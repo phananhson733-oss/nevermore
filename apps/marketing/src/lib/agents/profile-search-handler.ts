@@ -9,6 +9,8 @@ import {
   type DataForSeoCompetitorsDomainRequest,
   type DataForSeoCompetitorsDomainResponse,
   type DataForSeoMarketResolution,
+  type DataForSeoSerpCompetitorsRequest,
+  type DataForSeoSerpCompetitorsResponse,
   type DataForSeoSerpOrganicRequest,
   type DataForSeoSerpOrganicResponse,
 } from "@sf/sources";
@@ -33,11 +35,6 @@ import {
   type PublicToolJsonResult,
   type PublicToolSlot,
 } from "../tools/public-tool-request.ts";
-import {
-  consumePublicToolQuota,
-  DEFAULT_SHARED_QUOTA_DEPENDENCIES,
-  type SharedQuotaDependencies,
-} from "../tools/shared-rate-limit.ts";
 import type { AgentKind } from "./audit-contract.ts";
 import {
   AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
@@ -46,18 +43,18 @@ import {
   type AgentProfileSearchData,
   type AgentProfileSearchMethod,
   type AgentProfileSearchOverlapRow,
+  type AgentProfileSearchSeedSerpCompetitorRow,
   type AgentProfileSearchSerpRow,
 } from "./profile-search-contract.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
 const TARGET_QUERY_MAX_LENGTH = 200;
 const RESULT_LIMIT = 10;
+const COMPETITOR_MAXIMUM_RANK_GROUP = 100;
+const PRODUCT_PROFILE_SEARCH_SEED_MAX_LENGTH = 200;
+const PRODUCT_PROFILE_SEARCH_SEED_LIMIT = 5;
 const CN_LOCATION_CODE = 2156;
 const CN_LANGUAGE_CODE = "zh";
-
-export const AGENT_PROFILE_SEARCH_DAILY_IP_MAX = 5;
-export const AGENT_PROFILE_SEARCH_DAILY_GLOBAL_MAX = 100;
-export const AGENT_PROFILE_SEARCH_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
 
 interface AgentProfileSearchCredentials {
   readonly login: string;
@@ -69,6 +66,10 @@ export interface AgentProfileSearchProvider {
     request: DataForSeoCompetitorsDomainRequest,
     signal?: AbortSignal,
   ) => Promise<DataForSeoCompetitorsDomainResponse>;
+  readonly serpCompetitors: (
+    request: DataForSeoSerpCompetitorsRequest,
+    signal?: AbortSignal,
+  ) => Promise<DataForSeoSerpCompetitorsResponse>;
   readonly serpOrganic: (
     request: DataForSeoSerpOrganicRequest,
     signal?: AbortSignal,
@@ -104,7 +105,6 @@ export interface AgentProfileSearchDependencies {
     targetHost: string,
     payload: unknown,
   ) => Promise<void>;
-  readonly quota: SharedQuotaDependencies;
   readonly now: () => number;
   /** Receives a sealed operational record: no URL, query, provider prose, or credentials. */
   readonly log: (record: AgentProfileSearchLog) => void;
@@ -124,6 +124,8 @@ function createProvider(
   return {
     competitorsDomain: (request, signal) =>
       labs.competitorsDomain(request, signal),
+    serpCompetitors: (request, signal) =>
+      labs.serpCompetitors(request, signal),
     serpOrganic: (request, signal) =>
       keywordMetrics.serpOrganic(request, signal),
   };
@@ -146,7 +148,6 @@ const DEFAULT_DEPENDENCIES: AgentProfileSearchDependencies = {
   readCache: (namespace, host) => readCrawlCache(namespace, host),
   writeCache: (namespace, host, payload) =>
     writeCrawlCache(namespace, host, payload),
-  quota: DEFAULT_SHARED_QUOTA_DEPENDENCIES,
   now: Date.now,
   log: defaultLog,
 };
@@ -156,6 +157,7 @@ interface ProfileSearchInput {
   readonly marketCode: string;
   readonly languageTag: string;
   readonly targetQuery: string;
+  readonly productProfileSearchSeeds: readonly string[];
 }
 
 interface PlannedSearch {
@@ -176,6 +178,11 @@ interface ProfileSearchCacheIdentity {
   readonly providerMarketCode: string;
   readonly providerLocationCode: number;
   readonly providerLanguageCode: string;
+  readonly maximumRankGroup: number | null;
+  readonly fallbackWhenProjectedOverlapEmpty: boolean;
+  readonly maximumProductProfileSearchSeeds: number | null;
+  readonly productProfileSearchSeeds: readonly string[];
+  readonly serpCompetitorsLimit: number | null;
 }
 
 function profileSearchCacheNamespace(
@@ -191,7 +198,7 @@ function profileSearchCacheNamespace(
       }),
     )
     .digest("hex");
-  return `agent_profile_search_v1_${agent}_${fingerprint}`;
+  return `agent_profile_search_v3_${agent}_${fingerprint}`;
 }
 
 function json(
@@ -227,12 +234,42 @@ function canonicalLanguageTag(value: unknown): string | null {
   }
 }
 
+function canonicalProductProfileSearchSeeds(
+  value: unknown,
+): readonly string[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  const seeds: string[] = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "string") return null;
+    const seed = candidate.normalize("NFKC").trim().replace(/\s+/g, " ");
+    if (
+      seed === "" ||
+      seed.length > PRODUCT_PROFILE_SEARCH_SEED_MAX_LENGTH
+    ) {
+      return null;
+    }
+    const identity = seed.toLocaleLowerCase("en-US");
+    if (seen.has(identity)) continue;
+    if (seeds.length === PRODUCT_PROFILE_SEARCH_SEED_LIMIT) return null;
+    seen.add(identity);
+    seeds.push(seed);
+  }
+  return Object.freeze(seeds);
+}
+
 function parseInput(value: unknown): ProfileSearchInput | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }
   const object = value as Readonly<Record<string, unknown>>;
-  const expected = ["url", "marketCode", "languageTag", "targetQuery"];
+  const expected = [
+    "url",
+    "marketCode",
+    "languageTag",
+    "targetQuery",
+    "productProfileSearchSeeds",
+  ];
   if (
     Object.keys(object).length !== expected.length ||
     !expected.every((key) => Object.hasOwn(object, key)) ||
@@ -245,29 +282,24 @@ function parseInput(value: unknown): ProfileSearchInput | null {
   const marketCode = object.marketCode.trim().toUpperCase();
   const languageTag = canonicalLanguageTag(object.languageTag);
   const targetQuery = object.targetQuery.trim();
+  const productProfileSearchSeeds = canonicalProductProfileSearchSeeds(
+    object.productProfileSearchSeeds,
+  );
   if (
     !/^[A-Z]{2}$/.test(marketCode) ||
     languageTag === null ||
-    targetQuery.length > TARGET_QUERY_MAX_LENGTH
+    targetQuery.length > TARGET_QUERY_MAX_LENGTH ||
+    productProfileSearchSeeds === null
   ) {
     return null;
   }
-  return { url: object.url, marketCode, languageTag, targetQuery };
-}
-
-function utcDay(nowMs: number): string {
-  return new Date(nowMs).toISOString().slice(0, 10);
-}
-
-export function agentProfileSearchIpBucket(
-  clientIp: string,
-  nowMs: number,
-): string {
-  return `agent-profile-search:ip:${clientIp}:${utcDay(nowMs)}`;
-}
-
-export function agentProfileSearchGlobalBucket(nowMs: number): string {
-  return `agent-profile-search:global:${utcDay(nowMs)}`;
+  return {
+    url: object.url,
+    marketCode,
+    languageTag,
+    targetQuery,
+    productProfileSearchSeeds,
+  };
 }
 
 function inflightKey(clientIp: string): string {
@@ -317,6 +349,55 @@ function projectOverlapRows(
     if (projected.length === RESULT_LIMIT) break;
   }
   return projected;
+}
+
+function projectSeedSerpCompetitorRows(
+  rows: DataForSeoSerpCompetitorsResponse["rows"],
+  target: string,
+): readonly AgentProfileSearchSeedSerpCompetitorRow[] {
+  const byDomain = new Map<string, AgentProfileSearchSeedSerpCompetitorRow>();
+  for (const row of rows) {
+    const domain = domainKey(row.domain);
+    if (
+      domain === null ||
+      domain === target ||
+      !finiteNonNegative(row.averagePosition) ||
+      !finiteNonNegative(row.medianPosition) ||
+      !finiteNonNegative(row.rating) ||
+      !finiteNonNegative(row.organicEstimatedTrafficVolume) ||
+      !Number.isSafeInteger(row.keywordsCount) ||
+      row.keywordsCount < 0 ||
+      !finiteNonNegative(row.visibility) ||
+      !Number.isSafeInteger(row.relevantSerpItems) ||
+      row.relevantSerpItems < 0
+    ) {
+      continue;
+    }
+    const projected: AgentProfileSearchSeedSerpCompetitorRow = {
+      kind: "profile_seed_serp_competitor",
+      domain,
+      averagePosition: row.averagePosition,
+      medianPosition: row.medianPosition,
+      rating: row.rating,
+      organicEstimatedTrafficVolume: row.organicEstimatedTrafficVolume,
+      keywordsCount: row.keywordsCount,
+      visibility: row.visibility,
+      relevantSerpItems: row.relevantSerpItems,
+    };
+    const existing = byDomain.get(domain);
+    if (existing !== undefined && existing.rating >= projected.rating) {
+      continue;
+    }
+    byDomain.set(domain, projected);
+  }
+  return [...byDomain.values()]
+    .sort(
+      (left, right) =>
+        right.rating - left.rating ||
+        right.keywordsCount - left.keywordsCount ||
+        left.domain.localeCompare(right.domain, "en"),
+    )
+    .slice(0, RESULT_LIMIT);
 }
 
 function projectSerpRows(
@@ -402,13 +483,14 @@ function sourceUnavailableData(
   agent: AgentKind,
   target: string,
   plan: PlannedSearch,
+  method: AgentProfileSearchMethod = plan.method,
 ): AgentProfileSearchData {
   return {
     schemaVersion: AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
     agent,
     targetHost: target,
     availability: "source_unavailable",
-    method: plan.method,
+    method,
     market: plan.market,
     observedAt: null,
     rows: [],
@@ -420,18 +502,34 @@ function cachedDataMatches(
   agent: AgentKind,
   target: string,
   plan: PlannedSearch,
+  productProfileSearchSeeds: readonly string[],
 ): value is AgentProfileSearchData {
   const envelope = { data: value };
   if (!isAgentProfileSearchEnvelope(envelope)) return false;
   const data = envelope.data;
+  if (
+    !(
+      (data.availability === "available" ||
+        data.availability === "no_data") &&
+      data.agent === agent &&
+      data.targetHost === target &&
+      data.market.code === plan.market.code &&
+      data.market.locationCode === plan.market.locationCode &&
+      data.market.languageCode === plan.market.languageCode
+    )
+  ) {
+    return false;
+  }
+  if (plan.method === "target_query_serp") {
+    return data.method === "target_query_serp";
+  }
+  if (data.method === "serp_competitors") {
+    return productProfileSearchSeeds.length > 0;
+  }
   return (
-    (data.availability === "available" || data.availability === "no_data") &&
-    data.agent === agent &&
-    data.targetHost === target &&
-    data.method === plan.method &&
-    data.market.code === plan.market.code &&
-    data.market.locationCode === plan.market.locationCode &&
-    data.market.languageCode === plan.market.languageCode
+    data.method === "competitors_domain" &&
+    (data.availability === "available" ||
+      productProfileSearchSeeds.length === 0)
   );
 }
 
@@ -461,33 +559,6 @@ function requestError(result: Extract<PublicToolJsonResult, { ok: false }>): Res
         ? 413
         : 400;
   return error(result.code, status);
-}
-
-async function consumeDailyQuotas(
-  clientIp: string,
-  dependencies: AgentProfileSearchDependencies,
-): Promise<Response | null> {
-  const nowMs = dependencies.now();
-  for (const [bucket, max] of [
-    [agentProfileSearchIpBucket(clientIp, nowMs), AGENT_PROFILE_SEARCH_DAILY_IP_MAX],
-    [agentProfileSearchGlobalBucket(nowMs), AGENT_PROFILE_SEARCH_DAILY_GLOBAL_MAX],
-  ] as const) {
-    const outcome = await consumePublicToolQuota(
-      bucket,
-      max,
-      AGENT_PROFILE_SEARCH_DAILY_WINDOW_SECONDS,
-      dependencies.quota,
-      dependencies.now,
-    );
-    if (outcome.kind === "unavailable") {
-      console.error("[agent-profile-search] quota unavailable");
-      return error("quota_unavailable", 503, 60);
-    }
-    if (outcome.kind === "limited") {
-      return error("rate_limited", 429, outcome.retryAfterSeconds);
-    }
-  }
-  return null;
 }
 
 export async function handleAgentProfileSearchRequest(
@@ -531,18 +602,40 @@ export async function handleAgentProfileSearchRequest(
     providerMarketCode: plan.market.code,
     providerLocationCode: plan.market.locationCode,
     providerLanguageCode: plan.market.languageCode,
+    maximumRankGroup:
+      plan.method === "competitors_domain"
+        ? COMPETITOR_MAXIMUM_RANK_GROUP
+        : null,
+    fallbackWhenProjectedOverlapEmpty:
+      plan.method === "competitors_domain",
+    maximumProductProfileSearchSeeds:
+      plan.method === "competitors_domain"
+        ? PRODUCT_PROFILE_SEARCH_SEED_LIMIT
+        : null,
+    productProfileSearchSeeds:
+      plan.method === "competitors_domain"
+        ? input.productProfileSearchSeeds
+        : [],
+    serpCompetitorsLimit:
+      plan.method === "competitors_domain" ? RESULT_LIMIT : null,
   });
   try {
     const cached = await dependencies.readCache(cacheNamespace, target);
     if (
       cached !== null &&
       isCanonicalCapturedAt(cached.capturedAt) &&
-      cachedDataMatches(cached.payload, agent, target, plan)
+      cachedDataMatches(
+        cached.payload,
+        agent,
+        target,
+        plan,
+        input.productProfileSearchSeeds,
+      )
     ) {
       return json({ data: cached.payload });
     }
   } catch {
-    // Cache reads fail soft; the authenticated request continues to paid gates.
+    // Cache reads fail soft; the authenticated request continues to the provider.
   }
 
   const credentials = dependencies.credentials();
@@ -563,28 +656,73 @@ export async function handleAgentProfileSearchRequest(
   if (!slot.acquired) return error("search_in_progress", 409, 5);
 
   try {
-    const quotaRefusal = await consumeDailyQuotas(clientIp, dependencies);
-    if (quotaRefusal !== null) return quotaRefusal;
-
+    let attemptedMethod: AgentProfileSearchMethod = plan.method;
     try {
       const provider = dependencies.createProvider(credentials);
       if (plan.method === "competitors_domain") {
-        const result = await provider.competitorsDomain(
+        const overlapResult = await provider.competitorsDomain(
           {
             target,
             locationCode: plan.market.locationCode,
             languageCode: plan.market.languageCode,
             limit: RESULT_LIMIT,
+            maximumRankGroup: COMPETITOR_MAXIMUM_RANK_GROUP,
           },
           request.signal,
         );
-        const rows = projectOverlapRows(result.rows, target);
-        const availability = rows.length === 0 ? "no_data" : "available";
+        const overlapRows = projectOverlapRows(overlapResult.rows, target);
+        if (
+          overlapRows.length === 0 &&
+          input.productProfileSearchSeeds.length > 0
+        ) {
+          attemptedMethod = "serp_competitors";
+          const seedSerpResult = await provider.serpCompetitors(
+            {
+              keywords: input.productProfileSearchSeeds,
+              locationCode: plan.market.locationCode,
+              languageCode: plan.market.languageCode,
+              limit: RESULT_LIMIT,
+            },
+            request.signal,
+          );
+          const rows = projectSeedSerpCompetitorRows(
+            seedSerpResult.rows,
+            target,
+          );
+          const availability = rows.length === 0 ? "no_data" : "available";
+          dependencies.log({
+            agent,
+            method: attemptedMethod,
+            status: availability,
+            costUsd: Number(
+              (overlapResult.costUsd + seedSerpResult.costUsd).toFixed(12),
+            ),
+          });
+          const data: AgentProfileSearchData = {
+            schemaVersion: AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
+            agent,
+            targetHost: target,
+            availability,
+            method: attemptedMethod,
+            market: plan.market,
+            observedAt: new Date(dependencies.now()).toISOString(),
+            rows,
+          };
+          await writeCacheFailSoft(
+            dependencies,
+            cacheNamespace,
+            target,
+            data,
+          );
+          return json({ data });
+        }
+        const availability =
+          overlapRows.length === 0 ? "no_data" : "available";
         dependencies.log({
           agent,
           method: plan.method,
           status: availability,
-          costUsd: result.costUsd,
+          costUsd: overlapResult.costUsd,
         });
         const data: AgentProfileSearchData = {
           schemaVersion: AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
@@ -594,7 +732,7 @@ export async function handleAgentProfileSearchRequest(
           method: plan.method,
           market: plan.market,
           observedAt: new Date(dependencies.now()).toISOString(),
-          rows,
+          rows: overlapRows,
         };
         await writeCacheFailSoft(
           dependencies,
@@ -618,7 +756,7 @@ export async function handleAgentProfileSearchRequest(
       const availability = rows.length === 0 ? "no_data" : "available";
       dependencies.log({
         agent,
-        method: plan.method,
+        method: "target_query_serp",
         status: availability,
         costUsd: result.costUsd,
       });
@@ -627,7 +765,7 @@ export async function handleAgentProfileSearchRequest(
         agent,
         targetHost: target,
         availability,
-        method: plan.method,
+        method: "target_query_serp",
         market: plan.market,
         observedAt: new Date(dependencies.now()).toISOString(),
         rows,
@@ -642,12 +780,12 @@ export async function handleAgentProfileSearchRequest(
     } catch {
       dependencies.log({
         agent,
-        method: plan.method,
+        method: attemptedMethod,
         status: "source_unavailable",
         costUsd: null,
       });
       return json({
-        data: sourceUnavailableData(agent, target, plan),
+        data: sourceUnavailableData(agent, target, plan, attemptedMethod),
       });
     }
   } finally {

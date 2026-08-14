@@ -16,6 +16,7 @@ export type AgentProfileSearchAvailability =
   | "source_unavailable";
 export type AgentProfileSearchMethod =
   | "competitors_domain"
+  | "serp_competitors"
   | "target_query_serp";
 
 export interface AgentProfileSearchMarket {
@@ -42,6 +43,20 @@ export interface AgentProfileSearchSerpRow {
   readonly rank: number;
 }
 
+/** Provider SERP-competitor evidence from explicit Product Profile seeds. */
+export interface AgentProfileSearchSeedSerpCompetitorRow {
+  readonly kind: "profile_seed_serp_competitor";
+  readonly domain: string;
+  readonly averagePosition: number;
+  readonly medianPosition: number;
+  /** Provider rating; deliberately not relabelled as keyword intersections. */
+  readonly rating: number;
+  readonly organicEstimatedTrafficVolume: number;
+  readonly keywordsCount: number;
+  readonly visibility: number;
+  readonly relevantSerpItems: number;
+}
+
 interface AgentProfileSearchBase {
   readonly schemaVersion: typeof AGENT_PROFILE_SEARCH_SCHEMA_VERSION;
   readonly agent: AgentProfileSearchAgent;
@@ -62,6 +77,14 @@ export interface AgentProfileSearchSerpData extends AgentProfileSearchBase {
   readonly method: "target_query_serp";
   readonly observedAt: string;
   readonly rows: readonly AgentProfileSearchSerpRow[];
+}
+
+export interface AgentProfileSearchSeedSerpCompetitorData
+  extends AgentProfileSearchBase {
+  readonly availability: "available" | "no_data";
+  readonly method: "serp_competitors";
+  readonly observedAt: string;
+  readonly rows: readonly AgentProfileSearchSeedSerpCompetitorRow[];
 }
 
 export interface AgentProfileSearchMarketUnsupportedData
@@ -93,6 +116,7 @@ export interface AgentProfileSearchSourceUnavailableData
 
 export type AgentProfileSearchData =
   | AgentProfileSearchOverlapData
+  | AgentProfileSearchSeedSerpCompetitorData
   | AgentProfileSearchSerpData
   | AgentProfileSearchMarketUnsupportedData
   | AgentProfileSearchSourceUnavailableData;
@@ -198,6 +222,36 @@ function isSerpRow(value: unknown): value is AgentProfileSearchSerpRow {
   );
 }
 
+function isSeedSerpCompetitorRow(
+  value: unknown,
+): value is AgentProfileSearchSeedSerpCompetitorRow {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, [
+      "kind",
+      "domain",
+      "averagePosition",
+      "medianPosition",
+      "rating",
+      "organicEstimatedTrafficVolume",
+      "keywordsCount",
+      "visibility",
+      "relevantSerpItems",
+    ]) &&
+    value.kind === "profile_seed_serp_competitor" &&
+    domainKey(value.domain) !== null &&
+    isNonNegativeFinite(value.averagePosition) &&
+    isNonNegativeFinite(value.medianPosition) &&
+    isNonNegativeFinite(value.rating) &&
+    isNonNegativeFinite(value.organicEstimatedTrafficVolume) &&
+    Number.isSafeInteger(value.keywordsCount) &&
+    (value.keywordsCount as number) >= 0 &&
+    isNonNegativeFinite(value.visibility) &&
+    Number.isSafeInteger(value.relevantSerpItems) &&
+    (value.relevantSerpItems as number) >= 0
+  );
+}
+
 function hasUniqueBoundedDomains(rows: readonly unknown[]): boolean {
   if (rows.length > 10) return false;
   const domains = rows.map((row) =>
@@ -246,6 +300,7 @@ function isData(value: unknown): value is AgentProfileSearchData {
       value.observedAt === null &&
       value.rows.length === 0 &&
       (value.method === "competitors_domain" ||
+        value.method === "serp_competitors" ||
         value.method === "target_query_serp") &&
       value.market.locationCode !== null &&
       value.market.languageCode !== null
@@ -266,6 +321,9 @@ function isData(value: unknown): value is AgentProfileSearchData {
 
   if (value.method === "competitors_domain") {
     return value.rows.every(isOverlapRow);
+  }
+  if (value.method === "serp_competitors") {
+    return value.rows.every(isSeedSerpCompetitorRow);
   }
   if (value.method === "target_query_serp") {
     return value.rows.every(isSerpRow);

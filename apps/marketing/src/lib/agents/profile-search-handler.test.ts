@@ -1,14 +1,9 @@
-// @input  -- authenticated profile-search requests plus injected provider/quota seams
+// @input  -- authenticated profile-search requests plus injected provider/cache/concurrency seams
 // @output -- auth order, strict input, cost gates, market routing, and safe projections
 // @pos    -- focused TDD suite for the marketing-only DataForSEO boundary
 
 import { describe, expect, it, vi } from "vitest";
 import {
-  AGENT_PROFILE_SEARCH_DAILY_GLOBAL_MAX,
-  AGENT_PROFILE_SEARCH_DAILY_IP_MAX,
-  AGENT_PROFILE_SEARCH_DAILY_WINDOW_SECONDS,
-  agentProfileSearchGlobalBucket,
-  agentProfileSearchIpBucket,
   handleAgentProfileSearchRequest,
   type AgentProfileSearchDependencies,
   type AgentProfileSearchProvider,
@@ -24,6 +19,7 @@ function request(
     marketCode: "US",
     languageTag: "en-US",
     targetQuery: "seo platform",
+    productProfileSearchSeeds: [],
   },
   headers: Readonly<Record<string, string>> = {},
 ): Request {
@@ -53,6 +49,25 @@ function provider(): AgentProfileSearchProvider {
       totalCount: 1,
       itemsCount: 1,
       costUsd: 0.02,
+      providerStatusCode: 20_000,
+      taskStatusCode: 20_000,
+    })),
+    serpCompetitors: vi.fn(async () => ({
+      rows: [
+        {
+          domain: "seed-rival.com",
+          averagePosition: 4.5,
+          medianPosition: 3,
+          rating: 812.25,
+          organicEstimatedTrafficVolume: 321,
+          keywordsCount: 4,
+          visibility: 0.42,
+          relevantSerpItems: 3,
+        },
+      ],
+      totalCount: 1,
+      itemsCount: 1,
+      costUsd: 0.03,
       providerStatusCode: 20_000,
       taskStatusCode: 20_000,
     })),
@@ -93,6 +108,34 @@ function cachedData(
   } as AgentProfileSearchData;
 }
 
+function cachedSeedSerpData(
+  overrides: Partial<AgentProfileSearchData> = {},
+): AgentProfileSearchData {
+  return {
+    schemaVersion: "agent_profile_search.v1",
+    agent: "seo",
+    targetHost: "acme.com",
+    availability: "available",
+    method: "serp_competitors",
+    market: { code: "US", locationCode: 2840, languageCode: "en" },
+    observedAt: "2026-08-13T10:00:00.000Z",
+    rows: [
+      {
+        kind: "profile_seed_serp_competitor",
+        domain: "cached-seed-rival.com",
+        averagePosition: 4.5,
+        medianPosition: 3,
+        rating: 812.25,
+        organicEstimatedTrafficVolume: 321,
+        keywordsCount: 4,
+        visibility: 0.42,
+        relevantSerpItems: 3,
+      },
+    ],
+    ...overrides,
+  } as AgentProfileSearchData;
+}
+
 function dependencies(
   overrides: Partial<AgentProfileSearchDependencies> = {},
 ): AgentProfileSearchDependencies {
@@ -114,13 +157,6 @@ function dependencies(
     acquireSlot: vi.fn(() => ({ acquired: true as const, release: vi.fn() })),
     readCache: vi.fn(async () => null),
     writeCache: vi.fn(async () => undefined),
-    quota: {
-      callQuota: vi.fn(async () => ({
-        allowed: true,
-        hits: 1,
-        reset_at: "2026-08-14T00:00:00.000Z",
-      })),
-    },
     now: () => NOW,
     log: vi.fn(),
     ...overrides,
@@ -128,11 +164,10 @@ function dependencies(
 }
 
 describe("handleAgentProfileSearchRequest", () => {
-  it("returns an exact strict cache hit before credentials, slot, quota, or provider", async () => {
+  it("returns an exact strict cache hit before credentials, slot, or provider", async () => {
     const credentials = vi.fn(() => ({ login: "login", password: "password" }));
     const extractClientIp = vi.fn(() => IP);
     const acquireSlot = vi.fn(() => ({ acquired: true as const, release: vi.fn() }));
-    const callQuota = vi.fn();
     const createProvider = vi.fn();
     const writeCache = vi.fn();
     const data = cachedData();
@@ -140,7 +175,6 @@ describe("handleAgentProfileSearchRequest", () => {
       credentials,
       extractClientIp,
       acquireSlot,
-      quota: { callQuota: callQuota as never },
       createProvider: createProvider as never,
       readCache: vi.fn(async () => ({
         payload: data,
@@ -161,7 +195,6 @@ describe("handleAgentProfileSearchRequest", () => {
     expect(credentials).not.toHaveBeenCalled();
     expect(extractClientIp).not.toHaveBeenCalled();
     expect(acquireSlot).not.toHaveBeenCalled();
-    expect(callQuota).not.toHaveBeenCalled();
     expect(createProvider).not.toHaveBeenCalled();
     expect(writeCache).not.toHaveBeenCalled();
   });
@@ -174,6 +207,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "en-US",
         targetQuery: "seo platform",
+        productProfileSearchSeeds: [],
       },
       "seo",
     ],
@@ -184,6 +218,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "en-US",
         targetQuery: "seo platform",
+        productProfileSearchSeeds: [],
       },
       "tech",
     ],
@@ -194,6 +229,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "GB",
         languageTag: "en-US",
         targetQuery: "seo platform",
+        productProfileSearchSeeds: [],
       },
       "seo",
     ],
@@ -204,6 +240,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "fr-FR",
         targetQuery: "seo platform",
+        productProfileSearchSeeds: [],
       },
       "seo",
     ],
@@ -239,7 +276,6 @@ describe("handleAgentProfileSearchRequest", () => {
 
       await handleAgentProfileSearchRequest(request(), "seo", deps);
       vi.mocked(upstream.competitorsDomain).mockClear();
-      vi.mocked(deps.quota.callQuota).mockClear();
 
       await handleAgentProfileSearchRequest(
         request(secondBody),
@@ -248,7 +284,6 @@ describe("handleAgentProfileSearchRequest", () => {
       );
 
       expect(upstream.competitorsDomain).toHaveBeenCalledTimes(1);
-      expect(deps.quota.callQuota).toHaveBeenCalledTimes(2);
       expect(readCache).toHaveBeenCalledTimes(2);
       expect(writeCache).toHaveBeenCalledTimes(2);
     },
@@ -279,7 +314,6 @@ describe("handleAgentProfileSearchRequest", () => {
 
     await handleAgentProfileSearchRequest(request(), "seo", deps);
     vi.mocked(upstream.competitorsDomain).mockClear();
-    vi.mocked(deps.quota.callQuota).mockClear();
 
     const response = await handleAgentProfileSearchRequest(
       request({
@@ -287,6 +321,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "en-US",
         targetQuery: "technical seo",
+        productProfileSearchSeeds: [],
       }),
       "seo",
       deps,
@@ -294,9 +329,150 @@ describe("handleAgentProfileSearchRequest", () => {
 
     expect(response.status).toBe(200);
     expect(upstream.competitorsDomain).not.toHaveBeenCalled();
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
     expect(readCache).toHaveBeenCalledTimes(2);
     expect(writeCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("keys fallback cache by canonical Product Profile seeds", async () => {
+    const cache = new Map<string, unknown>();
+    const upstream = provider();
+    vi.mocked(upstream.competitorsDomain).mockResolvedValue({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0.02,
+      providerStatusCode: 20_000,
+      taskStatusCode: 40_102,
+    });
+    const readCache = vi.fn(async (namespace: string, host: string) => {
+      const payload = cache.get(`${namespace}:${host}`);
+      return payload === undefined
+        ? null
+        : {
+            payload,
+            capturedAt: "2026-08-13T10:00:00.000Z",
+          };
+    });
+    const writeCache = vi.fn(
+      async (namespace: string, host: string, payload: unknown) => {
+        cache.set(`${namespace}:${host}`, payload);
+      },
+    );
+    const deps = dependencies({
+      readCache,
+      writeCache,
+      createProvider: () => upstream,
+    });
+
+    await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["  SEO   Platform  ", "SEO Platform"],
+      }),
+      "seo",
+      deps,
+    );
+    vi.mocked(upstream.competitorsDomain).mockClear();
+    vi.mocked(upstream.serpCompetitors).mockClear();
+
+    const cachedResponse = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "ignored",
+        productProfileSearchSeeds: ["SEO Platform"],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect((await cachedResponse.json()).data.method).toBe("serp_competitors");
+    expect(upstream.competitorsDomain).not.toHaveBeenCalled();
+    expect(upstream.serpCompetitors).not.toHaveBeenCalled();
+
+    await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["different seed"],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect(upstream.competitorsDomain).toHaveBeenCalledTimes(1);
+    expect(upstream.serpCompetitors).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a cached empty overlap suppress the seed fallback", async () => {
+    const upstream = provider();
+    vi.mocked(upstream.competitorsDomain).mockResolvedValue({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0.02,
+      providerStatusCode: 20_000,
+      taskStatusCode: 40_102,
+    });
+    const deps = dependencies({
+      readCache: async () => ({
+        payload: cachedData({ availability: "no_data", rows: [] }),
+        capturedAt: "2026-08-13T10:00:00.000Z",
+      }),
+      createProvider: () => upstream,
+    });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["SEO platform"],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.method).toBe("serp_competitors");
+    expect(upstream.competitorsDomain).toHaveBeenCalledTimes(1);
+    expect(upstream.serpCompetitors).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a strict seed-SERP cache hit before paid gates", async () => {
+    const upstream = provider();
+    const deps = dependencies({
+      readCache: async () => ({
+        payload: cachedSeedSerpData(),
+        capturedAt: "2026-08-13T10:00:00.000Z",
+      }),
+      createProvider: () => upstream,
+    });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["SEO platform"],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toEqual(cachedSeedSerpData());
+    expect(deps.credentials).not.toHaveBeenCalled();
+    expect(upstream.competitorsDomain).not.toHaveBeenCalled();
+    expect(upstream.serpCompetitors).not.toHaveBeenCalled();
   });
 
   it("keeps the target query in target_query_serp cache identity", async () => {
@@ -330,12 +506,12 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "CN",
         languageTag: "zh-CN",
         targetQuery: "免费星盘计算",
+        productProfileSearchSeeds: [],
       }),
       "seo",
       deps,
     );
     vi.mocked(upstream.serpOrganic).mockClear();
-    vi.mocked(deps.quota.callQuota).mockClear();
 
     await handleAgentProfileSearchRequest(
       request({
@@ -343,13 +519,13 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "CN",
         languageTag: "zh-CN",
         targetQuery: "出生星盘",
+        productProfileSearchSeeds: [],
       }),
       "seo",
       deps,
     );
 
     expect(upstream.serpOrganic).toHaveBeenCalledTimes(1);
-    expect(deps.quota.callQuota).toHaveBeenCalledTimes(2);
     expect(readCache).toHaveBeenCalledTimes(2);
     expect(writeCache).toHaveBeenCalledTimes(2);
   });
@@ -371,7 +547,6 @@ describe("handleAgentProfileSearchRequest", () => {
 
       expect(response.status).toBe(200);
       expect(upstream.competitorsDomain).toHaveBeenCalledTimes(1);
-      expect(deps.quota.callQuota).toHaveBeenCalledTimes(2);
       expect((await response.json()).data.rows[0].domain).toBe("rival.com");
     },
   );
@@ -420,7 +595,6 @@ describe("handleAgentProfileSearchRequest", () => {
 
       expect(response.status).toBe(200);
       expect(upstream.competitorsDomain).toHaveBeenCalledTimes(1);
-      expect(deps.quota.callQuota).toHaveBeenCalledTimes(2);
       expect((await response.json()).data.rows[0].domain).toBe("rival.com");
     },
   );
@@ -438,6 +612,7 @@ describe("handleAgentProfileSearchRequest", () => {
           providerStatusCode: 20_000,
           taskStatusCode: 40_102,
         })),
+        serpCompetitors: vi.fn(),
         serpOrganic: vi.fn(),
       } satisfies AgentProfileSearchProvider,
     ],
@@ -458,7 +633,7 @@ describe("handleAgentProfileSearchRequest", () => {
     expect(data.availability).toBe(_label);
     expect(writeCache).toHaveBeenCalledTimes(1);
     expect(writeCache).toHaveBeenCalledWith(
-      expect.stringMatching(/^agent_profile_search_v1_seo_[a-f0-9]{64}$/),
+      expect.stringMatching(/^agent_profile_search_v3_seo_[a-f0-9]{64}$/),
       "acme.com",
       data,
     );
@@ -503,15 +678,13 @@ describe("handleAgentProfileSearchRequest", () => {
     expect((await response.json()).data.availability).toBe("available");
   });
 
-  it("authenticates before reading the body or touching quota/provider", async () => {
+  it("authenticates before reading the body or touching the provider", async () => {
     const incoming = request();
     const createProvider = vi.fn();
-    const callQuota = vi.fn();
     const response = await handleAgentProfileSearchRequest(incoming, "seo", {
       ...dependencies(),
       authenticate: async () => "unauthenticated",
       createProvider: createProvider as never,
-      quota: { callQuota: callQuota as never },
     });
 
     expect(response.status).toBe(401);
@@ -519,7 +692,6 @@ describe("handleAgentProfileSearchRequest", () => {
       error: { code: "auth_required" },
     });
     expect(incoming.bodyUsed).toBe(false);
-    expect(callQuota).not.toHaveBeenCalled();
     expect(createProvider).not.toHaveBeenCalled();
   });
 
@@ -550,12 +722,18 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "en",
         targetQuery: "seo",
+        productProfileSearchSeeds: [],
         extra: true,
       },
     ],
     [
       "missing key",
-      { url: "acme.com", marketCode: "US", languageTag: "en" },
+      {
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en",
+        targetQuery: "seo",
+      },
     ],
     [
       "invalid market",
@@ -564,6 +742,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "USA",
         languageTag: "en",
         targetQuery: "seo",
+        productProfileSearchSeeds: [],
       },
     ],
     [
@@ -573,6 +752,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "not_a_locale",
         targetQuery: "seo",
+        productProfileSearchSeeds: [],
       },
     ],
     [
@@ -582,6 +762,47 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "US",
         languageTag: "en",
         targetQuery: "x".repeat(201),
+        productProfileSearchSeeds: [],
+      },
+    ],
+    [
+      "non-array Product Profile seeds",
+      {
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en",
+        targetQuery: "seo",
+        productProfileSearchSeeds: "seo platform",
+      },
+    ],
+    [
+      "empty Product Profile seed",
+      {
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en",
+        targetQuery: "seo",
+        productProfileSearchSeeds: ["   "],
+      },
+    ],
+    [
+      "overlong Product Profile seed",
+      {
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en",
+        targetQuery: "seo",
+        productProfileSearchSeeds: ["x".repeat(201)],
+      },
+    ],
+    [
+      "more than five canonical Product Profile seeds",
+      {
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en",
+        targetQuery: "seo",
+        productProfileSearchSeeds: ["one", "two", "three", "four", "five", "six"],
       },
     ],
   ] as const)("rejects an exact-body violation: %s", async (_label, body) => {
@@ -596,7 +817,6 @@ describe("handleAgentProfileSearchRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "invalid_request" },
     });
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
     expect(deps.createProvider).not.toHaveBeenCalled();
   });
 
@@ -612,7 +832,6 @@ describe("handleAgentProfileSearchRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "payload_too_large" },
     });
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
   });
 
   it("rejects a normalized URL whose host is not a public DNS hostname", async () => {
@@ -629,7 +848,6 @@ describe("handleAgentProfileSearchRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "invalid_url" },
     });
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
     expect(deps.createProvider).not.toHaveBeenCalled();
   });
 
@@ -683,6 +901,7 @@ describe("handleAgentProfileSearchRequest", () => {
         locationCode: 2840,
         languageCode: "en",
         limit: 10,
+        maximumRankGroup: 100,
       },
       expect.any(AbortSignal),
     );
@@ -713,6 +932,262 @@ describe("handleAgentProfileSearchRequest", () => {
     });
   });
 
+  it("uses canonical Product Profile seeds only after projected top-100 overlap is empty", async () => {
+    const events: string[] = [];
+    const upstream = provider();
+    vi.mocked(upstream.competitorsDomain).mockImplementation(async () => {
+      events.push("competitors_domain");
+      return {
+        rows: [
+          {
+            domain: "www.acme.com",
+            averagePosition: 1,
+            summedPosition: 1,
+            intersections: 1,
+            organicEstimatedTrafficVolume: 1,
+          },
+        ],
+        totalCount: 1,
+        itemsCount: 1,
+        costUsd: 0.02,
+        providerStatusCode: 20_000,
+        taskStatusCode: 20_000,
+      };
+    });
+    vi.mocked(upstream.serpCompetitors).mockImplementation(async () => {
+      events.push("serp_competitors");
+      return {
+        rows: [
+          {
+            domain: "www.acme.com",
+            averagePosition: 1,
+            medianPosition: 1,
+            rating: 999,
+            organicEstimatedTrafficVolume: 999,
+            keywordsCount: 5,
+            visibility: 1,
+            relevantSerpItems: 5,
+          },
+          {
+            domain: "www.rival.com",
+            averagePosition: 5,
+            medianPosition: 4,
+            rating: 4,
+            organicEstimatedTrafficVolume: 100,
+            keywordsCount: 8,
+            visibility: 0.3,
+            relevantSerpItems: 2,
+          },
+          {
+            domain: "rival.com",
+            averagePosition: 4,
+            medianPosition: 3,
+            rating: 5,
+            organicEstimatedTrafficVolume: 200,
+            keywordsCount: 2,
+            visibility: 0.4,
+            relevantSerpItems: 3,
+          },
+          {
+            domain: "second.com",
+            averagePosition: 2,
+            medianPosition: 2,
+            rating: 5,
+            organicEstimatedTrafficVolume: 300,
+            keywordsCount: 7,
+            visibility: 0.5,
+            relevantSerpItems: 4,
+          },
+        ],
+        totalCount: 4,
+        itemsCount: 4,
+        costUsd: 0.03,
+        providerStatusCode: 20_000,
+        taskStatusCode: 20_000,
+      };
+    });
+    const log = vi.fn();
+    const deps = dependencies({
+      createProvider: () => upstream,
+      log,
+    });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "ignored outside CN",
+        productProfileSearchSeeds: [
+          "  SEO   Platform  ",
+          "SEO Platform",
+          "ＡＩ search",
+        ],
+      }),
+      "seo",
+      deps,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, private");
+    expect(events).toEqual(["competitors_domain", "serp_competitors"]);
+    expect(upstream.competitorsDomain).toHaveBeenCalledWith(
+      {
+        target: "acme.com",
+        locationCode: 2840,
+        languageCode: "en",
+        limit: 10,
+        maximumRankGroup: 100,
+      },
+      expect.any(AbortSignal),
+    );
+    expect(upstream.serpCompetitors).toHaveBeenCalledWith(
+      {
+        keywords: ["SEO Platform", "AI search"],
+        locationCode: 2840,
+        languageCode: "en",
+        limit: 10,
+      },
+      expect.any(AbortSignal),
+    );
+    expect(body.data).toMatchObject({
+      schemaVersion: "agent_profile_search.v1",
+      availability: "available",
+      method: "serp_competitors",
+      observedAt: "2026-08-13T10:00:00.000Z",
+    });
+    expect(body.data.rows).toEqual([
+      {
+        kind: "profile_seed_serp_competitor",
+        domain: "second.com",
+        averagePosition: 2,
+        medianPosition: 2,
+        rating: 5,
+        organicEstimatedTrafficVolume: 300,
+        keywordsCount: 7,
+        visibility: 0.5,
+        relevantSerpItems: 4,
+      },
+      {
+        kind: "profile_seed_serp_competitor",
+        domain: "rival.com",
+        averagePosition: 4,
+        medianPosition: 3,
+        rating: 5,
+        organicEstimatedTrafficVolume: 200,
+        keywordsCount: 2,
+        visibility: 0.4,
+        relevantSerpItems: 3,
+      },
+    ]);
+    expect(body.data.rows[0]).not.toHaveProperty("intersections");
+    expect(log).toHaveBeenCalledWith({
+      agent: "seo",
+      method: "serp_competitors",
+      status: "available",
+      costUsd: 0.05,
+    });
+  });
+
+  it("does not call SERP Competitors when projected overlap is available", async () => {
+    const upstream = provider();
+    const deps = dependencies({ createProvider: () => upstream });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["SEO platform"],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.method).toBe("competitors_domain");
+    expect(upstream.serpCompetitors).not.toHaveBeenCalled();
+  });
+
+  it("returns seed-SERP no_data when the bounded fallback is empty", async () => {
+    const upstream = provider();
+    vi.mocked(upstream.competitorsDomain).mockResolvedValue({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0.02,
+      providerStatusCode: 20_000,
+      taskStatusCode: 40_102,
+    });
+    vi.mocked(upstream.serpCompetitors).mockResolvedValue({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0,
+      providerStatusCode: 20_000,
+      taskStatusCode: 40_102,
+    });
+    const deps = dependencies({ createProvider: () => upstream });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["SEO platform"],
+      }),
+      "seo",
+      deps,
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        availability: "no_data",
+        method: "serp_competitors",
+        rows: [],
+      },
+    });
+  });
+
+  it("uses the app-aligned top-100 overlap policy and a fresh cache identity for gengrowth.ai", async () => {
+    const upstream = provider();
+    const deps = dependencies({
+      normalizeUrl: () => ({ ok: true, url: "https://gengrowth.ai/" }),
+      createProvider: () => upstream,
+    });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "gengrowth.ai",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: [],
+      }),
+      "seo",
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(upstream.competitorsDomain).toHaveBeenCalledWith(
+      {
+        target: "gengrowth.ai",
+        locationCode: 2840,
+        languageCode: "en",
+        limit: 10,
+        maximumRankGroup: 100,
+      },
+      expect.any(AbortSignal),
+    );
+    expect(deps.readCache).toHaveBeenCalledWith(
+      expect.stringMatching(/^agent_profile_search_v3_seo_[a-f0-9]{64}$/),
+      "gengrowth.ai",
+    );
+  });
+
   it("uses the explicit request language only through the served-market resolver", async () => {
     const resolveMarket = vi.fn(() => ({
       locationCode: 2840,
@@ -728,6 +1203,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "us",
         languageTag: "es-MX",
         targetQuery: "plataforma seo",
+        productProfileSearchSeeds: [],
       }),
       "tech",
       deps,
@@ -768,6 +1244,7 @@ describe("handleAgentProfileSearchRequest", () => {
         marketCode: "CN",
         languageTag: "zh-CN",
         targetQuery: " 免费星盘计算 ",
+        productProfileSearchSeeds: ["birth chart calculator"],
       }),
       "tech",
       deps,
@@ -783,6 +1260,7 @@ describe("handleAgentProfileSearchRequest", () => {
       },
       expect.any(AbortSignal),
     );
+    expect(upstream.serpCompetitors).not.toHaveBeenCalled();
     expect(body.data).toEqual({
       schemaVersion: "agent_profile_search.v1",
       agent: "tech",
@@ -802,7 +1280,7 @@ describe("handleAgentProfileSearchRequest", () => {
     ["AQ", "seo platform"],
     ["CN", "   "],
   ] as const)(
-    "returns market_unsupported without quota or provider for %s",
+    "returns market_unsupported without provider access for %s",
     async (marketCode, targetQuery) => {
       const deps = dependencies({ resolveMarket: () => null });
       const response = await handleAgentProfileSearchRequest(
@@ -811,6 +1289,7 @@ describe("handleAgentProfileSearchRequest", () => {
           marketCode,
           languageTag: "en",
           targetQuery,
+          productProfileSearchSeeds: [],
         }),
         "seo",
         deps,
@@ -829,14 +1308,13 @@ describe("handleAgentProfileSearchRequest", () => {
           rows: [],
         },
       });
-      expect(deps.quota.callQuota).not.toHaveBeenCalled();
       expect(deps.createProvider).not.toHaveBeenCalled();
       expect(deps.readCache).not.toHaveBeenCalled();
       expect(deps.writeCache).not.toHaveBeenCalled();
     },
   );
 
-  it("returns source_unavailable when credentials are absent without spending quota", async () => {
+  it("returns source_unavailable when credentials are absent without calling the provider", async () => {
     const deps = dependencies({ credentials: () => null });
     const response = await handleAgentProfileSearchRequest(
       request(),
@@ -854,65 +1332,29 @@ describe("handleAgentProfileSearchRequest", () => {
       },
     });
     expect(deps.writeCache).not.toHaveBeenCalled();
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
     expect(deps.createProvider).not.toHaveBeenCalled();
   });
 
-  it("applies per-IP then global durable daily quotas before a paid call", async () => {
-    const events: string[] = [];
+  it("serves repeated normal-use searches without a daily request allowance", async () => {
     const upstream = provider();
-    vi.mocked(upstream.competitorsDomain).mockImplementation(async () => {
-      events.push("provider");
-      return {
-        rows: [],
-        totalCount: 0,
-        itemsCount: 0,
-        costUsd: 0,
-        providerStatusCode: 20_000,
-        taskStatusCode: 40_102,
-      };
-    });
-    const callQuota = vi.fn(async (bucket: string) => {
-      events.push(bucket);
-      return {
-        allowed: true,
-        hits: 1,
-        reset_at: "2026-08-14T00:00:00.000Z",
-      };
-    });
     const deps = dependencies({
       createProvider: () => upstream,
-      quota: { callQuota },
     });
 
-    const response = await handleAgentProfileSearchRequest(
-      request(),
-      "seo",
-      deps,
-    );
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const response = await handleAgentProfileSearchRequest(
+        request(),
+        "seo",
+        deps,
+      );
+      expect(response.status).toBe(200);
+      expect((await response.json()).data.availability).toBe("available");
+    }
 
-    expect(response.status).toBe(200);
-    expect((await response.json()).data.availability).toBe("no_data");
-    expect(callQuota).toHaveBeenNthCalledWith(
-      1,
-      agentProfileSearchIpBucket(IP, NOW),
-      AGENT_PROFILE_SEARCH_DAILY_IP_MAX,
-      AGENT_PROFILE_SEARCH_DAILY_WINDOW_SECONDS,
-    );
-    expect(callQuota).toHaveBeenNthCalledWith(
-      2,
-      agentProfileSearchGlobalBucket(NOW),
-      AGENT_PROFILE_SEARCH_DAILY_GLOBAL_MAX,
-      AGENT_PROFILE_SEARCH_DAILY_WINDOW_SECONDS,
-    );
-    expect(events).toEqual([
-      agentProfileSearchIpBucket(IP, NOW),
-      agentProfileSearchGlobalBucket(NOW),
-      "provider",
-    ]);
+    expect(upstream.competitorsDomain).toHaveBeenCalledTimes(6);
   });
 
-  it("refuses concurrent runs before durable quota", async () => {
+  it("refuses concurrent runs before the provider", async () => {
     const deps = dependencies({ acquireSlot: () => ({ acquired: false }) });
     const response = await handleAgentProfileSearchRequest(
       request(),
@@ -924,39 +1366,8 @@ describe("handleAgentProfileSearchRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "search_in_progress" },
     });
-    expect(deps.quota.callQuota).not.toHaveBeenCalled();
     expect(deps.createProvider).not.toHaveBeenCalled();
   });
-
-  it.each([
-    ["limited", { allowed: false, hits: 6, reset_at: "2026-08-13T11:00:00.000Z" }, 429, "rate_limited"],
-    ["unavailable", new Error("quota store detail"), 503, "quota_unavailable"],
-  ] as const)(
-    "fails closed when quota is %s and releases the slot",
-    async (_label, quotaResult, status, code) => {
-      const release = vi.fn();
-      const deps = dependencies({
-        acquireSlot: () => ({ acquired: true, release }),
-        quota: {
-          callQuota: async () => {
-            if (quotaResult instanceof Error) throw quotaResult;
-            return quotaResult;
-          },
-        },
-      });
-      const response = await handleAgentProfileSearchRequest(
-        request(),
-        "seo",
-        deps,
-      );
-
-      expect(response.status).toBe(status);
-      await expect(response.json()).resolves.toEqual({ error: { code } });
-      expect(release).toHaveBeenCalledTimes(1);
-      expect(deps.createProvider).not.toHaveBeenCalled();
-      expect(deps.writeCache).not.toHaveBeenCalled();
-    },
-  );
 
   it("turns a provider rejection into typed source_unavailable without leaking details", async () => {
     const release = vi.fn();
@@ -989,6 +1400,58 @@ describe("handleAgentProfileSearchRequest", () => {
     expect(log).toHaveBeenCalledWith({
       agent: "seo",
       method: "competitors_domain",
+      status: "source_unavailable",
+      costUsd: null,
+    });
+    expect(deps.writeCache).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("attributes a fallback rejection to SERP Competitors and releases the shared slot", async () => {
+    const release = vi.fn();
+    const log = vi.fn();
+    const upstream = provider();
+    vi.mocked(upstream.competitorsDomain).mockResolvedValue({
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: 0.02,
+      providerStatusCode: 20_000,
+      taskStatusCode: 40_102,
+    });
+    vi.mocked(upstream.serpCompetitors).mockRejectedValue(
+      new Error("secret fallback diagnostic"),
+    );
+    const deps = dependencies({
+      acquireSlot: () => ({ acquired: true, release }),
+      createProvider: () => upstream,
+      log,
+    });
+
+    const response = await handleAgentProfileSearchRequest(
+      request({
+        url: "acme.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
+        productProfileSearchSeeds: ["SEO platform"],
+      }),
+      "seo",
+      deps,
+    );
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).not.toContain("secret");
+    expect(JSON.parse(text).data).toMatchObject({
+      availability: "source_unavailable",
+      method: "serp_competitors",
+      observedAt: null,
+      rows: [],
+    });
+    expect(log).toHaveBeenCalledWith({
+      agent: "seo",
+      method: "serp_competitors",
       status: "source_unavailable",
       costUsd: null,
     });

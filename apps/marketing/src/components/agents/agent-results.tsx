@@ -11,8 +11,6 @@ import { useTranslations } from "next-intl";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   buildAgentAuditViewModel,
-  type AgentAuditPolicyOverride,
-  type AgentAuditPolicyOverrides,
   type AgentAuditScope,
   type AgentDiagnosisContext,
 } from "./agent-audit-model";
@@ -91,8 +89,6 @@ export function AgentResults({
   const [selectedRecommendationIds, setSelectedRecommendationIds] = useState<
     Record<AgentAuditScope, string | null>
   >({ site: null, page: null });
-  const [policyOverrides, setPolicyOverrides] =
-    useState<AgentAuditPolicyOverrides>({});
   const summary = summarizeAgentRecords(data.result.records);
   const notCollected = notCollectedUrlCount(data.result.coverage);
 
@@ -107,34 +103,6 @@ export function AgentResults({
 
   function handleCheckChange(checkId: string): void {
     setSelectedCheckIds((current) => ({ ...current, [scope]: checkId }));
-  }
-
-  function handleSavePolicy(
-    checkId: string,
-    override: AgentAuditPolicyOverride,
-  ): void {
-    setPolicyOverrides((current) => ({ ...current, [checkId]: override }));
-  }
-
-  function handleResetCheckPolicy(checkId: string): void {
-    setPolicyOverrides((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([id]) => id !== checkId),
-      ),
-    );
-  }
-
-  function handleResetScopePolicy(resetScope: AgentAuditScope): void {
-    const scopeIds = new Set(
-      model.scopes[resetScope].groups.flatMap((group) =>
-        group.checks.map((check) => check.id),
-      ),
-    );
-    setPolicyOverrides((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([id]) => !scopeIds.has(id)),
-      ),
-    );
   }
 
   return (
@@ -236,10 +204,6 @@ export function AgentResults({
         onScopeChange={handleScopeChange}
         onGroupChange={handleGroupChange}
         onCheckChange={handleCheckChange}
-        policyOverrides={policyOverrides}
-        onSavePolicy={handleSavePolicy}
-        onResetCheckPolicy={handleResetCheckPolicy}
-        onResetScopePolicy={handleResetScopePolicy}
       />
 
       <AgentRecommendations

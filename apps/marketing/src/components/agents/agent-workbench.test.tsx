@@ -425,6 +425,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
               marketCode: "US",
               languageTag: "en-US",
               targetQuery: "growth evidence",
+              productProfileSearchSeeds: ["Live Example Product"],
             }),
           );
           return Response.json(profileSearchEnvelope("seo"));
@@ -532,6 +533,116 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     discoverSearchCandidates();
     await flushAsyncWork();
     expect(searchRequests).toBe(2);
+  });
+
+  it("runs a new automatic search when the refreshed Product Profile seed changes", async () => {
+    let profileRequests = 0;
+    let searchRequests = 0;
+    const searchBodies: unknown[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        if (path === "/api/agents/seo/profile-refresh") {
+          profileRequests += 1;
+          return Response.json(
+            profileRefreshEnvelope("seo", {
+              productName:
+                profileRequests === 1 ? "First Live Product" : "Second Live Product",
+            }),
+          );
+        }
+        if (path === "/api/agents/seo/profile-search") {
+          searchRequests += 1;
+          searchBodies.push(JSON.parse(String(init?.body)));
+          return Response.json(profileSearchEnvelope("seo"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    setRunContext();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(searchRequests).toBe(2);
+    expect(searchBodies).toEqual([
+      expect.objectContaining({
+        productProfileSearchSeeds: ["First Live Product"],
+      }),
+      expect.objectContaining({
+        productProfileSearchSeeds: ["Second Live Product"],
+      }),
+    ]);
+  });
+
+  it("reuses automatic search evidence across cosmetic Product Profile seed changes", async () => {
+    let profileRequests = 0;
+    let searchRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: true });
+      }
+      if (path === "/api/agents/seo/profile-refresh") {
+        profileRequests += 1;
+        return Response.json(
+          profileRefreshEnvelope("seo", {
+            productName:
+              profileRequests === 1 ? "GenGrowth   AI" : " gengrowth ai ",
+          }),
+        );
+      }
+      if (path === "/api/agents/seo/profile-search") {
+        searchRequests += 1;
+        return Response.json(profileSearchEnvelope("seo"));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    setRunContext();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(searchRequests).toBe(1);
+  });
+
+  it("sends no hostname or placeholder seeds for an unrefreshed generic profile", async () => {
+    let requestBody: unknown = null;
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(input).toBe("/api/agents/tech/profile-search");
+        requestBody = JSON.parse(String(init?.body));
+        return Response.json(profileSearchEnvelope("tech"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("tech");
+    setProfileUrl("tech", "gengrowth.ai");
+    setRunContext();
+    discoverSearchCandidates();
+    await flushAsyncWork();
+
+    expect(requestBody).toEqual({
+      url: "gengrowth.ai",
+      marketCode: "US",
+      languageTag: "en-US",
+      targetQuery: "",
+      productProfileSearchSeeds: [],
+    });
   });
 
   it("does not automatically request CN search evidence without an explicit target query", async () => {
@@ -929,6 +1040,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       marketCode: "US",
       languageTag: "en-US",
       targetQuery: "merged search context",
+      productProfileSearchSeeds: ["Live Example Product"],
     });
   });
 
@@ -1299,6 +1411,13 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
             marketCode: "CN",
             languageTag: "zh-CN",
             targetQuery: "免费星盘计算",
+            productProfileSearchSeeds: [
+              "AstrologyWiki",
+              "Astrology tool",
+              "Self-discovery platform",
+              "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
+              "Free natal chart calculator",
+            ],
           }),
         );
         return Response.json({
@@ -1569,8 +1688,19 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       document.querySelector('[data-profile-card="product"]')?.textContent,
     ).toContain("未知网站");
     expect(
-      document.querySelector('[data-profile-card="icp"]')?.textContent,
-    ).toContain("未知——请确认主要受众。");
+      document.querySelector('[data-profile-card="icp"]'),
+    ).toBeNull();
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(
+      (document.querySelector('[aria-label="fields.primaryIcp"]') as HTMLInputElement)
+        .value,
+    ).toBe("未知——请确认主要受众。");
     expect(
       document.querySelector('[data-profile-card="context"]')?.textContent,
     ).toContain("确认首个技术可靠性目标。");

@@ -218,7 +218,7 @@ describe("AgentResults", () => {
     ).toBe("true");
   });
 
-  it("saves and resets a non-Official local policy without rejudging the run", () => {
+  it("keeps local policy controls hidden while retaining the accepted default rule", () => {
     render("seo", true);
     act(() => {
       host
@@ -231,62 +231,13 @@ describe("AgentResults", () => {
         ?.click();
     });
 
-    const initialHealth = host.textContent?.match(/Health[^0-9]*(\d+\/100|Unavailable)/)?.[1];
-    const threshold = host.querySelector<HTMLInputElement>(
-      '[data-policy-threshold="3.4"]',
-    );
-    expect(threshold?.disabled).toBe(false);
-    act(() => {
-      if (threshold) {
-        Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          "value",
-        )?.set?.call(threshold, "Local H2 range 2–7");
-        threshold.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    });
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-policy-action="save"]')
-        ?.click();
-    });
-
-    expect(host.textContent).toContain("Local H2 range 2–7");
-    expect(host.textContent).toContain("A new real run is required");
-    expect(host.textContent?.match(/Health[^0-9]*(\d+\/100|Unavailable)/)?.[1]).toBe(
-      initialHealth,
-    );
-
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-policy-action="reset-check"]')
-        ?.click();
-    });
-    expect(host.textContent).not.toContain("Local H2 range 2–7");
     expect(host.textContent).toContain("Tool landing soft range: H2 5–9");
-  });
-
-  it("locks an Official threshold while leaving the non-blocking weight reviewable", () => {
-    render("tech", true);
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-8"]')
-        ?.click();
-    });
-    act(() => {
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-check-8.1"]')
-        ?.click();
-    });
-
     expect(
-      host.querySelector<HTMLInputElement>('[data-policy-threshold="8.1"]')
-        ?.disabled,
-    ).toBe(true);
-    expect(
-      host.querySelector<HTMLInputElement>('[data-policy-weight="8.1"]')
-        ?.disabled,
-    ).toBe(false);
-    expect(host.textContent).toContain("Official threshold is locked");
+      host.querySelector('[data-testid^="diagnosis-policy-"]'),
+    ).toBeNull();
+    expect(host.querySelector("[data-policy-threshold]")).toBeNull();
+    expect(host.querySelector("[data-policy-weight]")).toBeNull();
+    expect(host.querySelector("[data-policy-action]")).toBeNull();
+    expect(host.textContent).not.toContain("Local policy control");
   });
 });

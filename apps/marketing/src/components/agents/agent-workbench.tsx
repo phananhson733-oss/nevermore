@@ -27,6 +27,10 @@ import {
   createAgentProfileDraft,
   type AgentProfileDraft,
 } from "./agent-profile";
+import {
+  deriveProductProfileSearchSeeds,
+  productProfileSearchSeedsIdentity,
+} from "./agent-profile-search-seeds";
 import { AgentResults } from "./agent-results";
 import {
   clearPendingAgentIntent,
@@ -79,6 +83,7 @@ function profileSearchRequestKey(
   profile: AgentProfileDraft,
   languageTag: string,
 ): string {
+  const productProfileSearchSeeds = deriveProductProfileSearchSeeds(profile);
   return [
     profile.agent,
     profile.targetUrl,
@@ -86,6 +91,7 @@ function profileSearchRequestKey(
     profile.country,
     languageTag,
     profile.country === "CN" ? profile.targetQuery.trim() : "",
+    productProfileSearchSeedsIdentity(productProfileSearchSeeds),
   ].join("\n");
 }
 
@@ -414,6 +420,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         requestedProfile,
         targetLanguageTag,
       );
+      const productProfileSearchSeeds =
+        deriveProductProfileSearchSeeds(requestedProfile);
       if (!resumeAfterSignIn) pendingProfileSearch.current = null;
       if (
         reuseMatching &&
@@ -463,6 +471,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
               marketCode: requestedProfile.country,
               languageTag: targetLanguageTag,
               targetQuery: requestedProfile.targetQuery,
+              productProfileSearchSeeds,
             }),
             signal: controller.signal,
           }),

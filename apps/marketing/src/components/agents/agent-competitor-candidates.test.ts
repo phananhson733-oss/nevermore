@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
 import {
   classifyAgentCompetitorProfile,
+  deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
+  resolveAgentCompetitorClassification,
 } from "./agent-competitor-candidates";
 import {
   createAgentProfileDraft,
@@ -70,28 +72,53 @@ describe("deriveAgentCompetitorSuggestions", () => {
       "low.example",
     ]);
     expect(
-      suggestions.map(({ reviewBucket, discoveryConfidence }) => ({
-        reviewBucket,
-        discoveryConfidence,
-      })),
+      suggestions.map(
+        ({ reviewBucket, discoveryConfidence, suggestedClassification }) => ({
+          reviewBucket,
+          discoveryConfidence,
+          suggestedClassification,
+        }),
+      ),
     ).toEqual([
-      { reviewBucket: "higher_overlap", discoveryConfidence: "medium" },
-      { reviewBucket: "higher_overlap", discoveryConfidence: "medium" },
-      { reviewBucket: "higher_overlap", discoveryConfidence: "low" },
-      { reviewBucket: "adjacent_overlap", discoveryConfidence: "low" },
+      {
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "medium",
+        suggestedClassification: "direct",
+      },
+      {
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "medium",
+        suggestedClassification: "direct",
+      },
+      {
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "low",
+        suggestedClassification: "direct",
+      },
+      {
+        reviewBucket: "adjacent_overlap",
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
+      },
     ]);
     expect(suggestions[0]).toEqual({
       domain: "leader.example",
       reviewBucket: "higher_overlap",
       discoveryConfidence: "medium",
+      suggestedClassification: "direct",
       evidenceKind: "organic_search_overlap",
       observedAt: OBSERVED_AT,
       metrics: {
         intersections: 10,
         averagePosition: 4.5,
+        medianPosition: null,
         summedPosition: 45,
         organicEstimatedTrafficVolume: 100,
         rank: null,
+        rating: null,
+        keywordsCount: null,
+        visibility: null,
+        relevantSerpItems: null,
       },
     });
     expect(suggestions[0]).not.toHaveProperty("similarity");
@@ -131,7 +158,7 @@ describe("deriveAgentCompetitorSuggestions", () => {
     ).toBe(7);
   });
 
-  it("keeps target-query SERP rows as unclassified search evidence with nullable unavailable metrics", () => {
+  it("defaults target-query SERP rows to a low-confidence indirect business suggestion while keeping provider metrics nullable", () => {
     const data: AgentProfileSearchData = {
       schemaVersion: "agent_profile_search.v1",
       agent: "tech",
@@ -150,29 +177,120 @@ describe("deriveAgentCompetitorSuggestions", () => {
       {
         domain: "first.cn",
         reviewBucket: "unclassified",
-        discoveryConfidence: null,
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
         evidenceKind: "target_query_serp",
         observedAt: OBSERVED_AT,
         metrics: {
           intersections: null,
           averagePosition: null,
+          medianPosition: null,
           summedPosition: null,
           organicEstimatedTrafficVolume: null,
           rank: 2,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
         },
       },
       {
         domain: "second.cn",
         reviewBucket: "unclassified",
-        discoveryConfidence: null,
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
         evidenceKind: "target_query_serp",
         observedAt: OBSERVED_AT,
         metrics: {
           intersections: null,
           averagePosition: null,
+          medianPosition: null,
           summedPosition: null,
           organicEstimatedTrafficVolume: null,
           rank: 8,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
+        },
+      },
+    ]);
+  });
+
+  it("projects seed-SERP competitor facts without presenting them as overlap or target-query rank", () => {
+    const data: AgentProfileSearchData = {
+      schemaVersion: "agent_profile_search.v1",
+      agent: "seo",
+      targetHost: "acme.com",
+      availability: "available",
+      method: "serp_competitors",
+      market: { code: "US", locationCode: 2840, languageCode: "en" },
+      observedAt: OBSERVED_AT,
+      rows: [
+        {
+          kind: "profile_seed_serp_competitor",
+          domain: "lower.example",
+          averagePosition: 3.5,
+          medianPosition: 3,
+          rating: 30,
+          organicEstimatedTrafficVolume: 900,
+          keywordsCount: 1,
+          visibility: 0.2,
+          relevantSerpItems: 1,
+        },
+        {
+          kind: "profile_seed_serp_competitor",
+          domain: "leader.example",
+          averagePosition: 8.25,
+          medianPosition: 7,
+          rating: 100,
+          organicEstimatedTrafficVolume: 100,
+          keywordsCount: 4,
+          visibility: 0.8,
+          relevantSerpItems: 3,
+        },
+      ],
+    };
+
+    expect(deriveAgentCompetitorSuggestions(data, "acme.com")).toEqual([
+      {
+        domain: "leader.example",
+        reviewBucket: "unclassified",
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
+        evidenceKind: "profile_seed_serp_competitor",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: null,
+          averagePosition: 8.25,
+          medianPosition: 7,
+          summedPosition: null,
+          organicEstimatedTrafficVolume: 100,
+          rank: null,
+          rating: 100,
+          keywordsCount: 4,
+          visibility: 0.8,
+          relevantSerpItems: 3,
+        },
+      },
+      {
+        domain: "lower.example",
+        reviewBucket: "unclassified",
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
+        evidenceKind: "profile_seed_serp_competitor",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: null,
+          averagePosition: 3.5,
+          medianPosition: 3,
+          summedPosition: null,
+          organicEstimatedTrafficVolume: 900,
+          rank: null,
+          rating: 30,
+          keywordsCount: 1,
+          visibility: 0.2,
+          relevantSerpItems: 1,
         },
       },
     ]);
@@ -277,4 +395,138 @@ describe("classifyAgentCompetitorProfile", () => {
       expect(classified.reviewState).toBe("needs_confirmation");
     },
   );
+});
+
+describe("resolveAgentCompetitorClassification", () => {
+  it("uses the deterministic system suggestion when the visitor has not adjusted the domain", () => {
+    const suggestion = deriveAgentCompetitorSuggestions(
+      overlapData([overlap("leader.example", 12, 300)]),
+      "acme.com",
+    )[0]!;
+
+    expect(
+      resolveAgentCompetitorClassification(suggestion, {
+        direct: [],
+        indirect: [],
+        excluded: [],
+      }),
+    ).toEqual({ classification: "direct", source: "system" });
+  });
+
+  it("gives a normalized manual adjustment precedence over the system suggestion", () => {
+    const suggestion = deriveAgentCompetitorSuggestions(
+      overlapData([overlap("leader.example", 12, 300)]),
+      "acme.com",
+    )[0]!;
+
+    expect(
+      resolveAgentCompetitorClassification(suggestion, {
+        direct: [],
+        indirect: ["WWW.LEADER.EXAMPLE"],
+        excluded: [],
+      }),
+    ).toEqual({ classification: "indirect", source: "manual" });
+  });
+
+  it("fails closed to a manual exclusion if legacy manual groups contain the same normalized domain", () => {
+    const suggestion = deriveAgentCompetitorSuggestions(
+      overlapData([overlap("leader.example", 12, 300)]),
+      "acme.com",
+    )[0]!;
+
+    expect(
+      resolveAgentCompetitorClassification(suggestion, {
+        direct: ["leader.example"],
+        indirect: ["www.leader.example"],
+        excluded: ["LEADER.EXAMPLE"],
+      }),
+    ).toEqual({ classification: "excluded", source: "manual" });
+  });
+});
+
+describe("deriveAgentCompetitorDisplayFrame", () => {
+  it("groups system defaults and normalized manual overrides exactly once while retaining manual-only domains", () => {
+    const suggestions = deriveAgentCompetitorSuggestions(
+      overlapData([
+        overlap("system-direct.example", 10, 100),
+        overlap("manual-override.example", 8, 90),
+        overlap("excluded-override.example", 7, 80),
+        overlap("system-indirect.example", 1, 70),
+      ]),
+      "acme.com",
+    );
+
+    const frame = deriveAgentCompetitorDisplayFrame(suggestions, {
+      direct: ["WWW.MANUAL-ONLY.EXAMPLE", "legacy-duplicate.example"],
+      indirect: [
+        "MANUAL-OVERRIDE.EXAMPLE",
+        "www.legacy-duplicate.example",
+      ],
+      excluded: [
+        "www.excluded-override.example",
+        "LEGACY-DUPLICATE.EXAMPLE",
+      ],
+    });
+    const compact = {
+      direct: frame.direct.map(({ domain, source, suggestion }) => ({
+        domain,
+        source,
+        hasProviderSuggestion: suggestion !== null,
+      })),
+      indirect: frame.indirect.map(({ domain, source, suggestion }) => ({
+        domain,
+        source,
+        hasProviderSuggestion: suggestion !== null,
+      })),
+      excluded: frame.excluded.map(({ domain, source, suggestion }) => ({
+        domain,
+        source,
+        hasProviderSuggestion: suggestion !== null,
+      })),
+    };
+
+    expect(compact).toEqual({
+      direct: [
+        {
+          domain: "system-direct.example",
+          source: "system",
+          hasProviderSuggestion: true,
+        },
+        {
+          domain: "manual-only.example",
+          source: "manual",
+          hasProviderSuggestion: false,
+        },
+      ],
+      indirect: [
+        {
+          domain: "manual-override.example",
+          source: "manual",
+          hasProviderSuggestion: true,
+        },
+        {
+          domain: "system-indirect.example",
+          source: "system",
+          hasProviderSuggestion: true,
+        },
+      ],
+      excluded: [
+        {
+          domain: "excluded-override.example",
+          source: "manual",
+          hasProviderSuggestion: true,
+        },
+        {
+          domain: "legacy-duplicate.example",
+          source: "manual",
+          hasProviderSuggestion: false,
+        },
+      ],
+    });
+    expect(
+      Object.values(frame)
+        .flat()
+        .map(({ domain }) => domain),
+    ).toHaveLength(6);
+  });
 });

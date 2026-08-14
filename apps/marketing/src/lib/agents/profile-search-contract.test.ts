@@ -45,8 +45,33 @@ const serpEnvelope = {
   },
 } satisfies AgentProfileSearchEnvelope;
 
+const seedSerpCompetitorEnvelope = {
+  data: {
+    schemaVersion: "agent_profile_search.v1",
+    agent: "seo",
+    targetHost: "acme.com",
+    availability: "available",
+    method: "serp_competitors",
+    market: { code: "US", locationCode: 2840, languageCode: "en" },
+    observedAt: "2026-08-13T10:00:00.000Z",
+    rows: [
+      {
+        kind: "profile_seed_serp_competitor",
+        domain: "rival.com",
+        averagePosition: 4.5,
+        medianPosition: 3,
+        rating: 812.25,
+        organicEstimatedTrafficVolume: 321,
+        keywordsCount: 4,
+        visibility: 0.42,
+        relevantSerpItems: 3,
+      },
+    ],
+  },
+} satisfies AgentProfileSearchEnvelope;
+
 describe("isAgentProfileSearchEnvelope", () => {
-  it.each([competitorEnvelope, serpEnvelope])(
+  it.each([competitorEnvelope, serpEnvelope, seedSerpCompetitorEnvelope])(
     "accepts either provider-observation method without a cost field",
     (value) => {
       expect(isAgentProfileSearchEnvelope(value)).toBe(true);
@@ -64,6 +89,13 @@ describe("isAgentProfileSearchEnvelope", () => {
     };
 
     expect(isAgentProfileSearchEnvelope(value)).toBe(true);
+  });
+
+  it("keeps SERP Competitors rating distinct from overlap intersections", () => {
+    expect(isAgentProfileSearchEnvelope(seedSerpCompetitorEnvelope)).toBe(true);
+    expect(seedSerpCompetitorEnvelope.data.rows[0]).not.toHaveProperty(
+      "intersections",
+    );
   });
 
   it("accepts market_unsupported without fabricating a method or provider market", () => {
@@ -112,6 +144,55 @@ describe("isAgentProfileSearchEnvelope", () => {
       "wrong metric shape for method",
       () => ({
         data: { ...structuredClone(competitorEnvelope).data, rows: serpEnvelope.data.rows },
+      }),
+    ],
+    [
+      "SERP Competitors rating relabelled as intersections",
+      () => ({
+        data: {
+          ...structuredClone(seedSerpCompetitorEnvelope).data,
+          rows: [
+            {
+              kind: "profile_seed_serp_competitor",
+              domain: "rival.com",
+              intersections: 812.25,
+              averagePosition: 4.5,
+              medianPosition: 3,
+              organicEstimatedTrafficVolume: 321,
+              keywordsCount: 4,
+              visibility: 0.42,
+              relevantSerpItems: 3,
+            },
+          ],
+        },
+      }),
+    ],
+    [
+      "negative SERP Competitors provider metric",
+      () => ({
+        data: {
+          ...structuredClone(seedSerpCompetitorEnvelope).data,
+          rows: [
+            {
+              ...seedSerpCompetitorEnvelope.data.rows[0],
+              rating: -1,
+            },
+          ],
+        },
+      }),
+    ],
+    [
+      "fractional SERP Competitors count",
+      () => ({
+        data: {
+          ...structuredClone(seedSerpCompetitorEnvelope).data,
+          rows: [
+            {
+              ...seedSerpCompetitorEnvelope.data.rows[0],
+              relevantSerpItems: 1.5,
+            },
+          ],
+        },
       }),
     ],
     [

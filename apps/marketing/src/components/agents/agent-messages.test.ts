@@ -28,6 +28,13 @@ function messageAt(catalog: unknown, path: string): string {
   return value as string;
 }
 
+it("keeps the visible profile stage focused on Product Profile", () => {
+  expect(en.agents.workbench.profile.stage).toBe("Stage 01 · Product Profile");
+  expect(zh.agents.workbench.profile.stage).toBe("阶段 01 · Product Profile");
+  expect(en.agents.workbench.profile.fields.primaryIcp).not.toBe("");
+  expect(zh.agents.workbench.profile.fields.primaryIcp).not.toBe("");
+});
+
 const PROFILE_PATHS = [
   "stage",
   "seo.title",
@@ -71,7 +78,6 @@ const PROFILE_PATHS = [
   "fields.indirectAlternatives",
   "fields.excludedAlternatives",
   "cards.product",
-  "cards.icp",
   "cards.context",
   "cards.competitor",
   "facts.category",
@@ -80,17 +86,6 @@ const PROFILE_PATHS = [
   "facts.businessModel",
   "facts.primaryCta",
   "facts.trustSignals",
-  "facts.interests",
-  "facts.pain",
-  "facts.positioning",
-  "facts.buyer",
-  "facts.user",
-  "facts.triggerPain",
-  "facts.useCases",
-  "facts.outcomes",
-  "facts.barriers",
-  "facts.qualificationSignals",
-  "facts.disqualifiers",
   "facts.directCompetitors",
   "facts.indirectAlternatives",
   "facts.excludedAlternatives",
@@ -157,7 +152,6 @@ const PROFILE_PATHS = [
   "search.sourceUnavailable",
   "search.errors.authRequired",
   "search.errors.authUnavailable",
-  "search.errors.rateLimited",
   "search.errors.requestFailed",
   "search.domainLabel",
   "search.intersectionsLabel",
@@ -165,6 +159,14 @@ const PROFILE_PATHS = [
   "search.trafficLabel",
   "search.rankLabel",
   "search.observedAtLabel",
+  "search.review.suggestedDirect",
+  "search.review.suggestedIndirect",
+  "search.review.currentDirect",
+  "search.review.currentIndirect",
+  "search.review.currentExcluded",
+  "search.review.systemSuggestionSource",
+  "search.review.systemSuggestionProvenance",
+  "search.review.mixedSuggestionProvenance",
   "actions.review",
   "actions.confirmRun",
 ] as const;
@@ -423,7 +425,7 @@ describe("Agent message catalogs", () => {
     expect(english).toMatch(/Inferred|Confirm before use/);
     expect(english).toMatch(/Review & adjust/);
     expect(english).toMatch(/Accept context & run/);
-    expect(english).toMatch(/not confirmed business competitors/);
+    expect(english).toMatch(/not a confirmed business fact/);
     expect(english).toMatch(/not configured|temporarily unavailable/);
     expect(english).toMatch(/does not write an app Product Profile/);
 
@@ -436,7 +438,7 @@ describe("Agent message catalogs", () => {
     expect(chinese).toMatch(/推断|使用前确认/);
     expect(chinese).toMatch(/检查并调整/);
     expect(chinese).toMatch(/接受上下文并运行/);
-    expect(chinese).toMatch(/不是已确认的商业竞品/);
+    expect(chinese).toMatch(/不等于已确认的商业关系/);
     expect(chinese).toMatch(/尚未配置|暂时不可用/);
     expect(chinese).toMatch(/不会写入 app 的 Product Profile/);
   });

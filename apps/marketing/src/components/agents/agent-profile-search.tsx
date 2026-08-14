@@ -13,11 +13,14 @@ import {
 import { useId } from "react";
 
 import {
-  normalizeAgentProfileSearchDomain,
   type AgentProfileSearchData,
 } from "../../lib/agents/profile-search-contract";
 import {
+  deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
+  resolveAgentCompetitorClassification,
+  type AgentCompetitorClassification,
+  type AgentCompetitorClassifications,
   type AgentCompetitorSuggestion,
 } from "./agent-competitor-candidates";
 
@@ -29,6 +32,7 @@ export interface AgentProfileSearchCopy {
   readonly loadingAction: string;
   readonly organicBoundary: string;
   readonly serpBoundary: string;
+  readonly seedSerpBoundary: string;
   readonly noData: string;
   readonly marketUnsupported: string;
   readonly sourceUnavailable: string;
@@ -36,7 +40,12 @@ export interface AgentProfileSearchCopy {
   readonly domainLabel: string;
   readonly intersectionsLabel: string;
   readonly averagePositionLabel: string;
+  readonly medianPositionLabel: string;
+  readonly ratingLabel: string;
   readonly trafficLabel: string;
+  readonly keywordsCountLabel: string;
+  readonly visibilityLabel: string;
+  readonly relevantSerpItemsLabel: string;
   readonly rankLabel: string;
   readonly observedAtLabel: string;
   readonly unavailableMetricLabel: string;
@@ -44,10 +53,13 @@ export interface AgentProfileSearchCopy {
   readonly confirmedCountLabel: string;
   readonly excludedCountLabel: string;
   readonly providerEvidenceLabel: string;
-  readonly needsReviewLabel: string;
+  readonly seedSerpEvidenceLabel: string;
+  readonly suggestedDirectLabel: string;
+  readonly suggestedIndirectLabel: string;
   readonly higherOverlapLabel: string;
   readonly adjacentOverlapLabel: string;
   readonly unclassifiedLabel: string;
+  readonly seedSerpObservedLabel: string;
   readonly currentDirectLabel: string;
   readonly currentIndirectLabel: string;
   readonly currentExcludedLabel: string;
@@ -56,16 +68,8 @@ export interface AgentProfileSearchCopy {
   readonly excludeAction: string;
 }
 
-export type AgentCompetitorClassification =
-  | "direct"
-  | "indirect"
-  | "excluded";
-
-export interface AgentProfileSearchClassifications {
-  readonly direct: readonly string[];
-  readonly indirect: readonly string[];
-  readonly excluded: readonly string[];
-}
+export type AgentProfileSearchClassifications =
+  AgentCompetitorClassifications;
 
 export interface AgentProfileSearchProps {
   readonly locale?: string;
@@ -163,25 +167,6 @@ function AvailabilityNotice({
   );
 }
 
-function normalizedSet(values: readonly string[]): ReadonlySet<string> {
-  return new Set(
-    values.map(
-      (value) =>
-        normalizeAgentProfileSearchDomain(value) ?? value.trim().toLowerCase(),
-    ),
-  );
-}
-
-function currentClassification(
-  domain: string,
-  classifications: AgentProfileSearchClassifications,
-): AgentCompetitorClassification | null {
-  if (normalizedSet(classifications.direct).has(domain)) return "direct";
-  if (normalizedSet(classifications.indirect).has(domain)) return "indirect";
-  if (normalizedSet(classifications.excluded).has(domain)) return "excluded";
-  return null;
-}
-
 export function AgentProfileSearch({
   locale = "en",
   loading,
@@ -204,18 +189,19 @@ export function AgentProfileSearch({
   const boundary =
     data?.method === "target_query_serp"
       ? copy.serpBoundary
-      : copy.organicBoundary;
+      : data?.method === "serp_competitors"
+        ? copy.seedSerpBoundary
+        : copy.organicBoundary;
   const reviewSuggestions =
     suggestions ??
     (data ? deriveAgentCompetitorSuggestions(data, data.targetHost) : []);
-  const directDomains = normalizedSet(classifications.direct);
-  const indirectDomains = normalizedSet(classifications.indirect);
-  const excludedDomains = normalizedSet(classifications.excluded);
-  const confirmedCount = new Set([
-    ...directDomains,
-    ...indirectDomains,
-  ]).size;
-  const excludedCount = excludedDomains.size;
+  const displayFrame = deriveAgentCompetitorDisplayFrame(
+    reviewSuggestions,
+    classifications,
+  );
+  const confirmedCount =
+    displayFrame.direct.length + displayFrame.indirect.length;
+  const excludedCount = displayFrame.excluded.length;
 
   return (
     <section
@@ -329,24 +315,35 @@ export function AgentProfileSearch({
 
             <ol className="mt-1 min-w-0 divide-y divide-brand-border-faint">
               {reviewSuggestions.map((suggestion) => {
-                const classification = currentClassification(
-                  suggestion.domain,
+                const resolution = resolveAgentCompetitorClassification(
+                  suggestion,
                   classifications,
                 );
+                const { classification } = resolution;
                 const statusLabel =
-                  classification === "direct"
-                    ? copy.currentDirectLabel
-                    : classification === "indirect"
-                      ? copy.currentIndirectLabel
-                      : classification === "excluded"
-                        ? copy.currentExcludedLabel
-                        : copy.needsReviewLabel;
+                  resolution.source === "system"
+                    ? classification === "direct"
+                      ? copy.suggestedDirectLabel
+                      : copy.suggestedIndirectLabel
+                    : classification === "direct"
+                      ? copy.currentDirectLabel
+                      : classification === "indirect"
+                        ? copy.currentIndirectLabel
+                        : copy.currentExcludedLabel;
                 const bucketLabel =
                   suggestion.reviewBucket === "higher_overlap"
                     ? copy.higherOverlapLabel
+                    : suggestion.evidenceKind ===
+                        "profile_seed_serp_competitor"
+                      ? copy.seedSerpObservedLabel
                     : suggestion.reviewBucket === "adjacent_overlap"
                       ? copy.adjacentOverlapLabel
                       : copy.unclassifiedLabel;
+                const providerEvidenceLabel =
+                  suggestion.evidenceKind ===
+                  "profile_seed_serp_competitor"
+                    ? copy.seedSerpEvidenceLabel
+                    : copy.providerEvidenceLabel;
                 return (
                   <li
                     key={suggestion.domain}
@@ -366,7 +363,7 @@ export function AgentProfileSearch({
                         </p>
                         <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
                           <span className="rounded border border-brand-info/25 bg-brand-info/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-info uppercase">
-                            {copy.providerEvidenceLabel}
+                            {providerEvidenceLabel}
                           </span>
                           <span className="rounded border border-brand-warning/25 bg-brand-warning/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-warning uppercase">
                             {bucketLabel}
@@ -402,6 +399,66 @@ export function AgentProfileSearch({
                             )}
                           />
                         </dl>
+                      ) : suggestion.evidenceKind ===
+                          "profile_seed_serp_competitor" ? (
+                        <dl className="grid min-w-0 grid-cols-1 gap-2 min-[440px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                          <Metric
+                            label={copy.averagePositionLabel}
+                            value={formatMetric(
+                              suggestion.metrics.averagePosition,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.medianPositionLabel}
+                            value={formatMetric(
+                              suggestion.metrics.medianPosition,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.ratingLabel}
+                            value={formatMetric(
+                              suggestion.metrics.rating,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.trafficLabel}
+                            value={formatMetric(
+                              suggestion.metrics.organicEstimatedTrafficVolume,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.keywordsCountLabel}
+                            value={formatMetric(
+                              suggestion.metrics.keywordsCount,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.visibilityLabel}
+                            value={formatMetric(
+                              suggestion.metrics.visibility,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.relevantSerpItemsLabel}
+                            value={formatMetric(
+                              suggestion.metrics.relevantSerpItems,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                        </dl>
                       ) : (
                         <dl className="min-w-0">
                           <Metric
@@ -419,7 +476,10 @@ export function AgentProfileSearch({
                     <div className="grid min-w-0 gap-2 rounded-md border border-brand-border-faint bg-brand-panel px-2.5 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                       <p
                         data-profile-competitor-classification={
-                          classification ?? "needs_review"
+                          classification
+                        }
+                        data-profile-competitor-classification-source={
+                          resolution.source
                         }
                         className="min-w-0 text-[10px] leading-[1.45] text-text-dark-secondary"
                       >

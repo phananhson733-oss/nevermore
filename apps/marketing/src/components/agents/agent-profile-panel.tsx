@@ -16,18 +16,22 @@ import {
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
-import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
+import {
+  normalizeAgentProfileSearchDomain,
+  type AgentProfileSearchData,
+} from "../../lib/agents/profile-search-contract";
 import type {
   AgentProfileRefreshData,
   AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
 import {
   classifyAgentCompetitorProfile,
+  deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
+  type AgentCompetitorClassification,
 } from "./agent-competitor-candidates";
 import {
   AgentProfileSearch,
-  type AgentCompetitorClassification,
   type AgentProfileSearchCopy,
 } from "./agent-profile-search";
 import {
@@ -135,14 +139,6 @@ const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "indirectAlternatives",
   "excludedAlternatives",
 ]);
-const PRODUCT_INFORMATION_UNSUPPORTED_ICP_FIELDS = [
-  "buyer",
-  "icpPain",
-  "icpBehavior",
-  "barriers",
-  "disqualifiers",
-] as const satisfies readonly AgentProfileEditableField[];
-
 const PROFILE_MARKET_SUGGESTIONS = [
   "US",
   "CN",
@@ -420,13 +416,10 @@ export function AgentProfilePanel({
   const productAdjusted = profile.editedFields.some((field) =>
     PRODUCT_FIELDS.has(field),
   );
-  const icpAdjusted = profile.editedFields.some((field) =>
-    ICP_FIELDS.has(field),
-  );
   const competitorAdjusted = profile.editedFields.some((field) =>
     COMPETITOR_FIELDS.has(field),
   );
-  const hasBusinessFrame =
+  const hasManualBusinessFrame =
     profile.directCompetitors.length > 0 ||
     profile.indirectAlternatives.length > 0 ||
     profile.excludedAlternatives.length > 0;
@@ -477,15 +470,6 @@ export function AgentProfilePanel({
     profile,
     locale,
   );
-  const missingProductInformationIcpFields =
-    PRODUCT_INFORMATION_UNSUPPORTED_ICP_FIELDS.filter((field) =>
-      profile.fieldProvenance.some(
-        (entry) =>
-          entry.path === `/${field}` &&
-          entry.source !== "supplied_product_information" &&
-          entry.source !== "user_edit",
-      ),
-    );
 
   function sectionSourceClass(
     fields: readonly AgentProfileEditableField[],
@@ -559,10 +543,6 @@ export function AgentProfilePanel({
     "oneLinePositioning",
     ...PRODUCT_FIELDS,
   ]);
-  const icpSectionSource = sectionSourceClass([
-    "primaryIcp",
-    ...ICP_FIELDS,
-  ]);
   const competitorSectionSource = sectionSourceClass([
     ...COMPETITOR_FIELDS,
   ]);
@@ -578,6 +558,65 @@ export function AgentProfilePanel({
   const competitorSuggestions = profileSearch?.data
     ? deriveAgentCompetitorSuggestions(profileSearch.data, profile.host)
     : [];
+  const competitorClassifications = {
+    direct: profile.directCompetitors,
+    indirect: profile.indirectAlternatives,
+    excluded: profile.excludedAlternatives,
+  };
+  const competitorDisplayFrame = deriveAgentCompetitorDisplayFrame(
+    competitorSuggestions,
+    competitorClassifications,
+  );
+  function competitorDisplayValues(
+    entries: (typeof competitorDisplayFrame)["direct"],
+    manualValues: readonly string[],
+  ): readonly string[] {
+    const values = entries.map(({ domain }) => domain);
+    const seen = new Set(values.map((value) => value.toLowerCase()));
+    for (const value of manualValues) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      const key =
+        normalizeAgentProfileSearchDomain(trimmed) ?? trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      values.push(trimmed);
+    }
+    return values;
+  }
+  const directDisplayValues = competitorDisplayValues(
+    competitorDisplayFrame.direct,
+    profile.directCompetitors,
+  );
+  const indirectDisplayValues = competitorDisplayValues(
+    competitorDisplayFrame.indirect,
+    profile.indirectAlternatives,
+  );
+  const excludedDisplayValues = competitorDisplayValues(
+    competitorDisplayFrame.excluded,
+    profile.excludedAlternatives,
+  );
+  function competitorDisplayProvenance(
+    field: "directCompetitors" | "indirectAlternatives" | "excludedAlternatives",
+    entries: (typeof competitorDisplayFrame)["direct"],
+  ) {
+    const hasSystemSuggestion = entries.some(
+      (entry) => entry.source === "system",
+    );
+    if (!hasSystemSuggestion) return fieldProvenance(field);
+    const hasManualAdjustment = entries.some(
+      (entry) => entry.source === "manual",
+    );
+    return {
+      derivation: "inferred",
+      sourceClass: "inferred" as const,
+      label: t(
+        hasManualAdjustment
+          ? "search.review.mixedSuggestionProvenance"
+          : "search.review.systemSuggestionProvenance",
+      ),
+    };
+  }
   let searchSummary: { readonly state: string; readonly label: string } | null =
     null;
   if (profileSearch?.loading) {
@@ -620,6 +659,7 @@ export function AgentProfilePanel({
     loadingAction: t("search.loadingAction"),
     organicBoundary: t("search.organicBoundary"),
     serpBoundary: t("search.serpBoundary"),
+    seedSerpBoundary: t("search.seedSerpBoundary"),
     noData: t("search.noData"),
     marketUnsupported: t("search.marketUnsupported"),
     sourceUnavailable: t("search.sourceUnavailable"),
@@ -630,13 +670,16 @@ export function AgentProfilePanel({
           ? t("search.errors.authUnavailable")
           : profileSearch?.errorCode === "search_timeout"
             ? t("search.errors.searchTimeout")
-          : profileSearch?.errorCode === "rate_limited"
-            ? t("search.errors.rateLimited")
             : t("search.errors.requestFailed"),
     domainLabel: t("search.domainLabel"),
     intersectionsLabel: t("search.intersectionsLabel"),
     averagePositionLabel: t("search.averagePositionLabel"),
+    medianPositionLabel: t("search.medianPositionLabel"),
+    ratingLabel: t("search.ratingLabel"),
     trafficLabel: t("search.trafficLabel"),
+    keywordsCountLabel: t("search.keywordsCountLabel"),
+    visibilityLabel: t("search.visibilityLabel"),
+    relevantSerpItemsLabel: t("search.relevantSerpItemsLabel"),
     rankLabel: t("search.rankLabel"),
     observedAtLabel: t("search.observedAtLabel"),
     unavailableMetricLabel: t("search.unavailableMetricLabel"),
@@ -644,10 +687,13 @@ export function AgentProfilePanel({
     confirmedCountLabel: t("search.counts.confirmedLabel"),
     excludedCountLabel: t("search.counts.excludedLabel"),
     providerEvidenceLabel: t("search.review.providerEvidence"),
-    needsReviewLabel: t("search.review.needsReview"),
+    seedSerpEvidenceLabel: t("search.review.seedSerpEvidence"),
+    suggestedDirectLabel: t("search.review.suggestedDirect"),
+    suggestedIndirectLabel: t("search.review.suggestedIndirect"),
     higherOverlapLabel: t("search.review.higherOverlap"),
     adjacentOverlapLabel: t("search.review.adjacentOverlap"),
     unclassifiedLabel: t("search.review.targetQueryObserved"),
+    seedSerpObservedLabel: t("search.review.seedSerpObserved"),
     currentDirectLabel: t("search.review.currentDirect"),
     currentIndirectLabel: t("search.review.currentIndirect"),
     currentExcludedLabel: t("search.review.currentExcluded"),
@@ -1175,34 +1221,27 @@ export function AgentProfilePanel({
             data-profile-stage="01"
             className="relative min-w-0 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:p-5"
           >
-            <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
-              <div className="min-w-0">
-                <StageHeader number="01" label={t("cards.product")} />
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <SourceChip
-                    source={profile.sources.product}
-                    sectionSource={productSectionSource}
-                    label={sectionSourceLabel(
-                      profile.sources.product,
-                      productSectionSource,
-                    )}
-                  />
-                  {productAdjusted ? (
-                    <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-                  ) : null}
-                </div>
-                <h3 className="mt-4 text-[18px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                  {profile.productName}
-                </h3>
-                <p className="mt-2 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
-                  {profile.oneLinePositioning}
-                </p>
+            <div className="min-w-0">
+              <StageHeader number="01" label={t("cards.product")} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <SourceChip
+                  source={profile.sources.product}
+                  sectionSource={productSectionSource}
+                  label={sectionSourceLabel(
+                    profile.sources.product,
+                    productSectionSource,
+                  )}
+                />
+                {productAdjusted ? (
+                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                ) : null}
               </div>
-              {suppliedProductInformation ? (
-                <p className="min-w-0 self-end border-l border-brand-accent/45 pl-4 text-[12px] leading-[1.65] text-text-dark-secondary">
-                  {t("document.boundary")}
-                </p>
-              ) : null}
+              <h3 className="mt-4 text-[18px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                {profile.productName}
+              </h3>
+              <p className="mt-2 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
+                {profile.oneLinePositioning}
+              </p>
             </div>
 
             {suppliedProductInformation ? (
@@ -1447,167 +1486,39 @@ export function AgentProfilePanel({
           </article>
 
           <article
-            data-profile-card="icp"
+            data-profile-card="competitor"
             data-profile-stage="02"
             className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
             <div className="min-w-0">
-              <StageHeader number="02" label={t("cards.icp")} />
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <SourceChip
-                  source={profile.sources.icp}
-                  sectionSource={icpSectionSource}
-                  label={sectionSourceLabel(
-                    profile.sources.icp,
-                    icpSectionSource,
-                  )}
-                />
-                {icpAdjusted ? (
-                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-                ) : null}
-              </div>
-              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                {profile.primaryIcp}
-              </h3>
-            </div>
-            <div className="min-w-0">
-              <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2">
-                <Fact
-                  label={t("facts.interests")}
-                  value={
-                    profile.icpInterests.length > 0
-                      ? profile.icpInterests.join(" · ")
-                      : t("values.unavailable")
-                  }
-                  provenance={fieldProvenance("icpInterests")}
-                />
-                <Fact
-                  label={t("facts.user")}
-                  value={profile.user}
-                  provenance={fieldProvenance("user")}
-                />
-                <Fact
-                  label={t("facts.triggerPain")}
-                  value={profile.triggerPain}
-                  provenance={fieldProvenance("triggerPain")}
-                />
-                <Fact
-                  label={t("facts.useCases")}
-                  value={
-                    profile.useCases.length > 0
-                      ? profile.useCases.join(" · ")
-                      : t("values.unavailable")
-                  }
-                  provenance={fieldProvenance("useCases")}
-                />
-                <Fact
-                  label={t("fields.jtbd")}
-                  value={profile.jtbd}
-                  provenance={fieldProvenance("jtbd")}
-                />
-                <Fact
-                  label={t("facts.outcomes")}
-                  value={
-                    profile.outcomes.length > 0
-                      ? profile.outcomes.join(" · ")
-                      : t("values.unavailable")
-                  }
-                  provenance={fieldProvenance("outcomes")}
-                />
-                <Fact
-                  label={t("facts.qualificationSignals")}
-                  value={
-                    profile.qualificationSignals.length > 0
-                      ? profile.qualificationSignals.join(" · ")
-                      : t("values.unavailable")
-                  }
-                  provenance={fieldProvenance("qualificationSignals")}
-                />
-                <Fact
-                  label={t("facts.positioning")}
-                  value={profile.icpPositioning}
-                  provenance={fieldProvenance("icpPositioning")}
-                />
-              </dl>
-              <div className="mt-4 rounded-row border border-brand-border-faint bg-brand-bg/35 p-3">
-                <h4 className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
-                  {t("document.confirmationTitle")}
-                </h4>
-                <dl className="mt-1 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
-                  <Fact
-                    label={t("facts.buyer")}
-                    value={profile.buyer}
-                    provenance={fieldProvenance("buyer")}
-                  />
-                  <Fact
-                    label={t("facts.pain")}
-                    value={profile.icpPain}
-                    provenance={fieldProvenance("icpPain")}
-                  />
-                  <Fact
-                    label={t("fields.icpBehavior")}
-                    value={profile.icpBehavior}
-                    provenance={fieldProvenance("icpBehavior")}
-                  />
-                  <Fact
-                    label={t("facts.barriers")}
-                    value={
-                      profile.barriers.length > 0
-                        ? profile.barriers.join(" · ")
-                        : t("values.unavailable")
-                    }
-                    provenance={fieldProvenance("barriers")}
-                  />
-                  <Fact
-                    label={t("facts.disqualifiers")}
-                    value={
-                      profile.disqualifiers.length > 0
-                        ? profile.disqualifiers.join(" · ")
-                        : t("values.unavailable")
-                    }
-                    provenance={fieldProvenance("disqualifiers")}
-                  />
-                </dl>
-              </div>
-              {missingProductInformationIcpFields.length > 0 ? (
-                <div
-                  data-product-information-missing-icp
-                  className="mt-4 rounded-md border border-brand-warning/30 bg-brand-warning/[0.06] px-3 py-2.5"
-                >
-                  <p className="text-[11px] leading-[1.55] text-text-dark-secondary">
-                    {t("document.missingIcp", {
-                      fields: missingProductInformationIcpFields
-                        .map((field) => t(`fields.${field}`))
-                        .join(", "),
-                    })}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </article>
-
-          <article
-            data-profile-card="competitor"
-            data-profile-stage="03"
-            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
-          >
-            <div className="min-w-0">
-              <StageHeader number="03" label={t("cards.competitor")} />
+              <StageHeader number="02" label={t("cards.competitor")} />
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.competitor}
-                  sectionSource={competitorSectionSource}
-                  label={sectionSourceLabel(
-                    profile.sources.competitor,
-                    competitorSectionSource,
-                  )}
+                  sectionSource={
+                    competitorSuggestions.length > 0
+                      ? hasManualBusinessFrame
+                        ? "mixed"
+                        : "inferred"
+                      : competitorSectionSource
+                  }
+                  label={
+                    competitorSuggestions.length > 0
+                      ? hasManualBusinessFrame
+                        ? t("sources.mixed_sources")
+                        : t("search.review.systemSuggestionSource")
+                      : sectionSourceLabel(
+                          profile.sources.competitor,
+                          competitorSectionSource,
+                        )
+                  }
                 />
                 {competitorAdjusted ? (
                   <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
                 ) : null}
               </div>
               <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                {hasBusinessFrame
+                {hasManualBusinessFrame
                   ? t("values.businessFrameReviewed")
                   : competitorSuggestions.length > 0
                     ? t("search.review.candidatesReady")
@@ -1626,39 +1537,40 @@ export function AgentProfilePanel({
               <Fact
                 label={t("facts.directCompetitors")}
                 value={
-                  profile.directCompetitors.length > 0
-                    ? profile.directCompetitors.join(" · ")
-                    : competitorSuggestions.length > 0
-                      ? t("search.review.awaitingClassification", {
-                          count: competitorSuggestions.length,
-                        })
-                      : t("values.confirmationRequired")
+                  directDisplayValues.length > 0
+                    ? directDisplayValues.join(" · ")
+                    : t("values.confirmationRequired")
                 }
-                provenance={fieldProvenance("directCompetitors")}
+                provenance={competitorDisplayProvenance(
+                  "directCompetitors",
+                  competitorDisplayFrame.direct,
+                )}
               />
               <Fact
                 label={t("facts.indirectAlternatives")}
                 value={
-                  profile.indirectAlternatives.length > 0
-                    ? profile.indirectAlternatives.join(" · ")
-                    : competitorSuggestions.length > 0
-                      ? t("search.review.awaitingClassification", {
-                          count: competitorSuggestions.length,
-                        })
-                      : t("values.confirmationRequired")
+                  indirectDisplayValues.length > 0
+                    ? indirectDisplayValues.join(" · ")
+                    : t("values.confirmationRequired")
                 }
-                provenance={fieldProvenance("indirectAlternatives")}
+                provenance={competitorDisplayProvenance(
+                  "indirectAlternatives",
+                  competitorDisplayFrame.indirect,
+                )}
               />
               <Fact
                 label={t("facts.excludedAlternatives")}
                 value={
-                  profile.excludedAlternatives.length > 0
-                    ? profile.excludedAlternatives.join(" · ")
+                  excludedDisplayValues.length > 0
+                    ? excludedDisplayValues.join(" · ")
                     : competitorSuggestions.length > 0
                       ? t("search.review.noneExcluded")
                       : t("values.confirmationRequired")
                 }
-                provenance={fieldProvenance("excludedAlternatives")}
+                provenance={competitorDisplayProvenance(
+                  "excludedAlternatives",
+                  competitorDisplayFrame.excluded,
+                )}
               />
             </dl>
             {profileSearch ? (
@@ -1673,9 +1585,7 @@ export function AgentProfilePanel({
                   reviewDisabled={disabled}
                   suggestions={competitorSuggestions}
                   classifications={{
-                    direct: profile.directCompetitors,
-                    indirect: profile.indirectAlternatives,
-                    excluded: profile.excludedAlternatives,
+                    ...competitorClassifications,
                   }}
                   onClassify={handleCompetitorClassification}
                   disabledReason={
@@ -1693,11 +1603,11 @@ export function AgentProfilePanel({
 
           <article
             data-profile-card="context"
-            data-profile-stage="04"
+            data-profile-stage="03"
             className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
             <div className="min-w-0">
-              <StageHeader number="04" label={t("cards.context")} />
+              <StageHeader number="03" label={t("cards.context")} />
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.run}

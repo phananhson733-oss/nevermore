@@ -24,6 +24,8 @@ const COPY = {
     "Organic search overlap — not confirmed business competitors.",
   serpBoundary:
     "Target-query SERP candidates — not confirmed business competitors.",
+  seedSerpBoundary:
+    "Product Profile seed SERP domains — provider-seeded search evidence, not confirmed business competitors.",
   noData: "No candidate domains were observed for this run.",
   marketUnsupported: "This market is not supported for this search method.",
   sourceUnavailable: "Search evidence is currently unavailable.",
@@ -31,18 +33,26 @@ const COPY = {
   domainLabel: "Domain",
   intersectionsLabel: "Keyword intersections",
   averagePositionLabel: "Average position",
+  medianPositionLabel: "Median position",
+  ratingLabel: "Provider rating",
   trafficLabel: "Estimated organic traffic",
+  keywordsCountLabel: "Keywords tracked",
+  visibilityLabel: "Visibility",
+  relevantSerpItemsLabel: "Relevant SERP items",
   rankLabel: "Observed rank",
   observedAtLabel: "Fetched at",
   unavailableMetricLabel: "Unavailable",
   providerCountLabel: "Search candidates",
-  confirmedCountLabel: "Confirmed",
+  confirmedCountLabel: "Assigned relationships",
   excludedCountLabel: "Excluded",
   providerEvidenceLabel: "DataForSEO search evidence",
-  needsReviewLabel: "Not yet classified as a business competitor",
+  seedSerpEvidenceLabel: "Product Profile seed SERP evidence",
+  suggestedDirectLabel: "System suggestion · direct competitor",
+  suggestedIndirectLabel: "System suggestion · indirect alternative",
   higherOverlapLabel: "Higher-overlap domain",
   adjacentOverlapLabel: "Adjacent-overlap domain",
   unclassifiedLabel: "Target-query domain",
+  seedSerpObservedLabel: "Product Profile seed SERP domain",
   currentDirectLabel: "Confirmed direct",
   currentIndirectLabel: "Confirmed indirect",
   currentExcludedLabel: "Excluded locally",
@@ -80,6 +90,29 @@ const SERP_DATA = {
   market: { code: "CN", locationCode: 2156, languageCode: "zh" },
   observedAt: "2026-08-13T10:00:00.000Z",
   rows: [{ kind: "target_query_serp", domain: "rival.cn", rank: 2 }],
+} satisfies AgentProfileSearchEnvelope["data"];
+
+const SEED_SERP_DATA = {
+  schemaVersion: "agent_profile_search.v1",
+  agent: "seo",
+  targetHost: "acme.com",
+  availability: "available",
+  method: "serp_competitors",
+  market: { code: "US", locationCode: 2840, languageCode: "en" },
+  observedAt: "2026-08-13T10:00:00.000Z",
+  rows: [
+    {
+      kind: "profile_seed_serp_competitor",
+      domain: "seed-rival.com",
+      averagePosition: 5.4,
+      medianPosition: 4.2,
+      rating: 0.73,
+      organicEstimatedTrafficVolume: 4321,
+      keywordsCount: 18,
+      visibility: 0.41,
+      relevantSerpItems: 6,
+    },
+  ],
 } satisfies AgentProfileSearchEnvelope["data"];
 
 describe("AgentProfileSearch", () => {
@@ -136,15 +169,21 @@ describe("AgentProfileSearch", () => {
         {
           domain: "rival.com",
           reviewBucket: "higher_overlap",
+          suggestedClassification: "direct",
           discoveryConfidence: "medium",
           evidenceKind: "organic_search_overlap",
           observedAt: ORGANIC_DATA.observedAt,
           metrics: {
             intersections: 12,
             averagePosition: 4.5,
+            medianPosition: null,
             summedPosition: 54,
             organicEstimatedTrafficVolume: 321,
             rank: null,
+            rating: null,
+            keywordsCount: null,
+            visibility: null,
+            relevantSerpItems: null,
           },
         },
       ],
@@ -159,7 +198,7 @@ describe("AgentProfileSearch", () => {
     expect(results?.textContent).toContain("4.5");
     expect(results?.textContent).toContain("321");
     expect(results?.textContent).toContain(COPY.providerEvidenceLabel);
-    expect(results?.textContent).toContain(COPY.needsReviewLabel);
+    expect(results?.textContent).toContain(COPY.suggestedDirectLabel);
     expect(results?.textContent).toContain(COPY.higherOverlapLabel);
     expect(results?.textContent).not.toMatch(/confirmed direct/i);
     expect(results?.textContent).toContain(
@@ -178,15 +217,21 @@ describe("AgentProfileSearch", () => {
         {
           domain: "rival.com",
           reviewBucket: "higher_overlap",
+          suggestedClassification: "direct",
           discoveryConfidence: "medium",
           evidenceKind: "organic_search_overlap",
           observedAt: ORGANIC_DATA.observedAt,
           metrics: {
             intersections: 12,
             averagePosition: 4.5,
+            medianPosition: null,
             summedPosition: 54,
             organicEstimatedTrafficVolume: 321,
             rank: null,
+            rating: null,
+            keywordsCount: null,
+            visibility: null,
+            relevantSerpItems: null,
           },
         },
       ],
@@ -205,7 +250,7 @@ describe("AgentProfileSearch", () => {
     expect(
       host.querySelector('[data-profile-competitor-count="confirmed"]')
         ?.textContent,
-    ).toContain("2");
+    ).toContain("3");
     expect(
       host.querySelector('[data-profile-competitor-count="excluded"]')
         ?.textContent,
@@ -219,15 +264,21 @@ describe("AgentProfileSearch", () => {
         {
           domain: "rival.com",
           reviewBucket: "higher_overlap",
+          suggestedClassification: "direct",
           discoveryConfidence: null,
           evidenceKind: "organic_search_overlap",
           observedAt: ORGANIC_DATA.observedAt,
           metrics: {
             intersections: null,
             averagePosition: null,
+            medianPosition: null,
             summedPosition: null,
             organicEstimatedTrafficVolume: null,
             rank: null,
+            rating: null,
+            keywordsCount: null,
+            visibility: null,
+            relevantSerpItems: null,
           },
         },
       ],
@@ -248,7 +299,7 @@ describe("AgentProfileSearch", () => {
     ).toHaveLength(3);
   });
 
-  it("offers accessible explicit classification actions without auto-promoting a candidate", () => {
+  it("preselects a source-honest system relationship and lets the visitor override it", () => {
     const onClassify = vi.fn();
     render({
       data: ORGANIC_DATA,
@@ -256,15 +307,21 @@ describe("AgentProfileSearch", () => {
         {
           domain: "rival.com",
           reviewBucket: "higher_overlap",
+          suggestedClassification: "direct",
           discoveryConfidence: "medium",
           evidenceKind: "organic_search_overlap",
           observedAt: ORGANIC_DATA.observedAt,
           metrics: {
             intersections: 12,
             averagePosition: 4.5,
+            medianPosition: null,
             summedPosition: 54,
             organicEstimatedTrafficVolume: 321,
             rank: null,
+            rating: null,
+            keywordsCount: null,
+            visibility: null,
+            relevantSerpItems: null,
           },
         },
       ],
@@ -281,13 +338,69 @@ describe("AgentProfileSearch", () => {
     const exclude = host.querySelector<HTMLButtonElement>(
       '[data-profile-competitor-action="excluded"]',
     );
-    expect(direct?.getAttribute("aria-pressed")).toBe("false");
+    expect(direct?.getAttribute("aria-pressed")).toBe("true");
+    expect(indirect?.getAttribute("aria-pressed")).toBe("false");
+    expect(
+      host.querySelector(
+        '[data-profile-competitor-classification-source="system"]',
+      )?.textContent,
+    ).toContain(COPY.suggestedDirectLabel);
     expect(direct?.getAttribute("aria-label")).toContain("rival.com");
     expect(indirect?.getAttribute("aria-label")).toContain("rival.com");
     expect(exclude?.getAttribute("aria-label")).toContain("rival.com");
 
-    act(() => direct?.click());
-    expect(onClassify).toHaveBeenCalledWith("rival.com", "direct");
+    act(() => indirect?.click());
+    expect(onClassify).toHaveBeenCalledWith("rival.com", "indirect");
+  });
+
+  it("gives an existing manual relationship precedence over the system suggestion", () => {
+    render({
+      data: ORGANIC_DATA,
+      suggestions: [
+        {
+          domain: "rival.com",
+          reviewBucket: "higher_overlap",
+          suggestedClassification: "direct",
+          discoveryConfidence: "medium",
+          evidenceKind: "organic_search_overlap",
+          observedAt: ORGANIC_DATA.observedAt,
+          metrics: {
+            intersections: 12,
+            averagePosition: 4.5,
+            medianPosition: null,
+            summedPosition: 54,
+            organicEstimatedTrafficVolume: 321,
+            rank: null,
+            rating: null,
+            keywordsCount: null,
+            visibility: null,
+            relevantSerpItems: null,
+          },
+        },
+      ],
+      classifications: {
+        direct: [],
+        indirect: ["rival.com"],
+        excluded: [],
+      },
+      onClassify: vi.fn(),
+    });
+
+    expect(
+      host
+        .querySelector('[data-profile-competitor-action="direct"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      host
+        .querySelector('[data-profile-competitor-action="indirect"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      host.querySelector(
+        '[data-profile-competitor-classification-source="manual"]',
+      )?.textContent,
+    ).toContain(COPY.currentIndirectLabel);
   });
 
   it("localizes provider numbers and the local fetch timestamp", () => {
@@ -331,6 +444,59 @@ describe("AgentProfileSearch", () => {
     expect(results?.textContent).toContain("rival.cn");
     expect(results?.textContent).toContain("2");
     expect(results?.textContent).not.toContain(COPY.intersectionsLabel);
+  });
+
+  it("renders Product Profile seed SERP evidence with its own factual metrics and source labels", () => {
+    render({
+      data: SEED_SERP_DATA,
+      suggestions: [
+        {
+          domain: "seed-rival.com",
+          reviewBucket: "unclassified",
+          suggestedClassification: "indirect",
+          discoveryConfidence: "low",
+          evidenceKind: "profile_seed_serp_competitor",
+          observedAt: SEED_SERP_DATA.observedAt,
+          metrics: {
+            intersections: null,
+            averagePosition: 5.4,
+            medianPosition: 4.2,
+            rating: 0.73,
+            summedPosition: null,
+            organicEstimatedTrafficVolume: 4321,
+            keywordsCount: 18,
+            visibility: 0.41,
+            relevantSerpItems: 6,
+            rank: null,
+          },
+        },
+      ],
+      classifications: { direct: [], indirect: [], excluded: [] },
+      onClassify: vi.fn(),
+    });
+
+    const results = host.querySelector('[data-profile-search-results="available"]');
+    const candidate = host.querySelector(
+      '[data-profile-competitor-candidate="seed-rival.com"]',
+    );
+    expect(results?.textContent).toContain(COPY.seedSerpBoundary);
+    expect(results?.textContent).toContain(COPY.seedSerpEvidenceLabel);
+    expect(results?.textContent).toContain(COPY.seedSerpObservedLabel);
+    expect(results?.textContent).toContain(COPY.suggestedIndirectLabel);
+    expect(results?.textContent).not.toContain(COPY.intersectionsLabel);
+    expect(results?.textContent).not.toContain(COPY.rankLabel);
+    expect(candidate?.textContent).toContain("5.4");
+    expect(candidate?.textContent).toContain("4.2");
+    expect(candidate?.textContent).toContain("0.73");
+    expect(candidate?.textContent).toContain("4,321");
+    expect(candidate?.textContent).toContain("18");
+    expect(candidate?.textContent).toContain("0.41");
+    expect(candidate?.textContent).toContain("6");
+    expect(
+      candidate
+        ?.querySelector('[data-profile-competitor-action="indirect"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it.each([

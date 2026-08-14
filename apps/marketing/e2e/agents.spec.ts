@@ -166,7 +166,7 @@ function profileSearchEnvelope(agent: AgentKind) {
       agent,
       targetHost: "astrologywiki.com",
       availability: "available",
-      method: "competitors_domain",
+      method: "serp_competitors",
       market: {
         code: "US",
         locationCode: 2840,
@@ -175,20 +175,26 @@ function profileSearchEnvelope(agent: AgentKind) {
       observedAt: "2026-08-13T10:01:00.000Z",
       rows: [
         {
-          kind: "organic_search_overlap",
+          kind: "profile_seed_serp_competitor",
           domain: "astro-seek.com",
-          intersections: 18,
-          averagePosition: 7.4,
-          summedPosition: 133.2,
+          averagePosition: 5.4,
+          medianPosition: 4.2,
+          rating: 0.73,
           organicEstimatedTrafficVolume: 12_400,
+          keywordsCount: 18,
+          visibility: 0.41,
+          relevantSerpItems: 6,
         },
         {
-          kind: "organic_search_overlap",
+          kind: "profile_seed_serp_competitor",
           domain: "astro.com",
-          intersections: 5,
-          averagePosition: 12.1,
-          summedPosition: 60.5,
+          averagePosition: 9.1,
+          medianPosition: 8.3,
+          rating: 0.52,
           organicEstimatedTrafficVolume: 8_900,
+          keywordsCount: 11,
+          visibility: 0.28,
+          relevantSerpItems: 4,
         },
       ],
     },
@@ -336,12 +342,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await expect(page.locator('[data-profile-card="product"]')).toContainText(
     "Swiss Ephemeris",
   );
-  await expect(page.locator('[data-profile-card="icp"]')).not.toContainText(
-    "22–38",
-  );
-  await expect(page.locator('[data-profile-card="icp"]')).not.toContainText(
-    "female-skewed",
-  );
+  await expect(page.locator('[data-profile-card="icp"]')).toHaveCount(0);
   const productNameProposal = page.locator(
     '[data-profile-refresh-proposal="productName"]',
   );
@@ -378,16 +379,22 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   const candidate = page.locator(
     '[data-profile-competitor-candidate="astro-seek.com"]',
   );
-  await expect(candidate).toContainText("Not yet classified");
+  await expect(candidate).toContainText(
+    "System suggestion · indirect alternative",
+  );
+  await expect(candidate).toContainText("Product Profile seed SERP evidence");
   await expect(candidate).toContainText("18");
   await expect(candidate).toContainText("12,400");
+  await expect(
+    candidate.locator('[data-profile-competitor-action="indirect"]'),
+  ).toHaveAttribute("aria-pressed", "true");
   await candidate
     .locator('[data-profile-competitor-action="direct"]')
     .click();
-  await expect(candidate).toContainText("Local review · direct competitor");
+  await expect(candidate).toContainText("Manually adjusted · direct competitor");
   await expect(
     page.locator('[data-profile-competitor-count="confirmed"]'),
-  ).toContainText("1");
+  ).toContainText("2");
   await expect(page.locator('[data-profile-card="competitor"]')).toContainText(
     "astro-seek.com",
   );
@@ -417,6 +424,13 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
         marketCode: "US",
         languageTag: "en-US",
         targetQuery: "",
+        productProfileSearchSeeds: [
+          "AstrologyWiki",
+          "Astrology tool",
+          "Self-discovery platform",
+          "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
+          "Free natal chart calculator",
+        ],
       },
     },
   ]);
@@ -481,12 +495,15 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   );
   await page.getByTestId("diagnosis-group-3").click();
   await page.getByTestId("diagnosis-check-3.4").click();
-  await page.locator('[data-policy-threshold="3.4"]').fill("Local H2 range 2–7");
-  await page.locator('[data-policy-action="save"]').click();
-  await expect(page.getByText("Local H2 range 2–7")).toBeVisible();
-  await expect(page.getByText(/new real run is required/i)).toBeVisible();
-  await page.locator('[data-policy-action="reset-scope"]').click();
-  await expect(page.getByText("Local H2 range 2–7")).toHaveCount(0);
+  await expect(page.getByTestId("diagnosis-heading-preset")).toContainText(
+    "H2 3–6",
+  );
+  await expect(page.locator('[data-testid^="diagnosis-policy-"]')).toHaveCount(
+    0,
+  );
+  await expect(page.locator("[data-policy-threshold]")).toHaveCount(0);
+  await expect(page.locator("[data-policy-weight]")).toHaveCount(0);
+  await expect(page.locator("[data-policy-action]")).toHaveCount(0);
   await expect(page.getByTestId("agent-recommendation-row")).toBeVisible();
   await expect(page.getByTestId("agent-selected-solution")).toContainText(
     "SEO Agent decision",

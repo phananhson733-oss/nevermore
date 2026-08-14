@@ -656,13 +656,16 @@ describe("AgentProfilePanel", () => {
 
   it("labels field source classes and marks a section mixed when child facts differ", () => {
     const refresh = makeProfileRefreshData();
-    const profile = applyAgentProfileRefresh(
+    const refreshed = applyAgentProfileRefresh(
       updateAgentProfile(
         createAgentProfileDraft("seo", "astrologywiki.com"),
         { country: "US", locale: "en-US", primaryCta: "Manual CTA" },
       ),
       refresh,
     );
+    const profile = acceptAgentProfileRefreshFields(refreshed, refresh, [
+      "valueProposition",
+    ]);
     renderPanel(profile, undefined, undefined, undefined, {
       loading: false,
       errorCode: null,
@@ -673,13 +676,12 @@ describe("AgentProfilePanel", () => {
       "supplied",
       "manual",
       "live_public_page",
-      "inferred",
       "missing",
     ]) {
       const chip = document.querySelector(
         `[data-profile-source-class="${sourceClass}"]`,
       );
-      expect(chip).not.toBeNull();
+      expect(chip, sourceClass).not.toBeNull();
       expect(chip?.textContent).toContain(
         `provenance.sourceClasses.${sourceClass}`,
       );
@@ -962,7 +964,7 @@ describe("AgentProfilePanel", () => {
     );
   });
 
-  it("presents Product Profile, target customer, competitors, and run context as a top-to-bottom stage rail", () => {
+  it("keeps the default stage rail focused on Product Profile, competitors, and run context", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
     const rail = document.querySelector(
@@ -980,16 +982,36 @@ describe("AgentProfilePanel", () => {
       })),
     ).toEqual([
       { stage: "01", card: "product" },
-      { stage: "02", card: "icp" },
-      { stage: "03", card: "competitor" },
-      { stage: "04", card: "context" },
+      { stage: "02", card: "competitor" },
+      { stage: "03", card: "context" },
     ]);
+    expect(document.querySelector('[data-profile-card="icp"]')).toBeNull();
+  });
+
+  it("keeps ICP context available for explicit review without rendering a dense ICP stage", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
+    renderPanel(profile);
+
+    expect(document.querySelector('[data-profile-card="icp"]')).toBeNull();
+
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(
+      (document.querySelector('[aria-label="fields.primaryIcp"]') as HTMLInputElement)
+        .value,
+    ).toBe(profile.primaryIcp);
   });
 
   it("shows every supplied Product Information section without Marketing Strategy facts", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
-    expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(4);
+    expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(3);
     expect(
       Array.from(
         document.querySelectorAll("[data-product-information-section]"),
@@ -1009,9 +1031,8 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('[data-profile-card="product"]')?.textContent,
     ).toContain("Swiss Ephemeris");
-    expect(
-      document.querySelector('[data-profile-card="icp"]')?.textContent,
-    ).toContain("People interested in astrology who use birth charts");
+    expect(document.querySelector('[data-profile-card="icp"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("document.boundary");
     expect(document.body.textContent).not.toContain("22–38");
     expect(document.body.textContent).not.toContain("female-skewed");
     expect(document.body.textContent).not.toContain("Xiaohongshu");
@@ -1027,9 +1048,6 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('[data-profile-card="competitor"]')?.textContent,
     ).toContain("values.confirmationRequired");
-    expect(
-      document.querySelector('[data-profile-card="icp"]')?.textContent,
-    ).toContain("Generate and explore an accurate natal chart");
     expect(
       document.querySelectorAll('[data-profile-provenance="declared"]')
         .length,
@@ -1094,11 +1112,18 @@ describe("AgentProfilePanel", () => {
       ),
     ).toBeNull();
 
-    const icpCard = document.querySelector('[data-profile-card="icp"]');
-    expect(icpCard?.textContent).toContain("Observed primaryIcp");
-    expect(icpCard?.textContent).not.toContain(
-      "People interested in astrology who use a birth chart",
-    );
+    expect(document.querySelector('[data-profile-card="icp"]')).toBeNull();
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(
+      (document.querySelector('[aria-label="fields.primaryIcp"]') as HTMLInputElement)
+        .value,
+    ).toBe("Observed primaryIcp");
   });
 
   it("renders empty run-context inputs as confirmation-required missing values", () => {
@@ -1123,7 +1148,7 @@ describe("AgentProfilePanel", () => {
     }
   });
 
-  it("makes provider-observed domains the primary review content without auto-classifying them", () => {
+  it("shows provider-observed domains with editable system relationship defaults without mutating the draft", () => {
     const profile = createAgentProfileDraft("seo", "astrologywiki.com");
     renderPanel(
       profile,
@@ -1173,17 +1198,18 @@ describe("AgentProfilePanel", () => {
     expect(competitor?.querySelector("h3")?.textContent).toBe(
       "search.review.candidatesReady",
     );
-    expect(declaredBusinessFrame?.textContent).not.toContain(
+    expect(declaredBusinessFrame?.textContent).toContain(
       "observed-one.example",
     );
-    expect(declaredBusinessFrame?.textContent).not.toContain(
-      "values.confirmationRequired",
+    expect(declaredBusinessFrame?.textContent).toContain(
+      "observed-two.example",
     );
-    expect(
-      declaredBusinessFrame?.textContent?.match(
-        /search\.review\.awaitingClassification:2/g,
-      ),
-    ).toHaveLength(2);
+    expect(declaredBusinessFrame?.textContent).toContain(
+      "search.review.systemSuggestionProvenance",
+    );
+    expect(declaredBusinessFrame?.textContent).not.toContain(
+      "search.review.awaitingClassification",
+    );
     expect(declaredBusinessFrame?.textContent).toContain(
       "search.review.noneExcluded",
     );
@@ -1198,10 +1224,104 @@ describe("AgentProfilePanel", () => {
         '[data-profile-competitor-count="provider"]',
       )?.textContent,
     ).toContain("2");
-    expect(competitor?.textContent).toContain("search.review.needsReview");
+    expect(competitor?.textContent).toContain(
+      "search.review.suggestedIndirect",
+    );
+    expect(
+      competitor
+        ?.querySelector('[data-profile-competitor-action="indirect"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(competitor?.textContent).toContain(
       "search.review.providerEvidence",
     );
+    expect(profile.directCompetitors).toEqual([]);
+    expect(profile.indirectAlternatives).toEqual([]);
+    expect(profile.excludedAlternatives).toEqual([]);
+  });
+
+  it("shows Product Profile seed SERP domains with editable indirect defaults without mutating the draft", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
+    renderPanel(
+      profile,
+      undefined,
+      undefined,
+      {
+        loading: false,
+        errorCode: null,
+        onDiscover: vi.fn(),
+        data: {
+          schemaVersion: "agent_profile_search.v1",
+          agent: "seo",
+          targetHost: "astrologywiki.com",
+          availability: "available",
+          method: "serp_competitors",
+          market: {
+            code: "US",
+            locationCode: 2_840,
+            languageCode: "en",
+          },
+          observedAt: "2026-08-13T00:00:00.000Z",
+          rows: [
+            {
+              kind: "profile_seed_serp_competitor",
+              domain: "seed-one.example",
+              averagePosition: 4.1,
+              medianPosition: 3.8,
+              rating: 0.72,
+              organicEstimatedTrafficVolume: 540,
+              keywordsCount: 8,
+              visibility: 0.34,
+              relevantSerpItems: 3,
+            },
+            {
+              kind: "profile_seed_serp_competitor",
+              domain: "seed-two.example",
+              averagePosition: 9.2,
+              medianPosition: 7.4,
+              rating: 0.41,
+              organicEstimatedTrafficVolume: 210,
+              keywordsCount: 5,
+              visibility: 0.13,
+              relevantSerpItems: 2,
+            },
+          ],
+        },
+      },
+    );
+
+    const competitor = document.querySelector(
+      '[data-profile-card="competitor"]',
+    );
+    const declaredBusinessFrame = competitor?.querySelector("dl");
+    const summary = competitor?.querySelector(
+      '[data-profile-search-summary="available"]',
+    );
+
+    expect(summary?.textContent).toBe("search.summary.available:2");
+    expect(competitor?.querySelector("h3")?.textContent).toBe(
+      "search.review.candidatesReady",
+    );
+    expect(declaredBusinessFrame?.textContent).toContain("seed-one.example");
+    expect(declaredBusinessFrame?.textContent).toContain("seed-two.example");
+    expect(declaredBusinessFrame?.textContent).toContain(
+      "search.review.systemSuggestionProvenance",
+    );
+    expect(competitor?.textContent).toContain("search.seedSerpBoundary");
+    expect(competitor?.textContent).toContain(
+      "search.review.seedSerpEvidence",
+    );
+    expect(competitor?.textContent).toContain(
+      "search.review.seedSerpObserved",
+    );
+    expect(competitor?.textContent).toContain(
+      "search.review.suggestedIndirect",
+    );
+    expect(
+      competitor
+        ?.querySelector('[data-profile-competitor-action="indirect"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(profile.directCompetitors).toEqual([]);
     expect(profile.indirectAlternatives).toEqual([]);
     expect(profile.excludedAlternatives).toEqual([]);
@@ -1371,10 +1491,10 @@ describe("AgentProfilePanel", () => {
     ).toBe("search.summary.available:1");
     expect(
       en.agents.workbench.profile.search.summary.available,
-    ).toContain("not classified as business competitors");
+    ).toContain("editable system relationship suggestion");
     expect(
       zh.agents.workbench.profile.search.summary.available,
-    ).toContain("只有在你选择关系后");
+    ).toContain("可修改关系建议");
   });
 
   it("leaves search summary announcements to the existing results live region", () => {
@@ -1534,10 +1654,10 @@ describe("AgentProfilePanel", () => {
 
   it("keeps English and Chinese source-honest summary and timeout copy aligned", () => {
     expect(en.agents.workbench.profile.search.summary.available).toContain(
-      "not classified as business competitors",
+      "editable system relationship suggestion",
     );
     expect(zh.agents.workbench.profile.search.summary.available).toContain(
-      "只有在你选择关系后",
+      "可修改关系建议",
     );
     expect(en.agents.workbench.profile.search.title).toBe(
       "Domains worth review",
@@ -1716,15 +1836,26 @@ describe("AgentProfilePanel", () => {
     expect(document.body.textContent).toContain("search.missingPrerequisite");
   });
 
-  it("marks source-backed cards when their accepted facts were locally adjusted", () => {
+  it("marks the visible source-backed card while retaining hidden ICP adjustments for review", () => {
     const profile = updateAgentProfile(
       createAgentProfileDraft("seo", "astrologywiki.com"),
       { primaryCta: "Create my chart", icpPain: "Needs clearer guidance" },
     );
     renderPanel(profile);
 
-    expect(document.body.textContent?.match(/sources\.locally_adjusted/g)).toHaveLength(
-      2,
-    );
+    expect(
+      document.body.textContent?.match(/sources\.locally_adjusted/g),
+    ).toHaveLength(1);
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(
+      (document.querySelector('[aria-label="fields.icpPain"]') as HTMLInputElement)
+        .value,
+    ).toBe("Needs clearer guidance");
   });
 });
