@@ -52,7 +52,11 @@ function seoRow(keyword: string): KeywordOpportunityRow {
     serp: {
       verdict: "winnable_evidence",
       weakestTopTenDomainRank: 8,
+      weakestTopTenDomain: "example.com",
+      weakestTopTenPosition: 4,
       topTenDomains: ["example.com"],
+      topTenDomainRanks: [8],
+      pageOneItemTypes: null,
       isEstimate: false,
     },
     coverage: "not_observed_in_gsc_query_sample",
@@ -74,7 +78,10 @@ function result(
       pagesFetched: 14,
       productPagesFetched: 3,
       propositions: [
-        { statement: "Billing for dental clinics", sourceUrl: "https://acme.test/" },
+        {
+          statement: "Billing for dental clinics",
+          sourceUrl: "https://acme.test/",
+        },
       ],
       contextSufficient: true,
       stopReason: "page_budget_reached",
@@ -111,7 +118,10 @@ function render(
   value: KeywordOpportunityResult = result(),
 ): string {
   return renderToStaticMarkup(
-    <NextIntlClientProvider locale={locale} messages={locale === "en" ? en : zh}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "en" ? en : zh}
+    >
       <KeywordMapResults result={value} locale={locale} />
     </NextIntlClientProvider>,
   );
@@ -207,7 +217,10 @@ describe("keyword map results", () => {
     } as const;
     for (const [step, value] of Object.entries(expected)) {
       expect(
-        tileFor(markup, en.tools.keywordMap.funnel[step as keyof typeof expected]),
+        tileFor(
+          markup,
+          en.tools.keywordMap.funnel[step as keyof typeof expected],
+        ),
         step,
       ).toContain(`>${value}<`);
     }
@@ -262,8 +275,12 @@ describe("keyword map results", () => {
     );
     expect(markup).toContain(asRendered(en.tools.keywordMap.emptyTitle));
     expect(markup).toContain(asRendered(en.tools.keywordMap.emptyBody));
-    expect(markup).not.toContain(asRendered(en.tools.keywordMap.lane.seo.title));
-    expect(markup).not.toContain(asRendered(en.tools.keywordMap.lane.geo.title));
+    expect(markup).not.toContain(
+      asRendered(en.tools.keywordMap.lane.seo.title),
+    );
+    expect(markup).not.toContain(
+      asRendered(en.tools.keywordMap.lane.geo.title),
+    );
   });
 
   it("does not say the gates dropped candidates a gate never saw", () => {
@@ -301,9 +318,15 @@ describe("keyword map results", () => {
         ],
       }),
     );
-    const advice = markup.indexOf(asRendered(en.tools.keywordMap.nextSteps.add_seed_keywords));
-    const table = markup.indexOf(asRendered(en.tools.keywordMap.lane.seo.title));
-    const withheld = markup.indexOf(asRendered(en.tools.keywordMap.withheldTitle));
+    const advice = markup.indexOf(
+      asRendered(en.tools.keywordMap.nextSteps.add_seed_keywords),
+    );
+    const table = markup.indexOf(
+      asRendered(en.tools.keywordMap.lane.seo.title),
+    );
+    const withheld = markup.indexOf(
+      asRendered(en.tools.keywordMap.withheldTitle),
+    );
     expect(advice).toBeGreaterThan(-1);
     expect(advice).toBeLessThan(table);
     expect(table).toBeLessThan(withheld);
@@ -321,7 +344,11 @@ describe("keyword map results", () => {
             label: "dental billing",
             keywords: ["dental billing software", "dental billing service"],
           },
-          { id: "cluster-2", label: "orthodontic intake", keywords: ["orthodontic intake"] },
+          {
+            id: "cluster-2",
+            label: "orthodontic intake",
+            keywords: ["orthodontic intake"],
+          },
         ],
       }),
     );
@@ -339,7 +366,11 @@ describe("keyword map results", () => {
       "en",
       result({
         clusters: [
-          { id: "cluster-1", label: "dental billing software", keywords: ["dental billing software"] },
+          {
+            id: "cluster-1",
+            label: "dental billing software",
+            keywords: ["dental billing software"],
+          },
         ],
       }),
     );
@@ -422,7 +453,115 @@ describe("keyword map results", () => {
 
   it("stays silent when a complete run has nothing to suggest", () => {
     const markup = render("en");
-    expect(markup).not.toContain(asRendered(en.tools.keywordMap.nextStepsTitle));
-    expect(markup).not.toContain(asRendered(en.tools.keywordMap.availability.available));
+    expect(markup).not.toContain(
+      asRendered(en.tools.keywordMap.nextStepsTitle),
+    );
+    expect(markup).not.toContain(
+      asRendered(en.tools.keywordMap.availability.available),
+    );
+  });
+
+  it("orders the SEO table by measured volume, unpriced rows last", () => {
+    // The payload arrives in generator order; the 2026-08-14 live run had its
+    // highest-volume term at row eight. Order is read off the markup indexes
+    // because a set-style assertion would pass on any order.
+    const small = seoRow("small term");
+    const big = {
+      ...seoRow("big term"),
+      validation: { ...seoRow("big term").validation, volume: 22200 },
+    };
+    const unpriced = {
+      ...seoRow("unpriced term"),
+      validation: {
+        availability: "provider_no_data" as const,
+        volume: null,
+        difficulty: null,
+        intent: null,
+        serpFeatures: [],
+      },
+    };
+    const markup = render("en", result({ rows: [small, unpriced, big] }));
+
+    const at = (keyword: string) => markup.indexOf(keyword);
+    expect(at("big term")).toBeGreaterThan(-1);
+    expect(at("big term")).toBeLessThan(at("small term"));
+    expect(at("small term")).toBeLessThan(at("unpriced term"));
+  });
+
+  it("names the weakest holder and its position under the rank", () => {
+    const markup = render("en");
+    expect(markup).toContain("example.com");
+    expect(markup).toContain("· #4");
+  });
+
+  it("keeps the AI Overview column tri-state", () => {
+    const observed = {
+      ...seoRow("with aio"),
+      serp: { ...seoRow("with aio").serp, pageOneItemTypes: ["ai_overview"] },
+    };
+    const absent = {
+      ...seoRow("without aio"),
+      serp: { ...seoRow("without aio").serp, pageOneItemTypes: ["organic"] },
+    };
+    const markup = render("en", result({ rows: [observed, absent] }));
+
+    expect(markup).toContain(asRendered(en.tools.keywordMap.aio.shown));
+    expect(markup).toContain(asRendered(en.tools.keywordMap.aio.notShown));
+    // The silent state stays a dash — the default fixture's serp reports null.
+    expect(render("en")).toContain("—");
+  });
+
+  it("hoists checks shared by every row and keeps the rest in the rows", () => {
+    const shared = "read_page_one_intent" as const;
+    const own = "judge_commercial_fit" as const;
+    const first = { ...seoRow("first"), nextChecks: [shared, own] };
+    const second = { ...seoRow("second"), nextChecks: [shared] };
+    const markup = render("en", result({ rows: [first, second] }));
+
+    expect(markup).toContain(asRendered(en.tools.keywordMap.commonChecksIntro));
+    // The shared check appears once, above the table, instead of per row.
+    const sharedCopy = asRendered(en.tools.keywordMap.checks[shared]);
+    expect(markup.indexOf(sharedCopy)).toBe(markup.lastIndexOf(sharedCopy));
+    expect(markup).toContain(asRendered(en.tools.keywordMap.checks[own]));
+  });
+
+  it("offers a seeded re-run only for the terms the budget never reached", () => {
+    const withheld = [
+      {
+        keyword: "unjudged one",
+        discoveryBasis: "site_proposition" as const,
+        reason: "serp_sample_budget_exhausted" as const,
+      },
+      {
+        keyword: "priced at zero",
+        discoveryBasis: "site_proposition" as const,
+        reason: "volume_priced_at_zero" as const,
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <KeywordMapResults
+          result={result({ withheld })}
+          locale="en"
+          onRetryWithSeeds={() => {}}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    const button = asRendered(en.tools.keywordMap.retryWithSeeds);
+    // Exactly one button: the zero-priced group is a verdict, and re-running
+    // on a verdict changes nothing.
+    expect(markup.indexOf(button)).toBeGreaterThan(-1);
+    expect(markup.indexOf(button)).toBe(markup.lastIndexOf(button));
+
+    // Without the callback there is no button at all.
+    expect(render("en", result({ withheld }))).not.toContain(button);
+  });
+
+  it("offers the CSV export whenever there are rows to export", () => {
+    expect(render("en")).toContain(asRendered(en.tools.keywordMap.exportCsv));
+    expect(render("en", result({ rows: [] }))).not.toContain(
+      asRendered(en.tools.keywordMap.exportCsv),
+    );
   });
 });

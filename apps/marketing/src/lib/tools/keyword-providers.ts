@@ -132,11 +132,18 @@ export function createKeywordProviderSeams(options: {
           languageCode,
         });
         options.costs.record("serp_organic", response.costUsd);
+        // Position and item types travel with the domains. Both are already
+        // parsed by the provider client and cost nothing extra; this seam used
+        // to flatten each row to its domain, which is how the SERP position of
+        // the weakest holder and the page's AI Overview marker were silently
+        // lost between provider and report.
         samples.push({
           keyword,
-          domains: response.rows
-            .slice(0, DOMAINS_PER_SERP)
-            .map((row) => row.domain),
+          results: response.rows.slice(0, DOMAINS_PER_SERP).map((row) => ({
+            domain: row.domain,
+            position: row.rankGroup,
+          })),
+          pageItemTypes: response.itemTypes,
         });
       }
       return samples;

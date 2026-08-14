@@ -17,6 +17,11 @@ import {
   KEYWORD_STAGE_GSC_COVERAGE,
   KEYWORD_STAGE_SERP_SAMPLE,
 } from "@sf/public-tools/keyword-opportunity/types";
+import type { KeywordOpportunityCheck } from "@sf/public-tools/keyword-opportunity/types";
+import {
+  keywordOpportunityCsv,
+  keywordOpportunityCsvFilename,
+} from "@sf/public-tools/keyword-opportunity/csv";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
 // an aliased import would make this file unimportable from a test.
 import { formatCount } from "../../lib/tools/quick-wins-format";
@@ -94,7 +99,6 @@ export function funnelGridDividesEvenly(): boolean {
   return FUNNEL_STEPS.length % FUNNEL_COLUMNS === 0;
 }
 
-
 /**
  * A label for a payload value this bundle may have no copy for.
  *
@@ -126,11 +130,25 @@ function useOptionalLabel(): (key: string, fallback: string) => string {
 export function KeywordMapResults({
   result,
   locale,
+  onRetryWithSeeds,
 }: {
   readonly result: KeywordOpportunityResult;
   readonly locale: string;
+  /**
+   * Carries a withheld group back into the seed field for a narrower re-run.
+   * Optional so the component stays renderable from a test or a static
+   * context that has no live tool above it.
+   */
+  readonly onRetryWithSeeds?: (keywords: readonly string[]) => void;
 }) {
-  const seo = result.rows.filter((row) => row.lane === "seo");
+  // Volume descending, unpriced rows last. The payload arrives in candidate
+  // order — which is the generator's order — and the 2026-08-14 live review
+  // found the highest-volume term sitting at row eight of fifteen. Sorting by
+  // the measured number is presentation, not judgement: the verdicts and
+  // checks on each row are unchanged.
+  const seo = result.rows
+    .filter((row) => row.lane === "seo")
+    .sort((a, b) => (b.validation.volume ?? -1) - (a.validation.volume ?? -1));
   const geo = result.rows.filter((row) => row.lane === "geo");
   // A group of one is not a group. Every keyword that matched nothing becomes
   // its own cluster in the payload, so rendering them all turns "terms that
@@ -148,14 +166,54 @@ export function KeywordMapResults({
         <EmptyState degraded={result.unavailableStages.length > 0} />
       ) : (
         <>
+          <ExportRow result={result} />
           <RowTable rows={seo} lane="seo" />
           <RowTable rows={geo} lane="geo" />
         </>
       )}
 
       <Groups groups={groups} />
-      <Withheld withheld={result.withheld} />
+      <Withheld
+        withheld={result.withheld}
+        onRetryWithSeeds={onRetryWithSeeds}
+      />
       <WhereNext locale={locale} />
+    </div>
+  );
+}
+
+/**
+ * The one copy of a run that survives the tab.
+ *
+ * Nothing is stored server-side by design, so before this button existed the
+ * only way to keep a run's fifteen rows was to transcribe them by hand. The
+ * file carries the same evidence as the tables, blanks included — an
+ * unavailable number stays an empty cell rather than becoming a zero.
+ */
+function ExportRow({ result }: { readonly result: KeywordOpportunityResult }) {
+  const t = useTranslations("tools.keywordMap");
+
+  function download() {
+    const blob = new Blob([keywordOpportunityCsv(result)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = keywordOpportunityCsvFilename(result);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={download}
+        className="inline-flex h-10 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+      >
+        {t("exportCsv")}
+      </button>
     </div>
   );
 }
@@ -187,10 +245,7 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
       {degraded ? (
         <>
           <p className="text-[13.5px] leading-[1.6] text-brand-warning">
-            {label(
-              `availability.${result.availability}`,
-              result.availability,
-            )}
+            {label(`availability.${result.availability}`, result.availability)}
           </p>
           {result.unavailableStages.length > 0 ? (
             <p className="mt-1.5 text-[12.5px] leading-[1.6] text-brand-warning">
@@ -356,6 +411,25 @@ function EmptyState({ degraded }: { readonly degraded: boolean }) {
   );
 }
 
+/**
+ * The checks every row of a table shares, hoisted out of the rows.
+ *
+ * The live review measured the check column at roughly half the table's width
+ * with sixteen identical cells in it. The shared checks are still the same
+ * claim — they are stated once above the table — and each row keeps only what
+ * distinguishes it. Hoisting is by intersection, not by fiat, so a check that
+ * genuinely varies stays in the rows.
+ */
+export function commonChecks(
+  rows: readonly KeywordOpportunityRow[],
+): readonly KeywordOpportunityCheck[] {
+  const first = rows[0];
+  if (first === undefined || rows.length < 2) return [];
+  return first.nextChecks.filter((check) =>
+    rows.every((row) => row.nextChecks.includes(check)),
+  );
+}
+
 function RowTable({
   rows,
   lane,
@@ -367,10 +441,19 @@ function RowTable({
   const label = useOptionalLabel();
   if (rows.length === 0) return null;
 
+  const shared = commonChecks(rows);
+  const sharedSet = new Set(shared);
+
   return (
     <section className={CARD}>
       <h3 className={SECTION_TITLE}>{t(`lane.${lane}.title`)}</h3>
       <p className={SECTION_INTRO}>{t(`lane.${lane}.intro`)}</p>
+      {shared.length > 0 ? (
+        <p className={SECTION_INTRO}>
+          {t("commonChecksIntro")}{" "}
+          {shared.map((check) => label(`checks.${check}`, check)).join(" · ")}
+        </p>
+      ) : null}
 
       {/* Wide on purpose; the page must never scroll sideways because of it. */}
       <div className="mt-4 overflow-x-auto">
@@ -390,6 +473,9 @@ function RowTable({
                   </th>
                   <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
                     {t("columns.weakest")}
+                  </th>
+                  <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                    {t("columns.aiOverview")}
                   </th>
                 </>
               ) : (
@@ -424,6 +510,27 @@ function RowTable({
                     </td>
                     <td className="py-3 pr-4 text-right font-mono text-[13px] text-text-dark-secondary tabular-nums">
                       {row.serp.weakestTopTenDomainRank ?? "—"}
+                      {/*
+                       * The holder's identity and position, under the rank
+                       * they explain. A rank of 24 at position 2 and the same
+                       * rank clinging to position 10 are different facts, and
+                       * without the domain the reader cannot open the page
+                       * and check either one. `typeof` guards rather than
+                       * null checks: a payload from the previous deployment
+                       * has neither field, and `undefined !== null` would
+                       * render the word "undefined" into the table.
+                       */}
+                      {typeof row.serp.weakestTopTenDomain === "string" ? (
+                        <span className="block text-[11px] break-all text-text-dark-faint">
+                          {row.serp.weakestTopTenDomain}
+                          {typeof row.serp.weakestTopTenPosition === "number"
+                            ? ` · #${row.serp.weakestTopTenPosition}`
+                            : ""}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-3 pr-4 text-[12.5px]">
+                      <AiOverviewCell itemTypes={row.serp.pageOneItemTypes} />
                     </td>
                   </>
                 ) : (
@@ -435,11 +542,7 @@ function RowTable({
                   {label(`coverage.${row.coverage}`, row.coverage)}
                 </td>
                 <td className="py-3 text-[12.5px] text-text-dark-secondary">
-                  <ul className="space-y-1">
-                    {row.nextChecks.map((check) => (
-                      <li key={check}>{label(`checks.${check}`, check)}</li>
-                    ))}
-                  </ul>
+                  <RowChecks checks={row.nextChecks} shared={sharedSet} />
                 </td>
               </tr>
             ))}
@@ -451,6 +554,58 @@ function RowTable({
         {lane === "seo" ? t("weakestHint") : t("geoHint")}
       </p>
     </section>
+  );
+}
+
+/**
+ * Three states, none of them collapsible into another.
+ *
+ * "Shown" is the provider observing an AI Overview on the sampled page one —
+ * worth flagging because it answers the query above every organic result.
+ * "Not shown" is the provider listing the page's elements without one. The
+ * dash is the provider staying silent (or the page never being sampled), and
+ * rendering that as "not shown" would claim an observation nobody made.
+ */
+function AiOverviewCell({
+  itemTypes,
+}: {
+  /**
+   * `undefined` is accepted alongside the contract's `null` for the same
+   * reason the handler tolerates tokens without `headings`: a run started on
+   * the previous deployment finishes on this one, and its payload predates
+   * the field. Both read as "not reported".
+   */
+  readonly itemTypes: readonly string[] | null | undefined;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  if (itemTypes === null || itemTypes === undefined) {
+    return <span className="text-text-dark-faint">—</span>;
+  }
+  if (itemTypes.includes("ai_overview")) {
+    return <span className="text-brand-warning">{t("aio.shown")}</span>;
+  }
+  return <span className="text-text-dark-secondary">{t("aio.notShown")}</span>;
+}
+
+/** A row's own checks, minus the ones the whole table already states. */
+function RowChecks({
+  checks,
+  shared,
+}: {
+  readonly checks: readonly KeywordOpportunityCheck[];
+  readonly shared: ReadonlySet<KeywordOpportunityCheck>;
+}) {
+  const label = useOptionalLabel();
+  const own = checks.filter((check) => !shared.has(check));
+  if (own.length === 0) {
+    return <span className="text-text-dark-faint">—</span>;
+  }
+  return (
+    <ul className="space-y-1">
+      {own.map((check) => (
+        <li key={check}>{label(`checks.${check}`, check)}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -499,8 +654,10 @@ function Groups({
 
 function Withheld({
   withheld,
+  onRetryWithSeeds,
 }: {
   readonly withheld: readonly KeywordOpportunityWithheld[];
+  readonly onRetryWithSeeds?: (keywords: readonly string[]) => void;
 }) {
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
@@ -537,6 +694,25 @@ function Withheld({
                 </li>
               ))}
             </ul>
+            {/*
+             * Only the budget group gets a way forward. These terms were never
+             * judged — the per-run sample cap ran out before reaching them —
+             * so a re-run seeded with exactly these terms is the one move that
+             * changes the answer. The other reasons are verdicts; re-running
+             * on them changes nothing, which is what their copy says.
+             */}
+            {reason === "serp_sample_budget_exhausted" &&
+            onRetryWithSeeds !== undefined ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onRetryWithSeeds(keywords);
+                }}
+                className="mt-3 inline-flex h-10 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                {t("retryWithSeeds")}
+              </button>
+            ) : null}
           </details>
         ))}
       </div>
@@ -566,17 +742,11 @@ function WhereNext({ locale }: { readonly locale: string }) {
         {t("whereNextBody")}
       </p>
       <div className="mt-5 space-y-3">
-        <Link
-          href={localePath(locale, "/agents/seo")}
-          className={NAV_LINK}
-        >
+        <Link href={localePath(locale, "/agents/seo")} className={NAV_LINK}>
           {t("whereNextAudit")}
           <span aria-hidden="true">&rarr;</span>
         </Link>
-        <Link
-          href={localePath(locale, "/agents/tech")}
-          className={NAV_LINK}
-        >
+        <Link href={localePath(locale, "/agents/tech")} className={NAV_LINK}>
           {t("whereNextLinks")}
           <span aria-hidden="true">&rarr;</span>
         </Link>
