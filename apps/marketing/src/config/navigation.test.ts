@@ -21,7 +21,9 @@ import {
 const AGENTS_ROUTE_DIR = fileURLToPath(
   new URL("../app/[locale]/agents", import.meta.url),
 );
-const MESSAGES_DIR = fileURLToPath(new URL("../i18n/messages", import.meta.url));
+const MESSAGES_DIR = fileURLToPath(
+  new URL("../i18n/messages", import.meta.url),
+);
 
 function routedAgentSlugs(): string[] {
   if (!existsSync(AGENTS_ROUTE_DIR)) return [];
@@ -101,9 +103,7 @@ describe("Resources submenu", () => {
       "/resources",
     ]);
     expect(withMenu[1]?.menu).toBe(resourcesMenuGroups);
-    expect(withMenu[1]?.menuViewAllLabelKey).toBe(
-      "nav.resourcesMenu.viewAll",
-    );
+    expect(withMenu[1]?.menuViewAllLabelKey).toBe("nav.resourcesMenu.viewAll");
   });
 
   it("keeps Prompts, Tools, Skills, and Docs at their exact destinations", () => {
@@ -112,9 +112,11 @@ describe("Resources submenu", () => {
         group.items.map(({ slug, href }) => ({ slug, href })),
       ),
     ).toEqual([
-      { slug: "prompts", href: "/resources#prompts" },
+      // Prompts, Tools and Skills have their own hubs; Docs is still an anchor
+      // on the Resources page because no Docs route exists yet.
+      { slug: "prompts", href: "/prompts" },
       { slug: "tools", href: "/tools" },
-      { slug: "skills", href: "/resources#skills" },
+      { slug: "skills", href: "/skills" },
       { slug: "docs", href: "/resources#docs" },
     ]);
   });
@@ -128,22 +130,16 @@ describe("Resources submenu", () => {
         href: "/resources#prompts",
       }),
     ).toBe("/resources#prompts");
-    expect(
-      menuItemPath("/resources", { slug: "tools", href: "/tools" }),
-    ).toBe("/tools");
+    expect(menuItemPath("/resources", { slug: "tools", href: "/tools" })).toBe(
+      "/tools",
+    );
   });
 
   it("uses the same Resources IA in the footer", () => {
     expect(footerResourceLinks).toEqual([
-      {
-        labelKey: "nav.resourcesMenu.prompts.label",
-        href: "/resources#prompts",
-      },
+      { labelKey: "nav.resourcesMenu.prompts.label", href: "/prompts" },
       { labelKey: "nav.resourcesMenu.tools.label", href: "/tools" },
-      {
-        labelKey: "nav.resourcesMenu.skills.label",
-        href: "/resources#skills",
-      },
+      { labelKey: "nav.resourcesMenu.skills.label", href: "/skills" },
       {
         labelKey: "nav.resourcesMenu.docs.label",
         href: "/resources#docs",

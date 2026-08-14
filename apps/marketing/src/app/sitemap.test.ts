@@ -45,8 +45,48 @@ describe("canonical marketing sitemap", () => {
     expect(urls).not.toContain(
       "https://gengrowth.ai/tools/internal-link-audit",
     );
-    expect(
-      urls.some((url) => url.startsWith("https://gengrowth.ai/en")),
-    ).toBe(false);
+    expect(urls.some((url) => url.startsWith("https://gengrowth.ai/en"))).toBe(
+      false,
+    );
+  });
+
+  // The resource libraries are read from the real content directories rather
+  // than mocked, so this also proves every cross-reference in them resolves —
+  // the loader throws on a dangling related slug.
+  it("lists both resource hubs and every published resource in both locales", async () => {
+    const { default: sitemap } = await import("./sitemap");
+    const { getPromptsForLocale } = await import("../lib/prompt-content");
+    const { getSkillsForLocale } = await import("../lib/skill-content");
+
+    const entries = await sitemap();
+    const urls = new Set(entries.map((entry) => entry.url));
+    const { prompts } = await getPromptsForLocale("en");
+    const { skills } = await getSkillsForLocale("en");
+
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(skills.length).toBeGreaterThan(0);
+
+    expect(urls).toContain("https://gengrowth.ai/prompts");
+    expect(urls).toContain("https://gengrowth.ai/skills");
+    expect(urls).toContain("https://gengrowth.ai/zh/prompts");
+    expect(urls).toContain("https://gengrowth.ai/zh/skills");
+
+    for (const prompt of prompts) {
+      expect(urls).toContain(`https://gengrowth.ai/prompts/${prompt.slug}`);
+      expect(urls).toContain(`https://gengrowth.ai/zh/prompts/${prompt.slug}`);
+    }
+    for (const skill of skills) {
+      expect(urls).toContain(`https://gengrowth.ai/skills/${skill.slug}`);
+      expect(urls).toContain(`https://gengrowth.ai/zh/skills/${skill.slug}`);
+    }
+  });
+
+  it("never lists the skill download endpoint", async () => {
+    const { default: sitemap } = await import("./sitemap");
+    const entries = await sitemap();
+
+    // The download route returns an attachment, not a page. Listing it would
+    // ask crawlers to index a file with no canonical of its own.
+    expect(entries.some((entry) => entry.url.endsWith("/file"))).toBe(false);
   });
 });

@@ -45,7 +45,7 @@
       "viewAll": "Open Resources",
       "prompts": {
         "label": "Prompts",
-        "description": "Planned task-specific prompt templates with an explicit scope."
+        "description": "Copy-ready prompts for search work, each with its variables and a worked example."
       },
       "tools": {
         "label": "Tools",
@@ -53,7 +53,7 @@
       },
       "skills": {
         "label": "Skills",
-        "description": "Planned repeatable workflows that turn a method into reviewable steps."
+        "description": "Downloadable playbooks describing how a piece of SEO work is actually run."
       },
       "docs": {
         "label": "Docs",
@@ -106,15 +106,15 @@
     },
     "eyebrow": "Prompts · Tools · Skills · Docs",
     "title": "Turn growth methods into reusable resources.",
-    "subtitle": "Use a tool for the immediate question, then reuse the method through scoped prompts, repeatable skills, and clear documentation. Available and planned entries stay visibly separate.",
+    "subtitle": "Use a tool for the immediate question, then reuse the method through scoped prompts and repeatable skills. Available and planned entries stay visibly separate.",
     "available": "Available",
     "planned": "Planned",
     "openTools": "Browse Tools",
     "types": {
       "prompts": {
         "title": "Prompts",
-        "description": "Task-specific templates for structured growth work.",
-        "note": "Planned · No public prompt library yet"
+        "description": "Copy-ready prompts for search work, each with its variables and a worked example.",
+        "note": "Available · Public prompt library"
       },
       "tools": {
         "title": "Tools",
@@ -123,8 +123,8 @@
       },
       "skills": {
         "title": "Skills",
-        "description": "Repeatable workflows with explicit inputs and review points.",
-        "note": "Planned · No public skills library yet"
+        "description": "Downloadable playbooks describing how a piece of work is actually run.",
+        "note": "Available · Public skills library"
       },
       "docs": {
         "title": "Docs",
@@ -133,34 +133,184 @@
       }
     },
     "sections": {
-      "tools": {
+      "available": {
         "eyebrow": "Available now",
-        "title": "Tools answer the question in front of you.",
-        "body": "Open the supporting-tools directory for Search Console diagnostics and planning utilities, plus Agent-backed audit entry cards for SEO and technical review.",
-        "cta": "Open Tools"
+        "title": "Three ways to reuse the method.",
+        "body": "Tools answer the question in front of you, including Agent-backed audit entry cards for SEO and technical review. Prompts hand you the instruction for one task. Skills describe the whole procedure, including what it must refuse to claim."
       },
       "planned": {
         "eyebrow": "Library structure",
-        "title": "The next resource types are reserved, not overstated.",
-        "body": "Prompts, Skills, and Docs appear here to make the information architecture clear. They remain marked Planned until each resource has a real, reviewable public entry."
+        "title": "The remaining resource type is reserved, not overstated.",
+        "body": "Docs appears here to make the information architecture clear. It stays marked Planned until it has a real, reviewable public entry."
       }
     },
     "examples": {
-      "prompts": {
-        "seo": "SEO Audit Prompt",
-        "geo": "GEO Brief Prompt",
-        "social": "Social Angle Prompt"
-      },
-      "skills": {
-        "evidence": "Public Evidence Review",
-        "brief": "Content Brief Workflow",
-        "distribution": "Distribution Repurposing"
-      },
       "docs": {
         "boundaries": "Public Audit Boundaries",
         "agentScope": "How Agents Are Scoped",
         "dataRules": "Data Availability Rules"
       }
+    },
+    "openPrompts": "Browse prompts",
+    "openSkills": "Browse skills"
+  },
+  "prompts": {
+    "metadata": {
+      "title": "SEO Prompt Library: Copy-Ready Prompts for Search Work",
+      "description": "Structured prompts for keyword research, briefs, on-page copy, and AI answer visibility. Each one ships with its variables, a worked example, and the limits of what it can tell you."
+    },
+    "eyebrow": "Prompt library",
+    "title": "Prompts that refuse to make the numbers up.",
+    "subtitle": "Every prompt here is written for one job, states what it needs from you, and is instructed to say when data is unavailable rather than estimate it. Read the worked example before you run it.",
+    "filterLabel": "Filter by category",
+    "all": "All",
+    "empty": "No prompts in this category yet.",
+    "contentLanguageNote": "The prompt library is published in English. The prompts work in any language you ask them to answer in.",
+    "categories": {
+      "research": "Research",
+      "writing": "Writing",
+      "optimization": "Optimization",
+      "geo": "AI visibility"
+    },
+    "card": {
+      "models": "Tested with"
+    },
+    "detail": {
+      "backToLibrary": "All prompts",
+      "useCase": "Use case",
+      "outputFormat": "Output",
+      "models": "Tested with",
+      "updated": "Updated",
+      "promptEyebrow": "The prompt",
+      "promptTitle": "Copy it and fill in the variables",
+      "copy": "Copy prompt",
+      "copied": "Copied",
+      "variablesEyebrow": "Variables",
+      "variablesTitle": "What you need to supply",
+      "required": "Required",
+      "optional": "Optional",
+      "example": "Example value",
+      "howToUseEyebrow": "How to use it",
+      "howToUseTitle": "Running it, and checking what comes back",
+      "exampleInputEyebrow": "Example input",
+      "exampleInputTitle": "Every variable filled in",
+      "copyInput": "Copy input",
+      "exampleOutputEyebrow": "Example output",
+      "exampleOutputTitle": "What a good run produces",
+      "safetyEyebrow": "Before you trust it",
+      "safetyTitle": "What to check, and what this does not claim",
+      "faqEyebrow": "Questions",
+      "faqTitle": "Frequently asked",
+      "relatedPrompts": "Related prompts",
+      "relatedSkill": "Automates this",
+      "relatedSkillNote": "The skill that runs this work as a repeatable loop."
+    },
+    "faq": {
+      "eyebrow": "About this library",
+      "title": "Questions about the prompts",
+      "items": {
+        "cost": {
+          "q": "Does using these prompts require an account?",
+          "a": "No. Every prompt on this page is readable and copyable as published. An account is only relevant if you want a GenGrowth agent to run this work for you instead."
+        },
+        "difference": {
+          "q": "What is the difference between a prompt and a skill?",
+          "a": "A prompt is one instruction you paste into a model to get one deliverable. A skill is a whole operating procedure an agent follows repeatedly, and it usually consumes several prompts' worth of work as steps. Prompts are for a task; skills are for a loop."
+        },
+        "edit": {
+          "q": "Can I edit them?",
+          "a": "Yes, and you should. The variables mark the parts that always change; the steps and quality checks are the parts worth keeping, because they are what stop the model from inventing data."
+        },
+        "updates": {
+          "q": "How often does this library change?",
+          "a": "Prompts are revised when the underlying practice changes or when a run surfaces a failure the prompt should have caught. Each page shows when it was last updated."
+        }
+      }
+    },
+    "cta": {
+      "title": "Rather not run these by hand?",
+      "body": "The GenGrowth agents run this work against your own site, with the same rules about what counts as evidence.",
+      "action": "See the agents"
+    }
+  },
+  "skills": {
+    "metadata": {
+      "title": "SEO Skills Library: Downloadable Agent Playbooks",
+      "description": "Each skill is a plain-language SKILL.md file describing how a piece of SEO work is actually run, from evidence rules to the output it must produce. Read it, download it, or let the agent run it."
+    },
+    "eyebrow": "Skills library",
+    "title": "The playbooks our agents run, written so you can read them.",
+    "subtitle": "A skill is a procedure, not a prompt: what counts as evidence, the order of the work, and what it must refuse to claim. Every file is published in full — nothing is held back behind a form.",
+    "filterLabel": "Filter by category",
+    "all": "All",
+    "empty": "No skills in this category yet.",
+    "contentLanguageNote": "The skills library is published in English, matching the SKILL.md files themselves.",
+    "categories": {
+      "seo": "SEO",
+      "content": "Content",
+      "technical": "Technical",
+      "geo": "AI visibility"
+    },
+    "owners": {
+      "seo": "SEO Agent",
+      "tech": "Tech Agent"
+    },
+    "detail": {
+      "backToLibrary": "All skills",
+      "owner": "Owned by",
+      "category": "Category",
+      "format": "File",
+      "updated": "Updated",
+      "getFile": "Get the skill file",
+      "tryAgent": "Try the agent",
+      "fileEyebrow": "The skill file",
+      "fileTitle": "Read it, copy it, or download it",
+      "copy": "Copy file",
+      "copied": "Copied",
+      "download": "Download",
+      "whatEyebrow": "What it does",
+      "whatTitle": "The problem it exists to prevent",
+      "actionEyebrow": "In action",
+      "actionTitle": "A real exchange",
+      "actionAsk": "You ask",
+      "actionResponse": "The agent does",
+      "stepsEyebrow": "How it works",
+      "stepsTitle": "From input to output",
+      "coverageEyebrow": "Scope",
+      "coverageTitle": "What it covers",
+      "whenEyebrow": "When to reach for it",
+      "whenTitle": "Situations this fits",
+      "faqEyebrow": "Questions",
+      "faqTitle": "Frequently asked",
+      "relatedSkills": "Pair it with",
+      "relatedPrompts": "Prompts inside this skill"
+    },
+    "faq": {
+      "eyebrow": "About this library",
+      "title": "Questions about the skills",
+      "items": {
+        "what": {
+          "q": "What exactly is a skill file?",
+          "a": "A Markdown file with a short header and plain-language instructions — the same format an AI agent reads and a person can follow. It states what evidence the work relies on, the order of the steps, and what the output must contain."
+        },
+        "difference": {
+          "q": "How is a skill different from a prompt?",
+          "a": "A prompt produces one deliverable from one instruction. A skill describes a repeatable procedure with an evidence standard and a refusal list, and usually spans several steps that each involve their own prompting. If you want one output now, use a prompt; if you want the same work done consistently every month, read the skill."
+        },
+        "gate": {
+          "q": "Is the whole file public?",
+          "a": "Yes. The complete file is on the page and downloadable as it is published — there is no form in front of it and no truncated preview."
+        },
+        "agent": {
+          "q": "Do I need a GenGrowth agent to use one?",
+          "a": "No. The files are written to be followed by hand or handed to any capable model. The agents matter when the work needs data access and repetition across a whole site, which is where doing it by hand stops scaling."
+        }
+      }
+    },
+    "cta": {
+      "title": "Let an agent run the loop",
+      "body": "The same procedures, executed against your site with its own data, and reported with the evidence attached.",
+      "action": "See the agents"
     }
   },
   "home": {
