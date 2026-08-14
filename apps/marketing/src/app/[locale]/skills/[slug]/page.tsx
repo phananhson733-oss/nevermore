@@ -27,6 +27,7 @@ import {
   localesOwningSkill,
 } from "@/lib/skill-content";
 import { resourceAlternates } from "@/lib/resource-alternates";
+import { skillInstallCommand } from "@/lib/skill-install";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 import { toPlainText } from "@/lib/resource-markdown";
@@ -147,14 +148,7 @@ export default async function SkillDetailPage({
   const canonicalUrl = localeUrl(skill.locale, `${PATH}/${slug}`);
   const downloadHref = localePath(locale, `${PATH}/${skill.slug}/file`);
   const agentHref = localePath(locale, `/agents/${skill.owner}`);
-  // Absolute and pointing at the locale that owns the file: the command is
-  // copied out of the page into a terminal, where a relative path means
-  // nothing and a locale prefix that only mirrors English is noise.
-  const installDir = skill.installPath.slice(
-    0,
-    skill.installPath.lastIndexOf("/"),
-  );
-  const installCommand = `mkdir -p ${installDir} && curl -fsSL ${localeUrl(skill.locale, `${PATH}/${skill.slug}/file`)} -o ${skill.installPath}`;
+  const installCommand = skillInstallCommand(skill.slug);
 
   const techArticleLd = {
     "@context": "https://schema.org",
