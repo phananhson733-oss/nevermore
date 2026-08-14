@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-12
+updatedAt: 2026-08-14
 heroImage: /images/blog/pagerank-sculpting.jpg
 heroImageAlt: A five-lane toll plaza seen head-on, one lane shut off by a lowered barrier, the queues at the four open lanes all exactly the same length.
 localeExclusive: true
@@ -113,10 +113,13 @@ Google Search Central now documents three link attributes — sponsored for paid
 
 - [broken link and technical SEO audit checklist](/blog/seo-audit-checklist) — step-by-step process for auditing, categorizing, and fixing broken internal and external links across large content archives, with prioritization criteria
 - [what a bounded internal link crawl can prove](/blog/bounded-internal-link-crawl) — detailed process for mapping the full internal link graph, identifying structural gaps, and prioritizing fixes by equity impact
+- [how to read zero search volume keywords](/blog/zero-search-volume-keywords) — for deciding which pages are worth the link equity in the first place
 
 ## Take Action
 
 [Run the Tech Agent](https://gengrowth.ai/agents/tech) on your site. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. One crawl of public static HTML returns observed crawl, indexability, and internal-link conditions, including candidate orphan pages and collected error targets. The marketing run is not saved to an app project. A single run covers roughly 950 pages within a four-minute boundary, and a larger site comes back marked partial coverage. It will not classify an uncollected link as broken, and it is not a PageRank calculation. What it gives you is an observed link graph to reason from instead of assumptions.
+
+The link-structure half needs a crawl, but the "which pages deserve it" half starts from search data — [find your SEO opportunities in Search Console](/tools/seo-quick-wins).
 
 ## Sources
 
