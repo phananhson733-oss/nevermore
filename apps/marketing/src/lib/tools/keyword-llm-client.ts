@@ -47,13 +47,12 @@ export type KeywordLlmFailureReason =
 /**
  * The single public error code every LLM failure collapses to.
  *
- * Verbatim `keyword_source_unavailable` on purpose. Stage one funnels thrown
- * codes through `toKeywordOpportunityErrorCode`, which rewrites anything it
- * does not recognise to `site_unreachable` — and telling a visitor their site
- * could not be reached when the crawl succeeded and only our model provider
- * failed sends them to debug the wrong system.
+ * Distinct from `keyword_source_unavailable` on purpose. The model expands
+ * candidates before DataForSEO validates them, and collapsing those two
+ * dependencies sent visitors to debug the search-data source when the model
+ * transport was the component that failed.
  */
-export const KEYWORD_LLM_ERROR_CODE = "keyword_source_unavailable" as const;
+export const KEYWORD_LLM_ERROR_CODE = "keyword_generation_unavailable" as const;
 
 /** Transport/config/schema failure carrying the handler-mappable `code`. */
 export class KeywordLlmError extends Error {
@@ -487,8 +486,8 @@ class ChatCompletionsClient implements KeywordLlmClient {
    *
    * A route module builds its dependency object at import time. Throwing there
    * takes down every endpoint in the file — including the ones that do not use
-   * a model — instead of producing one honest `keyword_source_unavailable` for
-   * the request that actually needed it.
+   * a model — instead of producing one honest
+   * `keyword_generation_unavailable` for the request that actually needed it.
    */
   private resolveConfig(): KeywordLlmConfig {
     if (this.config === null) {

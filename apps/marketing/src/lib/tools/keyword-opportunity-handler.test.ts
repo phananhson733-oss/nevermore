@@ -4,6 +4,7 @@ import type { KeywordOpportunityProviderRow } from "@sf/public-tools";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import { openCrawlGate, type CrawlGateDependencies } from "./crawl-gate.ts";
 import { createKeywordCostAccumulator } from "./keyword-cost-guard.ts";
+import { KeywordLlmError } from "./keyword-llm-client.ts";
 import {
   acquirePublicCrawlSlot,
   resetPublicToolSlots,
@@ -697,6 +698,33 @@ describe("handleKeywordContextRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "site_unreachable" },
     });
+  });
+
+  it("identifies proposition-generation failure without blaming the target or search data", async () => {
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        extractPropositions: () =>
+          Promise.reject(
+            new KeywordLlmError(
+              "network_error",
+              "LLM request did not reach the provider.",
+            ),
+          ),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "keyword_generation_unavailable" },
+    });
+    expect(logged).toContain(
+      JSON.stringify({
+        tool: "keyword_opportunity",
+        stage: "context",
+        code: "keyword_generation_unavailable",
+      }),
+    );
   });
 
   it("releases the crawl gate after a successful read", async () => {
@@ -1552,6 +1580,34 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({
       error: { code: "keyword_source_unavailable" },
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("identifies a candidate-generation transport failure without blaming search data", async () => {
+    const release = vi.fn();
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.reject(
+            new KeywordLlmError(
+              "network_error",
+              "LLM request did not reach the provider.",
+            ),
+          ),
+        openGscGate: () => Promise.resolve({ ok: true, release }),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "keyword_generation_unavailable" },
+    });
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "expand_candidates",
+      failureReason: "network_error",
     });
     expect(release).toHaveBeenCalledTimes(1);
   });

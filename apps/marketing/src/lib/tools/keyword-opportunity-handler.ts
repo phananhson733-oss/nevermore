@@ -37,7 +37,10 @@ import {
   type KeywordBudgetOutcome,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
-import type { KeywordLlmUsage } from "./keyword-llm-client.ts";
+import {
+  KeywordLlmError,
+  type KeywordLlmUsage,
+} from "./keyword-llm-client.ts";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
@@ -902,6 +905,16 @@ export async function handleKeywordOpportunitiesRequest(
 
     return json({ data: payload }, 200);
   } catch (error) {
+    if (error instanceof KeywordLlmError) {
+      console.error(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "expand_candidates",
+          failureReason: error.reason,
+        }),
+      );
+      return json(createPublicToolError(error.code), 502);
+    }
     console.error(
       JSON.stringify({
         tool: "keyword_opportunity",
