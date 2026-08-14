@@ -28,6 +28,8 @@ vi.mock("next-intl", () => ({
             ? `${key}:pages=${String(values?.pages)}`
             : key === "refresh.sources.expand"
               ? `${key}:count=${String(values?.count)}`
+              : key === "refresh.proposals.evidence"
+                ? `${key}:count=${String(values?.count)}`
               : key === "refresh.proposals.useLabel"
                 ? `${key}:field=${String(values?.field)}`
           : key,
@@ -535,6 +537,9 @@ describe("AgentProfilePanel", () => {
     expect(
       row?.querySelector("[data-profile-refresh-proposal-evidence]"),
     ).not.toBeNull();
+    expect(
+      row?.querySelectorAll("[data-profile-refresh-proposal-evidence-url]"),
+    ).toHaveLength(1);
 
     const action = row?.querySelector(
       '[data-profile-refresh-proposal-action="productName"]',
@@ -549,6 +554,54 @@ describe("AgentProfilePanel", () => {
       accepted.fieldProvenance.find((entry) => entry.path === "/productName")
         ?.source,
     ).toBe("public_page");
+  });
+
+  it("makes every source promised by a live suggestion reachable", () => {
+    const sourceUrls = Array.from(
+      { length: 4 },
+      (_, index) => `https://astrologywiki.com/evidence-${index + 1}`,
+    );
+    const baseRefresh = makeProfileRefreshData({ sourceUrls });
+    const refresh: AgentProfileRefreshData = {
+      ...baseRefresh,
+      fields: baseRefresh.fields.map((field) =>
+        field.path === "productName" && field.state === "available"
+          ? { ...field, evidenceUrls: sourceUrls }
+          : field,
+      ) as AgentProfileRefreshData["fields"],
+    };
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      refresh,
+    );
+
+    renderPanel(profile, undefined, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    const row = document.querySelector(
+      '[data-profile-refresh-proposal="productName"]',
+    );
+    const disclosure = row?.querySelector(
+      "details[data-profile-refresh-proposal-evidence]",
+    ) as HTMLDetailsElement;
+    expect(disclosure).not.toBeNull();
+    expect(disclosure.open).toBe(false);
+    expect(disclosure.querySelector("summary")?.textContent).toBe(
+      "refresh.proposals.evidence:count=4",
+    );
+    const links = Array.from(
+      disclosure.querySelectorAll<HTMLAnchorElement>(
+        "[data-profile-refresh-proposal-evidence-url]",
+      ),
+    );
+    expect(links).toHaveLength(4);
+    expect(links.map((link) => link.href)).toEqual(sourceUrls);
   });
 
   it("applies all eligible live suggestions without replacing a manual edit", () => {
@@ -665,7 +718,7 @@ describe("AgentProfilePanel", () => {
       details.querySelectorAll("[data-profile-refresh-source]"),
     ).toHaveLength(11);
     expect(details.querySelector("summary")?.textContent).toBe(
-      "refresh.sources.expand:count=14",
+      "refresh.sources.expand:count=11",
     );
     expect(
       document.querySelector('[data-profile-refresh-source-total]')
@@ -889,6 +942,18 @@ describe("AgentProfilePanel", () => {
     );
     expect(zh.agents.workbench.profile.refresh.loading).toContain(
       "有边界的公开页面",
+    );
+    expect(en.agents.workbench.profile.refresh.proposals.evidence).toContain(
+      "support this suggestion",
+    );
+    expect(zh.agents.workbench.profile.refresh.proposals.evidence).toContain(
+      "支持该建议",
+    );
+    expect(en.agents.workbench.profile.refresh.sources.total).toContain(
+      "crawl source URLs",
+    );
+    expect(zh.agents.workbench.profile.refresh.sources.total).toContain(
+      "抓取来源 URL",
     );
   });
 

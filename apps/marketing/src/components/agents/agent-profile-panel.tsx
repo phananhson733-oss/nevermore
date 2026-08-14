@@ -906,6 +906,9 @@ export function AgentProfilePanel({
                   <ul className="grid gap-2">
                     {refreshProposals.map((proposal) => {
                       const manual = proposal.currentSource === "user_edit";
+                      const evidenceLabel = t("refresh.proposals.evidence", {
+                        count: proposal.evidenceUrls.length,
+                      });
                       return (
                         <li
                           key={proposal.path}
@@ -938,23 +941,52 @@ export function AgentProfilePanel({
                             <p className="mt-1 break-words text-[11px] leading-[1.5] text-text-dark-primary">
                               {proposalValue(proposal.liveValue)}
                             </p>
-                            <a
-                              data-profile-refresh-proposal-evidence
-                              href={proposal.evidenceUrls[0]}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 inline-flex max-w-full items-center gap-1 text-[9.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
-                            >
-                              <span className="truncate">
-                                {t("refresh.proposals.evidence", {
-                                  count: proposal.evidenceUrls.length,
-                                })}
-                              </span>
-                              <ExternalLink
-                                aria-hidden="true"
-                                className="size-3 shrink-0"
-                              />
-                            </a>
+                            {proposal.evidenceUrls.length === 1 ? (
+                              <a
+                                data-profile-refresh-proposal-evidence
+                                data-profile-refresh-proposal-evidence-url
+                                href={proposal.evidenceUrls[0]}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 inline-flex max-w-full items-center gap-1 text-[9.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
+                              >
+                                <span className="truncate">{evidenceLabel}</span>
+                                <ExternalLink
+                                  aria-hidden="true"
+                                  className="size-3 shrink-0"
+                                />
+                              </a>
+                            ) : (
+                              <details
+                                data-profile-refresh-proposal-evidence
+                                className="group mt-1.5 rounded border border-brand-info/15 bg-brand-info/[0.025] px-2 py-1.5"
+                              >
+                                <summary className="cursor-pointer text-[9.5px] font-medium text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info">
+                                  {evidenceLabel}
+                                </summary>
+                                <ul className="mt-1.5 grid gap-1.5">
+                                  {proposal.evidenceUrls.map((evidenceUrl) => (
+                                    <li key={evidenceUrl} className="min-w-0">
+                                      <a
+                                        data-profile-refresh-proposal-evidence-url
+                                        href={evidenceUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex max-w-full items-center gap-1 text-[9px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
+                                      >
+                                        <span className="truncate">
+                                          {evidenceUrl}
+                                        </span>
+                                        <ExternalLink
+                                          aria-hidden="true"
+                                          className="size-3 shrink-0"
+                                        />
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
                           </div>
                           <div className="md:pt-0.5">
                             <button
@@ -1038,7 +1070,7 @@ export function AgentProfilePanel({
                   >
                     <summary className="cursor-pointer text-[10.5px] font-medium text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info">
                       {t("refresh.sources.expand", {
-                        count: refreshData.diagnostics.sourceUrls.length,
+                        count: refreshData.diagnostics.sourceUrls.length - 3,
                       })}
                     </summary>
                     <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">

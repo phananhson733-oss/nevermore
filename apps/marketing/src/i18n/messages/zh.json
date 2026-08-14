@@ -2434,15 +2434,15 @@
             "description": "已提供资料与手动调整在你明确选择实时建议前保持权威；批量应用永远不会覆盖手动调整。",
             "current": "当前草稿",
             "live": "实时建议",
-            "evidence": "{count} 个来源页面",
+            "evidence": "{count} 个来源页面支持该建议",
             "use": "使用实时建议",
             "useLabel": "为{field}使用实时建议",
             "applyAll": "应用全部可用建议",
             "manualRetained": "保留手动值"
           },
           "sources": {
-            "total": "个来源 URL 已检查",
-            "expand": "查看其余来源（共检查 {count} 个）"
+            "total": "个抓取来源 URL 已检查",
+            "expand": "查看其余 {count} 个抓取来源"
           },
           "diagnostics": {
             "unavailableFields": "以下画像字段无法从本次有边界的实时公开页面抓取中获得：",
