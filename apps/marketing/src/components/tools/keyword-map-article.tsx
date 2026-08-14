@@ -22,7 +22,8 @@ import { localePath } from "../../lib/locale-path";
 const H2 =
   "max-w-2xl text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary";
 const H3 = "mt-8 text-[15.5px] font-semibold text-text-dark-primary";
-const P = "mt-3 max-w-[46em] text-[13.5px] leading-[1.7] text-text-dark-secondary";
+const P =
+  "mt-3 max-w-[46em] text-[13.5px] leading-[1.7] text-text-dark-secondary";
 const SECTION = "border-b border-brand-border py-16 md:py-22";
 const LINK =
   "flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info";
@@ -37,14 +38,50 @@ function ExampleTable({ locale }: { readonly locale: string }) {
     : ["Keyword", "Volume", "KD", "Weakest rank", "AI Overview"];
   const rows = zh
     ? [
-        ["travel espresso kit", "1,300", "12", "38 · smallbrew.example · #6", "未观测到"],
-        ["manual espresso maker cleaning", "320", "4", "55 · beanpress.example · #9", "第一页有"],
-        ["espresso ratio calculator", "590", "8", "24 · pullshot.example · #3", "未观测到"],
+        [
+          "travel espresso kit",
+          "1,300",
+          "12",
+          "38 · smallbrew.example · #6",
+          "未观测到",
+        ],
+        [
+          "manual espresso maker cleaning",
+          "320",
+          "4",
+          "55 · beanpress.example · #9",
+          "第一页有",
+        ],
+        [
+          "espresso ratio calculator",
+          "590",
+          "8",
+          "24 · pullshot.example · #3",
+          "未观测到",
+        ],
       ]
     : [
-        ["travel espresso kit", "1,300", "12", "38 · smallbrew.example · #6", "Not observed"],
-        ["manual espresso maker cleaning", "320", "4", "55 · beanpress.example · #9", "On page one"],
-        ["espresso ratio calculator", "590", "8", "24 · pullshot.example · #3", "Not observed"],
+        [
+          "travel espresso kit",
+          "1,300",
+          "12",
+          "38 · smallbrew.example · #6",
+          "Not observed",
+        ],
+        [
+          "manual espresso maker cleaning",
+          "320",
+          "4",
+          "55 · beanpress.example · #9",
+          "On page one",
+        ],
+        [
+          "espresso ratio calculator",
+          "590",
+          "8",
+          "24 · pullshot.example · #3",
+          "Not observed",
+        ],
       ];
 
   return (
@@ -135,7 +172,9 @@ function RelatedLinks({ locale }: { readonly locale: string }) {
 
   return (
     <section className="py-16 md:py-22">
-      <h2 className={H2}>{zh ? "继续读、继续查" : "Keep reading, keep checking"}</h2>
+      <h2 className={H2}>
+        {zh ? "继续读、继续查" : "Keep reading, keep checking"}
+      </h2>
       <p className={P}>
         {zh
           ? "这张地图找的是「还没写的页面」。下面的文章讲选词方法本身；两个姊妹工具则从你已有的数据里找机会——三者读的是同一套证据纪律。"
@@ -143,7 +182,9 @@ function RelatedLinks({ locale }: { readonly locale: string }) {
       </p>
       <div className="mt-8 grid gap-10 md:grid-cols-2">
         <div>
-          <p className={TABLE_LABEL}>{zh ? "方法文章" : "The method, in writing"}</p>
+          <p className={TABLE_LABEL}>
+            {zh ? "方法文章" : "The method, in writing"}
+          </p>
           <div className="mt-4 space-y-3">
             {blog.map((item) => (
               <Link
@@ -187,15 +228,15 @@ function EnArticle() {
 
         <h3 className={H3}>A bounded crawl, confirmed by you</h3>
         <p className={P}>
-          The run starts by fetching up to fourteen of your pages, product
-          pages first, and reading the site&apos;s positioning off them. It
-          then stops and shows you what it understood — every statement with
-          the URL it came from — before anything is spent. This gate exists
-          because the candidates are generated from that reading: a wrong
-          reading produces wrong keywords, and you are the only party who can
-          tell. The seed field takes up to ten terms of your own, which travel
-          into the generator alongside the crawl; use it when your buyers use
-          words your site does not spell out.
+          The run starts by fetching up to fourteen of your pages, product pages
+          first, and reading the site&apos;s positioning off them. It then stops
+          and shows you what it understood — every statement with the URL it
+          came from — before anything is spent. This gate exists because the
+          candidates are generated from that reading: a wrong reading produces
+          wrong keywords, and you are the only party who can tell. The seed
+          field takes up to ten terms of your own, which travel into the
+          generator alongside the crawl; use it when your buyers use words your
+          site does not spell out.
         </p>
 
         <h3 className={H3}>Three-state pricing, with blanks kept blank</h3>
@@ -224,38 +265,39 @@ function EnArticle() {
         <h3 className={H3}>Twenty real page ones, not a difficulty model</h3>
         <p className={P}>
           For up to twenty surviving terms per run, the map opens the actual
-          search results page and resolves the authority of every domain in
-          the top ten. A term is called winnable on one observation only: a
+          search results page and resolves the authority of every domain in the
+          top ten. A term is called winnable on one observation only: a
           low-authority domain — at or below 200 on the provider&apos;s 0–1000
-          scale — already holds a page-one place. The row names that domain
-          and the position it holds, and records whether the provider observed
-          an AI Overview on the page. The cap and the per-run cost ceiling are
-          what keep the tool free; the terms they cut are listed, not hidden,
-          and a button re-runs the map with exactly those terms as seeds.
+          scale — already holds a page-one place. The row names that domain and
+          the position it holds, and records whether the provider observed an AI
+          Overview on the page. The cap and the per-run cost ceiling are what
+          keep the tool free; the terms they cut are listed, not hidden, and a
+          button hands them to the seed field so the next run&apos;s candidate
+          generation is steered toward exactly that gap.
         </p>
       </section>
 
       <section className={SECTION}>
         <h2 className={H2}>The boundaries it will not cross</h2>
         <p className={P}>
-          The weakest rank answers one narrow question — how weak is the
-          weakest current holder — and the map deliberately treats it as a
-          proxy signal rather than a verdict. It does not read the pages that
-          rank, does not classify the query&apos;s intent, does not judge what
-          kind of page wins, and does not model how much traffic an AI
-          Overview absorbs. Those judgements need eyes on the page, which is
-          why every row ships with a checklist instead of a confidence score.
+          The weakest rank answers one narrow question — how weak is the weakest
+          current holder — and the map deliberately treats it as a proxy signal
+          rather than a verdict. It does not read the pages that rank, does not
+          classify the query&apos;s intent, does not judge what kind of page
+          wins, and does not model how much traffic an AI Overview absorbs.
+          Those judgements need eyes on the page, which is why every row ships
+          with a checklist instead of a confidence score.
         </p>
         <p className={P}>
           The same discipline runs through the rest of the output. Term groups
-          are lexical — words overlapping enough that one page might serve
-          them — and are labelled a suggestion, because proving two terms
-          share a page needs page-one overlap this run does not fetch. Numbers
-          the run could not measure stay blank in the table and in the CSV
-          export; a zero you did not measure is a lie with decimals. And a run
-          that finds little says so: about a quarter of the sites we tested
-          came back with the honest answer that public data does not support a
-          keyword plan for them yet.
+          are lexical — words overlapping enough that one page might serve them
+          — and are labelled a suggestion, because proving two terms share a
+          page needs page-one overlap this run does not fetch. Numbers the run
+          could not measure stay blank in the table and in the CSV export; a
+          zero you did not measure is a lie with decimals. And a run that finds
+          little says so: about a quarter of the sites we tested came back with
+          the honest answer that public data does not support a keyword plan for
+          them yet.
         </p>
         <ExampleTable locale="en" />
       </section>
@@ -263,9 +305,9 @@ function EnArticle() {
       <section className={SECTION}>
         <h2 className={H2}>The method this feeds — and the half you keep</h2>
         <p className={P}>
-          Our own selection method starts where difficulty scores end: open
-          page one, read what the results actually answer, note who holds each
-          place and whether an answer box has already taken the click. The map
+          Our own selection method starts where difficulty scores end: open page
+          one, read what the results actually answer, note who holds each place
+          and whether an answer box has already taken the click. The map
           automates the measurable slice of that — pricing demand, opening the
           page, finding the weakest holder — and hands you everything it saw:
           the domain, its position, the page&apos;s features, the full audit
@@ -274,10 +316,10 @@ function EnArticle() {
         <p className={P}>
           The reading half stays yours on purpose. Whether the weak site that
           broke through is defended or abandoned, whether the query means what
-          your page would mean, whether the demand is your buyer — the tool
-          has not read those pages and will not pretend it has. Treat every
-          row as a place worth looking, walk the checks printed on it, and
-          spend your writing budget only on what survives your own eyes.
+          your page would mean, whether the demand is your buyer — the tool has
+          not read those pages and will not pretend it has. Treat every row as a
+          place worth looking, walk the checks printed on it, and spend your
+          writing budget only on what survives your own eyes.
         </p>
       </section>
 
@@ -306,9 +348,10 @@ function ZhArticle() {
 
         <h3 className={H3}>用你自己的查询做去重过滤</h3>
         <p className={P}>
-          你最近 28
-          个完整日的 Search Console 查询，告诉地图哪些词你的站点已经在实测地服务；这些词会被拦下，而不是再推荐给你一遍。这项检查对自己的局限也诚实：Search
-          Console 会匿名化相当比例的查询，所以「不在样本里」只被当作「未观测到」，绝不当作「不存在」的证明——而当这一步读取彻底失败时，每一行都会写明「没查」，而不是悄悄放行。
+          你最近 28 个完整日的 Search Console
+          查询，告诉地图哪些词你的站点已经在实测地服务；这些词会被拦下，而不是再推荐给你一遍。这项检查对自己的局限也诚实：Search
+          Console
+          会匿名化相当比例的查询，所以「不在样本里」只被当作「未观测到」，绝不当作「不存在」的证明——而当这一步读取彻底失败时，每一行都会写明「没查」，而不是悄悄放行。
         </p>
 
         <h3 className={H3}>二十个真实第一页，而不是一个难度模型</h3>
@@ -317,7 +360,7 @@ function ZhArticle() {
           0–1000 标度上不超过
           200——已经占住了第一页的位置。那一行会写明是哪个域名、排在第几位，并记录数据源是否在那一页上观测到
           AI
-          Overview。抽样上限和单次成本上限是这个工具能免费的原因；被上限切掉的词会被列出来而不是藏起来，清单下的按钮会把它们原样填回种子重跑。
+          Overview。抽样上限和单次成本上限是这个工具能免费的原因；被上限切掉的词会被列出来而不是藏起来，清单下的按钮会把它们填入种子，让下一轮候选词生成朝着这个缺口收窄。
         </p>
       </section>
 
@@ -325,8 +368,8 @@ function ZhArticle() {
         <h2 className={H2}>它刻意不越过的边界</h2>
         <p className={P}>
           「最弱排名」只回答一个很窄的问题——当前占位者里最弱的有多弱——地图刻意把它当作代理信号，而不是判定。它没有读那些排在前面的页面，不分类查询意图，不判断赢家是哪类页面，也不建模
-          AI
-          Overview 会吸走多少流量。这些判断需要眼睛看页面，所以每一行带的是检查清单，而不是置信分。
+          AI Overview
+          会吸走多少流量。这些判断需要眼睛看页面，所以每一行带的是检查清单，而不是置信分。
         </p>
         <p className={P}>
           同样的纪律贯穿其余输出。词组分组只看词面——措辞重合到可能共用一个页面——并被明确标注为建议，因为要证明两个词该共用页面，需要本次运行没有抓取的第一页重合度。运行测不到的数字，在表格里和

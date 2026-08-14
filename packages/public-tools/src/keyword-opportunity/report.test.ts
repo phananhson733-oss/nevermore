@@ -658,6 +658,32 @@ describe("buildKeywordOpportunityResult withheld", () => {
     ]);
   });
 
+  it("tells a sampled page whose ranks never resolved apart from a budget miss", () => {
+    // Both end as `no_serp_evidence`, but only the budget miss changes on a
+    // seeded re-run — the resolved-nothing case hits the same provider gap
+    // again, at the same cost. The domains list is the witness that the page
+    // was actually opened.
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [
+          seo("ledger reconciliation", {
+            serp: {
+              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+              topTenDomains: ["unknown-a.test", "unknown-b.test"],
+              topTenDomainRanks: [null, null],
+            },
+          }),
+          seo("invoice software", { serp: KEYWORD_OPPORTUNITY_UNSAMPLED }),
+        ],
+      }),
+    );
+
+    expect(result.withheld.map((entry) => entry.reason)).toEqual([
+      "page_one_ranks_unresolved",
+      "serp_sample_budget_exhausted",
+    ]);
+  });
+
   it("never blames missing demand data for a GEO row, which is not judged on demand", () => {
     // The GEO lane exists because question phrasings clear the volume check
     // only 13% of the time. Reporting "no measured demand" for one would send

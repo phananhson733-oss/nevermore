@@ -1837,7 +1837,7 @@
         "winnableEvidence": "Weak site on page one",
         "shown": "Shown"
       },
-      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale; the domain holding it and its position sit under the number so you can open the page yourself. It is one proxy signal, not a verdict on the whole page — a low number means somebody small is already there, which is evidence, not a promise.",
+      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale; the domain holding it and its position sit under the number so you can open the page yourself. A 0 is the provider's own value for a domain it has no backlink data on, not a measurement of weakness. It is one proxy signal, not a verdict on the whole page — a low number means somebody small is already there, which is evidence, not a promise.",
       "geoHint": "These carry no demand data on purpose. Question phrasings almost never have measurable search volume, so they are judged on whether your site already has a page that answers them.",
       "withheldTitle": "Held back, and why",
       "withheldIntro": "Each of these hit a specific wall. The reason names which one, because they imply different next moves.",
@@ -1891,6 +1891,7 @@
         "volume_not_returned": "The provider returned no data for it — which is not the same as zero",
         "already_covered": "Your site already serves this query",
         "page_one_contested": "Page one was sampled and strong sites hold it",
+        "page_one_ranks_unresolved": "Page one was opened but the provider resolved no authority for its domains — a data gap, not a verdict, and a re-run hits the same gap",
         "serp_sample_budget_exhausted": "The run's page-one budget did not reach it",
         "serp_sample_unavailable": "Page-one sampling did not run",
         "no_supporting_page": "No crawled page answers it"

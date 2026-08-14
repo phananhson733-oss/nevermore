@@ -338,7 +338,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "Where the rest went",
-        body: "Every candidate that did not reach the table, with the specific wall it hit — and for the terms the sampling budget never reached, a one-click way to re-run with exactly those as seeds.",
+        body: "Every candidate that did not reach the table, with the specific wall it hit — and for the terms the sampling budget never reached, a one-click way to hand them to the seed field for a narrower re-run.",
       },
     ],
     faq: [
@@ -372,7 +372,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Why were some candidates never checked against page one?",
         answer:
-          "Each run samples at most twenty page ones and stops at a per-run cost ceiling, because sampling is the expensive stage of a free tool. The held-back list names every term the budget did not reach, and the button under that list re-runs the map with exactly those terms as seeds — so the terms nobody judged get judged next.",
+          "Each run samples at most twenty page ones and stops at a per-run cost ceiling, because sampling is the expensive stage of a free tool. The held-back list names every term the budget did not reach, and the button under that list hands them to the seed field for a narrower re-run. Seeds steer the next run's candidate generation toward those terms; the pricing and page-one gates then judge them like any other candidate.",
       },
       {
         question: "Does the map detect AI Overviews?",
@@ -669,7 +669,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "其余的都去哪了",
-        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。对抽样预算没轮到的那些词，还有一键把它们填回种子重跑的入口。",
+        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。对抽样预算没轮到的那些词，还有一键把它们填入种子、跑一轮更窄地图的入口。",
       },
     ],
     faq: [
@@ -701,7 +701,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "为什么有些候选词从来没被对照过第一页？",
         answer:
-          "每次运行最多抽样二十个第一页，并有单次成本上限——抽样是这个免费工具最贵的一步。被拦下的清单会点名预算没轮到的每一个词，清单下的按钮会把这些词原样填入种子重跑——让没被判过的词下一轮被判。",
+          "每次运行最多抽样二十个第一页，并有单次成本上限——抽样是这个免费工具最贵的一步。被拦下的清单会点名预算没轮到的每一个词，清单下的按钮会把它们填入种子、跑一轮更窄的地图。种子是用来牵引下一轮候选词生成的；核价和第一页闸口仍会像对待其他候选词一样判它们。",
       },
       {
         question: "地图检测 AI Overview 吗？",

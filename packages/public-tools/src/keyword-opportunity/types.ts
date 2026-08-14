@@ -110,6 +110,16 @@ export type KeywordOpportunityWithheldReason =
   | "volume_not_returned"
   | "already_covered"
   | "page_one_contested"
+  /**
+   * The page WAS opened but no domain on it resolved an authority rank.
+   *
+   * A provider gap, not a budget miss — and the distinction pays for itself
+   * at the re-run button: a term the budget never reached is worth a seeded
+   * re-run, while re-running this one spends another sample to hit the same
+   * gap. Before this member existed both cases said "budget", which is
+   * exactly the quiet dishonesty this union documents itself against.
+   */
+  | "page_one_ranks_unresolved"
   /** The run's sample budget ran out before reaching this term. */
   | "serp_sample_budget_exhausted"
   /**
@@ -191,6 +201,7 @@ export const KEYWORD_OPPORTUNITY_WITHHELD_REASONS = [
   "volume_not_returned",
   "already_covered",
   "page_one_contested",
+  "page_one_ranks_unresolved",
   "serp_sample_budget_exhausted",
   "serp_sample_unavailable",
   "no_supporting_page",

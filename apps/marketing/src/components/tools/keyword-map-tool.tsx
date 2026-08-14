@@ -41,6 +41,7 @@ const SECONDARY_BUTTON =
 
 /** Seeds the visitor may add, matching what the API accepts. */
 const MAX_SEEDS = 10;
+const MAX_SEED_LENGTH = 80;
 
 /**
  * Languages offered, and the market each one defaults from.
@@ -215,12 +216,19 @@ export function KeywordMapTool({
    *
    * Seeds travel inside the sealed context token, so the path back through
    * stage one is not ceremony — it is the only way the generator ever sees
-   * them. This is the cheap honest answer to "the page-one budget did not
-   * reach these": a re-run scoped to exactly the terms nobody judged, using
-   * the same admission, budget and pricing machinery as any other run.
+   * them. Seeds steer the next run's candidate generation; they do not skip
+   * it, so the copy anywhere near this must promise a narrower re-run, never
+   * that these exact terms will be judged.
    */
   function retryWithSeeds(keywords: readonly string[]) {
-    setSeedInput(keywords.slice(0, MAX_SEEDS).join(", "));
+    // Two filters, both about the round trip surviving: the API refuses any
+    // seed over its length cap with a 400 for the whole request, and the
+    // seed field is comma-separated, so a term carrying a comma would arrive
+    // as two fragments of itself.
+    const usable = keywords.filter(
+      (keyword) => keyword.length <= MAX_SEED_LENGTH && !keyword.includes(","),
+    );
+    setSeedInput(usable.slice(0, MAX_SEEDS).join(", "));
     setContext(null);
     setResult(null);
     setErrorCode(null);

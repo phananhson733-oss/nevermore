@@ -697,9 +697,10 @@ function Withheld({
             {/*
              * Only the budget group gets a way forward. These terms were never
              * judged — the per-run sample cap ran out before reaching them —
-             * so a re-run seeded with exactly these terms is the one move that
-             * changes the answer. The other reasons are verdicts; re-running
-             * on them changes nothing, which is what their copy says.
+             * and seeding the next run with them is the move that narrows it
+             * toward exactly this gap. The other reasons are verdicts or
+             * provider gaps; re-running on them changes nothing, which is
+             * what their copy says.
              */}
             {reason === "serp_sample_budget_exhausted" &&
             onRetryWithSeeds !== undefined ? (
