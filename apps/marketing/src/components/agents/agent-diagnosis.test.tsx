@@ -31,6 +31,7 @@ const messages = {
           device: "Device",
           pageType: "Page type",
           targetQuery: "Target query",
+          targetQueryUnconfirmed: "Not confirmed",
         },
         scopeLabel: "Audit scope",
         scopes: { site: "Site", page: "Page" },
@@ -40,8 +41,16 @@ const messages = {
         health: "Health",
         healthUnavailable: "Unavailable",
         healthHint: "Excluded checks never become zero.",
+        healthScoredCount: "Derived from {scored} scored checks",
+        healthInsufficient: "Not enough evidence for a health score",
+        healthInsufficientHint:
+          "Scored checks in this scope: {scored}. A single number is withheld below {minimum}.",
+        healthPendingSources: "Still waiting on: {sources}",
+        healthDimmedReason:
+          "Dimmed because blocker checks are open in this scope ({blockers}). Read those before the score.",
         evaluatedTotal: "{evaluated} / {total} evaluated",
         engineCoverage: "{ready} / {total} engines ready",
+        inventoryCoverage: "Inventory {ready} / {total}",
         groupsLabel: "Groups",
         checksLabel: "Checks",
         selectCheck: "Inspect {check}",
@@ -55,8 +64,15 @@ const messages = {
           dataSource: "Data source",
           scoreContribution: "Score contribution",
           boundary: "Boundary / unknown",
+          notMeasured: "Not measured in this run",
+          notScored: "Not scored",
         },
-        axes: { result: "Result", engine: "Engine", truth: "Truth" },
+        axes: { result: "Result", engine: "Engine", truth: "Truthfulness" },
+        axisLegend: {
+          result: "What this run decided for the check.",
+          engine: "Whether the detector is integrated and had a source.",
+          truth: "How the value was learned.",
+        },
         results: {
           blocker: "Blocker",
           warning: "Warning",
@@ -69,10 +85,11 @@ const messages = {
           needsIntegration: "Needs integration",
           needsSupplement: "Needs supplement",
           notIntegrated: "Not integrated",
-          accessRequired: "Access required",
+          accessRequired: "Authorized source required",
         },
         truth: {
           observed: "Observed",
+          notObserved: "Not observed in bounded sample",
           documented: "Documented",
           inferred: "Inferred",
           partial: "Partial",
@@ -89,6 +106,12 @@ const messages = {
           boundary: "Confirm applicability for this page role.",
         },
         noCheckSelected: "Select a check to inspect its evidence contract.",
+        authorities: {
+          official: "Official standard",
+          industry: "Industry practice",
+          sop: "Internal SOP",
+          judgment: "Internal judgment",
+        },
       },
     },
   },
@@ -106,49 +129,123 @@ const context: AgentDiagnosisContext = {
   auditScope: "site-first",
 };
 
-const data: AgentAuditSuccessData = {
-  run: {
-    agent: "seo",
-    mode: "authenticated_agent",
-    persistence: "none",
-    source: {
-      tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
-      completedAt: "2026-08-13T00:00:00.000Z",
-      cache: { status: "miss", capturedAt: null },
-    },
-  },
-  result: {
-    targetUrl: "https://astrologywiki.com/chart",
-    siteOrigin: "https://astrologywiki.com",
-    scannedAt: "2026-08-13T00:00:00.000Z",
-    coverage: {
-      availability: "unavailable",
-      pagesInspected: 0,
-      linksObserved: 0,
-      sitemapUrlsObserved: 0,
-      urlsSkipped: 0,
-      urlsBlocked: 0,
-      urlsDisallowed: 0,
-      urlsErrored: 0,
-      stopReason: "crawl_failed",
-    },
-    siteResources: {
-      robotsFetched: false,
-      robotsGroupsObserved: 0,
-      sitemapReferencesObserved: 0,
-      sitemapFetched: false,
-    },
-    records: [],
-  },
-};
+type AuditRecord = AgentAuditSuccessData["result"]["records"][number];
 
-function render(scope: "site" | "page", selectedGroupId: string): string {
+const TARGET_URL = "https://astrologywiki.com/chart";
+
+/** Neutral "tested, nothing affected" record; overrides carry the exceptions. */
+function record(id: string, overrides: Partial<AuditRecord> = {}): AuditRecord {
+  return {
+    id,
+    category: "crawl",
+    state: "not_observed",
+    unit: "pages",
+    tested: 24,
+    affected: 0,
+    observations: [],
+    limitation: null,
+    ...overrides,
+  };
+}
+
+function auditData({
+  availability,
+  records,
+  targetInspected,
+}: {
+  readonly availability: AgentAuditSuccessData["result"]["coverage"]["availability"];
+  readonly records: readonly AuditRecord[];
+  readonly targetInspected: boolean;
+}): AgentAuditSuccessData {
+  return {
+    run: {
+      agent: "seo",
+      mode: "authenticated_agent",
+      persistence: "none",
+      source: {
+        tool: "seo_audit",
+        schemaVersion: "seo_audit.sitewide.v3",
+        completedAt: "2026-08-13T00:00:00.000Z",
+        cache: { status: "miss", capturedAt: null },
+      },
+    },
+    result: {
+      targetUrl: TARGET_URL,
+      siteOrigin: "https://astrologywiki.com",
+      scannedAt: "2026-08-13T00:00:00.000Z",
+      targetInspected,
+      coverage: {
+        availability,
+        pagesInspected: availability === "unavailable" ? 0 : 24,
+        linksObserved: availability === "unavailable" ? 0 : 180,
+        sitemapUrlsObserved: availability === "unavailable" ? 0 : 24,
+        urlsSkipped: 0,
+        urlsBlocked: 0,
+        urlsDisallowed: 0,
+        urlsErrored: 0,
+        stopReason:
+          availability === "unavailable" ? "crawl_failed" : "complete",
+      },
+      siteResources: {
+        robotsFetched: availability !== "unavailable",
+        robotsGroupsObserved: availability === "unavailable" ? 0 : 1,
+        sitemapReferencesObserved: availability === "unavailable" ? 0 : 1,
+        sitemapFetched: availability !== "unavailable",
+      },
+      records,
+    },
+  };
+}
+
+/** Nothing was collected at all: every check is excluded. */
+const data = auditData({
+  availability: "unavailable",
+  records: [],
+  targetInspected: true,
+});
+
+/**
+ * One clean observation. Enough for the evaluator to emit a weighted mean, far
+ * too little for that mean to be worth printing as a 0-100 number.
+ */
+const thinEvidence = auditData({
+  availability: "available",
+  records: [record("internal_target_http_error", { unit: "link_targets" })],
+  targetInspected: true,
+});
+
+/** Several scored checks plus a target-page blocker. */
+const richEvidence = auditData({
+  availability: "available",
+  targetInspected: true,
+  records: [
+    record("internal_target_http_error", { unit: "link_targets" }),
+    record("meta_description_duplicate", { category: "metadata" }),
+    record("title_missing", { category: "metadata" }),
+    record("h1_missing", { category: "structure" }),
+    record("sitemap_page_without_observed_inlink", { category: "links" }),
+    record("click_depth_beyond_reviewed_limit", { category: "structure" }),
+    record("non_2xx_final_status", {
+      category: "indexability",
+      state: "observed",
+      affected: 1,
+      observations: [
+        { url: TARGET_URL, values: [{ label: "final_status", value: 404 }] },
+      ],
+    }),
+  ],
+});
+
+function render(
+  scope: "site" | "page",
+  selectedGroupId: string,
+  auditResult: AgentAuditSuccessData = data,
+): string {
   const model = buildAgentAuditViewModel({
     agent: "seo",
     locale: "en",
     context,
-    data,
+    data: auditResult,
   });
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
@@ -165,6 +262,13 @@ function render(scope: "site" | "page", selectedGroupId: string): string {
   );
 }
 
+/** Markup of one element, from its test id to the end of its open element. */
+function element(html: string, testId: string, closingTag: string): string {
+  const start = html.indexOf(`data-testid="${testId}"`);
+  expect(start).toBeGreaterThan(-1);
+  return html.slice(start, html.indexOf(closingTag, start));
+}
+
 describe("AgentDiagnosis", () => {
   it("renders confirmed context, explicit scopes, and honest scope metrics", () => {
     const html = render("site", "E");
@@ -175,9 +279,8 @@ describe("AgentDiagnosis", () => {
     expect(html).toContain("United States");
     expect(html).toContain('data-testid="diagnosis-scope-site"');
     expect(html).toContain('data-testid="diagnosis-scope-page"');
-    expect(html).toContain("5 groups · 27 checks");
-    expect(html).toContain("0 / 27 evaluated");
-    expect(html).toContain("Unavailable");
+    expect(html).toContain("5 groups · 31 checks");
+    expect(html).toContain("0 / 31 evaluated");
     expect(html).not.toContain("0/100");
   });
 
@@ -213,5 +316,160 @@ describe("AgentDiagnosis", () => {
     expect(html).toContain("lg:grid-cols");
     expect(html).not.toMatch(/overflow-y-(?:auto|scroll)/);
     expect(html).not.toMatch(/max-h-\[/);
+  });
+
+  describe("health evidence floor", () => {
+    it("withholds the 0-100 number when too few checks were scored", () => {
+      const html = render("site", "C", thinEvidence);
+
+      expect(element(html, "diagnosis-health", "</article>")).toContain(
+        'data-health-state="insufficient"',
+      );
+      expect(html).not.toContain("/100");
+      expect(html).toContain("Not enough evidence for a health score");
+      expect(html).toContain("Scored checks in this scope: 1.");
+      expect(html).toContain("A single number is withheld below 3.");
+    });
+
+    it("names the data sources the withheld score is still waiting on", () => {
+      const html = render("site", "C", thinEvidence);
+
+      expect(html).toContain("Still waiting on:");
+      expect(html).toContain("Authorized search source required");
+    });
+
+    it("reports the number with the count of checks behind it once scored", () => {
+      const html = render("site", "C", richEvidence);
+      const card = element(html, "diagnosis-health", "</article>");
+
+      expect(card).toContain('data-health-state="scored"');
+      expect(card).toContain("100/100");
+      expect(card).toContain("Derived from 5 scored checks");
+      expect(card).not.toContain("Not enough evidence");
+    });
+
+    it("does not count evaluated-but-unscored checks toward the floor", () => {
+      // Page group 1 is judged and never scored: two of its checks come back as
+      // blockers here, and neither may prop up the scored-check count.
+      const html = render("page", "1", richEvidence);
+      const card = element(html, "diagnosis-health", "</article>");
+
+      expect(card).toContain("Derived from 4 scored checks");
+    });
+
+    it("says why the health card is dimmed while blockers are open", () => {
+      const withBlockers = element(
+        render("page", "1", richEvidence),
+        "diagnosis-health",
+        "</article>",
+      );
+      const withoutBlockers = element(
+        render("site", "C", richEvidence),
+        "diagnosis-health",
+        "</article>",
+      );
+
+      expect(withBlockers).toContain("opacity-70");
+      expect(withBlockers).toContain('data-health-dimmed="true"');
+      expect(withBlockers).toContain(
+        "Dimmed because blocker checks are open in this scope (2).",
+      );
+      expect(withoutBlockers).not.toContain("opacity-70");
+      expect(withoutBlockers).not.toContain('data-health-dimmed="true"');
+    });
+  });
+
+  describe("axis badges", () => {
+    it("never renders an axis state the evaluator cannot produce", () => {
+      const html = [
+        render("site", "E", richEvidence),
+        render("page", "1", richEvidence),
+        render("page", "9", richEvidence),
+        render("site", "A"),
+      ].join("");
+
+      expect(html).not.toContain("Needs integration");
+      expect(html).not.toContain("Documented");
+      expect(html).not.toContain("Inferred");
+      expect(html).not.toContain("Illustrative");
+    });
+
+    it("still labels every reachable axis state", () => {
+      const blockers = render("page", "1", richEvidence);
+      const passes = render("page", "6", richEvidence);
+      const gated = render("site", "E");
+
+      expect(blockers).toContain("Blocker");
+      expect(blockers).toContain("Ready");
+      expect(blockers).toContain("Observed");
+      expect(passes).toContain("Not observed in bounded sample");
+      expect(gated).toContain("Source gated");
+      expect(gated).toContain("Unavailable");
+    });
+
+    it("explains the three axes and points the badges at the explanation", () => {
+      const html = render("site", "E", richEvidence);
+
+      expect(html).toContain('data-testid="diagnosis-axis-legend"');
+      expect(html).toContain('id="seo-diagnosis-axis-result"');
+      expect(html).toContain('id="seo-diagnosis-axis-engine"');
+      expect(html).toContain('id="seo-diagnosis-axis-truth"');
+      expect(html).toContain("What this run decided for the check.");
+      expect(html).toContain(
+        "Whether the detector is integrated and had a source.",
+      );
+      expect(html).toContain("How the value was learned.");
+      expect(html).toContain('aria-describedby="seo-diagnosis-axis-result"');
+      expect(html).toContain('aria-describedby="seo-diagnosis-axis-engine"');
+      expect(html).toContain('aria-describedby="seo-diagnosis-axis-truth"');
+    });
+  });
+
+  describe("honesty copy legibility", () => {
+    it("keeps boundary and hint copy at body size and body colour", () => {
+      const html = render("site", "E", richEvidence);
+      const boundary = element(html, "diagnosis-boundary", "</p>");
+      const healthCard = element(html, "diagnosis-health", "</article>");
+
+      expect(boundary).toContain("text-[12.5px]");
+      expect(boundary).toContain("text-text-dark-primary");
+      expect(healthCard).toContain("text-[12px]");
+      expect(healthCard).not.toContain("text-[10.5px]");
+      expect(html).not.toContain("text-[10.5px]");
+      expect(html).not.toContain("text-[8.5px] tracking-[0.09em] hint");
+    });
+  });
+
+  describe("null-value wording", () => {
+    it("calls an unset target query unconfirmed rather than unavailable", () => {
+      const model = buildAgentAuditViewModel({
+        agent: "seo",
+        locale: "en",
+        context: { ...context, targetQuery: "" },
+        data,
+      });
+      const html = renderToStaticMarkup(
+        <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+          <AgentDiagnosis
+            model={model}
+            scope="site"
+            selectedGroupId="E"
+            selectedCheckId={null}
+            onScopeChange={vi.fn()}
+            onGroupChange={vi.fn()}
+            onCheckChange={vi.fn()}
+          />
+        </NextIntlClientProvider>,
+      );
+
+      expect(html).toContain("Not confirmed");
+    });
+
+    it("separates an unmeasured value from an uncounted score", () => {
+      const html = render("site", "E");
+
+      expect(html).toContain("Not measured in this run");
+      expect(html).toContain("Not scored");
+    });
   });
 });

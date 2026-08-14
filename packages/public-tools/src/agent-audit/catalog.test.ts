@@ -7,12 +7,12 @@ import {
 } from "./catalog.ts";
 
 describe("v2 Agent audit catalog", () => {
-  it("freezes 5/27 site and 9/50 page entries with unique IDs", () => {
+  it("freezes 5/31 site and 9/50 page entries with unique IDs", () => {
     const site = SITE_AUDIT_GROUPS.flatMap((group) => group.checks);
     const page = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks);
     expect(SITE_AUDIT_GROUPS).toHaveLength(5);
-    expect(site).toHaveLength(27);
-    expect(new Set(site.map((check) => check.id)).size).toBe(27);
+    expect(site).toHaveLength(31);
+    expect(new Set(site.map((check) => check.id)).size).toBe(31);
     expect(PAGE_AUDIT_GROUPS).toHaveLength(9);
     expect(page).toHaveLength(50);
     expect(new Set(page.map((check) => check.id)).size).toBe(50);
@@ -23,11 +23,21 @@ describe("v2 Agent audit catalog", () => {
     expect(SITE_AUDIT_GROUPS.reduce((sum, group) => sum + (group.weight ?? 0), 0)).toBe(100);
     expect(PAGE_AUDIT_GROUPS.reduce((sum, group) => sum + (group.weight ?? 0), 0)).toBe(100);
     const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap((group) => group.checks);
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(43);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(47);
     expect(AGENT_AUDIT_DEFAULT_GROUPS).toEqual({
-      seo: { site: "E", page: "9" },
-      tech: { site: "A", page: "1" },
+      seo: { site: "D", page: "2" },
+      tech: { site: "C", page: "1" },
     });
+    // Every default group must contain at least one check this crawl can decide.
+    for (const defaults of Object.values(AGENT_AUDIT_DEFAULT_GROUPS)) {
+      const siteGroup = SITE_AUDIT_GROUPS.find((g) => g.id === defaults.site)!;
+      const pageGroup = PAGE_AUDIT_GROUPS.find((g) => g.id === defaults.page)!;
+      for (const group of [siteGroup, pageGroup]) {
+        expect(
+          group.checks.some((check) => check.evidenceRecordIds.length > 0),
+        ).toBe(true);
+      }
+    }
     expect(AGENT_AUDIT_HEADING_PRESETS.tool).toMatchObject({
       h2: { min: 5, max: 9 },
       h3: { min: 6, max: 18 },

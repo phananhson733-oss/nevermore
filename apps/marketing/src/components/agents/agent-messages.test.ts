@@ -447,14 +447,16 @@ describe("Agent message catalogs", () => {
     const english = JSON.stringify(en.agents.workbench.diagnosis);
     const chinese = JSON.stringify(zh.agents.workbench.diagnosis);
 
-    expect(english).toMatch(/5 groups|27 checks/);
-    expect(english).toMatch(/9 groups|50 checks/);
+    // Scope labels take live counts so the copy can never contradict the
+    // catalogue it describes.
+    expect(en.agents.workbench.diagnosis.scopes.site).toContain("{groups}");
+    expect(en.agents.workbench.diagnosis.scopes.site).toContain("{checks}");
+    expect(zh.agents.workbench.diagnosis.scopes.page).toContain("{groups}");
+    expect(zh.agents.workbench.diagnosis.scopes.page).toContain("{checks}");
     expect(english).toMatch(/Blocker|Health|Result|Engine|Truth/);
     expect(english).toMatch(/Excluded|Not integrated|Source gated/);
     expect(english).toMatch(/not zero|never zero|not a pass/);
 
-    expect(chinese).toMatch(/5 组|27 项/);
-    expect(chinese).toMatch(/9 组|50 项/);
     expect(chinese).toMatch(/阻断|健康度|结果|引擎|真实性/);
     expect(chinese).toMatch(/排除|未接入|来源受限/);
     expect(chinese).toMatch(/不.*零|不等于通过/);

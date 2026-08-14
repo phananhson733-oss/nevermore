@@ -13,6 +13,7 @@ import type {
   AgentAuditLocalizedText,
   AgentAuditResultState,
   AgentAuditScope,
+  AgentAuditTruthState,
 } from "./types.ts";
 
 const l = (en: string, zh: string): AgentAuditLocalizedText => ({ en, zh });
@@ -28,31 +29,54 @@ function comparableUrl(value: string | null | undefined): string | null {
   }
 }
 
+/**
+ * Re-express a site-wide record as what it says about one page.
+ *
+ * A record the crawl never ran stays unverified. Otherwise the target either
+ * appears in the issue list, or it does not — and "does not" is a clean result
+ * for the target only when the target itself was inspected.
+ */
 function projectRecordToTarget(
   record: SeoAuditRecord,
   targetUrl: string,
+  targetInspected: boolean,
 ): SeoAuditRecord {
-  if (record.state !== "observed") return record;
+  if (record.state === "unverified") return record;
+
   const target = comparableUrl(targetUrl);
-  const observations = record.observations.filter(
-    (observation) => comparableUrl(observation.url) === target,
-  );
-  if (observations.length === 0) {
+  const observations =
+    record.state === "observed"
+      ? record.observations.filter(
+          (observation) => comparableUrl(observation.url) === target,
+        )
+      : [];
+
+  if (observations.length > 0) {
     return {
       ...record,
-      state: "unverified",
-      tested: 0,
-      affected: 0,
-      observations: [],
-      limitation: "No target-specific observation in the bounded site crawl.",
+      state: "observed",
+      tested: 1,
+      affected: observations.length,
+      observations,
     };
   }
-  return {
-    ...record,
-    tested: Math.max(1, observations.length),
-    affected: observations.length,
-    observations,
-  };
+
+  return targetInspected
+    ? {
+        ...record,
+        state: "not_observed",
+        tested: 1,
+        affected: 0,
+        observations: [],
+      }
+    : {
+        ...record,
+        state: "unverified",
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: "No target-specific observation in the bounded site crawl.",
+      };
 }
 
 function matchingRecords(
@@ -63,16 +87,77 @@ function matchingRecords(
   const records = input.records.filter((record) => ids.has(record.id));
   if (check.scope !== "page") return records;
   if (!input.targetUrl || comparableUrl(input.targetUrl) === null) return [];
-  return records.map((record) => projectRecordToTarget(record, input.targetUrl!));
+  return records.map((record) =>
+    projectRecordToTarget(
+      record,
+      input.targetUrl!,
+      input.targetInspected === true,
+    ),
+  );
 }
 
+/**
+ * Sibling records of one check measure the same population, so their counts are
+ * de-duplicated rather than summed: a page missing both a title and an H1 is one
+ * affected page, and 100 pages tested twice are still 100 tested units.
+ */
 function measurement(records: readonly SeoAuditRecord[]): AgentAuditLocalizedText {
-  const affected = records.reduce((total, record) => total + record.affected, 0);
-  const tested = records.reduce((total, record) => total + record.tested, 0);
+  const affectedUrls = new Set<string>();
+  let siteLevelAffected = 0;
+  for (const record of records) {
+    for (const observation of record.observations) {
+      if (observation.url === null) siteLevelAffected += 1;
+      else affectedUrls.add(observation.url);
+    }
+  }
+  const affected = affectedUrls.size + siteLevelAffected;
+  const tested = records.reduce(
+    (highest, record) => Math.max(highest, record.tested),
+    0,
+  );
   return l(
     `${affected} affected observations across ${tested} tested units`,
     `${tested} 个测试单元中有 ${affected} 个受影响观测`,
   );
+}
+
+type RecordIssueSeverity = "none" | "degraded" | "full";
+
+/** Applies the check's published threshold to one record. */
+function issueSeverity(
+  record: SeoAuditRecord,
+  check: AgentAuditCheckDefinition,
+): RecordIssueSeverity {
+  if (record.state !== "observed" || record.affected === 0) return "none";
+
+  const rule = check.issueRules.find((entry) => entry.recordId === record.id);
+  if (rule === undefined) return "full";
+
+  if (rule.kind === "affected-ratio") {
+    if (record.tested <= 0) return "full";
+    const share = record.affected / record.tested;
+    if (share < rule.passBelow) return "none";
+    if (rule.failAbove === undefined || share > rule.failAbove) return "full";
+    return "degraded";
+  }
+
+  return record.observations.some((observation) =>
+    observation.values.some(
+      (entry) =>
+        entry.label === rule.label &&
+        typeof entry.value === "number" &&
+        entry.value > rule.max,
+    ),
+  )
+    ? "full"
+    : "none";
+}
+
+/** The softer state for a measurement past the pass mark but under the fail mark. */
+function degradedResult(
+  check: AgentAuditCheckDefinition,
+): AgentAuditResultState {
+  return check.failureResult === "warning" ? "tip" : check.failureResult;
 }
 
 function failureState(
@@ -124,41 +209,40 @@ function evaluateCheck(
       scoreContribution: null,
     };
   }
-  if (records.every((record) => record.state === "not_observed")) {
-    return {
-      check,
-      result: "excluded",
-      engine: "ready",
-      truth: "not-observed",
-      measurement: measurement(records),
-      evidenceRecordIds: records.map((record) => record.id),
-      scoreValue: null,
-      scoreContribution: null,
-    };
-  }
-
-  const issueRecords = records.filter(
-    (record) => record.state === "observed" && record.affected > 0,
+  const severities = records.map((record) => issueSeverity(record, check));
+  const failingRecords = records.filter(
+    (_, index) => severities[index] === "full",
   );
   const result =
-    issueRecords.length > 0
-      ? failureState(check, new Set(issueRecords.map((record) => record.id)))
-      : "pass";
-  const scoreValue =
-    !check.scored
-      ? null
-      : result === "pass"
-        ? 1
-        : result === "tip"
-          ? 0.5
-          : result === "warning"
-            ? 0
-            : null;
+    failingRecords.length > 0
+      ? failureState(check, new Set(failingRecords.map((record) => record.id)))
+      : severities.includes("degraded")
+        ? degradedResult(check)
+        : "pass";
+
+  // A tested population with nothing affected is a real pass, but it stays
+  // labelled by how it was learned: the crawl is bounded, so "not observed in
+  // the sample" never claims the condition is absent site-wide.
+  const truth: AgentAuditTruthState =
+    input.availability === "partial"
+      ? "partial"
+      : records.some((record) => record.state === "observed")
+        ? "observed"
+        : "not-observed";
+
+  const scoreValue = !check.scored
+    ? null
+    : result === "pass"
+      ? 1
+      : result === "tip"
+        ? 0.5
+        : 0;
+
   return {
     check,
     result,
     engine: "ready",
-    truth: input.availability === "partial" ? "partial" : "observed",
+    truth,
     measurement: measurement(records),
     evidenceRecordIds: records.map((record) => record.id),
     scoreValue,
@@ -202,7 +286,7 @@ export function evaluateAgentAuditScope(
     (total, group) => total + (group.group.weight ?? 0),
     0,
   );
-  let health =
+  const health =
     totalGroupWeight === 0
       ? null
       : Math.round(
@@ -212,9 +296,6 @@ export function evaluateAgentAuditScope(
             0,
           ) / totalGroupWeight,
         );
-  if (health === 100 && checks.some((check) => check.result === "excluded")) {
-    health = 99;
-  }
 
   return {
     scope,

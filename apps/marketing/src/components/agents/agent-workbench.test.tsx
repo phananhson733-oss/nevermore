@@ -95,6 +95,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         targetUrl,
         siteOrigin: "https://astrologywiki.com",
         scannedAt: "2026-08-13T00:00:00.000Z",
+        targetInspected: true,
         coverage: {
           availability: "available",
           pagesInspected: 1,
@@ -2032,5 +2033,72 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         ?.getAttribute("data-open"),
     ).toBe("false");
     expect(document.querySelector("[data-profile-search-results]")).toBeNull();
+  });
+
+  it("keeps a captured report while the visitor edits context the audit never reads", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    setInputValue(
+      document.querySelector(
+        '[aria-label="fields.productName"]',
+      ) as HTMLInputElement,
+      "Renamed product",
+    );
+    await flushAsyncWork();
+
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it("drops a captured report once the audited URL changes", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    setProfileUrl("seo", "example.com");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
   });
 });

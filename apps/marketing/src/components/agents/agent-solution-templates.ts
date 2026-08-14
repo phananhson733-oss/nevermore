@@ -1,7 +1,8 @@
-// @input  -- Agent identity and a selected evaluated v2 check
-// @output -- Agent-specific, preview-only content or code/config solution shape
+// @input  -- Agent identity, a selected evaluated v2 check, and the run's own measured facts
+// @output -- solution-specific, preview-only content or code/config shape filled with observed values
 // @pos    -- pure Stage 04 semantic adapter; never applies, saves, or deploys
 
+import type { SeoAuditRecord } from "@sf/public-tools";
 import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
 
 import type { AgentKind } from "./agent-types";
@@ -15,6 +16,7 @@ export type AgentSolutionKind =
   | "heading-structure"
   | "internal-link-exposure"
   | "structured-data"
+  | "media-assets"
   | "technical-issue-brief"
   | "indexability"
   | "crawl"
@@ -23,87 +25,315 @@ export type AgentSolutionKind =
   | "performance"
   | "rendering"
   | "template"
-  | "schema";
+  | "schema"
+  | "link-integrity";
 
-type AgentSolutionMessageKey<
-  Agent extends AgentKind,
-  Name extends string,
-> = `recommendations.${Agent}.${Name}`;
+/**
+ * Message-path segment for each solution kind.
+ *
+ * Stage 04 copy is written per solution kind, not per Agent: the same Agent
+ * gives different advice, validation steps, risks, and limits for a canonical
+ * fix than for a redirect chain.
+ */
+const KIND_MESSAGE_SEGMENT = {
+  "search-opportunity": "searchOpportunity",
+  "search-presentation": "searchPresentation",
+  "content-brief": "contentBrief",
+  "heading-structure": "headingStructure",
+  "internal-link-exposure": "internalLinkExposure",
+  "structured-data": "structuredData",
+  "media-assets": "mediaAssets",
+  "technical-issue-brief": "technicalIssueBrief",
+  indexability: "indexability",
+  crawl: "crawl",
+  redirect: "redirect",
+  canonical: "canonical",
+  performance: "performance",
+  rendering: "rendering",
+  template: "template",
+  schema: "schema",
+  "link-integrity": "linkIntegrity",
+} as const satisfies Readonly<Record<AgentSolutionKind, string>>;
+
+export type AgentSolutionKindSegment =
+  (typeof KIND_MESSAGE_SEGMENT)[AgentSolutionKind];
+
+type AgentSolutionKindMessageKey<Name extends string> =
+  `recommendations.${AgentKind}.kinds.${AgentSolutionKindSegment}.${Name}`;
+
+type AgentSolutionAgentMessageKey<Name extends string> =
+  `recommendations.${AgentKind}.${Name}`;
 
 export interface AgentSolutionTemplate {
   readonly agent: AgentKind;
   readonly kind: AgentSolutionKind;
   readonly presentation: AgentSolutionPresentation;
   readonly preview: string;
-  readonly recommendationKey: AgentSolutionMessageKey<
-    AgentKind,
-    "recommendation"
-  >;
-  readonly applicableContextKey: AgentSolutionMessageKey<
-    AgentKind,
-    "applicableContext"
-  >;
+  readonly recommendationKey: AgentSolutionKindMessageKey<"recommendation">;
+  readonly applicableContextKey: AgentSolutionAgentMessageKey<"applicableContext">;
   readonly validationKeys: readonly [
-    AgentSolutionMessageKey<AgentKind, "validation1">,
-    AgentSolutionMessageKey<AgentKind, "validation2">,
-    AgentSolutionMessageKey<AgentKind, "validation3">,
+    AgentSolutionKindMessageKey<"validation1">,
+    AgentSolutionKindMessageKey<"validation2">,
+    AgentSolutionKindMessageKey<"validation3">,
   ];
-  readonly impactSurfaceKey: AgentSolutionMessageKey<
-    AgentKind,
-    "impactSurface"
-  >;
-  readonly risksKey: AgentSolutionMessageKey<AgentKind, "risks">;
-  readonly limitsKey: AgentSolutionMessageKey<AgentKind, "limits">;
+  readonly impactSurfaceKey: AgentSolutionKindMessageKey<"impactSurface">;
+  readonly risksKey: AgentSolutionKindMessageKey<"risks">;
+  readonly limitsKey: AgentSolutionKindMessageKey<"limits">;
+}
+
+/**
+ * Run facts a preview may quote.
+ *
+ * Every field is either a value this run actually measured or `null`. A null
+ * field is rendered as an explicit marker, never as invented content.
+ */
+export interface AgentSolutionPreviewInput {
+  /** Marker for a slot the reviewer still has to decide or write. */
+  readonly fillIn: string;
+  /** Marker for a value this bounded run did not capture. */
+  readonly notCaptured: string;
+  readonly targetUrl: string;
+  readonly productName: string;
+  readonly targetQuery: string;
+  /** Already localized confirmed page type. */
+  readonly pageType: string;
+  /** Already localized "country · locale · device" summary. */
+  readonly searchContext: string;
+  /** Already localized measured value for the selected check, if any. */
+  readonly measurement: string | null;
+  readonly evidenceRecords: readonly SeoAuditRecord[];
+}
+
+interface PreviewFacts {
+  readonly fillIn: string;
+  readonly notCaptured: string;
+  readonly targetUrl: string;
+  readonly host: string;
+  readonly targetPath: string;
+  readonly productName: string;
+  readonly targetQuery: string;
+  readonly pageType: string;
+  readonly searchContext: string;
+  readonly measurement: string;
+  readonly observedUrls: readonly string[];
+  readonly observedValues: Readonly<Record<string, string>>;
 }
 
 interface SolutionShape {
   readonly kind: AgentSolutionKind;
   readonly presentation: AgentSolutionPresentation;
-  readonly preview: string;
+  readonly buildPreview: (facts: PreviewFacts) => string;
+}
+
+const MAX_QUOTED_VALUE = 120;
+
+function present(value: string | null | undefined, marker: string): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (trimmed.length === 0) return marker;
+  return trimmed.length > MAX_QUOTED_VALUE
+    ? `${trimmed.slice(0, MAX_QUOTED_VALUE)}…`
+    : trimmed;
+}
+
+function observedValue(facts: PreviewFacts, label: string): string {
+  return present(facts.observedValues[label], facts.notCaptured);
+}
+
+function observedUrl(facts: PreviewFacts, index: number): string {
+  return present(facts.observedUrls[index], facts.notCaptured);
+}
+
+function collectObservedUrls(
+  records: readonly SeoAuditRecord[],
+): readonly string[] {
+  const urls: string[] = [];
+  for (const record of records) {
+    for (const observation of record.observations) {
+      if (observation.url && !urls.includes(observation.url)) {
+        urls.push(observation.url);
+      }
+    }
+  }
+  return urls;
+}
+
+function collectObservedValues(
+  records: readonly SeoAuditRecord[],
+): Readonly<Record<string, string>> {
+  const values: Record<string, string> = {};
+  for (const record of records) {
+    for (const observation of record.observations) {
+      for (const entry of observation.values) {
+        if (entry.value === null || entry.label in values) continue;
+        values[entry.label] = String(entry.value);
+      }
+    }
+  }
+  return values;
+}
+
+/**
+ * Display-only parse of the visitor's exact input. Server-side URL
+ * normalization stays authoritative; this only decides what a preview may
+ * quote instead of a placeholder.
+ */
+function urlParts(
+  targetUrl: string,
+): { href: string; host: string; path: string } | null {
+  const trimmed = targetUrl.trim();
+  if (!trimmed || trimmed.length > 2_048) return null;
+  try {
+    const parsed = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
+    );
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return {
+      href: parsed.href,
+      host: parsed.host,
+      path: `${parsed.pathname}${parsed.search}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function previewFacts(input: AgentSolutionPreviewInput): PreviewFacts {
+  const parts = urlParts(input.targetUrl);
+  return {
+    fillIn: input.fillIn,
+    notCaptured: input.notCaptured,
+    targetUrl: present(parts?.href ?? input.targetUrl, input.notCaptured),
+    host: present(parts?.host, input.notCaptured),
+    targetPath: present(parts?.path, input.notCaptured),
+    productName: present(input.productName, input.fillIn),
+    targetQuery: present(input.targetQuery, input.fillIn),
+    pageType: present(input.pageType, input.notCaptured),
+    searchContext: present(input.searchContext, input.notCaptured),
+    measurement: present(input.measurement, input.notCaptured),
+    observedUrls: collectObservedUrls(input.evidenceRecords),
+    observedValues: collectObservedValues(input.evidenceRecords),
+  };
 }
 
 const SEO_SHAPES = {
   searchOpportunity: {
     kind: "search-opportunity",
     presentation: "investigation",
-    preview:
-      "search decision\n  target query: [confirmed query]\n  country / locale / device: [confirmed context]\n  required source: [SERP or authorized GSC]\n  decision: [pursue, refine, or defer after evidence]",
+    buildPreview: (facts) =>
+      [
+        "search decision",
+        `  target query: ${facts.targetQuery}`,
+        `  country / locale / device: ${facts.searchContext}`,
+        `  page under review: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        "  required source: SERP snapshot or authorized Search Console",
+        `  decision (pursue / refine / defer): ${facts.fillIn}`,
+        `  evidence behind that decision: ${facts.fillIn}`,
+      ].join("\n"),
   },
   searchPresentation: {
     kind: "search-presentation",
     presentation: "content",
-    preview:
-      "page role: [confirmed user decision]\n  title: [distinct promise + confirmed topic]\n  meta description: [page-specific outcome]\n  opening: [answer the first decision without invented demand]",
+    buildPreview: (facts) =>
+      [
+        "search presentation draft",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  observed title: ${observedValue(facts, "title")}`,
+        `  observed meta description: ${observedValue(facts, "meta_description")}`,
+        `  new title: ${facts.fillIn}`,
+        `  new meta description: ${facts.fillIn}`,
+        `  opening line that answers the first decision: ${facts.fillIn}`,
+        `  stay true to: ${facts.productName} · ${facts.targetQuery}`,
+      ].join("\n"),
   },
   contentBrief: {
     kind: "content-brief",
     presentation: "content",
-    preview:
-      "content brief seed\n  audience / JTBD: [confirmed Profile]\n  intent: [interpretation, not ranking fact]\n  evidence to preserve: [observed page facts]\n  sections: [decision-led outline]",
+    buildPreview: (facts) =>
+      [
+        "content brief seed",
+        `  page: ${facts.targetUrl}`,
+        `  product: ${facts.productName}`,
+        `  target query: ${facts.targetQuery}`,
+        `  measured this run: ${facts.measurement}`,
+        `  page facts worth keeping: ${facts.fillIn}`,
+        `  sections to add or rewrite: ${facts.fillIn}`,
+        `  source for every new claim: ${facts.fillIn}`,
+      ].join("\n"),
   },
   headingStructure: {
     kind: "heading-structure",
     presentation: "content",
-    preview:
-      "document outline\n  h1: [one clear page decision]\n  h2: [major decision steps]\n  h3: [subquestions with substantive answers]\n  preset: [confirmed page type]",
+    buildPreview: (facts) =>
+      [
+        "document outline",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  observed h1 count: ${observedValue(facts, "h1_count")}`,
+        `  page-type preset: ${facts.pageType}`,
+        `  h1 (one page decision): ${facts.fillIn}`,
+        `  h2 (major decision steps): ${facts.fillIn}`,
+        `  h3 (subquestions with substantive answers): ${facts.fillIn}`,
+      ].join("\n"),
   },
   internalLinkExposure: {
     kind: "internal-link-exposure",
     presentation: "content",
-    preview:
-      "contextual discovery path\n  source page: [observed relevant context]\n  anchor: [descriptive user-facing phrase]\n  target page: [confirmed canonical destination]",
+    buildPreview: (facts) =>
+      [
+        "contextual discovery path",
+        `  destination page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  observed inbound links: ${observedValue(facts, "observed_inbound_links")}`,
+        `  source page to link from: ${facts.fillIn}`,
+        `  anchor text (descriptive, user-facing): ${facts.fillIn}`,
+        `  why the link helps the reader there: ${facts.fillIn}`,
+      ].join("\n"),
   },
   structuredData: {
     kind: "structured-data",
     presentation: "content",
-    preview:
-      "visible-content schema brief\n  page role: [confirmed type]\n  entity: [facts visible on page]\n  vocabulary/version: [selected rule set]\n  eligibility: not promised",
+    buildPreview: (facts) =>
+      [
+        "visible-content schema brief",
+        `  page: ${facts.targetUrl}`,
+        `  page role: ${facts.pageType}`,
+        `  measured this run: ${facts.measurement}`,
+        `  entity described: ${facts.fillIn}`,
+        `  facts already visible on the page to mark up: ${facts.fillIn}`,
+        `  vocabulary / version: ${facts.fillIn}`,
+        "  rich-result eligibility: not promised",
+      ].join("\n"),
+  },
+  mediaAssets: {
+    kind: "media-assets",
+    presentation: "content",
+    buildPreview: (facts) =>
+      [
+        "image and alt-text pass",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  alt text per affected image (what it shows): ${facts.fillIn}`,
+        `  format or file-size decision: ${facts.fillIn}`,
+        `  owner of the media pipeline: ${facts.fillIn}`,
+      ].join("\n"),
   },
   technicalIssueBrief: {
     kind: "technical-issue-brief",
     presentation: "content",
-    preview:
-      "technical issue brief\n  observed condition: [preserved evidence]\n  affected search decision: [bounded interpretation]\n  owner/context needed: [template, CMS, or platform]\n  next step: review independently in Tech Agent",
+    buildPreview: (facts) =>
+      [
+        "technical issue brief",
+        `  page: ${facts.targetUrl}`,
+        `  observed condition: ${facts.measurement}`,
+        `  first observed URL: ${observedUrl(facts, 0)}`,
+        `  affected search decision: ${facts.fillIn}`,
+        `  owner or system to involve: ${facts.fillIn}`,
+        "  next step: review independently in Tech Agent",
+      ].join("\n"),
   },
 } as const satisfies Readonly<Record<string, SolutionShape>>;
 
@@ -111,50 +341,146 @@ const TECH_SHAPES = {
   indexability: {
     kind: "indexability",
     presentation: "code",
-    preview:
-      "# preview only — choose directives after owner intent is confirmed\nHTTP/1.1 200 OK\nX-Robots-Tag: index, follow\n<meta name=\"robots\" content=\"index,follow\">",
+    buildPreview: (facts) =>
+      [
+        "# preview only — confirm owner intent before changing any directive",
+        `# target: ${facts.targetUrl}`,
+        `# measured this run: ${facts.measurement}`,
+        `# observed final status: ${observedValue(facts, "final_status")}`,
+        `# observed robots directive: ${observedValue(facts, "robots_directive")}`,
+        "HTTP/1.1 200 OK",
+        "X-Robots-Tag: index, follow",
+        '<meta name="robots" content="index,follow">',
+      ].join("\n"),
   },
   crawl: {
     kind: "crawl",
     presentation: "code",
-    preview:
-      "# preview only — public crawl policy\nUser-agent: *\nAllow: /[intended public path]\nSitemap: https://[host]/sitemap.xml",
+    buildPreview: (facts) =>
+      [
+        "# preview only — public crawl policy",
+        `# target: ${facts.targetUrl}`,
+        `# measured this run: ${facts.measurement}`,
+        "User-agent: *",
+        `Allow: ${facts.targetPath}`,
+        `Sitemap: https://${facts.host}/sitemap.xml`,
+        `# paths that must stay disallowed: ${facts.fillIn}`,
+      ].join("\n"),
   },
   redirect: {
     kind: "redirect",
     presentation: "code",
-    preview:
-      "# preview only — framework syntax depends on the owning system\nredirect(\"[legacy path]\", \"[single HTTPS 200 destination]\", 301)\n# verify: one hop, intended canonical target",
+    buildPreview: (facts) =>
+      [
+        "# preview only — framework syntax depends on the owning system",
+        `# target: ${facts.targetUrl}`,
+        `# measured this run: ${facts.measurement}`,
+        `# observed hops: ${observedValue(facts, "redirect_hops")}`,
+        `# observed final URL: ${observedValue(facts, "final_url")}`,
+        `redirect("${facts.targetPath}", "${observedValue(facts, "final_url")}", 301)`,
+        "# verify: one hop, HTTPS, 200 destination",
+      ].join("\n"),
   },
   canonical: {
     kind: "canonical",
     presentation: "code",
-    preview:
-      "<!-- preview only — emit from the owning page template -->\n<link rel=\"canonical\" href=\"https://[host]/[confirmed-200-path]\" />",
+    buildPreview: (facts) =>
+      [
+        "<!-- preview only — emit from the owning page template -->",
+        `<!-- measured this run: ${facts.measurement} -->`,
+        `<!-- observed canonical target: ${observedValue(facts, "canonical_target")} -->`,
+        `<link rel="canonical" href="${facts.targetUrl}" />`,
+      ].join("\n"),
   },
   performance: {
     kind: "performance",
     presentation: "investigation",
-    preview:
-      "performance investigation\n  field: [CrUX p75 / 28-day window]\n  lab: [Lighthouse run, shown separately]\n  route/template: [confirmed owner]\n  change: only after bottleneck evidence",
+    buildPreview: (facts) =>
+      [
+        "performance investigation",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  field source (CrUX p75, 28-day window): ${facts.fillIn}`,
+        `  lab source (separate Lighthouse run): ${facts.fillIn}`,
+        `  owning route or template: ${facts.fillIn}`,
+        "  change: only after the bottleneck is evidenced",
+      ].join("\n"),
   },
   rendering: {
     kind: "rendering",
     presentation: "investigation",
-    preview:
-      "rendering investigation\n  compare: static response vs rendered DOM\n  inspect: scripts, styles, hydration, blocked resources\n  fix preview: conditional on framework and runtime evidence",
+    buildPreview: (facts) =>
+      [
+        "rendering investigation",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        "  compare: static HTML response vs rendered DOM",
+        "  inspect: blocking scripts, styles, hydration, blocked resources",
+        `  owning framework and runtime: ${facts.fillIn}`,
+        "  fix preview: written only after that comparison",
+      ].join("\n"),
   },
   template: {
     kind: "template",
     presentation: "code",
-    preview:
-      "template guard (pseudocode)\n  derive one value from canonical page data\n  emit once in the owning layout/template\n  test representative routes before release",
+    buildPreview: (facts) =>
+      [
+        "template guard (pseudocode)",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  owning layout or template: ${facts.fillIn}`,
+        "  derive one value from canonical page data",
+        "  emit it once in the owning template",
+        `  representative routes to test before release: ${facts.fillIn}`,
+      ].join("\n"),
   },
   schema: {
     kind: "schema",
     presentation: "code",
-    preview:
-      '<script type="application/ld+json">\n{\n  "@context": "https://schema.org",\n  "@type": "[page-type match]",\n  "[required field]": "[visible page fact]"\n}\n</script>',
+    buildPreview: (facts) =>
+      [
+        `<!-- measured this run: ${facts.measurement} -->`,
+        '<script type="application/ld+json">',
+        "{",
+        '  "@context": "https://schema.org",',
+        `  "@type": "${facts.fillIn}",`,
+        `  "url": "${facts.targetUrl}",`,
+        `  "name": "${facts.productName}",`,
+        `  "[required property]": "${facts.fillIn}"`,
+        "}",
+        "</script>",
+      ].join("\n"),
+  },
+  internalLinkExposure: {
+    kind: "internal-link-exposure",
+    presentation: "code",
+    buildPreview: (facts) =>
+      [
+        "discovery path repair",
+        `  page that needs reaching: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  observed inbound links: ${observedValue(facts, "observed_inbound_links")}`,
+        `  observed click depth: ${observedValue(facts, "observed_click_depth")}`,
+        `  source page or template to link from: ${facts.fillIn}`,
+        `  descriptive anchor text: ${facts.fillIn}`,
+        "  re-test: recrawl and compare inbound links and depth for this page",
+      ].join("\n"),
+  },
+  linkIntegrity: {
+    kind: "link-integrity",
+    presentation: "code",
+    buildPreview: (facts) =>
+      [
+        "link integrity fix",
+        `  page: ${facts.targetUrl}`,
+        `  measured this run: ${facts.measurement}`,
+        `  observed broken outbound targets: ${observedValue(facts, "broken_link_targets")}`,
+        `  observed failing target status: ${observedValue(facts, "final_status")}`,
+        `  first observed source page: ${observedUrl(facts, 0)}`,
+        `  per broken target — repoint, restore, or remove: ${facts.fillIn}`,
+        `  owning template or content source: ${facts.fillIn}`,
+        "  re-test: the corrected link plus one nearby control link",
+      ].join("\n"),
   },
 } as const satisfies Readonly<Record<string, SolutionShape>>;
 
@@ -163,18 +489,31 @@ function seoShape(checkId: string): SolutionShape {
   if (/^(?:D[12]|2\.)/.test(checkId)) return SEO_SHAPES.searchPresentation;
   if (/^(?:D3|3\.)/.test(checkId)) return SEO_SHAPES.headingStructure;
   if (/^4\./.test(checkId)) return SEO_SHAPES.contentBrief;
+  if (/^(?:D4|5\.)/.test(checkId)) return SEO_SHAPES.mediaAssets;
   if (/^(?:C[1-5]|6\.)/.test(checkId)) return SEO_SHAPES.internalLinkExposure;
   if (/^(?:D5|7\.)/.test(checkId)) return SEO_SHAPES.structuredData;
   return SEO_SHAPES.technicalIssueBrief;
 }
 
 function techShape(checkId: string): SolutionShape {
-  if (/^(?:A6|1\.6)$/.test(checkId)) return TECH_SHAPES.redirect;
-  if (/^1\.4$/.test(checkId)) return TECH_SHAPES.canonical;
+  // Redirects: the site-level chain and the page-level hop both end in a
+  // redirect rule, not a template guard.
+  if (/^(?:A6|C6|1\.6)$/.test(checkId)) return TECH_SHAPES.redirect;
+  // Canonical: a page pointing elsewhere, at either scope.
+  if (/^(?:D7|1\.4)$/.test(checkId)) return TECH_SHAPES.canonical;
   if (/^8\.6$/.test(checkId)) return TECH_SHAPES.rendering;
   if (/^(?:B3|8\.)/.test(checkId)) return TECH_SHAPES.performance;
   if (/^(?:D5|7\.)/.test(checkId)) return TECH_SHAPES.schema;
-  if (/^(?:A[134]|1\.[134578])$/.test(checkId)) {
+  // Broken links are the only link checks a repoint/restore/remove preview
+  // fits. Reachability checks (orphans, depth, missing inbound links) need
+  // links added, which is the internal-link exposure shape.
+  if (/^(?:C2|6\.3)$/.test(checkId)) return TECH_SHAPES.linkIntegrity;
+  if (/^(?:C[1345]|6\.[1245])$/.test(checkId)) {
+    return TECH_SHAPES.internalLinkExposure;
+  }
+  // Indexability covers noindex and HTTPS delivery as well as the status and
+  // hreflang checks.
+  if (/^(?:A[1-4]|A7|A8|D6|1\.[13578])$/.test(checkId)) {
     return TECH_SHAPES.indexability;
   }
   if (/^(?:A5|B[1245]|1\.2)$/.test(checkId)) return TECH_SHAPES.crawl;
@@ -184,24 +523,29 @@ function techShape(checkId: string): SolutionShape {
 export function solutionTemplate(
   agent: AgentKind,
   evaluated: AgentAuditEvaluatedCheck,
+  input: AgentSolutionPreviewInput,
 ): AgentSolutionTemplate {
   const shape =
     agent === "seo"
       ? seoShape(evaluated.check.id)
       : techShape(evaluated.check.id);
+  const segment = KIND_MESSAGE_SEGMENT[shape.kind];
+  const base = `recommendations.${agent}.kinds.${segment}` as const;
 
   return {
     agent,
-    ...shape,
-    recommendationKey: `recommendations.${agent}.recommendation`,
+    kind: shape.kind,
+    presentation: shape.presentation,
+    preview: shape.buildPreview(previewFacts(input)),
+    recommendationKey: `${base}.recommendation`,
     applicableContextKey: `recommendations.${agent}.applicableContext`,
     validationKeys: [
-      `recommendations.${agent}.validation1`,
-      `recommendations.${agent}.validation2`,
-      `recommendations.${agent}.validation3`,
+      `${base}.validation1`,
+      `${base}.validation2`,
+      `${base}.validation3`,
     ],
-    impactSurfaceKey: `recommendations.${agent}.impactSurface`,
-    risksKey: `recommendations.${agent}.risks`,
-    limitsKey: `recommendations.${agent}.limits`,
+    impactSurfaceKey: `${base}.impactSurface`,
+    risksKey: `${base}.risks`,
+    limitsKey: `${base}.limits`,
   };
 }

@@ -91,6 +91,7 @@ const payload = {
     targetUrl: "https://acme.test/",
     siteOrigin: "https://acme.test",
     scannedAt: "2026-07-30T09:00:00.000Z",
+    targetInspected: true,
     coverage: {
       availability: "available",
       pagesInspected: 0,

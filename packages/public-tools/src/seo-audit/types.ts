@@ -100,6 +100,12 @@ export interface SeoAuditReport {
   readonly scannedAt: string;
   readonly coverage: SeoAuditCoverage;
   readonly siteResources: SeoAuditSiteResources;
+  /**
+   * True when the submitted URL itself was collected as a 2xx HTML page.
+   * Without it, "the target is absent from every issue list" proves nothing
+   * about the target.
+   */
+  readonly targetInspected: boolean;
   readonly records: readonly SeoAuditRecord[];
   readonly pages: readonly SeoAuditPage[];
 }

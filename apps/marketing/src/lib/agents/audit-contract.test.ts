@@ -26,6 +26,13 @@ const RECORD_SPECS = [
   ["sitemap_page_without_observed_inlink", "links"],
   ["internal_target_http_error", "links"],
   ["json_ld_parse_error", "structured_data"],
+  ["page_outbound_broken_link", "links"],
+  ["page_not_in_sitemap", "crawl"],
+  ["title_length_outside_range", "metadata"],
+  ["meta_description_length_outside_range", "metadata"],
+  ["page_without_outbound_internal_link", "links"],
+  ["click_depth_beyond_reviewed_limit", "links"],
+  ["json_ld_missing", "structured_data"],
 ] as const;
 
 const success = {
@@ -45,6 +52,7 @@ const success = {
       targetUrl: "https://acme.test/",
       siteOrigin: "https://acme.test",
       scannedAt: "2026-08-12T09:00:00.000Z",
+      targetInspected: true,
       coverage: {
         availability: "available",
         pagesInspected: 1,
@@ -96,7 +104,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       };
 
       expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
-      expect(envelope.data.result.records).toHaveLength(17);
+      expect(envelope.data.result.records).toHaveLength(24);
       expect("pages" in envelope.data.result).toBe(false);
     },
   );

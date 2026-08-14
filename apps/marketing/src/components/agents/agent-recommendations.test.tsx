@@ -7,7 +7,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SeoAuditRecord } from "@sf/public-tools";
+import type { SeoAuditEvidenceValue, SeoAuditRecord } from "@sf/public-tools";
 import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
 
 import en from "../../i18n/messages/en.json";
@@ -18,7 +18,13 @@ import {
 } from "./agent-profile";
 import { AgentRecommendations } from "./agent-recommendations";
 
-function record(id: string, affected: number): SeoAuditRecord {
+function record(
+  id: string,
+  affected: number,
+  values: readonly { label: string; value: SeoAuditEvidenceValue }[] = [
+    { label: "title", value: `${id} evidence` },
+  ],
+): SeoAuditRecord {
   return {
     id,
     category: "metadata",
@@ -29,11 +35,11 @@ function record(id: string, affected: number): SeoAuditRecord {
     observations: [
       {
         url: "https://example.com/target",
-        values: [{ label: "title", value: `${id} evidence` }],
+        values: [...values],
       },
     ],
     limitation: null,
-  };
+  } as unknown as SeoAuditRecord;
 }
 
 function check({
@@ -42,18 +48,27 @@ function check({
   primaryAgent,
   recordId,
   result = "warning",
+  engine,
+  truth,
+  measurement,
+  scope = "page",
 }: {
   readonly id: string;
   readonly title: string;
   readonly primaryAgent: "seo" | "tech";
+  readonly scope?: "site" | "page";
   readonly recordId?: string;
   readonly result?: "blocker" | "warning" | "tip" | "excluded";
+  readonly engine?: string;
+  readonly truth?: string;
+  readonly measurement?: { readonly en: string; readonly zh: string } | null;
 }): AgentAuditEvaluatedCheck {
   const evidenceRecordIds = recordId ? [recordId] : [];
+  const evidenced = evidenceRecordIds.length > 0;
   return {
     check: {
       id,
-      scope: "page",
+      scope,
       groupId: id.split(".")[0] ?? id,
       title: { en: title, zh: `${title} 中文` },
       impact: {
@@ -73,12 +88,14 @@ function check({
       evidenceRecordIds,
     },
     result,
-    engine: evidenceRecordIds.length > 0 ? "ready" : "not-integrated",
-    truth: evidenceRecordIds.length > 0 ? "observed" : "unavailable",
+    engine: engine ?? (evidenced ? "ready" : "not-integrated"),
+    truth: truth ?? (evidenced ? "observed" : "unavailable"),
     measurement:
-      evidenceRecordIds.length > 0
-        ? { en: `${title} observed`, zh: `已观测 ${title}` }
-        : null,
+      measurement === undefined
+        ? evidenced
+          ? { en: `${title} observed`, zh: `已观测 ${title}` }
+          : null
+        : measurement,
     evidenceRecordIds,
     scoreValue: null,
     scoreContribution: null,
@@ -102,11 +119,17 @@ const checks = [
     id: "8.1",
     title: "LCP field data",
     primaryAgent: "tech",
-    result: "excluded",
+    engine: "not-integrated",
+    truth: "unavailable",
   }),
 ];
 
-const records = [record("title_signal", 2), record("canonical_signal", 3)];
+const records = [
+  record("title_signal", 2),
+  record("canonical_signal", 3, [
+    { label: "canonical_target", value: "https://example.com/" },
+  ]),
+];
 
 function profile(agent: "seo" | "tech") {
   return confirmAgentProfile(
@@ -118,13 +141,29 @@ function profile(agent: "seo" | "tech") {
   );
 }
 
+const MESSAGES = {
+  agents: en.agents,
+  tools: { seoAudit: en.tools.seoAudit },
+};
+
+function selectSpy() {
+  return vi.fn<(recommendationId: string) => void>();
+}
+
+type SelectSpy = ReturnType<typeof selectSpy>;
+
+const RECOMMENDATION_COPY = en.agents.workbench.recommendations;
+const DIAGNOSIS_COPY = en.agents.workbench.diagnosis;
+const PROFILE_OPTIONS = en.agents.workbench.profile.options;
+
 describe("AgentRecommendations", () => {
   let host: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-      true;
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -136,27 +175,28 @@ describe("AgentRecommendations", () => {
     vi.restoreAllMocks();
   });
 
-  function render(
-    agent: "seo" | "tech",
-    selectedRecommendationId: string | null,
-    onSelectRecommendation = vi.fn(),
-  ) {
+  function renderWith({
+    agent,
+    selectedRecommendationId,
+    evaluatedChecks = checks,
+    evidence = records,
+    onSelectRecommendation = selectSpy(),
+  }: {
+    readonly agent: "seo" | "tech";
+    readonly selectedRecommendationId: string | null;
+    readonly evaluatedChecks?: readonly AgentAuditEvaluatedCheck[];
+    readonly evidence?: readonly SeoAuditRecord[];
+    readonly onSelectRecommendation?: SelectSpy;
+  }) {
     act(() => {
       root.render(
-        <NextIntlClientProvider
-          locale="en"
-          timeZone="UTC"
-          messages={{
-            agents: en.agents,
-            tools: { seoAudit: en.tools.seoAudit },
-          }}
-        >
+        <NextIntlClientProvider locale="en" timeZone="UTC" messages={MESSAGES}>
           <AgentRecommendations
             agent={agent}
             locale="en"
             targetUrl="https://example.com/target"
-            evaluatedChecks={checks}
-            records={records}
+            evaluatedChecks={evaluatedChecks}
+            records={evidence}
             profile={profile(agent)}
             selectedRecommendationId={selectedRecommendationId}
             onSelectRecommendation={onSelectRecommendation}
@@ -165,6 +205,35 @@ describe("AgentRecommendations", () => {
       );
     });
     return onSelectRecommendation;
+  }
+
+  function render(
+    agent: "seo" | "tech",
+    selectedRecommendationId: string | null,
+    onSelectRecommendation = selectSpy(),
+  ) {
+    return renderWith({
+      agent,
+      selectedRecommendationId,
+      onSelectRecommendation,
+    });
+  }
+
+  function textOf(testId: string): string {
+    return (
+      host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+        ?.textContent ?? ""
+    );
+  }
+
+  function solutionCopy(): readonly string[] {
+    return [
+      "agent-solution-recommendation",
+      "agent-solution-validation",
+      "agent-solution-impact",
+      "agent-solution-risks",
+      "agent-solution-limits",
+    ].map(textOf);
   }
 
   it("renders controlled recommendation rows with aria-pressed and aria-controls", () => {
@@ -185,46 +254,25 @@ describe("AgentRecommendations", () => {
   });
 
   it("ranks an evidenced blocker before a wider warning and keeps reach secondary", () => {
-    const rankedChecks = [
-      check({
-        id: "2.3",
-        title: "Wide metadata warning",
-        primaryAgent: "seo",
-        recordId: "wide_warning",
-      }),
-      check({
-        id: "1.1",
-        title: "Narrow status blocker",
-        primaryAgent: "tech",
-        recordId: "narrow_blocker",
-        result: "blocker",
-      }),
-    ];
-    act(() => {
-      root.render(
-        <NextIntlClientProvider
-          locale="en"
-          timeZone="UTC"
-          messages={{
-            agents: en.agents,
-            tools: { seoAudit: en.tools.seoAudit },
-          }}
-        >
-          <AgentRecommendations
-            agent="seo"
-            locale="en"
-            targetUrl="https://example.com/target"
-            evaluatedChecks={rankedChecks}
-            records={[
-              record("wide_warning", 100),
-              record("narrow_blocker", 1),
-            ]}
-            profile={profile("seo")}
-            selectedRecommendationId={null}
-            onSelectRecommendation={vi.fn()}
-          />
-        </NextIntlClientProvider>,
-      );
+    renderWith({
+      agent: "seo",
+      selectedRecommendationId: null,
+      evaluatedChecks: [
+        check({
+          id: "2.3",
+          title: "Wide metadata warning",
+          primaryAgent: "seo",
+          recordId: "wide_warning",
+        }),
+        check({
+          id: "1.1",
+          title: "Narrow status blocker",
+          primaryAgent: "tech",
+          recordId: "narrow_blocker",
+          result: "blocker",
+        }),
+      ],
+      evidence: [record("wide_warning", 100), record("narrow_blocker", 1)],
     });
 
     const list = host.querySelector('[data-stage="03"]');
@@ -250,9 +298,7 @@ describe("AgentRecommendations", () => {
 
   it("renders all required Selected Solution fields and an explicit preview-only boundary", () => {
     render("tech", "tech:page:1.4");
-    const solution = host.querySelector<HTMLElement>(
-      "#tech-selected-solution",
-    );
+    const solution = host.querySelector<HTMLElement>("#tech-selected-solution");
     const text = solution?.textContent ?? "";
 
     for (const label of [
@@ -273,39 +319,269 @@ describe("AgentRecommendations", () => {
     expect(text).toContain("published, or deployed");
   });
 
-  it("gives SEO and Tech different recommendations and solutions from the same checks", () => {
+  it("gives SEO and Tech different solution shapes and copy from the same check", () => {
     render("seo", "seo:page:1.4");
-    const seoText = host.textContent ?? "";
+    const seoCopy = solutionCopy();
     const seoPreview = host.querySelector("pre")?.textContent ?? "";
+    const seoContext = host.textContent ?? "";
 
     render("tech", "tech:page:1.4");
-    const techText = host.textContent ?? "";
+    const techCopy = solutionCopy();
     const techPreview = host.querySelector("pre")?.textContent ?? "";
+    const techContext = host.textContent ?? "";
 
-    expect(seoText).toContain("SEO Agent decision");
-    expect(seoText).toContain("AstrologyWiki");
-    expect(seoText).toContain("Generate Free Birth Chart");
-    expect(seoText).toContain("免费星盘计算");
-    expect(techText).toContain("Tech Agent fix review");
-    expect(techText).toContain(
+    expect(seoContext).toContain("AstrologyWiki");
+    expect(seoContext).toContain("Generate Free Birth Chart");
+    expect(seoContext).toContain("免费星盘计算");
+    expect(techContext).toContain(
       "Evaluate crawlability and reliability of the public birth-chart experience",
     );
     expect(seoPreview).toContain("technical issue brief");
     expect(techPreview).toContain('rel="canonical"');
     expect(seoPreview).not.toBe(techPreview);
+    for (const [index, copy] of seoCopy.entries()) {
+      expect(copy).not.toBe("");
+      expect(copy).not.toBe(techCopy[index]);
+    }
   });
 
-  it("renders excluded source-gated checks as unavailable investigation, not an actionable fix", () => {
-    render("tech", "tech:page:8.1");
-    const solution = host.querySelector<HTMLElement>(
-      "#tech-selected-solution",
+  it("gives two different Tech solution kinds their own advice, validation, risks, and limits", () => {
+    const canonicalChecks = [
+      check({
+        id: "1.4",
+        title: "Canonical target",
+        primaryAgent: "tech",
+        recordId: "canonical_signal",
+      }),
+    ];
+    const redirectChecks = [
+      check({
+        id: "1.6",
+        title: "Redirect chain length",
+        primaryAgent: "tech",
+        recordId: "redirect_signal",
+      }),
+    ];
+    const redirectRecords = [
+      record("redirect_signal", 1, [
+        { label: "redirect_hops", value: 3 },
+        { label: "final_url", value: "https://example.com/final" },
+      ]),
+    ];
+
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.4",
+      evaluatedChecks: canonicalChecks,
+    });
+    const canonicalCopy = solutionCopy();
+
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.6",
+      evaluatedChecks: redirectChecks,
+      evidence: redirectRecords,
+    });
+    const redirectCopy = solutionCopy();
+
+    for (const [index, copy] of canonicalCopy.entries()) {
+      expect(copy).not.toBe("");
+      expect(copy).not.toBe(redirectCopy[index]);
+    }
+  });
+
+  it("fills the fix preview with this run's own measured values instead of placeholders", () => {
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.6",
+      evaluatedChecks: [
+        check({
+          id: "1.6",
+          title: "Redirect chain length",
+          primaryAgent: "tech",
+          recordId: "redirect_signal",
+        }),
+      ],
+      evidence: [
+        record("redirect_signal", 1, [
+          { label: "redirect_hops", value: 3 },
+          { label: "final_url", value: "https://example.com/final" },
+        ]),
+      ],
+    });
+    const preview = host.querySelector("pre")?.textContent ?? "";
+
+    expect(preview).toContain("https://astrologywiki.com/");
+    expect(preview).toContain("Redirect chain length observed");
+    expect(preview).toContain("observed hops: 3");
+    expect(preview).toContain("https://example.com/final");
+    expect(preview).not.toContain("[legacy path]");
+    expect(preview).not.toContain("[host]");
+    expect(preview).not.toContain("[confirmed query]");
+  });
+
+  it("localizes result, engine, truthfulness, and page context instead of raw enum tokens", () => {
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.4",
+      evaluatedChecks: [
+        check({
+          id: "1.4",
+          title: "Canonical target",
+          primaryAgent: "tech",
+          recordId: "canonical_signal",
+          engine: "needs-supplement",
+          truth: "source-gated",
+        }),
+      ],
+    });
+
+    const states = textOf("agent-solution-states");
+    expect(states).toContain(DIAGNOSIS_COPY.results.warning);
+    expect(states).toContain(DIAGNOSIS_COPY.engines.needsSupplement);
+    expect(states).toContain(DIAGNOSIS_COPY.truth.sourceGated);
+    expect(states).not.toContain("needs-supplement");
+    expect(states).not.toContain("source-gated");
+
+    const solution =
+      host.querySelector<HTMLElement>("#tech-selected-solution")?.textContent ??
+      "";
+    expect(solution).toContain(
+      [
+        PROFILE_OPTIONS.pageType.homepage,
+        PROFILE_OPTIONS.device.mobile,
+        PROFILE_OPTIONS.auditScope["site-first"],
+      ].join(" · "),
     );
+    expect(solution).not.toContain("site-first");
+
+    const row =
+      host.querySelector<HTMLElement>(
+        '[data-testid="agent-recommendation-tech:page:1.4"]',
+      )?.textContent ?? "";
+    expect(row).toContain(`P1 · ${DIAGNOSIS_COPY.results.warning}`);
+  });
+
+  it("renders source-gated checks as unavailable investigation, not an actionable fix", () => {
+    render("tech", "tech:page:8.1");
+    const solution = host.querySelector<HTMLElement>("#tech-selected-solution");
     const text = solution?.textContent ?? "";
 
-    expect(text).toContain("Evidence unavailable");
-    expect(text).toContain("Unavailable investigation");
+    expect(textOf("agent-solution-boundary")).toContain(
+      RECOMMENDATION_COPY.unavailableInvestigation,
+    );
+    expect(text).toContain(RECOMMENDATION_COPY.evidenceUnavailable);
+    expect(
+      host
+        .querySelector('[data-testid="agent-evidence-empty"]')
+        ?.getAttribute("data-presence"),
+    ).toBe("source-gated");
     expect(text).not.toContain("Apply fix");
     expect(text).not.toContain("Create PR");
+  });
+
+  it("explains a not-observed check instead of contradicting its own measured value", () => {
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.5",
+      evaluatedChecks: [
+        check({
+          id: "1.5",
+          title: "Included in sitemap",
+          primaryAgent: "tech",
+          engine: "ready",
+          truth: "not-observed",
+          measurement: {
+            en: "0 of 12 inspected pages affected",
+            zh: "12 个已检查页面中 0 个受影响",
+          },
+        }),
+      ],
+      evidence: [],
+    });
+
+    const empty = host.querySelector('[data-testid="agent-evidence-empty"]');
+    expect(empty?.getAttribute("data-presence")).toBe("not-observed");
+    const solution =
+      host.querySelector<HTMLElement>("#tech-selected-solution")?.textContent ??
+      "";
+    expect(solution).toContain("0 of 12 inspected pages affected");
+    expect(solution).not.toContain(RECOMMENDATION_COPY.evidenceUnavailable);
+    expect(textOf("agent-solution-boundary")).toContain(
+      RECOMMENDATION_COPY.previewOnly,
+    );
+    expect(textOf("agent-solution-boundary")).not.toContain(
+      RECOMMENDATION_COPY.unavailableInvestigation,
+    );
+  });
+
+  it("keeps a page-level check without a matching observation out of the source-gated wording", () => {
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:page:1.4",
+      evaluatedChecks: [
+        check({
+          id: "1.4",
+          title: "Canonical target",
+          primaryAgent: "tech",
+          recordId: "canonical_signal",
+          engine: "ready",
+          truth: "observed",
+        }),
+      ],
+      evidence: [
+        {
+          ...record("canonical_signal", 1),
+          observations: [
+            {
+              url: "https://example.com/other",
+              values: [{ label: "canonical_target", value: null }],
+            },
+          ],
+        } as unknown as SeoAuditRecord,
+      ],
+    });
+
+    expect(
+      host
+        .querySelector('[data-testid="agent-evidence-empty"]')
+        ?.getAttribute("data-presence"),
+    ).toBe("not-captured");
+  });
+
+  it("still shows preserved observations when the record itself is not a confirmed hit", () => {
+    renderWith({
+      agent: "tech",
+      selectedRecommendationId: "tech:site:C2",
+      evaluatedChecks: [
+        check({
+          id: "C2",
+          title: "Broken link count",
+          primaryAgent: "tech",
+          recordId: "internal_target_http_error",
+          scope: "site",
+          engine: "ready",
+          truth: "observed",
+        }),
+      ],
+      evidence: [
+        {
+          ...record("internal_target_http_error", 0, [
+            { label: "final_status", value: 404 },
+          ]),
+          state: "unverified",
+        } as unknown as SeoAuditRecord,
+      ],
+    });
+
+    expect(
+      host.querySelector('[data-testid="agent-evidence-empty"]'),
+    ).toBeNull();
+    const solution =
+      host.querySelector<HTMLElement>("#tech-selected-solution")?.textContent ??
+      "";
+    expect(solution).toContain("https://example.com/target");
+    expect(solution).toContain("404");
   });
 
   it("exposes the 39/61 desktop grid with Stage 03 before Stage 04 in DOM order", () => {

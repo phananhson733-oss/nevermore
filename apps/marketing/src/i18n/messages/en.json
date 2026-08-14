@@ -935,7 +935,11 @@
         "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
         "bounded_static_html_crawl_inlinks_only": "Inbound counts include links in collected static HTML only. This record is not a definitive orphan-page claim.",
         "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
-        "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured."
+        "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured.",
+        "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
+        "character_count_only_rendered_pixel_width_not_measured": "Character count only. Rendered pixel width, which is what Google truncates on, was not measured.",
+        "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
+        "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point."
       },
       "records": {
         "robots_resource": {
@@ -1005,6 +1009,34 @@
         "json_ld_parse_error": {
           "title": "JSON-LD parse error",
           "description": "Inspected static HTML pages containing JSON-LD blocks that could not be parsed as JSON."
+        },
+        "page_outbound_broken_link": {
+          "title": "Broken internal links on a page",
+          "description": "Pages that link out to an internal URL the crawl found returning 4xx or 5xx."
+        },
+        "page_not_in_sitemap": {
+          "title": "Page absent from the sitemap",
+          "description": "Collected HTML pages that were not listed in any sitemap the crawl retrieved."
+        },
+        "title_length_outside_range": {
+          "title": "Title outside the reviewed length range",
+          "description": "Pages whose title text falls outside the reviewed working range. Google truncates by rendered width, not character count."
+        },
+        "meta_description_length_outside_range": {
+          "title": "Meta description outside the reviewed length range",
+          "description": "Pages whose meta description falls outside the reviewed working range. Google truncates by rendered width, not character count."
+        },
+        "page_without_outbound_internal_link": {
+          "title": "Page with no outbound internal link",
+          "description": "Collected HTML pages from which the crawl observed no internal link to another page."
+        },
+        "click_depth_beyond_reviewed_limit": {
+          "title": "Page deeper than the reviewed click limit",
+          "description": "Pages that took more clicks from the crawl entry point than the reviewed limit."
+        },
+        "json_ld_missing": {
+          "title": "No JSON-LD block",
+          "description": "Collected HTML pages that carried no JSON-LD structured data at all."
         }
       },
       "evidence": {
@@ -1028,7 +1060,15 @@
         "observed_inbound_links": "Observed inbound links",
         "observed_source_pages": "Observed source pages",
         "malformed_blocks": "Malformed JSON-LD blocks",
-        "types_observed": "JSON-LD types observed"
+        "types_observed": "JSON-LD types observed",
+        "broken_link_targets": "Broken link targets",
+        "title_characters": "Title characters",
+        "description_characters": "Description characters",
+        "reviewed_range": "Reviewed range",
+        "observed_outbound_internal_links": "Observed outbound internal links",
+        "observed_click_depth": "Observed click depth",
+        "reviewed_limit": "Reviewed limit",
+        "json_ld_blocks": "JSON-LD blocks"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -2402,8 +2442,8 @@
       "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
       "step2Title": "Inspect public HTML",
       "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
-      "step3Title": "Diagnose all 77 checks",
-      "step3Body": "Review site and page groups with separate blockers, health, engine readiness, and truthfulness states. Unsupported sources stay excluded.",
+      "step3Title": "See what this crawl can decide",
+      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected SEO solution",
       "step4Body": "Prioritize evidence and the confirmed search context, then inspect a page-specific change and validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
@@ -2413,7 +2453,7 @@
       "metaTitle": "Technical SEO Agent for Crawl Review",
       "metaDescription": "Inspect a site's public static HTML crawl for response, indexability, and internal-link conditions with evidence and explicit limitations.",
       "eyebrow": "Tech Agent · Bounded crawl",
-      "title": "Review technical site conditions without a black-box score",
+      "title": "Review technical site conditions against evidence you can open",
       "subtitle": "Submit a site to inspect observed crawl responses, static indexability directives, and internal-link conditions in discoverable same-origin HTML.",
       "heroCta": "Run Tech Agent",
       "accountBoundaryTitle": "Account access gate",
@@ -2427,8 +2467,8 @@
       "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
       "step2Title": "Inspect bounded responses",
       "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
-      "step3Title": "Diagnose all 77 checks",
-      "step3Body": "Review site and page groups with separate blockers, health, engine readiness, and truthfulness states. Unsupported sources stay excluded.",
+      "step3Title": "See what this crawl can decide",
+      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected technical solution",
       "step4Body": "Trace the affected response, directive, link, template, or configuration and inspect a code-oriented validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."
@@ -2480,7 +2520,7 @@
           "device": "Device",
           "pageType": "Page type",
           "targetQuery": "Target query",
-          "auditScope": "Audit scope",
+          "auditScope": "Opening view",
           "directCompetitors": "Direct competitors (comma separated)",
           "indirectAlternatives": "Indirect alternatives (comma separated)",
           "excludedAlternatives": "Excluded alternatives (comma separated)"
@@ -2712,8 +2752,8 @@
             "guide": "Guide or article"
           },
           "auditScope": {
-            "site-first": "Site first, then page",
-            "page-only": "This page only"
+            "site-first": "Open on site findings",
+            "page-only": "Open on page findings"
           }
         },
         "boundary": "Review this Agent's context before running. Supplied facts, field-level provenance, and inferred assumptions stay visibly labeled; acceptance applies only to this Agent run and does not write an app Product Profile.",
@@ -2742,12 +2782,13 @@
           "locale": "Language / locale",
           "device": "Device",
           "pageType": "Page type",
-          "targetQuery": "Target query"
+          "targetQuery": "Target query",
+          "targetQueryUnconfirmed": "Not confirmed"
         },
         "scopeLabel": "Audit scope",
         "scopes": {
-          "site": "Site · 5 groups / 27 checks",
-          "page": "Page · 9 groups / 50 checks"
+          "site": "Site · {groups} groups / {checks} checks",
+          "page": "Page · {groups} groups / {checks} checks"
         },
         "scopeSummary": "{groups} groups · {total} checks",
         "blockers": "Blockers",
@@ -2770,12 +2811,15 @@
           "howToFix": "How to address it",
           "dataSource": "Data source",
           "scoreContribution": "Score contribution",
-          "boundary": "Boundary / unknown"
+          "boundary": "Boundary / unknown",
+          "notMeasured": "Not measured in this run",
+          "notScored": "Not scored"
         },
         "axes": {
           "result": "Result",
           "engine": "Engine",
-          "truth": "Truthfulness"
+          "truth": "Truthfulness",
+          "unknownState": "Unrecognised in this build"
         },
         "results": {
           "blocker": "Blocker",
@@ -2801,7 +2845,7 @@
           "unavailable": "Unavailable",
           "illustrative": "Illustrative"
         },
-        "excludedBoundary": "Unavailable, not-observed-in-sample, not-integrated, and source-gated checks are excluded from health calculations; exclusion is never zero and is not a pass.",
+        "excludedBoundary": "Unavailable, not-integrated, and source-gated checks are excluded from the health calculation; exclusion is never zero and is not a pass. A check that was tested with nothing affected counts as a pass inside the bounded sample only.",
         "headingPreset": {
           "label": "Page-type heading preset",
           "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · {words}+ words per H3 section",
@@ -2829,6 +2873,16 @@
           "scopeAtPreset": "Scope policy at preset",
           "doesNotRejudge": "Changing policy records a local review rule only. It does not rejudge this completed run.",
           "rerunRequired": "Local policy changed. A new real run is required before the result can be rejudged."
+        },
+        "healthScoredCount": "Derived from {scored} scored checks",
+        "healthInsufficient": "Not enough evidence for a health score",
+        "healthInsufficientHint": "Scored checks in this scope: {scored}. A single number is withheld below {minimum}.",
+        "healthPendingSources": "Still waiting on: {sources}",
+        "healthDimmedReason": "Dimmed because blocker checks are open in this scope ({blockers}). Read those before the score.",
+        "axisLegend": {
+          "result": "What this run decided for the check: blocker, warning, tip, pass, or excluded.",
+          "engine": "Whether the detector behind the check is integrated and had a source to read this run.",
+          "truth": "How the value was learned: observed in the bounded sample, tested with nothing observed, or not measured at all."
         }
       },
       "auditCatalog": {
@@ -2939,7 +2993,7 @@
       "recommendations": {
         "stage3": "Stage 03 · Recommendations",
         "stage3Title": "Prioritize evidence-backed next steps",
-        "stage3Body": "Compare blockers, result state, evidence reach, source availability, and the confirmed Profile. Excluded or source-gated checks remain unavailable investigations and never become executable fixes.",
+        "stage3Body": "Ordered by result severity, then by whether this run collected evidence, then by which Agent owns the check, then by observed reach. The confirmed Profile is not part of this ordering. Checks this run could not evaluate are reported separately and never enter the ranking.",
         "stage4": "Stage 04 · Selected solution & validation",
         "stage4Title": "Review one solution before implementation",
         "stage4Body": "Inspect the issue, evidence, proposed change, applicable context, validation steps, impact surface, risks, and limits together.",
@@ -2982,7 +3036,81 @@
           "validation3": "Rerun the same bounded checks; use an authorized search source separately when a result depends on search-performance data.",
           "impactSurface": "Search intent clarity, snippet inputs, document hierarchy, internal discovery, and structured-data consistency on the affected pages.",
           "risks": "A generic rewrite can dilute the page's actual purpose, duplicate another page, or introduce markup that visible content does not support.",
-          "limits": "This preview does not infer search demand or ranking impact. It cannot replace SERP, traffic, or authorized search-performance evidence."
+          "limits": "This preview does not infer search demand or ranking impact. It cannot replace SERP, traffic, or authorized search-performance evidence.",
+          "kinds": {
+            "searchOpportunity": {
+              "recommendation": "Decide whether the confirmed query is worth pursuing before touching the page. Bind country, locale, device, and page, read a SERP snapshot or an authorized Search Console source, then record pursue, refine, or defer together with the evidence behind it.",
+              "validation1": "Re-read the SERP for the same query, country, locale, and device, and note what changed since this run.",
+              "validation2": "Check the recorded decision against the page's actual role: an opportunity no page on the site can answer is a content decision, not a fix.",
+              "validation3": "Before acting on any search-performance number, confirm the authorized source is connected; this run does not read it.",
+              "impactSurface": "Which queries this page competes for, and whether this page is the right place to answer them at all.",
+              "risks": "Pursuing a query on the wrong page splits intent across two pages and leaves both weaker than one clear answer would have been.",
+              "limits": "This preview reads the shape of a result page, not demand. It does not estimate volume, clicks, or position, and it cannot tell you the outcome of pursuing the query."
+            },
+            "searchPresentation": {
+              "recommendation": "Rewrite the title and meta description so each states what this page decides for the reader, and so no other page on the site makes the same promise. Keep the wording true to what the page actually contains.",
+              "validation1": "Fetch the changed public HTML and confirm the new title and description are what the server returns, not only what the CMS shows.",
+              "validation2": "Compare the new text with the sibling pages that shared the old wording and confirm each page now reads differently.",
+              "validation3": "Read the first screen of the page and confirm it delivers the promise the snippet just made.",
+              "impactSurface": "The title, description, and opening lines a search result is built from, plus how this page reads next to its siblings.",
+              "risks": "A rewrite tuned to a query rather than to the page can promise something the page does not deliver, which costs more than the duplicate wording did.",
+              "limits": "The character counts here are a reviewed working range, not a rule: results truncate by rendered width. This preview cannot tell you how the snippet will finally be displayed."
+            },
+            "contentBrief": {
+              "recommendation": "Treat this as a content brief, not a word-count target. List the decisions a reader still cannot make on this page, write the sections that answer them, and cite where each new claim comes from.",
+              "validation1": "Re-read the page as the confirmed ICP and check whether the added sections remove a real blocker for them.",
+              "validation2": "Confirm every added claim has a source that survives review, and delete any sentence that exists only to add length.",
+              "validation3": "Rerun the same bounded content check and compare it with the measured value captured here.",
+              "impactSurface": "What the page actually explains, and whether a reader can finish their decision without leaving it.",
+              "risks": "Padding a page to hit a length target dilutes the parts that already worked, and text lifted from competitors can duplicate a page you already own.",
+              "limits": "Word count and keyword density are internal heuristics, not documented ranking signals. This preview does not judge content quality and does not predict how the page will perform."
+            },
+            "headingStructure": {
+              "recommendation": "Give the page one H1 that names its single decision, use H2s for the steps a reader takes, and H3s for the subquestions each step raises. Fix the outline before changing the wording.",
+              "validation1": "Fetch the changed page and read only its heading text top to bottom; the outline alone should explain the page.",
+              "validation2": "Confirm no heading level is skipped and that no heading is used purely for its visual size.",
+              "validation3": "Check that each H3 section answers its own heading instead of restating it.",
+              "impactSurface": "The reading order of the page and the structure assistive technology and parsers navigate.",
+              "risks": "Reshaping headings can break in-page anchors, table-of-contents links, and any styling that keys off heading level.",
+              "limits": "The H2/H3 counts are a page-type preset and never a blocker. A page with a different but coherent structure can be entirely correct."
+            },
+            "internalLinkExposure": {
+              "recommendation": "Give this page a discovery path from a page that is genuinely about the same topic. Pick the source page for its context, write the anchor the way a reader would describe the destination, and add one good link rather than many weak ones.",
+              "validation1": "Fetch the source page's public HTML and confirm the link sits in the main content, not only inside a template block.",
+              "validation2": "Follow the link and confirm the destination returns 200 and is the canonical version of the page.",
+              "validation3": "Rerun the bounded crawl and compare the observed inbound link count with the value captured here.",
+              "impactSurface": "How a reader and a crawler reach this page from the rest of the site.",
+              "risks": "Links added for coverage rather than for context read as filler, and repeating one anchor across many pages makes every one of them less descriptive.",
+              "limits": "This count comes from a bounded same-origin crawl. Navigation the crawl did not reach, and links rendered only by client-side script, are not represented here."
+            },
+            "structuredData": {
+              "recommendation": "Mark up only what a reader can already see on the page, and pick the type that matches what the page actually is. When the two disagree, fix the visible content first.",
+              "validation1": "Validate the emitted JSON-LD with a schema validator and confirm every required property is present.",
+              "validation2": "Compare each marked-up value against the rendered page and remove anything the page does not actually show.",
+              "validation3": "Refetch the public HTML and confirm the block is served in the response rather than injected after load.",
+              "impactSurface": "The machine-readable description of this page and its agreement with what the page displays.",
+              "risks": "Markup describing content the page does not show is a policy violation, not a shortcut, and it puts the page's existing eligibility at risk.",
+              "limits": "Valid markup does not entitle a page to a rich result. This preview checks structure and agreement with visible content only, and promises no search feature."
+            },
+            "mediaAssets": {
+              "recommendation": "Write alt text that says what each image shows for someone who cannot see it, and treat file format and size as a delivery decision separate from the alt text.",
+              "validation1": "Read the page with images disabled and confirm the alt text still carries the meaning.",
+              "validation2": "Confirm decorative images carry an empty alt attribute instead of a description.",
+              "validation3": "Refetch the page and compare image count, format, and byte size with the values captured here.",
+              "impactSurface": "What the page communicates when images do not load or cannot be seen, and how much the page weighs.",
+              "risks": "Alt text written for a query instead of for the image misdescribes the page to the readers who depend on it most.",
+              "limits": "This is an accessibility and delivery observation. The format and size thresholds here are internal judgment, and no search outcome is implied."
+            },
+            "technicalIssueBrief": {
+              "recommendation": "This is a technical condition surfaced during a search review, so write it up instead of fixing it here. Record the observed condition and the search decision it constrains, then hand it to whoever owns the template, CMS, or platform.",
+              "validation1": "Confirm the condition still reproduces on the public URL before handing it over.",
+              "validation2": "Review the same check in the Tech Agent, where the owning system and its evidence are in scope.",
+              "validation3": "After the owner releases a change, refetch the URL and compare it with the evidence recorded here.",
+              "impactSurface": "The search decision this condition constrains; the code or configuration behind it sits outside this Agent.",
+              "risks": "Working around a delivery problem in content hides it instead of fixing it, and the workaround usually outlives the person who added it.",
+              "limits": "Framework, repository, and owner context are absent here by design. No code or configuration change is prepared, reviewed, or released from this view."
+            }
+          }
         },
         "tech": {
           "recommendation": "Tech Agent fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a reviewable response, redirect, directive, link, or performance change.",
@@ -2992,8 +3120,108 @@
           "validation3": "After an owner-managed release, fetch the public URL and rerun the same bounded technical checks to compare evidence.",
           "impactSurface": "HTTP delivery, crawl paths, index directives, canonical behavior, internal-link integrity, and the specific template or configuration surface involved.",
           "risks": "A change without framework and owner context can break routing, deliberate exclusions, localization, caching, or adjacent templates.",
-          "limits": "Owner and framework context are required before implementation. No site edit, apply, pull request, approval, publish, or deploy occurs here."
-        }
+          "limits": "Owner and framework context are required before implementation. No site edit, apply, pull request, approval, publish, or deploy occurs here.",
+          "kinds": {
+            "indexability": {
+              "recommendation": "Confirm the owner actually intends this URL to be indexable before changing anything: some exclusions are deliberate. Then correct the single status or directive that keeps it out and leave the rest alone.",
+              "validation1": "Request the URL exactly as a crawler does, with no cookies or session, and read the final status and headers.",
+              "validation2": "Check the same directive on one nearby URL that is deliberately excluded, to confirm the change did not widen.",
+              "validation3": "After release, refetch the public URL and rerun this check; use an authorized search source separately to see how the crawler treats it.",
+              "impactSurface": "Whether this URL is eligible to be crawled and indexed at all, and every URL that shares the same directive source.",
+              "risks": "Directives are usually emitted by shared middleware or a layout, so one edit can silently expose staging paths, filtered views, or thin duplicates.",
+              "limits": "This run reads the static response only. Directives added by client-side script, and the crawler's actual indexing decision, are not observed here."
+            },
+            "crawl": {
+              "recommendation": "Change robots.txt only where a rule blocks something the owner meant to keep public. Allow the specific path instead of loosening a broad rule, and keep deliberate exclusions in place.",
+              "validation1": "Test the exact URL against the new robots.txt with a robots tester before release.",
+              "validation2": "Re-test one path that must stay disallowed and confirm it is still blocked.",
+              "validation3": "After release, fetch /robots.txt from the public origin and confirm the served file is the one that was reviewed.",
+              "impactSurface": "Which paths a crawler is permitted to request, across every URL the affected rule matches.",
+              "risks": "robots.txt is prefix-matched and evaluated per user-agent, so a rule written for one path routinely matches more than intended, and disallow does not remove anything already indexed.",
+              "limits": "A crawl policy is a request, not an access control. This preview says nothing about authentication, and blocking a URL is not a way to keep it private."
+            },
+            "redirect": {
+              "recommendation": "Collapse the chain into a single hop that lands on a 200 HTTPS URL, and point every source at the final destination instead of at the next hop. Use a permanent redirect only when the move is permanent.",
+              "validation1": "Request the original URL without following redirects and read each hop's status and Location header in order.",
+              "validation2": "Confirm the destination is the canonical URL of the content and returns 200, not another redirect or a soft 404.",
+              "validation3": "Test one URL that must not redirect, then refetch after release and compare the hop count with the value captured here.",
+              "impactSurface": "The response path for this URL and for every source that links to it, including external links you do not control.",
+              "risks": "Redirect rules are ordered and pattern-based, so a new rule can shadow an existing one or create a loop; permanent redirects are cached by browsers and are hard to take back.",
+              "limits": "This run follows the public response chain only. Which hop a crawler ultimately honors, and how long a cached permanent redirect persists, are not observed here."
+            },
+            "canonical": {
+              "recommendation": "Emit one self-referencing canonical from the page template, using the same absolute URL the server actually serves. Point it elsewhere only when this page is genuinely a duplicate of that target.",
+              "validation1": "Fetch the page and confirm exactly one canonical element is present in the served HTML.",
+              "validation2": "Confirm the canonical URL returns 200 on its own and matches the served URL character for character, including scheme, host, and trailing slash.",
+              "validation3": "Check one paginated, filtered, or parameterized variant of the page and confirm it now consolidates as intended.",
+              "impactSurface": "Which URL of this content is treated as the one to keep, and every variant that consolidates into it.",
+              "risks": "A canonical pointing at the wrong page asks for this page to be dropped in favor of that one, and a template-wide canonical that hardcodes a single URL does that to every page at once.",
+              "limits": "A canonical is a hint, not an instruction, and this run does not fetch the canonical target's status. Consolidation is decided by the search engine, not by this markup."
+            },
+            "performance": {
+              "recommendation": "Separate field data from lab data before changing anything: field data says whether real users are affected, lab data says where the time goes. Locate the bottleneck in the owning route or template first, then make one measurable change.",
+              "validation1": "Read the CrUX p75 over the 28-day window for the same URL and form factor, and remember the window lags any change you ship.",
+              "validation2": "Run a lab test on the same route before and after the change with identical throttling settings, and compare the specific metric.",
+              "validation3": "Check one other page on the same template to confirm the change helped there too, not only on the tested URL.",
+              "impactSurface": "Loading and interaction behavior for this route and every page rendered from the same template or bundle.",
+              "risks": "Optimizing against a lab number no real user experiences wastes the effort, and deferring or removing resources to move a metric can break functionality that tests do not cover.",
+              "limits": "Field and lab performance sources are not integrated in this run. Where no measured value is shown above, the threshold comes from the check catalog and not from a measurement of this page."
+            },
+            "rendering": {
+              "recommendation": "Compare the static response with the rendered DOM before writing any fix: the difference is exactly what depends on script. Then decide with the framework owner whether the missing content should be server-rendered.",
+              "validation1": "Fetch the URL with scripts disabled and list what content is missing from the response.",
+              "validation2": "Load the same URL in a browser, compare the rendered DOM with that response, and note which resources blocked rendering.",
+              "validation3": "Re-run the comparison after the change and confirm the previously missing content is in the served response.",
+              "impactSurface": "What is present in the HTML a crawler receives, versus what appears only after script runs.",
+              "risks": "Moving rendering to the server changes caching, personalization, and hydration behavior at once, and a partial move can produce a mismatch that only fails at runtime.",
+              "limits": "This run reads the static response only and never executes page script. It cannot tell you whether a crawler rendered the page, or when."
+            },
+            "template": {
+              "recommendation": "This value is emitted by a shared template, so fix it once at the source instead of page by page. Derive it from the page's own canonical data, emit it exactly once, and check the routes that share the template.",
+              "validation1": "Identify every route rendered by the same template and pick the two that differ most from each other.",
+              "validation2": "Render both routes and confirm the value is present, distinct, and derived rather than hardcoded.",
+              "validation3": "After release, refetch one page of each type and compare with the evidence captured here.",
+              "impactSurface": "Every page rendered from this template, including routes this bounded crawl never reached.",
+              "risks": "A template fix lands everywhere at once, so a value that is right for one page type can be wrong for another, and a fallback string repeated across routes recreates the duplicate it was meant to remove.",
+              "limits": "This run observed only the pages the bounded crawl reached. Which template owns the value, and how many routes it covers, must be confirmed in the repository."
+            },
+            "schema": {
+              "recommendation": "Emit the JSON-LD from the template using the page's own data, and mark up only values the page already displays. Choose the type from what the page is, not from the result you want.",
+              "validation1": "Validate the emitted block with a schema validator and confirm no required property is missing.",
+              "validation2": "Compare each property against the rendered page and remove anything the page does not display.",
+              "validation3": "Check one other page of the same type and confirm the template produced correct, page-specific values there too.",
+              "impactSurface": "The machine-readable description emitted for every page of this type.",
+              "risks": "Because the block is generated, one wrong field is wrong on every page of the type, and markup describing content the page does not show is a policy violation.",
+              "limits": "Valid markup does not entitle a page to any search feature. This run checks presence and parseability only; it does not verify that each value matches the rendered page."
+            },
+            "linkIntegrity": {
+              "recommendation": "Take each broken target one at a time and decide whether to repoint it at the live URL, restore the missing page, or remove the link. Fix it where the link is authored, in the template or the content, rather than adding a redirect for every case.",
+              "validation1": "Request each observed target directly and record its final status; a target the crawl could not reach is not automatically broken.",
+              "validation2": "Confirm the corrected link resolves in one hop to a 200 URL, and check one nearby link on the same page as a control.",
+              "validation3": "Rerun the bounded crawl and compare the broken-target count with the value captured here.",
+              "impactSurface": "Whether readers and crawlers can follow this page's outbound links, and every page rendered from the same link source.",
+              "risks": "Deleting a link removes a discovery path other pages may depend on, and redirecting every broken target to the homepage turns a 404 into a soft 404 that is harder to find later.",
+              "limits": "This run classifies only the link targets the bounded crawl collected. Targets it could not reach, and links rendered by client-side script, are not represented here."
+            },
+            "internalLinkExposure": {
+              "recommendation": "Give the page a real discovery path: add a contextual internal link from a page that already covers the topic, using anchor text a reader would recognise.",
+              "validation1": "Confirm the destination is the canonical URL you want indexed, not a redirect or a variant.",
+              "validation2": "Place the link inside body content a reader actually passes, not in a footer dump.",
+              "validation3": "Recrawl and compare observed inbound links and click depth for the same page.",
+              "impactSurface": "Affects whether crawlers and readers can reach the page at all, and how deep it sits from the entry point.",
+              "risks": "Bulk-adding links to hit a number creates link blocks nobody reads. Add links where the topic genuinely connects.",
+              "limits": "Inbound links and depth are counted from this bounded crawl only. Links behind JavaScript, pagination, or pages outside the crawl are not observed, and reachability is not a ranking claim."
+            }
+          }
+        },
+        "rankedDisclosure": "{total} evidence-backed recommendations were ranked in this scope; the {shown} highest-ranked are listed here.",
+        "dataSourceGaps": "{count} relevant checks could not be evaluated in this run because their data source was not collected. They are not ranked as recommendations; the excluded list stays in Diagnosis.",
+        "previewFillIn": "[to fill in]",
+        "previewNotCaptured": "[not captured in this run]",
+        "evidenceNotObservedTitle": "No affected unit observed",
+        "evidenceNotObservedBody": "This check ran against the collected sample and found no affected unit. Nothing was found inside the bounded crawl; that is not proof that nothing exists outside it.",
+        "evidenceNoObservationTitle": "No displayable observation",
+        "evidenceNoObservationBody": "This run kept no observation record for the selected page on this check. Read the measured value and evidence source above before treating it as actionable."
       },
       "seo": {
         "title": "Start an SEO evidence run",
@@ -3103,7 +3331,9 @@
           "implementation": "internal link\n  href: [confirmed public target]\n  anchor text: [descriptive label]",
           "validation": "Fetch each changed target, confirm the final response and source-page link in static HTML, then rerun the crawl without classifying uncollected targets as fixed."
         }
-      }
+      },
+      "evidenceRecords": "Evidence records measured",
+      "evidenceRecordsBoundary": "Evidence records are the measurements this run collected. Diagnosis counts checks, which is a different unit, so the two numbers are not comparable."
     }
   },
   "playbooks": {

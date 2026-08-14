@@ -19,6 +19,15 @@ import type { SeoAuditRaw } from "./scan.ts";
 
 const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
 
+/**
+ * Reviewed working ranges, not official limits. Google truncates titles and
+ * descriptions by rendered pixel width, not character count, so these bounds
+ * only flag lengths far enough outside common practice to be worth a look.
+ */
+const TITLE_LENGTH = { min: 15, max: 70 } as const;
+const DESCRIPTION_LENGTH = { min: 50, max: 165 } as const;
+const CLICK_DEPTH_LIMIT = 4;
+
 function usage(raw: CrawlRaw, key: string): number {
   const value = raw.providerUsage[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -183,6 +192,10 @@ function buildRecords(
     string,
     { readonly page: SeoAuditPage; readonly sources: Set<string> }
   >();
+  /** Broken internal link targets keyed by the page that links to them. */
+  const brokenLinkSources = new Map<string, Set<string>>();
+  /** Sitemap membership is only testable when a sitemap was actually collected. */
+  const sitemapWasFetched = raw.sitemap.fetched;
 
   for (const source of raw.pages) {
     for (const link of source.projection.internalOutlinks) {
@@ -201,6 +214,11 @@ function buildRecords(
       };
       current.sources.add(source.projection.fetchUrl);
       linkTargetErrors.set(target.subjectUrl, current);
+
+      const owned =
+        brokenLinkSources.get(source.projection.fetchUrl) ?? new Set<string>();
+      owned.add(target.subjectUrl);
+      brokenLinkSources.set(source.projection.fetchUrl, owned);
     }
   }
 
@@ -420,6 +438,102 @@ function buildRecords(
       limitation: "uncollected_link_targets_not_classified",
     }),
     record({
+      id: "page_outbound_broken_link",
+      category: "links",
+      tested: htmlPages.length,
+      observations: [...brokenLinkSources.entries()]
+        .map(([sourceUrl, brokenTargets]) => ({
+          url: sourceUrl,
+          values: values({ broken_link_targets: brokenTargets.size }),
+        })),
+      limitation: "uncollected_link_targets_not_classified",
+    }),
+    record({
+      id: "page_not_in_sitemap",
+      category: "crawl",
+      tested: sitemapWasFetched ? htmlPages.length : 0,
+      observations: sitemapWasFetched
+        ? htmlPages
+            .filter((page) => !page.sitemapMember)
+            .map((page) => pageObservation(page, { sitemap_member: false }))
+        : [],
+      limitation: sitemapWasFetched
+        ? null
+        : "no_sitemap_collected_membership_not_testable",
+    }),
+    record({
+      id: "title_length_outside_range",
+      category: "metadata",
+      tested: htmlPages.filter((page) => page.title !== null).length,
+      observations: htmlPages
+        .filter(
+          (page) =>
+            page.title !== null &&
+            (page.title.trim().length < TITLE_LENGTH.min ||
+              page.title.trim().length > TITLE_LENGTH.max),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            title_characters: page.title!.trim().length,
+            reviewed_range: `${TITLE_LENGTH.min}-${TITLE_LENGTH.max}`,
+          }),
+        ),
+      limitation: "character_count_only_rendered_pixel_width_not_measured",
+    }),
+    record({
+      id: "meta_description_length_outside_range",
+      category: "metadata",
+      tested: htmlPages.filter((page) => page.metaDescription !== null).length,
+      observations: htmlPages
+        .filter(
+          (page) =>
+            page.metaDescription !== null &&
+            (page.metaDescription.trim().length < DESCRIPTION_LENGTH.min ||
+              page.metaDescription.trim().length > DESCRIPTION_LENGTH.max),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            description_characters: page.metaDescription!.trim().length,
+            reviewed_range: `${DESCRIPTION_LENGTH.min}-${DESCRIPTION_LENGTH.max}`,
+          }),
+        ),
+      limitation: "character_count_only_rendered_pixel_width_not_measured",
+    }),
+    record({
+      id: "page_without_outbound_internal_link",
+      category: "links",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.outboundLinks === 0)
+        .map((page) =>
+          pageObservation(page, { observed_outbound_internal_links: 0 }),
+        ),
+      limitation: "bounded_static_html_crawl_outlinks_only",
+    }),
+    record({
+      id: "click_depth_beyond_reviewed_limit",
+      category: "links",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.depth > CLICK_DEPTH_LIMIT)
+        .map((page) =>
+          pageObservation(page, {
+            observed_click_depth: page.depth,
+            reviewed_limit: CLICK_DEPTH_LIMIT,
+          }),
+        ),
+      limitation: "depth_from_bounded_crawl_entry_point_only",
+    }),
+    record({
+      id: "json_ld_missing",
+      category: "structured_data",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.jsonLdTypes.length === 0)
+        .map((page) => pageObservation(page, { json_ld_blocks: 0 })),
+      limitation: "static_html_json_ld_only",
+    }),
+    record({
       id: "json_ld_parse_error",
       category: "structured_data",
       tested: htmlPages.length,
@@ -440,8 +554,18 @@ function buildRecords(
 
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
+  const requestedSubject = subjectUrlOf(raw.requestedUrl);
+  const targetInspected = pages.some(
+    (page) =>
+      page.subjectUrl === requestedSubject &&
+      page.finalStatus !== null &&
+      page.finalStatus >= 200 &&
+      page.finalStatus < 300 &&
+      isHtml(page.contentType),
+  );
   return {
     targetUrl: raw.requestedUrl,
+    targetInspected,
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {

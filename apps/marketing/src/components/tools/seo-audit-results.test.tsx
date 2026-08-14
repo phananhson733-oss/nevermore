@@ -166,6 +166,7 @@ const report: SeoAuditReport = {
   targetUrl: "https://acme.com",
   siteOrigin: "https://acme.com",
   scannedAt: "2026-08-07T00:00:00.000Z",
+  targetInspected: true,
   coverage: {
     availability: "available",
     pagesInspected: 12,

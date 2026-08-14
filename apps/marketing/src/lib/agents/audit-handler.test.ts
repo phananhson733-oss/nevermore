@@ -27,6 +27,13 @@ const RECORD_SPECS = [
   ["sitemap_page_without_observed_inlink", "links"],
   ["internal_target_http_error", "links"],
   ["json_ld_parse_error", "structured_data"],
+  ["page_outbound_broken_link", "links"],
+  ["page_not_in_sitemap", "crawl"],
+  ["title_length_outside_range", "metadata"],
+  ["meta_description_length_outside_range", "metadata"],
+  ["page_without_outbound_internal_link", "links"],
+  ["click_depth_beyond_reviewed_limit", "links"],
+  ["json_ld_missing", "structured_data"],
 ] as const satisfies readonly (readonly [string, SeoAuditRecord["category"]])[];
 
 function record(
@@ -73,6 +80,7 @@ const upstreamPayload = {
     targetUrl: "https://acme.test/",
     siteOrigin: "https://acme.test",
     scannedAt: "2026-08-12T09:00:00.000Z",
+    targetInspected: true,
     coverage: {
       availability: "partial",
       pagesInspected: 2,
@@ -215,6 +223,7 @@ describe("handleAgentAuditRequest", () => {
           targetUrl: upstreamPayload.result.targetUrl,
           siteOrigin: upstreamPayload.result.siteOrigin,
           scannedAt: upstreamPayload.result.scannedAt,
+          targetInspected: upstreamPayload.result.targetInspected,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
@@ -273,6 +282,7 @@ describe("handleAgentAuditRequest", () => {
       targetUrl: upstreamPayload.result.targetUrl,
       siteOrigin: upstreamPayload.result.siteOrigin,
       scannedAt: upstreamPayload.result.scannedAt,
+      targetInspected: upstreamPayload.result.targetInspected,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
@@ -290,7 +300,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(17);
+    expect(body.data.result.records).toHaveLength(24);
   });
 
   it.each([

@@ -42,7 +42,8 @@ export function getSessionIntentStorage(
 export type PendingAgentIntentPurpose =
   | "prepare_profile"
   | "run_confirmed_profile"
-  | "refresh_profile";
+  | "refresh_profile"
+  | "search_profile";
 
 export type AgentProfileRefreshMode = "prefer_cache" | "refresh";
 
@@ -57,6 +58,8 @@ export interface PendingAgentIntent {
   /** Present only for a profile refresh request that must never auto-run audit. */
   readonly refreshProfile?: AgentProfileDraft;
   readonly refreshMode?: AgentProfileRefreshMode;
+  /** Present only for a search-landscape request interrupted by authentication. */
+  readonly searchProfile?: AgentProfileDraft;
 }
 
 export function pendingAgentIntentKey(agent: AgentKind): string {
@@ -76,11 +79,16 @@ function isPendingIntent(
   const purposeIsKnown =
     candidate.purpose === "prepare_profile" ||
     candidate.purpose === "run_confirmed_profile" ||
-    candidate.purpose === "refresh_profile";
+    candidate.purpose === "refresh_profile" ||
+    candidate.purpose === "search_profile";
   const confirmedProfileIsValid =
     candidate.confirmedProfile === undefined ||
     (candidate.purpose === "run_confirmed_profile" &&
       isConfirmedAgentProfile(candidate.confirmedProfile, agent, candidate.url));
+  const searchProfileIsValid =
+    candidate.purpose !== "search_profile"
+      ? candidate.searchProfile === undefined
+      : isRefreshProfileDraft(candidate.searchProfile, agent, candidate.url);
   const refreshProfileIsValid =
     candidate.purpose !== "refresh_profile"
       ? candidate.refreshProfile === undefined &&
@@ -90,6 +98,7 @@ function isPendingIntent(
   return (
     candidate.agent === agent &&
     purposeIsKnown &&
+    searchProfileIsValid &&
     typeof candidate.url === "string" &&
     candidate.url.trim().length > 0 &&
     candidate.url.length <= 2_048 &&
@@ -221,6 +230,53 @@ export function storeAgentProfileRefreshIntent(
   } catch {
     return null;
   }
+}
+
+/**
+ * Keep a search-landscape draft alive across the sign-in reload.
+ *
+ * Signing in reloads the page, so an in-memory ref loses everything the visitor
+ * had typed. This is the same durable slot the audit and refresh paths use, and
+ * like them it is data for Stage 01, never permission to run an audit.
+ */
+export function storeAgentProfileSearchIntent(
+  storage: IntentStorage,
+  profile: AgentProfileDraft,
+  now = Date.now(),
+): PendingAgentIntent | null {
+  const intent: PendingAgentIntent = {
+    agent: profile.agent,
+    purpose: "search_profile",
+    url: profile.targetUrl,
+    createdAt: now,
+    expiresAt: now + AGENT_INTENT_TTL_MS,
+    searchProfile: profile,
+  };
+  if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) {
+    return null;
+  }
+  try {
+    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    storage.setItem(
+      pendingAgentIntentKey(profile.agent),
+      JSON.stringify(intent),
+    );
+    return intent;
+  } catch {
+    return null;
+  }
+}
+
+export function isProfileSearchPendingAgentIntent(
+  intent: PendingAgentIntent,
+): intent is PendingAgentIntent & {
+  readonly purpose: "search_profile";
+  readonly searchProfile: AgentProfileDraft;
+} {
+  return (
+    intent.purpose === "search_profile" &&
+    isRefreshProfileDraft(intent.searchProfile, intent.agent, intent.url)
+  );
 }
 
 /** A homepage preparation intent is data for Stage 01, never permission to POST. */

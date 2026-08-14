@@ -319,6 +319,7 @@ export async function handleAgentAuditRequest(
       targetUrl: result.targetUrl,
       siteOrigin: result.siteOrigin,
       scannedAt: result.scannedAt,
+      targetInspected: result.targetInspected,
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
       records: result.records.map(projectRecord),

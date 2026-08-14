@@ -38,6 +38,7 @@ const data: AgentAuditSuccessData = {
     targetUrl: "https://astrologywiki.com/chart",
     siteOrigin: "https://astrologywiki.com",
     scannedAt: "2026-08-13T00:00:00.000Z",
+    targetInspected: true,
     coverage: {
       availability: "unavailable",
       pagesInspected: 0,
@@ -61,10 +62,10 @@ const data: AgentAuditSuccessData = {
 
 describe("buildAgentAuditViewModel", () => {
   it.each([
-    ["seo" as const, "E", "9"],
-    ["tech" as const, "A", "1"],
+    ["seo" as const, "D", "2"],
+    ["tech" as const, "C", "1"],
   ])(
-    "keeps all 77 checks and applies the %s Agent defaults",
+    "keeps all 81 checks and applies the %s Agent defaults",
     (agent, siteDefault, pageDefault) => {
       const model = buildAgentAuditViewModel({
         agent,
@@ -78,14 +79,14 @@ describe("buildAgentAuditViewModel", () => {
         pageGroupId: pageDefault,
       });
       expect(model.scopes.site.groups).toHaveLength(5);
-      expect(model.scopes.site.total).toBe(27);
-      expect(model.scopes.site.inventoryReady).toBe(21);
+      expect(model.scopes.site.total).toBe(31);
+      expect(model.scopes.site.inventoryReady).toBe(25);
       expect(model.scopes.page.groups).toHaveLength(9);
       expect(model.scopes.page.total).toBe(50);
       expect(model.scopes.page.inventoryReady).toBe(22);
       expect(
         model.scopes.site.total + model.scopes.page.total,
-      ).toBe(77);
+      ).toBe(81);
     },
   );
 
@@ -105,7 +106,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.scopes.page.health).toBeNull();
     expect(model.scopes.site.evaluated).toBe(0);
     expect(model.scopes.page.evaluated).toBe(0);
-    expect(checks).toHaveLength(77);
+    expect(checks).toHaveLength(81);
     expect(checks.every((check) => check.result === "excluded")).toBe(true);
     expect(checks.some((check) => check.result === "pass")).toBe(false);
     expect(checks.every((check) => check.measurement === null)).toBe(true);
@@ -146,9 +147,9 @@ describe("buildAgentAuditViewModel", () => {
       .flatMap((group) => group.checks)
       .find((candidate) => candidate.id === "D2");
 
-    expect(check?.result).toBe("excluded");
+    expect(check?.result).toBe("pass");
     expect(check?.truth).toBe("not_observed");
-    expect(model.scopes.site.health).toBeNull();
+    expect(model.scopes.site.health).toBe(100);
   });
 
   it("exposes every explainability field and the page-type heading policy", () => {

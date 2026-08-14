@@ -34,6 +34,31 @@ export interface AgentAuditLocalizedText {
   readonly zh: string;
 }
 
+/**
+ * How one evidence record becomes an issue for a check.
+ *
+ * Without a rule a record is an issue as soon as one unit is affected, which is
+ * what the counting checks publish ("0 pages; above 0 is a Warning"). Checks
+ * whose published threshold is a share or a per-observation limit carry a rule,
+ * so the decision the evaluator executes is the one the check displays.
+ */
+export type AgentAuditIssueRule =
+  | {
+      readonly recordId: string;
+      readonly kind: "affected-ratio";
+      /** Affected share below which the record is not an issue. */
+      readonly passBelow: number;
+      /** Affected share above which the record takes the full failure result. */
+      readonly failAbove?: number;
+    }
+  | {
+      readonly recordId: string;
+      readonly kind: "observation-value-max";
+      readonly label: string;
+      /** Highest still-acceptable value for the named observation entry. */
+      readonly max: number;
+    };
+
 export interface AgentAuditCheckDefinition {
   readonly id: string;
   readonly scope: AgentAuditScope;
@@ -53,6 +78,7 @@ export interface AgentAuditCheckDefinition {
   readonly inventoryReady: boolean;
   readonly engine: AgentAuditEngineState;
   readonly evidenceRecordIds: readonly string[];
+  readonly issueRules: readonly AgentAuditIssueRule[];
   readonly boundary: AgentAuditLocalizedText;
 }
 
@@ -97,6 +123,12 @@ export interface AgentAuditEvidenceInput {
   readonly availability: "available" | "partial" | "unavailable";
   /** Normalized crawl entry URL. Required to attribute page-level observations. */
   readonly targetUrl?: string;
+  /**
+   * Whether the target URL was collected as a 2xx HTML page. Only then does the
+   * target's absence from an issue list mean the target is clean; otherwise the
+   * page-level check stays unverified.
+   */
+  readonly targetInspected?: boolean;
 }
 
 export type AgentAuditPageType = "homepage" | "product" | "tool" | "guide";

@@ -24,6 +24,7 @@ function data(): AgentAuditSuccessData {
       targetUrl: "https://example.com",
       siteOrigin: "https://example.com",
       scannedAt: "2026-08-12T00:00:00.000Z",
+      targetInspected: true,
       coverage: {
         availability: "available",
         pagesInspected: 1,
