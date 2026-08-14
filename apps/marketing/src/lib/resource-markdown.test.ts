@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   extractFencedBlock,
+  parseBulletList,
   splitResourceSections,
   splitResourceSubsections,
   toPlainText,
@@ -145,6 +146,17 @@ describe("splitResourceSubsections", () => {
     expect(subsections.map((s) => s.heading)).toEqual(["One", "Two"]);
   });
 
+  it("rejects a repeated heading", () => {
+    // Duplicates would render the same card twice under one React key.
+    expect(() =>
+      splitResourceSubsections(
+        lines("### One", "a", "### One", "b"),
+        "f.md",
+        "Variables",
+      ),
+    ).toThrow(/repeats the '### One' heading/);
+  });
+
   it("rejects a fence left open in the last subsection", () => {
     expect(() =>
       splitResourceSubsections(
@@ -166,6 +178,29 @@ describe("toPlainText", () => {
   it("drops fenced blocks rather than inlining their contents", () => {
     expect(toPlainText(lines("Before.", "```", "code()", "```", "After."))).toBe(
       "Before. After.",
+    );
+  });
+});
+
+describe("parseBulletList", () => {
+  it("reads a flat list", () => {
+    expect(parseBulletList(lines("- one", "- two"), "f.md", "Scope")).toEqual([
+      "one",
+      "two",
+    ]);
+  });
+
+  it("rejects nested items rather than dropping them", () => {
+    // The section renders flat, so a nested bullet would exist in the file and
+    // never on the page.
+    expect(() =>
+      parseBulletList(lines("- one", "    - nested"), "f.md", "Scope"),
+    ).toThrow(/must be a flat list/);
+  });
+
+  it("rejects an empty list", () => {
+    expect(() => parseBulletList("prose only", "f.md", "Scope")).toThrow(
+      /must list at least one item/,
     );
   });
 });

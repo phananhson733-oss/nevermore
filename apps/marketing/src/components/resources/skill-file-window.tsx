@@ -13,6 +13,7 @@ interface SkillFileWindowProps {
   readonly downloadHref: string;
   readonly copyLabel: string;
   readonly copiedLabel: string;
+  readonly failedLabel: string;
   readonly downloadLabel: string;
 }
 
@@ -22,6 +23,7 @@ export function SkillFileWindow({
   downloadHref,
   copyLabel,
   copiedLabel,
+  failedLabel,
   downloadLabel,
 }: SkillFileWindowProps) {
   return (
@@ -35,6 +37,7 @@ export function SkillFileWindow({
             value={content}
             label={copyLabel}
             copiedLabel={copiedLabel}
+            failedLabel={failedLabel}
             compact
           />
           {/*
@@ -53,7 +56,17 @@ export function SkillFileWindow({
         </div>
       </div>
 
-      <pre className="max-h-[520px] min-w-0 overflow-auto p-5 font-mono text-[12px] leading-[1.85] whitespace-pre-wrap text-text-dark-secondary [word-break:break-word]">
+      {/*
+       * Focusable with a label and a region role: this scroll box holds the
+       * page's central content, and a keyboard user with no pointer cannot
+       * reach the rest of the file without being able to focus and scroll it.
+       */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label={fileName}
+        className="max-h-[520px] min-w-0 overflow-auto p-5 font-mono text-[12px] leading-[1.85] whitespace-pre-wrap text-text-dark-secondary [word-break:break-word] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent"
+      >
         {content}
       </pre>
     </div>

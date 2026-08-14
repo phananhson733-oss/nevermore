@@ -104,9 +104,9 @@ could not be determined and what access would settle it.
 
 ## What it does
 
-The common failure is treating AI visibility as an on-page checklist. A team adds FAQ markup, a summary box at the top of each page, and a few sentences written to sound quotable, ships it, then asks an assistant one question. If the brand appears, the work is declared successful; if it does not, the work is declared broken. Neither conclusion follows from one sample, and in the case GenGrowth tested most closely — a site with no meaningful off-site presence — the on-page changes alone did not produce citations at all. What predicted citation was whether anything else on the web referenced the site.
+The common failure is treating AI visibility as an on-page checklist. A team adds FAQ markup, a summary box at the top of each page, and a few sentences written to sound quotable, ships it, then asks an assistant one question. If the brand appears, the work is declared successful; if it does not, the work is declared broken. Neither conclusion follows from one sample. The one case we watched closely was a site with no meaningful off-site presence, where the page changes went in and citations did not follow. That is one observation rather than a measured effect, and it is why this skill treats off-site references as the part worth working on rather than promising citations from page edits.
 
-This skill is built around that finding. It treats on-page extractability as a precondition rather than a lever: if the answer is not in the served HTML, or a crawler is blocked at the edge, no amount of off-site work reaches it. But it does not stop there, and it will not tell you that rewriting an intro paragraph is a path to being cited. The larger half of the output is off-site: which publications, roundups, directories, and threads the assistants are actually pulling from for your questions, taken from your own capture log rather than assumed.
+This skill is built around that observation. It treats on-page extractability as a precondition rather than a lever: if the answer is not in the served HTML, or a crawler is blocked at the edge, no amount of off-site work reaches it. But it does not stop there, and it will not tell you that rewriting an intro paragraph is a path to being cited. The larger half of the output is off-site: which publications, roundups, directories, and threads the assistants are actually pulling from for your questions, taken from your own capture log rather than assumed.
 
 Measurement is handled the same way. Assistant answers move between runs and accounts, so the unit of reporting is a capture rate with a sample size and a date, not a claim of presence. Where referral data or crawler logs are unavailable, the output says unavailable and names the access that would close the gap, instead of reporting a zero that reads like a finding.
 
@@ -169,11 +169,11 @@ The off-site plan is built from the capture log rather than from a generic list:
 
 ### How is this different from the On-Page SEO skill?
 
-On-page SEO works on a page that already has search visibility and finds what is limiting it. This skill starts from captured assistant answers and works backwards to why a source is cited, which usually points off the page entirely. They overlap on one thing: server-rendered, extractable content is a requirement for both. Where they part is that on-page work can move a ranking on its own, and page edits alone did not produce citations in the case we tested.
+On-page SEO works on a page that already has search visibility and finds what is limiting it. This skill starts from captured assistant answers and works backwards to why a source is cited, which usually points off the page entirely. They overlap on one thing: server-rendered, extractable content is a requirement for both. Where they part is that on-page work can move a ranking on its own, whereas in the one case we watched closely, page edits alone were not followed by citations.
 
 ### Will adding FAQ schema get us cited?
 
-Structured data helps a machine parse a page and is worth having, but we have not observed it producing citations by itself on sites with no off-site presence. Treat it as removing an obstacle. If your question set shows assistants citing roundups and trade publications for your topics, the schema on your own page is not what decides which of those sources gets quoted.
+Structured data helps a machine parse a page and is worth having, but we have not measured what it does on its own; on the one site we watched closely, which had no off-site presence, adding it was not followed by citations. Treat it as removing an obstacle. If your question set shows assistants citing roundups and trade publications for your topics, the schema on your own page is not what decides which of those sources gets quoted.
 
 ### Why does the report give a capture rate instead of saying whether we are visible?
 

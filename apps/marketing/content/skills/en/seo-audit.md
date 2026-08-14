@@ -126,9 +126,9 @@ We are riverbend-supply.com, a plumbing parts distributor with about 4,000 produ
 
 ### The agent does
 
-Four findings, ordered by severity band, then by measured demand.
+Four findings, ordered by severity band, then by click depth as a stated proxy for demand, which is unavailable for these URLs — the unchecked item below says why.
 
-Blocking. The forty product pages with the highest impressions serve their specification tables client-side. I fetched raw HTML for twelve of them: the table markup is absent from the response and appears only in the rendered DOM. Thread size, material, and pressure rating — the things these queries are asking for — are all in that table.
+Blocking. The forty product pages closest to the homepage in click depth serve their specification tables client-side. I fetched raw HTML for twelve of them: the table markup is absent from the response and appears only in the rendered DOM. Thread size, material, and pressure rating — the specifications these pages exist to state — are all in that table.
 
 Blocking. Discontinued products return 200 with an empty product body. I pulled 30 URLs from your sitemap; all 30 returned 200 and 18 had no product content. These are soft 404s.
 
@@ -138,7 +138,7 @@ Minor. Every sitemap entry carries the same lastmod date, which looks like a gen
 
 Unchecked. I cannot tell you how many of the 4,000 product pages are indexed. The connected Search Console property is a URL-prefix property covering /shop/, and product URLs live under /catalog/. A domain property would settle this.
 
-Rendering comes first because it affects pages with measured impressions now. The filter URLs waste crawl on pages nobody searches for, which is real but slower.
+Rendering comes first because it affects the pages a crawler reaches first. The filter URLs waste crawl on pages nobody searches for, which is real but slower.
 
 ## How it works
 
@@ -177,9 +177,9 @@ Within a severity band, findings are ordered by measured impressions on the affe
 
 ## FAQ
 
-### How is this different from the Technical SEO Checklist skill?
+### How is this different from the Technical SEO skill?
 
-The checklist verifies a fixed set of conditions and reports each as met, not met, or unchecked. It is the right tool before a launch or after a deploy, when the question is whether known requirements hold. The audit is open-ended: it starts from the site's measured demand and works backwards to find what is standing between it and the searcher, including problems no checklist anticipated. In practice the audit will often invoke checklist-style verification for the delivery layer, then keep going.
+The Technical SEO skill verifies a fixed set of conditions and reports each as met, not met, or unchecked. It is the right tool before a launch or after a deploy, when the question is whether known requirements hold. The audit is open-ended: it starts from the site's measured demand and works backwards to find what is standing between it and the searcher, including problems no checklist anticipated. In practice the audit will often invoke checklist-style verification for the delivery layer, then keep going.
 
 ### Why does it refuse to produce an SEO score?
 

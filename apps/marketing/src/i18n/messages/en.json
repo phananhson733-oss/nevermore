@@ -101,8 +101,8 @@
   },
   "resources": {
     "metadata": {
-      "title": "Growth Resources: Prompts, Tools, Skills & Docs",
-      "description": "Find GenGrowth tools and review the planned Prompts, Skills, and Docs library without mixing resources into the Agent catalogue."
+      "title": "Growth Resources: Prompts, Skills, Tools & Docs",
+      "description": "Copy-ready prompts, downloadable skill playbooks, and supporting tools for search work — kept separate from the Agent catalogue so each stays easy to find."
     },
     "eyebrow": "Prompts · Tools · Skills · Docs",
     "title": "Turn growth methods into reusable resources.",
@@ -203,7 +203,8 @@
       "faqTitle": "Frequently asked",
       "relatedPrompts": "Related prompts",
       "relatedSkill": "Automates this",
-      "relatedSkillNote": "The skill that runs this work as a repeatable loop."
+      "relatedSkillNote": "The skill that runs this work as a repeatable loop.",
+      "copyFailed": "Copy failed"
     },
     "faq": {
       "eyebrow": "About this library",
@@ -258,7 +259,6 @@
     "detail": {
       "backToLibrary": "All skills",
       "owner": "Owned by",
-      "category": "Category",
       "format": "File",
       "updated": "Updated",
       "getFile": "Get the skill file",
@@ -283,7 +283,8 @@
       "faqEyebrow": "Questions",
       "faqTitle": "Frequently asked",
       "relatedSkills": "Pair it with",
-      "relatedPrompts": "Prompts inside this skill"
+      "relatedPrompts": "Prompts inside this skill",
+      "copyFailed": "Copy failed"
     },
     "faq": {
       "eyebrow": "About this library",

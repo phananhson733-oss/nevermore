@@ -8,8 +8,8 @@ import { SITEMAP_TOOLS } from "../config/sitemap-tools";
 import { getAllBlogPosts } from "../lib/blog";
 import { getLegalDocument } from "../lib/legal";
 import { localeUrl } from "../lib/locale-path";
-import { getPromptsForLocale } from "../lib/prompt-content";
-import { getSkillsForLocale } from "../lib/skill-content";
+import { getPrompts } from "../lib/prompt-content";
+import { getSkills } from "../lib/skill-content";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
@@ -115,12 +115,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Resource detail pages are enumerated from the content directories rather
   // than a hand-kept list: unlike Tools, every file is exactly one live page,
   // so the directory is the authority and a second list could only drift from
-  // it. Both locales are listed because each renders its own page, falling back
-  // to the English library where a translation does not exist yet.
+  // it.
+  //
+  // Listed only for the locale whose file exists. A locale without a
+  // translation still serves the page — navigation and the language switch
+  // reach it — but offering that URL to crawlers would advertise a second
+  // document carrying the same English text. The hubs stay listed in both
+  // locales because their own copy is fully translated.
   for (const locale of locales) {
-    const [{ prompts }, { skills }] = await Promise.all([
-      getPromptsForLocale(locale),
-      getSkillsForLocale(locale),
+    const [prompts, skills] = await Promise.all([
+      getPrompts(locale),
+      getSkills(locale),
     ]);
 
     for (const prompt of prompts) {

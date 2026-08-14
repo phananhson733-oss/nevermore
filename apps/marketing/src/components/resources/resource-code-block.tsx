@@ -12,6 +12,7 @@ interface ResourceCodeBlockProps {
   readonly headingId: string;
   readonly copyLabel: string;
   readonly copiedLabel: string;
+  readonly failedLabel: string;
 }
 
 export function ResourceCodeBlock({
@@ -21,6 +22,7 @@ export function ResourceCodeBlock({
   headingId,
   copyLabel,
   copiedLabel,
+  failedLabel,
 }: ResourceCodeBlockProps) {
   return (
     <section aria-labelledby={headingId} className="min-w-0">
@@ -40,6 +42,7 @@ export function ResourceCodeBlock({
           value={value}
           label={copyLabel}
           copiedLabel={copiedLabel}
+          failedLabel={failedLabel}
         />
       </div>
 

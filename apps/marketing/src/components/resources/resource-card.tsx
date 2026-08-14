@@ -20,6 +20,8 @@ export interface ResourceCardItem {
   readonly categoryLabel: string;
   /** Mono microlabel in the card header: output format, or the skill filename. */
   readonly metaLabel: string;
+  /** What the chips are, e.g. the models a prompt was checked against. */
+  readonly chipsLabel: string;
   readonly chips: readonly string[];
 }
 
@@ -34,24 +36,31 @@ export function ResourceCard({ item }: { readonly item: ResourceCardItem }) {
           <span className="rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2.5 py-0.5 font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
             {item.categoryLabel}
           </span>
-          <span className="min-w-0 truncate font-mono text-[9.5px] tracking-[0.08em] text-text-dark-faint uppercase">
+          {/* Secondary rather than faint: this names the output format or the
+              file, which a reader loses if they cannot read it. */}
+          <span className="min-w-0 truncate font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
             {item.metaLabel}
           </span>
         </div>
 
-        <h3 className="mt-4 text-[16px] leading-[1.4] font-semibold text-text-dark-primary">
+        <h2 className="mt-4 text-[16px] leading-[1.4] font-semibold text-text-dark-primary">
           {item.title}
-        </h3>
+        </h2>
 
         <p className="mt-2.5 flex-1 text-[13px] leading-[1.65] text-text-dark-secondary">
           {item.description}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-brand-border-faint pt-3.5">
+          {/* Bare model names read as decoration without this: the chips say
+              "ChatGPT · Claude" but never what that list is. */}
+          <span className="font-mono text-[9.5px] tracking-[0.06em] text-text-dark-faint uppercase">
+            {item.chipsLabel}
+          </span>
           {item.chips.map((chip) => (
             <span
               key={chip}
-              className="font-mono text-[9.5px] tracking-[0.06em] text-text-dark-faint uppercase"
+              className="font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase"
             >
               {chip}
             </span>

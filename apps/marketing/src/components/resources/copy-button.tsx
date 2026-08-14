@@ -12,17 +12,22 @@ interface CopyButtonProps {
   readonly value: string;
   readonly label: string;
   readonly copiedLabel: string;
+  readonly failedLabel: string;
   /** Icon-only rendering for dense headers such as the skill file window. */
   readonly compact?: boolean;
 }
+
+type CopyState = "idle" | "copied" | "failed";
 
 export function CopyButton({
   value,
   label,
   copiedLabel,
+  failedLabel,
   compact = false,
 }: CopyButtonProps) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>("idle");
+  const copied = state === "copied";
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A component unmounted while the confirmation is showing would otherwise set
@@ -34,41 +39,68 @@ export function CopyButton({
     [],
   );
 
+  function scheduleReset(): void {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setState("idle"), 2500);
+  }
+
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
-      // Clipboard access is denied in some embedded and non-secure contexts.
-      // The text stays selectable on the page, so failing quietly is better
-      // than an error state the reader can do nothing about.
+      // Clipboard access is denied in embedded and non-secure contexts. Saying
+      // so beats silence: the reader can select the text themselves, but only
+      // if they know the button did not work.
+      setState("failed");
+      scheduleReset();
       return;
     }
 
-    setCopied(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 2000);
+    setState("copied");
+    scheduleReset();
   }
 
   const Icon = copied ? Check : Copy;
+  const statusText =
+    state === "copied" ? copiedLabel : state === "failed" ? failedLabel : "";
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label={compact ? (copied ? copiedLabel : label) : undefined}
-      className={
-        compact
-          ? "inline-flex size-8 items-center justify-center rounded-row border border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary transition-colors hover:border-brand-accent/40 hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-          : "inline-flex h-9 shrink-0 items-center gap-2 rounded-row border border-brand-border-strong bg-brand-panel-raised px-3.5 font-mono text-[11px] tracking-[0.06em] text-text-dark-strong uppercase transition-colors hover:border-brand-accent/40 hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-      }
-    >
-      <Icon
-        aria-hidden="true"
+    <>
+      {/*
+       * The visible label change is invisible to a screen reader that has moved
+       * on, and the compact variant has no visible label at all. This region
+       * announces both outcomes, including the failure the visible UI cannot
+       * show.
+       */}
+      <span aria-live="polite" className="sr-only">
+        {statusText}
+      </span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={compact ? (copied ? copiedLabel : label) : undefined}
         className={
-          compact ? "size-3.5" : copied ? "size-3.5 text-brand-accent-text" : "size-3.5"
+          compact
+            ? "inline-flex size-8 items-center justify-center rounded-row border border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary transition-colors hover:border-brand-accent/40 hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            : "inline-flex h-9 shrink-0 items-center gap-2 rounded-row border border-brand-border-strong bg-brand-panel-raised px-3.5 font-mono text-[11px] tracking-[0.06em] text-text-dark-strong uppercase transition-colors hover:border-brand-accent/40 hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         }
-      />
-      {compact ? null : <span>{copied ? copiedLabel : label}</span>}
-    </button>
+      >
+        <Icon
+          aria-hidden="true"
+          className={
+            compact
+              ? "size-3.5"
+              : copied
+                ? "size-3.5 text-brand-accent-text"
+                : "size-3.5"
+          }
+        />
+        {compact ? null : (
+          <span>
+            {state === "failed" ? failedLabel : copied ? copiedLabel : label}
+          </span>
+        )}
+      </button>
+    </>
   );
 }

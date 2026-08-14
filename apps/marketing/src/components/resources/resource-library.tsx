@@ -2,7 +2,7 @@
 
 // @input  -- 归一化条目、分类清单与筛选文案
 // @output -- 带分类筛选的资源网格
-// @pos    -- Prompt / Skill hub 的列表区；筛选只在客户端隐藏，不改变已渲染的内容
+// @pos    -- Prompt / Skill hub 的列表区；筛选是纯客户端状态，不进 URL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { useState } from "react";
@@ -25,10 +25,15 @@ interface ResourceLibraryProps {
 const ALL = "all";
 
 /**
- * Every item is server-rendered and stays in the document; the filter only
- * decides what is displayed. That keeps the whole library crawlable from one
- * URL and avoids filter permutations becoming indexable pages — robots.txt
- * already refuses query-filtered URLs elsewhere on the site.
+ * The filter is client state only — it never touches the URL, so the library
+ * has exactly one indexable address and no filter permutation can become a
+ * page of its own.
+ *
+ * What a crawler and a scripting-disabled reader get is the unfiltered list:
+ * the server renders every card, and narrowing happens after hydration by
+ * re-rendering with a subset. Filtered-out cards do leave the DOM at that
+ * point, which is fine — it is a reader's own choice, applied to a document
+ * that was complete when it arrived.
  */
 export function ResourceLibrary({
   items,
@@ -50,9 +55,7 @@ export function ResourceLibrary({
   ];
 
   const visible =
-    active === ALL
-      ? items
-      : items.filter((item) => item.categoryId === active);
+    active === ALL ? items : items.filter((item) => item.categoryId === active);
 
   return (
     <div className="min-w-0">
@@ -78,14 +81,18 @@ export function ResourceLibrary({
               }
             >
               {option.label}
-              <span className="text-text-dark-faint tabular-nums">{count}</span>
+              <span className="text-text-dark-secondary tabular-nums">
+                {count}
+              </span>
             </button>
           );
         })}
       </div>
 
       {visible.length === 0 ? (
-        <p className="mt-8 text-[14px] text-text-dark-secondary">{emptyLabel}</p>
+        <p className="mt-8 text-[14px] text-text-dark-secondary">
+          {emptyLabel}
+        </p>
       ) : (
         <div className="mt-8 grid min-w-0 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {visible.map((item) => (

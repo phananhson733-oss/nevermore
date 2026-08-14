@@ -19,7 +19,11 @@ import { safeJsonLd } from "@/components/seo/json-ld/utils";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { siteConfig } from "@/config/site";
 import { routing } from "@/i18n/routing";
-import { getPromptForLocale, getPromptsForLocale } from "@/lib/prompt-content";
+import {
+  getPromptForLocale,
+  getPrompts,
+  getPromptsForLocale,
+} from "@/lib/prompt-content";
 import { getSkillForLocale } from "@/lib/skill-content";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
@@ -62,12 +66,36 @@ export async function generateMetadata({
     });
   }
 
-  return generatePageMetadata({
+  const metadata = generatePageMetadata({
     title: prompt.title,
     description: prompt.description,
     locale,
     path: `${PATH}/${slug}`,
   });
+
+  // Only claim a language alternate when that locale has its own file. The
+  // default helper claims both unconditionally, which on this route would tell
+  // search engines the /zh URL is the Chinese version of a prompt whose body is
+  // still English — the same reason the blog detail page overrides it.
+  const alternateLocale = locale === "en" ? "zh" : "en";
+  const alternateExists = (await getPrompts(alternateLocale)).some(
+    (entry) => entry.slug === slug,
+  );
+  const canonical = localeUrl(locale, `${PATH}/${slug}`);
+
+  return {
+    ...metadata,
+    alternates: {
+      canonical,
+      languages: {
+        [locale]: canonical,
+        ...(alternateExists
+          ? { [alternateLocale]: localeUrl(alternateLocale, `${PATH}/${slug}`) }
+          : {}),
+        "x-default": localeUrl("en", `${PATH}/${slug}`),
+      },
+    },
+  };
 }
 
 export default async function PromptDetailPage({
@@ -189,7 +217,7 @@ export default async function PromptDetailPage({
             </p>
 
             {prompt.locale !== locale && (
-              <p className="mt-4 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-faint">
+              <p className="mt-4 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-secondary">
                 {t("contentLanguageNote")}
               </p>
             )}
@@ -213,7 +241,7 @@ export default async function PromptDetailPage({
         </header>
 
         <div className="grid min-w-0 gap-12 pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-14">
-          <main className="flex min-w-0 flex-col gap-14">
+          <div className="flex min-w-0 flex-col gap-14">
             <ResourceCodeBlock
               value={prompt.promptText}
               eyebrow={t("detail.promptEyebrow")}
@@ -221,6 +249,7 @@ export default async function PromptDetailPage({
               headingId="prompt-body"
               copyLabel={t("detail.copy")}
               copiedLabel={t("detail.copied")}
+              failedLabel={t("detail.copyFailed")}
             />
 
             <section aria-labelledby="prompt-variables" className="min-w-0">
@@ -266,6 +295,7 @@ export default async function PromptDetailPage({
               headingId="prompt-example-input"
               copyLabel={t("detail.copyInput")}
               copiedLabel={t("detail.copied")}
+              failedLabel={t("detail.copyFailed")}
             />
 
             <section
@@ -309,7 +339,7 @@ export default async function PromptDetailPage({
               title={t("detail.faqTitle")}
               headingId="prompt-faq"
             />
-          </main>
+          </div>
 
           <aside className="flex min-w-0 flex-col gap-10 lg:sticky lg:top-24 lg:self-start">
             {relatedSkill && (
@@ -331,7 +361,7 @@ export default async function PromptDetailPage({
                     {relatedSkill.tagline}
                   </span>
                 </Link>
-                <p className="mt-3 text-[12px] leading-[1.6] text-text-dark-faint">
+                <p className="mt-3 text-[12px] leading-[1.6] text-text-dark-secondary">
                   {t("detail.relatedSkillNote")}
                 </p>
               </section>

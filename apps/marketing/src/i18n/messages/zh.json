@@ -101,8 +101,8 @@
   },
   "resources": {
     "metadata": {
-      "title": "增长资源：Prompts、Tools、Skills 与 Docs",
-      "description": "查找 GenGrowth 工具，并查看规划中的 Prompts、Skills 与 Docs 资源库，不把资源与 Agent 目录混在一起。"
+      "title": "增长资源：提示词、Skills、工具与文档",
+      "description": "可直接复制的提示词、可下载的 Skill 执行手册，以及搜索工作的辅助工具——与 Agent 目录分开陈列，各自都好找。"
     },
     "eyebrow": "Prompts · Tools · Skills · Docs",
     "title": "把增长方法变成可复用资源。",
@@ -203,7 +203,8 @@
       "faqTitle": "关于这条提示词",
       "relatedPrompts": "相关提示词",
       "relatedSkill": "对应的 Skill",
-      "relatedSkillNote": "把这项工作变成可重复执行流程的 Skill。"
+      "relatedSkillNote": "把这项工作变成可重复执行流程的 Skill。",
+      "copyFailed": "复制失败"
     },
     "faq": {
       "eyebrow": "关于本库",
@@ -258,7 +259,6 @@
     "detail": {
       "backToLibrary": "全部 Skills",
       "owner": "所属 Agent",
-      "category": "分类",
       "format": "文件",
       "updated": "更新于",
       "getFile": "查看 Skill 文件",
@@ -283,7 +283,8 @@
       "faqEyebrow": "常见问题",
       "faqTitle": "关于这个 Skill",
       "relatedSkills": "搭配使用",
-      "relatedPrompts": "这个 Skill 里用到的提示词"
+      "relatedPrompts": "这个 Skill 里用到的提示词",
+      "copyFailed": "复制失败"
     },
     "faq": {
       "eyebrow": "关于本库",

@@ -173,7 +173,7 @@ Across Kestrel Field accounts, the median first job starts at 8:10am and the med
 
 Most days have one or two calls that cannot move: the maintenance visit the customer took a morning off for, the install with a delivery window. Place those first, then build outward. Scheduling them last is what forces a truck across town at 1pm.
 
-*[Sections 3 to 6 continue in the same shape and are omitted here for length.]*
+*[Sections 3, 5 and 6 continue in the same shape and are omitted here for length.]*
 
 ---
 

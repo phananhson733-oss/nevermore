@@ -187,9 +187,9 @@ Sampling density: we have no defensible per-hectare figure. We advise per field.
 | Why choose us | "We are the leading soil carbon lab in the Midlands. Our results are trusted by farms across the region" | Delete the first sentence; replace the second with [fact needed: holdings tested, or years in operation]. | Standing claims with no source supplied; a count would be checkable |
 | Accreditation | "We are fully accredited, so your results will stand up wherever you need to submit them." | Otterbeck Soil Lab is accredited to ISO/IEC 17025 under certificate 4471, first issued March 2024. The scope covers total organic carbon and pH. | Names standard, certificate and scope; drops a promise about what others accept |
 | Pricing | "Pricing is competitive. Get in touch for a quote" | Soil carbon testing at Otterbeck Soil Lab costs 48 GBP per sample. On-site sampling adds a 75 GBP mobilisation fee. Prices current as of 1 July 2026. | The date lets the figure be seen going stale |
-| Sampling | "Sample density depends on your situation." | Otterbeck Soil Lab does not publish a per-hectare density. It is set per field from size, cropping history and slope, because one figure would be wrong for most holdings. | Answers honestly rather than deflecting, without inventing a number |
+| Sampling | "Sample density depends on your situation." | Otterbeck Soil Lab does not publish a per-hectare density. Sampling density is set per field, and the lab advises on it. [fact needed: what the per-field density is set from] | Answers honestly rather than deflecting; the missing detail is marked, not invented |
 
-**Facts needed:** one — holdings tested or years in operation, to replace "trusted by farms across the region".
+**Facts needed:** two — holdings tested or years in operation, to replace "trusted by farms across the region"; and what the per-field sampling density is set from.
 
 **Entity naming:** the body never states the name; every claim rides on "we" or "the lab", so a passage quoted away from the page arrives with no entity attached. Each section now opens with "Otterbeck Soil Lab", and the intro should say what it is and where: an independent soil-testing laboratory in Shropshire.
 
@@ -199,7 +199,7 @@ Sampling density: we have no defensible per-hectare figure. We advise per field.
 
 ## Safety notes
 
-Before this plan reaches a writer, check the replacement column against `verified_facts` figure by figure. Every number, date, certificate, and method name in a replacement must trace to something you supplied — anything else is the model writing what a lab like yours would plausibly say. Then check the deletions in the other direction: the prompt removes claims of standing because no source was attached, and occasionally someone in the business does have the source. Restore those with the source named, not as the original claim.
+Before this plan reaches a writer, check the replacement column against `verified_facts` line by line. Every number, date, certificate, method name, and statement about how you work in a replacement must trace to something you supplied — anything else is the model writing what a lab like yours would plausibly say. Then check the deletions in the other direction: the prompt removes claims of standing because no source was attached, and occasionally someone in the business does have the source. Restore those with the source named, not as the original claim.
 
 The plan deliberately does not say the page will be cited, retrieved, or shown in an AI answer, and it gives no visibility score or share of answers. It makes one narrow claim: that a revised passage says what it means when read on its own. That is checkable by you in a minute, which is why it is the thing being promised.
 

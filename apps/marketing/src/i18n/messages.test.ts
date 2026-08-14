@@ -35,11 +35,31 @@ function leafPaths(value: unknown, prefix = ""): readonly string[] {
   );
 }
 
+describe("message catalogs", () => {
+  /**
+   * next-intl renders the key path instead of throwing when a key is missing,
+   * so an untranslated key ships as the literal text `prompts.detail.copy` on a
+   * production page. Nothing else catches that: type-checking does not see
+   * message keys, and a test asserting a translated string "appears on the
+   * page" passes just as happily against the key path.
+   *
+   * Checked across the whole catalog rather than per namespace, so a new
+   * namespace is covered the day it is added.
+   */
+  it("keeps every key present in both locales", () => {
+    const en = [...leafPaths(enMessages)].sort();
+    const zh = [...leafPaths(zhMessages)].sort();
+
+    expect(en.filter((key) => !zh.includes(key))).toEqual([]);
+    expect(zh.filter((key) => !en.includes(key))).toEqual([]);
+  });
+});
+
 describe("SEO Audit message catalogs", () => {
   it("keeps the complete English and Chinese SEO Audit key shapes aligned", () => {
-    expect(
-      [...leafPaths(enMessages.tools.seoAudit)].sort(),
-    ).toEqual([...leafPaths(zhMessages.tools.seoAudit)].sort());
+    expect([...leafPaths(enMessages.tools.seoAudit)].sort()).toEqual(
+      [...leafPaths(zhMessages.tools.seoAudit)].sort(),
+    );
   });
 
   it.each([

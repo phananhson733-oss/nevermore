@@ -22,9 +22,9 @@ export function RelatedResources({ items, title }: RelatedResourcesProps) {
 
   return (
     <section className="min-w-0">
-      <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+      <h2 className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
         {title}
-      </p>
+      </h2>
       <ul className="mt-4 border-t border-brand-border">
         {items.map((item) => (
           <li key={item.slug} className="border-b border-brand-border">

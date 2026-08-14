@@ -8,10 +8,9 @@ import { getSkillsForLocale } from "../../../../../lib/skill-content";
 import { GET } from "./route";
 
 function get(locale: string, slug: string) {
-  return GET(
-    new Request(`https://gengrowth.ai/skills/${slug}/file`),
-    { params: Promise.resolve({ locale, slug }) },
-  );
+  return GET(new Request(`https://gengrowth.ai/skills/${slug}/file`), {
+    params: Promise.resolve({ locale, slug }),
+  });
 }
 
 describe("skill file download", () => {
@@ -30,6 +29,10 @@ describe("skill file download", () => {
     expect(response.headers.get("content-disposition")).toBe(
       `attachment; filename="${skill.fileName}"`,
     );
+    // Every skill page links here, so the sitemap's exclusion is not enough on
+    // its own: without this header the file competes in the index with the page
+    // whose text it duplicates.
+    expect(response.headers.get("x-robots-tag")).toBe("noindex");
     // A download that had drifted from the preview would be the one thing on
     // the page a reader cannot check for themselves. Compared exactly: a test
     // that trims first would pass while the bytes differ.

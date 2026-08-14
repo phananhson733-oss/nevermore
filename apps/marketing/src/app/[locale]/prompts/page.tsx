@@ -59,6 +59,7 @@ export default async function PromptsHubPage({
     categoryId: prompt.category,
     categoryLabel: t(`categories.${prompt.category}`),
     metaLabel: prompt.outputFormat,
+    chipsLabel: t("card.models"),
     chips: prompt.models,
   }));
 
@@ -126,14 +127,14 @@ export default async function PromptsHubPage({
               {t("subtitle")}
             </p>
             {hasFallback && (
-              <p className="mt-5 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-faint">
+              <p className="mt-5 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-secondary">
                 {t("contentLanguageNote")}
               </p>
             )}
           </div>
         </header>
 
-        <main className="pt-12 md:pt-14">
+        <div className="pt-12 md:pt-14">
           <ResourceLibrary
             items={items}
             categories={categories}
@@ -166,7 +167,7 @@ export default async function PromptsHubPage({
               </Link>
             </aside>
           </section>
-        </main>
+        </div>
       </div>
     </div>
   );

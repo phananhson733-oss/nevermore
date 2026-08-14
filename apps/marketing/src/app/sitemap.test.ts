@@ -53,15 +53,15 @@ describe("canonical marketing sitemap", () => {
   // The resource libraries are read from the real content directories rather
   // than mocked, so this also proves every cross-reference in them resolves —
   // the loader throws on a dangling related slug.
-  it("lists both resource hubs and every published resource in both locales", async () => {
+  it("lists both hubs in both locales and each resource under its own locale", async () => {
     const { default: sitemap } = await import("./sitemap");
-    const { getPromptsForLocale } = await import("../lib/prompt-content");
-    const { getSkillsForLocale } = await import("../lib/skill-content");
+    const { getPrompts } = await import("../lib/prompt-content");
+    const { getSkills } = await import("../lib/skill-content");
 
     const entries = await sitemap();
     const urls = new Set(entries.map((entry) => entry.url));
-    const { prompts } = await getPromptsForLocale("en");
-    const { skills } = await getSkillsForLocale("en");
+    const prompts = await getPrompts("en");
+    const skills = await getSkills("en");
 
     expect(prompts.length).toBeGreaterThan(0);
     expect(skills.length).toBeGreaterThan(0);
@@ -71,13 +71,16 @@ describe("canonical marketing sitemap", () => {
     expect(urls).toContain("https://gengrowth.ai/zh/prompts");
     expect(urls).toContain("https://gengrowth.ai/zh/skills");
 
+    // Detail pages are listed for the locale that owns the file. With no zh
+    // translations, listing a zh detail URL would advertise a second document
+    // carrying the same English text.
     for (const prompt of prompts) {
       expect(urls).toContain(`https://gengrowth.ai/prompts/${prompt.slug}`);
-      expect(urls).toContain(`https://gengrowth.ai/zh/prompts/${prompt.slug}`);
+      expect(urls).not.toContain(`https://gengrowth.ai/zh/prompts/${prompt.slug}`);
     }
     for (const skill of skills) {
       expect(urls).toContain(`https://gengrowth.ai/skills/${skill.slug}`);
-      expect(urls).toContain(`https://gengrowth.ai/zh/skills/${skill.slug}`);
+      expect(urls).not.toContain(`https://gengrowth.ai/zh/skills/${skill.slug}`);
     }
   });
 

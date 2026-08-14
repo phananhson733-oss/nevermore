@@ -91,6 +91,18 @@ describe("Resources hub contract", () => {
     );
   });
 
+  it("renders the declared paths as links rather than leaving them unused", () => {
+    const source = readFileSync(RESOURCES_PAGE, "utf8");
+
+    // Asserting the data alone would pass on a page that declared a path and
+    // then rendered every tile as an anchor. These are the two expressions that
+    // actually turn a declared path into a link.
+    expect(source).toContain("localePath(locale, type.path)");
+    expect(source).toContain("localePath(locale, resource.path)");
+    // And the available branch has to be a real navigation, not an anchor.
+    expect(source).toMatch(/type\.path \?\s*\(\s*<Link/);
+  });
+
   it("reaches planned types by anchor and routes only through declared paths", () => {
     const source = readFileSync(RESOURCES_PAGE, "utf8");
     const declared = new Set([

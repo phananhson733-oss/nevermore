@@ -182,9 +182,9 @@ Elements that must survive the edit unchanged: H2 "Where to start"; the link to
 Cycle counting means counting a slice of your SKUs while the warehouse keeps
 running, instead of closing the floor for a full physical count.
 
-The reason to count a slice is timing. A discrepancy found in March on a SKU
-last received in February still has a paper trail you can walk back. The same
-discrepancy found in an annual December count does not.
+The reason to count a slice is timing. A discrepancy found weeks after a SKU
+was last received still has a paper trail you can walk back. The same
+discrepancy found in a full physical count, long after that receipt, does not.
 
 Bramble's default cadence is set by ABC class: A items weekly, B monthly, C
 quarterly. Change it if your mix demands it.

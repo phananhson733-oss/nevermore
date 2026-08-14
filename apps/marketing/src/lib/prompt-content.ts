@@ -29,7 +29,15 @@ export type ResourceLocale = (typeof RESOURCE_LOCALES)[number];
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const VARIABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
-const PLACEHOLDER_PATTERN = /\{\{\s*([a-z][a-z0-9_]*)\s*\}\}/g;
+/**
+ * Matches any `{{…}}` run, not only well-formed names.
+ *
+ * A pattern that only recognised valid snake_case would make a malformed
+ * placeholder — `{{SiteTopic}}`, `{{site-topic}}` — invisible to the
+ * cross-check, so it would ship undocumented in the copyable prompt while the
+ * variable cards looked complete.
+ */
+const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
 
 /** Models a prompt may be labelled as tested against. */
 const KNOWN_MODELS = ["ChatGPT", "Claude", "Gemini", "DeepSeek"] as const;
@@ -237,11 +245,28 @@ function assertPlaceholdersMatchVariables(
   variables: readonly PromptVariable[],
   sourceName: string,
 ): void {
-  const placeholders = new Set(
-    [...promptText.matchAll(PLACEHOLDER_PATTERN)].map(
-      (match) => match[1] ?? "",
-    ),
+  const raw = [...promptText.matchAll(PLACEHOLDER_PATTERN)].map(
+    (match) => match[1] ?? "",
   );
+
+  // Reject a malformed placeholder outright. Skipping it would let it through
+  // undocumented, and silently correcting it would change the text an operator
+  // copies without changing the file it came from.
+  const malformed = raw
+    .map((name) => name.trim())
+    .filter((name) => !VARIABLE_NAME_PATTERN.test(name));
+  if (malformed.length > 0) {
+    throw new Error(
+      `${sourceName}: placeholders must be snake_case starting with a letter: ${[
+        ...new Set(malformed),
+      ]
+        .sort()
+        .map((name) => `{{${name}}}`)
+        .join(", ")}.`,
+    );
+  }
+
+  const placeholders = new Set(raw.map((name) => name.trim()));
   const documented = new Set(variables.map((variable) => variable.name));
 
   const undocumented = [...placeholders].filter(

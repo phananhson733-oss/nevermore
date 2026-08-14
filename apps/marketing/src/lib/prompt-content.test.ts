@@ -144,6 +144,19 @@ Example: Freelance designers`,
     );
   });
 
+  it("rejects a malformed placeholder instead of ignoring it", () => {
+    // A pattern that only recognised valid names would let this one through
+    // undocumented: invisible to the cross-check, present in the copied text.
+    const source = withSection(
+      "Work on {{site_topic}} for {{target_user}} in {{TargetMarket}}.",
+      "Work on {{site_topic}} for {{target_user}}.",
+    );
+
+    expect(() => parsePromptFile("en", "example-prompt.md", source)).toThrow(
+      /placeholders must be snake_case.*\{\{TargetMarket\}\}/s,
+    );
+  });
+
   it("rejects a missing section", () => {
     const source = VALID.replace("## Safety notes\n\nCheck the numbers.\n", "");
 

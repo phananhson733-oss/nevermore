@@ -51,6 +51,12 @@ export async function GET(
       // separators into the header.
       "content-disposition": `attachment; filename="${skill.fileName}"`,
       "cache-control": "public, max-age=0, must-revalidate",
+      // Every skill page links here, so a crawler reaches this URL whether or
+      // not the sitemap lists it — and the bytes are a verbatim subset of that
+      // page. A non-HTML response cannot carry <link rel="canonical">, so the
+      // header is the only way to keep the file out of the index and stop it
+      // competing with the page it came from.
+      "x-robots-tag": "noindex",
     },
   });
 }

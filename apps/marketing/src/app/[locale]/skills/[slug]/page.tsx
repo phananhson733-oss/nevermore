@@ -20,7 +20,11 @@ import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { siteConfig } from "@/config/site";
 import { routing } from "@/i18n/routing";
 import { getPromptForLocale } from "@/lib/prompt-content";
-import { getSkillForLocale, getSkillsForLocale } from "@/lib/skill-content";
+import {
+  getSkillForLocale,
+  getSkills,
+  getSkillsForLocale,
+} from "@/lib/skill-content";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 import { toPlainText } from "@/lib/resource-markdown";
@@ -56,12 +60,34 @@ export async function generateMetadata({
     });
   }
 
-  return generatePageMetadata({
+  const metadata = generatePageMetadata({
     title: skill.title,
     description: skill.description,
     locale,
     path: `${PATH}/${slug}`,
   });
+
+  // Only claim a language alternate when that locale has its own file — see the
+  // matching override on the prompt detail route.
+  const alternateLocale = locale === "en" ? "zh" : "en";
+  const alternateExists = (await getSkills(alternateLocale)).some(
+    (entry) => entry.slug === slug,
+  );
+  const canonical = localeUrl(locale, `${PATH}/${slug}`);
+
+  return {
+    ...metadata,
+    alternates: {
+      canonical,
+      languages: {
+        [locale]: canonical,
+        ...(alternateExists
+          ? { [alternateLocale]: localeUrl(alternateLocale, `${PATH}/${slug}`) }
+          : {}),
+        "x-default": localeUrl("en", `${PATH}/${slug}`),
+      },
+    },
+  };
 }
 
 export default async function SkillDetailPage({
@@ -189,7 +215,7 @@ export default async function SkillDetailPage({
           ]}
         />
 
-        <header className="relative overflow-hidden border-b border-brand-border pt-7 pb-11">
+        <header className="relative border-b border-brand-border pt-7 pb-11">
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-signal-grid opacity-40"
@@ -206,7 +232,7 @@ export default async function SkillDetailPage({
             </p>
 
             {skill.locale !== locale && (
-              <p className="mt-4 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-faint">
+              <p className="mt-4 border-l-2 border-brand-border-dashed pl-4 font-mono text-[11px] leading-[1.6] text-text-dark-secondary">
                 {t("contentLanguageNote")}
               </p>
             )}
@@ -245,7 +271,7 @@ export default async function SkillDetailPage({
         </header>
 
         <div className="grid min-w-0 gap-12 pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-14">
-          <main className="flex min-w-0 flex-col gap-14">
+          <div className="flex min-w-0 flex-col gap-14">
             <section
               id="skill-file"
               aria-labelledby="skill-file-title"
@@ -266,6 +292,7 @@ export default async function SkillDetailPage({
                 downloadHref={downloadHref}
                 copyLabel={t("detail.copy")}
                 copiedLabel={t("detail.copied")}
+                failedLabel={t("detail.copyFailed")}
                 downloadLabel={t("detail.download")}
               />
             </section>
@@ -401,7 +428,7 @@ export default async function SkillDetailPage({
               title={t("detail.faqTitle")}
               headingId="skill-faq"
             />
-          </main>
+          </div>
 
           <aside className="flex min-w-0 flex-col gap-10 lg:sticky lg:top-24 lg:self-start">
             <RelatedResources

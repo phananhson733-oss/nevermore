@@ -162,8 +162,17 @@ export function splitResourceSubsections(
   let buffer: string[] = [];
   let fence: string | null = null;
 
+  const seen = new Set<string>();
   const flush = (): void => {
     if (heading === null) return;
+    // Duplicate headings become duplicate React keys and a card or FAQ entry
+    // rendered twice, which reads as a content mistake nobody put there.
+    if (seen.has(heading)) {
+      throw new Error(
+        `${sourceName}: '${label}' repeats the '### ${heading}' heading.`,
+      );
+    }
+    seen.add(heading);
     subsections.push({ heading, content: buffer.join("\n").trim() });
   };
 
@@ -349,10 +358,22 @@ export function parseBulletList(
   sourceName: string,
   label: string,
 ): readonly string[] {
-  const items = section
-    .split("\n")
+  const lines = section.split("\n");
+  const items = lines
     .map((line) => /^\s{0,3}[-*+]\s+(.+?)\s*$/.exec(line)?.[1])
     .filter((item): item is string => Boolean(item));
+
+  // These sections render as flat lists, so a nested bullet has nowhere to go.
+  // Dropping it quietly is the failure worth preventing: the author sees their
+  // sub-point in the file and never on the page.
+  const nested = lines.filter(
+    (line) => /^\s{4,}[-*+]\s+\S/.test(line) && !/^\s{0,3}[-*+]/.test(line),
+  );
+  if (nested.length > 0) {
+    throw new Error(
+      `${sourceName}: '${label}' must be a flat list; nested items are not rendered (${nested.length} found).`,
+    );
+  }
 
   if (items.length === 0) {
     throw new Error(`${sourceName}: '${label}' must list at least one item.`);

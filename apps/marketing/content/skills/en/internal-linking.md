@@ -173,9 +173,9 @@ Each page receives one verdict: promote, consolidate, retire, or leave. Only pro
 
 ## FAQ
 
-### How is this different from the Technical SEO Checklist skill?
+### How is this different from the Technical SEO skill?
 
-The checklist asks whether an individual page can be crawled, rendered, and indexed — mostly binary questions with per-page answers. This skill assumes the pages are reachable and asks how attention moves between them. They meet at the handoff: the checklist finds that a page is set to noindex, and this skill is what notices twelve other pages are still linking to it.
+The Technical SEO skill asks whether an individual page can be crawled, rendered, and indexed — mostly binary questions with per-page answers. This skill assumes the pages are reachable and asks how attention moves between them. They meet at the handoff: Technical SEO finds that a page is set to noindex, and this skill is what notices twelve other pages are still linking to it.
 
 ### When does it recommend merging instead of adding a link?
 
