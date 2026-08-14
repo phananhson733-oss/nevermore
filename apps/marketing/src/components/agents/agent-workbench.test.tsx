@@ -226,6 +226,49 @@ function profileRefreshEnvelope(
   };
 }
 
+function profileSearchEnvelope(
+  agent: AgentKind,
+  {
+    targetHost = "example.com",
+    marketCode = "US",
+    availability = "available",
+  }: {
+    readonly targetHost?: string;
+    readonly marketCode?: string;
+    readonly availability?: "available" | "source_unavailable";
+  } = {},
+) {
+  return {
+    data: {
+      schemaVersion: "agent_profile_search.v1",
+      agent,
+      targetHost,
+      availability,
+      method: "competitors_domain",
+      market: {
+        code: marketCode,
+        locationCode: 2840,
+        languageCode: "en",
+      },
+      observedAt:
+        availability === "available" ? "2026-08-13T10:01:00.000Z" : null,
+      rows:
+        availability === "available"
+          ? [
+              {
+                kind: "organic_search_overlap",
+                domain: "competitor.example",
+                intersections: 12,
+                averagePosition: 8.5,
+                summedPosition: 102,
+                organicEstimatedTrafficVolume: 850,
+              },
+            ]
+          : [],
+    },
+  } as const;
+}
+
 let root: Root | null = null;
 
 async function flushAsyncWork(): Promise<void> {
@@ -365,23 +408,189 @@ afterEach(async () => {
 });
 
 describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
+  it("starts one profile search after an explicit diagnosis succeeds and never starts either operation before the click", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        if (path === "/api/agents/seo/profile-refresh") {
+          return Response.json(profileRefreshEnvelope("seo"));
+        }
+        if (path === "/api/agents/seo/profile-search") {
+          expect(init?.body).toBe(
+            JSON.stringify({
+              url: "example.com",
+              marketCode: "US",
+              languageTag: "en-US",
+              targetQuery: "growth evidence",
+            }),
+          );
+          return Response.json(profileSearchEnvelope("seo"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    setRunContext("US", "en-US", "growth evidence");
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/seo/profile-refresh",
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/seo/profile-search",
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/seo/audit",
+      ),
+    ).toHaveLength(0);
+    expect(
+      document.querySelector('[data-profile-search-results="available"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps a completed profile diagnosis usable when automatic search discovery fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: true });
+      }
+      if (path === "/api/agents/tech/profile-refresh") {
+        return Response.json(profileRefreshEnvelope("tech"));
+      }
+      if (path === "/api/agents/tech/profile-search") {
+        return Response.json(
+          { error: { code: "provider_unavailable" } },
+          { status: 503 },
+        );
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("tech");
+    setProfileUrl("tech", "example.com");
+    setRunContext();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("Live Example Product");
+    expect(
+      document.querySelector('[data-profile-refresh-status="partial"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(
+        '[data-profile-search-error="provider_unavailable"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("reuses matching automatic search evidence across repeated diagnoses but explicit search still refreshes it", async () => {
+    let searchRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: true });
+      }
+      if (path === "/api/agents/seo/profile-refresh") {
+        return Response.json(profileRefreshEnvelope("seo"));
+      }
+      if (path === "/api/agents/seo/profile-search") {
+        searchRequests += 1;
+        return Response.json(profileSearchEnvelope("seo"));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    setRunContext();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(searchRequests).toBe(1);
+
+    discoverSearchCandidates();
+    await flushAsyncWork();
+    expect(searchRequests).toBe(2);
+  });
+
+  it("does not automatically request CN search evidence without an explicit target query", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: true });
+      }
+      if (path === "/api/agents/seo/profile-refresh") {
+        return Response.json(
+          profileRefreshEnvelope("seo", {
+            marketCode: "CN",
+            languageTag: "zh-CN",
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "example.com");
+    setRunContext("CN", "zh-CN");
+    runProfileDiagnosis();
+    await flushAsyncWork();
+
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/seo/profile-search",
+      ),
+    ).toHaveLength(0);
+    expect(
+      document.querySelector('[data-profile-refresh-status="partial"]'),
+    ).not.toBeNull();
+  });
+
   it("does not diagnose while editing and sends the exact profile request only from the explicit action", async () => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === "/api/auth/session") {
+        const path = String(input);
+        if (path === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
-        expect(input).toBe("/api/agents/seo/profile-refresh");
-        expect(init?.body).toBe(
-          JSON.stringify({
-            url: "example.com",
-            marketCode: "US",
-            languageTag: "en-US",
-            outputLocale: "en",
-            mode: "prefer_cache",
-          }),
-        );
-        return Response.json(profileRefreshEnvelope("seo"));
+        if (path === "/api/agents/seo/profile-refresh") {
+          expect(init?.body).toBe(
+            JSON.stringify({
+              url: "example.com",
+              marketCode: "US",
+              languageTag: "en-US",
+              outputLocale: "en",
+              mode: "prefer_cache",
+            }),
+          );
+          return Response.json(profileRefreshEnvelope("seo"));
+        }
+        if (path === "/api/agents/seo/profile-search") {
+          return Response.json(profileSearchEnvelope("seo"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
       },
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -400,7 +609,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     ).toBe("true");
     await flushAsyncWork();
 
-    expect(postCalls(fetchMock)).toHaveLength(1);
+    expect(postCalls(fetchMock)).toHaveLength(2);
     expect(
       fetchMock.mock.calls.filter(
         ([input]) => String(input) === "/api/agents/seo/audit",
@@ -418,9 +627,14 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     const requestBodies: string[] = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === "/api/auth/session") {
+        const path = String(input);
+        if (path === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
+        if (path === "/api/agents/tech/profile-search") {
+          return Response.json(profileSearchEnvelope("tech"));
+        }
+        expect(path).toBe("/api/agents/tech/profile-refresh");
         requestBodies.push(String(init?.body));
         return Response.json(
           profileRefreshEnvelope("tech", {
@@ -650,16 +864,23 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
   it("preserves a non-identity user edit made before a signed-out profile refresh resumes", async () => {
     let signedIn = false;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
-      if (path === "/api/auth/session") {
-        return Response.json({ signedIn });
-      }
-      if (path === "/api/agents/tech/profile-refresh") {
-        return Response.json(profileRefreshEnvelope("tech"));
-      }
-      throw new Error(`Unexpected request: ${path}`);
-    });
+    let profileSearchBody: unknown = null;
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn });
+        }
+        if (path === "/api/agents/tech/profile-refresh") {
+          return Response.json(profileRefreshEnvelope("tech"));
+        }
+        if (path === "/api/agents/tech/profile-search") {
+          profileSearchBody = JSON.parse(String(init?.body));
+          return Response.json(profileSearchEnvelope("tech"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
@@ -681,6 +902,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       ) as HTMLInputElement,
       "Start now",
     );
+    setInputValue(
+      document.querySelector(
+        'input[aria-label="fields.targetQuery"]',
+      ) as HTMLInputElement,
+      "merged search context",
+    );
     signedIn = true;
     act(() => window.dispatchEvent(new Event("focus")));
     await flushAsyncWork();
@@ -697,6 +924,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         ([input]) => String(input) === "/api/agents/tech/profile-refresh",
       ),
     ).toHaveLength(1);
+    expect(profileSearchBody).toMatchObject({
+      url: "example.com",
+      marketCode: "US",
+      languageTag: "en-US",
+      targetQuery: "merged search context",
+    });
   });
 
   it("shows auth-unavailable feedback without a profile diagnosis POST", async () => {
@@ -1180,8 +1413,8 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
             agent: "tech",
             targetHost: "astrologywiki.com",
             availability: "source_unavailable",
-            method: "target_query_serp",
-            market: { code: "CN", locationCode: 2156, languageCode: "zh" },
+            method: "competitors_domain",
+            market: { code: "US", locationCode: 2840, languageCode: "en" },
             observedAt: null,
             rows: [],
           },
@@ -1227,6 +1460,107 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       ),
     ).not.toBeNull();
   });
+
+  it.each([
+    {
+      identity: "URL path",
+      initialContext: () => setRunContext(),
+      changeIdentity: () =>
+        setProfileUrl("tech", "https://astrologywiki.com/pricing"),
+    },
+    {
+      identity: "host",
+      initialContext: () => setRunContext(),
+      changeIdentity: () => setProfileUrl("tech", "example.com"),
+    },
+    {
+      identity: "market",
+      initialContext: () => setRunContext(),
+      changeIdentity: () =>
+        setInputValue(
+          document.querySelector(
+            '[data-profile-refresh-field="market"]',
+          ) as HTMLInputElement,
+          "CA",
+        ),
+    },
+    {
+      identity: "language",
+      initialContext: () => setRunContext(),
+      changeIdentity: () =>
+        setInputValue(
+          document.querySelector(
+            '[data-profile-refresh-field="language"]',
+          ) as HTMLInputElement,
+          "fr-CA",
+        ),
+    },
+    {
+      identity: "CN target query",
+      initialContext: () => setRunContext("CN", "zh-CN", "free birth chart"),
+      changeIdentity: () =>
+        setInputValue(
+          document.querySelector(
+            'input[aria-label="fields.targetQuery"]',
+          ) as HTMLInputElement,
+          "免费星盘计算",
+        ),
+    },
+  ])(
+    "cancels an auth-required profile-search resume when its $identity changes",
+    async ({ initialContext, changeIdentity }) => {
+      let signedIn = false;
+      const profileSearchBodies: unknown[] = [];
+      const fetchMock = vi.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const path = String(input);
+          if (path === "/api/agents/tech/profile-search") {
+            profileSearchBodies.push(JSON.parse(String(init?.body)));
+            if (!signedIn) {
+              return Response.json(
+                { error: { code: "auth_required" } },
+                { status: 401 },
+              );
+            }
+            return Response.json(
+              profileSearchEnvelope("tech", {
+                targetHost: "astrologywiki.com",
+              }),
+            );
+          }
+          throw new Error(`Unexpected request: ${path}`);
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      renderStrict("tech");
+      setProfileUrl("tech", "astrologywiki.com");
+      initialContext();
+      discoverSearchCandidates();
+      await flushAsyncWork();
+
+      expect(profileSearchBodies).toHaveLength(1);
+      expect(
+        document
+          .querySelector('[data-testid="sign-in-dialog"]')
+          ?.getAttribute("data-open"),
+      ).toBe("true");
+
+      changeIdentity();
+      expect(
+        document
+          .querySelector('[data-testid="sign-in-dialog"]')
+          ?.getAttribute("data-open"),
+      ).toBe("false");
+
+      signedIn = true;
+      act(() => window.dispatchEvent(new Event("focus")));
+      await flushAsyncWork();
+
+      expect(profileSearchBodies).toHaveLength(1);
+      expect(document.querySelector("[data-profile-search-results]")).toBeNull();
+    },
+  );
 
   it("uses the route locale for the initial Profile draft", () => {
     renderStrict("tech", "zh");

@@ -159,6 +159,42 @@ function profileRefreshEnvelope(agent: AgentKind) {
   } as const;
 }
 
+function profileSearchEnvelope(agent: AgentKind) {
+  return {
+    data: {
+      schemaVersion: "agent_profile_search.v1",
+      agent,
+      targetHost: "astrologywiki.com",
+      availability: "available",
+      method: "competitors_domain",
+      market: {
+        code: "US",
+        locationCode: 2840,
+        languageCode: "en",
+      },
+      observedAt: "2026-08-13T10:01:00.000Z",
+      rows: [
+        {
+          kind: "organic_search_overlap",
+          domain: "astro-seek.com",
+          intersections: 18,
+          averagePosition: 7.4,
+          summedPosition: 133.2,
+          organicEstimatedTrafficVolume: 12_400,
+        },
+        {
+          kind: "organic_search_overlap",
+          domain: "astro.com",
+          intersections: 5,
+          averagePosition: 12.1,
+          summedPosition: 60.5,
+          organicEstimatedTrafficVolume: 8_900,
+        },
+      ],
+    },
+  } as const;
+}
+
 async function mockSession(page: Page, signedIn: boolean): Promise<void> {
   await page.route("**/api/auth/session", async (route) => {
     await route.fulfill({
@@ -207,6 +243,10 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
     readonly method: string;
     readonly body: unknown;
   }> = [];
+  const searchRequests: Array<{
+    readonly method: string;
+    readonly body: unknown;
+  }> = [];
   let auditPosts = 0;
 
   await page.route("**/api/agents/seo/profile-refresh", async (route) => {
@@ -223,6 +263,17 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await page.route("**/api/agents/seo/audit", async (route) => {
     auditPosts += 1;
     await route.fulfill({ status: 500, body: "unexpected" });
+  });
+  await page.route("**/api/agents/seo/profile-search", async (route) => {
+    searchRequests.push({
+      method: route.request().method(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(profileSearchEnvelope("seo")),
+    });
   });
 
   await page.goto("/agents/seo");
@@ -306,6 +357,25 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await expect(
     sourceDetails.locator('[data-profile-refresh-source]').last(),
   ).toHaveAttribute("href", "https://astrologywiki.com/source-14");
+  await expect(
+    page.locator('[data-profile-competitor-count="provider"]'),
+  ).toContainText("2");
+  const candidate = page.locator(
+    '[data-profile-competitor-candidate="astro-seek.com"]',
+  );
+  await expect(candidate).toContainText("Not yet classified");
+  await expect(candidate).toContainText("18");
+  await expect(candidate).toContainText("12,400");
+  await candidate
+    .locator('[data-profile-competitor-action="direct"]')
+    .click();
+  await expect(candidate).toContainText("Local review · direct competitor");
+  await expect(
+    page.locator('[data-profile-competitor-count="confirmed"]'),
+  ).toContainText("1");
+  await expect(page.locator('[data-profile-card="competitor"]')).toContainText(
+    "astro-seek.com",
+  );
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(
@@ -321,6 +391,17 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
         languageTag: "en-US",
         outputLocale: "en",
         mode: "prefer_cache",
+      },
+    },
+  ]);
+  expect(searchRequests).toEqual([
+    {
+      method: "POST",
+      body: {
+        url: "astrologywiki.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        targetQuery: "",
       },
     },
   ]);

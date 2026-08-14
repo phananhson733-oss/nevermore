@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // @input  -- controlled profile-search observations and visible availability states
 // @output -- proof of factual labels, accessible discovery controls, and zero side effects
-// @pos    -- compact enrichment block contract for Stage 01 competitor context
+// @pos    -- compact Stage 03 discovery and local-review contract
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -34,6 +34,21 @@ const COPY = {
   trafficLabel: "Estimated organic traffic",
   rankLabel: "Observed rank",
   observedAtLabel: "Fetched at",
+  unavailableMetricLabel: "Unavailable",
+  providerCountLabel: "Search candidates",
+  confirmedCountLabel: "Confirmed",
+  excludedCountLabel: "Excluded",
+  providerEvidenceLabel: "DataForSEO search evidence",
+  needsReviewLabel: "Not yet classified as a business competitor",
+  higherOverlapLabel: "Higher-overlap domain",
+  adjacentOverlapLabel: "Adjacent-overlap domain",
+  unclassifiedLabel: "Target-query domain",
+  currentDirectLabel: "Confirmed direct",
+  currentIndirectLabel: "Confirmed indirect",
+  currentExcludedLabel: "Excluded locally",
+  directAction: "Direct",
+  indirectAction: "Indirect",
+  excludeAction: "Exclude",
 } satisfies AgentProfileSearchCopy;
 
 const ORGANIC_DATA = {
@@ -115,7 +130,27 @@ describe("AgentProfileSearch", () => {
   });
 
   it("renders organic overlap as provider evidence rather than business competitors", () => {
-    render({ data: ORGANIC_DATA });
+    render({
+      data: ORGANIC_DATA,
+      suggestions: [
+        {
+          domain: "rival.com",
+          reviewBucket: "higher_overlap",
+          discoveryConfidence: "medium",
+          evidenceKind: "organic_search_overlap",
+          observedAt: ORGANIC_DATA.observedAt,
+          metrics: {
+            intersections: 12,
+            averagePosition: 4.5,
+            summedPosition: 54,
+            organicEstimatedTrafficVolume: 321,
+            rank: null,
+          },
+        },
+      ],
+      classifications: { direct: [], indirect: [], excluded: [] },
+      onClassify: vi.fn(),
+    });
 
     const results = host.querySelector('[data-profile-search-results="available"]');
     expect(results?.textContent).toContain(COPY.organicBoundary);
@@ -123,6 +158,10 @@ describe("AgentProfileSearch", () => {
     expect(results?.textContent).toContain("12");
     expect(results?.textContent).toContain("4.5");
     expect(results?.textContent).toContain("321");
+    expect(results?.textContent).toContain(COPY.providerEvidenceLabel);
+    expect(results?.textContent).toContain(COPY.needsReviewLabel);
+    expect(results?.textContent).toContain(COPY.higherOverlapLabel);
+    expect(results?.textContent).not.toMatch(/confirmed direct/i);
     expect(results?.textContent).toContain(
       new Intl.DateTimeFormat("en", {
         dateStyle: "medium",
@@ -130,6 +169,125 @@ describe("AgentProfileSearch", () => {
       }).format(new Date(ORGANIC_DATA.observedAt)),
     );
     expect(results?.textContent).not.toMatch(/similarity|cost/i);
+  });
+
+  it("shows truthful discovery and local-review counts", () => {
+    render({
+      data: ORGANIC_DATA,
+      suggestions: [
+        {
+          domain: "rival.com",
+          reviewBucket: "higher_overlap",
+          discoveryConfidence: "medium",
+          evidenceKind: "organic_search_overlap",
+          observedAt: ORGANIC_DATA.observedAt,
+          metrics: {
+            intersections: 12,
+            averagePosition: 4.5,
+            summedPosition: 54,
+            organicEstimatedTrafficVolume: 321,
+            rank: null,
+          },
+        },
+      ],
+      classifications: {
+        direct: ["confirmed.example", "WWW.CONFIRMED.EXAMPLE"],
+        indirect: ["alternative.example"],
+        excluded: ["ignored.example"],
+      },
+      onClassify: vi.fn(),
+    });
+
+    expect(
+      host.querySelector('[data-profile-competitor-count="provider"]')
+        ?.textContent,
+    ).toContain("1");
+    expect(
+      host.querySelector('[data-profile-competitor-count="confirmed"]')
+        ?.textContent,
+    ).toContain("2");
+    expect(
+      host.querySelector('[data-profile-competitor-count="excluded"]')
+        ?.textContent,
+    ).toContain("1");
+  });
+
+  it("never renders an unavailable provider metric as a measured zero", () => {
+    render({
+      data: ORGANIC_DATA,
+      suggestions: [
+        {
+          domain: "rival.com",
+          reviewBucket: "higher_overlap",
+          discoveryConfidence: null,
+          evidenceKind: "organic_search_overlap",
+          observedAt: ORGANIC_DATA.observedAt,
+          metrics: {
+            intersections: null,
+            averagePosition: null,
+            summedPosition: null,
+            organicEstimatedTrafficVolume: null,
+            rank: null,
+          },
+        },
+      ],
+      classifications: { direct: [], indirect: [], excluded: [] },
+      onClassify: vi.fn(),
+    });
+
+    const candidate = host.querySelector("[data-profile-competitor-candidate]");
+    expect(candidate?.textContent).not.toContain(
+      `${COPY.intersectionsLabel}0`,
+    );
+    expect(candidate?.textContent).not.toContain(
+      `${COPY.averagePositionLabel}0`,
+    );
+    expect(candidate?.textContent).not.toContain(`${COPY.trafficLabel}0`);
+    expect(
+      candidate?.textContent?.match(new RegExp(COPY.unavailableMetricLabel, "g")),
+    ).toHaveLength(3);
+  });
+
+  it("offers accessible explicit classification actions without auto-promoting a candidate", () => {
+    const onClassify = vi.fn();
+    render({
+      data: ORGANIC_DATA,
+      suggestions: [
+        {
+          domain: "rival.com",
+          reviewBucket: "higher_overlap",
+          discoveryConfidence: "medium",
+          evidenceKind: "organic_search_overlap",
+          observedAt: ORGANIC_DATA.observedAt,
+          metrics: {
+            intersections: 12,
+            averagePosition: 4.5,
+            summedPosition: 54,
+            organicEstimatedTrafficVolume: 321,
+            rank: null,
+          },
+        },
+      ],
+      classifications: { direct: [], indirect: [], excluded: [] },
+      onClassify,
+    });
+
+    const direct = host.querySelector<HTMLButtonElement>(
+      '[data-profile-competitor-action="direct"]',
+    );
+    const indirect = host.querySelector<HTMLButtonElement>(
+      '[data-profile-competitor-action="indirect"]',
+    );
+    const exclude = host.querySelector<HTMLButtonElement>(
+      '[data-profile-competitor-action="excluded"]',
+    );
+    expect(direct?.getAttribute("aria-pressed")).toBe("false");
+    expect(direct?.getAttribute("aria-label")).toContain("rival.com");
+    expect(indirect?.getAttribute("aria-label")).toContain("rival.com");
+    expect(exclude?.getAttribute("aria-label")).toContain("rival.com");
+
+    act(() => direct?.click());
+    expect(onClassify).toHaveBeenCalledWith("rival.com", "direct");
   });
 
   it("localizes provider numbers and the local fetch timestamp", () => {
@@ -246,7 +404,7 @@ describe("AgentProfileSearch", () => {
         rows: [
           {
             kind: "target_query_serp",
-            domain: `${"very-long-subdomain-".repeat(8)}example.com`,
+            domain: `${"very-long-subdomain.".repeat(8)}example.com`,
             rank: 1,
           },
         ],

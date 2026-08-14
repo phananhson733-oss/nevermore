@@ -22,6 +22,10 @@ vi.mock("next-intl", () => ({
     () => (key: string, values?: Readonly<Record<string, unknown>>) =>
       key === "search.summary.available"
         ? `${key}:${String(values?.count)}`
+        : key === "search.review.awaitingClassification"
+          ? `${key}:${String(values?.count)}`
+        : key.startsWith("search.counts.")
+          ? `${key}:${String(values?.count)}`
         : key === "search.missingPrerequisite"
           ? `${key}:${String(values?.fields)}`
           : key === "refresh.diagnostics.stopReasons.max_urls"
@@ -1055,9 +1059,10 @@ describe("AgentProfilePanel", () => {
     }
   });
 
-  it("keeps provider-observed search domains separate from business classifications", () => {
+  it("makes provider-observed domains the primary review content without auto-classifying them", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
     renderPanel(
-      createAgentProfileDraft("seo", "astrologywiki.com"),
+      profile,
       undefined,
       undefined,
       {
@@ -1101,17 +1106,152 @@ describe("AgentProfilePanel", () => {
     );
 
     expect(summary?.textContent).toBe("search.summary.available:2");
+    expect(competitor?.querySelector("h3")?.textContent).toBe(
+      "search.review.candidatesReady",
+    );
     expect(declaredBusinessFrame?.textContent).not.toContain(
       "observed-one.example",
     );
+    expect(declaredBusinessFrame?.textContent).not.toContain(
+      "values.confirmationRequired",
+    );
     expect(
       declaredBusinessFrame?.textContent?.match(
-        /values\.confirmationRequired/g,
+        /search\.review\.awaitingClassification:2/g,
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(declaredBusinessFrame?.textContent).toContain(
+      "search.review.noneExcluded",
+    );
     expect(
       competitor?.querySelectorAll("[data-profile-search-domain]"),
     ).toHaveLength(2);
+    expect(
+      competitor?.querySelectorAll("[data-profile-competitor-candidate]"),
+    ).toHaveLength(2);
+    expect(
+      competitor?.querySelector(
+        '[data-profile-competitor-count="provider"]',
+      )?.textContent,
+    ).toContain("2");
+    expect(competitor?.textContent).toContain("search.review.needsReview");
+    expect(competitor?.textContent).toContain(
+      "search.review.providerEvidence",
+    );
+    expect(profile.directCompetitors).toEqual([]);
+    expect(profile.indirectAlternatives).toEqual([]);
+    expect(profile.excludedAlternatives).toEqual([]);
+  });
+
+  it("turns an explicit provider-candidate review into exactly one local classification", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        directCompetitors: ["existing.example"],
+        indirectAlternatives: ["rival.example"],
+        excludedAlternatives: ["ignored.example"],
+      },
+    );
+    const onChange = vi.fn();
+    renderPanel(profile, onChange, undefined, {
+      loading: false,
+      errorCode: null,
+      onDiscover: vi.fn(),
+      data: {
+        schemaVersion: "agent_profile_search.v1",
+        agent: "seo",
+        targetHost: "astrologywiki.com",
+        availability: "available",
+        method: "competitors_domain",
+        market: {
+          code: "US",
+          locationCode: 2_840,
+          languageCode: "en",
+        },
+        observedAt: "2026-08-13T00:00:00.000Z",
+        rows: [
+          {
+            kind: "organic_search_overlap",
+            domain: "rival.example",
+            intersections: 8,
+            averagePosition: 5,
+            summedPosition: 40,
+            organicEstimatedTrafficVolume: 250,
+          },
+        ],
+      },
+    });
+
+    act(() => {
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-profile-competitor-action="direct"]',
+        )
+        ?.click();
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directCompetitors: ["existing.example", "rival.example"],
+        indirectAlternatives: [],
+        excludedAlternatives: ["ignored.example"],
+      }),
+    );
+    expect(profile.directCompetitors).toEqual(["existing.example"]);
+    expect(profile.indirectAlternatives).toEqual(["rival.example"]);
+  });
+
+  it("counts only reviewable provider domains after self and platform filtering", () => {
+    renderPanel(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      undefined,
+      undefined,
+      {
+        loading: false,
+        errorCode: null,
+        onDiscover: vi.fn(),
+        data: {
+          schemaVersion: "agent_profile_search.v1",
+          agent: "seo",
+          targetHost: "astrologywiki.com",
+          availability: "available",
+          method: "competitors_domain",
+          market: {
+            code: "US",
+            locationCode: 2_840,
+            languageCode: "en",
+          },
+          observedAt: "2026-08-13T00:00:00.000Z",
+          rows: [
+            {
+              kind: "organic_search_overlap",
+              domain: "astrologywiki.com",
+              intersections: 20,
+              averagePosition: 2,
+              summedPosition: 40,
+              organicEstimatedTrafficVolume: 1_000,
+            },
+            {
+              kind: "organic_search_overlap",
+              domain: "reddit.com",
+              intersections: 10,
+              averagePosition: 3,
+              summedPosition: 30,
+              organicEstimatedTrafficVolume: 900,
+            },
+          ],
+        },
+      },
+    );
+
+    expect(
+      document.querySelector('[data-profile-search-summary="available"]')
+        ?.textContent,
+    ).toBe("search.summary.available:0");
+    expect(
+      document.querySelectorAll("[data-profile-competitor-candidate]"),
+    ).toHaveLength(0);
   });
 
   it("shows a reviewed business frame when competitors were entered manually", () => {
@@ -1167,10 +1307,10 @@ describe("AgentProfilePanel", () => {
     ).toBe("search.summary.available:1");
     expect(
       en.agents.workbench.profile.search.summary.available,
-    ).toContain("provider observation itself does not classify");
+    ).toContain("not classified as business competitors");
     expect(
       zh.agents.workbench.profile.search.summary.available,
-    ).toContain("数据源观测本身不将其归类为商业竞品");
+    ).toContain("只有在你选择关系后");
   });
 
   it("leaves search summary announcements to the existing results live region", () => {
@@ -1330,10 +1470,16 @@ describe("AgentProfilePanel", () => {
 
   it("keeps English and Chinese source-honest summary and timeout copy aligned", () => {
     expect(en.agents.workbench.profile.search.summary.available).toContain(
-      "provider observation itself does not classify",
+      "not classified as business competitors",
     );
     expect(zh.agents.workbench.profile.search.summary.available).toContain(
-      "数据源观测本身不将其归类为商业竞品",
+      "只有在你选择关系后",
+    );
+    expect(en.agents.workbench.profile.search.title).toBe(
+      "Domains worth review",
+    );
+    expect(zh.agents.workbench.profile.search.title).toBe(
+      "值得审核的搜索域",
     );
     expect(en.agents.workbench.profile.search.errors.searchTimeout).toContain(
       "timed out",
