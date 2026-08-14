@@ -11,13 +11,16 @@ import {
   type AgentProfileRefreshResult,
 } from "../../lib/agents/profile-refresh-contract";
 import {
+  acceptAgentProfileRefreshFields,
   applyAgentProfileRefresh,
   confirmAgentProfile,
   createAgentProfileDraft,
   isAgentProfileDraft,
   isConfirmedAgentProfile,
   isAgentProfileReady,
+  listAgentProfileRefreshProposals,
   redraftAgentProfileForUrl,
+  summarizeAgentProfileRefresh,
   updateAgentProfile,
 } from "./agent-profile";
 
@@ -89,6 +92,36 @@ function profileRefreshResult(
     fields,
     ...overrides,
   };
+}
+
+function fullAstrologyRefreshResult(): AgentProfileRefreshResult {
+  const listFields = new Set<AgentProfileRefreshFieldPath>([
+    "coreFeatures",
+    "categories",
+    "trustSignals",
+    "icpInterests",
+    "useCases",
+    "outcomes",
+    "barriers",
+    "qualificationSignals",
+    "disqualifiers",
+  ]);
+  const available = Object.fromEntries(
+    AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) => [
+      path,
+      listFields.has(path) ? [`Live ${path}`] : `Live ${path}`,
+    ]),
+  ) as Record<AgentProfileRefreshFieldPath, string | readonly string[]>;
+  return profileRefreshResult(available, {
+    request: {
+      submittedUrl: "https://www.astrologywiki.com/birth-chart",
+      normalizedUrl: "https://www.astrologywiki.com/birth-chart",
+      targetHost: "www.astrologywiki.com",
+      marketCode: "US",
+      languageTag: "en-US",
+      outputLocale: "en",
+    },
+  });
 }
 
 describe("Agent-local Product / ICP profiles", () => {
@@ -697,6 +730,149 @@ describe("Agent-local Product / ICP profiles", () => {
       refreshed.fieldProvenance.find((entry) => entry.path === "/buyer")
         ?.source,
     ).toBe("public_page");
+  });
+
+  it("summarizes the full AstrologyWiki refresh by what was actually applied", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      { country: "US", locale: "en-US" },
+    );
+    const refresh = fullAstrologyRefreshResult();
+    const refreshed = applyAgentProfileRefresh(profile, refresh);
+
+    expect(summarizeAgentProfileRefresh(refreshed, refresh)).toEqual({
+      found: 22,
+      applied: 2,
+      retained: 20,
+      unavailable: 0,
+    });
+  });
+
+  it("lists only differing retained live fields with both source classes", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      {
+        country: "US",
+        locale: "en-US",
+        valueProposition: "Manually reviewed positioning",
+      },
+    );
+    const refresh = fullAstrologyRefreshResult();
+    const refreshed = applyAgentProfileRefresh(profile, refresh);
+    const proposals = listAgentProfileRefreshProposals(refreshed, refresh);
+
+    expect(proposals).toHaveLength(20);
+    expect(proposals).toContainEqual({
+      path: "productName",
+      currentValue: "AstrologyWiki",
+      liveValue: "Live productName",
+      evidenceUrls: ["https://www.acme.com/"],
+      currentSource: "supplied_product_information",
+      liveSource: "public_page",
+    });
+    expect(proposals).toContainEqual({
+      path: "valueProposition",
+      currentValue: "Manually reviewed positioning",
+      liveValue: "Live valueProposition",
+      evidenceUrls: ["https://www.acme.com/"],
+      currentSource: "user_edit",
+      liveSource: "public_page",
+    });
+    expect(proposals.map((proposal) => proposal.path)).not.toContain("buyer");
+    expect(proposals.map((proposal) => proposal.path)).not.toContain(
+      "disqualifiers",
+    );
+  });
+
+  it("accepts selected supplied fields while protecting manual edits and run context", () => {
+    const initial = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      {
+        country: "US",
+        locale: "en-US",
+        targetQuery: "free birth chart",
+        valueProposition: "Manually reviewed positioning",
+      },
+    );
+    const refresh = fullAstrologyRefreshResult();
+    const refreshed = applyAgentProfileRefresh(initial, refresh);
+    const confirmed = confirmAgentProfile(refreshed);
+    const accepted = acceptAgentProfileRefreshFields(confirmed, refresh, [
+      "productName",
+      "valueProposition",
+    ]);
+
+    expect(confirmed.reviewState).toBe("confirmed");
+    expect(accepted).toMatchObject({
+      productName: "Live productName",
+      valueProposition: "Manually reviewed positioning",
+      country: "US",
+      locale: "en-US",
+      targetQuery: "free birth chart",
+      reviewState: "needs_confirmation",
+      editedFields: initial.editedFields,
+    });
+    expect(accepted.user).toBe(refreshed.user);
+    expect(accepted.sources).toEqual(refreshed.sources);
+    expect(
+      accepted.fieldProvenance.find(
+        (entry) => entry.path === "/productName",
+      ),
+    ).toEqual({
+      path: "/productName",
+      derivation: "inferred",
+      confidence: "medium",
+      source: "public_page",
+      limitation: "Inferred only from the bounded public-page crawl.",
+      observedAt: "2026-08-13T10:00:00.000Z",
+      evidenceUrls: ["https://www.acme.com/"],
+    });
+    expect(
+      accepted.fieldProvenance.find(
+        (entry) => entry.path === "/valueProposition",
+      )?.source,
+    ).toBe("user_edit");
+    expect(summarizeAgentProfileRefresh(accepted, refresh)).toEqual({
+      found: 22,
+      applied: 3,
+      retained: 19,
+      unavailable: 0,
+    });
+  });
+
+  it("fails closed across all proposal helpers when refresh identity differs", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      { country: "US", locale: "en-US" },
+    );
+    const refresh = fullAstrologyRefreshResult();
+    const mismatch = {
+      ...refresh,
+      request: { ...refresh.request, marketCode: "CA" },
+    };
+
+    expect(summarizeAgentProfileRefresh(profile, mismatch)).toEqual({
+      found: 0,
+      applied: 0,
+      retained: 0,
+      unavailable: 0,
+    });
+    expect(listAgentProfileRefreshProposals(profile, mismatch)).toEqual([]);
+    expect(
+      acceptAgentProfileRefreshFields(profile, mismatch, ["productName"]),
+    ).toBe(profile);
   });
 
   it("replaces a prior public-page inference but never blanks it with unavailable data", () => {

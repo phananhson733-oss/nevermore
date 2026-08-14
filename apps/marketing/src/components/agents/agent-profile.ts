@@ -2,7 +2,10 @@
 // @output -- immutable, source-labeled Product/ICP drafts and local confirmation
 // @pos    -- browser-only Profile contract; it never writes an app project/profile
 
-import type { AgentProfileRefreshResult } from "../../lib/agents/profile-refresh-contract";
+import type {
+  AgentProfileRefreshFieldPath,
+  AgentProfileRefreshResult,
+} from "../../lib/agents/profile-refresh-contract";
 import type { AgentKind } from "./agent-types";
 
 export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v3" as const;
@@ -138,6 +141,25 @@ export type AgentProfileEditableField =
 export type AgentProfileEdits = Partial<
   Pick<AgentProfileDraft, AgentProfileEditableField>
 >;
+
+export interface AgentProfileRefreshSummary {
+  readonly found: number;
+  readonly applied: number;
+  readonly retained: number;
+  readonly unavailable: number;
+}
+
+export type AgentProfileRefreshProposalValue =
+  AgentProfileDraft[AgentProfileRefreshFieldPath];
+
+export interface AgentProfileRefreshProposal {
+  readonly path: AgentProfileRefreshFieldPath;
+  readonly currentValue: AgentProfileRefreshProposalValue;
+  readonly liveValue: AgentProfileRefreshProposalValue;
+  readonly evidenceUrls: readonly string[];
+  readonly currentSource: AgentProfileFieldSource;
+  readonly liveSource: "public_page";
+}
 
 const EDITABLE_FIELDS: readonly AgentProfileEditableField[] = [
   "productName",
@@ -846,6 +868,183 @@ function comparableUrl(input: string): string {
   }
 }
 
+function isMatchingAgentProfileRefresh(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+): boolean {
+  return (
+    refresh.agent === profile.agent &&
+    comparableUrl(refresh.request.submittedUrl) ===
+      comparableUrl(profile.targetUrl) &&
+    comparableUrl(refresh.request.normalizedUrl) ===
+      comparableUrl(profile.targetUrl) &&
+    displayHost(refresh.request.targetHost) === profile.host &&
+    refresh.request.marketCode.toUpperCase() === profile.country.toUpperCase() &&
+    refresh.request.languageTag.toLowerCase() === profile.locale.toLowerCase()
+  );
+}
+
+function profileValueMatchesRefreshField(
+  profile: AgentProfileDraft,
+  field: AgentProfileRefreshResult["fields"][number],
+): boolean {
+  if (field.state !== "available") return false;
+  const current = profile[field.path];
+  return Array.isArray(current) && Array.isArray(field.value)
+    ? current.length === field.value.length &&
+        current.every((value, index) => value === field.value[index])
+    : current === field.value;
+}
+
+function isAppliedRefreshField(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+  field: AgentProfileRefreshResult["fields"][number],
+): boolean {
+  const provenance = profile.fieldProvenance.find(
+    (entry) => entry.path === `/${field.path}`,
+  );
+  return (
+    field.state === "available" &&
+    provenance?.source === "public_page" &&
+    provenance.observedAt === refresh.observedAt &&
+    profileValueMatchesRefreshField(profile, field)
+  );
+}
+
+/** Describe a matching live refresh by what this draft actually contains. */
+export function summarizeAgentProfileRefresh(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+): AgentProfileRefreshSummary {
+  if (!isMatchingAgentProfileRefresh(profile, refresh)) {
+    return { found: 0, applied: 0, retained: 0, unavailable: 0 };
+  }
+
+  let found = 0;
+  let applied = 0;
+  let unavailable = 0;
+  for (const field of refresh.fields) {
+    if (field.state === "unavailable") {
+      unavailable += 1;
+      continue;
+    }
+    found += 1;
+    if (isAppliedRefreshField(profile, refresh, field)) {
+      applied += 1;
+    }
+  }
+  return { found, applied, retained: found - applied, unavailable };
+}
+
+/** Return source-labeled live alternatives that differ from retained values. */
+export function listAgentProfileRefreshProposals(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+): readonly AgentProfileRefreshProposal[] {
+  if (!isMatchingAgentProfileRefresh(profile, refresh)) return [];
+
+  const proposals: AgentProfileRefreshProposal[] = [];
+  for (const field of refresh.fields) {
+    if (
+      field.state !== "available" ||
+      isAppliedRefreshField(profile, refresh, field) ||
+      profileValueMatchesRefreshField(profile, field)
+    ) {
+      continue;
+    }
+    const provenance = profile.fieldProvenance.find(
+      (entry) => entry.path === `/${field.path}`,
+    );
+    if (!provenance) continue;
+    const currentValue = profile[field.path];
+    proposals.push({
+      path: field.path,
+      currentValue: Array.isArray(currentValue)
+        ? [...currentValue]
+        : currentValue,
+      liveValue: Array.isArray(field.value) ? [...field.value] : field.value,
+      evidenceUrls: [...field.evidenceUrls],
+      currentSource: provenance.source,
+      liveSource: "public_page",
+    });
+  }
+  return proposals;
+}
+
+/** Apply explicit live choices while keeping manual edits authoritative. */
+export function acceptAgentProfileRefreshFields(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+  paths: readonly AgentProfileRefreshFieldPath[],
+): AgentProfileDraft {
+  if (!isMatchingAgentProfileRefresh(profile, refresh)) return profile;
+
+  const selected = new Set(paths);
+  const accepted: AgentProfileEdits = {};
+  const fieldProvenance: AgentProfileFieldProvenance[] =
+    profile.fieldProvenance.map((entry) => ({
+      ...entry,
+      evidenceUrls: [...entry.evidenceUrls],
+    }));
+  let acceptedCount = 0;
+  let productRefreshed = false;
+  let icpRefreshed = false;
+
+  for (const field of refresh.fields) {
+    if (field.state !== "available" || !selected.has(field.path)) continue;
+    const provenanceIndex = fieldProvenance.findIndex(
+      (entry) => entry.path === `/${field.path}`,
+    );
+    const currentProvenance = fieldProvenance[provenanceIndex];
+    if (
+      !currentProvenance ||
+      currentProvenance.source === "user_edit" ||
+      profile.editedFields.includes(field.path)
+    ) {
+      continue;
+    }
+    (accepted as Record<string, unknown>)[field.path] = Array.isArray(field.value)
+      ? [...field.value]
+      : field.value;
+    fieldProvenance[provenanceIndex] = {
+      path: `/${field.path}`,
+      derivation: "inferred",
+      confidence: field.confidence,
+      source: "public_page",
+      limitation: field.limitation,
+      observedAt: refresh.observedAt,
+      evidenceUrls: [...field.evidenceUrls],
+    };
+    acceptedCount += 1;
+    productRefreshed ||= REFRESH_PRODUCT_FIELDS.has(field.path);
+    icpRefreshed ||= REFRESH_ICP_FIELDS.has(field.path);
+  }
+
+  if (acceptedCount === 0) return profile;
+  return copyDraft({
+    ...profile,
+    ...accepted,
+    sources: {
+      ...profile.sources,
+      product:
+        productRefreshed &&
+        profile.sources.product !== "product_information_supplied" &&
+        profile.sources.product !== "marketing_strategy_supplied"
+          ? "public_page_refresh"
+          : profile.sources.product,
+      icp:
+        icpRefreshed &&
+        profile.sources.icp !== "product_information_supplied" &&
+        profile.sources.icp !== "marketing_strategy_supplied"
+          ? "public_page_refresh"
+          : profile.sources.icp,
+    },
+    fieldProvenance,
+    reviewState: "needs_confirmation",
+  });
+}
+
 /**
  * Merge one browser-validated live diagnosis into this temporary local draft.
  * This does not confirm or persist an app Product Profile.
@@ -854,16 +1053,7 @@ export function applyAgentProfileRefresh(
   profile: AgentProfileDraft,
   refresh: AgentProfileRefreshResult,
 ): AgentProfileDraft {
-  if (
-    refresh.agent !== profile.agent ||
-    comparableUrl(refresh.request.submittedUrl) !==
-      comparableUrl(profile.targetUrl) ||
-    comparableUrl(refresh.request.normalizedUrl) !==
-      comparableUrl(profile.targetUrl) ||
-    displayHost(refresh.request.targetHost) !== profile.host ||
-    refresh.request.marketCode.toUpperCase() !== profile.country.toUpperCase() ||
-    refresh.request.languageTag.toLowerCase() !== profile.locale.toLowerCase()
-  ) {
+  if (!isMatchingAgentProfileRefresh(profile, refresh)) {
     return profile;
   }
 

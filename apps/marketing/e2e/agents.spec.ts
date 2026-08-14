@@ -102,62 +102,59 @@ function agentEnvelope(agent: AgentKind) {
 }
 
 function profileRefreshEnvelope(agent: AgentKind) {
-  const sourceUrls = [
-    "https://example.com/",
-    "https://example.com/product",
-    "https://example.com/about",
-  ] as const;
+  const sourceUrls = Array.from(
+    { length: 14 },
+    (_, index) => `https://astrologywiki.com/source-${index + 1}`,
+  );
+  const listFields = new Set([
+    "coreFeatures",
+    "categories",
+    "trustSignals",
+    "icpInterests",
+    "useCases",
+    "outcomes",
+    "barriers",
+    "qualificationSignals",
+    "disqualifiers",
+  ]);
   return {
     data: {
       schemaVersion: "agent_profile_refresh.v1",
       agent,
       request: {
-        submittedUrl: "example.com",
-        normalizedUrl: "https://example.com/",
-        targetHost: "example.com",
+        submittedUrl: "astrologywiki.com",
+        normalizedUrl: "https://astrologywiki.com/",
+        targetHost: "astrologywiki.com",
         marketCode: "US",
         languageTag: "en-US",
         outputLocale: "en",
       },
-      availability: "partial",
+      availability: "available",
       observedAt: "2026-08-13T10:00:00.000Z",
       cache: {
         status: "fresh",
         capturedAt: "2026-08-13T10:00:00.000Z",
       },
       diagnostics: {
-        resolvedOrigin: "https://example.com",
-        pagesFetched: 3,
-        productPagesFetched: 1,
+        resolvedOrigin: "https://astrologywiki.com",
+        pagesFetched: 14,
+        productPagesFetched: 3,
         stopReason: "max_urls",
         contextSufficient: true,
         sourceUrls,
-        fieldsAvailable: 1,
-        fieldsMissing: 21,
+        fieldsAvailable: 22,
+        fieldsMissing: 0,
       },
-      fields: AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) =>
-        path === "productName"
-          ? {
-              path,
-              state: "available",
-              value: "Live Example Product",
-              derivation: "inferred",
-              confidence: "medium",
-              source: "public_page",
-              limitation: null,
-              evidenceUrls: [sourceUrls[0]],
-            }
-          : {
-              path,
-              state: "unavailable",
-              value: null,
-              derivation: "missing",
-              confidence: "unknown",
-              source: "not_available",
-              limitation: "Not stated on the bounded public pages.",
-              evidenceUrls: [],
-            },
-      ),
+      fields: AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) => ({
+        path,
+        state: "available",
+        value: listFields.has(path) ? [`Live ${path}`] : `Live ${path}`,
+        derivation: "inferred",
+        confidence: "medium",
+        source: "public_page",
+        limitation: null,
+        evidenceUrls: [sourceUrls[0]],
+      })),
     },
   } as const;
 }
@@ -234,7 +231,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   const language = page.getByLabel("Target language (BCP 47)");
   const run = page.getByRole("button", { name: "Run profile diagnosis" });
 
-  await url.fill("example.com");
+  await url.fill("astrologywiki.com");
   await market.fill("US");
   await language.fill("en-US");
   await page.waitForLoadState("networkidle");
@@ -258,27 +255,68 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await run.click();
 
   await expect(
-    page.getByText("A partial public-page profile draft is ready"),
+    page.getByText("Public-page profile draft is ready"),
   ).toBeVisible();
   await expect(page.getByText("Fresh result")).toBeVisible();
   await expect(
     page.locator('[data-profile-refresh-metric="pages"]'),
+  ).toContainText("14");
+  await expect(
+    page.locator('[data-profile-refresh-count="found"]'),
+  ).toContainText("22");
+  await expect(
+    page.locator('[data-profile-refresh-count="applied"]'),
+  ).toContainText("2");
+  await expect(
+    page.locator('[data-profile-refresh-count="retained"]'),
+  ).toContainText("20");
+  await expect(
+    page.locator('[data-profile-refresh-count="unavailable"]'),
+  ).toContainText("0");
+  await expect(page.locator('[data-profile-card="product"]')).toContainText(
+    "AstrologyWiki",
+  );
+  const productNameProposal = page.locator(
+    '[data-profile-refresh-proposal="productName"]',
+  );
+  await expect(productNameProposal).toContainText("Live productName");
+  await page
+    .getByRole("button", {
+      name: "Use the live suggestion for Product name",
+    })
+    .click();
+  await expect(page.locator('[data-profile-card="product"]')).toContainText(
+    "Live productName",
+  );
+  await expect(
+    page.locator('[data-profile-refresh-count="applied"]'),
   ).toContainText("3");
   await expect(
-    page.locator('[data-profile-refresh-metric="missing"]'),
-  ).toContainText("21");
+    page.locator('[data-profile-refresh-count="retained"]'),
+  ).toContainText("19");
+
   await expect(
-    page.locator('[data-profile-card="product"]'),
-  ).toContainText("Live Example Product");
+    page.locator('[data-profile-refresh-source-preview] a'),
+  ).toHaveCount(3);
+  const sourceDetails = page.locator(
+    "details[data-profile-refresh-source-details]",
+  );
+  await expect(sourceDetails).not.toHaveAttribute("open", "");
+  await sourceDetails.locator("summary").click();
   await expect(
-    page.locator('[data-profile-refresh-source]').first(),
-  ).toHaveAttribute("href", "https://example.com/");
+    sourceDetails.locator('[data-profile-refresh-source]').last(),
+  ).toHaveAttribute("href", "https://astrologywiki.com/source-14");
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
 
   expect(profileRequests).toEqual([
     {
       method: "POST",
       body: {
-        url: "example.com",
+        url: "astrologywiki.com",
         marketCode: "US",
         languageTag: "en-US",
         outputLocale: "en",

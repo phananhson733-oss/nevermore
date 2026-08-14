@@ -27,13 +27,17 @@ import {
 } from "./agent-profile-search";
 import {
   AGENT_PROFILE_READY_FIELDS,
+  acceptAgentProfileRefreshFields,
   confirmAgentProfile,
   isAgentProfileReady,
+  listAgentProfileRefreshProposals,
   redraftAgentProfileForUrl,
+  summarizeAgentProfileRefresh,
   updateAgentProfile,
   type AgentProfileDraft,
   type AgentProfileEditableField,
   type AgentProfileEdits,
+  type AgentProfileFieldSource,
   type AgentProfileSourceId,
 } from "./agent-profile";
 import type { AgentKind } from "./agent-types";
@@ -163,6 +167,31 @@ const PROFILE_REFRESH_ERROR_KEYS = new Set([
   "unknown",
 ]);
 
+type ProfileSourceClass =
+  | "supplied"
+  | "manual"
+  | "live_public_page"
+  | "inferred"
+  | "missing";
+type ProfileSectionSourceClass = ProfileSourceClass | "mixed";
+
+function profileSourceClass(source: AgentProfileFieldSource): ProfileSourceClass {
+  if (
+    source === "supplied_product_information" ||
+    source === "supplied_marketing_strategy"
+  ) {
+    return "supplied";
+  }
+  if (source === "user_edit") return "manual";
+  if (source === "public_page") return "live_public_page";
+  if (source === "not_available") return "missing";
+  return "inferred";
+}
+
+function proposalValue(value: string | readonly string[]): string {
+  return typeof value === "string" ? value : value.join(" · ");
+}
+
 function canonicalLanguageTag(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 35) return null;
@@ -191,16 +220,17 @@ function LocalAdjustmentChip({ label }: { readonly label: string }) {
 function SourceChip({
   source,
   label,
+  sectionSource,
 }: {
   readonly source: AgentProfileSourceId;
   readonly label: string;
+  readonly sectionSource: ProfileSectionSourceClass;
 }) {
-  const supplied =
-    source === "product_information_supplied" ||
-    source === "marketing_strategy_supplied";
+  const supplied = sectionSource === "supplied";
   return (
     <span
       data-profile-source={source}
+      data-profile-section-source={sectionSource}
       className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9px] tracking-[0.06em] uppercase ${
         supplied
           ? "border-brand-accent/30 bg-brand-accent/[0.07] text-brand-accent-text"
@@ -226,6 +256,7 @@ function Fact({
   readonly value: string;
   readonly provenance?: {
     readonly derivation: string;
+    readonly sourceClass: ProfileSourceClass;
     readonly label: string;
   };
 }) {
@@ -240,6 +271,7 @@ function Fact({
       {provenance ? (
         <dd
           data-profile-provenance={provenance.derivation}
+          data-profile-source-class={provenance.sourceClass}
           className="mt-2 inline-flex max-w-full rounded border border-brand-border-faint bg-brand-panel-raised px-1.5 py-0.5 font-mono text-[9.5px] leading-[1.35] tracking-[0.04em] text-text-dark-secondary uppercase"
         >
           {provenance.label}
@@ -268,6 +300,25 @@ function StageHeader({
         {label}
       </p>
     </div>
+  );
+}
+
+function ProfileRefreshSourceLink({
+  sourceUrl,
+}: {
+  readonly sourceUrl: string;
+}) {
+  return (
+    <a
+      data-profile-refresh-source
+      href={sourceUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex max-w-full items-center gap-1 text-[10.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2 hover:decoration-brand-info"
+    >
+      <span className="max-w-[28rem] truncate">{sourceUrl}</span>
+      <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+    </a>
   );
 }
 
@@ -364,17 +415,66 @@ export function AgentProfilePanel({
   ].filter((value): value is string => value !== null);
   const searchDisabled = disabled || missingSearchPrerequisites.length > 0;
   const refreshData = profileRefresh?.data ?? null;
+  const refreshSummary = refreshData
+    ? summarizeAgentProfileRefresh(profile, refreshData)
+    : null;
+  const refreshProposals = refreshData
+    ? listAgentProfileRefreshProposals(profile, refreshData)
+    : [];
+  const actionableRefreshProposals = refreshProposals.filter(
+    (proposal) => proposal.currentSource !== "user_edit",
+  );
   const targetLanguageValid = canonicalLanguageTag(profile.locale) !== null;
   const marketOptionsId = `${agent}-profile-market-options`;
   const languageOptionsId = `${agent}-profile-language-options`;
+
+  function sectionSourceClass(
+    fields: readonly AgentProfileEditableField[],
+  ): ProfileSectionSourceClass {
+    const classes = new Set(
+      fields.flatMap((field) => {
+        const provenance = profile.fieldProvenance.find(
+          (entry) => entry.path === `/${field}`,
+        );
+        return provenance ? [profileSourceClass(provenance.source)] : [];
+      }),
+    );
+    if (classes.size > 1) return "mixed";
+    return classes.values().next().value ?? "missing";
+  }
+
+  function sectionSourceLabel(
+    source: AgentProfileSourceId,
+    sourceClass: ProfileSectionSourceClass,
+  ): string {
+    if (sourceClass === "mixed") return t("sources.mixed_sources");
+    if (sourceClass === "live_public_page") {
+      return t("sources.public_page_refresh");
+    }
+    if (sourceClass === "manual") return t("sources.locally_adjusted");
+    if (sourceClass === "missing") return t("sources.confirmation_required");
+    return t(`sources.${source}`);
+  }
+
+  function acceptRefreshFields(
+    paths: readonly (typeof refreshProposals)[number]["path"][],
+  ): void {
+    if (!refreshData || disabled) return;
+    onChange(acceptAgentProfileRefreshFields(profile, refreshData, paths));
+  }
+
   function fieldProvenance(field: AgentProfileEditableField) {
     const provenance = profile.fieldProvenance.find(
       (entry) => entry.path === `/${field}`,
     );
+    const sourceClass = provenance
+      ? profileSourceClass(provenance.source)
+      : "missing";
     return provenance
       ? {
           derivation: provenance.derivation,
-          label: `${t(`provenance.derivations.${provenance.derivation}`)} · ${t(`provenance.confidence.${provenance.confidence}`)}`,
+          sourceClass,
+          label: `${t(`provenance.derivations.${provenance.derivation}`)} · ${t(`provenance.confidence.${provenance.confidence}`)} · ${t(`provenance.sourceClasses.${sourceClass}`)}`,
         }
       : undefined;
   }
@@ -390,9 +490,32 @@ export function AgentProfilePanel({
       ? fieldProvenance(field)
       : {
           derivation: "missing",
-          label: `${t("provenance.derivations.missing")} · ${t("provenance.confidence.unknown")}`,
+          sourceClass: "missing" as const,
+          label: `${t("provenance.derivations.missing")} · ${t("provenance.confidence.unknown")} · ${t("provenance.sourceClasses.missing")}`,
         };
   }
+
+  const productSectionSource = sectionSourceClass([
+    "productName",
+    "oneLinePositioning",
+    ...PRODUCT_FIELDS,
+  ]);
+  const icpSectionSource = sectionSourceClass([
+    "primaryIcp",
+    ...ICP_FIELDS,
+  ]);
+  const competitorSectionSource = sectionSourceClass([
+    ...COMPETITOR_FIELDS,
+  ]);
+  const contextSectionSource = sectionSourceClass([
+    "firstOutcome",
+    "country",
+    "locale",
+    "device",
+    "pageType",
+    "targetQuery",
+    "auditScope",
+  ]);
   let searchSummary: { readonly state: string; readonly label: string } | null =
     null;
   if (profileSearch?.loading) {
@@ -651,7 +774,7 @@ export function AgentProfilePanel({
                 </time>
               </div>
 
-              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {(
                   [
                     [
@@ -668,11 +791,6 @@ export function AgentProfilePanel({
                       "sources",
                       refreshData.diagnostics.sourceUrls.length,
                       t("refresh.metrics.sources"),
-                    ],
-                    [
-                      "missing",
-                      refreshData.diagnostics.fieldsMissing,
-                      t("refresh.metrics.missing"),
                     ],
                   ] as const
                 ).map(([hook, value, label]) => {
@@ -693,13 +811,42 @@ export function AgentProfilePanel({
                 })}
               </dl>
 
+              {refreshSummary ? (
+                <dl
+                  data-profile-refresh-adoption
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                >
+                  {(
+                    [
+                      ["found", refreshSummary.found],
+                      ["applied", refreshSummary.applied],
+                      ["retained", refreshSummary.retained],
+                      ["unavailable", refreshSummary.unavailable],
+                    ] as const
+                  ).map(([name, value]) => (
+                    <div
+                      key={name}
+                      data-profile-refresh-count={name}
+                      className="rounded-md border border-brand-border-faint bg-brand-bg px-3 py-2"
+                    >
+                      <dt className="font-mono text-[8.5px] tracking-[0.06em] text-text-dark-faint uppercase">
+                        {t(`refresh.counts.${name}`)}
+                      </dt>
+                      <dd className="mt-1 text-[13px] font-semibold text-text-dark-primary">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+
               {refreshData.diagnostics.fieldsMissing > 0 ? (
                 <div
-                  data-profile-refresh-missing-fields
+                  data-profile-refresh-unavailable-fields
                   className="grid gap-2 rounded-md border border-brand-warning/20 bg-brand-warning/[0.045] px-3 py-2.5"
                 >
                   <p className="text-[10.5px] leading-[1.5] text-text-dark-secondary">
-                    {t("refresh.diagnostics.missingFields")}
+                    {t("refresh.diagnostics.unavailableFields")}
                   </p>
                   <ul className="flex flex-wrap gap-1.5">
                     {refreshData.fields
@@ -716,6 +863,126 @@ export function AgentProfilePanel({
                 </div>
               ) : null}
 
+              {refreshProposals.length > 0 ? (
+                <section
+                  data-profile-refresh-proposals
+                  aria-labelledby={`${agent}-profile-refresh-proposals`}
+                  className="grid gap-3 rounded-row border border-brand-info/20 bg-brand-info/[0.035] p-3.5"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[9px] tracking-[0.08em] text-brand-info uppercase">
+                        {t("refresh.proposals.eyebrow")}
+                      </p>
+                      <h3
+                        id={`${agent}-profile-refresh-proposals`}
+                        className="mt-1 text-[13px] font-semibold text-text-dark-primary"
+                      >
+                        {t("refresh.proposals.title")}
+                      </h3>
+                      <p className="mt-1 max-w-3xl text-[10.5px] leading-[1.55] text-text-dark-secondary">
+                        {t("refresh.proposals.description")}
+                      </p>
+                    </div>
+                    {actionableRefreshProposals.length > 0 ? (
+                      <button
+                        type="button"
+                        data-profile-refresh-proposal-action="all"
+                        disabled={disabled}
+                        onClick={() =>
+                          acceptRefreshFields(
+                            actionableRefreshProposals.map(
+                              (proposal) => proposal.path,
+                            ),
+                          )
+                        }
+                        className="inline-flex w-full shrink-0 items-center justify-center rounded-md border border-brand-info/35 bg-brand-info/[0.09] px-3 py-2 text-[10.5px] font-semibold text-brand-info transition-colors hover:bg-brand-info/[0.14] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info disabled:opacity-50 md:w-auto"
+                      >
+                        {t("refresh.proposals.applyAll")}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <ul className="grid gap-2">
+                    {refreshProposals.map((proposal) => {
+                      const manual = proposal.currentSource === "user_edit";
+                      return (
+                        <li
+                          key={proposal.path}
+                          data-profile-refresh-proposal={proposal.path}
+                          className="grid min-w-0 gap-3 rounded-md border border-brand-border-faint bg-brand-bg p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-start"
+                        >
+                          <div
+                            data-profile-refresh-proposal-current
+                            className="min-w-0"
+                          >
+                            <p className="font-mono text-[8.5px] tracking-[0.07em] text-text-dark-faint uppercase">
+                              {t("refresh.proposals.current")}
+                            </p>
+                            <p className="mt-1 break-words text-[11px] leading-[1.5] text-text-dark-secondary">
+                              {proposalValue(proposal.currentValue)}
+                            </p>
+                            <p className="mt-1 font-mono text-[8.5px] tracking-[0.04em] text-text-dark-faint uppercase">
+                              {t(
+                                `provenance.sourceClasses.${profileSourceClass(proposal.currentSource)}`,
+                              )}
+                            </p>
+                          </div>
+                          <div
+                            data-profile-refresh-proposal-live
+                            className="min-w-0"
+                          >
+                            <p className="font-mono text-[8.5px] tracking-[0.07em] text-brand-info uppercase">
+                              {t("refresh.proposals.live")}
+                            </p>
+                            <p className="mt-1 break-words text-[11px] leading-[1.5] text-text-dark-primary">
+                              {proposalValue(proposal.liveValue)}
+                            </p>
+                            <a
+                              data-profile-refresh-proposal-evidence
+                              href={proposal.evidenceUrls[0]}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 inline-flex max-w-full items-center gap-1 text-[9.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
+                            >
+                              <span className="truncate">
+                                {t("refresh.proposals.evidence", {
+                                  count: proposal.evidenceUrls.length,
+                                })}
+                              </span>
+                              <ExternalLink
+                                aria-hidden="true"
+                                className="size-3 shrink-0"
+                              />
+                            </a>
+                          </div>
+                          <div className="md:pt-0.5">
+                            <button
+                              type="button"
+                              data-profile-refresh-proposal-action={
+                                proposal.path
+                              }
+                              aria-label={t("refresh.proposals.useLabel", {
+                                field: t(`fields.${proposal.path}`),
+                              })}
+                              disabled={disabled || manual}
+                              onClick={() =>
+                                acceptRefreshFields([proposal.path])
+                              }
+                              className="inline-flex w-full items-center justify-center rounded-md border border-brand-border-strong bg-brand-panel-raised px-3 py-2 text-[10px] font-semibold text-text-dark-primary transition-colors hover:border-brand-info/55 hover:text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info disabled:cursor-not-allowed disabled:opacity-55 md:w-auto"
+                            >
+                              {manual
+                                ? t("refresh.proposals.manualRetained")
+                                : t("refresh.proposals.use")}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ) : null}
+
               {!refreshData.diagnostics.contextSufficient ||
               refreshData.diagnostics.stopReason ? (
                 <div className="grid gap-1 text-[10.5px] leading-[1.55] text-brand-warning">
@@ -730,30 +997,62 @@ export function AgentProfilePanel({
                         refreshData.diagnostics.stopReason
                       }
                     >
-                      {t(
-                        `refresh.diagnostics.stopReasons.${refreshData.diagnostics.stopReason}`,
-                      )}
+                      {refreshData.diagnostics.stopReason === "max_urls"
+                        ? t("refresh.diagnostics.stopReasons.max_urls", {
+                            pages: refreshData.diagnostics.pagesFetched,
+                          })
+                        : t(
+                            `refresh.diagnostics.stopReasons.${refreshData.diagnostics.stopReason}`,
+                          )}
                     </p>
                   ) : null}
                 </div>
               ) : null}
 
-              <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {refreshData.diagnostics.sourceUrls.map((sourceUrl) => (
-                  <li key={sourceUrl}>
-                    <a
-                      data-profile-refresh-source
-                      href={sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-full items-center gap-1 text-[10.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2 hover:decoration-brand-info"
-                    >
-                      <span className="max-w-[28rem] truncate">{sourceUrl}</span>
-                      <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <div className="grid gap-2">
+                <p
+                  data-profile-refresh-source-total
+                  className="font-mono text-[9px] tracking-[0.06em] text-text-dark-faint uppercase"
+                >
+                  <strong className="text-text-dark-secondary">
+                    {refreshData.diagnostics.sourceUrls.length}
+                  </strong>{" "}
+                  {t("refresh.sources.total")}
+                </p>
+                <ul
+                  data-profile-refresh-source-preview
+                  className="flex flex-wrap gap-x-4 gap-y-1.5"
+                >
+                  {refreshData.diagnostics.sourceUrls
+                    .slice(0, 3)
+                    .map((sourceUrl) => (
+                      <li key={sourceUrl}>
+                        <ProfileRefreshSourceLink sourceUrl={sourceUrl} />
+                      </li>
+                    ))}
+                </ul>
+                {refreshData.diagnostics.sourceUrls.length > 3 ? (
+                  <details
+                    data-profile-refresh-source-details
+                    className="group rounded-md border border-brand-border-faint bg-brand-bg px-3 py-2"
+                  >
+                    <summary className="cursor-pointer text-[10.5px] font-medium text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info">
+                      {t("refresh.sources.expand", {
+                        count: refreshData.diagnostics.sourceUrls.length,
+                      })}
+                    </summary>
+                    <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                      {refreshData.diagnostics.sourceUrls
+                        .slice(3)
+                        .map((sourceUrl) => (
+                          <li key={sourceUrl}>
+                            <ProfileRefreshSourceLink sourceUrl={sourceUrl} />
+                          </li>
+                        ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
@@ -772,7 +1071,11 @@ export function AgentProfilePanel({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.product}
-                  label={t(`sources.${profile.sources.product}`)}
+                  sectionSource={productSectionSource}
+                  label={sectionSourceLabel(
+                    profile.sources.product,
+                    productSectionSource,
+                  )}
                 />
                 {productAdjusted ? (
                   <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
@@ -837,7 +1140,11 @@ export function AgentProfilePanel({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.icp}
-                  label={t(`sources.${profile.sources.icp}`)}
+                  sectionSource={icpSectionSource}
+                  label={sectionSourceLabel(
+                    profile.sources.icp,
+                    icpSectionSource,
+                  )}
                 />
                 {icpAdjusted ? (
                   <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
@@ -945,7 +1252,11 @@ export function AgentProfilePanel({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.competitor}
-                  label={t(`sources.${profile.sources.competitor}`)}
+                  sectionSource={competitorSectionSource}
+                  label={sectionSourceLabel(
+                    profile.sources.competitor,
+                    competitorSectionSource,
+                  )}
                 />
                 {competitorAdjusted ? (
                   <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
@@ -1026,7 +1337,11 @@ export function AgentProfilePanel({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <SourceChip
                   source={profile.sources.run}
-                  label={t(`sources.${profile.sources.run}`)}
+                  sectionSource={contextSectionSource}
+                  label={sectionSourceLabel(
+                    profile.sources.run,
+                    contextSectionSource,
+                  )}
                 />
                 {contextAdjusted ? (
                   <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
