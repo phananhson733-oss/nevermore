@@ -296,13 +296,13 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Content opportunity planning",
     title: "Find low competition keywords with a weak site already on page one",
     description:
-      "Reads your site, generates candidate terms from what it actually sells, prices them against a search-data provider, and keeps only the ones whose page one a small site has already broken into.",
+      "Reads your site, prices candidate terms with real search data, and keeps the ones where a low-authority site already holds a page-one place.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
       "Read-only. Your own Search Console queries are what tell the map which terms your site already serves, so it does not hand you back a page you have.",
     cta: "Connect Search Console",
     trust:
-      "No fabricated search volume, and no keyword called winnable on a difficulty score. Every term shown had its page one opened.",
+      "No fabricated search volume, and no keyword called winnable on a difficulty score. Every search term shown had its page one opened; question phrasings are matched to your own pages instead.",
     workflowTitle: "How the map decides what to show you",
     steps: [
       {
@@ -319,14 +319,14 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Page one is opened for the survivors",
-        text: "A term is only called winnable when a low-authority site is already ranking for it. A difficulty score cannot tell you that, and relying on one is what sent our own keyword picks wrong four times.",
+        text: "Up to twenty terms per run have their real page one sampled. A term is only called winnable when a low-authority domain already ranks there — named, with its position, so you can open the page yourself. The weakest rank is a proxy signal, not a verdict; trusting difficulty scores instead is what sent our own keyword picks wrong four times.",
       },
     ],
     outputTitle: "What you get back",
     outputs: [
       {
         label: "Search terms with measured demand",
-        body: "Volume from the provider, plus the weakest domain currently holding a page-one place.",
+        body: "Volume from the provider, the weakest domain currently holding a page-one place — named, with its position — and whether the provider observed an AI Overview on that page. The whole table exports as CSV.",
       },
       {
         label: "Questions your site already answers",
@@ -338,7 +338,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "Where the rest went",
-        body: "Every candidate that did not reach the table, with the specific wall it hit.",
+        body: "Every candidate that did not reach the table, with the specific wall it hit — and for the terms the sampling budget never reached, a one-click way to hand them to the seed field for a narrower re-run.",
       },
     ],
     faq: [
@@ -351,6 +351,38 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         question: "Are AI-generated candidates enough?",
         answer:
           "No. The model proposes terms from what your site says; a search-data provider prices them and a real page-one sample decides whether any of them is worth attempting.",
+      },
+      {
+        question:
+          "Why would the map suggest terms that have nothing to do with my business?",
+        answer:
+          "The candidates come from a model reading up to fourteen of your pages, and models mishandle ambiguous words: an earlier version of our own internal keyword engine once tagged 'miami dade transit bus tracker' as astrology-relevant, because 'transit' is a legitimate astrology term. That failure is why this map shows you what it read and waits for your confirmation before spending anything — and why the seed field exists. Correct the reading, and the candidates follow.",
+      },
+      {
+        question:
+          "The difficulty score says easy. Why does page one still look impossible?",
+        answer:
+          "A difficulty score models links and authority; it does not say who actually holds page one. Terms with single-digit scores routinely show a page one owned end to end by high-authority domains. That is why the map opens the real page for each surviving term and reports the weakest domain it found there — named, with its position — instead of trusting the score.",
+      },
+      {
+        question: "What does the weakest rank tell me — and what does it not?",
+        answer:
+          "It answers one narrow question: how weak is the weakest domain currently holding a page-one place. One low number is evidence that a small site got in; it says nothing about the other nine results, the intent behind the query, or what kind of page wins. That is why every row carries checks to run before acting, and why the domain and its position are shown for you to open.",
+      },
+      {
+        question: "Why were some candidates never checked against page one?",
+        answer:
+          "Each run samples at most twenty page ones and stops at a per-run cost ceiling, because sampling is the expensive stage of a free tool. The held-back list names every term the budget did not reach, and the button under that list hands them to the seed field for a narrower re-run. Seeds steer the next run's candidate generation toward those terms; the pricing and page-one gates then judge them like any other candidate.",
+      },
+      {
+        question: "Does the map detect AI Overviews?",
+        answer:
+          "It records what the provider observed: when a sampled page one carried an AI Overview, the row says so, and the CSV export carries the same column. A dash means the provider reported nothing about the page's features, which is not the same as no AI Overview. The map does not model how much traffic an AI Overview absorbs — treat its presence as a reason to open the page before writing anything.",
+      },
+      {
+        question: "Is the search volume global?",
+        answer:
+          "No. You pick one market and one language before the run, and every volume is priced for that pair — the same term can carry entirely different demand in different countries. The market list is deliberately short: every entry on it has actually been run against the crawl, the prompts and the data provider.",
       },
       {
         question: "Why would a run come back with almost nothing?",
@@ -595,13 +627,13 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "内容机会规划",
     title: "找出第一页已经有弱站排上去的低竞争关键词",
     description:
-      "读取你的站点，从它实际在卖的东西生成候选词，拿到搜索数据源核价，只保留那些第一页已经被小站攻进去的词。",
+      "读取你的站点，用真实搜索数据给候选词核价，只保留第一页已经有低权重站点占位的词。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
       "只读授权。正是你自己的 Search Console 查询数据，让这张地图知道哪些词你的站点已经在服务——从而不会把你已经有的页面再推荐给你一遍。",
     cta: "连接 Search Console",
     trust:
-      "不虚构搜索量，也不靠难度分判定「可赢」。每一个展示出来的词，第一页都被真实打开过。",
+      "不虚构搜索量，也不靠难度分判定「可赢」。每一个展示出来的搜索词，第一页都被真实打开过；问句条目则按「你站上是否已有页面回答它」来匹配。",
     workflowTitle: "这张地图凭什么决定给你看什么",
     steps: [
       {
@@ -618,14 +650,14 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "对通过的词打开第一页",
-        text: "只有当低权重站点已经排在那里时，一个词才会被称为可赢。难度分说明不了这件事——我们自己就是靠难度分连续选错过四次词。",
+        text: "每次运行最多对二十个词抽样真实第一页。只有当低权重域名已经排在那里时，一个词才会被称为可赢——并写明是哪个域名、排在第几位，方便你亲自打开核对。「最弱排名」是代理信号而不是判定；改信难度分，正是我们自己连续选错四次词的原因。",
       },
     ],
     outputTitle: "你会拿到什么",
     outputs: [
       {
         label: "有实测需求的搜索词",
-        body: "数据源给出的搜索量，加上当前占据第一页的最弱域名。",
+        body: "数据源给出的搜索量，加上当前占据第一页的最弱域名——具名、带排位——以及数据源在那一页上是否观测到 AI Overview。整张表可导出为 CSV。",
       },
       {
         label: "你站点已经能回答的问题",
@@ -637,7 +669,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "其余的都去哪了",
-        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。",
+        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。对抽样预算没轮到的那些词，还有一键把它们填入种子、跑一轮更窄地图的入口。",
       },
     ],
     faq: [
@@ -650,6 +682,36 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         question: "AI 生成的候选词够用吗？",
         answer:
           "不够。模型根据你站点上写的东西提出候选词，由搜索数据源核价，再由真实的第一页抽样决定其中哪些值得一试。",
+      },
+      {
+        question: "为什么地图会给出和我的业务毫无关系的词？",
+        answer:
+          "候选词来自模型读你的至多十四个页面，而模型会在多义词上出错：我们内部关键词引擎的一个早期版本，就曾把「miami dade transit bus tracker」标成与占星相关——因为 transit（行星过境）恰好是占星的正当用词。正是那次失败，让这张地图先把读到的内容摆给你、等你确认后才花钱，也是种子词一栏存在的原因。把读取纠正了，候选词自然就正了。",
+      },
+      {
+        question: "难度分说很容易，为什么第一页看起来还是打不进去？",
+        answer:
+          "难度分建模的是链接和权重，它不回答「第一页现在被谁占着」。个位数难度分的词，第一页被高权重域名从头占到尾的情况比比皆是。所以这张地图对每个通过的词都打开真实第一页，报告它在那里找到的最弱域名——具名、带排位——而不是相信那个分数。",
+      },
+      {
+        question: "「最弱排名」到底能告诉我什么、不能告诉我什么？",
+        answer:
+          "它只回答一个很窄的问题：当前占据第一页的域名里，最弱的那个有多弱。一个低数字是「小站进得去」的证据；它不涉及其余九条结果、查询背后的意图、以及赢家是哪类页面。所以每一行都带着动手前要跑的检查，也所以域名和排位都摆出来，让你亲自打开看。",
+      },
+      {
+        question: "为什么有些候选词从来没被对照过第一页？",
+        answer:
+          "每次运行最多抽样二十个第一页，并有单次成本上限——抽样是这个免费工具最贵的一步。被拦下的清单会点名预算没轮到的每一个词，清单下的按钮会把它们填入种子、跑一轮更窄的地图。种子是用来牵引下一轮候选词生成的；核价和第一页闸口仍会像对待其他候选词一样判它们。",
+      },
+      {
+        question: "地图检测 AI Overview 吗？",
+        answer:
+          "它记录数据源观测到的事实：抽样的第一页上有 AI Overview 时，那一行会标出来，CSV 导出里也带同一列。破折号表示数据源没有报告那一页的元素构成——这和「没有 AI Overview」不是一回事。地图不建模 AI Overview 会吸走多少流量——把它的存在当成动笔之前先打开那一页的理由。",
+      },
+      {
+        question: "搜索量是全球的吗？",
+        answer:
+          "不是。运行前你要先选定一个市场和一种语言，所有搜索量都按这一组合核价——同一个词在不同国家的需求量可以完全不同。市场列表刻意很短：上面的每一项都真实跑通过爬取、提示词和数据源。",
       },
       {
         question: "为什么有的站跑完几乎什么都没有？",

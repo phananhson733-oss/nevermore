@@ -9,6 +9,7 @@ import {
   isKeywordAlreadyCovered,
   createPublicToolError,
   judgeKeywordWinnability,
+  KEYWORD_OPPORTUNITY_UNSAMPLED,
   keywordCoverageProperty,
   keywordTokens,
   keywordValidationFor,
@@ -37,10 +38,7 @@ import {
   type KeywordBudgetOutcome,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
-import {
-  KeywordLlmError,
-  type KeywordLlmUsage,
-} from "./keyword-llm-client.ts";
+import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
@@ -211,7 +209,13 @@ export interface KeywordCandidateDraft {
 
 export interface KeywordSerpSampleResult {
   readonly keyword: string;
-  readonly domains: readonly string[];
+  /** Top ten organic results in rank order, position included. */
+  readonly results: readonly {
+    readonly domain: string;
+    readonly position: number;
+  }[];
+  /** SERP element types the provider observed; null means it reported none. */
+  readonly pageItemTypes: readonly string[] | null;
 }
 
 export interface KeywordContextCrawlResult {
@@ -835,7 +839,11 @@ export async function handleKeywordOpportunitiesRequest(
           languageCode: token.languageCode,
         });
         domainRanks = await dependencies.resolveDomainRanks([
-          ...new Set(samples.flatMap((sample) => sample.domains)),
+          ...new Set(
+            samples.flatMap((sample) =>
+              sample.results.map((result) => result.domain),
+            ),
+          ),
         ]);
       } catch {
         // Without page one no term may be called winnable, so the run reports
@@ -859,14 +867,13 @@ export async function handleKeywordOpportunitiesRequest(
         validation: row.validation,
         serp:
           sample === undefined
-            ? {
-                verdict: "no_serp_evidence" as const,
-                weakestTopTenDomainRank: null,
-                topTenDomains: [],
-                isEstimate: false,
-              }
+            ? KEYWORD_OPPORTUNITY_UNSAMPLED
             : judgeKeywordWinnability(
-                { domains: sample.domains, domainRanks },
+                {
+                  results: sample.results,
+                  domainRanks,
+                  pageItemTypes: sample.pageItemTypes,
+                },
                 null,
               ),
         coverage: row.coverage.state,

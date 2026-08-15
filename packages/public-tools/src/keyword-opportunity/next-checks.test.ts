@@ -39,7 +39,12 @@ function row(overrides: RowOverrides = {}): KeywordOpportunityCheckInput {
     serp: {
       verdict,
       weakestTopTenDomainRank: verdict === "no_serp_evidence" ? null : 14,
+      weakestTopTenDomain:
+        verdict === "no_serp_evidence" ? null : "example.com",
+      weakestTopTenPosition: verdict === "no_serp_evidence" ? null : 5,
       topTenDomains: verdict === "no_serp_evidence" ? [] : ["example.com"],
+      topTenDomainRanks: verdict === "no_serp_evidence" ? [] : [14],
+      pageOneItemTypes: null,
       isEstimate: false,
     },
     coverage: overrides.coverage ?? "not_observed_in_gsc_query_sample",

@@ -41,6 +41,7 @@ const SECONDARY_BUTTON =
 
 /** Seeds the visitor may add, matching what the API accepts. */
 const MAX_SEEDS = 10;
+const MAX_SEED_LENGTH = 80;
 
 /**
  * Languages offered, and the market each one defaults from.
@@ -97,6 +98,21 @@ function isKnownErrorCode(code: string): code is KeywordOpportunityErrorCode {
   return (KEYWORD_OPPORTUNITY_ERROR_CODES as readonly string[]).includes(code);
 }
 
+/**
+ * The server's own cooldown, or 0 when it sent none.
+ *
+ * Clamped: `Retry-After` arrives from a response and a bad or hostile value
+ * must not park the button for a week. An hour covers the widest window any
+ * gate actually uses.
+ */
+function retryAfterSecondsFrom(response: Response): number {
+  const header = response.headers.get("Retry-After");
+  if (header === null) return 0;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.min(seconds, 3600);
+}
+
 export function KeywordMapTool({
   locale,
   properties,
@@ -120,10 +136,29 @@ export function KeywordMapTool({
   const [context, setContext] = useState<ContextState | null>(null);
   const [result, setResult] = useState<KeywordOpportunityResult | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const startedAt = useRef<number | null>(null);
 
   const busy = phase === "reading" || phase === "running";
+
+  /**
+   * Count the server's own `Retry-After` down to zero.
+   *
+   * The gates have sent the header on every refusal since they shipped; the
+   * client read only the JSON body, so a rate-limited visitor got a generic
+   * error, a still-enabled button, and no reason not to click again — which
+   * spends another admission attempt and resets nothing.
+   */
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setTimeout(() => {
+      setCooldownSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [cooldownSeconds]);
 
   /**
    * An honest elapsed counter, and deliberately not a progress bar.
@@ -176,6 +211,31 @@ export function KeywordMapTool({
       .slice(0, MAX_SEEDS);
   }
 
+  /**
+   * Carry withheld terms back into the seed field for a narrower re-run.
+   *
+   * Seeds travel inside the sealed context token, so the path back through
+   * stage one is not ceremony — it is the only way the generator ever sees
+   * them. Seeds steer the next run's candidate generation; they do not skip
+   * it, so the copy anywhere near this must promise a narrower re-run, never
+   * that these exact terms will be judged.
+   */
+  function retryWithSeeds(keywords: readonly string[]) {
+    // Two filters, both about the round trip surviving: the API refuses any
+    // seed over its length cap with a 400 for the whole request, and the
+    // seed field is comma-separated, so a term carrying a comma would arrive
+    // as two fragments of itself.
+    const usable = keywords.filter(
+      (keyword) => keyword.length <= MAX_SEED_LENGTH && !keyword.includes(","),
+    );
+    setSeedInput(usable.slice(0, MAX_SEEDS).join(", "));
+    setContext(null);
+    setResult(null);
+    setErrorCode(null);
+    setPhase("idle");
+    document.getElementById(SECTION_ID)?.scrollIntoView({ block: "start" });
+  }
+
   async function readSite() {
     trackMarketingEvent("tool_start", { tool_name: "keyword_opportunity_map" });
     setPhase("reading");
@@ -205,6 +265,7 @@ export function KeywordMapTool({
       };
       if (!response.ok || !body.data?.contextToken) {
         setErrorCode(body.error?.code ?? "unknown");
+        setCooldownSeconds(retryAfterSecondsFrom(response));
         setPhase("idle");
         return;
       }
@@ -237,6 +298,7 @@ export function KeywordMapTool({
       };
       if (!response.ok || !body.data?.result) {
         setErrorCode(body.error?.code ?? "unknown");
+        setCooldownSeconds(retryAfterSecondsFrom(response));
         // Back to the confirmation step, not to the start: the sealed context
         // is still valid for ten minutes, and making the visitor re-crawl
         // their own site to retry a provider hiccup wastes a minute of theirs.
@@ -382,7 +444,7 @@ export function KeywordMapTool({
       <div className="mt-5 flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={busy || siteUrl.trim() === ""}
+          disabled={busy || cooldownSeconds > 0 || siteUrl.trim() === ""}
           aria-busy={phase === "reading"}
           onClick={() => void readSite()}
           className={BUTTON}
@@ -436,7 +498,20 @@ export function KeywordMapTool({
            * and a bare code reads as a crash.
            */}
           {t(`errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}`)}
-          {errorCode === "authentication_required" ? (
+          {cooldownSeconds > 0 ? (
+            <span className="mt-1.5 block font-mono text-[12px] tabular-nums">
+              {t("cooldown", { seconds: cooldownSeconds })}
+            </span>
+          ) : null}
+          {/*
+           * `gsc_revoked` gets the same way back as `authentication_required`:
+           * both mean the browser holds no usable grant and the only fix is
+           * the consent screen. Before this, a revoked visitor saw a generic
+           * error with no exit — the reconnect link rendered for the other
+           * code only.
+           */}
+          {errorCode === "authentication_required" ||
+          errorCode === "gsc_revoked" ? (
             <a
               href={gscAuthorizeHref(locale, TOOL_PATH)}
               className="mt-2 block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
@@ -486,7 +561,7 @@ export function KeywordMapTool({
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || cooldownSeconds > 0}
               aria-busy={phase === "running"}
               onClick={() => void runMap(context.token)}
               className={BUTTON}
@@ -514,7 +589,11 @@ export function KeywordMapTool({
       ) : null}
 
       {result !== null ? (
-        <KeywordMapResults result={result} locale={locale} />
+        <KeywordMapResults
+          result={result}
+          locale={locale}
+          onRetryWithSeeds={retryWithSeeds}
+        />
       ) : null}
 
       <GscDisconnect namespace="tools.keywordMap" />

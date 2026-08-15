@@ -6,6 +6,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
+import { KeywordMapArticle } from "@/components/tools/keyword-map-article";
 import { KeywordMapTool } from "@/components/tools/keyword-map-tool";
 import {
   BreadcrumbJsonLd,
@@ -31,9 +32,7 @@ export async function generateMetadata({
   const content = getConnectedToolContent(locale, "low-competition-keywords");
   return generatePageMetadata({
     title:
-      locale === "en"
-        ? "Low Competition Keyword Finder"
-        : "低竞争关键词发现",
+      locale === "en" ? "Low Competition Keyword Finder" : "低竞争关键词发现",
     description: content.description,
     locale,
     path: content.path,
@@ -82,6 +81,7 @@ export default async function LowCompetitionKeywordsPage({
         locale={locale}
         content={content}
         connected={session.properties !== null}
+        article={<KeywordMapArticle locale={locale} />}
       >
         {/* Only this tool's namespace crosses the client boundary. */}
         <NextIntlClientProvider

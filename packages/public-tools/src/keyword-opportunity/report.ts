@@ -116,6 +116,13 @@ function withheldReason(
   if (observation.serp.verdict === "contested_evidence") {
     return "page_one_contested";
   }
+  // A page one that was opened but resolved no ranks is a provider gap for
+  // THIS term, not a budget miss. Reporting it as budget invited a seeded
+  // re-run that spends another sample to hit the same gap; the domains list
+  // is the witness that the page was fetched.
+  if (observation.serp.topTenDomains.length > 0) {
+    return "page_one_ranks_unresolved";
+  }
   // A stage that failed and a budget that ran out are different facts, and
   // only the first is worth retrying unchanged. Reporting the second for both
   // told a reader to narrow a run that was never the problem.

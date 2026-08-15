@@ -1,5 +1,5 @@
 // @input  -- localized public-tool name, description, and canonical URL
-// @output -- page-specific free SoftwareApplication JSON-LD
+// @output -- page-specific free WebApplication JSON-LD
 // @pos    -- structured data for standalone GenGrowth public tool routes
 
 import { safeJsonLd } from "./utils";
@@ -19,7 +19,10 @@ export function ToolSoftwareApplicationJsonLd({
 }: ToolSoftwareApplicationJsonLdProps) {
   const data = {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
+    // WebApplication, the SoftwareApplication subtype for tools that run in
+    // the browser. The parent type was not wrong, just less specific than
+    // what every page using this component actually is.
+    "@type": "WebApplication",
     name,
     applicationCategory: "SEOApplication",
     operatingSystem: "Web",
