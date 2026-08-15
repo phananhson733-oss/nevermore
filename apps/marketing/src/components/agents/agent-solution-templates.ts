@@ -115,6 +115,7 @@ interface PreviewFacts {
   readonly pageType: string;
   readonly searchContext: string;
   readonly measurement: string;
+  readonly scope: "site" | "page";
   readonly observedUrls: readonly string[];
   readonly observedValues: Readonly<Record<string, string>>;
 }
@@ -141,6 +142,17 @@ function observedValue(facts: PreviewFacts, label: string): string {
 
 function observedUrl(facts: PreviewFacts, index: number): string {
   return present(facts.observedUrls[index], facts.notCaptured);
+}
+
+/**
+ * The page a fix applies to.
+ *
+ * For a page-scope check that is the audited page. For a site-scope check it is
+ * whichever page the evidence names; falling back to the audit entry URL would
+ * tell the reader to change a page that has no such problem.
+ */
+function affectedUrl(facts: PreviewFacts): string {
+  return facts.observedUrls[0] ?? (facts.scope === "page" ? facts.targetUrl : facts.fillIn);
 }
 
 function collectObservedUrls(
@@ -199,9 +211,13 @@ function urlParts(
   }
 }
 
-function previewFacts(input: AgentSolutionPreviewInput): PreviewFacts {
+function previewFacts(
+  input: AgentSolutionPreviewInput,
+  scope: "site" | "page",
+): PreviewFacts {
   const parts = urlParts(input.targetUrl);
   return {
+    scope,
     fillIn: input.fillIn,
     notCaptured: input.notCaptured,
     targetUrl: present(parts?.href ?? input.targetUrl, input.notCaptured),
@@ -377,7 +393,8 @@ const TECH_SHAPES = {
         `# measured this run: ${facts.measurement}`,
         `# observed hops: ${observedValue(facts, "redirect_hops")}`,
         `# observed final URL: ${observedValue(facts, "final_url")}`,
-        `redirect("${facts.targetPath}", "${observedValue(facts, "final_url")}", 301)`,
+        `# affected source: ${affectedUrl(facts)}`,
+        `redirect("${affectedUrl(facts)}", "${observedValue(facts, "final_url")}", 301)`,
         "# verify: one hop, HTTPS, 200 destination",
       ].join("\n"),
   },
@@ -388,8 +405,10 @@ const TECH_SHAPES = {
       [
         "<!-- preview only — emit from the owning page template -->",
         `<!-- measured this run: ${facts.measurement} -->`,
-        `<!-- observed canonical target: ${observedValue(facts, "canonical_target")} -->`,
-        `<link rel="canonical" href="${facts.targetUrl}" />`,
+        `<!-- affected page: ${affectedUrl(facts)} -->`,
+        `<!-- its canonical currently points at: ${observedValue(facts, "canonical_target")} -->`,
+        `<!-- emit on the affected page, pointing at the URL you want indexed -->`,
+        `<link rel="canonical" href="${facts.fillIn}" />`,
       ].join("\n"),
   },
   performance: {
@@ -536,7 +555,7 @@ export function solutionTemplate(
     agent,
     kind: shape.kind,
     presentation: shape.presentation,
-    preview: shape.buildPreview(previewFacts(input)),
+    preview: shape.buildPreview(previewFacts(input, evaluated.check.scope)),
     recommendationKey: `${base}.recommendation`,
     applicableContextKey: `recommendations.${agent}.applicableContext`,
     validationKeys: [

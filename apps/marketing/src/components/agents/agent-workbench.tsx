@@ -148,6 +148,14 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [data, setData] = useState<AgentAuditSuccessData | null>(null);
+  /**
+   * The Profile as confirmed for the captured run.
+   *
+   * A finished report survives later context edits, so the report has to keep
+   * showing the context it was run under. Reading the live Profile here would
+   * relabel a captured report with a market or query it never used.
+   */
+  const [runProfile, setRunProfile] = useState<AgentProfileDraft | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInPurpose, setSignInPurpose] =
     useState<SignInPurpose | null>(null);
@@ -236,6 +244,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           return;
         }
         setData(success);
+        setRunProfile(confirmedProfile);
       } catch {
         if (
           mounted.current &&
@@ -265,6 +274,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         setLoading(true);
         setErrorCode(null);
         setData(null);
+        setRunProfile(null);
       }
 
       let sessionStatus: SessionStatus;
@@ -302,6 +312,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           setLoading(true);
           setErrorCode(null);
           setData(null);
+          setRunProfile(null);
         }
 
         if (pendingIntent && pendingIntent.expiresAt <= Date.now()) {
@@ -499,10 +510,13 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             // Signing in reloads the page, so the draft has to outlive this tab
             // state or the visitor retypes everything they just entered.
             const storage = getSessionIntentStorage();
-            const stored = storage
-              ? storeAgentProfileSearchIntent(storage, requestedProfile)
-              : null;
-            if (stored) schedulePendingAgentIntentExpiry(storage!, stored);
+            if (storage) {
+              const stored = storeAgentProfileSearchIntent(
+                storage,
+                requestedProfile,
+              );
+              if (stored) schedulePendingAgentIntentExpiry(storage, stored);
+            }
             setSignInPurpose("profile_search");
             setSignInOpen(true);
           } else {
@@ -913,6 +927,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       setLoading(false);
       setErrorCode(null);
       setData(null);
+      setRunProfile(null);
     }
     if (searchIdentityChanged) {
       profileSearchController.current?.abort();
@@ -1084,7 +1099,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           agent={agent}
           locale={locale}
           data={data}
-          profile={profile}
+          profile={runProfile ?? profile}
         />
       ) : null}
 

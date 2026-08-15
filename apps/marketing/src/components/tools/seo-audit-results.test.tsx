@@ -23,6 +23,7 @@ function record(
     category: "metadata",
     state: "observed",
     unit: "pages",
+    population: "every_collected_page" as const,
     tested: 12,
     affected: 0,
     observations: [],
@@ -66,6 +67,7 @@ const records: readonly SeoAuditRecord[] = [
     id: "robots_resource",
     category: "crawl",
     unit: "site_resource",
+    population: "every_collected_page" as const,
     tested: 1,
     affected: 1,
     observations: [
@@ -88,6 +90,7 @@ const records: readonly SeoAuditRecord[] = [
     id: "sitemap_resource",
     category: "crawl",
     unit: "site_resource",
+    population: "every_collected_page" as const,
     state: "unverified",
     tested: 0,
     affected: 0,
@@ -167,6 +170,7 @@ const report: SeoAuditReport = {
   siteOrigin: "https://acme.com",
   scannedAt: "2026-08-07T00:00:00.000Z",
   targetInspected: true,
+  inspectedTargetUrl: "https://acme.test/",
   coverage: {
     availability: "available",
     pagesInspected: 12,

@@ -27,7 +27,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -37,6 +37,7 @@ const data: AgentAuditSuccessData = {
     siteOrigin: "https://example.com",
     scannedAt: "2026-08-13T00:00:00.000Z",
     targetInspected: true,
+    inspectedTargetUrl: "https://acme.test/",
     coverage: {
       availability: "unavailable",
       pagesInspected: 0,
@@ -67,6 +68,7 @@ function observedRecord(
     id,
     category: "metadata",
     state: "observed",
+    population: "every_collected_page",
     unit,
     tested: 6,
     affected: urls.length,

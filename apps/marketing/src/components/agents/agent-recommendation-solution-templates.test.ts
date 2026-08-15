@@ -48,6 +48,7 @@ function evidence(
     category: "indexability",
     state: "observed",
     unit: "pages",
+    population: "every_collected_page",
     tested: 12,
     affected: 1,
     observations: [
@@ -223,7 +224,7 @@ describe("Agent-specific selected solution templates", () => {
     expect(template).not.toHaveProperty("deployAction");
   });
 
-  it("fills the canonical preview with the run's own URL and observed canonical target", () => {
+  it("addresses the canonical preview to the affected page, not the audit entry", () => {
     const template = solutionTemplate(
       "tech",
       check("1.4"),
@@ -235,10 +236,17 @@ describe("Agent-specific selected solution templates", () => {
       ]),
     );
 
+    // The affected page comes from the evidence; the href stays an author slot
+    // because only the reviewer knows which URL should be indexed.
     expect(template.preview).toContain(
-      '<link rel="canonical" href="https://astrologywiki.com/tools/birth-chart" />',
+      "affected page: https://astrologywiki.com/tools/birth-chart",
     );
-    expect(template.preview).toContain("https://astrologywiki.com/");
+    expect(template.preview).toContain(
+      "its canonical currently points at: https://astrologywiki.com/",
+    );
+    expect(template.preview).toContain(
+      `<link rel="canonical" href="${FILL_IN}" />`,
+    );
     expect(template.preview).toContain("2 of 12 inspected pages affected");
     expect(template.preview).not.toContain("[host]");
     expect(template.preview).not.toContain("[confirmed-200-path]");
@@ -258,7 +266,7 @@ describe("Agent-specific selected solution templates", () => {
 
     expect(template.preview).toContain("observed hops: 3");
     expect(template.preview).toContain(
-      'redirect("/tools/birth-chart", "https://astrologywiki.com/tools/chart", 301)',
+      'redirect("https://astrologywiki.com/tools/birth-chart", "https://astrologywiki.com/tools/chart", 301)',
     );
     expect(template.preview).not.toContain("[legacy path]");
   });
@@ -306,7 +314,7 @@ describe("Agent-specific selected solution templates", () => {
 
     expect(template.preview).toContain(`measured this run: ${NOT_CAPTURED}`);
     expect(template.preview).toContain(
-      `observed canonical target: ${NOT_CAPTURED}`,
+      `its canonical currently points at: ${NOT_CAPTURED}`,
     );
   });
 

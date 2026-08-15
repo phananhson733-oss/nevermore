@@ -39,16 +39,24 @@ function comparableUrl(value: string | null | undefined): string | null {
 function projectRecordToTarget(
   record: SeoAuditRecord,
   targetUrl: string,
-  targetInspected: boolean,
+  inspectedTargetUrl: string | null,
 ): SeoAuditRecord {
   if (record.state === "unverified") return record;
 
-  const target = comparableUrl(targetUrl);
+  // Match on the collected page's own URL as well as the submitted one: entry
+  // redirects and URL normalisation routinely make them differ, and matching on
+  // the submitted form alone reads a page's real problems as a clean pass.
+  const targets = new Set(
+    [inspectedTargetUrl, targetUrl]
+      .map((value) => comparableUrl(value))
+      .filter((value): value is string => value !== null),
+  );
   const observations =
     record.state === "observed"
-      ? record.observations.filter(
-          (observation) => comparableUrl(observation.url) === target,
-        )
+      ? record.observations.filter((observation) => {
+          const url = comparableUrl(observation.url);
+          return url !== null && targets.has(url);
+        })
       : [];
 
   if (observations.length > 0) {
@@ -61,7 +69,12 @@ function projectRecordToTarget(
     };
   }
 
-  return targetInspected
+  // Absence is evidence about this page only when the record tested every
+  // collected page and this page was one of them. A record that tested a
+  // qualifying subset (pages that have a title, sitemap members) says nothing
+  // about a page that may never have qualified.
+  return inspectedTargetUrl !== null &&
+    record.population === "every_collected_page"
     ? {
         ...record,
         state: "not_observed",
@@ -75,7 +88,10 @@ function projectRecordToTarget(
         tested: 0,
         affected: 0,
         observations: [],
-        limitation: "No target-specific observation in the bounded site crawl.",
+        limitation:
+          inspectedTargetUrl === null
+            ? "The submitted page was not collected in this crawl."
+            : "This condition was only tested on pages meeting a precondition the target may not meet.",
       };
 }
 
@@ -91,7 +107,9 @@ function matchingRecords(
     projectRecordToTarget(
       record,
       input.targetUrl!,
-      input.targetInspected === true,
+      input.targetInspected === true
+        ? (input.inspectedTargetUrl ?? input.targetUrl!)
+        : null,
     ),
   );
 }
@@ -121,7 +139,7 @@ function measurement(records: readonly SeoAuditRecord[]): AgentAuditLocalizedTex
   );
 }
 
-type RecordIssueSeverity = "none" | "degraded" | "full";
+type RecordIssueSeverity = "none" | "degraded" | "full" | "unmeasured";
 
 /** Applies the check's published threshold to one record. */
 function issueSeverity(
@@ -141,16 +159,23 @@ function issueSeverity(
     return "degraded";
   }
 
-  return record.observations.some((observation) =>
-    observation.values.some(
-      (entry) =>
-        entry.label === rule.label &&
-        typeof entry.value === "number" &&
-        entry.value > rule.max,
-    ),
-  )
-    ? "full"
-    : "none";
+  // Every affected observation has to carry a readable measurement. A missing or
+  // non-numeric value means the rule could not be applied, and an unapplied rule
+  // must never be reported as "within the limit".
+  let comparable = 0;
+  let exceeds = false;
+  for (const observation of record.observations) {
+    for (const entry of observation.values) {
+      if (entry.label !== rule.label) continue;
+      if (typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+        continue;
+      }
+      comparable += 1;
+      if (entry.value > rule.max) exceeds = true;
+    }
+  }
+  if (exceeds) return "full";
+  return comparable === record.observations.length ? "none" : "unmeasured";
 }
 
 /** The softer state for a measurement past the pass mark but under the fail mark. */
@@ -210,6 +235,18 @@ function evaluateCheck(
     };
   }
   const severities = records.map((record) => issueSeverity(record, check));
+  if (severities.includes("unmeasured")) {
+    return {
+      check,
+      result: "excluded",
+      engine: "needs-supplement",
+      truth: "partial",
+      measurement: measurement(records),
+      evidenceRecordIds: records.map((record) => record.id),
+      scoreValue: null,
+      scoreContribution: null,
+    };
+  }
   const failingRecords = records.filter(
     (_, index) => severities[index] === "full",
   );

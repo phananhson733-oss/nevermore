@@ -129,6 +129,12 @@ export interface AgentAuditEvidenceInput {
    * page-level check stays unverified.
    */
   readonly targetInspected?: boolean;
+  /**
+   * The collected page that is the target, in the form its observations carry.
+   * The submitted URL can differ from it after normalisation, and matching on
+   * the submitted form would read a page's real problems as a clean pass.
+   */
+  readonly inspectedTargetUrl?: string | null;
 }
 
 export type AgentAuditPageType = "homepage" | "product" | "tool" | "guide";

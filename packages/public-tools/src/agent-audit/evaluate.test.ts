@@ -15,6 +15,7 @@ function record(
         : "crawl",
     state,
     unit: "pages",
+    population: "every_collected_page" as const,
     tested: 4,
     affected,
     observations:
@@ -35,6 +36,7 @@ function ratioRecord(
     state:
       tested === 0 ? "unverified" : affected > 0 ? "observed" : "not_observed",
     unit: "pages",
+    population: "every_collected_page" as const,
     tested,
     affected,
     observations: Array.from({ length: affected }, (_, index) => ({
@@ -241,6 +243,113 @@ describe("v2 Agent audit page projection", () => {
   });
 });
 
+describe("v2 Agent audit target identity", () => {
+  function noindexOn(url: string): SeoAuditRecord {
+    return {
+      id: "noindex_directive",
+      category: "indexability",
+      state: "observed",
+      unit: "pages",
+      population: "every_collected_page",
+      tested: 4,
+      affected: 1,
+      observations: [{ url, values: [] }],
+      limitation: null,
+    };
+  }
+
+  it("attributes a problem to the target when the crawl normalised its URL", () => {
+    // The visitor submitted /blog; the site serves /blog/ and the crawl
+    // recorded that form. Matching on the submitted string alone reported a
+    // noindexed page as a clean pass.
+    const result = evaluateAgentAuditScope("page", {
+      availability: "available",
+      targetUrl: "https://example.com/blog",
+      targetInspected: true,
+      inspectedTargetUrl: "https://example.com/blog/",
+      records: [noindexOn("https://example.com/blog/")],
+    });
+    const indexability = result.checks.find((check) => check.check.id === "1.3");
+
+    expect(indexability?.result).toBe("blocker");
+    expect(indexability?.truth).toBe("observed");
+  });
+
+  it("still passes a normalised target that carries no problem", () => {
+    const result = evaluateAgentAuditScope("page", {
+      availability: "available",
+      targetUrl: "https://example.com/blog",
+      targetInspected: true,
+      inspectedTargetUrl: "https://example.com/blog/",
+      records: [noindexOn("https://example.com/other/")],
+    });
+
+    expect(result.checks.find((check) => check.check.id === "1.3")?.result).toBe(
+      "pass",
+    );
+  });
+
+  it("never passes a check whose record only tested a qualifying subset", () => {
+    // title_duplicate only tests self-canonical pages that have a title, so a
+    // target's absence from it proves nothing about the target.
+    const result = evaluateAgentAuditScope("page", {
+      availability: "available",
+      targetUrl: "https://example.com/target",
+      targetInspected: true,
+      inspectedTargetUrl: "https://example.com/target",
+      records: [
+        {
+          ...record("title_duplicate", "observed", 1),
+          population: "conditional_subset",
+        },
+      ],
+    });
+    const uniqueness = result.checks.find((check) => check.check.id === "2.2");
+
+    expect(uniqueness?.result).toBe("excluded");
+    expect(uniqueness?.scoreValue).toBeNull();
+  });
+});
+
+describe("v2 Agent audit unmeasurable rules", () => {
+  function redirectRecord(values: readonly { label: string; value: unknown }[]) {
+    return {
+      id: "redirect_chain",
+      category: "crawl" as const,
+      state: "observed" as const,
+      unit: "pages" as const,
+      population: "every_collected_page" as const,
+      tested: 10,
+      affected: 1,
+      observations: [
+        {
+          url: "https://example.com/",
+          values: values as { label: string; value: never }[],
+        },
+      ],
+      limitation: null,
+    };
+  }
+
+  it.each([
+    ["a missing label", [{ label: "hops", value: 2 }]],
+    ["a non-numeric value", [{ label: "redirect_hops", value: "2" }]],
+    ["a null value", [{ label: "redirect_hops", value: null }]],
+  ])("does not pass a threshold it could not apply: %s", (_case, values) => {
+    const result = evaluateAgentAuditScope("page", {
+      availability: "available",
+      targetUrl: "https://example.com/",
+      targetInspected: true,
+      inspectedTargetUrl: "https://example.com/",
+      records: [redirectRecord(values)],
+    });
+    const chain = result.checks.find((check) => check.check.id === "1.6");
+
+    expect(chain?.result).toBe("excluded");
+    expect(chain?.result).not.toBe("pass");
+  });
+});
+
 describe("v2 Agent audit scoring monotonicity", () => {
   function siteHealth(records: readonly SeoAuditRecord[]): number | null {
     return evaluateAgentAuditScope("site", {
@@ -343,6 +452,7 @@ describe("v2 Agent audit published thresholds", () => {
             category: "crawl",
             state: "observed",
             unit: "pages",
+            population: "every_collected_page" as const,
             tested: 10,
             affected: 1,
             observations: [
@@ -371,6 +481,7 @@ describe("v2 Agent audit published thresholds", () => {
           category: "crawl",
           state: "observed",
           unit: "pages",
+          population: "every_collected_page" as const,
           tested: 10,
           affected: 1,
           observations: [

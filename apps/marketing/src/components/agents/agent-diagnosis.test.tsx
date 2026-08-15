@@ -140,6 +140,7 @@ function record(id: string, overrides: Partial<AuditRecord> = {}): AuditRecord {
     category: "crawl",
     state: "not_observed",
     unit: "pages",
+    population: "every_collected_page" as const,
     tested: 24,
     affected: 0,
     observations: [],
@@ -152,10 +153,12 @@ function auditData({
   availability,
   records,
   targetInspected,
+  inspectedTargetUrl,
 }: {
   readonly availability: AgentAuditSuccessData["result"]["coverage"]["availability"];
   readonly records: readonly AuditRecord[];
   readonly targetInspected: boolean;
+  readonly inspectedTargetUrl?: string | null;
 }): AgentAuditSuccessData {
   return {
     run: {
@@ -164,7 +167,7 @@ function auditData({
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v3",
+        schemaVersion: "seo_audit.sitewide.v4",
         completedAt: "2026-08-13T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -174,6 +177,7 @@ function auditData({
       siteOrigin: "https://astrologywiki.com",
       scannedAt: "2026-08-13T00:00:00.000Z",
       targetInspected,
+      inspectedTargetUrl: inspectedTargetUrl ?? (targetInspected ? TARGET_URL : null),
       coverage: {
         availability,
         pagesInspected: availability === "unavailable" ? 0 : 24,
@@ -202,6 +206,7 @@ const data = auditData({
   availability: "unavailable",
   records: [],
   targetInspected: true,
+  inspectedTargetUrl: "https://acme.test/",
 });
 
 /**
@@ -212,12 +217,14 @@ const thinEvidence = auditData({
   availability: "available",
   records: [record("internal_target_http_error", { unit: "link_targets" })],
   targetInspected: true,
+  inspectedTargetUrl: "https://acme.test/",
 });
 
 /** Several scored checks plus a target-page blocker. */
 const richEvidence = auditData({
   availability: "available",
   targetInspected: true,
+  inspectedTargetUrl: "https://acme.test/",
   records: [
     record("internal_target_http_error", { unit: "link_targets" }),
     record("meta_description_duplicate", { category: "metadata" }),

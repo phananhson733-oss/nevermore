@@ -29,13 +29,34 @@ export interface RankedAgentRecommendation {
 }
 
 /**
- * A check this run could never evaluate. It is inventory, not advice, so it is
- * kept out of the ranking and handed back separately for disclosure.
+ * A check this run could not evaluate, with the reason it could not.
+ *
+ * "Waiting on a source we have not integrated" and "the crawl could not attribute
+ * this to your page" are different problems with different next steps; reporting
+ * both as a missing data source sends the reader after integrations they already
+ * have.
  */
+export type AgentUnevaluatedReason =
+  | "source_not_integrated"
+  | "not_attributable_to_target"
+  | "not_measurable_this_run";
+
 export interface AgentDataSourceGap {
   readonly id: string;
   readonly agent: AgentKind;
   readonly check: AgentAuditEvaluatedCheck;
+  readonly reason: AgentUnevaluatedReason;
+}
+
+function unevaluatedReason(
+  check: AgentAuditEvaluatedCheck,
+): AgentUnevaluatedReason {
+  if (check.engine === "access-required" || check.engine === "not-integrated") {
+    return "source_not_integrated";
+  }
+  return check.truth === "partial" || check.truth === "not-observed"
+    ? "not_attributable_to_target"
+    : "not_measurable_this_run";
 }
 
 export interface AgentRecommendationAnalysis {
@@ -159,6 +180,7 @@ export function analyzeAgentRecommendations(
       id: `${agent}:${check.check.scope}:${check.check.id}`,
       agent,
       check,
+      reason: unevaluatedReason(check),
     }));
 
   const ordered = checks

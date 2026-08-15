@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -39,6 +39,7 @@ const data: AgentAuditSuccessData = {
     siteOrigin: "https://astrologywiki.com",
     scannedAt: "2026-08-13T00:00:00.000Z",
     targetInspected: true,
+    inspectedTargetUrl: "https://acme.test/",
     coverage: {
       availability: "unavailable",
       pagesInspected: 0,
@@ -134,6 +135,7 @@ describe("buildAgentAuditViewModel", () => {
               category: "metadata",
               state: "not_observed",
               unit: "pages",
+              population: "every_collected_page" as const,
               tested: 4,
               affected: 0,
               observations: [],
@@ -194,7 +196,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       persistence: "none",
     });
   });

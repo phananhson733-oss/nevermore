@@ -6,6 +6,19 @@ export type SeoAuditRobotsDirectiveState =
   | "noindex_observed"
   | "noindex_not_observed";
 export type SeoAuditRecordUnit = "pages" | "link_targets" | "site_resource";
+/**
+ * Which pages a record actually tested.
+ *
+ * `every_collected_page` means the record ran over the whole collected
+ * population, so a page's absence from its observations is real evidence that
+ * the page is clean. `conditional_subset` means the record only tested pages
+ * meeting a precondition (has a title, is a sitemap member, self-canonical),
+ * so absence proves nothing about a page that may never have qualified.
+ */
+export type SeoAuditRecordPopulation =
+  | "every_collected_page"
+  | "conditional_subset"
+  | "site_resource";
 export type SeoAuditCategory =
   | "crawl"
   | "indexability"
@@ -40,6 +53,7 @@ export interface SeoAuditRecord {
   readonly category: SeoAuditCategory;
   readonly state: SeoAuditRecordState;
   readonly unit: SeoAuditRecordUnit;
+  readonly population: SeoAuditRecordPopulation;
   readonly tested: number;
   readonly affected: number;
   readonly observations: readonly SeoAuditObservation[];
@@ -106,6 +120,13 @@ export interface SeoAuditReport {
    * about the target.
    */
   readonly targetInspected: boolean;
+  /**
+   * The collected page that is the submitted target, in the exact form its
+   * observations carry. Matching on the submitted string instead would miss a
+   * page whose URL was normalised on the way in (a trailing slash, a tracking
+   * parameter), and report its problems as a clean pass.
+   */
+  readonly inspectedTargetUrl: string | null;
   readonly records: readonly SeoAuditRecord[];
   readonly pages: readonly SeoAuditPage[];
 }

@@ -30,6 +30,7 @@ function record(
     category: "metadata",
     state: "observed",
     unit: "pages",
+    population: "every_collected_page" as const,
     tested: 12,
     affected,
     observations: [

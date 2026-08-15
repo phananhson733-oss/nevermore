@@ -12,6 +12,7 @@ import type {
   SeoAuditPayload,
   SeoAuditRecord,
   SeoAuditRecordState,
+  SeoAuditRecordPopulation,
   SeoAuditRecordUnit,
   SeoAuditReport,
 } from "./types.ts";
@@ -58,6 +59,8 @@ interface RecordInput {
   readonly id: string;
   readonly category: SeoAuditCategory;
   readonly unit?: SeoAuditRecordUnit;
+  /** Defaults to the whole collected population; say so when it is narrower. */
+  readonly population?: SeoAuditRecordPopulation;
   readonly tested: number;
   readonly observations: readonly SeoAuditObservation[];
   readonly limitation?: string | null;
@@ -77,6 +80,7 @@ function record(input: RecordInput): SeoAuditRecord {
           ? "observed"
           : "not_observed"),
     unit: input.unit ?? "pages",
+    population: input.population ?? "every_collected_page",
     tested: input.tested,
     affected: observations.length,
     observations,
@@ -194,6 +198,7 @@ function buildRecords(
   >();
   /** Broken internal link targets keyed by the page that links to them. */
   const brokenLinkSources = new Map<string, Set<string>>();
+  const htmlSubjects = new Set(htmlPages.map((page) => page.subjectUrl));
   /** Sitemap membership is only testable when a sitemap was actually collected. */
   const sitemapWasFetched = raw.sitemap.fetched;
 
@@ -215,16 +220,21 @@ function buildRecords(
       current.sources.add(source.projection.fetchUrl);
       linkTargetErrors.set(target.subjectUrl, current);
 
-      const owned =
-        brokenLinkSources.get(source.projection.fetchUrl) ?? new Set<string>();
-      owned.add(target.subjectUrl);
-      brokenLinkSources.set(source.projection.fetchUrl, owned);
+      // Only pages inside the tested population may become source rows, or the
+      // record reports more affected pages than it tested.
+      if (htmlSubjects.has(source.subjectUrl)) {
+        const owned =
+          brokenLinkSources.get(source.projection.fetchUrl) ?? new Set<string>();
+        owned.add(target.subjectUrl);
+        brokenLinkSources.set(source.projection.fetchUrl, owned);
+      }
     }
   }
 
   const records: SeoAuditRecord[] = [
     record({
       id: "robots_resource",
+      population: "site_resource",
       category: "crawl",
       unit: "site_resource",
       tested: raw.robots.fetched ? 1 : 0,
@@ -247,6 +257,7 @@ function buildRecords(
     }),
     record({
       id: "sitemap_resource",
+      population: "site_resource",
       category: "crawl",
       unit: "site_resource",
       tested: raw.sitemap.fetched ? 1 : 0,
@@ -352,6 +363,8 @@ function buildRecords(
     }),
     record({
       id: "title_duplicate",
+      // Tested population: self-canonical pages that have a title.
+      population: "conditional_subset",
       category: "metadata",
       tested: selfCanonicalHtmlPages.filter((page) => page.title !== null)
         .length,
@@ -372,6 +385,8 @@ function buildRecords(
     }),
     record({
       id: "meta_description_duplicate",
+      // Tested population: self-canonical pages that have a description.
+      population: "conditional_subset",
       category: "metadata",
       tested: selfCanonicalHtmlPages.filter(
         (page) => page.metaDescription !== null,
@@ -401,6 +416,8 @@ function buildRecords(
     }),
     record({
       id: "sitemap_page_without_observed_inlink",
+      // Tested population: sitemap members other than the root.
+      population: "conditional_subset",
       category: "links",
       tested: pages.filter((page) => page.sitemapMember).length,
       observations: pages
@@ -420,6 +437,8 @@ function buildRecords(
     }),
     record({
       id: "internal_target_http_error",
+      // Tested population: collected internal link targets.
+      population: "conditional_subset",
       category: "links",
       unit: "link_targets",
       tested: new Set(
@@ -450,6 +469,8 @@ function buildRecords(
     }),
     record({
       id: "page_not_in_sitemap",
+      // Tested population: collected pages, only when a sitemap was retrieved.
+      population: "conditional_subset",
       category: "crawl",
       tested: sitemapWasFetched ? htmlPages.length : 0,
       observations: sitemapWasFetched
@@ -463,6 +484,8 @@ function buildRecords(
     }),
     record({
       id: "title_length_outside_range",
+      // Tested population: pages that have a title.
+      population: "conditional_subset",
       category: "metadata",
       tested: htmlPages.filter((page) => page.title !== null).length,
       observations: htmlPages
@@ -482,6 +505,8 @@ function buildRecords(
     }),
     record({
       id: "meta_description_length_outside_range",
+      // Tested population: pages that have a description.
+      population: "conditional_subset",
       category: "metadata",
       tested: htmlPages.filter((page) => page.metaDescription !== null).length,
       observations: htmlPages
@@ -555,17 +580,19 @@ function buildRecords(
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   const requestedSubject = subjectUrlOf(raw.requestedUrl);
-  const targetInspected = pages.some(
-    (page) =>
-      page.subjectUrl === requestedSubject &&
-      page.finalStatus !== null &&
-      page.finalStatus >= 200 &&
-      page.finalStatus < 300 &&
-      isHtml(page.contentType),
-  );
+  const inspectedTarget =
+    pages.find(
+      (page) =>
+        page.subjectUrl === requestedSubject &&
+        page.finalStatus !== null &&
+        page.finalStatus >= 200 &&
+        page.finalStatus < 300 &&
+        isHtml(page.contentType),
+    ) ?? null;
   return {
     targetUrl: raw.requestedUrl,
-    targetInspected,
+    targetInspected: inspectedTarget !== null,
+    inspectedTargetUrl: inspectedTarget?.url ?? null,
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
@@ -597,7 +624,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

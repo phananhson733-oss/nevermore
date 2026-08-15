@@ -33,7 +33,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["B3", "Average response time", "平均响应时间", "Below 500 ms; above 1 s is Warning", "低于 500 毫秒；高于 1 秒为警告"],
   ["B4", "Crawl sufficiency", "抓取充裕度", "Internal heuristic only. Crawl budget has no published per-URL rate; compare a site against its own history.", "仅为内部启发式。抓取预算没有官方的单 URL 速率；只与站点自身历史比较。"],
   ["B5", "Discovery versus refresh crawl ratio", "发现与刷新抓取比", "Display only; no pass/fail threshold", "仅展示，不设通过阈值"],
-  ["C1", "Orphan page rate", "孤岛页占比", "Below 5%; above 20% is Warning", "低于 5%；高于 20% 为警告"],
+  ["C1", "Orphan page rate", "孤岛页占比", "Below 5% passes; 5–20% is a Tip; above 20% is a Warning", "低于 5% 通过；5–20% 为提示；高于 20% 为警告"],
   ["C2", "Broken link count", "断链数", "0 links; above 0 is Warning", "0 个链接；大于 0 为警告"],
   ["C3", "Average click depth", "平均点击深度", "At most 3 clicks; above 4 is Warning", "最多 3 次点击；大于 4 为警告"],
   ["C4", "Pages deeper than four clicks", "点击深度大于 4 的页面占比", "Below 10% of inspected pages; otherwise Warning", "低于已检查页面的 10%；否则为警告"],
@@ -315,7 +315,13 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
             : []
       : [];
   const blocking = BLOCKER_CAPABLE.has(id);
-  const scored = !(scope === "page" && groupId === "1") && !["B5", "6.5"].includes(id);
+  // A7 / C6 / D7 report conditions that are routinely deliberate (an intentional
+  // noindex, a redirected internal URL, a consolidating canonical). They are
+  // listed for review, and their thresholds say so, so they must not also
+  // deduct from a score.
+  const scored =
+    !(scope === "page" && groupId === "1") &&
+    !["B5", "6.5", "A7", "C6", "D7"].includes(id);
   const primaryAgent =
     scope === "page" && ["2", "3", "4", "5", "9"].includes(groupId)
       ? "seo"

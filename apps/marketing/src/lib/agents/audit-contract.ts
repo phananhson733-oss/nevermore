@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v3 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v4 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO and Tech Agent API and UI
 
@@ -20,11 +20,11 @@ export { isCanonicalIsoTimestamp };
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v3" as const;
+  "seo_audit.sitewide.v4" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v3. */
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v4. */
 export const AGENT_AUDIT_RECORD_CATEGORIES = {
   robots_resource: "crawl",
   sitemap_resource: "crawl",
@@ -78,6 +78,7 @@ export type AgentAuditResult = Pick<
   | "siteOrigin"
   | "scannedAt"
   | "targetInspected"
+  | "inspectedTargetUrl"
   | "coverage"
   | "siteResources"
   | "records"
@@ -183,6 +184,7 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     typeof value.targetUrl !== "string" ||
     typeof value.siteOrigin !== "string" ||
     typeof value.targetInspected !== "boolean" ||
+    !isNullableString(value.inspectedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||
     !isCoverage(value.coverage) ||
     !isSiteResources(value.siteResources) ||

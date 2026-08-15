@@ -52,6 +52,7 @@ function record(
     category,
     state,
     unit: "pages",
+    population: "every_collected_page" as const,
     tested: 2,
     affected: state === "observed" ? 1 : 0,
     observations:
@@ -70,7 +71,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v3",
+    schemaVersion: "seo_audit.sitewide.v4",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -81,6 +82,7 @@ const upstreamPayload = {
     siteOrigin: "https://acme.test",
     scannedAt: "2026-08-12T09:00:00.000Z",
     targetInspected: true,
+    inspectedTargetUrl: "https://acme.test/",
     coverage: {
       availability: "partial",
       pagesInspected: 2,
@@ -214,7 +216,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v3",
+            schemaVersion: "seo_audit.sitewide.v4",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -224,6 +226,7 @@ describe("handleAgentAuditRequest", () => {
           siteOrigin: upstreamPayload.result.siteOrigin,
           scannedAt: upstreamPayload.result.scannedAt,
           targetInspected: upstreamPayload.result.targetInspected,
+          inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
@@ -283,6 +286,7 @@ describe("handleAgentAuditRequest", () => {
       siteOrigin: upstreamPayload.result.siteOrigin,
       scannedAt: upstreamPayload.result.scannedAt,
       targetInspected: upstreamPayload.result.targetInspected,
+      inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
@@ -585,7 +589,7 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            schemaVersion: "seo_audit.sitewide.v4",
+            schemaVersion: "seo_audit.sitewide.v5",
           },
         },
       }),

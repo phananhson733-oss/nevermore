@@ -235,6 +235,7 @@ export function buildAgentAuditViewModel({
     records: data.result.records,
     targetUrl: data.result.targetUrl,
     targetInspected: data.result.targetInspected,
+    inspectedTargetUrl: data.result.inspectedTargetUrl,
   } as const;
   const site = evaluateAgentAuditScope("site", evidence);
   const page = evaluateAgentAuditScope("page", evidence);

@@ -216,6 +216,10 @@ function projectRecord(record: SeoAuditRecord): SeoAuditRecord {
     category: record.category,
     state: record.state,
     unit: record.unit,
+    // The evaluator needs this to know whether a page's absence from the
+    // observations is evidence about that page. Dropping it here would silently
+    // downgrade every page-level check to unverified.
+    population: record.population,
     tested: record.tested,
     affected: record.affected,
     observations: record.observations.map((observation) => ({
@@ -320,6 +324,7 @@ export async function handleAgentAuditRequest(
       siteOrigin: result.siteOrigin,
       scannedAt: result.scannedAt,
       targetInspected: result.targetInspected,
+      inspectedTargetUrl: result.inspectedTargetUrl,
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
       records: result.records.map(projectRecord),

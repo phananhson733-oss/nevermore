@@ -43,7 +43,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v3",
+        schemaVersion: "seo_audit.sitewide.v4",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -53,6 +53,7 @@ const success = {
       siteOrigin: "https://acme.test",
       scannedAt: "2026-08-12T09:00:00.000Z",
       targetInspected: true,
+      inspectedTargetUrl: "https://acme.test/",
       coverage: {
         availability: "available",
         pagesInspected: 1,
@@ -75,6 +76,7 @@ const success = {
         category,
         state: index === 0 ? ("observed" as const) : ("not_observed" as const),
         unit: "pages" as const,
+        population: "every_collected_page" as const,
         tested: 1,
         affected: index === 0 ? 1 : 0,
         observations:
@@ -253,7 +255,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
     const malformed = structuredClone(success) as unknown as {
       data: { run: { source: { schemaVersion: string } } };
     };
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v4";
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

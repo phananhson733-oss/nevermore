@@ -22,6 +22,7 @@ function record(
     category: "metadata",
     state: "observed",
     unit: "pages",
+    population: "every_collected_page",
     tested: 12,
     affected: 0,
     observations: [],
