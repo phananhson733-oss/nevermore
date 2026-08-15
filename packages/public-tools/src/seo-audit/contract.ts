@@ -46,6 +46,14 @@ function isEvidenceValue(
   );
 }
 
+function isRecordPopulation(value: unknown): boolean {
+  return (
+    value === "every_collected_page" ||
+    value === "conditional_subset" ||
+    value === "site_resource"
+  );
+}
+
 export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
   if (!isObject(value)) return false;
   if (
@@ -64,6 +72,7 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
     !["pages", "link_targets", "site_resource"].includes(
       value.unit as string,
     ) ||
+    !isRecordPopulation(value.population) ||
     !isNonNegativeInteger(value.tested) ||
     !isNonNegativeInteger(value.affected) ||
     !Array.isArray(value.observations) ||
@@ -164,13 +173,16 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v3" &&
+    run.schemaVersion === "seo_audit.sitewide.v4" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&
     isCanonicalIsoTimestamp(run.completedAt) &&
     typeof result.targetUrl === "string" &&
     typeof result.siteOrigin === "string" &&
+    typeof result.targetInspected === "boolean" &&
+    (result.inspectedTargetUrl === null ||
+      typeof result.inspectedTargetUrl === "string") &&
     isCanonicalIsoTimestamp(result.scannedAt) &&
     isCoverage(result.coverage) &&
     isSiteResources(result.siteResources) &&

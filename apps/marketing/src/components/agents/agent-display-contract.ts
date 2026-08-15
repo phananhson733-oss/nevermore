@@ -23,6 +23,13 @@ const NEUTRAL_AGENT_RECORD_IDS = new Set([
   "json_ld_parse_error",
   "sitemap_page_without_observed_inlink",
   "internal_target_http_error",
+  "page_outbound_broken_link",
+  "page_not_in_sitemap",
+  "title_length_outside_range",
+  "meta_description_length_outside_range",
+  "page_without_outbound_internal_link",
+  "click_depth_beyond_reviewed_limit",
+  "json_ld_missing",
 ]);
 
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
@@ -52,6 +59,14 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   "observed_source_pages",
   "malformed_blocks",
   "types_observed",
+  "broken_link_targets",
+  "title_characters",
+  "description_characters",
+  "reviewed_range",
+  "observed_outbound_internal_links",
+  "observed_click_depth",
+  "reviewed_limit",
+  "json_ld_blocks",
 ]);
 
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
@@ -61,6 +76,10 @@ export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   "bounded_static_html_crawl_inlinks_only",
   "uncollected_link_targets_not_classified",
   "static_html_json_ld_only",
+  "no_sitemap_collected_membership_not_testable",
+  "character_count_only_rendered_pixel_width_not_measured",
+  "bounded_static_html_crawl_outlinks_only",
+  "depth_from_bounded_crawl_entry_point_only",
 ]);
 
 /**

@@ -150,19 +150,21 @@ function checkView(
           tool: "Tool landing",
           guide: "Long-form guide",
         }[headingPreset.pageType];
+  // These ranges are house working defaults, not documented limits. Say so on
+  // the card, so nobody reads a heading count as a published rule.
   const headingThreshold =
     evaluated.check.id === "3.4"
       ? locale === "zh"
-        ? `${presetName}软区间：H2 ${headingPreset.h2.min}–${headingPreset.h2.max}；数量本身绝不阻断`
-        : `${presetName} soft range: H2 ${headingPreset.h2.min}–${headingPreset.h2.max}; count alone never blocks`
+        ? `${presetName}内部启发区间：H2 ${headingPreset.h2.min}–${headingPreset.h2.max}；无官方标准，数量本身绝不阻断`
+        : `${presetName} internal heuristic range: H2 ${headingPreset.h2.min}–${headingPreset.h2.max}; no documented standard, and count alone never blocks`
       : evaluated.check.id === "3.5"
         ? locale === "zh"
-          ? `${presetName}软区间：H3 ${headingPreset.h3.min}–${headingPreset.h3.max}；数量本身绝不阻断`
-          : `${presetName} soft range: H3 ${headingPreset.h3.min}–${headingPreset.h3.max}; count alone never blocks`
+          ? `${presetName}内部启发区间：H3 ${headingPreset.h3.min}–${headingPreset.h3.max}；无官方标准，数量本身绝不阻断`
+          : `${presetName} internal heuristic range: H3 ${headingPreset.h3.min}–${headingPreset.h3.max}; no documented standard, and count alone never blocks`
         : evaluated.check.id === "3.6"
           ? locale === "zh"
-            ? `${presetName}子章节实质：至少 ${headingPreset.substanceWords} 词；内部启发式`
-            : `${presetName} subsection substance: at least ${headingPreset.substanceWords} words; internal heuristic`
+            ? `${presetName}子章节实质：至少 ${headingPreset.substanceWords} 词；内部启发式，无官方标准`
+            : `${presetName} subsection substance: at least ${headingPreset.substanceWords} words; internal heuristic, no documented standard`
           : null;
   return {
     id: evaluated.check.id,
@@ -232,6 +234,8 @@ export function buildAgentAuditViewModel({
     availability: data.result.coverage.availability,
     records: data.result.records,
     targetUrl: data.result.targetUrl,
+    targetInspected: data.result.targetInspected,
+    inspectedTargetUrl: data.result.inspectedTargetUrl,
   } as const;
   const site = evaluateAgentAuditScope("site", evidence);
   const page = evaluateAgentAuditScope("page", evidence);

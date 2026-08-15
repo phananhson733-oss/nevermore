@@ -36,11 +36,13 @@ import {
   clearPendingAgentIntent,
   getSessionIntentStorage,
   isProfileRefreshPendingAgentIntent,
+  isProfileSearchPendingAgentIntent,
   isRunnablePendingAgentIntent,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
   storeAgentProfileRefreshIntent,
+  storeAgentProfileSearchIntent,
   storeConfirmedAgentRunIntent,
   type PendingAgentIntent,
 } from "./agent-intent";
@@ -146,6 +148,14 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [data, setData] = useState<AgentAuditSuccessData | null>(null);
+  /**
+   * The Profile as confirmed for the captured run.
+   *
+   * A finished report survives later context edits, so the report has to keep
+   * showing the context it was run under. Reading the live Profile here would
+   * relabel a captured report with a market or query it never used.
+   */
+  const [runProfile, setRunProfile] = useState<AgentProfileDraft | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInPurpose, setSignInPurpose] =
     useState<SignInPurpose | null>(null);
@@ -234,6 +244,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           return;
         }
         setData(success);
+        setRunProfile(confirmedProfile);
       } catch {
         if (
           mounted.current &&
@@ -263,6 +274,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         setLoading(true);
         setErrorCode(null);
         setData(null);
+        setRunProfile(null);
       }
 
       let sessionStatus: SessionStatus;
@@ -300,6 +312,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           setLoading(true);
           setErrorCode(null);
           setData(null);
+          setRunProfile(null);
         }
 
         if (pendingIntent && pendingIntent.expiresAt <= Date.now()) {
@@ -494,6 +507,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
               profile: { ...requestedProfile },
               requestKey,
             };
+            // Signing in reloads the page, so the draft has to outlive this tab
+            // state or the visitor retypes everything they just entered.
+            const storage = getSessionIntentStorage();
+            if (storage) {
+              const stored = storeAgentProfileSearchIntent(
+                storage,
+                requestedProfile,
+              );
+              if (stored) schedulePendingAgentIntentExpiry(storage, stored);
+            }
             setSignInPurpose("profile_search");
             setSignInOpen(true);
           } else {
@@ -785,6 +808,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       return;
     }
 
+    if (isProfileSearchPendingAgentIntent(pending)) {
+      setProfile(pending.searchProfile);
+      if (storage) clearPendingAgentIntent(storage, agent);
+      return;
+    }
+
     if (isProfileRefreshPendingAgentIntent(pending)) {
       profileRefreshIntent.current = pending;
       setProfile(pending.refreshProfile);
@@ -883,13 +912,23 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       refreshIdentityChanged ||
       (next.country === "CN" &&
         next.targetQuery.trim() !== profile.targetQuery.trim());
-    activeOperationController.current?.abort();
-    activeOperationController.current = null;
-    operationId.current += 1;
-    busy.current = false;
-    setLoading(false);
-    setErrorCode(null);
-    setData(null);
+    // A captured report is evidence about one URL. Editing the product context
+    // that only labels that evidence must not abort a running crawl or throw
+    // away a finished one; only changing what is being audited does.
+    const auditIdentityChanged =
+      next.agent !== profile.agent ||
+      next.targetUrl !== profile.targetUrl ||
+      next.host !== profile.host;
+    if (auditIdentityChanged) {
+      activeOperationController.current?.abort();
+      activeOperationController.current = null;
+      operationId.current += 1;
+      busy.current = false;
+      setLoading(false);
+      setErrorCode(null);
+      setData(null);
+      setRunProfile(null);
+    }
     if (searchIdentityChanged) {
       profileSearchController.current?.abort();
       profileSearchController.current = null;
@@ -1060,7 +1099,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           agent={agent}
           locale={locale}
           data={data}
-          profile={profile}
+          profile={runProfile ?? profile}
         />
       ) : null}
 

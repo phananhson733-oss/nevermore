@@ -935,7 +935,11 @@
         "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
         "bounded_static_html_crawl_inlinks_only": "入链数量只统计已采集静态 HTML 中的链接；该记录不是对孤立页面的最终断言。",
         "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
-        "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。"
+        "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。",
+        "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
+        "character_count_only_rendered_pixel_width_not_measured": "仅统计字符数。未测量 Google 实际据以截断的渲染像素宽度。",
+        "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
+        "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。"
       },
       "records": {
         "robots_resource": {
@@ -1005,6 +1009,34 @@
         "json_ld_parse_error": {
           "title": "JSON-LD 解析错误",
           "description": "已检查静态 HTML 中，包含无法解析为 JSON 的 JSON-LD 代码块的页面。"
+        },
+        "page_outbound_broken_link": {
+          "title": "页面出站断链",
+          "description": "链接到抓取中返回 4xx 或 5xx 的站内 URL 的页面。"
+        },
+        "page_not_in_sitemap": {
+          "title": "未列入 sitemap 的页面",
+          "description": "已采集的 HTML 页面中，未出现在任何已取回 sitemap 里的页面。"
+        },
+        "title_length_outside_range": {
+          "title": "Title 长度超出审阅区间",
+          "description": "Title 文本长度落在已审阅工作区间之外的页面。Google 按渲染宽度截断，而非字符数。"
+        },
+        "meta_description_length_outside_range": {
+          "title": "Meta description 长度超出审阅区间",
+          "description": "Meta description 长度落在已审阅工作区间之外的页面。Google 按渲染宽度截断，而非字符数。"
+        },
+        "page_without_outbound_internal_link": {
+          "title": "无出站内链的页面",
+          "description": "抓取中未观察到任何指向站内其他页面链接的已采集 HTML 页面。"
+        },
+        "click_depth_beyond_reviewed_limit": {
+          "title": "点击深度超过审阅上限的页面",
+          "description": "从抓取入口出发所需点击次数超过审阅上限的页面。"
+        },
+        "json_ld_missing": {
+          "title": "无 JSON-LD 块",
+          "description": "完全不含 JSON-LD 结构化数据的已采集 HTML 页面。"
         }
       },
       "evidence": {
@@ -1028,7 +1060,15 @@
         "observed_inbound_links": "已观测入链",
         "observed_source_pages": "已观测来源页面",
         "malformed_blocks": "格式错误的 JSON-LD 块",
-        "types_observed": "已观测 JSON-LD 类型"
+        "types_observed": "已观测 JSON-LD 类型",
+        "broken_link_targets": "断链目标数",
+        "title_characters": "Title 字符数",
+        "description_characters": "Description 字符数",
+        "reviewed_range": "审阅区间",
+        "observed_outbound_internal_links": "观察到的出站内链数",
+        "observed_click_depth": "观察到的点击深度",
+        "reviewed_limit": "审阅上限",
+        "json_ld_blocks": "JSON-LD 块数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -2418,8 +2458,8 @@
       "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
       "step2Title": "检查公开 HTML",
       "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
-      "step3Title": "诊断全部 77 项检查",
-      "step3Body": "按站级与页面级分组查看阻断项、健康度、引擎就绪度和真实性状态；缺少来源的项目保持排除。",
+      "step3Title": "看清本次抓取能判定什么",
+      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的 SEO 方案",
       "step4Body": "结合证据和已确认的搜索上下文确定优先级，再检查页面级变更与验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
@@ -2429,7 +2469,7 @@
       "metaTitle": "抓取检查技术 SEO Agent",
       "metaDescription": "检查网站公开静态 HTML 抓取中的响应、索引性和内链情况，并查看证据与明确限制。",
       "eyebrow": "Tech Agent · 有边界抓取",
-      "title": "不用黑箱评分检查网站技术情况",
+      "title": "对照可逐条打开的证据检查网站技术情况",
       "subtitle": "提交一个站点，在可发现的同源 HTML 中检查已观测抓取响应、静态索引指令和内链情况。",
       "heroCta": "运行 Tech Agent",
       "accountBoundaryTitle": "账号访问门槛",
@@ -2443,8 +2483,8 @@
       "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
       "step2Title": "检查有边界响应",
       "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
-      "step3Title": "诊断全部 77 项检查",
-      "step3Body": "按站级与页面级分组查看阻断项、健康度、引擎就绪度和真实性状态；缺少来源的项目保持排除。",
+      "step3Title": "看清本次抓取能判定什么",
+      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的技术方案",
       "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
@@ -2496,7 +2536,7 @@
           "device": "设备",
           "pageType": "页面类型",
           "targetQuery": "目标查询",
-          "auditScope": "审计范围",
+          "auditScope": "首屏视图",
           "directCompetitors": "直接竞品（逗号分隔）",
           "indirectAlternatives": "间接替代方案（逗号分隔）",
           "excludedAlternatives": "排除的替代方案（逗号分隔）"
@@ -2728,8 +2768,8 @@
             "guide": "指南或文章页"
           },
           "auditScope": {
-            "site-first": "先站级，再页面级",
-            "page-only": "仅当前页面"
+            "site-first": "先看站点级结果",
+            "page-only": "先看页面级结果"
           }
         },
         "boundary": "运行前请检查本 Agent 的上下文。已提供事实、字段级来源与推断假设会保持明确标记；接受仅作用于本次 Agent 运行，不会写入 app 的 Product Profile。",
@@ -2758,12 +2798,13 @@
           "locale": "语言 / Locale",
           "device": "设备",
           "pageType": "页面类型",
-          "targetQuery": "目标查询"
+          "targetQuery": "目标查询",
+          "targetQueryUnconfirmed": "未确认"
         },
         "scopeLabel": "审计范围",
         "scopes": {
-          "site": "站级 · 5 组 / 27 项检查",
-          "page": "页面级 · 9 组 / 50 项检查"
+          "site": "站级 · {groups} 组 / {checks} 项检查",
+          "page": "页面级 · {groups} 组 / {checks} 项检查"
         },
         "scopeSummary": "{groups} 组 · {total} 项检查",
         "blockers": "阻断项",
@@ -2786,12 +2827,15 @@
           "howToFix": "如何处理",
           "dataSource": "数据来源",
           "scoreContribution": "分数贡献",
-          "boundary": "边界 / 未知项"
+          "boundary": "边界 / 未知项",
+          "notMeasured": "本次运行未实测",
+          "notScored": "不参与计分"
         },
         "axes": {
           "result": "结果",
           "engine": "引擎",
-          "truth": "真实性"
+          "truth": "真实性",
+          "unknownState": "本版本无法识别"
         },
         "results": {
           "blocker": "阻断",
@@ -2817,7 +2861,7 @@
           "unavailable": "不可用",
           "illustrative": "示意"
         },
-        "excludedBoundary": "不可用、样本中未观测到、未接入和来源受限的检查会从健康度计算中排除；排除项不记为零，也不等于通过。",
+        "excludedBoundary": "不可用、未接入和来源受限的检查会从健康度计算中排除；排除项不记为零，也不等于通过。已实测且未发现受影响项的检查记为通过，但该结论只在有边界样本内成立。",
         "headingPreset": {
           "label": "按页面类型调整的标题预设",
           "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · 每个 H3 分区至少 {words} 词",
@@ -2845,6 +2889,16 @@
           "scopeAtPreset": "本范围使用预设",
           "doesNotRejudge": "调整口径只记录本地审阅规则，不会重新判定这次已完成运行。",
           "rerunRequired": "本地口径已调整；必须完成新的真实运行后才能重新判定结果。"
+        },
+        "healthScoredCount": "由 {scored} 条已计分检查得出",
+        "healthInsufficient": "证据不足以给出健康度",
+        "healthInsufficientHint": "本范围已计分检查 {scored} 条；不足 {minimum} 条时不给出健康分。",
+        "healthPendingSources": "仍在等待的数据来源：{sources}",
+        "healthDimmedReason": "本范围存在未处理的阻断检查（{blockers} 项），卡片因此变暗；请先看阻断项，再看分数。",
+        "axisLegend": {
+          "result": "本次运行对该检查的判定：阻断、警告、提示、通过或已排除。",
+          "engine": "该检查背后的检测器是否已接入，以及本次运行是否拿到可读的数据源。",
+          "truth": "这个结论是怎么来的：在有边界样本中观测到、已实测但未观测到，或根本没有实测。"
         }
       },
       "auditCatalog": {
@@ -2955,7 +3009,7 @@
       "recommendations": {
         "stage3": "阶段 03 · 建议",
         "stage3Title": "确定有证据支持的下一步",
-        "stage3Body": "结合阻断项、结果状态、证据触达范围、来源可用性与已确认画像进行比较；排除项或来源受限项只保留为不可用调查，绝不会变成可执行修复。",
+        "stage3Body": "排序依据依次为：结果严重度、本次运行是否采集到证据、检查归属的 Agent、已观测触达范围。已确认画像不参与此排序。本次无法评估的检查会单独说明，不进入排序。",
         "stage4": "阶段 04 · 已选方案与验证",
         "stage4Title": "实施前完整检查一个方案",
         "stage4Body": "将问题、证据、拟议变更、适用上下文、验证步骤、影响范围、风险与限制放在一起审阅。",
@@ -2998,7 +3052,81 @@
           "validation3": "重新运行相同的有边界检查；若结论依赖搜索表现，请另行使用获授权的搜索数据源。",
           "impactSurface": "受影响页面的搜索意图清晰度、摘要输入、文档层级、站内发现路径与结构化数据一致性。",
           "risks": "泛化改写可能削弱页面真实用途、与其他页面重复，或引入可见内容无法支持的标记。",
-          "limits": "本预览不会推断搜索需求或排名影响，也不能替代 SERP、流量或获授权的搜索表现证据。"
+          "limits": "本预览不会推断搜索需求或排名影响，也不能替代 SERP、流量或获授权的搜索表现证据。",
+          "kinds": {
+            "searchOpportunity": {
+              "recommendation": "先判断这个已确认目标词值不值得做，再动页面。把国家、语言、设备和页面绑定好，看 SERP 快照或获授权的 Search Console 数据，然后写下推进、调整还是暂缓，并附上依据。",
+              "validation1": "用同样的目标词、国家、语言和设备重新看一次 SERP，记录相较本次运行发生了什么变化。",
+              "validation2": "把记录下来的决定和页面的真实角色对一下：站内没有页面能回答的机会属于内容决策，不是修复项。",
+              "validation3": "在依据任何搜索表现数字行动前，先确认已连接获授权的数据源；本次运行并不读取该来源。",
+              "impactSurface": "这个页面在争取哪些查询，以及这个页面到底是不是回答它们的正确位置。",
+              "risks": "把某个词押在错误的页面上，会让意图分散到两个页面，结果两个都不如一个清晰的答案。",
+              "limits": "本预览看的是结果页的结构，不是需求。它不估算搜索量、点击或排名，也无法告诉你推进这个词会有什么结果。"
+            },
+            "searchPresentation": {
+              "recommendation": "重写 Title 和 Meta description，让它们各自说清这个页面替读者解决什么问题，并且站内没有第二个页面许下同样的承诺。措辞必须与页面实际内容一致。",
+              "validation1": "抓一次修改后的公开 HTML，确认新的 Title 和描述确实是服务器返回的内容，而不只是 CMS 里显示的样子。",
+              "validation2": "把新文案与此前共用旧措辞的兄弟页面逐一对比，确认每个页面现在读起来都不一样。",
+              "validation3": "读一遍页面首屏，确认它兑现了摘要刚刚做出的承诺。",
+              "impactSurface": "搜索结果所依据的 Title、描述和开头段落，以及这个页面与兄弟页面并排时的读感。",
+              "risks": "只对着目标词而不对着页面改写，可能许下页面兑现不了的承诺，代价比原来的重复文案更高。",
+              "limits": "这里的字数只是已审阅的工作区间，不是硬规则：结果按渲染宽度截断。本预览无法告诉你摘要最终会以什么形式显示。"
+            },
+            "contentBrief": {
+              "recommendation": "把它当成内容简报，而不是字数指标。先列出读者在这个页面上仍然做不了的判断，再写出回答这些判断的章节，并注明每条新说法的出处。",
+              "validation1": "以已确认的 ICP 身份重读页面，看新增章节是否真的解决了他们的一个卡点。",
+              "validation2": "确认每条新增说法都有经得起复核的来源，并删掉任何只为凑长度而存在的句子。",
+              "validation3": "重跑同一项有边界的内容检查，与这里记录的实测值做比较。",
+              "impactSurface": "页面究竟讲清了什么，以及读者能否不离开页面就完成决策。",
+              "risks": "为凑长度而注水，会稀释原本有效的部分；照抄竞品的文字还可能与自己站内已有页面重复。",
+              "limits": "字数和关键词密度只是内部启发式，不是有据可查的排名信号。本预览不评判内容质量，也不预测页面表现。"
+            },
+            "headingStructure": {
+              "recommendation": "给页面一个 H1，点明它要解决的那一件事；用 H2 承载读者要走的步骤，用 H3 承载每个步骤引出的子问题。先把大纲理顺，再改措辞。",
+              "validation1": "抓取修改后的页面，只从上到下读标题文字；仅凭这份大纲就应该能讲清这个页面。",
+              "validation2": "确认标题层级没有跳级，也没有任何标题只是为了字号好看而使用。",
+              "validation3": "逐个检查 H3 下的内容是真的回答了这个标题，而不是把标题换个说法重复一遍。",
+              "impactSurface": "页面的阅读顺序，以及辅助技术和解析器所依赖的结构。",
+              "risks": "改动标题结构可能破坏页内锚点、目录链接，以及任何依赖标题层级的样式。",
+              "limits": "H2/H3 的数量只是页面类型预设，永远不构成阻断项。结构不同但自洽的页面完全可以是正确的。"
+            },
+            "internalLinkExposure": {
+              "recommendation": "给这个页面接一条来自真正同主题页面的发现路径。按上下文相关性挑选来源页，锚文本要写成读者会怎么描述目标页；宁可加一条到位的链接，也不要堆一堆弱链接。",
+              "validation1": "抓取来源页的公开 HTML，确认这条链接位于正文内容里，而不只是模板区块中。",
+              "validation2": "点开这条链接，确认目标返回 200，并且是该页面的 Canonical 版本。",
+              "validation3": "重跑有边界抓取，把观测到的入站内链数与这里记录的数值做比较。",
+              "impactSurface": "读者和抓取程序如何从站内其他位置到达这个页面。",
+              "risks": "为覆盖率而非为上下文添加的链接读起来就是凑数；同一个锚文本在多个页面重复使用，只会让每一条都更不具描述性。",
+              "limits": "这个数量来自有边界的同源抓取。本次抓取没有走到的导航，以及只由客户端脚本渲染出来的链接，都不在其中。"
+            },
+            "structuredData": {
+              "recommendation": "只标注读者在页面上已经能看到的内容，并选择与页面真实身份相符的类型。两者不一致时，先改可见内容。",
+              "validation1": "用 Schema 校验工具验证输出的 JSON-LD，确认所有必填字段齐备。",
+              "validation2": "把每个被标注的值与渲染后的页面逐项对照，删掉页面上并不存在的内容。",
+              "validation3": "重新抓取公开 HTML，确认这段标记出现在响应里，而不是加载后才注入的。",
+              "impactSurface": "这个页面的机器可读描述，以及它与页面实际展示内容的一致性。",
+              "risks": "标注页面上并不存在的内容属于违规，不是捷径，还会危及页面现有的展示资格。",
+              "limits": "标记合规并不等于页面就能拿到富媒体结果。本预览只检查结构以及与可见内容是否一致，不承诺任何搜索展示形式。"
+            },
+            "mediaAssets": {
+              "recommendation": "为每张图片写出「看不见的人也能知道图里是什么」的 alt 文本；文件格式和体积属于另一件事，与 alt 文本分开决策。",
+              "validation1": "关掉图片再读一遍页面，确认 alt 文本依然传达了原有含义。",
+              "validation2": "确认装饰性图片使用空 alt 属性，而不是硬塞一段描述。",
+              "validation3": "重新抓取页面，把图片数量、格式和体积与这里记录的数值做比较。",
+              "impactSurface": "图片加载失败或看不见时页面还能传达什么，以及页面的体积。",
+              "risks": "为目标词而不是为图片本身写的 alt 文本，恰恰向最依赖它的读者错误描述了页面。",
+              "limits": "这是可访问性与交付层面的观察。这里的格式与体积阈值属于内部判断，不隐含任何搜索结果层面的承诺。"
+            },
+            "technicalIssueBrief": {
+              "recommendation": "这是在搜索侧审阅中暴露出来的技术问题，所以在这里应该把它写清楚，而不是就地修。记录已观测到的状况、它限制住了哪个搜索决策，然后交给模板、CMS 或平台的负责人。",
+              "validation1": "移交前先确认这个状况在公开 URL 上仍能复现。",
+              "validation2": "到 Tech Agent 里复看同一项检查——那里才把归属系统及其证据纳入了范围。",
+              "validation3": "负责人发布变更后，重新抓取该 URL，与这里记录的证据做比较。",
+              "impactSurface": "这个状况限制住的那个搜索决策；造成它的代码或配置不在本 Agent 的范围内。",
+              "risks": "用内容手段绕开交付层的问题，只是把它藏起来而不是修好；而这种绕法往往比加它的人待得更久。",
+              "limits": "框架、代码仓库和负责人上下文在这里是刻意缺席的。此视图不准备、不审阅、也不发布任何代码或配置变更。"
+            }
+          }
         },
         "tech": {
           "recommendation": "追踪最小相关代码或配置范围，确认负责人和框架后，再准备可审阅的响应、跳转、指令、链接或性能变更。",
@@ -3008,8 +3136,108 @@
           "validation3": "由负责人完成发布后，再获取公开 URL 并重跑相同的有边界技术检查，以比较证据。",
           "impactSurface": "HTTP 交付、抓取路径、索引指令、Canonical 行为、内链完整性，以及涉及的具体模板或配置范围。",
           "risks": "缺少框架和负责人上下文时进行变更，可能破坏路由、有意排除、多语言、缓存或邻近模板。",
-          "limits": "实施前必须确认负责人和框架上下文；这里不会编辑站点、应用变更、创建 PR、批准、发布或部署。"
-        }
+          "limits": "实施前必须确认负责人和框架上下文；这里不会编辑站点、应用变更、创建 PR、批准、发布或部署。",
+          "kinds": {
+            "indexability": {
+              "recommendation": "改动之前先确认负责人确实希望这个 URL 可被索引——有些排除是故意的。确认后，只修正把它挡在外面的那一处状态码或指令，其余不要动。",
+              "validation1": "像抓取程序那样请求这个 URL——不带 cookie、不带会话——并查看最终状态码和响应头。",
+              "validation2": "在一个有意排除的邻近 URL 上检查同一条指令，确认这次改动没有扩大范围。",
+              "validation3": "发布后重新抓取公开 URL 并重跑本项检查；再单独用获授权的搜索数据源查看抓取程序的实际处理结果。",
+              "impactSurface": "这个 URL 是否具备被抓取和编入索引的资格，以及所有共用同一条指令来源的 URL。",
+              "risks": "这类指令通常由共享中间件或布局统一输出，改一处就可能悄悄放出预发路径、筛选视图或稀薄的重复页。",
+              "limits": "本次运行只读取静态响应。客户端脚本追加的指令，以及抓取程序真正的索引决定，都不在这里的观测范围内。"
+            },
+            "crawl": {
+              "recommendation": "只在某条规则挡住了负责人本来想公开的内容时才改 robots.txt。放行具体路径，而不是把一条宽泛规则整个放松，同时保留那些有意的排除。",
+              "validation1": "发布前，用 robots 测试工具拿这个确切 URL 对新的 robots.txt 跑一遍。",
+              "validation2": "再测一条必须保持禁止的路径，确认它依然被拦住。",
+              "validation3": "发布后从公开源站获取 /robots.txt，确认线上提供的就是审阅过的那份文件。",
+              "impactSurface": "抓取程序被允许请求哪些路径——覆盖受影响规则匹配到的所有 URL。",
+              "risks": "robots.txt 按前缀匹配、按 user-agent 分别生效，为某一条路径写的规则常常会波及更多；而且 disallow 并不能移除已被索引的内容。",
+              "limits": "抓取策略是一种请求约定，不是访问控制。本预览不涉及身份认证；靠拦截抓取来保密是行不通的。"
+            },
+            "redirect": {
+              "recommendation": "把跳转链压缩成一跳，终点是返回 200 的 HTTPS URL；每个来源都直接指向最终目标，而不是指向下一跳。只有确实是永久迁移时才用永久跳转。",
+              "validation1": "请求原始 URL 但不自动跟随跳转，按顺序查看每一跳的状态码和 Location 响应头。",
+              "validation2": "确认终点是该内容的 Canonical URL 且返回 200，而不是又一次跳转或软 404。",
+              "validation3": "再测一条本来就不应该跳转的 URL；发布后重新抓取，把跳数与这里记录的数值做比较。",
+              "impactSurface": "这个 URL 的响应路径，以及所有指向它的来源——包括你无法控制的外部链接。",
+              "risks": "跳转规则按顺序、按模式匹配，新加一条可能盖住已有规则或造成循环；永久跳转会被浏览器缓存，很难撤回。",
+              "limits": "本次运行只跟随公开响应链。抓取程序最终认哪一跳，以及被缓存的永久跳转会存续多久，都不在这里的观测范围内。"
+            },
+            "canonical": {
+              "recommendation": "由页面模板输出一条自指的 Canonical，使用服务器实际提供的那个绝对 URL。只有当这个页面确实是目标页的重复版本时，才让它指向别处。",
+              "validation1": "抓取页面，确认服务器返回的 HTML 中恰好只有一条 Canonical 元素。",
+              "validation2": "确认这个 Canonical URL 单独访问时返回 200，并与线上 URL 逐字符一致，包括协议、主机名和末尾斜杠。",
+              "validation3": "挑一个分页、筛选或带参数的变体页面，确认它现在按预期收敛。",
+              "impactSurface": "这份内容的哪个 URL 被当作要保留的那一个，以及所有向它收敛的变体。",
+              "risks": "Canonical 指错页面，等于主动请求丢掉这个页面、保留那一个；而在模板里写死一个 URL 的 Canonical，会一次性对所有页面这么做。",
+              "limits": "Canonical 是提示而不是指令，而且本次运行并不请求 Canonical 目标的状态码。最终是否收敛由搜索引擎决定，不由这段标记决定。"
+            },
+            "performance": {
+              "recommendation": "动手之前先把现场数据和实验室数据分开：现场数据说明真实用户是否受影响，实验室数据说明时间花在哪。先在归属的路由或模板里定位瓶颈，再做一处可度量的改动。",
+              "validation1": "查看同一 URL、同一设备形态在 28 天窗口内的 CrUX p75，并记住这个窗口会滞后于你刚发布的改动。",
+              "validation2": "在同一路由上、用相同的限速设置，在改动前后各跑一次实验室测试，比较那一项具体指标。",
+              "validation3": "再看一个使用同一模板的页面，确认这次改动在那里同样有效，而不只是对被测 URL 有效。",
+              "impactSurface": "这个路由的加载与交互表现，以及所有由同一模板或同一打包产物渲染出来的页面。",
+              "risks": "对着一个真实用户根本感受不到的实验室数字做优化就是白费力气；为了把指标拉好而延迟或删除资源，还可能弄坏测试覆盖不到的功能。",
+              "limits": "本次运行未接入现场与实验室性能数据源。若上方没有实测值，那么阈值来自检查目录，而不是对这个页面的测量。"
+            },
+            "rendering": {
+              "recommendation": "写任何修复之前，先把静态响应和渲染后的 DOM 做一次对比：差异本身就说明了哪些内容依赖脚本。然后和框架负责人一起决定，缺失的内容是否应该改为服务端渲染。",
+              "validation1": "在禁用脚本的情况下抓取该 URL，列出响应里缺失了哪些内容。",
+              "validation2": "在浏览器里打开同一 URL，把渲染后的 DOM 与那份响应做对比，并记录是哪些资源阻塞了渲染。",
+              "validation3": "改动后重跑这次对比，确认此前缺失的内容已经出现在服务器返回的响应里。",
+              "impactSurface": "抓取程序收到的 HTML 里已有什么，与哪些内容只有在脚本执行后才出现。",
+              "risks": "把渲染搬到服务端，会同时改变缓存、个性化和 hydration 行为；搬一半还可能造成只有运行时才暴露的不一致。",
+              "limits": "本次运行只读取静态响应，从不执行页面脚本。它无法告诉你抓取程序是否渲染过这个页面，也无法告诉你渲染发生在什么时候。"
+            },
+            "template": {
+              "recommendation": "这个值由共享模板输出，所以要在源头改一次，而不是逐页去补。让它从页面自身的规范数据推导出来，只输出一次，然后检查共用该模板的那些路由。",
+              "validation1": "找出由同一模板渲染的所有路由，挑出彼此差异最大的两条。",
+              "validation2": "渲染这两条路由，确认该值都存在、彼此不同，并且是推导出来的而不是写死的。",
+              "validation3": "发布后各抓取一个类型的页面，与这里记录的证据做比较。",
+              "impactSurface": "所有由该模板渲染的页面，包括本次有边界抓取没有走到的路由。",
+              "risks": "模板改动会一次性作用于所有页面：对某种页面类型正确的值，换一种可能就是错的；而在多条路由上重复同一个兜底字符串，等于把本要修掉的重复又造了出来。",
+              "limits": "本次运行只观测到有边界抓取走到的页面。这个值归哪个模板管、覆盖多少条路由，必须回代码仓库确认。"
+            },
+            "schema": {
+              "recommendation": "由模板用页面自身的数据输出 JSON-LD，并且只标注页面上已经展示的值。类型要按页面的真实身份来选，而不是按你想拿到的展示形式来选。",
+              "validation1": "用 Schema 校验工具验证输出的这段标记，确认没有遗漏必填字段。",
+              "validation2": "把每个字段与渲染后的页面逐项对照，删掉页面并未展示的内容。",
+              "validation3": "再看一个同类型页面，确认模板在那里同样产出了正确且属于该页面的值。",
+              "impactSurface": "为这一类型的每个页面所输出的机器可读描述。",
+              "risks": "这段标记是生成出来的，一个字段错了，同类型的每个页面都会跟着错；标注页面并未展示的内容还属于违规。",
+              "limits": "标记合规并不等于页面就能获得任何搜索展示形式。本次运行只检查是否存在、能否解析，并不核验每个值是否与渲染后的页面一致。"
+            },
+            "linkIntegrity": {
+              "recommendation": "对每个断掉的目标逐条处理：是改指到有效 URL、把缺失的页面恢复回来，还是干脆删掉这条链接。要在链接被写出来的地方修——模板或内容里——而不是给每种情况都加一条跳转。",
+              "validation1": "直接请求每个已观测目标并记录最终状态码；抓取没走到的目标不等于就是断链。",
+              "validation2": "确认修正后的链接一跳直达返回 200 的 URL，并在同一页面上挑一条邻近链接作为对照检查。",
+              "validation3": "重跑有边界抓取，把断链目标数与这里记录的数值做比较。",
+              "impactSurface": "读者和抓取程序能否走通这个页面的出站链接，以及所有由同一链接来源渲染出来的页面。",
+              "risks": "删掉一条链接，等于抽掉了其他页面可能依赖的发现路径；而把所有断掉的目标一律跳到首页，只会把 404 变成日后更难发现的软 404。",
+              "limits": "本次运行只对有边界抓取采集到的链接目标做判定。抓取无法到达的目标，以及由客户端脚本渲染出来的链接，都不在其中。"
+            },
+            "internalLinkExposure": {
+              "recommendation": "给这个页面一条真实的发现路径：从已经覆盖该主题的页面加一条上下文内链，锚文本要用读者认得出的说法。",
+              "validation1": "确认目标地址就是你希望被索引的 Canonical URL，而不是跳转地址或变体。",
+              "validation2": "把链接放在读者真会读到的正文里，而不是塞进页脚链接堆。",
+              "validation3": "重新抓取，比较同一页面的入站内链数与点击深度是否改善。",
+              "impactSurface": "影响抓取器与读者能否到达该页面，以及它距离入口有多深。",
+              "risks": "为了凑数量批量加链接，会产出没人读的链接块。只在主题真正相关处加链接。",
+              "limits": "入站内链数与深度仅来自本次有界抓取。JavaScript 渲染出的链接、分页之外或未被抓取的页面都不计入；可达性也不等于排名承诺。"
+            }
+          }
+        },
+        "rankedDisclosure": "当前范围内共排出 {total} 条有证据支持的建议，此处只列出排名最前的 {shown} 条。",
+        "dataSourceGaps": "另有 {count} 项相关检查因数据源未采集而无法评估，不作为建议参与排序；已排除清单见诊断区。",
+        "previewFillIn": "[待填写]",
+        "previewNotCaptured": "[本次运行未采集]",
+        "evidenceNotObservedTitle": "未观察到受影响单元",
+        "evidenceNotObservedBody": "该检查已在已采集样本上执行，未发现受影响的单元。有边界抓取范围内没有发现，并不能证明范围之外也没有。",
+        "evidenceNoObservationTitle": "没有可展示的观测",
+        "evidenceNoObservationBody": "本次运行没有为所选页面在该检查上保留观测记录。在把它当作可执行项之前，请先看上方的实测值与证据来源。"
       },
       "seo": {
         "title": "开始 SEO 证据检查",
@@ -3119,7 +3347,9 @@
           "implementation": "internal link\n  href: [已确认公开目标]\n  anchor text: [有描述性的标签]",
           "validation": "获取每个变更目标，确认最终响应及来源页静态 HTML 中的链接，再重新运行抓取；不要把未采集目标归类为已修复。"
         }
-      }
+      },
+      "evidenceRecords": "已测量证据记录",
+      "evidenceRecordsBoundary": "证据记录是本次运行采集到的测量条目；诊断区数的是检查项，两者口径不同，数字不能互相对照。"
     }
   },
   "playbooks": {

@@ -1135,20 +1135,35 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(confirmAgentProfile(generic).reviewState).toBe(
       "needs_confirmation",
     );
+    // Positioning detail enriches the record but does not decide the audit, so
+    // it no longer stands between a visitor and their own site's evidence.
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, valueProposition: "" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, coreFeatures: [] }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, useCases: [] }),
+    ).toBe(true);
+    // The context the run reads back still has to be there.
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, productName: "" }),
+    ).toBe(false);
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, primaryIcp: "" }),
+    ).toBe(false);
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, primaryCta: "" }),
+    ).toBe(false);
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, firstOutcome: "" }),
     ).toBe(false);
     expect(
       isAgentProfileReady({
         ...suppliedWithRunMarket,
         fieldProvenance: suppliedWithRunMarket.fieldProvenance.filter(
-          (entry) => entry.path !== "/valueProposition",
+          (entry) => entry.path !== "/primaryIcp",
         ),
       }),
     ).toBe(false);
@@ -1156,13 +1171,13 @@ describe("Agent-local Product / ICP profiles", () => {
       isAgentProfileReady({
         ...suppliedWithRunMarket,
         fieldProvenance: suppliedWithRunMarket.fieldProvenance.map((entry) =>
-          entry.path === "/valueProposition"
+          entry.path === "/primaryIcp"
             ? {
                 ...entry,
                 derivation: "missing" as const,
                 confidence: "unknown" as const,
                 source: "not_available" as const,
-                limitation: "No value proposition is available.",
+                limitation: "No primary ICP is available.",
                 observedAt: null,
               }
             : entry,
@@ -1193,6 +1208,7 @@ describe("Agent-local Product / ICP profiles", () => {
       icpPain: "Examples are scattered",
       jtbd: "Align a team around clear examples",
       useCases: ["Create and share product examples"],
+      firstOutcome: "First 20 examples published",
       country: "US",
       locale: "en-US",
     });

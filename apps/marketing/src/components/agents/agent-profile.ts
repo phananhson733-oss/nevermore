@@ -1271,21 +1271,20 @@ function isCompleteFieldProvenance(
   );
 }
 
+/**
+ * The context a run actually consumes.
+ *
+ * The audit itself is decided by crawl evidence alone, so blocking a run on
+ * fifteen positioning fields bought nothing. These six are the ones the run
+ * reads back: they label the evidence and fill the Stage 04 solution preview.
+ * Every other Profile field stays editable and stays in the record; it just no
+ * longer stands between a visitor and their own site's evidence.
+ */
 export const AGENT_PROFILE_READY_FIELDS = [
   "productName",
-  "oneLinePositioning",
-  "valueProposition",
-  "coreFeatures",
-  "categories",
-  "businessModel",
   "primaryCta",
   "primaryIcp",
-  "buyer",
-  "user",
-  "triggerPain",
-  "icpPain",
-  "jtbd",
-  "useCases",
+  "firstOutcome",
   "country",
   "locale",
 ] as const satisfies readonly AgentProfileEditableField[];

@@ -60,6 +60,7 @@ vi.mock("./agent-results", () => ({
       readonly agent: string;
       readonly targetUrl: string;
       readonly reviewState: string;
+      readonly country: string;
     };
   }) => (
     <div
@@ -69,6 +70,7 @@ vi.mock("./agent-results", () => ({
       data-profile-agent={profile.agent}
       data-profile-url={profile.targetUrl}
       data-profile-state={profile.reviewState}
+      data-profile-country={profile.country}
     />
   ),
 }));
@@ -86,7 +88,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         persistence: "none",
         source: {
           tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v3",
+          schemaVersion: "seo_audit.sitewide.v4",
           completedAt: "2026-08-13T00:00:00.000Z",
           cache: { status: "miss", capturedAt: null },
         },
@@ -95,6 +97,8 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         targetUrl,
         siteOrigin: "https://astrologywiki.com",
         scannedAt: "2026-08-13T00:00:00.000Z",
+        targetInspected: true,
+        inspectedTargetUrl: "https://acme.test/",
         coverage: {
           availability: "available",
           pagesInspected: 1,
@@ -118,6 +122,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
             category,
             state: "not_observed" as const,
             unit: "pages" as const,
+            population: "every_collected_page" as const,
             tested: 1,
             affected: 0,
             observations: [],
@@ -2032,5 +2037,106 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         ?.getAttribute("data-open"),
     ).toBe("false");
     expect(document.querySelector("[data-profile-search-results]")).toBeNull();
+  });
+
+  it("keeps a captured report while the visitor edits context the audit never reads", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      (
+        document.querySelector(
+          'button[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    setInputValue(
+      document.querySelector(
+        '[aria-label="fields.productName"]',
+      ) as HTMLInputElement,
+      "Renamed product",
+    );
+    await flushAsyncWork();
+
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it("keeps a captured report labelled with the context it actually ran under", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext("US", "en-US");
+    confirmProfile();
+    await flushAsyncWork();
+
+    const reportCountry = () =>
+      document
+        .querySelector('[data-testid="agent-results"]')
+        ?.getAttribute("data-profile-country");
+    expect(reportCountry()).toBe("US");
+
+    // Editing the market after the fact must not relabel a captured report
+    // with a context that run never used.
+    setRunContext("GB", "en-GB");
+    await flushAsyncWork();
+
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+    expect(reportCountry()).toBe("US");
+  });
+
+  it("drops a captured report once the audited URL changes", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL): Promise<Response> => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com"));
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    setProfileUrl("seo", "example.com");
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
   });
 });

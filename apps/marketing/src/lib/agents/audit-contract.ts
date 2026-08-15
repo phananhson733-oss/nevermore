@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v3 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v4 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO and Tech Agent API and UI
 
@@ -20,11 +20,11 @@ export { isCanonicalIsoTimestamp };
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v3" as const;
+  "seo_audit.sitewide.v4" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v3. */
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v4. */
 export const AGENT_AUDIT_RECORD_CATEGORIES = {
   robots_resource: "crawl",
   sitemap_resource: "crawl",
@@ -43,6 +43,13 @@ export const AGENT_AUDIT_RECORD_CATEGORIES = {
   sitemap_page_without_observed_inlink: "links",
   internal_target_http_error: "links",
   json_ld_parse_error: "structured_data",
+  page_outbound_broken_link: "links",
+  page_not_in_sitemap: "crawl",
+  title_length_outside_range: "metadata",
+  meta_description_length_outside_range: "metadata",
+  page_without_outbound_internal_link: "links",
+  click_depth_beyond_reviewed_limit: "links",
+  json_ld_missing: "structured_data",
 } as const satisfies Readonly<Record<string, SeoAuditCategory>>;
 
 const AGENT_AUDIT_RECORD_IDS = Object.keys(AGENT_AUDIT_RECORD_CATEGORIES);
@@ -70,6 +77,8 @@ export type AgentAuditResult = Pick<
   | "targetUrl"
   | "siteOrigin"
   | "scannedAt"
+  | "targetInspected"
+  | "inspectedTargetUrl"
   | "coverage"
   | "siteResources"
   | "records"
@@ -174,6 +183,8 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !isObject(value) ||
     typeof value.targetUrl !== "string" ||
     typeof value.siteOrigin !== "string" ||
+    typeof value.targetInspected !== "boolean" ||
+    !isNullableString(value.inspectedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||
     !isCoverage(value.coverage) ||
     !isSiteResources(value.siteResources) ||
