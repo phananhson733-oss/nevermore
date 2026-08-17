@@ -323,11 +323,11 @@
     "hero": {
       "eyebrow": "SEO and technical website Agents",
       "title": "Enter a URL. <hl>Review the evidence and the next move.</hl>",
-      "subtitle": "Choose an independent SEO or Tech Agent for a bounded review of public static HTML, then inspect observed conditions, evidence, and adaptable solutions.",
+      "subtitle": "Run the SEO Agent for a bounded review of public static HTML, then inspect observed conditions, their evidence, and an adjustable solution.",
       "urlLabel": "Website host or URL",
       "urlPlaceholder": "example.com or https://example.com",
       "primaryCta": "Run SEO Agent",
-      "secondaryCta": "Run Tech Agent",
+      "secondaryCta": "Open the technical view",
       "socialProof": "Verified account required · identity access only · no Gmail, Search Console, or project persistence"
     },
     "freeAudit": {
@@ -366,12 +366,12 @@
       "step4Desc": "A 30/60/90 plan carrying owners, status and dependencies."
     },
     "capabilities": {
-      "eyebrow": "Two independent Agents",
+      "eyebrow": "One Agent, two focuses",
       "title": "Choose the review that matches the question",
       "subtitle": "Each Agent has its own URL input, run, result, opportunity selection, and solution view. Shared crawl infrastructure never merges their state.",
       "seoTitle": "SEO Agent",
       "seoDesc": "Inspect metadata, heading structure, and structured-data conditions observed in collected public HTML.",
-      "techTitle": "Tech Agent",
+      "techTitle": "Technical focus",
       "techDesc": "Inspect crawl responses, static indexability directives, and internal-link conditions in a bounded crawl.",
       "accountRequired": "Verified account",
       "liveCrawl": "Bounded crawl evidence",
@@ -380,7 +380,7 @@
       "linksTitle": "Internal Link Audit",
       "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
       "cardCta": "Open Agent",
-      "viewAll": "View both Agents"
+      "viewAll": "Open the SEO Agent"
     },
     "socialProof": {
       "title": "SEO advice should show its work",
@@ -408,7 +408,7 @@
     },
     "bottomCta": {
       "title": "Start with the website question in front of you",
-      "subtitle": "Run the SEO Agent for on-page signals or the Tech Agent for crawl, indexability, and link evidence. Each run stays explicit about what it did not verify.",
+      "subtitle": "Run the SEO Agent for on-page signals, or open its technical focus for crawl, indexability and link evidence. Every run states what it did not verify.",
       "cta": "Open SEO Agent"
     }
   },
@@ -786,10 +786,10 @@
   "tools": {
     "eyebrow": "Start with the question in front of you",
     "title": "Supporting tools for the next SEO decision",
-    "subtitle": "Use a focused Search Console or planning tool here. URL audits now run through the independent, account-gated SEO and Tech Agents.",
+    "subtitle": "Use a focused Search Console or planning tool here. URL audits run through the account-gated SEO Agent, and one page against its target queries runs through the On-Page SEO Checker.",
     "diagnoseEyebrow": "I have a website to improve",
     "diagnoseTitle": "Read the search-performance evidence",
-    "diagnoseBody": "Connect Search Console when the question depends on your site's private query and traffic history. For a public-HTML URL audit, choose SEO Agent or Tech Agent instead.",
+    "diagnoseBody": "Connect Search Console when the question depends on your site's private query and traffic history. To audit a public HTML URL, use the SEO Agent; to check one page against the words you want it found for, use the On-Page SEO Checker.",
     "planEyebrow": "I need to plan and measure",
     "planTitle": "Make the next experiment easier to size",
     "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
@@ -2431,14 +2431,14 @@
     "hero": {
       "eyebrow": "Account-gated, payment-free audits",
       "title": "Run the first audit without choosing a paid plan.",
-      "subtitle": "SEO Agent and Tech Agent require a verified GenGrowth account before any URL is crawled. They need no payment, Search Console connection, or site-ownership verification, and current audit runs are not saved."
+      "subtitle": "The SEO Agent requires a verified GenGrowth account before any URL is crawled. It needs no payment, no Search Console connection and no site-ownership verification, and the current audit saves no run history."
     },
     "freeTools": {
       "eyebrow": "Available now",
-      "title": "SEO and Tech URL audit Agents",
-      "body": "Choose one independent Agent, enter a public URL, then sign in or register before the crawl starts. Registration controls access; it does not create saved project history.",
+      "title": "URL audit, on the SEO Agent",
+      "body": "Enter a public URL, then sign in or register before the crawl starts. Registration is for access control; it does not create a saved project history.",
       "item1": "SEO Agent reviews metadata, heading structure, and structured-data evidence from the bounded crawl.",
-      "item2": "Tech Agent reviews crawl responses, indexability directives, and internal-link evidence.",
+      "item2": "Its technical focus reviews crawl responses, indexability directives, and internal-link evidence.",
       "item3": "No payment, Search Console connection, or site-ownership verification is required; each run uses no persistence.",
       "cta": "Explore Agents"
     },
@@ -2524,7 +2524,7 @@
       "title": "Frequently Asked Questions",
       "q1": {
         "question": "Do the URL audit Agents require payment?",
-        "answer": "No. SEO Agent and Tech Agent can run without a payment step. A verified GenGrowth account is required before the server reads the submitted URL or starts a crawl."
+        "answer": "No. The SEO Agent can run without a payment step. A verified GenGrowth account is required before the server reads the submitted URL or starts a crawl."
       },
       "q2": {
         "question": "When will full-product pricing be available?",
@@ -2540,24 +2540,24 @@
       },
       "q5": {
         "question": "Where should I start?",
-        "answer": "Choose SEO Agent for metadata, heading, and structured-data questions, or Tech Agent for crawl, indexability, and internal-link questions. Each Agent accepts its own URL after account verification."
+        "answer": "One Agent covers both. Open it for metadata, heading and structured-data questions, and switch to its technical focus for crawl, indexability and internal links. To check one page against specific target queries, use the On-Page SEO Checker instead."
       }
     },
     "cta": {
       "title": "Start with a real signal, not a pricing commitment",
-      "subtitle": "Choose the Agent that matches your question, verify your account, and run the bounded audit without connecting Search Console or choosing a paid plan.",
+      "subtitle": "Verify your account and run the bounded audit without connecting Search Console or proving site ownership.",
       "button": "Explore Agents"
     }
   },
   "agents": {
     "hub": {
-      "metaTitle": "SEO and Technical Website Agents",
+      "metaTitle": "SEO Agent: Evidence-Bounded Review of Public HTML",
       "metaDescription": "Choose a focused GenGrowth Agent to inspect public static HTML for SEO content signals or technical crawl and indexability conditions.",
       "breadcrumb": "Agents",
       "eyebrow": "Focused website review",
-      "title": "Choose the Agent that matches the question",
-      "subtitle": "Run an evidence-bounded review of public static HTML. SEO Agent examines on-page content signals; Tech Agent examines crawl, indexability, and internal-link conditions.",
-      "boundary": "Each Agent runs independently. Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority.",
+      "title": "One SEO Agent, for the whole site and for one page",
+      "subtitle": "An evidence-bounded review of public static HTML: on-page content signals, crawl responses, indexability directives and internal links, in one place. Every condition says which source produced it and what was not measured.",
+      "boundary": "Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority. A verified account is required before any URL is read.",
       "seo": {
         "title": "SEO Agent",
         "description": "Review metadata, heading structure, and structured-data conditions observed in the collected public HTML.",
@@ -2565,10 +2565,10 @@
         "cta": "Open SEO Agent"
       },
       "tech": {
-        "title": "Tech Agent",
-        "description": "Review crawl responses, static indexability directives, and internal-link conditions observed in the bounded crawl.",
+        "title": "Technical focus",
+        "description": "The same review, opened on crawl responses, indexability directives and internal links first. Same engine, same evidence, kept at its own URL so existing links and campaigns still land somewhere real.",
         "scope": "Crawl · Indexability · Links",
-        "cta": "Open Tech Agent"
+        "cta": "Open the technical view"
       }
     },
     "seo": {

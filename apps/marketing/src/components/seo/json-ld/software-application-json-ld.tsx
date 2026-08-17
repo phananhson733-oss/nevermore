@@ -12,7 +12,7 @@ export function SoftwareApplicationJsonLd() {
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
     description:
-      "Evidence-led SEO growth system with independent SEO and Tech URL audit Agents. A verified GenGrowth account is required before an audit; current runs use public static HTML and are not persisted.",
+      "Evidence-led SEO growth system with one account-gated SEO Agent for URL audits, opened on content or technical checks. A verified GenGrowth account is required before an audit; current runs use public static HTML and are not persisted.",
     url: "https://gengrowth.ai",
     featureList: [
       "Account-gated SEO Agent for metadata, headings, and structured data",

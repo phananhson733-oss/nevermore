@@ -323,11 +323,11 @@
     "hero": {
       "eyebrow": "SEO 与技术网站 Agents",
       "title": "输入 URL，<hl>查看证据与下一步。</hl>",
-      "subtitle": "选择独立的 SEO 或 Tech Agent，对公开静态 HTML 进行有边界的审查，并查看已观察状态、证据和可调整的解决方案。",
+      "subtitle": "用 SEO Agent 对公开静态 HTML 做有边界的审查，并查看已观察状态、证据和可调整的解决方案。",
       "urlLabel": "网站域名或 URL",
       "urlPlaceholder": "example.com 或 https://example.com",
       "primaryCta": "运行 SEO Agent",
-      "secondaryCta": "运行 Tech Agent",
+      "secondaryCta": "打开技术视图",
       "socialProof": "需要已验证账号 · 仅身份权限 · 不读取 Gmail、Search Console，也不保存为项目运行"
     },
     "freeAudit": {
@@ -366,12 +366,12 @@
       "step4Desc": "带负责人、状态与依赖关系的 30/60/90 计划。"
     },
     "capabilities": {
-      "eyebrow": "两个独立的 Agents",
+      "eyebrow": "一个 Agent，两个焦点",
       "title": "选择与你的问题匹配的审查",
       "subtitle": "每个 Agent 都有独立的 URL 输入、运行、结果、机会选择与解决方案视图；共享抓取基础设施不会合并两者状态。",
       "seoTitle": "SEO Agent",
       "seoDesc": "审查已采集公开 HTML 中的元数据、标题结构与结构化数据状态。",
-      "techTitle": "Tech Agent",
+      "techTitle": "技术焦点",
       "techDesc": "在有边界的抓取中审查响应、静态可索引指令与内链状态。",
       "accountRequired": "需要已验证账号",
       "liveCrawl": "有边界的抓取证据",
@@ -380,7 +380,7 @@
       "linksTitle": "内链审计",
       "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
       "cardCta": "打开 Agent",
-      "viewAll": "查看两个 Agents"
+      "viewAll": "打开 SEO Agent"
     },
     "socialProof": {
       "title": "SEO 建议应当展示它的推导过程",
@@ -408,7 +408,7 @@
     },
     "bottomCta": {
       "title": "从眼前的网站问题开始",
-      "subtitle": "用 SEO Agent 查看页面信号，或用 Tech Agent 查看抓取、可索引性与链接证据；每次运行都会明确说明哪些内容尚未验证。",
+      "subtitle": "用 SEO Agent 查看页面信号，或切到它的技术焦点查看抓取、可索引性与链接证据；每次运行都会明确说明哪些内容尚未验证。",
       "cta": "打开 SEO Agent"
     }
   },
@@ -786,10 +786,10 @@
   "tools": {
     "eyebrow": "从眼前的问题开始",
     "title": "为下一步 SEO 决策准备的辅助工具",
-    "subtitle": "在这里使用聚焦的 Search Console 或规划工具。URL 审计现已由各自独立、需要账号验证的 SEO 与 Tech Agents 运行。",
+    "subtitle": "在这里使用聚焦的 Search Console 或规划工具。URL 审计由需要账号验证的 SEO Agent 运行；针对目标关键词检查单个页面，用 On-Page SEO 检查器。",
     "diagnoseEyebrow": "我有一个需要优化的网站",
     "diagnoseTitle": "读取搜索表现证据",
-    "diagnoseBody": "当问题依赖网站的私有查询与流量历史时，请连接 Search Console；如果要审计公开 HTML URL，请改用 SEO Agent 或 Tech Agent。",
+    "diagnoseBody": "当问题依赖网站的私有查询与流量历史时，请连接 Search Console；要审计公开 HTML URL 请用 SEO Agent；要检查某一页有没有覆盖你想被搜到的词，请用 On-Page SEO 检查器。",
     "planEyebrow": "我需要规划和衡量",
     "planTitle": "让下一次实验更容易判断",
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
@@ -2431,14 +2431,14 @@
     "hero": {
       "eyebrow": "先验证账号，无需付费即可审计",
       "title": "无需先选择付费方案，即可运行第一次审计。",
-      "subtitle": "SEO Agent 与 Tech Agent 会在抓取任何 URL 前要求验证 GenGrowth 账号；无需付费、连接 Search Console 或验证站点所有权，当前审计也不会保存运行记录。"
+      "subtitle": "SEO Agent 会在抓取任何 URL 前要求验证 GenGrowth 账号；无需付费、连接 Search Console 或验证站点所有权，当前审计也不会保存运行记录。"
     },
     "freeTools": {
       "eyebrow": "现已可用",
-      "title": "SEO 与 Tech URL 审计 Agents",
-      "body": "选择一个独立 Agent 并输入公开 URL，然后在抓取开始前登录或注册。注册用于访问控制，不会创建可保存的项目历史。",
+      "title": "URL 审计，在 SEO Agent 上",
+      "body": "输入公开 URL，然后在抓取开始前登录或注册。注册用于访问控制，不会创建可保存的项目历史。",
       "item1": "SEO Agent 基于有边界的抓取，检查 Metadata、标题结构与结构化数据证据。",
-      "item2": "Tech Agent 检查抓取响应、索引指令与内链证据。",
+      "item2": "它的技术焦点检查抓取响应、索引指令与内链证据。",
       "item3": "无需付费、连接 Search Console 或验证站点所有权；每次运行均不持久化。",
       "cta": "探索 Agents"
     },
@@ -2524,7 +2524,7 @@
       "title": "常见问题",
       "q1": {
         "question": "URL 审计 Agents 需要付费吗？",
-        "answer": "不需要。SEO Agent 与 Tech Agent 无需付费即可运行，但服务端在读取提交的 URL 或开始抓取之前，必须先验证 GenGrowth 账号。"
+        "answer": "不需要。SEO Agent 无需付费即可运行，但服务端在读取提交的 URL 或开始抓取之前，必须先验证 GenGrowth 账号。"
       },
       "q2": {
         "question": "完整产品的定价何时可用？",
@@ -2540,24 +2540,24 @@
       },
       "q5": {
         "question": "我应该从哪里开始？",
-        "answer": "如果关注 Metadata、标题结构与结构化数据，请选择 SEO Agent；如果关注抓取、索引性与内链，请选择 Tech Agent。两个 Agent 都会在账号验证后独立接收 URL。"
+        "answer": "一个 Agent 都覆盖。关注 Metadata、标题结构与结构化数据就直接打开它；关注抓取、索引性与内链就切到它的技术焦点。若要针对特定目标关键词检查某一个页面，请改用 On-Page SEO 检查器。"
       }
     },
     "cta": {
       "title": "先得到一个真实信号，而不是先作出付费承诺",
-      "subtitle": "选择与你的问题匹配的 Agent，验证账号后即可运行有边界的审计，无需连接 Search Console 或选择付费方案。",
+      "subtitle": "验证账号后即可运行有边界的审计，无需连接 Search Console 或证明站点所有权。",
       "button": "探索 Agents"
     }
   },
   "agents": {
     "hub": {
-      "metaTitle": "SEO 与技术网站 Agents 智能体",
+      "metaTitle": "SEO Agent：对公开 HTML 的有证据边界检查",
       "metaDescription": "选择一个聚焦的 GenGrowth Agent，基于公开静态 HTML 检查 SEO 内容信号或技术抓取与索引情况。",
       "breadcrumb": "Agents 智能体",
       "eyebrow": "聚焦式网站检查",
-      "title": "选择与你的问题相匹配的 Agent",
-      "subtitle": "对公开静态 HTML 进行有证据边界的检查。SEO Agent 检查页面内容信号；Tech Agent 检查抓取、索引指令和内链情况。",
-      "boundary": "两个 Agent 各自独立运行。结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。",
+      "title": "一个 SEO Agent，既看整站也看单页",
+      "subtitle": "对公开静态 HTML 的有证据边界检查：页面内容信号、抓取响应、索引指令与内链，都在同一处。每一条状态都会说明它由哪个来源得出、以及哪些没有被测量。",
+      "boundary": "结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。读取任何 URL 之前都需要已验证账号。",
       "seo": {
         "title": "SEO Agent",
         "description": "检查本次采集公开 HTML 中观测到的 Metadata、标题结构和结构化数据情况。",
@@ -2565,10 +2565,10 @@
         "cta": "打开 SEO Agent"
       },
       "tech": {
-        "title": "Tech Agent",
-        "description": "检查有边界抓取中观测到的响应、静态索引指令和内链情况。",
+        "title": "技术焦点",
+        "description": "同一套检查，只是先展开抓取响应、索引指令与内链。同一个引擎、同一批证据，保留自己的 URL，好让既有链接和投放仍然落在一个真实页面上。",
         "scope": "抓取 · 索引性 · 内链",
-        "cta": "打开 Tech Agent"
+        "cta": "打开技术视图"
       }
     },
     "seo": {
