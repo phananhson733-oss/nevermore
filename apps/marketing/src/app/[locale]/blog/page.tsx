@@ -336,8 +336,8 @@ export default async function BlogPage({
             </h2>
             <p className="mt-3 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {locale === "en"
-                ? "The SEO and Tech Agents inspect public HTML after you sign in to a verified GenGrowth account. No Search Console connection or site-ownership verification is required, and the marketing run is not saved to an app project."
-                : "登录已验证的 GenGrowth 账号后，即可使用 SEO 与 Tech Agent 检查公开 HTML；无需连接 Search Console 或验证站点所有权，本次营销站运行也不会保存到 App 项目。"}
+                ? "The SEO Agent inspects public HTML after you sign in to a verified GenGrowth account. No Search Console connection or site-ownership verification is required, and the marketing run is not saved to an app project."
+                : "登录已验证的 GenGrowth 账号后，即可用 SEO Agent 检查公开 HTML；无需连接 Search Console 或验证站点所有权，本次营销站运行也不会保存到 App 项目。"}
             </p>
           </div>
           <Link

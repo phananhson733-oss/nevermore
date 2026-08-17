@@ -6,7 +6,9 @@ import {
   ON_PAGE_DRAFT_KEY,
   ON_PAGE_DRAFT_TTL_MS,
   ON_PAGE_HISTORY_KEY,
+  ON_PAGE_HISTORY_MAX_CHARS,
   ON_PAGE_HISTORY_MAX_ENTRIES,
+  ON_PAGE_HISTORY_MAX_ENTRY_CHARS,
   newOnPageHistoryId,
   readOnPageDraft,
   readOnPageHistory,
@@ -90,6 +92,51 @@ function historyEntry(
  * and both of these rules exist because a reader has no other way to tell a
  * complete crawl from one that stopped early.
  */
+/**
+ * Three limits guard this list, and only the entry count had a test. The other
+ * two are what stand between a convenience list and a localStorage quota error
+ * on an unrelated page later.
+ */
+describe("the history size limits", () => {
+  it("refuses a single entry larger than its own cap", () => {
+    const storage = new MemoryStorage();
+    const oversized = historyEntry({
+      url: `https://example.com/${"p".repeat(ON_PAGE_HISTORY_MAX_ENTRY_CHARS)}`,
+    });
+
+    expect(JSON.stringify(oversized).length).toBeGreaterThan(
+      ON_PAGE_HISTORY_MAX_ENTRY_CHARS,
+    );
+    expect(appendOnPageHistory(storage, oversized)).toEqual([]);
+    expect(readOnPageHistory(storage)).toEqual([]);
+  });
+
+  it("drops the oldest entries to stay inside the serialized budget", () => {
+    const storage = new MemoryStorage();
+    // Each entry is well under the per-entry cap; together they are not.
+    const padding = "q".repeat(5_000);
+    for (let index = 1; index <= 28; index += 1) {
+      appendOnPageHistory(
+        storage,
+        historyEntry({
+          id: uuid(index),
+          createdAt: index,
+          url: `https://example.com/${padding}/${index}`,
+        }),
+      );
+    }
+
+    const stored = readOnPageHistory(storage);
+    const serialized = storage.getItem(ON_PAGE_HISTORY_KEY) ?? "";
+    expect(serialized.length).toBeLessThanOrEqual(ON_PAGE_HISTORY_MAX_CHARS);
+    // Under the entry cap, so it is the byte budget that trimmed it.
+    expect(stored.length).toBeLessThan(28);
+    expect(stored.length).toBeGreaterThan(0);
+    // Oldest first out, so the most recent check is always the one kept.
+    expect(stored.at(-1)?.id).toBe(uuid(28));
+  });
+});
+
 describe("stored coverage keeps the crawl's own answer", () => {
   it("accepts counts the response did not carry as null", () => {
     const storage = new MemoryStorage();

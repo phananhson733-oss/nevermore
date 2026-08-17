@@ -1,5 +1,5 @@
 // @input  — next-intl, framer-motion
-// @output — CapabilitiesPreview 组件（SEO Agent / Tech Agent 双入口）
+// @output — CapabilitiesPreview 组件（一个 SEO Agent，两个焦点）
 // @pos    — 首页区块 2，深色背景 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";

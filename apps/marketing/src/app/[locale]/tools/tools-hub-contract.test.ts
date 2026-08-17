@@ -23,8 +23,10 @@ describe("Tools hub Agent boundary", () => {
       "seo-audit",
       "low-competition-keywords",
     ]);
+    // Both entries open the same Agent; the technical one names a focus rather
+    // than a second product.
     expect(source).toContain(
-      'cta: { en: "Open Tech Agent", zh: "打开 Tech Agent" }',
+      'cta: { en: "Open the technical focus", zh: "打开技术焦点" }',
     );
     expect(source).toContain(
       'cta: { en: "Open SEO Agent", zh: "打开 SEO Agent" }',

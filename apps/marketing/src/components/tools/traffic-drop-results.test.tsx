@@ -323,13 +323,17 @@ describe("TrafficDropResults exit card (5b)", () => {
     expect(checksAt).toBeGreaterThan(cardAt);
   });
 
-  it("states the account gate and carries both Agent links", () => {
+  it("states the account gate and carries both routes into the one Agent", () => {
     const markup = render(makeResult({}));
     expect(markup).toContain(
       "Account verification is required before the crawl.",
     );
     expect(markup).toContain("SEO Agent");
-    expect(markup).toContain("Tech Agent");
+    // The technical route is still offered, as a focus rather than as a second
+    // product with a name of its own.
+    expect(markup).toContain("Technical focus");
+    expect(markup).not.toContain("Tech Agent");
+    expect(markup).toContain("/agents/tech");
   });
 
   it("renders the Chinese card", () => {

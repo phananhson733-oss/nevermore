@@ -27,10 +27,10 @@ const DIAGNOSIS_TOOLS = [
     slug: "internal-link-audit",
     title: { en: "Internal Link Audit", zh: "内链审计" },
     description: {
-      en: "Review crawl, indexability, and internal-link evidence in the Tech Agent. A verified account is required to run it.",
-      zh: "在 Tech Agent 中检查抓取、可索引性与内链证据；运行时需要已验证账号。",
+      en: "Review crawl, indexability, and internal-link evidence in the SEO Agent, opened on its technical focus. A verified account is required to run it.",
+      zh: "在 SEO Agent 的技术焦点下检查抓取、可索引性与内链证据；运行时需要已验证账号。",
     },
-    cta: { en: "Open Tech Agent", zh: "打开 Tech Agent" },
+    cta: { en: "Open the technical focus", zh: "打开技术焦点" },
     category: "diagnosis",
   },
   {

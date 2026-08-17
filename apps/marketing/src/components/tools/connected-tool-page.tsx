@@ -265,7 +265,7 @@ export function ConnectedToolPage({
                   href={localePath(locale, "/agents/tech")}
                   className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
                 >
-                  Tech Agent
+                  Technical focus
                   <span aria-hidden="true">&rarr;</span>
                 </Link>
               </div>

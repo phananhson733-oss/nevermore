@@ -193,7 +193,7 @@ const EN: QuickWinsArticle = {
         "Reviews public HTML without Search Console; account verification is required before the crawl.",
     },
     {
-      label: "Tech Agent",
+      label: "Technical focus",
       href: "/agents/tech",
       description:
         "Reviews crawl, indexability, and internal-link evidence without saving the run.",
@@ -353,7 +353,7 @@ const ZH: QuickWinsArticle = {
         "无需连接 Search Console 即可检查公开 HTML；抓取前必须验证账号。",
     },
     {
-      label: "Tech Agent",
+      label: "Technical focus",
       href: "/agents/tech",
       description: "检查抓取、索引性与内链证据，本次运行不会保存。",
     },

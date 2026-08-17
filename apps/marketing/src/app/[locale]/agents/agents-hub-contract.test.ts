@@ -3,7 +3,7 @@
 // @pos    -- the structural guard behind "one Agent, one technical focus"
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -13,19 +13,32 @@ import zh from "../../../i18n/messages/zh.json" with { type: "json" };
 const HUB_PAGE = fileURLToPath(new URL("./page.tsx", import.meta.url));
 
 /**
- * Copy that ships without going through the catalogue.
+ * Every source file in the app, not a list of the ones we thought of.
  *
- * Page metadata and JSON-LD are what a search result and an unfurl actually
- * show, and a catalogue sweep cannot see them: the peer-choice wording survived
- * in both after every message had been rewritten, including in one half of a
- * locale ternary where a check for English phrases could never have found it.
+ * The first version of this guard named four files. It passed while the retired
+ * product name was still shipping from the Tools directory, the blog index, two
+ * blog CTAs, the traffic-drop results, the quick-wins article and a homepage
+ * component — six of them user-visible, and all of them found by grepping the
+ * production build rather than by this test. A guard that enumerates its own
+ * scope can only ever be as complete as the sweep that wrote it.
  */
-const UNCATALOGUED_COPY = [
-  "../page.tsx",
-  "../pricing/page.tsx",
-  "../../../components/seo/json-ld/software-application-json-ld.tsx",
-  "../../../config/navigation.ts",
-];
+const SOURCE_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+function sourceFiles(directory: string): readonly string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) {
+      found.push(...sourceFiles(path));
+      continue;
+    }
+    if (!/\.tsx?$/.test(entry.name)) continue;
+    // Tests may name the retired product to assert its absence.
+    if (/\.test\.tsx?$/.test(entry.name)) continue;
+    found.push(path);
+  }
+  return found;
+}
 
 /**
  * The product has no "Tech Agent" in it.
@@ -70,20 +83,47 @@ describe("the product is one Agent with a technical focus", () => {
     expect(offenders).toEqual([]);
   });
 
-  it.each(UNCATALOGUED_COPY)("%s does the same", (relative) => {
-    const source = readFileSync(
-      fileURLToPath(new URL(relative, import.meta.url)),
-      "utf8",
+  /**
+   * The legal pages, which are markdown rather than source.
+   *
+   * A privacy policy that describes what "the SEO Agent and the Tech Agent" do
+   * with a visitor's data is a statement about a product that does not exist.
+   *
+   * `content/blog/` and `content/skills/` are deliberately NOT covered. Those are
+   * dated, published documents; rewriting what they said on the day they were
+   * published is a content decision for the Owner, not a mechanical sweep, and
+   * the technical route they link to is still reachable. Twelve blog posts and
+   * four Skill manuals still name the retired product, across 13 rendered pages
+   * — a recorded exemption, not an oversight.
+   */
+  it("legal pages describe one Agent", () => {
+    const legalRoot = fileURLToPath(
+      new URL("../../../../content/legal", import.meta.url),
     );
-    const copyOnly = [...source.matchAll(/"([^"\\]{12,})"/g)].map(
-      (match) => match[1],
-    );
+    const offenders: string[] = [];
+    for (const locale of readdirSync(legalRoot)) {
+      const directory = `${legalRoot}/${locale}`;
+      for (const entry of readdirSync(directory)) {
+        if (!entry.endsWith(".md")) continue;
+        const source = readFileSync(`${directory}/${entry}`, "utf8");
+        if (source.includes(RETIRED_PRODUCT_NAME)) {
+          offenders.push(`${locale}/${entry}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 
-    // Only string literals long enough to be prose: a `slug: "tech"` or an
-    // icon name is routing, not a claim about the product.
-    const offenders = copyOnly.filter((text) =>
-      text.includes(RETIRED_PRODUCT_NAME),
-    );
+  it("no source file anywhere in the app names the retired product", () => {
+    const offenders: string[] = [];
+    for (const path of sourceFiles(SOURCE_ROOT.replace(/\/$/, ""))) {
+      const source = readFileSync(path, "utf8");
+      if (!source.includes(RETIRED_PRODUCT_NAME)) continue;
+      offenders.push(path.slice(SOURCE_ROOT.length));
+    }
+
+    // Comments count. They are not user-visible, but a header comment that still
+    // describes two products is how the next reader learns the wrong model.
     expect(offenders).toEqual([]);
   });
 
@@ -95,23 +135,43 @@ describe("the product is one Agent with a technical focus", () => {
    * verification pass that grepped English phrases against `/zh/...` reported
    * it clean.
    */
-  it.each(UNCATALOGUED_COPY)("%s carries no two-audit claim in either locale", (
-    relative,
-  ) => {
-    const source = readFileSync(
-      fileURLToPath(new URL(relative, import.meta.url)),
-      "utf8",
-    );
+  it("carries no two-audit claim anywhere, in either locale", () => {
+    const offenders: string[] = [];
+    for (const path of sourceFiles(SOURCE_ROOT.replace(/\/$/, ""))) {
+      const source = readFileSync(path, "utf8");
+      for (const phrase of [
+        "SEO and Tech",
+        "SEO 与 Tech",
+        "independent SEO or Tech",
+        "独立的 SEO 或 Tech",
+      ]) {
+        if (source.includes(phrase)) {
+          offenders.push(`${path.slice(SOURCE_ROOT.length)}: ${phrase}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 
-    for (const phrase of [
-      "SEO and Tech",
-      "SEO 与 Tech",
-      "independent SEO or Tech",
-      "独立的 SEO 或 Tech",
-    ]) {
-      expect(source.includes(phrase), `${relative} still says "${phrase}"`).toBe(
-        false,
-      );
+  /**
+   * The hub's own search snippet.
+   *
+   * It kept telling searchers to choose between two Agents after every message
+   * on the page had been rewritten — metadata is copy, and it is the copy a
+   * reader sees before they see the page.
+   */
+  it.each([
+    ["en", en],
+    ["zh", zh],
+  ])("%s hub metadata does not offer a choice of Agent", (_locale, catalogue) => {
+    const description = (
+      catalogue as unknown as {
+        agents: { hub: { metaDescription: string } };
+      }
+    ).agents.hub.metaDescription;
+
+    for (const framing of ["Choose a", "choose a", "选择一个", "任选"]) {
+      expect(description.includes(framing), description).toBe(false);
     }
   });
 

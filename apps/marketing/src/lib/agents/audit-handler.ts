@@ -1,6 +1,6 @@
 // @input  -- authenticated Agent POST request and existing bounded SEO audit handler
 // @output -- buffered, category-projected evidence or stable auth/upstream errors
-// @pos    -- shared server-only execution boundary for SEO and Tech Agent APIs
+// @pos    -- shared server-only execution boundary for both of the Agent's focuses
 
 import type {
   SeoAuditCoverage,

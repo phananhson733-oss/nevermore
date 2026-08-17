@@ -10,7 +10,7 @@ status: published
 
 ## 严格必要
 
-这些 cookie 使站点得以运转。没有它们，登录、SEO 与 Tech Agent 以及 Search Console
+这些 cookie 使站点得以运转。没有它们，登录、SEO Agent 以及 Search Console
 连接都无法工作。
 
 | Cookie | 用途 | 有效期 |

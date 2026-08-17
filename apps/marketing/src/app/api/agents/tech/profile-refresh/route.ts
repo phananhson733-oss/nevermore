@@ -1,4 +1,4 @@
-// @input  -- authenticated Tech Agent profile-diagnosis POST
+// @input  -- authenticated technical-focus profile-diagnosis POST
 // @output -- cached or live public-page Product/ICP refresh result
 // @pos    -- thin Next.js boundary over the shared profile-refresh handler
 

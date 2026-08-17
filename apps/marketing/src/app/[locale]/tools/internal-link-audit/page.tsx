@@ -1,5 +1,5 @@
 // @input  -- locale route param from the retired public Internal Link Audit URL
-// @output -- permanent, locale-preserving redirect to the Tech Agent
+// @output -- permanent, locale-preserving redirect to the Agent's technical focus
 // @pos    -- compatibility shim; authenticated execution now lives at /agents/tech
 
 import { permanentRedirect } from "next/navigation";

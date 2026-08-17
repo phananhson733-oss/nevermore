@@ -78,12 +78,12 @@ const CHECK_LINKS: Readonly<Record<string, InternalLinkDefinition>> = {
     path: "/agents/tech",
     copy: {
       en: {
-        label: "Run Tech Agent on this site",
+        label: "Run the technical focus on this site",
         detail:
           "It reviews internal-link evidence from public HTML without a Search Console connection. A verified account is required before the crawl, and the run is not saved.",
       },
       zh: {
-        label: "对这个站点运行 Tech Agent",
+        label: "对这个站点运行技术焦点检查",
         detail:
           "它无需连接 Search Console，基于公开 HTML 检查内链证据；抓取前必须验证账号，本次运行也不会保存。",
       },

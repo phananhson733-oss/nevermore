@@ -2114,7 +2114,7 @@
           },
           {
             "q": "Why does the first check take minutes?",
-            "a": "Your page is read out of a site-wide collection rather than fetched on its own. Once a site has been collected, a second check on it is fast."
+            "a": "Your page is read out of a site-wide collection rather than fetched on its own. A second check on the same site within the hour reuses that collection and returns in seconds; after that the collection has expired and the crawl runs again."
           },
           {
             "q": "Will a high count rank the page?",
@@ -2563,7 +2563,7 @@
   "agents": {
     "hub": {
       "metaTitle": "SEO Agent: Evidence-Bounded Review of Public HTML",
-      "metaDescription": "Choose a focused GenGrowth Agent to inspect public static HTML for SEO content signals or technical crawl and indexability conditions.",
+      "metaDescription": "One GenGrowth Agent over public static HTML: on-page content signals, crawl responses, indexability directives and internal links in one review, each condition naming its source and what was not measured.",
       "breadcrumb": "Agents",
       "eyebrow": "Focused website review",
       "title": "One SEO Agent, for the whole site and for one page",

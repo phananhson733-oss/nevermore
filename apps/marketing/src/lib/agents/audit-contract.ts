@@ -1,6 +1,6 @@
 // @input  -- existing seo_audit.sitewide.v5 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
-// @pos    -- shared wire contract for the SEO and Tech Agent API and UI
+// @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
 import type {
   SeoAuditCategory,
