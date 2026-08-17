@@ -15,7 +15,11 @@ import {
 } from "@sf/public-tools/seo-audit/contract";
 import { extractClientIp } from "../rate-limit.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
-import { readSeoAuditInput } from "./seo-audit-input.ts";
+import {
+  readSeoAuditInput,
+  SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  type SeoAuditRequestInput,
+} from "./seo-audit-input.ts";
 import {
   openCrawlGate,
   type CrawlGateResult,
@@ -29,8 +33,6 @@ import {
 } from "./crawl-cache.ts";
 
 const TOOL_NAME = "seo_audit";
-
-const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
 /** The line-delimited progress transport, requested by the browser client only. */
 const NDJSON_MEDIA_TYPE = "application/x-ndjson";
@@ -92,6 +94,17 @@ export interface SeoAuditHandlerDependencies {
 export interface SeoAuditHandlerOptions {
   /** Keeps internal callers on the buffered JSON contract regardless of Accept. */
   readonly forceBufferedJson?: boolean;
+  /**
+   * An already-read, already-validated body.
+   *
+   * A request body can be read once. The Agent boundary has to read it to build
+   * the keyword region from this visitor's queries, and it must hand the
+   * request itself down rather than a copy, because a reconstructed Request
+   * lost Next's own state and crashed in production. So it passes what it
+   * parsed instead, which also means one parse and one validation rather than
+   * two that could disagree.
+   */
+  readonly input?: SeoAuditRequestInput;
 }
 
 const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
@@ -180,7 +193,11 @@ export async function handleSeoAuditRequest(
   dependencies: SeoAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
   options: SeoAuditHandlerOptions = {},
 ): Promise<Response> {
-  const body = await readPublicToolJson(request, REQUEST_BODY_LIMIT_BYTES);
+  const preParsed = options.input;
+  const body =
+    preParsed === undefined
+      ? await readPublicToolJson(request, SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES)
+      : ({ ok: true, value: undefined } as const);
   if (!body.ok) {
     const status =
       body.code === "unsupported_media_type"
@@ -191,7 +208,10 @@ export async function handleSeoAuditRequest(
     return json(createPublicToolError(body.code), status);
   }
 
-  const input = readSeoAuditInput(body.value);
+  const input =
+    preParsed === undefined
+      ? readSeoAuditInput(body.value)
+      : ({ ok: true, value: preParsed } as const);
   if (!input.ok) {
     return json(createPublicToolError("invalid_request"), 400);
   }

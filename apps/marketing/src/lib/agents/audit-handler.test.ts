@@ -231,13 +231,21 @@ describe("handleAgentAuditRequest", () => {
           order.push("auth");
           return "authenticated";
         },
-        delegate: async (forwarded) => {
+        delegate: async (forwarded, input) => {
           order.push("delegate");
+          // Identity, not a copy: a reconstructed Request lost Next's own
+          // state and crashed in production.
           expect(forwarded).toBe(incoming);
           expect(forwarded.headers.get("accept")).toBe(
             "application/x-ndjson",
           );
-          expect(await forwarded.json()).toEqual({ url: "acme.test" });
+          // The body was read once, up there, and handed over rather than
+          // left for this layer to read a second time.
+          expect(input).toEqual({
+            url: "acme.test",
+            targetQueries: null,
+            pageRole: null,
+          });
           return success();
         },
       },
@@ -777,6 +785,53 @@ describe("handleAgentAuditRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "invalid_request" },
     });
+    expect(delegate).not.toHaveBeenCalled();
+  });
+  /**
+   * The keyword layer made this boundary read the body itself. The bounded
+   * reader it has to use streams with a byte cap and cancels past it; a plain
+   * `json()` buffers whatever arrives, which turns a 4 KB limit into none.
+   */
+  it("rejects an oversized body without buffering it or delegating", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      new Request("https://gengrowth.ai/api/agents/seo/audit", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-real-ip": "203.0.113.9",
+        },
+        body: JSON.stringify({ url: "acme.test", targetQueries: ["x".repeat(9_000)] }),
+      }),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "payload_too_large" },
+    });
+    expect(delegate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the wrong-media-type answer a 415 rather than a generic 400", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      new Request("https://gengrowth.ai/api/agents/seo/audit", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "text/plain",
+          "x-real-ip": "203.0.113.9",
+        },
+        body: JSON.stringify({ url: "acme.test" }),
+      }),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(415);
     expect(delegate).not.toHaveBeenCalled();
   });
 });

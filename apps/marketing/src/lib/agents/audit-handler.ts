@@ -14,7 +14,12 @@ import {
 import type { QualifyingTool } from "../credits/credits-config.ts";
 import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
-import { readSeoAuditInput } from "../tools/seo-audit-input.ts";
+import {
+  readSeoAuditInput,
+  SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  type SeoAuditRequestInput,
+} from "../tools/seo-audit-input.ts";
+import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
   isCanonicalIsoTimestamp,
@@ -27,7 +32,15 @@ export interface AgentAuditHandlerDependencies {
   /** Proves a real Supabase user before any part of the audit request is read. */
   readonly authenticate: () => Promise<ServerAuthenticationStatus>;
   /** Runs the existing bounded crawler, gate, and completed-result cache. */
-  readonly delegate: (request: Request) => Promise<Response>;
+  /**
+   * Runs the crawl. Receives the request object itself, plus the body this
+   * boundary already read and validated, so the body is never parsed twice and
+   * the request is never rebuilt.
+   */
+  readonly delegate: (
+    request: Request,
+    input: SeoAuditRequestInput,
+  ) => Promise<Response>;
   /**
    * Records that an audit completed, so a referred visitor's first qualifying
    * run can pay its reward.
@@ -49,8 +62,11 @@ export interface AgentAuditHandlerDependencies {
  */
 export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
-  delegate: (request) =>
-    handleSeoAuditRequest(request, undefined, { forceBufferedJson: true }),
+  delegate: (request, input) =>
+    handleSeoAuditRequest(request, undefined, {
+      forceBufferedJson: true,
+      input,
+    }),
   reportFirstRun: reportFirstToolRun,
 };
 
@@ -305,17 +321,20 @@ export async function handleAgentAuditRequest(
   // delegate to run the crawl. A body can only be read once, so this reads a
   // clone and hands the delegate the request it was given — rebuilding it
   // would drop everything a NextRequest carries beyond method, headers and
-  // bytes. Both sides validate with the same reader, so they cannot disagree
-  // about what the visitor asked for.
-  let input: ReturnType<typeof readSeoAuditInput>;
-  try {
-    input = readSeoAuditInput(await request.clone().json());
-  } catch {
-    return errorResponse("invalid_request", 400);
+  // bytes. Both sides go through the same bounded reader and the same
+  // validator, so they cannot disagree about what the visitor asked for, and
+  // neither can be made to hold an unbounded body.
+  const body = await readPublicToolJson(
+    request,
+    SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  );
+  if (!body.ok) {
+    return errorResponse(body.code, UPSTREAM_ERROR_STATUS[body.code]);
   }
+  const input = readSeoAuditInput(body.value);
   if (!input.ok) return errorResponse("invalid_request", 400);
 
-  const upstream = await dependencies.delegate(request);
+  const upstream = await dependencies.delegate(request, input.value);
   if (!upstream.ok) return projectUpstreamError(upstream);
 
   if (

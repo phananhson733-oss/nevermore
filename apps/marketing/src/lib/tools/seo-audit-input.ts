@@ -10,6 +10,15 @@ import {
 } from "@sf/public-tools";
 
 /**
+ * Body budget for an SEO audit request.
+ *
+ * A URL, five short queries and a page role. Enforced by the bounded reader
+ * before anything is parsed, so a caller cannot make either layer hold an
+ * arbitrary body in memory just by sending one.
+ */
+export const SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES = 4_096;
+
+/**
  * Fields a caller may send.
  *
  * A whitelist rather than a key count: the keyword layer adds two optional
