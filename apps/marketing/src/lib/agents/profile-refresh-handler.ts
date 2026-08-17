@@ -12,6 +12,8 @@ import {
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
 import { createHash } from "node:crypto";
+import type { QualifyingTool } from "../credits/credits-config.ts";
+import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { isSameOriginPost } from "../auth/disconnect.ts";
 import {
   getServerAuthenticationStatus,
@@ -109,9 +111,24 @@ export interface AgentProfileRefreshHandlerDependencies {
   readonly synthesize: (
     input: AgentProfileRefreshSynthesisInput,
   ) => Promise<{ readonly fields: readonly AgentProfileRefreshField[] }>;
+  /**
+   * Records that a refresh completed, so a referred visitor's first qualifying
+   * run can pay its reward.
+   *
+   * Optional and never awaited. Both success paths report, including the cache
+   * hit: the visitor asked for a profile and got one, and whether someone else
+   * crawled the same host minutes earlier is not something they can see or
+   * control.
+   */
+  readonly reportFirstRun?: (tool: QualifyingTool) => void;
 }
 
-const DEFAULT_DEPENDENCIES: AgentProfileRefreshHandlerDependencies = {
+/**
+ * Exported so credits/first-run-wiring.test.ts can prove the reporter is
+ * actually attached in production; every handler test builds its own literal
+ * deps object and would stay green if it were not.
+ */
+export const DEFAULT_DEPENDENCIES: AgentProfileRefreshHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
   isSameOriginPost,
   normalizeUrl: normalizeSeoAuditUrl,
@@ -128,6 +145,7 @@ const DEFAULT_DEPENDENCIES: AgentProfileRefreshHandlerDependencies = {
     writeCrawlCache(namespace, host, payload),
   crawl: (url, options) => crawlSiteContextProfile(url, options),
   synthesize: (input) => synthesizeAgentProfileRefresh(input),
+  reportFirstRun: reportFirstToolRun,
 };
 
 function json(body: unknown, status: number): Response {
@@ -351,9 +369,11 @@ export async function handleAgentProfileRefreshRequest(
         },
         cache: { status: "hit", capturedAt },
       };
-      return isAgentProfileRefreshData(cached)
-        ? json({ data: cached }, 200)
-        : json({ error: { code: "profile_response_invalid" } }, 502);
+      if (!isAgentProfileRefreshData(cached)) {
+        return json({ error: { code: "profile_response_invalid" } }, 502);
+      }
+      dependencies.reportFirstRun?.("profile-refresh");
+      return json({ data: cached }, 200);
     }
     const crawl = await dependencies.crawl(normalized.url, {
       targetLanguage: input.languageTag.split("-")[0]?.toLowerCase() ?? "en",
@@ -418,6 +438,7 @@ export async function handleAgentProfileRefreshRequest(
     } catch {
       // Completed profile diagnosis remains usable when the optional cache is down.
     }
+    dependencies.reportFirstRun?.("profile-refresh");
     return json({ data }, 200);
   } catch (error) {
     return contextErrorResponse(error);

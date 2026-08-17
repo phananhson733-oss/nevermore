@@ -39,11 +39,13 @@
   "devDependencies": {
     "@playwright/test": "catalog:",
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/sanitize-html": "^2.16.0",
     "eslint": "catalog:",
     "eslint-config-next": "catalog:",
+    "pg": "catalog:",
     "typescript": "catalog:"
   }
 }

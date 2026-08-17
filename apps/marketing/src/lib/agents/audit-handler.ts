@@ -11,6 +11,8 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
+import type { QualifyingTool } from "../credits/credits-config.ts";
+import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
 import {
   isCanonicalIsoTimestamp,
@@ -24,12 +26,30 @@ export interface AgentAuditHandlerDependencies {
   readonly authenticate: () => Promise<ServerAuthenticationStatus>;
   /** Runs the existing bounded crawler, gate, and completed-result cache. */
   readonly delegate: (request: Request) => Promise<Response>;
+  /**
+   * Records that an audit completed, so a referred visitor's first qualifying
+   * run can pay its reward.
+   *
+   * Optional, and it must never throw: this success return is the one in the
+   * set that sits outside any try/catch, so a throw here would turn a finished
+   * audit into a 500. A cache hit still counts — the visitor ran the audit and
+   * got the evidence, and making the reward depend on whether someone else
+   * crawled the same host first would be unpredictable for them and free for
+   * an attacker either way.
+   */
+  readonly reportFirstRun?: (tool: QualifyingTool) => void;
 }
 
-const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
+/**
+ * Exported so credits/first-run-wiring.test.ts can prove the reporter is
+ * actually attached in production; every handler test builds its own literal
+ * deps object and would stay green if it were not.
+ */
+export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
   delegate: (request) =>
     handleSeoAuditRequest(request, undefined, { forceBufferedJson: true }),
+  reportFirstRun: reportFirstToolRun,
 };
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -331,6 +351,7 @@ export async function handleAgentAuditRequest(
     },
   };
 
+  dependencies.reportFirstRun?.("agent-audit");
   return Response.json(
     { data: projected },
     { status: upstream.status, headers: successHeaders(cache) },

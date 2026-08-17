@@ -4,8 +4,11 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { renderToStaticMarkup } from "react-dom/server";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it } from "vitest";
 
+import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 import {
   getConnectedToolContent,
   type ConnectedTool,
@@ -13,12 +16,29 @@ import {
 } from "./connected-tool-content.ts";
 import { ConnectedToolPage } from "./connected-tool-page.tsx";
 
+/**
+ * The page carries the free-during-testing notice, which reads its copy from
+ * the catalog. On the site that context comes from the locale shell; here it
+ * has to be supplied, or the notice would render the key path.
+ */
+function withIntl(locale: string, node: React.ReactNode): string {
+  return renderToStaticMarkup(
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "zh" ? zh : en}
+    >
+      {node}
+    </NextIntlClientProvider>,
+  );
+}
+
 function render(
   locale: string,
   tool: ConnectedTool,
   connected = false,
 ): string {
-  return renderToStaticMarkup(
+  return withIntl(
+    locale,
     <ConnectedToolPage
       locale={locale}
       content={getConnectedToolContent(locale, tool)}
@@ -70,7 +90,8 @@ describe("ConnectedToolPage hero CTA", () => {
     // Every tool in the union is GSC-backed now, so the hand-off branch has no
     // live case and would rot unseen. Rendered from a synthetic path to keep
     // the branch exercised for whichever tool arrives next.
-    const markup = renderToStaticMarkup(
+    const markup = withIntl(
+      "en",
       <ConnectedToolPage
         locale="en"
         content={{
@@ -100,3 +121,4 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(after).not.toContain("URL Agents to use next");
   });
 });
+

@@ -3377,5 +3377,47 @@
     "importCta": "Import to Your Product",
     "waitlistCta": "Join Waitlist to Import",
     "backToPlaybooks": "Back to Playbooks"
+  },
+  "credits": {
+    "badge": {
+      "label": "Credits",
+      "loading": "…",
+      "checkedIn": "Checked in today",
+      "unavailable": "Credits unavailable"
+    },
+    "account": {
+      "title": "Credits",
+      "subtitle": "Free while GenGrowth tools are in testing.",
+      "loading": "Loading your credits…",
+      "balanceLabel": "Balance",
+      "welfareNotice": "Testing period: tools cost nothing today. These credits are what you will spend once pricing starts.",
+      "dailyTitle": "Daily check-in",
+      "dailyGranted": "+{amount} added today",
+      "dailyPending": "Sign in tomorrow for +{amount} more",
+      "welfareRemaining": "{remaining} of {cap} testing credits left to earn",
+      "referralTitle": "Invite a colleague",
+      "referralBody": "You both get {amount} credits once they finish their first audit.",
+      "referralCopy": "Copy invite link",
+      "referralCopied": "Copied",
+      "referralCount": "{count} of {cap} invites rewarded",
+      "ledgerTitle": "History",
+      "ledgerEmpty": "Nothing yet.",
+      "ledgerMore": "Show more",
+      "ledgerBalance": "Balance {balance}",
+      "entry": {
+        "signup_bonus": "Welcome bonus",
+        "daily_grant": "Daily check-in",
+        "daily_expire": "Daily credits expired",
+        "referral_reward_inviter": "Invite rewarded",
+        "referral_reward_invitee": "Invited signup bonus",
+        "consume": "Tool run",
+        "refund": "Refund",
+        "purchase": "Top-up",
+        "adjustment": "Adjustment"
+      },
+      "entryFallback": "Credit change",
+      "signedOut": "Sign in to see your credits.",
+      "unavailable": "Credits are temporarily unavailable."
+    }
   }
 }

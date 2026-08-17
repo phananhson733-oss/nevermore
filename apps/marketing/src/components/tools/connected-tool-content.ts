@@ -2,6 +2,9 @@
 // @output -- truthful public copy for tools that require a connected data source
 // @pos    -- content boundary between marketing acquisition and the authenticated product
 
+// Relative with an explicit extension: the shared Vitest config maps `@/` to
+// apps/web only, so an aliased import would not resolve from the unit project.
+
 export type ConnectedTool =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"

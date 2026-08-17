@@ -3377,5 +3377,47 @@
     "importCta": "导入到你的产品",
     "waitlistCta": "加入候补以导入",
     "backToPlaybooks": "返回 Playbook 列表"
+  },
+  "credits": {
+    "badge": {
+      "label": "积分",
+      "loading": "…",
+      "checkedIn": "今天已签到",
+      "unavailable": "积分暂时看不了"
+    },
+    "account": {
+      "title": "积分",
+      "subtitle": "GenGrowth 的工具在测试期内限免。",
+      "loading": "正在读取你的积分…",
+      "balanceLabel": "余额",
+      "welfareNotice": "测试期内跑工具不扣积分。这些积分是正式计费后你要花的额度。",
+      "dailyTitle": "每日签到",
+      "dailyGranted": "今天已到账 +{amount}",
+      "dailyPending": "明天再来登录，可再领 +{amount}",
+      "welfareRemaining": "测试期还能攒 {remaining} 积分，上限 {cap}",
+      "referralTitle": "邀请同事",
+      "referralBody": "对方跑完第一次审计，你们各得 {amount} 积分。",
+      "referralCopy": "复制邀请链接",
+      "referralCopied": "已复制",
+      "referralCount": "已计奖 {count} 次邀请，上限 {cap} 次",
+      "ledgerTitle": "明细",
+      "ledgerEmpty": "还没有记录。",
+      "ledgerMore": "显示更多",
+      "ledgerBalance": "余额 {balance}",
+      "entry": {
+        "signup_bonus": "注册奖励",
+        "daily_grant": "每日签到",
+        "daily_expire": "每日积分过期",
+        "referral_reward_inviter": "邀请奖励",
+        "referral_reward_invitee": "受邀奖励",
+        "consume": "工具消耗",
+        "refund": "退回",
+        "purchase": "充值",
+        "adjustment": "人工调整"
+      },
+      "entryFallback": "积分变动",
+      "signedOut": "登录后查看你的积分。",
+      "unavailable": "积分暂时不可用。"
+    }
   }
 }

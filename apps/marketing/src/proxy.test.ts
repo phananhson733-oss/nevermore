@@ -133,6 +133,37 @@ describe("proxy primary-directory route reservation", () => {
   });
 });
 
+describe("proxy referral landing", () => {
+  /**
+   * Without the exclusion next-intl rewrites /r/{code} to /en/r/{code}, which
+   * matches no route and answers 404. The two-segment path is also invisible to
+   * the single-segment short-link fallback, so nothing else would catch it.
+   */
+  it.each(["/r/ab3kd9xz", "/r"])(
+    "hands %s to the route handler untouched",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
+
+  it("keeps /account out of the short-link fallback", () => {
+    const response = proxy(request("/account"));
+    expect(response.headers.get("x-middleware-rewrite")).toContain(
+      "/en/account",
+    );
+    expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
+  });
+
+  it("keeps the account page in locale routing", () => {
+    const response = proxy(request("/account/credits"));
+    expect(response.headers.get("x-middleware-rewrite")).toContain(
+      "/en/account/credits",
+    );
+  });
+});
+
 describe("proxy retired marketing routes", () => {
   const frozenGonePaths = LEGACY_EN_MIGRATION_ENTRIES.filter(
     (entry) => entry.disposition === "gone",

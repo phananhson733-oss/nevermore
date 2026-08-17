@@ -6,7 +6,6 @@
 
 import {
   CircleAlert,
-  DatabaseZap,
   LoaderCircle,
   Search,
 } from "lucide-react";

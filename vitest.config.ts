@@ -121,7 +121,18 @@ export default defineConfig({
             "apps/**/*.integration.test.ts",
             "e2e/**/*.integration.vitest.ts",
           ],
-          exclude: ["**/node_modules/**", "**/.next/**"],
+          exclude: [
+            "**/node_modules/**",
+            "**/.next/**",
+            // apps/marketing persists to a DIFFERENT Postgres (its own Supabase
+            // project, `public` schema) than DATABASE_URL, and this setup file
+            // applies the 53 product migrations. Marketing SQL gets its own
+            // project below rather than the wrong database. Excluded here
+            // rather than by narrowing `include` to apps/web, which would
+            // silently drop the apps/worker integration files from every
+            // project at once.
+            "apps/marketing/**",
+          ],
           environment: "node",
           testTimeout: 60_000,
           hookTimeout: 60_000,
@@ -129,6 +140,32 @@ export default defineConfig({
           // Integration files share one real Postgres and run DDL / role changes
           // (migrations, REVOKE, SET ROLE). Running files concurrently races on
           // the shared schema, so integration runs one file at a time.
+          fileParallelism: false,
+        },
+      },
+      {
+        /**
+         * Marketing SQL against a real Postgres.
+         *
+         * The marketing app owns a second migration tree
+         * (apps/marketing/supabase/migrations) that no test had ever executed:
+         * the product `integration` project points at DATABASE_URL and applies
+         * a different schema entirely. Credit grants are decided inside
+         * SECURITY DEFINER functions under row locks and unique constraints,
+         * and none of that is observable from a mocked client — a fake can
+         * only prove which arguments were passed.
+         *
+         * Needs MARKETING_TEST_DATABASE_URL on a disposable loopback database;
+         * `pnpm test:sql:marketing` is not part of `pnpm test`.
+         */
+        test: {
+          name: "marketing-sql",
+          include: ["apps/marketing/**/*.integration.test.ts"],
+          exclude: ["**/node_modules/**", "**/.next/**"],
+          environment: "node",
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+          // One disposable database, shared DDL: files must not race.
           fileParallelism: false,
         },
       },
