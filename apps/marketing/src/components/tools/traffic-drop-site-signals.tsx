@@ -97,7 +97,7 @@ export function TrafficDropSiteSignals({
       <section
         className={`rounded-card border p-[22px] md:p-[26px] ${
           path === "issue_reported"
-            ? "border-brand-error/40 bg-brand-error/[0.07] shadow-[inset_2px_0_0_#F09090]"
+            ? "border-brand-error/40 bg-brand-error/[0.07] shadow-rail-error"
             : "border-brand-border-card bg-brand-panel"
         }`}
       >

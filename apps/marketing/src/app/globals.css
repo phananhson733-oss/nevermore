@@ -1,11 +1,20 @@
 /* @input  — tailwindcss, tw-animate-css, shadcn/tailwind.css */
-/* @output — 全局 CSS 变量（Signal Console 品牌色、间距、圆角）、排版基线和品牌 utility */
+/* @output — 全局 CSS 变量（Signal Console 深/浅两套品牌色、间距、圆角）、排版基线和品牌 utility */
 /* @pos    — 全局样式层，被 app/layout.tsx 引入，影响所有页面 */
 /* 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md */
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * 主题变体。绝大多数差异应该由 token 承担——组件里写 `light:` 意味着这个差别
+ * 用颜色变量表达不出来（比如需要换一张图、翻转一个第三方品牌色块）。真需要时
+ * 用它，但每处都该说得出为什么 token 不够。
+ *
+ * shadcn 默认给的是 `.dark` 类名版本，本站的开关是 html[data-theme]，两者对不上，
+ * 留着只会让 `dark:` 静默失效。
+ */
+@custom-variant light (&:is([data-theme="light"] *));
+@custom-variant dark (&:is(:root:not([data-theme="light"]) *));
 
 @theme inline {
   --color-background: var(--background);
@@ -70,43 +79,59 @@
   /*
    * Brand colours — Signal Console v1 (Design Spec 01).
    * 深蓝黑基底而非纯黑；一条绿→青渐变承担全部品牌强调；语义色只用于状态。
+   *
+   * 这里全部只写 var(--sc-*)，不写字面色值。`@theme inline` 会把声明的**值**
+   * 内联进 utility：写 `--color-brand-bg: #0b0f14` 生成的是
+   * `.bg-brand-bg{background-color:#0b0f14}`，一个写死的 hex，后面无论用什么
+   * 选择器覆盖 `--color-brand-bg` 都不再有人读它。改成引用一层私有变量后，
+   * utility 生成的是 `background-color: var(--sc-bg)`，主题切换才有支点。
+   * 类名不变，2600 处调用点一处不用改。
+   *
+   * 实际色值见下方 `:root`（深色，默认）与 `:root[data-theme="light"]`（浅色）。
    */
-  --color-brand-bg: #0b0f14; /* 页面底 */
-  --color-brand-bg-alt: #0c1119; /* 隔段底（相邻区块交替） */
-  --color-brand-panel: #0e141c; /* 卡片底 */
-  --color-brand-panel-raised: #111823; /* 强调行 / 嵌套面板 */
-  --color-brand-panel-sunken: #0c1219; /* 指标格 / 状态条 */
+  --color-brand-bg: var(--sc-bg); /* 页面底 */
+  --color-brand-bg-alt: var(--sc-bg-alt); /* 隔段底（相邻区块交替） */
+  --color-brand-panel: var(--sc-panel); /* 卡片底 */
+  --color-brand-panel-raised: var(--sc-panel-raised); /* 强调行 / 嵌套面板 */
+  --color-brand-panel-sunken: var(--sc-panel-sunken); /* 指标格 / 状态条 */
 
-  --color-brand-accent: #3ddc97; /* 主强调 / 正向 */
-  --color-brand-accent-2: #4cc3fa; /* 次强调 / 数据源 / 渐变末端 */
-  --color-brand-accent-hover: #6be7b2;
-  --color-brand-accent-soft: rgba(61, 220, 151, 0.08);
-  --color-brand-accent-text: #3ddc97; /* on #0B0F14 ≈ 9.5:1，AA */
-  --color-brand-on-accent: #06110c; /* 渐变按钮上的墨绿黑，不用纯白 */
+  --color-brand-accent: var(--sc-accent); /* 主强调 / 正向 */
+  --color-brand-accent-2: var(--sc-accent-2); /* 次强调 / 数据源 / 渐变末端 */
+  --color-brand-accent-hover: var(--sc-accent-hover);
+  --color-brand-accent-soft: var(--sc-accent-soft);
+  --color-brand-accent-text: var(--sc-accent-text);
+  --color-brand-on-accent: var(--sc-on-accent); /* 渐变按钮上的墨绿黑，不用纯白 */
 
   /* 描边四级：表格行 → 区块分隔 → 卡片外框 → 输入/chip/可点元素 */
-  --color-brand-border-faint: #141c26;
-  --color-brand-border: #1b2430;
-  --color-brand-border-card: #1e2937;
-  --color-brand-border-strong: #24303e;
-  --color-brand-border-dashed: #2a3a4a; /* 「即将上线 / 边界说明 / 下一步」专用 */
+  --color-brand-border-faint: var(--sc-border-faint);
+  --color-brand-border: var(--sc-border);
+  --color-brand-border-card: var(--sc-border-card);
+  --color-brand-border-strong: var(--sc-border-strong);
+  /* 「即将上线 / 边界说明 / 下一步」专用 */
+  --color-brand-border-dashed: var(--sc-border-dashed);
 
-  --color-brand-success: #3ddc97;
-  --color-brand-warning: #e5c878;
-  --color-brand-error: #f09090;
-  --color-brand-info: #8ed6fb;
+  --color-brand-success: var(--sc-success);
+  --color-brand-warning: var(--sc-warning);
+  --color-brand-error: var(--sc-error);
+  --color-brand-info: var(--sc-info);
   /*
    * Chart series pair. 主序列走 accent-green、次序列走 accent-cyan，但两者在
    * 图表里必须再靠线型区分（实线 vs 虚线）——绿与青在 deuteranopia 下差异不足以
    * 单独承担辨识，颜色只是第二重编码。
    */
-  --color-brand-series-1: #3ddc97;
-  --color-brand-series-2: #4cc3fa;
+  --color-brand-series-1: var(--sc-series-1);
+  --color-brand-series-2: var(--sc-series-2);
 
-  --color-text-dark-primary: #e8edf2; /* 15.2:1 */
-  --color-text-dark-strong: #b8c2ce; /* 列表 / 次要正文 */
-  --color-text-dark-secondary: #8b96a5; /* 描述文字 · 5.9:1 */
-  --color-text-dark-faint: #5e6b7a; /* 仅限 mono 小标签 */
+  /*
+   * 名字里的 dark 是历史包袱：它诞生时全站只有深色，含义是「深色面上的文字」。
+   * 两套主题下它的真实含义是「正文文字的四个层级」，浅色主题里就是深色墨字。
+   * 不改名是因为 190 个文件里有一千多处引用，重命名的 diff 会淹没这次改动本身，
+   * 而且和其它 worktree 里在建的营销站分支必然冲突。
+   */
+  --color-text-dark-primary: var(--sc-text-primary);
+  --color-text-dark-strong: var(--sc-text-strong); /* 列表 / 次要正文 */
+  --color-text-dark-secondary: var(--sc-text-secondary); /* 描述文字 */
+  --color-text-dark-faint: var(--sc-text-faint); /* 仅限 mono 小标签 */
 
   /* Layout */
   --max-width-content: 1200px;
@@ -117,48 +142,209 @@
   --radius-row: 11px;
 
   /* Glow — 全站只有这 3 处光效，见 Design Spec 05 */
-  --shadow-cta: 0 10px 34px rgba(61, 220, 151, 0.3);
-  --shadow-cta-hover: 0 12px 44px rgba(61, 220, 151, 0.45);
-  --shadow-cta-sm: 0 6px 22px rgba(61, 220, 151, 0.28);
-  --shadow-panel: 0 24px 70px rgba(0, 0, 0, 0.4);
+  --shadow-cta: var(--sc-shadow-cta);
+  --shadow-cta-hover: var(--sc-shadow-cta-hover);
+  --shadow-cta-sm: var(--sc-shadow-cta-sm);
+  --shadow-panel: var(--sc-shadow-panel);
 
   /* Gradient — 唯一渐变 */
-  --gradient-brand: linear-gradient(90deg, #3ddc97, #4cc3fa);
+  --gradient-brand: var(--sc-gradient-brand);
 }
 
+/*
+ * ─── 深色（默认）─────────────────────────────────────────────────────────
+ *
+ * 服务端渲染出来的 HTML 上没有 data-theme，所以未选择过主题的访客拿到的就是
+ * 这一套——与设计规范 Signal Console v1「全站统一深色」一致，也意味着这次改动
+ * 不会替任何既有访客改变首屏观感。
+ */
 :root {
+  /* 让原生控件（滚动条、表单、下拉、日期选择器）跟着主题走。缺了这一行，
+     浅色主题下 Chrome 仍会画深色滚动条和深色 select 弹层。 */
+  color-scheme: dark;
+
+  --sc-bg: #0b0f14;
+  --sc-bg-alt: #0c1119;
+  --sc-panel: #0e141c;
+  --sc-panel-raised: #111823;
+  --sc-panel-sunken: #0c1219;
+
+  --sc-accent: #3ddc97;
+  --sc-accent-2: #4cc3fa;
+  --sc-accent-hover: #6be7b2;
+  --sc-accent-soft: rgba(61, 220, 151, 0.08);
+  --sc-accent-text: #3ddc97; /* on #0B0F14 ≈ 10.9:1 */
+  --sc-on-accent: #06110c;
+
+  --sc-border-faint: #141c26;
+  --sc-border: #1b2430;
+  --sc-border-card: #1e2937;
+  --sc-border-strong: #24303e;
+  --sc-border-dashed: #2a3a4a;
+
+  --sc-success: #3ddc97;
+  --sc-warning: #e5c878;
+  --sc-error: #f09090;
+  --sc-info: #8ed6fb;
+  --sc-series-1: #3ddc97;
+  --sc-series-2: #4cc3fa;
+
+  --sc-text-primary: #e8edf2; /* 16.3:1 */
+  --sc-text-strong: #b8c2ce; /* 10.7:1 */
+  --sc-text-secondary: #8b96a5; /* 6.4:1 */
+  --sc-text-faint: #5e6b7a; /* 3.5:1 — 仅 mono 微标签，读不到也不丢信息 */
+
+  --sc-shadow-cta: 0 10px 34px rgba(61, 220, 151, 0.3);
+  --sc-shadow-cta-hover: 0 12px 44px rgba(61, 220, 151, 0.45);
+  --sc-shadow-cta-sm: 0 6px 22px rgba(61, 220, 151, 0.28);
+  --sc-shadow-panel: 0 24px 70px rgba(0, 0, 0, 0.4);
+  --sc-shadow-eyebrow: 0 0 24px rgba(61, 220, 151, 0.12);
+  --sc-shadow-pulse-dot: 0 0 8px rgba(61, 220, 151, 0.9);
+
+  /* 渐变本身两套主题共用：它是品牌本体，按钮上的墨绿黑 #06110C 对两个端点
+     分别是 10.9:1 和 9.6:1，换到浅色底上一样成立，没有换掉它的理由。 */
+  --sc-gradient-brand: linear-gradient(90deg, #3ddc97, #4cc3fa);
+  /* 但渐变**文字**必须分主题：薄荷绿描在近白底上只有 1.6:1。 */
+  --sc-gradient-brand-text: linear-gradient(90deg, #3ddc97, #4cc3fa);
+
+  /* 装饰光效。深色下是发光，浅色下是淡淡的品牌色晕染，所以两边的 alpha 不同。 */
+  --sc-glow-page: rgba(61, 220, 151, 0.13);
+  --sc-glow-hero: rgba(61, 220, 151, 0.16);
+  --sc-glow-hero-2: rgba(76, 195, 250, 0.12);
+  --sc-glow-cta: rgba(61, 220, 151, 0.22);
+  --sc-glow-cta-2: rgba(76, 195, 250, 0.1);
+  --sc-wash-dashed: linear-gradient(
+    135deg,
+    rgba(61, 220, 151, 0.04),
+    rgba(76, 195, 250, 0.05)
+  );
+  --sc-wash-column: linear-gradient(180deg, rgba(61, 220, 151, 0.06), transparent);
+  --sc-grid-line: rgba(76, 195, 250, 0.05);
+  --sc-wash-hover: rgba(232, 237, 242, 0.035);
+  --sc-wash-chip: rgba(232, 237, 242, 0.05);
+  --sc-scrim: rgba(11, 15, 20, 0.8);
+  --sc-scrollbar-thumb-hover: #33465a;
+
   --radius: 0.625rem;
-  --background: #0b0f14;
-  --foreground: #e8edf2;
-  --card: #0e141c;
-  --card-foreground: #e8edf2;
-  --popover: #0e141c;
-  --popover-foreground: #e8edf2;
-  --primary: #3ddc97;
-  --primary-foreground: #06110c;
-  --secondary: #111823;
-  --secondary-foreground: #e8edf2;
-  --muted: #111823;
-  --muted-foreground: #8b96a5;
-  --accent: #3ddc97;
-  --accent-foreground: #06110c;
-  --destructive: #f09090;
-  --border: #1b2430;
-  --input: #24303e;
-  --ring: #3ddc97;
-  --chart-1: #3ddc97;
-  --chart-2: #4cc3fa;
-  --chart-3: #e5c878;
-  --chart-4: #8ed6fb;
-  --chart-5: #f09090;
-  --sidebar: #0e141c;
-  --sidebar-foreground: #e8edf2;
-  --sidebar-primary: #3ddc97;
-  --sidebar-primary-foreground: #06110c;
-  --sidebar-accent: #111823;
-  --sidebar-accent-foreground: #e8edf2;
-  --sidebar-border: #1b2430;
-  --sidebar-ring: #3ddc97;
+  --background: var(--sc-bg);
+  --foreground: var(--sc-text-primary);
+  --card: var(--sc-panel);
+  --card-foreground: var(--sc-text-primary);
+  --popover: var(--sc-panel);
+  --popover-foreground: var(--sc-text-primary);
+  --primary: var(--sc-accent);
+  --primary-foreground: var(--sc-on-accent);
+  --secondary: var(--sc-panel-raised);
+  --secondary-foreground: var(--sc-text-primary);
+  --muted: var(--sc-panel-raised);
+  --muted-foreground: var(--sc-text-secondary);
+  --accent: var(--sc-accent);
+  --accent-foreground: var(--sc-on-accent);
+  --destructive: var(--sc-error);
+  --border: var(--sc-border);
+  --input: var(--sc-border-strong);
+  --ring: var(--sc-accent);
+  --chart-1: var(--sc-series-1);
+  --chart-2: var(--sc-series-2);
+  --chart-3: var(--sc-warning);
+  --chart-4: var(--sc-info);
+  --chart-5: var(--sc-error);
+  --sidebar: var(--sc-panel);
+  --sidebar-foreground: var(--sc-text-primary);
+  --sidebar-primary: var(--sc-accent);
+  --sidebar-primary-foreground: var(--sc-on-accent);
+  --sidebar-accent: var(--sc-panel-raised);
+  --sidebar-accent-foreground: var(--sc-text-primary);
+  --sidebar-border: var(--sc-border);
+  --sidebar-ring: var(--sc-accent);
+}
+
+/*
+ * ─── 浅色 ────────────────────────────────────────────────────────────────
+ *
+ * Signal Console 的设计稿只出了深色一版（Design Spec 06 明写「浅色区块不再使用
+ * —— 全站统一深色」）。可用的浅色权威是同一份 Claude Design 项目里的方向稿
+ * 1d「Aurora — 深色 Hero + 浅色正文混合」：它和 Signal Console 属于同一条
+ * 绿→青品牌族，且已经解决了「这套绿放到近白底上要怎么活」这个问题——把强调色
+ * 压深（#059669 / #0284C7 一档），而不是把薄荷绿直接搬过来。
+ *
+ * 这里照它的思路给每个角色配对位值，但中性色保留 Signal Console 自己的冷蓝色相
+ * （而不是 Aurora 偏绿的灰），否则切一次主题品牌的冷暖会整个翻面。
+ *
+ * 两条硬约束：
+ * ① 每个角色对最差的那块底（panel-sunken）都要过 WCAG AA 4.5:1，唯一例外是
+ *    text-faint —— 它在深色主题里就是 3.5:1 的微标签档，浅色这边 3.7:1，比基线
+ *    更好，不把它拉到 AA 是因为拉上去它就和 secondary 挤在一起，四档层级塌成三档。
+ * ② 渐变和渐变按钮上的墨绿黑不换，那是品牌记忆点。
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* 卡片是最亮的一档（纯白），页面底比它暗一点点——层级方向和深色主题相反，
+     但含义一致：卡片永远朝着光的方向抬一档。 */
+  --sc-bg: #f7f9fb;
+  --sc-bg-alt: #eff3f8;
+  --sc-panel: #ffffff;
+  /* 白底上没法再往亮里抬，所以「抬起」的强调行改用一层极淡的冷色底， */
+  --sc-panel-raised: #f4f7fb;
+  /* 「凹陷」的指标格则压得更深一档，两者仍分得开。 */
+  --sc-panel-sunken: #e9eff5;
+
+  --sc-accent: #097550; /* 5.7:1 on #FFF — 它同时当文字和填充用 */
+  --sc-accent-2: #0369a1; /* 5.9:1 */
+  --sc-accent-hover: #065c3e; /* 浅色下 hover 是压深，不是提亮 */
+  --sc-accent-soft: rgba(9, 117, 80, 0.09);
+  --sc-accent-text: #097550;
+  --sc-on-accent: #06110c;
+
+  --sc-border-faint: #e9eef4;
+  --sc-border: #dce3eb;
+  --sc-border-card: #d3dce6;
+  --sc-border-strong: #c2cdda;
+  --sc-border-dashed: #aebccb;
+
+  --sc-success: #097550;
+  --sc-warning: #845800;
+  --sc-error: #b3261e;
+  --sc-info: #0e7490;
+  --sc-series-1: #097550;
+  --sc-series-2: #0369a1;
+
+  --sc-text-primary: #0d141c; /* 18.5:1 */
+  --sc-text-strong: #33404f; /* 10.6:1 */
+  --sc-text-secondary: #5a6875; /* 5.7:1 */
+  --sc-text-faint: #6e7c8b; /* 4.3:1 — 见上文 ② */
+
+  /* 近白底上不存在「发光」这回事：同样的绿色外发光只会糊成一团脏色。
+     主 CTA 的立体感改由一道带品牌色偏的投影承担，强度也收掉一半。 */
+  --sc-shadow-cta: 0 10px 28px rgba(6, 80, 55, 0.22);
+  --sc-shadow-cta-hover: 0 12px 34px rgba(6, 80, 55, 0.3);
+  --sc-shadow-cta-sm: 0 6px 18px rgba(6, 80, 55, 0.18);
+  --sc-shadow-panel: 0 24px 60px rgba(13, 30, 50, 0.12);
+  --sc-shadow-eyebrow: none;
+  --sc-shadow-pulse-dot: 0 0 6px rgba(9, 117, 80, 0.45);
+
+  --sc-gradient-brand: linear-gradient(90deg, #3ddc97, #4cc3fa);
+  --sc-gradient-brand-text: linear-gradient(90deg, #097550, #0369a1);
+
+  --sc-glow-page: rgba(61, 220, 151, 0.2);
+  --sc-glow-hero: rgba(61, 220, 151, 0.24);
+  --sc-glow-hero-2: rgba(76, 195, 250, 0.2);
+  --sc-glow-cta: rgba(61, 220, 151, 0.26);
+  --sc-glow-cta-2: rgba(76, 195, 250, 0.16);
+  --sc-wash-dashed: linear-gradient(
+    135deg,
+    rgba(9, 117, 80, 0.05),
+    rgba(3, 105, 161, 0.06)
+  );
+  --sc-wash-column: linear-gradient(180deg, rgba(9, 117, 80, 0.07), transparent);
+  --sc-grid-line: rgba(3, 105, 161, 0.07);
+  --sc-wash-hover: rgba(13, 20, 28, 0.045);
+  --sc-wash-chip: rgba(13, 20, 28, 0.055);
+  /* 遮罩两套主题都是压暗的。浅色下若照抄「页面底 80%」，等于用近白盖住近白，
+     弹层只剩阴影在撑，页面并没有被推到后面去。 */
+  --sc-scrim: rgba(13, 20, 28, 0.45);
+  --sc-scrollbar-thumb-hover: #9aa8b8;
 }
 
 @layer base {
@@ -265,7 +451,7 @@
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #33465a;
+    background: var(--sc-scrollbar-thumb-hover);
   }
 }
 
@@ -278,8 +464,13 @@
   background-image: var(--gradient-brand);
 }
 
+/*
+ * 渐变文字走的是**另一条**渐变（--sc-gradient-brand-text）。填充用的品牌渐变
+ * 两套主题共用，因为它下面永远压着 #06110C 的墨绿黑；但同一条渐变描成字形放到
+ * 近白底上只有 1.6:1，等于没有字。浅色主题里这条渐变换成压深的一档。
+ */
 @utility text-brand-gradient {
-  background-image: var(--gradient-brand);
+  background-image: var(--sc-gradient-brand-text);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -299,11 +490,107 @@
 /* GLOW_01 — hero 氛围光：48px 网格线，向下渐隐。仅首屏与页级 hero。 */
 @utility bg-signal-grid {
   background-image:
-    linear-gradient(rgba(76, 195, 250, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(76, 195, 250, 0.05) 1px, transparent 1px);
+    linear-gradient(var(--sc-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sc-grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 52%);
   mask-image: linear-gradient(180deg, #000 0%, transparent 52%);
+}
+
+/*
+ * 装饰性光晕与晕染。原来这些是散在 19 个文件里的 arbitrary value
+ * （`bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)]` 之类），
+ * 字面色值写死在 className 里，主题切换够不到它们——浅色底上会留下一团深色时代
+ * 的绿雾。收成 utility 后光效的出现次数重新变得可 grep，也只有一个地方需要为
+ * 浅色重新调 alpha。
+ *
+ * 页级 hero 的那一圈光原本有 0.10/0.12/0.13/0.14 四个几乎看不出差别的 alpha，
+ * 这里统一成一个 --sc-glow-page。首页 hero 的双色光、底部 CTA 的地平线光按
+ * Design Spec 05 仍然是独立的两处，不并进来。
+ */
+@utility bg-page-glow {
+  background-image: radial-gradient(
+    ellipse,
+    var(--sc-glow-page),
+    transparent 65%
+  );
+}
+
+@utility bg-hero-glow {
+  background-image: radial-gradient(
+    ellipse,
+    var(--sc-glow-hero),
+    transparent 65%
+  );
+}
+
+@utility bg-hero-glow-2 {
+  background-image: radial-gradient(
+    ellipse,
+    var(--sc-glow-hero-2),
+    transparent 65%
+  );
+}
+
+/* GLOW_03 的底部 CTA 地平线光：绿起青收，一屏只有一处。 */
+@utility bg-cta-glow {
+  background-image: radial-gradient(
+    ellipse,
+    var(--sc-glow-cta),
+    var(--sc-glow-cta-2) 60%,
+    transparent 75%
+  );
+}
+
+/* 「即将上线 / 边界说明 / 下一步」虚线容器的微渐变底，见 Design Spec 04。 */
+@utility bg-dashed-wash {
+  background-image: var(--sc-wash-dashed);
+}
+
+/* 分栏里被强调的那一列，自上而下的一层极淡品牌色。 */
+@utility bg-column-wash {
+  background-image: var(--sc-wash-column);
+}
+
+/* hero eyebrow 徽章的外发光。浅色主题下它是 none——近白底上没有「发光」。 */
+@utility shadow-brand-eyebrow {
+  box-shadow: var(--sc-shadow-eyebrow);
+}
+
+/* 状态呼吸点的光晕。 */
+@utility shadow-brand-pulse-dot {
+  box-shadow: var(--sc-shadow-pulse-dot);
+}
+
+/*
+ * 选中 / 强调卡片左缘的 2px 光条（Design Spec 04：accent 描边 + 8–12% 底 +
+ * inset 左侧光条，三件一套）。原来写成 shadow-[inset_2px_0_0_#3DDC97]，色值
+ * 钉死在 className 里，浅色主题下会在白卡片上留一道薄荷绿。
+ */
+@utility shadow-rail-accent {
+  box-shadow: inset 2px 0 0 var(--sc-accent);
+}
+
+@utility shadow-rail-error {
+  box-shadow: inset 2px 0 0 var(--sc-error);
+}
+
+/*
+ * 悬停/静态的「提一档」薄底。原来写作 bg-white/[0.03] 之类——白色在深色底上
+ * 是提亮，在浅色底上等于什么都没发生（白上加 3% 白）。改成朝正文色混：正文色
+ * 深色下接近白、浅色下接近黑，同一个语义在两边都成立。
+ */
+@utility bg-hover-wash {
+  background-color: var(--sc-wash-hover);
+}
+
+@utility bg-chip-wash {
+  background-color: var(--sc-wash-chip);
+}
+
+/* 弹层 / 侧边菜单背后的遮罩。 */
+@utility bg-scrim {
+  background-color: var(--sc-scrim);
 }
 
 /* hero eyebrow 的呼吸点，全站唯一一个常驻动画 */

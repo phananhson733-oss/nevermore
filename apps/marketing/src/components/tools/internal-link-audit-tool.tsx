@@ -266,19 +266,33 @@ const COPY = {
 
 type ToolCopy = (typeof COPY)[keyof typeof COPY];
 
+/**
+ * 节点外圈是「同色但更醒目一档」。深色主题里那一档是更亮，浅色主题里是更暗，
+ * 所以不能写死一个更亮的 hex——把填充色朝正文色混就够了：正文色在深色下接近
+ * 白、在浅色下接近黑，同一个配方在两套主题里自动走对方向。
+ */
+const halo = (token: string) =>
+  `color-mix(in oklab, var(${token}) 65%, var(--sc-text-primary))`;
+
 const STYLE: Record<
   InternalLinkAuditNode["kind"],
   { fill: string; ring: string }
 > = {
-  home: { fill: "#E8EDF2", ring: "#E8EDF2" },
-  page: { fill: "#3DDC97", ring: "#6BE7B2" },
-  deep: { fill: "#E5C878", ring: "#F0DCA8" },
-  unreachable: { fill: "#F09090", ring: "#F5B4B4" },
-  orphan_candidate: { fill: "#F09090", ring: "#F5B4B4" },
+  home: { fill: "var(--sc-text-primary)", ring: "var(--sc-text-primary)" },
+  page: { fill: "var(--sc-accent)", ring: "var(--sc-accent-hover)" },
+  deep: { fill: "var(--sc-warning)", ring: halo("--sc-warning") },
+  unreachable: { fill: "var(--sc-error)", ring: halo("--sc-error") },
+  orphan_candidate: { fill: "var(--sc-error)", ring: halo("--sc-error") },
   // Deliberately not the orphan red: the crawl stopped early, so this node is
   // a question, not a finding.
-  orphan_undetermined: { fill: "#5E6B7A", ring: "#8B96A5" },
-  unresolved_target: { fill: "#8B96A5", ring: "#B8C2CE" },
+  orphan_undetermined: {
+    fill: "var(--sc-text-faint)",
+    ring: "var(--sc-text-secondary)",
+  },
+  unresolved_target: {
+    fill: "var(--sc-text-secondary)",
+    ring: "var(--sc-text-strong)",
+  },
 };
 
 function displayPath(url: string): string {
@@ -409,7 +423,7 @@ function TreeNodeRow({
             ? "border-brand-accent bg-brand-accent/[0.10]"
             : level === 1
               ? "border-brand-accent/55 bg-brand-accent/[0.05] hover:bg-brand-accent/[0.08]"
-              : "border-brand-border-strong bg-brand-panel-raised hover:bg-white/[0.03]"
+              : "border-brand-border-strong bg-brand-panel-raised hover:bg-hover-wash"
         } ${directMatch ? "opacity-100" : "opacity-55"}`}
       >
         {hasChildren ? (
@@ -419,7 +433,7 @@ function TreeNodeRow({
             aria-label={branchLabel}
             disabled={forceExpanded}
             onClick={() => onToggle(node.id)}
-            className="flex w-10 shrink-0 items-center justify-center border-r border-brand-border text-text-dark-secondary transition-colors hover:bg-white/[0.035] hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+            className="flex w-10 shrink-0 items-center justify-center border-r border-brand-border text-text-dark-secondary transition-colors hover:bg-hover-wash hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
           >
             {expanded ? (
               <ChevronDown aria-hidden="true" className="size-4" />
@@ -446,7 +460,9 @@ function TreeNodeRow({
               className="h-2.5 w-2.5 shrink-0 rounded-full border-2"
               style={{
                 backgroundColor: nodeStyle.fill,
-                borderColor: selected ? "#E8EDF2" : nodeStyle.ring,
+                borderColor: selected
+                  ? "var(--sc-text-primary)"
+                  : nodeStyle.ring,
               }}
             />
             <span className="min-w-0 flex-1">
@@ -501,7 +517,7 @@ function TreeNodeRow({
             {hasChildren ? (
               <span
                 aria-hidden="true"
-                className="shrink-0 rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[9px] text-text-dark-secondary"
+                className="shrink-0 rounded bg-chip-wash px-1.5 py-0.5 font-mono text-[9px] text-text-dark-secondary"
               >
                 {children.length}
               </span>
@@ -712,7 +728,7 @@ function LinkTree({
               type="button"
               disabled={forceExpanded}
               onClick={() => setCollapsedIds(new Set())}
-              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-white/[0.04] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-hover-wash hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
             >
               {copy.expandAll}
             </button>
@@ -720,7 +736,7 @@ function LinkTree({
               type="button"
               disabled={forceExpanded}
               onClick={() => setCollapsedIds(new Set(expandableIds))}
-              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-white/[0.04] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-hover-wash hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
             >
               {copy.collapseAll}
             </button>
@@ -856,7 +872,7 @@ function NodeDetail({
 }) {
   return (
     <aside
-      className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-[inset_2px_0_0_#3DDC97] xl:sticky xl:top-24"
+      className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-rail-accent xl:sticky xl:top-24"
       aria-live="polite"
       data-testid="internal-link-node-detail"
     >
@@ -1013,7 +1029,7 @@ function FindingsList({
                 data-testid={`internal-link-finding-${finding.id}`}
                 className={`min-h-16 rounded-[11px] border p-3.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
                   selected
-                    ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-[inset_2px_0_0_#3DDC97]"
+                    ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-rail-accent"
                     : "border-brand-border bg-brand-panel-raised hover:border-brand-accent/40"
                 }`}
               >

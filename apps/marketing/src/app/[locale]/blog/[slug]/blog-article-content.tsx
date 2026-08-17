@@ -211,7 +211,7 @@ export function BlogArticleContent({
       />
 
       {/* 强调卡片：左侧 2px 内投影是这一屏唯一的「就是这里」信号 */}
-      <section className="my-14 rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97]">
+      <section className="my-14 rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-rail-accent">
         <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
           {locale === "zh" ? "把方法用在你的网站上" : "Put the method to work"}
         </p>

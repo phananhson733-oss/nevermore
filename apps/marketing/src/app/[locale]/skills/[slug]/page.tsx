@@ -333,7 +333,7 @@ export default async function SkillDetailPage({
                 </div>
                 {/* The agent's reply carries the accent rail: it is the claim the
                     page is making, and the question above is only its setup. */}
-                <div className="min-w-0 rounded-card border border-brand-accent/25 bg-brand-accent/[0.05] p-5 shadow-[inset_2px_0_0_#3DDC97] md:p-6">
+                <div className="min-w-0 rounded-card border border-brand-accent/25 bg-brand-accent/[0.05] p-5 shadow-rail-accent md:p-6">
                   <p className="font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
                     {t("detail.actionResponse")}
                   </p>

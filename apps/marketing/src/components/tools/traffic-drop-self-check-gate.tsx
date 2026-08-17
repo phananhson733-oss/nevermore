@@ -124,7 +124,7 @@ export function TrafficDropSelfCheckGate({
   return (
     /* The gate is the one card on this page that blocks the run, so it carries
        the accent rail rather than another shade of panel. */
-    <section className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-[inset_2px_0_0_#3DDC97] md:p-[26px]">
+    <section className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-rail-accent md:p-[26px]">
       <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("selfChecks.title")}
       </h2>

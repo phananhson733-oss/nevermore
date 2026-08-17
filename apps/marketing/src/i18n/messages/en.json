@@ -8,7 +8,9 @@
     "signIn": "Sign in",
     "signOut": "Sign out",
     "getStarted": "Get started free",
-    "runAudit": "Run website audit"
+    "runAudit": "Run website audit",
+    "switchToLight": "Dark theme on. Switch to light.",
+    "switchToDark": "Light theme on. Switch to dark."
   },
   "auth": {
     "title": "Sign in to GenGrowth",

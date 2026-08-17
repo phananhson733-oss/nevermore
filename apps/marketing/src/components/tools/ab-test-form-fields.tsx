@@ -87,7 +87,7 @@ export function ResultRow({
     /* 指标格：外层网格用 1px gap + 分隔色底拼出伪表格，格子自己只负责底色和内距 */
     <div
       className={`bg-brand-panel-sunken px-5 py-4 ${
-        accent ? "shadow-[inset_2px_0_0_#3DDC97]" : ""
+        accent ? "shadow-rail-accent" : ""
       }`}
     >
       <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">

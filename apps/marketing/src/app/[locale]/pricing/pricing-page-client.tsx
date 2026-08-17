@@ -31,7 +31,7 @@ export default function PricingPageClient() {
         />
         <div
           aria-hidden="true"
-          className="absolute -top-45 left-1/2 hidden h-100 w-150 -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.14),transparent_65%)] blur-[12px] md:block"
+          className="absolute -top-45 left-1/2 hidden h-100 w-150 -translate-x-1/2 rounded-full bg-page-glow blur-[12px] md:block"
         />
         <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
           <p className="animate-hero-fade-in-up font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
@@ -55,7 +55,7 @@ export default function PricingPageClient() {
       <section className="py-16 md:py-22">
         <div className="max-w-content mx-auto grid gap-4 px-6 md:px-8 lg:grid-cols-2">
           {/* 强调卡：账号验证后的 SEO / Tech Agents 是当前 URL 审计入口 */}
-          <article className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97] md:p-8">
+          <article className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-rail-accent md:p-8">
             <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {tFree("eyebrow")}
             </p>
@@ -128,7 +128,7 @@ export default function PricingPageClient() {
         {/* GLOW_03 — 底部 CTA 地平线光，本屏唯一光效 */}
         <div
           aria-hidden="true"
-          className="absolute inset-x-0 -bottom-40 mx-auto h-80 w-[680px] rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.12),transparent_65%)] blur-[12px]"
+          className="absolute inset-x-0 -bottom-40 mx-auto h-80 w-[680px] rounded-full bg-page-glow blur-[12px]"
         />
         <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
           <motion.h2

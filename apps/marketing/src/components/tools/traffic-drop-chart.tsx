@@ -56,22 +56,22 @@ const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
  * reader is meant to look at.
  */
 const WINDOW_TINT: Record<TrafficWindow["id"], string> = {
-  peak: "rgba(61, 220, 151, 0.06)",
-  mid: "rgba(229, 200, 120, 0.055)",
-  recent: "rgba(240, 144, 144, 0.06)",
+  peak: "color-mix(in oklab, var(--sc-accent) 6%, transparent)",
+  mid: "color-mix(in oklab, var(--sc-warning) 5.5%, transparent)",
+  recent: "color-mix(in oklab, var(--sc-error) 6%, transparent)",
 };
 
 /** The same three colours at 25%, dashed — an edge, not a frame. */
 const WINDOW_EDGE: Record<TrafficWindow["id"], string> = {
-  peak: "rgba(61, 220, 151, 0.25)",
-  mid: "rgba(229, 200, 120, 0.25)",
-  recent: "rgba(240, 144, 144, 0.25)",
+  peak: "color-mix(in oklab, var(--sc-accent) 25%, transparent)",
+  mid: "color-mix(in oklab, var(--sc-warning) 25%, transparent)",
+  recent: "color-mix(in oklab, var(--sc-error) 25%, transparent)",
 };
 
 const WINDOW_LABEL: Record<TrafficWindow["id"], string> = {
-  peak: "var(--color-brand-accent)",
-  mid: "var(--color-brand-warning)",
-  recent: "var(--color-brand-error)",
+  peak: "var(--sc-accent)",
+  mid: "var(--sc-warning)",
+  recent: "var(--sc-error)",
 };
 
 /** GLOW_03 — the one data highlight this surface is allowed. */
@@ -191,8 +191,8 @@ export function TrafficDropChart({
         >
           <defs>
             <linearGradient id={CLICK_AREA_FILL_ID} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#3DDC97" stopOpacity={0.16} />
-              <stop offset="100%" stopColor="#3DDC97" stopOpacity={0} />
+              <stop offset="0%" stopColor="var(--sc-accent)" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="var(--sc-accent)" stopOpacity={0} />
             </linearGradient>
           </defs>
 
@@ -231,7 +231,7 @@ export function TrafficDropChart({
             const value = clickMax * step;
             return (
               <g key={step}>
-                {/* Baseline is the axis (#1B2430); the rest are grid (#141C26). */}
+                {/* Baseline is the axis (border); the rest are grid (border-faint). */}
                 <line
                   x1={PAD_LEFT}
                   x2={VIEW_WIDTH - PAD_RIGHT}
@@ -239,8 +239,8 @@ export function TrafficDropChart({
                   y2={yClicks(value)}
                   stroke={
                     step === 0
-                      ? "var(--color-brand-border)"
-                      : "var(--color-brand-border-faint)"
+                      ? "var(--sc-border)"
+                      : "var(--sc-border-faint)"
                   }
                   strokeWidth={1}
                 />
@@ -250,7 +250,7 @@ export function TrafficDropChart({
                   textAnchor="end"
                   fontFamily="var(--font-mono)"
                   fontSize={9.5}
-                  fill="var(--color-text-dark-secondary)"
+                  fill="var(--sc-text-secondary)"
                 >
                   {formatCompact(value, locale)}
                 </text>
@@ -259,7 +259,7 @@ export function TrafficDropChart({
                   y={yImpressions(impressionMax * step) + 4}
                   fontFamily="var(--font-mono)"
                   fontSize={9.5}
-                  fill="var(--color-brand-series-2)"
+                  fill="var(--sc-series-2)"
                   opacity={0.75}
                 >
                   {formatCompact(impressionMax * step, locale)}
@@ -276,7 +276,7 @@ export function TrafficDropChart({
           <polyline
             points={impressionLine}
             fill="none"
-            stroke="var(--color-brand-series-2)"
+            stroke="var(--sc-series-2)"
             strokeWidth={1.5}
             strokeDasharray="4 3"
             opacity={0.75}
@@ -288,7 +288,7 @@ export function TrafficDropChart({
           <polyline
             points={clickLine}
             fill="none"
-            stroke="var(--color-brand-series-1)"
+            stroke="var(--sc-series-1)"
             strokeWidth={2}
             strokeLinejoin="round"
           />
@@ -296,13 +296,13 @@ export function TrafficDropChart({
             cx={x(series.length - 1)}
             cy={yClicks(series[series.length - 1]?.clicks ?? 0)}
             r={7}
-            fill="rgba(61, 220, 151, 0.16)"
+            fill="color-mix(in oklab, var(--sc-accent) 16%, transparent)"
           />
           <circle
             cx={x(series.length - 1)}
             cy={yClicks(series[series.length - 1]?.clicks ?? 0)}
             r={3.5}
-            fill="var(--color-brand-series-1)"
+            fill="var(--sc-series-1)"
           />
 
           {hovered !== null ? (
@@ -311,7 +311,7 @@ export function TrafficDropChart({
               x2={x(hovered)}
               y1={PAD_TOP}
               y2={PAD_TOP + PLOT_HEIGHT}
-              stroke="var(--color-brand-accent)"
+              stroke="var(--sc-accent)"
               strokeWidth={1}
               strokeDasharray="3 3"
               opacity={0.4}
@@ -357,7 +357,7 @@ export function TrafficDropChart({
               y1="3"
               x2="18"
               y2="3"
-              stroke="var(--color-brand-series-1)"
+              stroke="var(--sc-series-1)"
               strokeWidth="2"
             />
           </svg>
@@ -376,7 +376,7 @@ export function TrafficDropChart({
               y1="3"
               x2="18"
               y2="3"
-              stroke="var(--color-brand-series-2)"
+              stroke="var(--sc-series-2)"
               strokeWidth="1.5"
               strokeDasharray="4 3"
               opacity="0.75"
