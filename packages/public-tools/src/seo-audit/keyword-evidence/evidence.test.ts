@@ -381,3 +381,52 @@ describe("buildKeywordEvidence — published metadata", () => {
     expect(serialized).not.toContain("map of the sky");
   });
 });
+
+describe("the region stays a fixed-cardinality record", () => {
+  /**
+   * A tripwire, not a runtime cap.
+   *
+   * The region is meant to be counts and states, with page text staying in the
+   * extract. If it ever grows past this, something started echoing text back —
+   * per-occurrence context, a matched snippet, an n-gram table — and the fix is
+   * to decide whether that belongs here, not to raise the number.
+   */
+  const TRIPWIRE_CHARS = 4_096;
+
+  it("serializes well under the tripwire at full width", () => {
+    // Exactly at the limit: 79 filler characters plus one distinguishing one.
+    const longest = "x".repeat(79);
+    const built = available(
+      buildKeywordEvidence(
+        extract,
+        queries([
+          `${longest}a`,
+          `${longest}b`,
+          `${longest}c`,
+          `${longest}d`,
+          `${longest}e`,
+        ]),
+        "guide",
+      ),
+    );
+
+    expect(built.queries).toHaveLength(5);
+    expect(JSON.stringify(built).length).toBeLessThanOrEqual(TRIPWIRE_CHARS);
+  });
+
+  it("echoes no page text, only the visitor's own queries", () => {
+    const serialized = JSON.stringify(
+      available(buildKeywordEvidence(extract, queries(["astrology"]), null)),
+    );
+
+    for (const pageText of [
+      extract.title,
+      extract.metaDescription,
+      extract.openingText,
+      ...extract.h1,
+      ...(extract.subHeadings ?? []),
+    ]) {
+      expect(serialized).not.toContain(String(pageText));
+    }
+  });
+});
