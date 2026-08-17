@@ -1,0 +1,179 @@
+// @input  -- one finished run: its metadata, keyword evidence, and localized limitation text
+// @output -- a Markdown report the visitor can paste into an assistant
+// @pos    -- the only place page-sourced text is rendered as document markup
+// 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
+
+import type { KeywordEvidence } from "@sf/public-tools";
+
+/** Everything past the limitations is detail; the report never exceeds this. */
+export const COPY_REPORT_MAX_CHARS = 16 * 1024;
+
+export interface CopyReportInput {
+  readonly targetUrl: string;
+  readonly scannedAt: string;
+  readonly cacheStatus: "hit" | "miss" | "unknown";
+  readonly evidence: KeywordEvidence;
+  /**
+   * Localized sentence per limitation code.
+   *
+   * Supplied by the caller because the wording belongs to the interface, not
+   * to this file. A code with no sentence is printed as the code: an unexplained
+   * identifier is worse than nothing, but silently dropping a limitation is
+   * worse than both.
+   */
+  readonly limitationText: Readonly<Record<string, string>>;
+}
+
+/**
+ * Wrap a value so its own characters cannot become markup.
+ *
+ * The URL, the queries and anything else here came from outside: a value
+ * containing a backtick, a pipe or a bracket would otherwise reformat the
+ * document it is quoted in, and this text is written to be pasted somewhere
+ * that reads Markdown. The fence grows past the longest run of backticks in
+ * the value, which is what makes the span unbreakable rather than merely
+ * unlikely to break.
+ */
+export function inlineCode(value: string): string {
+  const flat = value.replace(/\r?\n|\r/g, " ").trim();
+  if (flat === "") return "``";
+  const longestRun = Math.max(
+    0,
+    ...[...flat.matchAll(/`+/g)].map((match) => match[0].length),
+  );
+  const fence = "`".repeat(longestRun + 1);
+  const padding = flat.startsWith("`") || flat.endsWith("`") ? " " : "";
+  return `${fence}${padding}${flat}${padding}${fence}`;
+}
+
+function slotRow(
+  query: Extract<KeywordEvidence, { availability: "available" }>["queries"][number],
+): string {
+  const cell = (state: string, occurrences: number | null): string =>
+    state === "not_applicable"
+      ? "n/a"
+      : `${state === "covered" ? "yes" : "no"}${
+          occurrences === null ? "" : ` (${occurrences})`
+        }`;
+
+  const { slots } = query;
+  return [
+    inlineCode(query.displayQuery),
+    query.isPrimary ? "yes" : "no",
+    cell(slots.title.state, slots.title.occurrences),
+    cell(slots.description.state, slots.description.occurrences),
+    cell(slots.h1.state, slots.h1.occurrences),
+    cell(slots.subHeadings.state, slots.subHeadings.occurrences),
+    cell(slots.openingText.state, slots.openingText.occurrences),
+    slots.url.state === "covered" ? "yes" : "no",
+  ].join(" | ");
+}
+
+/**
+ * Render the report.
+ *
+ * The order is fixed: what was measured, then the coverage table, then the
+ * numbers, then every limitation in full. If the whole thing will not fit, the
+ * table loses rows from the end and says so — the metadata and the limitations
+ * are the parts that keep the numbers honest, so they are never what gets cut.
+ */
+export function buildCopyReport(input: CopyReportInput): string {
+  const header = [
+    "# On-page keyword check",
+    "",
+    `- Page: ${inlineCode(input.targetUrl)}`,
+    `- Collected at: ${inlineCode(input.scannedAt)}`,
+    `- Crawl cache: ${inlineCode(input.cacheStatus)}`,
+  ];
+
+  if (input.evidence.availability === "unavailable") {
+    return [
+      ...header,
+      "",
+      "## Result",
+      "",
+      `No keyword evidence: ${inlineCode(input.evidence.reason)}.`,
+      "The submitted page was not collected as a readable HTML response, so no",
+      "coverage was measured. This is not a score of zero.",
+      "",
+    ].join("\n");
+  }
+
+  const { evidence } = input;
+  const basis = [
+    "",
+    "## What was measured",
+    "",
+    "- Coverage and occurrences come from the collected page's title, meta",
+    "  description, H1s, sub-headings and the opening body text.",
+    "- Density shares that same text as its denominator. It is not a whole-page",
+    "  density, because the whole page body is not collected.",
+    "- Sub-headings are H2-H6 merged; heading levels are not retained.",
+    "- Counts read `n/a` where the page has no such field. That is not a zero.",
+    `- Evidence version: ${inlineCode(evidence.version)}, counting unit: ${inlineCode(
+      evidence.textUnitsVersion,
+    )}.`,
+    ...(evidence.pageRole === null
+      ? []
+      : [`- Page role, as declared by the visitor: ${inlineCode(evidence.pageRole)}.`]),
+  ];
+
+  const numbers = [
+    "",
+    "## Focus",
+    "",
+    `Covered ${evidence.focus.covered} of ${evidence.focus.applicable} checkable`,
+    "positions. This is a count, not a score, and unavailable positions are not",
+    "counted against the page.",
+    "",
+    "## Density",
+    "",
+    ...evidence.queries.map((query) =>
+      query.density === null
+        ? `- ${inlineCode(query.displayQuery)}: not available (no collected text).`
+        : `- ${inlineCode(query.displayQuery)}: ${(
+            query.density.value * 100
+          ).toFixed(2)}% of ${query.density.denominatorUnits} units (${
+            query.density.unitsBasis
+          }), ${query.capturedOccurrences} occurrences.`,
+    ),
+  ];
+
+  const limitations = [
+    "",
+    "## Limitations",
+    "",
+    ...evidence.limitations.map(
+      (code) => `- ${input.limitationText[code] ?? code}`,
+    ),
+    "",
+  ];
+
+  const tableHead = [
+    "",
+    "## Coverage",
+    "",
+    "| Query | Primary | Title | Description | H1 | Sub-headings | Opening text | URL |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+  ];
+
+  const rows = evidence.queries.map(slotRow);
+  const fixed = [...header, ...basis, ...numbers, ...limitations];
+
+  for (let kept = rows.length; kept >= 0; kept -= 1) {
+    const truncated = kept < rows.length;
+    const table = [
+      ...tableHead,
+      ...rows.slice(0, kept).map((row) => `| ${row} |`),
+      ...(truncated
+        ? ["", `_${rows.length - kept} more rows omitted to fit._`]
+        : []),
+    ];
+    const report = [...header, ...basis, ...table, ...numbers, ...limitations]
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n");
+    if (report.length <= COPY_REPORT_MAX_CHARS || kept === 0) return report;
+  }
+
+  return fixed.join("\n");
+}
