@@ -13,6 +13,19 @@ export type OnPageCheckerPageType = "homepage" | "product" | "tool" | "guide";
  */
 export const ON_PAGE_STORAGE_PREFIX = "gengrowth:onpage-";
 
+/**
+ * Everything a page-scoped check leaves in the browser.
+ *
+ * The checker writes its own draft *and* an Agent intent, because a handoff has
+ * to survive sign-in on the Agent's own terms. Signing out has to clear both:
+ * leaving the intent behind lets the next account in the same tab inherit the
+ * previous visitor's page URL for the rest of its ten-minute window.
+ */
+const CLEARED_PREFIXES: readonly string[] = [
+  ON_PAGE_STORAGE_PREFIX,
+  "gengrowth:agent-intent:",
+];
+
 export const ON_PAGE_DRAFT_KEY = `${ON_PAGE_STORAGE_PREFIX}draft:v1`;
 export const ON_PAGE_HISTORY_KEY = `${ON_PAGE_STORAGE_PREFIX}history:v1`;
 
@@ -24,10 +37,21 @@ export const ON_PAGE_HISTORY_MAX_ENTRIES = 30;
 export const ON_PAGE_HISTORY_MAX_CHARS = 128 * 1024;
 export const ON_PAGE_HISTORY_MAX_ENTRY_CHARS = 8 * 1024;
 
-export interface OnPageCheckerStorage {
+/**
+ * What reading or writing one known key needs.
+ *
+ * Separate from the walking interface below because the Agent boundary holds a
+ * storage handle with exactly these three methods, and requiring `key`/`length`
+ * there would have forced a second handle for no reason.
+ */
+export interface OnPageKeyedStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+}
+
+/** What clearing by prefix needs on top of that. */
+export interface OnPageCheckerStorage extends OnPageKeyedStorage {
   key(index: number): string | null;
   readonly length: number;
 }
@@ -186,14 +210,29 @@ function readDraft(value: unknown, now: number): OnPageCheckerDraft | null {
   };
 }
 
-/** Every key this tool owns, in whichever storage is being walked. */
-function ownedKeys(storage: OnPageCheckerStorage): readonly string[] {
+/**
+ * Keys under the given prefixes, collected before anything is deleted.
+ *
+ * Indices shift as keys are removed, so walking and deleting in one pass skips
+ * entries. The list is taken first and then acted on.
+ */
+function keysUnder(
+  storage: OnPageCheckerStorage,
+  prefixes: readonly string[],
+): readonly string[] {
   const keys: string[] = [];
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
-    if (key !== null && key.startsWith(ON_PAGE_STORAGE_PREFIX)) keys.push(key);
+    if (key !== null && prefixes.some((prefix) => key.startsWith(prefix))) {
+      keys.push(key);
+    }
   }
   return keys;
+}
+
+/** Every key this tool itself owns. */
+function ownedKeys(storage: OnPageCheckerStorage): readonly string[] {
+  return keysUnder(storage, [ON_PAGE_STORAGE_PREFIX]);
 }
 
 /** Drop slots this build no longer reads, so a stale URL cannot outlive its shape. */
@@ -208,7 +247,7 @@ function clearSupersededKeys(
 }
 
 export function storeOnPageDraft(
-  storage: OnPageCheckerStorage,
+  storage: OnPageKeyedStorage,
   draft: Omit<OnPageCheckerDraft, "createdAt" | "expiresAt">,
   now = Date.now(),
 ): OnPageCheckerDraft | null {
@@ -219,7 +258,9 @@ export function storeOnPageDraft(
   };
   if (readDraft(candidate, now) === null) return null;
   try {
-    clearSupersededKeys(storage, ON_PAGE_DRAFT_KEY);
+    if ("key" in storage) {
+      clearSupersededKeys(storage as OnPageCheckerStorage, ON_PAGE_DRAFT_KEY);
+    }
     storage.setItem(ON_PAGE_DRAFT_KEY, JSON.stringify(candidate));
     return candidate;
   } catch {
@@ -229,7 +270,7 @@ export function storeOnPageDraft(
 
 /** Read the draft, deleting it if it is expired, malformed, or unreadable. */
 export function readOnPageDraft(
-  storage: OnPageCheckerStorage,
+  storage: OnPageKeyedStorage,
   now = Date.now(),
 ): OnPageCheckerDraft | null {
   let parsed: unknown;
@@ -256,6 +297,22 @@ export function readOnPageDraft(
     return null;
   }
   return draft;
+}
+
+/**
+ * Delete the draft and nothing else.
+ *
+ * Used the moment a handoff has been prefilled: a draft that outlives its use is
+ * a stale URL waiting to fill in someone else's form. Clearing the whole prefix
+ * there would also take the recent-checks list, which the visitor did not ask to
+ * lose.
+ */
+export function clearOnPageDraft(storage: OnPageKeyedStorage): void {
+  try {
+    storage.removeItem(ON_PAGE_DRAFT_KEY);
+  } catch {
+    // A storage that refuses to delete is not holding anything we can act on.
+  }
 }
 
 function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
@@ -396,9 +453,9 @@ export function appendOnPageHistory(
 /**
  * Delete everything this tool stores, in every storage it was given.
  *
- * Walks the prefix rather than naming keys, and takes both storages because
- * signing out currently clears cookies only: on a shared machine the previous
- * visitor's URL and queries would otherwise still be on the page.
+ * Walks prefixes rather than naming keys, and takes both storages because
+ * signing out clears cookies only: on a shared machine the previous visitor's
+ * URL, queries and pending Agent handoff would otherwise still be there.
  */
 export function clearOnPageStorage(
   ...storages: readonly (OnPageCheckerStorage | null | undefined)[]
@@ -406,7 +463,9 @@ export function clearOnPageStorage(
   for (const storage of storages) {
     if (!storage) continue;
     try {
-      for (const key of ownedKeys(storage)) storage.removeItem(key);
+      for (const key of keysUnder(storage, CLEARED_PREFIXES)) {
+        storage.removeItem(key);
+      }
     } catch {
       // A storage that refuses to be read or written is already not holding
       // anything this build put there.

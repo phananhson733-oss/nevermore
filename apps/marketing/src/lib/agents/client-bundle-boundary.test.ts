@@ -41,9 +41,18 @@ describe("client-reachable modules stay off the package barrels", () => {
     );
 
     for (const barrel of FORBIDDEN_SPECIFIERS) {
+      // Any way of naming the specifier, not one spelling of it: a single-quoted
+      // import, a re-export, or a dynamic import pulls the same graph in, and
+      // matching only `from "x"` let all three through.
+      const reference = new RegExp(
+        String.raw`(?:from|import|require)\s*\(?\s*['"\`]${barrel.replace(
+          "/",
+          String.raw`\/`,
+        )}['"\`]`,
+      );
       expect(
-        source.includes(`from "${barrel}"`),
-        `${relative} imports the ${barrel} barrel; use a subpath export instead`,
+        reference.test(source),
+        `${relative} references the ${barrel} barrel; use a subpath export instead`,
       ).toBe(false);
     }
   });

@@ -130,8 +130,16 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   const [urlNotice, setUrlNotice] = useState<string | null>(null);
   const [history, setHistory] = useState<readonly OnPageHistoryEntry[]>([]);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+  /**
+   * The report text, kept only when the clipboard refused it.
+   *
+   * The failure copy tells the visitor to select the report and copy it, which
+   * needs a report on the page to select.
+   */
+  const [fallbackReport, setFallbackReport] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const mounted = useRef(true);
+  const inFlight = useRef<AbortController | null>(null);
 
   // Web Storage can throw on access alone, and the prefix walk needs `key`
   // and `length`, which the narrower intent storage interface does not carry.
@@ -147,6 +155,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      // A crawl can run for four minutes. Leaving on client navigation without
+      // aborting abandons it and keeps its crawl-gate slot held until the
+      // server finishes something nobody is waiting for.
+      inFlight.current?.abort();
+      inFlight.current = null;
     };
   }, []);
 
@@ -216,12 +229,18 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       setQueryNotice(t("errors.queryRequired"));
       return;
     }
+    // One run at a time: a second click would start a second crawl and leave
+    // whichever answer arrived last on screen.
+    if (inFlight.current !== null) return;
     setUrlNotice(null);
     setQueryNotice(null);
     setCopied("idle");
+    setFallbackReport(null);
     setElapsed(0);
     setRun({ kind: "running", startedAt: Date.now() });
 
+    const controller = new AbortController();
+    inFlight.current = controller;
     let response: Response;
     try {
       response = await fetch("/api/agents/seo/audit", {
@@ -235,13 +254,16 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           targetQueries: queries,
           pageRole,
         }),
+        signal: controller.signal,
       });
     } catch {
-      if (mounted.current) {
+      inFlight.current = null;
+      if (mounted.current && !controller.signal.aborted) {
         setRun({ kind: "failed", code: "scan_failed", retryAfter: null });
       }
       return;
     }
+    inFlight.current = null;
 
     const body = (await response.json().catch(() => null)) as unknown;
     if (!mounted.current) return;
@@ -334,10 +356,37 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied("done");
+      setFallbackReport(null);
     } catch {
+      // Browsers deny the clipboard in plenty of ordinary situations. The report
+      // goes on the page instead, so the instruction to select it is true.
       setCopied("failed");
+      setFallbackReport(text);
     }
   }, [run, t]);
+
+  /**
+   * Hand this page and its queries to the Agent.
+   *
+   * A plain link would drop everything the visitor just framed and open an empty
+   * site-wide form, which is the same loss the sign-in path was fixed for. The
+   * draft carries the queries, market, language and role; the intent carries the
+   * page and its scope, because that is what the Agent's own resume reads.
+   */
+  const openAgent = useCallback(() => {
+    const session = webStore("session");
+    if (session) {
+      storeOnPageDraft(session, {
+        url: url.trim(),
+        targetQueries: queries,
+        country,
+        locale: language,
+        pageType: pageRole,
+      });
+      storePageFocusedAgentIntent(session, url.trim());
+    }
+    window.location.assign(localePath(locale, "/agents/seo"));
+  }, [country, language, locale, pageRole, queries, url, webStore]);
 
   const clearHistory = useCallback(() => {
     clearOnPageStorage(webStore("local"), webStore("session"));
@@ -678,6 +727,23 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               ))}
             </ul>
 
+            {/*
+              The declared page role's one consumer. Without it the selector was
+              an input that changed nothing, which is the mirror image of a
+              required field that changes nothing.
+            */}
+            <div className="border-t border-brand-border-card pt-4">
+              <h3 className="text-[15px] text-text-dark-primary">
+                {t("fixes.title")}
+              </h3>
+              <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
+                {t(`fixes.${available.pageRole ?? "homepage"}`)}
+              </p>
+              <p className="mt-2 text-[12.5px] text-text-dark-faint">
+                {t("fixes.basis")}
+              </p>
+            </div>
+
             <ul className="grid gap-1.5 border-t border-brand-border-card pt-4">
               {available.limitations.map((code) => (
                 <li
@@ -704,13 +770,27 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                     ? t("actions.copyFailed")
                     : ""}
               </p>
-              <a
-                className="ml-auto text-[13.5px] text-brand-accent-text underline underline-offset-4"
-                href={localePath(locale, "/agents/seo")}
+              <button
+                className="ml-auto text-[13.5px] text-brand-accent-text underline underline-offset-4 hover:text-brand-accent-hover"
+                onClick={openAgent}
+                type="button"
               >
                 {t("actions.openAgent")}
-              </a>
+              </button>
             </div>
+            {fallbackReport !== null && (
+              <label className="grid gap-2">
+                <span className="text-[12.5px] text-text-dark-secondary">
+                  {t("actions.copyFallbackLabel")}
+                </span>
+                <textarea
+                  className="h-40 w-full rounded-lg border border-brand-border-card bg-brand-bg p-3 font-mono text-[12px] text-text-dark-primary"
+                  onFocus={(event) => event.currentTarget.select()}
+                  readOnly
+                  value={fallbackReport}
+                />
+              </label>
+            )}
           </div>
         )}
       </section>

@@ -1,6 +1,6 @@
-// @input  -- the Agents directory source and both message catalogues
-// @output -- a failing test when the directory offers a peer choice again
-// @pos    -- the guard for "one Agent, one technical focus" surviving future copy edits
+// @input  -- the Agents directory, both message catalogues, and every uncatalogued copy source
+// @output -- a failing test when the product goes back to being two Agents
+// @pos    -- the structural guard behind "one Agent, one technical focus"
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { readFileSync } from "node:fs";
@@ -13,44 +13,32 @@ import zh from "../../../i18n/messages/zh.json" with { type: "json" };
 const HUB_PAGE = fileURLToPath(new URL("./page.tsx", import.meta.url));
 
 /**
- * Sources that publish copy without going through the catalogue.
+ * Copy that ships without going through the catalogue.
  *
- * Page metadata and JSON-LD are what a search result actually shows, and the
- * catalogue sweep cannot see them: the peer-choice wording survived there after
- * every message had been rewritten.
+ * Page metadata and JSON-LD are what a search result and an unfurl actually
+ * show, and a catalogue sweep cannot see them: the peer-choice wording survived
+ * in both after every message had been rewritten, including in one half of a
+ * locale ternary where a check for English phrases could never have found it.
  */
 const UNCATALOGUED_COPY = [
   "../page.tsx",
   "../pricing/page.tsx",
   "../../../components/seo/json-ld/software-application-json-ld.tsx",
+  "../../../config/navigation.ts",
 ];
 
 /**
- * Phrases that put the two routes back on the same footing.
+ * The product has no "Tech Agent" in it.
  *
- * They render the same workbench over the same engine and differ only in which
- * checks open first, so asking a visitor to pick one is asking them to decide
- * something already decided. The technical route stays reachable and keeps its
- * URL; what it must not do is read as a second product.
+ * This is the whole rule, and it is deliberately a name rather than a list of
+ * phrasings: the technical route renders the same workbench over the same engine
+ * and differs only in which checks open first, so anything that gives it a
+ * product name of its own re-creates the choice we removed. A blacklist of
+ * sentences is worked around by writing a new sentence; a banned name is not.
+ *
+ * The route itself stays reachable and stays in the header — as a focus.
  */
-const PEER_CHOICE_PHRASES = {
-  en: [
-    "Choose the Agent",
-    "Choose one independent Agent",
-    "Two independent Agents",
-    "View both Agents",
-    "Each Agent runs independently",
-    "SEO Agent and Tech Agent",
-    "SEO and Tech URL audit Agents",
-  ],
-  zh: [
-    "两个独立",
-    "查看两个 Agents",
-    "各自独立运行",
-    "选择一个独立 Agent",
-    "SEO Agent 与 Tech Agent",
-  ],
-} as const;
+const RETIRED_PRODUCT_NAME = "Tech Agent";
 
 function walk(node: unknown, visit: (text: string) => void): void {
   if (typeof node === "string") {
@@ -66,26 +54,67 @@ function walk(node: unknown, visit: (text: string) => void): void {
   }
 }
 
-describe("uncatalogued copy stays consistent with one Agent", () => {
-  it.each(UNCATALOGUED_COPY)("%s names one Agent", (relative) => {
+describe("the product is one Agent with a technical focus", () => {
+  it.each([
+    ["en", en],
+    ["zh", zh],
+  ])("%s copy gives the technical route no product name of its own", (
+    _locale,
+    catalogue,
+  ) => {
+    const offenders: string[] = [];
+    walk(catalogue, (text) => {
+      if (text.includes(RETIRED_PRODUCT_NAME)) offenders.push(text);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it.each(UNCATALOGUED_COPY)("%s does the same", (relative) => {
+    const source = readFileSync(
+      fileURLToPath(new URL(relative, import.meta.url)),
+      "utf8",
+    );
+    const copyOnly = [...source.matchAll(/"([^"\\]{12,})"/g)].map(
+      (match) => match[1],
+    );
+
+    // Only string literals long enough to be prose: a `slug: "tech"` or an
+    // icon name is routing, not a claim about the product.
+    const offenders = copyOnly.filter((text) =>
+      text.includes(RETIRED_PRODUCT_NAME),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * Both halves of every locale ternary.
+   *
+   * The Chinese branch of two metadata descriptions kept advertising separate
+   * SEO and Tech audits after the English branch had been rewritten, and a
+   * verification pass that grepped English phrases against `/zh/...` reported
+   * it clean.
+   */
+  it.each(UNCATALOGUED_COPY)("%s carries no two-audit claim in either locale", (
+    relative,
+  ) => {
     const source = readFileSync(
       fileURLToPath(new URL(relative, import.meta.url)),
       "utf8",
     );
 
     for (const phrase of [
-      "independent SEO and Tech",
-      "SEO and Tech URL audit",
+      "SEO and Tech",
+      "SEO 与 Tech",
       "independent SEO or Tech",
+      "独立的 SEO 或 Tech",
     ]) {
       expect(source.includes(phrase), `${relative} still says "${phrase}"`).toBe(
         false,
       );
     }
   });
-});
 
-describe("the Agents directory offers one Agent", () => {
   it("renders a single primary card and no card loop", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
 
@@ -96,19 +125,5 @@ describe("the Agents directory offers one Agent", () => {
     // A map over a card list is what made them peers.
     expect(source).not.toMatch(/cards\.map/);
     expect(source).not.toMatch(/md:grid-cols-2/);
-  });
-
-  it.each([
-    ["en", en, PEER_CHOICE_PHRASES.en],
-    ["zh", zh, PEER_CHOICE_PHRASES.zh],
-  ])("keeps peer-choice wording out of %s copy", (_locale, catalogue, phrases) => {
-    const offenders: string[] = [];
-    walk(catalogue, (text) => {
-      for (const phrase of phrases) {
-        if (text.includes(phrase)) offenders.push(`${phrase} — ${text}`);
-      }
-    });
-
-    expect(offenders).toEqual([]);
   });
 });

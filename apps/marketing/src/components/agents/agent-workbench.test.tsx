@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AGENT_AUDIT_RECORD_CATEGORIES } from "../../lib/agents/audit-contract";
+import { storeOnPageDraft } from "../../lib/on-page-checker/storage";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
   type AgentProfileRefreshData,
@@ -1741,24 +1742,72 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });
 
-  it("resumes a page-focused launch on that page instead of discarding it", async () => {
+  it("resumes a page-focused launch with every field the checker handed over", async () => {
     storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
     await flushAsyncWork();
 
-    // Before this was handled, the intent fell through to the runnable check
-    // and was deleted as unusable, so the handoff lost the page and the
-    // visitor landed on an empty site-wide form.
+    // Reading only the URL out of the intent is what dropped the queries, the
+    // market, the language and the page role on the way over.
     expect(
       (document.querySelector("#seo-profile-target-url") as HTMLInputElement)
         .value,
     ).toBe("astrologywiki.com/chart");
+    // The market and language came across too, read off the fields themselves.
+    // Asserting they appear "somewhere in the page text" passed with the whole
+    // draft ignored, which is the assertion doing nothing.
+    expect(
+      (
+        document.querySelector("#seo-profile-market") as HTMLInputElement
+      ).value,
+    ).toBe("GB");
+    expect(
+      (
+        document.querySelector("#seo-profile-language") as HTMLInputElement
+      ).value,
+    ).toBe("en-GB");
     // Restored, never started: the visitor asked about a page, not for a crawl.
     expect(fetchMock).not.toHaveBeenCalled();
+    // Both slots consumed, so neither can prefill someone else's form later.
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+  });
+
+  it("keeps a page-focused launch out of an ordinary Agent request", async () => {
+    // No handoff: the request body must be byte-for-byte what it was before the
+    // keyword layer existed.
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(JSON.parse(body)).toEqual({ url: "astrologywiki.com" });
+    }
   });
 
   it("runs once only after a signed-in visitor confirms the exact Profile", async () => {

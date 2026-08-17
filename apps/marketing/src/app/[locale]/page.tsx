@@ -26,7 +26,7 @@ export async function generateMetadata({
     description:
       locale === "en"
         ? "Run the SEO Agent for a bounded URL audit after verifying a GenGrowth account. No payment, Search Console connection, site-ownership check, or saved run history."
-        : "验证 GenGrowth 账号后，独立运行 SEO 与 Tech URL 审计 Agent；无需付费、连接 Search Console、验证站点所有权，也不会保存运行历史。",
+        : "验证 GenGrowth 账号后，用 SEO Agent 做有边界的 URL 审计；无需付费、连接 Search Console、验证站点所有权，也不会保存运行历史。",
     locale,
     path: "",
   });

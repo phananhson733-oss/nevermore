@@ -38,7 +38,7 @@
         "description": "基于保留的证据，审查元数据、标题结构与结构化数据状态。"
       },
       "tech": {
-        "label": "Tech Agent",
+        "label": "技术焦点",
         "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
       }
     },
@@ -256,7 +256,7 @@
     },
     "owners": {
       "seo": "SEO Agent",
-      "tech": "Tech Agent"
+      "tech": "技术焦点"
     },
     "detail": {
       "backToLibrary": "全部 Skills",
@@ -368,7 +368,7 @@
     "capabilities": {
       "eyebrow": "一个 Agent，两个焦点",
       "title": "选择与你的问题匹配的审查",
-      "subtitle": "每个 Agent 都有独立的 URL 输入、运行、结果、机会选择与解决方案视图；共享抓取基础设施不会合并两者状态。",
+      "subtitle": "一个 URL 输入、一次运行、一份结果。内容检查与技术检查是同一次审查在同一批抓取上的两个焦点，不是两个各自维护状态的产品。",
       "seoTitle": "SEO Agent",
       "seoDesc": "审查已采集公开 HTML 中的元数据、标题结构与结构化数据状态。",
       "techTitle": "技术焦点",
@@ -1887,7 +1887,7 @@
       "whereNextTitle": "接下来去哪里",
       "whereNextBody": "无需连接 Search Console 即可检查网站基础；Agent 抓取开始前必须验证账号。",
       "whereNextAudit": "SEO Agent",
-      "whereNextLinks": "Tech Agent",
+      "whereNextLinks": "技术焦点",
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
@@ -2125,6 +2125,14 @@
             "a": "不能。关键词在页面上的位置只是众多输入之一，还有站点权重、页面体验、竞争强弱和用户行为。本工具只量它真正看得见的那一项。"
           }
         ]
+      },
+      "fixes": {
+        "title": "这一页该改什么",
+        "homepage": "首页被判断的是主词是否明确无误：把它放进 title、H1 和正文第一句，让副标题承载次要词，而不是重复主词。",
+        "product": "产品页拼的是具体性。title 和 H1 里保留产品自己的名字，让目标词出现在描述这个产品做什么的地方，而不是硬拼在名字前面。",
+        "tool": "工具页靠「它能做什么」被找到。title 和 H1 应该读起来就是访客要做的那件事，正文开头应该说明工具就在本页可用，而不是从外部描述它。",
+        "guide": "指南靠它回答的问题被找到。把问题本身的措辞放进 title 和 H1，用副标题承载子问题，让扫读的人看得出答案就在这里。",
+        "basis": "针对你所声明的页面角色给出的建议。它不改变上面任何一个计数，也不构成任何关于排名的判断。"
       }
     }
   },
@@ -2597,13 +2605,13 @@
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
     },
     "tech": {
-      "name": "Tech Agent",
+      "name": "SEO Agent · 技术焦点",
       "metaTitle": "抓取检查技术 SEO Agent",
       "metaDescription": "检查网站公开静态 HTML 抓取中的响应、索引性和内链情况，并查看证据与明确限制。",
-      "eyebrow": "Tech Agent · 有边界抓取",
+      "eyebrow": "技术焦点 · 有边界抓取",
       "title": "对照可逐条打开的证据检查网站技术情况",
       "subtitle": "提交一个站点，在可发现的同源 HTML 中检查已观测抓取响应、静态索引指令和内链情况。",
-      "heroCta": "运行 Tech Agent",
+      "heroCta": "运行技术复看",
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "仅使用公开抓取事实",
@@ -2631,7 +2639,7 @@
         },
         "tech": {
           "title": "先确认技术上下文，再开始诊断",
-          "body": "检查产品、受众、页面角色、设备与审计范围。Tech Agent 使用已确认上下文组织抓取和实施证据，不预设框架、代码仓库或负责人。"
+          "body": "检查产品、受众、页面角色、设备与审计范围。技术焦点使用已确认上下文组织抓取和实施证据，不预设框架、代码仓库或负责人。"
         },
         "states": {
           "needs_confirmation": "需要检查",
@@ -3252,7 +3260,7 @@
             "technicalIssueBrief": {
               "recommendation": "这是在搜索侧审阅中暴露出来的技术问题，所以在这里应该把它写清楚，而不是就地修。记录已观测到的状况、它限制住了哪个搜索决策，然后交给模板、CMS 或平台的负责人。",
               "validation1": "移交前先确认这个状况在公开 URL 上仍能复现。",
-              "validation2": "到 Tech Agent 里复看同一项检查——那里才把归属系统及其证据纳入了范围。",
+              "validation2": "到技术焦点里复看同一项检查——那里才把归属系统及其证据纳入了范围。",
               "validation3": "负责人发布变更后，重新抓取该 URL，与这里记录的证据做比较。",
               "impactSurface": "这个状况限制住的那个搜索决策；造成它的代码或配置不在本 Agent 的范围内。",
               "risks": "用内容手段绕开交付层的问题，只是把它藏起来而不是修好；而这种绕法往往比加它的人待得更久。",

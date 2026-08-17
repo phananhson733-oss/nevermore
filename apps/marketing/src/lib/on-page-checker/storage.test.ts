@@ -274,6 +274,31 @@ describe("clearOnPageStorage", () => {
     expect(local.getItem("gg-theme")).toBe("dark");
   });
 
+  it("removes the Agent intent the checker wrote for a handoff", () => {
+    const session = new MemoryStorage();
+    session.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({ purpose: "page_focused_launch" }),
+    );
+
+    clearOnPageStorage(session);
+
+    // Left behind, the next account in this tab inherits the previous
+    // visitor's page for the rest of the intent's window.
+    expect(session.getItem("gengrowth:agent-intent:seo:v3")).toBeNull();
+  });
+
+  it("collects keys before deleting so none are skipped", () => {
+    const local = new MemoryStorage();
+    for (let index = 0; index < 6; index += 1) {
+      local.setItem(`gengrowth:onpage-slot-${index}:v1`, "x");
+    }
+
+    clearOnPageStorage(local);
+
+    expect(local.length).toBe(0);
+  });
+
   it("removes a slot added after this clear was written", () => {
     const local = new MemoryStorage();
     local.setItem("gengrowth:onpage-something-new:v9", "value");

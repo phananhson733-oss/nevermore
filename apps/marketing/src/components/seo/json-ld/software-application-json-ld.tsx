@@ -16,7 +16,8 @@ export function SoftwareApplicationJsonLd() {
     url: "https://gengrowth.ai",
     featureList: [
       "Account-gated SEO Agent for metadata, headings, and structured data",
-      "Account-gated Tech Agent for crawl, indexability, and internal links",
+      "The same Agent, opened on crawl, indexability, and internal links",
+      "On-Page SEO Checker for one page against its target queries",
       "No payment, Search Console connection, or site-ownership verification required for current Agent audits",
       "No persistence for current Agent audit runs",
     ],

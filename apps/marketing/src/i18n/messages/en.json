@@ -38,7 +38,7 @@
         "description": "Review metadata, headings, and structured-data conditions with preserved evidence."
       },
       "tech": {
-        "label": "Tech Agent",
+        "label": "Technical focus",
         "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
       }
     },
@@ -256,7 +256,7 @@
     },
     "owners": {
       "seo": "SEO Agent",
-      "tech": "Tech Agent"
+      "tech": "Technical focus"
     },
     "detail": {
       "backToLibrary": "All skills",
@@ -368,7 +368,7 @@
     "capabilities": {
       "eyebrow": "One Agent, two focuses",
       "title": "Choose the review that matches the question",
-      "subtitle": "Each Agent has its own URL input, run, result, opportunity selection, and solution view. Shared crawl infrastructure never merges their state.",
+      "subtitle": "One URL input, one run, one result. Content checks and technical checks are two focuses of the same review over the same crawl, not two products with separate state.",
       "seoTitle": "SEO Agent",
       "seoDesc": "Inspect metadata, heading structure, and structured-data conditions observed in collected public HTML.",
       "techTitle": "Technical focus",
@@ -1887,7 +1887,7 @@
       "whereNextTitle": "Where to go next",
       "whereNextBody": "Check site fundamentals without connecting Search Console. Account verification is required before an Agent crawl.",
       "whereNextAudit": "SEO Agent",
-      "whereNextLinks": "Tech Agent",
+      "whereNextLinks": "Technical focus",
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
@@ -2125,6 +2125,14 @@
             "a": "No. Where a keyword sits on a page is one input among site authority, page experience, competition and behaviour. This measures the input it can actually see."
           }
         ]
+      },
+      "fixes": {
+        "title": "What to change on this page",
+        "homepage": "A homepage is judged on whether the primary term is unmistakable: put it in the title, the H1 and the first sentence of the body, and let the sub-headings carry the secondary terms rather than repeating the primary one.",
+        "product": "A product page competes on specificity. Keep the product's own name in the title and H1, and let the target term appear where it describes what the product does, not as a phrase bolted onto the front of the name.",
+        "tool": "A tool page is found by what it does. The title and H1 should read as the job the visitor came to do, and the opening text should say the tool runs here rather than describing it from the outside.",
+        "guide": "A guide is found by the question it answers. Put the question's own words in the title and H1, and use the sub-headings for the sub-questions so a reader scanning them can see the answer is here.",
+        "basis": "Guidance for the page role you declared. It does not change any count above, and none of it is a claim about ranking."
       }
     }
   },
@@ -2597,13 +2605,13 @@
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
     },
     "tech": {
-      "name": "Tech Agent",
+      "name": "SEO Agent · Technical focus",
       "metaTitle": "Technical SEO Agent for Crawl Review",
       "metaDescription": "Inspect a site's public static HTML crawl for response, indexability, and internal-link conditions with evidence and explicit limitations.",
-      "eyebrow": "Tech Agent · Bounded crawl",
+      "eyebrow": "Technical focus · Bounded crawl",
       "title": "Review technical site conditions against evidence you can open",
       "subtitle": "Submit a site to inspect observed crawl responses, static indexability directives, and internal-link conditions in discoverable same-origin HTML.",
-      "heroCta": "Run Tech Agent",
+      "heroCta": "Run the technical review",
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "Public crawl facts only",
@@ -2631,7 +2639,7 @@
         },
         "tech": {
           "title": "Confirm technical context before diagnosis",
-          "body": "Review the product, audience, page role, device, and audit scope. Tech Agent uses this confirmed context to frame crawl and implementation evidence without assuming a framework, repository, or owner."
+          "body": "Review the product, audience, page role, device, and audit scope. The technical focus uses this confirmed context to frame crawl and implementation evidence, and assumes no framework, repository, or owner."
         },
         "states": {
           "needs_confirmation": "Review required",
@@ -3252,7 +3260,7 @@
             "technicalIssueBrief": {
               "recommendation": "This is a technical condition surfaced during a search review, so write it up instead of fixing it here. Record the observed condition and the search decision it constrains, then hand it to whoever owns the template, CMS, or platform.",
               "validation1": "Confirm the condition still reproduces on the public URL before handing it over.",
-              "validation2": "Review the same check in the Tech Agent, where the owning system and its evidence are in scope.",
+              "validation2": "Review the same check in the technical focus, where the owning system and its evidence are in scope.",
               "validation3": "After the owner releases a change, refetch the URL and compare it with the evidence recorded here.",
               "impactSurface": "The search decision this condition constrains; the code or configuration behind it sits outside this Agent.",
               "risks": "Working around a delivery problem in content hides it instead of fixing it, and the workaround usually outlives the person who added it.",
@@ -3261,7 +3269,7 @@
           }
         },
         "tech": {
-          "recommendation": "Tech Agent fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a reviewable response, redirect, directive, link, or performance change.",
+          "recommendation": "Technical fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a change that can be verified against the same evidence.",
           "applicableContext": "Confirm the framework, routing layer, hosting behavior, repository owner, release path, and affected templates before translating evidence into code or configuration.",
           "validation1": "Reproduce the observed request, response, redirect, directive, or link condition in the owning environment.",
           "validation2": "Review the minimal code or configuration diff with the responsible owner and test the affected paths plus a nearby control path.",
