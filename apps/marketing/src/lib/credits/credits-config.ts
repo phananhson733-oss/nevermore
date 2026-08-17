@@ -67,9 +67,15 @@ export const CREDIT_TOOL_PRICES: Readonly<Record<CreditToolSlug, number>> = {
  * login (design §1 Phase 2), at which point the binding is free.
  *
  * profile-search stays out on its own merits: one DataForSEO call is not work.
+ *
+ * on-page-seo-check qualifies because it admits on the same Supabase session and
+ * runs the same crawl as agent-audit. The reward is claimed once per account
+ * regardless of which tool got there first, so listing it adds a way to earn the
+ * existing reward, not a second reward.
  */
 export const QUALIFYING_TOOLS = [
   "agent-audit",
+  "on-page-seo-check",
   "profile-refresh",
 ] as const satisfies ReadonlyArray<CreditToolSlug>;
 

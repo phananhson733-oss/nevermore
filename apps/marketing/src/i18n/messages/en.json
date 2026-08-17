@@ -2017,7 +2017,8 @@
         "queries": "Target queries (up to {max})",
         "market": "Market",
         "language": "Language",
-        "pageRole": "Page role"
+        "pageRole": "Page role",
+        "marketScope": "Market and language are not part of this check: the request carries the page URL, the queries and the page role. They are carried over when you open the SEO Agent from here."
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2042,12 +2043,12 @@
       "waiting": {
         "headline": "Collecting the site, then reading your page out of it.",
         "elapsed": "{seconds}s elapsed",
-        "body": "The crawl caps itself at four minutes and 2,000 pages, and the whole request takes longer than the crawl alone.",
+        "body": "The crawl paces itself to at least 250 ms between requests and stops at four minutes, which is about 950 pages at most; the whole request takes longer than the crawl alone.",
         "noEstimate": "No progress estimate: the browser is not told how many pages remain, so it does not guess."
       },
       "focus": {
-        "summary": "Covered {covered} of {applicable} checkable positions.",
-        "notAScore": "A count of positions, not a score. Positions the page has no field for are left out of the total rather than counted against it.",
+        "summary": "Covered {covered} of {applicable} checkable places.",
+        "notAScore": "A count of places, not a score, and it is the total over every query rather than a figure for the page. A place the page has no field for is left out of the total rather than counted against it.",
         "short": "{covered}/{applicable}"
       },
       "table": {
@@ -2067,8 +2068,13 @@
         "not_applicable": "n/a"
       },
       "density": {
-        "value": "{query}: {percent}% of {units} collected units, {occurrences} occurrences.",
-        "unavailable": "{query}: density unavailable, no collected text to measure against."
+        "value": "{query}: {percent}% of {units} collected {unitsBasis}, {occurrences} occurrences.",
+        "unavailable": "{query}: density unavailable, no collected text to measure against.",
+        "units": {
+          "words": "words",
+          "cjk_chars": "CJK characters",
+          "mixed": "mixed word and CJK-character units"
+        }
       },
       "limitations": {
         "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
@@ -2097,17 +2103,7 @@
         "queryLimit": "Up to {max} queries. Remove one to add another.",
         "queryTooLong": "Up to {max} characters per query.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
-        "invalid_url": "That does not look like a public page URL.",
-        "invalid_request": "Check the URL and the queries: up to five, of at most 80 characters each.",
-        "scan_in_progress": "This site is already being collected — most often by you, in another tab or in the SEO Agent. Wait for that run to finish.",
-        "target_busy": "This site is busy with another visitor's run. Try again shortly.",
-        "rate_limited": "Too many checks from here. Try again shortly.",
-        "scan_timeout": "The collection ran past its time limit before your page was reached.",
-        "scan_failed": "The collection could not finish. Nothing about this page was measured.",
-        "robots_disallowed": "This site's robots rules tell crawlers to stay out, so the page was not read.",
-        "robots_unreachable": "This site's robots rules could not be read, so nothing was collected.",
-        "retryAfter": "Retry in {seconds} seconds.",
-        "unknown": "The check did not finish. Nothing about this page was measured."
+        "retryAfter": "Retry in {seconds} seconds."
       },
       "faq": {
         "title": "What this does and does not tell you",
@@ -2133,6 +2129,13 @@
         "tool": "A tool page is found by what it does. The title and H1 should read as the job the visitor came to do, and the opening text should say the tool runs here rather than describing it from the outside.",
         "guide": "A guide is found by the question it answers. Put the question's own words in the title and H1, and use the sub-headings for the sub-questions so a reader scanning them can see the answer is here.",
         "basis": "Guidance for the page role you declared. It does not change any count above, and none of it is a claim about ranking."
+      },
+      "provenance": {
+        "page": "Page read: {url}",
+        "hit": "Read out of a crawl of this site collected at {time}, which was already held — this check started no new crawl.",
+        "miss": "Read out of a crawl this check started, collected at {time}.",
+        "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
+        "queriesMerged": "You submitted {submitted} queries and {measured} are measured below: two spellings of the same query are counted once."
       }
     }
   },

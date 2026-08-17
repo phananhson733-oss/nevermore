@@ -181,6 +181,7 @@ function dependencies(
   return {
     authenticate: vi.fn(async () => "authenticated" as const),
     delegate: vi.fn(async () => success()),
+    reportAs: "agent-audit",
     ...overrides,
   };
 }
@@ -192,6 +193,7 @@ describe("handleAgentAuditRequest", () => {
     const response = await handleAgentAuditRequest(incoming, "seo", {
       authenticate: vi.fn(async () => "unauthenticated" as const),
       delegate,
+      reportAs: "agent-audit",
     });
 
     expect(response.status).toBe(401);
@@ -210,6 +212,7 @@ describe("handleAgentAuditRequest", () => {
         throw new Error("Supabase unavailable");
       },
       delegate,
+      reportAs: "agent-audit",
     });
 
     expect(response.status).toBe(503);
@@ -248,6 +251,7 @@ describe("handleAgentAuditRequest", () => {
           });
           return success();
         },
+        reportAs: "agent-audit",
       },
     );
 

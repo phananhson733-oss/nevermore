@@ -105,6 +105,10 @@ describe("buildCopyReport", () => {
   });
 
   it("marks an absent field n/a instead of a zero", () => {
+    // Read the cell, not the page. `toContain("n/a")` is already satisfied by
+    // the boilerplate sentence that explains what n/a means, so it stays green
+    // while the value cell prints `0` — which is the one thing this test exists
+    // to catch.
     const text = buildCopyReport({
       targetUrl: extract.url,
       scannedAt: "2026-08-17T12:00:00.000Z",
@@ -121,7 +125,44 @@ describe("buildCopyReport", () => {
       limitationText,
     });
 
-    expect(text).toContain("n/a");
+    const lines = text.split("\n");
+    const header = lines.find((line) => line.startsWith("| Query |"));
+    const row = lines.find((line) => line.startsWith("| `pricing`"));
+    expect(header).toBeDefined();
+    expect(row).toBeDefined();
+
+    // Cells split on unescaped pipes only, and the column is located by its
+    // heading rather than by a hardcoded position, so a reordered table cannot
+    // make this read a different slot than the one it names.
+    const cells = (line: string) =>
+      line
+        .split(/(?<!\\)\|/)
+        .slice(1, -1)
+        .map((cell) => cell.trim());
+    const columns = cells(header ?? "");
+    const values = cells(row ?? "");
+    expect(values).toHaveLength(columns.length);
+
+    const cellFor = (heading: string) => {
+      const index = columns.indexOf(heading);
+      expect(index, `no ${heading} column`).toBeGreaterThanOrEqual(0);
+      return values[index];
+    };
+
+    // The page has no meta description at all: the cell says so, and says it
+    // without printing a number. Neither `0`, nor `no (0)`, nor an empty cell.
+    expect(cellFor("Description")).toBe("n/a");
+    // The contrast that gives that cell its meaning: a field the page does have
+    // where the keyword genuinely does not appear prints a counted zero. The two
+    // must not render the same, in either direction.
+    expect(cellFor("Sub-headings")).toBe("no (0)");
+    expect(cellFor("Description")).not.toBe(cellFor("Sub-headings"));
+    // And the slots that were counted still carry their counts, so this is not
+    // a row of n/a that happens to contain the cell being asserted.
+    expect(cellFor("Title")).toBe("yes (1)");
+    expect(cellFor("H1")).toBe("yes (1)");
+    expect(cellFor("Opening text")).toBe("yes (1)");
+
     expect(text).toContain("That is not a zero.");
   });
 
@@ -138,7 +179,29 @@ describe("buildCopyReport", () => {
 
     expect(text).toContain("target_page_not_captured");
     expect(text).toContain("This is not a score of zero.");
+    expect(text).toContain("was not collected as a readable HTML response");
     expect(text).not.toContain("## Coverage");
+  });
+
+  /**
+   * The two unavailable reasons are two different facts, and the report used to
+   * state the first for both. "Not collected" about a page that was collected
+   * points the reader at the wrong thing to fix.
+   */
+  it("distinguishes a page that was collected from one that was not", () => {
+    const normalized = normalizeTargetQueries(["pricing"]);
+    if (!normalized.ok) throw new Error(normalized.reason);
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: buildKeywordEvidence(null, normalized.queries, null, true),
+      limitationText,
+    });
+
+    expect(text).toContain("extract_missing");
+    expect(text).toContain("was collected, but its text was not carried");
+    expect(text).not.toContain("was not collected as a readable HTML response");
   });
 
   it("keeps a pipe in a query from splitting the table row it sits in", () => {
@@ -215,7 +278,12 @@ describe("buildCopyReport", () => {
     });
 
     expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
-    expect(text).toContain("Report truncated to fit.");
+    // Even here, what survives is the metadata and the limitation that caused
+    // the overflow — not the explanatory prose, and not a silent stop.
+    expect(text).toContain("# On-page keyword check");
+    expect(text).toContain("## Limitations");
+    expect(text).toContain("x".repeat(200));
+    expect(text).not.toContain("## Coverage");
   });
 
   /**
@@ -250,8 +318,33 @@ describe("buildCopyReport", () => {
       // not a truncation and owes no notice.
       if (rowsShown < 3) {
         expect(text).toMatch(
-          /more rows omitted to fit|Coverage table omitted to fit|Report truncated to fit/,
+          /more rows omitted to fit|Coverage table omitted to fit|Detail omitted to fit|Cut to fit/,
         );
+      }
+
+      /**
+       * The limitations are the last thing that may be cut.
+       *
+       * They are what keeps every number above them honest, so the budget is
+       * spent on the explanatory middle and the coverage table first. Whenever
+       * the limitations themselves fit inside the budget, all of them are
+       * present — including the long one that forced the cut.
+       */
+      const allLimitations = [
+        ...Object.values({
+          ...limitationText,
+          density_basis_captured_text_only: "y".repeat(filler),
+        }),
+      ];
+      const limitationsSize = allLimitations.join("\n").length;
+      if (limitationsSize < COPY_REPORT_MAX_CHARS - 512) {
+        for (const sentence of allLimitations) {
+          if (sentence === "") continue;
+          expect(
+            text.includes(sentence),
+            `filler ${filler}: a limitation was cut`,
+          ).toBe(true);
+        }
       }
     },
   );

@@ -76,11 +76,21 @@ export interface OnPageHistoryEntry {
   readonly locale: string;
   readonly pageType: OnPageCheckerPageType;
   readonly focus: { readonly covered: number; readonly applicable: number };
+  /**
+   * What the crawl behind this check managed to see.
+   *
+   * Every count is nullable and the availability is carried, because both facts
+   * are the visitor's only way to tell a page checked against a complete crawl
+   * from one checked against a crawl that stopped early. A count the response
+   * did not carry stays `null`: writing 0 there would turn "we were not told"
+   * into "we looked and there were none".
+   */
   readonly coverage: {
-    readonly pagesInspected: number;
-    readonly urlsSkipped: number;
-    readonly urlsBlocked: number;
-    readonly urlsErrored: number;
+    readonly availability: "available" | "partial" | "unavailable";
+    readonly pagesInspected: number | null;
+    readonly urlsSkipped: number | null;
+    readonly urlsBlocked: number | null;
+    readonly urlsErrored: number | null;
   };
   readonly cacheStatus: "hit" | "miss" | "unknown";
 }
@@ -106,7 +116,37 @@ const HISTORY_KEYS: ReadonlySet<string> = new Set([
  * not unique cannot be de-duplicated or pointed at later.
  */
 export function newOnPageHistoryId(): string {
-  return crypto.randomUUID();
+  // `crypto.randomUUID` needs a secure context, and this is called after the
+  // result is already on screen: a throw here would discard a finished check
+  // over a list identity. The fallback keeps the same shape so the reader that
+  // validates it does not have to learn a second one.
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return randomUuidV4FromBytes();
+  }
+}
+
+/** Same shape, same version nibble, from whatever randomness is available. */
+function randomUuidV4FromBytes(): string {
+  const bytes = new Uint8Array(16);
+  try {
+    crypto.getRandomValues(bytes);
+  } catch {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
 }
 
 const UUID_PATTERN =
@@ -153,6 +193,19 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/** A count the response carried, or `null` for one it did not. Never 0 for absent. */
+function isNullableCount(value: unknown): value is number | null {
+  return value === null || isNonNegativeInteger(value);
+}
+
+function isCoverageAvailability(
+  value: unknown,
+): value is "available" | "partial" | "unavailable" {
+  return (
+    value === "available" || value === "partial" || value === "unavailable"
+  );
 }
 
 /**
@@ -351,10 +404,11 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     !isNonNegativeInteger(focus.covered) ||
     !isNonNegativeInteger(focus.applicable) ||
     !isObject(coverage) ||
-    !isNonNegativeInteger(coverage.pagesInspected) ||
-    !isNonNegativeInteger(coverage.urlsSkipped) ||
-    !isNonNegativeInteger(coverage.urlsBlocked) ||
-    !isNonNegativeInteger(coverage.urlsErrored) ||
+    !isCoverageAvailability(coverage.availability) ||
+    !isNullableCount(coverage.pagesInspected) ||
+    !isNullableCount(coverage.urlsSkipped) ||
+    !isNullableCount(coverage.urlsBlocked) ||
+    !isNullableCount(coverage.urlsErrored) ||
     (cacheStatus !== "hit" && cacheStatus !== "miss" && cacheStatus !== "unknown")
   ) {
     return null;
@@ -371,6 +425,7 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     pageType: pageType as OnPageCheckerPageType,
     focus: { covered: focus.covered, applicable: focus.applicable },
     coverage: {
+      availability: coverage.availability,
       pagesInspected: coverage.pagesInspected,
       urlsSkipped: coverage.urlsSkipped,
       urlsBlocked: coverage.urlsBlocked,
@@ -445,7 +500,11 @@ export function appendOnPageHistory(
       storage.setItem(ON_PAGE_HISTORY_KEY, JSON.stringify(trimmed));
       return trimmed;
     } catch {
-      return next;
+      // Both writes failed, so nothing was stored. Returning `next` here would
+      // hand the caller a list to render that storage does not hold — the panel
+      // would show this check as remembered and lose it on the next reload.
+      // What is actually there is whatever the last successful write left.
+      return readOnPageHistory(storage);
     }
   }
 }

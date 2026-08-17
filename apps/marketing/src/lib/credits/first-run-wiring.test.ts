@@ -4,7 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_DEPENDENCIES as DEFAULT_AUDIT_DEPENDENCIES } from "../agents/audit-handler.ts";
+import {
+  DEFAULT_DEPENDENCIES as DEFAULT_AUDIT_DEPENDENCIES,
+  ON_PAGE_CHECK_DEPENDENCIES,
+} from "../agents/audit-handler.ts";
 import { DEFAULT_DEPENDENCIES as DEFAULT_PROFILE_REFRESH_DEPENDENCIES } from "../agents/profile-refresh-handler.ts";
 import { QUALIFYING_TOOLS } from "./credits-config.ts";
 import { reportFirstToolRun } from "./report-first-run.ts";
@@ -22,9 +25,24 @@ import { reportFirstToolRun } from "./report-first-run.ts";
 describe("first-run reporting is wired into production", () => {
   it.each([
     ["agent-audit", DEFAULT_AUDIT_DEPENDENCIES],
+    ["on-page-seo-check", ON_PAGE_CHECK_DEPENDENCIES],
     ["profile-refresh", DEFAULT_PROFILE_REFRESH_DEPENDENCIES],
   ])("%s carries the real reporter", (_name, dependencies) => {
     expect(dependencies.reportFirstRun).toBe(reportFirstToolRun);
+  });
+
+  /**
+   * The two audit dependency objects differ in exactly one field, and it is the
+   * one that decides which tool the ledger row names. Copying the object and
+   * forgetting to change the slug would record every checker run as an Agent
+   * audit — which is what this branch did before, silently.
+   */
+  it("labels each audit boundary with the tool the visitor actually ran", () => {
+    expect(DEFAULT_AUDIT_DEPENDENCIES.reportAs).toBe("agent-audit");
+    expect(ON_PAGE_CHECK_DEPENDENCIES.reportAs).toBe("on-page-seo-check");
+    expect(ON_PAGE_CHECK_DEPENDENCIES.delegate).toBe(
+      DEFAULT_AUDIT_DEPENDENCIES.delegate,
+    );
   });
 
   /**
@@ -33,6 +51,10 @@ describe("first-run reporting is wired into production", () => {
    * identity that did not do the work.
    */
   it("qualifies only tools the Supabase session admits", () => {
-    expect([...QUALIFYING_TOOLS]).toEqual(["agent-audit", "profile-refresh"]);
+    expect([...QUALIFYING_TOOLS]).toEqual([
+      "agent-audit",
+      "on-page-seo-check",
+      "profile-refresh",
+    ]);
   });
 });

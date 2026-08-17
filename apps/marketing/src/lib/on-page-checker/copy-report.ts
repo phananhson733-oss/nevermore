@@ -104,14 +104,27 @@ export function buildCopyReport(input: CopyReportInput): string {
   ];
 
   if (input.evidence.availability === "unavailable") {
+    // The two reasons are not the same fact. One says the page never came back
+    // as readable HTML; the other says it did and its text did not survive the
+    // projection. Printing the first for both misreports the second.
+    const why =
+      input.evidence.reason === "target_page_not_captured"
+        ? [
+            "The submitted page was not collected as a readable HTML response,",
+            "so no coverage was measured.",
+          ]
+        : [
+            "The submitted page was collected, but its text was not carried in",
+            "the response, so no coverage was measured.",
+          ];
     return [
       ...header,
       "",
       "## Result",
       "",
       `No keyword evidence: ${inlineCode(input.evidence.reason)}.`,
-      "The submitted page was not collected as a readable HTML response, so no",
-      "coverage was measured. This is not a score of zero.",
+      ...why,
+      "This is not a score of zero.",
       "",
     ].join("\n");
   }
@@ -211,6 +224,38 @@ export function buildCopyReport(input: CopyReportInput): string {
     .replace(/\n{3,}/g, "\n\n");
   if (droppedTable.length <= COPY_REPORT_MAX_CHARS) return droppedTable;
 
-  const notice = "\n\n_Report truncated to fit._\n";
-  return `${droppedTable.slice(0, COPY_REPORT_MAX_CHARS - notice.length)}${notice}`;
+  /**
+   * Last resort, and the one cut that has to be ordered rather than blind.
+   *
+   * Slicing the assembled report takes characters off the end, and the end is
+   * where the limitations are — the part that keeps every number above it
+   * honest. So the limitations and the metadata are laid down first and the
+   * explanatory middle is what gets dropped, with a line saying so.
+   */
+  const notice = "_Detail omitted to fit: the sections explaining how these";
+  const essential = [
+    ...header,
+    ...limitations,
+    "",
+    notice,
+    "numbers were measured did not fit, and the coverage table is omitted._",
+    "",
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+  if (essential.length <= COPY_REPORT_MAX_CHARS) return essential;
+
+  // The limitations alone exceed the budget, so one of them is what gets cut.
+  // The notice goes above them, where the slice cannot reach it: a report that
+  // stops mid-sentence without saying it was cut reads as a complete one.
+  const bare = [
+    ...header,
+    "",
+    "_Cut to fit: the limitations below are incomplete, and the coverage table",
+    "and the sections explaining the measurement are omitted._",
+    ...limitations,
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+  return bare.slice(0, COPY_REPORT_MAX_CHARS);
 }

@@ -90,7 +90,23 @@ export default async function OnPageSeoCheckPage({
           </div>
         </header>
 
-        <NextIntlClientProvider messages={messages}>
+        {/*
+          Only the namespaces the client actually reads.
+
+          Handing the provider the whole catalogue serializes every message on
+          the site into this page's RSC payload and its HTML — 232 KB against a
+          sibling tool page's 13 KB — for a component that reads two namespaces.
+        */}
+        <NextIntlClientProvider
+          messages={{
+            tools: {
+              onPageChecker: messages.tools.onPageChecker,
+              // The shared account of the crawl gate's errors, so this page does
+              // not write a second, contradicting one.
+              seoAudit: { errors: messages.tools.seoAudit.errors },
+            },
+          }}
+        >
           <OnPageChecker locale={locale} />
         </NextIntlClientProvider>
 

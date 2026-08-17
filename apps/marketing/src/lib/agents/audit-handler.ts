@@ -54,6 +54,19 @@ export interface AgentAuditHandlerDependencies {
    * an attacker either way.
    */
   readonly reportFirstRun?: (tool: QualifyingTool) => void;
+  /**
+   * Which tool the visitor actually ran.
+   *
+   * Owner ruling: the On-Page Checker reuses this endpoint's engine rather than
+   * getting one of its own, but it still records its own credit identity from
+   * day one. Those two facts only fit together if the identity comes from the
+   * boundary the request arrived at — the body cannot carry it, because the
+   * frozen request whitelist is `{url, targetQueries?, pageRole?}` and because a
+   * client-supplied slug is a client-chosen ledger label. The checker therefore
+   * has its own thin route over this same handler, and that route is the only
+   * thing that changes here.
+   */
+  readonly reportAs: QualifyingTool;
 }
 
 /**
@@ -69,6 +82,19 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
       input,
     }),
   reportFirstRun: reportFirstToolRun,
+  reportAs: "agent-audit",
+};
+
+/**
+ * The same handler, reached from the On-Page Checker's own route.
+ *
+ * Only the ledger label differs. Sharing the engine is what makes a second
+ * check on an already-crawled host fast, and sharing the in-flight gate is what
+ * keeps a checker run and an Agent run on one host from crawling it twice.
+ */
+export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
+  ...DEFAULT_DEPENDENCIES,
+  reportAs: "on-page-seo-check",
 };
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -151,7 +177,8 @@ function isJsonContentType(headers: Headers): boolean {
 }
 
 async function readBoundedJson(response: Response): Promise<unknown | null> {
-  if (!isJsonContentType(response.headers) || response.body === null) return null;
+  if (!isJsonContentType(response.headers) || response.body === null)
+    return null;
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -424,7 +451,7 @@ export async function handleAgentAuditRequest(
     },
   };
 
-  dependencies.reportFirstRun?.("agent-audit");
+  dependencies.reportFirstRun?.(dependencies.reportAs);
   return Response.json(
     { data: projected },
     { status: upstream.status, headers: successHeaders(cache) },

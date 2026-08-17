@@ -19,6 +19,7 @@ import type {
  */
 import {
   KEYWORD_EVIDENCE_VERSION,
+  TEXT_UNITS_VERSION,
   type KeywordEvidence,
 } from "@sf/public-tools/seo-audit/keyword-evidence/types";
 import {
@@ -226,7 +227,10 @@ function isKeywordEvidenceShape(value: unknown): value is KeywordEvidence {
   // discriminant would pass `queries: "none"` and `focus: null` through to a
   // client that then renders whatever that turns into.
   return (
-    typeof value.textUnitsVersion === "string" &&
+    // The exact literal, not any string: a region computed under a different
+    // counting algorithm would otherwise be published as current, and the
+    // density beside it read under rules that did not produce it.
+    value.textUnitsVersion === TEXT_UNITS_VERSION &&
     (value.pageRole === null ||
       value.pageRole === "homepage" ||
       value.pageRole === "product" ||

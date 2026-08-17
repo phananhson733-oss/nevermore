@@ -621,3 +621,222 @@ describe("seo audit record invariants", () => {
     expect(record?.tested).toBe(0);
   });
 });
+
+/**
+ * `pages` is a positional map of `raw.pages`, and the extract is read out of
+ * `raw.pages` at the index the target was found at in `pages`. Nothing outside
+ * this file can see that pairing come apart: a wrong index still produces a
+ * well-formed extract, one that reports another page's words under this page's
+ * URL. So every page in this fixture carries text of its own.
+ */
+function positionalFixture(): SeoAuditRaw {
+  return raw({
+    requestedUrl: "https://acme.test/pricing",
+    pages: [
+      page(
+        "https://acme.test/",
+        {
+          title: "Acme home",
+          metaDescription: "Home description",
+          h1: ["Home heading"],
+          headings: ["Home heading", "Home section"],
+          bodyExcerpt: "Home opening text",
+          wordCount: 100,
+        },
+        0,
+      ),
+      page("https://acme.test/blog", {
+        title: "Acme blog",
+        metaDescription: "Blog description",
+        h1: ["Blog heading"],
+        headings: ["Blog heading", "Blog section"],
+        bodyExcerpt: "Blog opening text",
+        wordCount: 200,
+      }),
+      page("https://acme.test/pricing", {
+        title: "Acme pricing",
+        metaDescription: "Pricing description",
+        h1: ["Pricing heading"],
+        headings: ["Pricing heading", "Pricing section"],
+        bodyExcerpt: "Pricing opening text",
+        wordCount: 300,
+      }),
+      page("https://acme.test/contact", {
+        title: "Acme contact",
+        metaDescription: "Contact description",
+        h1: ["Contact heading"],
+        headings: ["Contact heading", "Contact section"],
+        bodyExcerpt: "Contact opening text",
+        wordCount: 400,
+      }),
+    ],
+  });
+}
+
+describe("target page extract", () => {
+  it("extracts the same page the report says it inspected", () => {
+    const report = buildSeoAuditReport(positionalFixture());
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/pricing");
+    // Whole-object, so an index that is off by one in either direction reports
+    // the blog's or the contact page's text and fails here.
+    expect(report.targetPageExtract).toEqual({
+      url: "https://acme.test/pricing",
+      title: "Acme pricing",
+      metaDescription: "Pricing description",
+      h1: ["Pricing heading"],
+      subHeadings: ["Pricing section"],
+      openingText: "Pricing opening text",
+      staticBodyWords: 300,
+      truncatedLists: false,
+    });
+    expect(report.targetPageExtract?.url).toBe(report.inspectedTargetUrl);
+  });
+
+  it("carries no text belonging to any other collected page", () => {
+    const serialized = JSON.stringify(
+      buildSeoAuditReport(positionalFixture()).targetPageExtract,
+    );
+
+    for (const neighbour of [
+      "Acme home",
+      "Acme blog",
+      "Acme contact",
+      "Home opening text",
+      "Blog opening text",
+      "Contact opening text",
+      "Home section",
+      "Blog section",
+      "Contact section",
+    ]) {
+      expect(serialized).not.toContain(neighbour);
+    }
+  });
+
+  it("reads the index of the inspected journey, not the first record sharing the subject", () => {
+    // Two records for one subject URL: a redirect hop that was never an
+    // inspectable HTML response, then the response that was. Selecting the raw
+    // record by a second predicate on `subjectUrl` picks the stub, and the
+    // report then quotes text from a page it did not inspect.
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/pricing",
+        pages: [
+          page("https://acme.test/", { title: "Acme home" }, 0),
+          page("https://acme.test/pricing", {
+            status: 301,
+            finalStatus: 301,
+            redirectChain: ["https://acme.test/pricing/"],
+            title: "Redirect stub",
+            metaDescription: "Redirect stub description",
+            bodyExcerpt: "Redirect stub body",
+          }),
+          page("https://acme.test/pricing", {
+            title: "Acme pricing",
+            metaDescription: "Pricing description",
+            bodyExcerpt: "Pricing opening text",
+          }),
+        ],
+      }),
+    );
+
+    expect(report.targetPageExtract?.title).toBe("Acme pricing");
+    expect(report.targetPageExtract?.metaDescription).toBe(
+      "Pricing description",
+    );
+    expect(report.targetPageExtract?.openingText).toBe("Pricing opening text");
+  });
+
+  it("publishes no extract when the submitted page was never inspected", () => {
+    const uncollected = buildSeoAuditReport(
+      raw({ requestedUrl: "https://acme.test/never-crawled" }),
+    );
+    expect(uncollected.targetInspected).toBe(false);
+    expect(uncollected.targetPageExtract).toBeNull();
+
+    const notHtml = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/paper",
+        pages: [
+          page(
+            "https://acme.test/paper",
+            { contentType: "application/pdf", title: "Not HTML" },
+            0,
+          ),
+        ],
+      }),
+    );
+    expect(notHtml.targetInspected).toBe(false);
+    expect(notHtml.targetPageExtract).toBeNull();
+
+    const errorStatus = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/missing",
+        pages: [
+          page(
+            "https://acme.test/missing",
+            { status: 404, finalStatus: 404, title: "Gone" },
+            0,
+          ),
+        ],
+      }),
+    );
+    expect(errorStatus.targetInspected).toBe(false);
+    expect(errorStatus.targetPageExtract).toBeNull();
+  });
+
+  it("pins the schema version the extract ships under", () => {
+    const payload = buildSeoAuditPayload(positionalFixture());
+
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v5");
+    expect(payload.result.targetPageExtract).not.toBeNull();
+    expect(isSeoAuditPayload(payload)).toBe(true);
+  });
+});
+
+/**
+ * The keyword region is derived per request from one visitor's queries. This
+ * payload is what gets stored under a cache key shared by every visitor to the
+ * same host, so a payload carrying that region must not read as a valid
+ * instance of this shape — otherwise the next visitor is answered with the
+ * previous visitor's questions.
+ */
+describe("cache eligibility of the audit payload", () => {
+  const validRegion = {
+    availability: "available",
+    version: "keyword_evidence.v1",
+    textUnitsVersion: "text_units.v1",
+    pageRole: null,
+    queries: [],
+    focus: { covered: 0, applicable: 0 },
+    limitations: ["density_basis_captured_text_only"],
+  } as const;
+
+  it("rejects an otherwise valid payload purely for carrying a keyword region", () => {
+    const accepted = buildSeoAuditPayload(raw());
+    const rejected = {
+      ...accepted,
+      result: { ...accepted.result, keywordEvidence: validRegion },
+    };
+
+    // The same payload, one key apart.
+    expect(isSeoAuditPayload(accepted)).toBe(true);
+    expect(isSeoAuditPayload(rejected)).toBe(false);
+  });
+
+  it("rejects the key even when it carries nothing", () => {
+    // A spread that copies `keywordEvidence: undefined` still leaves the key
+    // present, and a check for a truthy or defined value would wave it through.
+    const accepted = buildSeoAuditPayload(raw());
+
+    for (const carried of [undefined, null, {}]) {
+      expect(
+        isSeoAuditPayload({
+          ...accepted,
+          result: { ...accepted.result, keywordEvidence: carried },
+        }),
+      ).toBe(false);
+    }
+  });
+});

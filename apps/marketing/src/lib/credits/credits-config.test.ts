@@ -57,7 +57,11 @@ describe("credits-config", () => {
    * one DataForSEO call is not work.
    */
   it("qualifies only the tools the Supabase session admits", () => {
-    expect([...QUALIFYING_TOOLS]).toEqual(["agent-audit", "profile-refresh"]);
+    expect([...QUALIFYING_TOOLS]).toEqual([
+      "agent-audit",
+      "on-page-seo-check",
+      "profile-refresh",
+    ]);
   });
 
   /**

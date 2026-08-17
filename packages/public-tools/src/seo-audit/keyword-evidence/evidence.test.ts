@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SeoAuditTargetPageExtract } from "../types.ts";
 import { buildKeywordEvidence } from "./evidence.ts";
-import { normalizeTargetQueries } from "./normalize.ts";
+import { normalizeForMatch, normalizeTargetQueries } from "./normalize.ts";
+import { countTextUnits } from "./text-units.ts";
 import type {
   KeywordEvidenceAvailable,
   KeywordEvidenceQuery,
@@ -428,5 +429,108 @@ describe("the region stays a fixed-cardinality record", () => {
     ]) {
       expect(serialized).not.toContain(String(pageText));
     }
+  });
+});
+
+describe("buildKeywordEvidence — density is counted over the text it names", () => {
+  /**
+   * The captured text, rebuilt here from the same fields the module reads.
+   *
+   * `basis: "captured_text"` is a claim about which document the denominator
+   * was counted over, and nothing else in the region can check it: a
+   * captured-text denominator and a whole-page word count are both positive
+   * integers, and the ratio stays internally consistent either way. So the
+   * label is only worth something if the number is reproducible from the
+   * captured text itself.
+   */
+  function capturedTextOf(page: SeoAuditTargetPageExtract): string {
+    return [
+      page.title ?? "",
+      page.metaDescription ?? "",
+      ...page.h1,
+      ...(page.subHeadings ?? []),
+      page.openingText ?? "",
+    ]
+      .filter((part) => part !== "")
+      .join(" ");
+  }
+
+  function densityFor(page: SeoAuditTargetPageExtract) {
+    return queryNamed(
+      available(buildKeywordEvidence(page, queries(["astrology"]), null)),
+      "astrology",
+    ).density;
+  }
+
+  it("reproduces the denominator from the captured text, not from a page-wide count", () => {
+    const expected = countTextUnits(normalizeForMatch(capturedTextOf(extract)));
+    // The fixture has to be able to tell the two apart, or this proves nothing.
+    expect(expected.units).toBeGreaterThan(0);
+    expect(expected.units).not.toBe(extract.staticBodyWords);
+
+    const density = densityFor(extract);
+
+    expect(density?.basis).toBe("captured_text");
+    expect(density?.denominatorUnits).toBe(expected.units);
+    expect(density?.unitsBasis).toBe(expected.basis);
+    // The published ratio is exactly this arithmetic over that denominator, so
+    // swapping the denominator cannot leave the value looking right.
+    expect(density?.value).toBe(
+      Math.round(((density?.numeratorUnits ?? 0) / expected.units) * 10_000) /
+        10_000,
+    );
+  });
+
+  it("moves with the captured text and never with the uncaptured body count", () => {
+    const base = densityFor(extract);
+    expect(base?.denominatorUnits).toBeGreaterThan(0);
+
+    // Same captured fields, a wildly different whole-page word count. The
+    // denominator is not that number, so it may not budge.
+    expect(
+      densityFor({ ...extract, staticBodyWords: 99_999 })?.denominatorUnits,
+    ).toBe(base?.denominatorUnits);
+    expect(
+      densityFor({ ...extract, staticBodyWords: null })?.denominatorUnits,
+    ).toBe(base?.denominatorUnits);
+
+    // One captured field made shorter: the denominator has to follow it down,
+    // and land exactly where the captured text says.
+    const trimmed: SeoAuditTargetPageExtract = {
+      ...extract,
+      openingText: "Astrology.",
+    };
+    expect(densityFor(trimmed)?.denominatorUnits).toBeLessThan(
+      base?.denominatorUnits ?? 0,
+    );
+    expect(densityFor(trimmed)?.denominatorUnits).toBe(
+      countTextUnits(normalizeForMatch(capturedTextOf(trimmed))).units,
+    );
+  });
+
+  it("labels a CJK denominator by the units that produced it", () => {
+    const cjk: SeoAuditTargetPageExtract = {
+      url: "https://example.test/",
+      title: "占星工具",
+      metaDescription: null,
+      h1: ["占星"],
+      subHeadings: null,
+      // No punctuation: `normalizeForMatch` deliberately keeps it, and a CJK
+      // full stop survives the CJK strip as a word unit, which would make the
+      // basis `mixed` for reasons that have nothing to do with this assertion.
+      openingText: "占星是一张出生时刻的天空地图",
+      // Withheld for CJK, and still not the denominator when it is present.
+      staticBodyWords: null,
+      truncatedLists: false,
+    };
+    const expected = countTextUnits(normalizeForMatch(capturedTextOf(cjk)));
+    const density = queryNamed(
+      available(buildKeywordEvidence(cjk, queries(["占星"]), null)),
+      "占星",
+    ).density;
+
+    expect(density?.unitsBasis).toBe(expected.basis);
+    expect(density?.unitsBasis).toBe("cjk_chars");
+    expect(density?.denominatorUnits).toBe(expected.units);
   });
 });

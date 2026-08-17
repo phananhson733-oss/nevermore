@@ -74,6 +74,7 @@ function historyEntry(
     pageType: "product",
     focus: { covered: 4, applicable: 6 },
     coverage: {
+      availability: "available",
       pagesInspected: 12,
       urlsSkipped: 0,
       urlsBlocked: 0,
@@ -83,6 +84,65 @@ function historyEntry(
     ...overrides,
   };
 }
+
+/**
+ * The stored coverage record is the one place a check's crawl context survives,
+ * and both of these rules exist because a reader has no other way to tell a
+ * complete crawl from one that stopped early.
+ */
+describe("stored coverage keeps the crawl's own answer", () => {
+  it("accepts counts the response did not carry as null", () => {
+    const storage = new MemoryStorage();
+    const entry = historyEntry({
+      coverage: {
+        availability: "partial",
+        pagesInspected: 12,
+        urlsSkipped: null,
+        urlsBlocked: null,
+        urlsErrored: null,
+      },
+    });
+
+    const stored = appendOnPageHistory(storage, entry);
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.coverage.urlsSkipped).toBeNull();
+    expect(stored[0]?.coverage.availability).toBe("partial");
+    // Read back through the validator, not just returned from memory.
+    expect(readOnPageHistory(storage)[0]?.coverage.urlsSkipped).toBeNull();
+  });
+
+  it("rejects an entry whose coverage carries no availability", () => {
+    const storage = new MemoryStorage();
+    const { availability: _dropped, ...rest } = historyEntry().coverage;
+
+    const stored = appendOnPageHistory(storage, {
+      ...historyEntry(),
+      coverage: rest as OnPageHistoryEntry["coverage"],
+    });
+
+    expect(stored).toEqual([]);
+  });
+
+  /**
+   * A write that failed entirely must not hand back a list to render. The panel
+   * would show the check as remembered and lose it on the next reload.
+   */
+  it("reports what storage holds when every write fails", () => {
+    const storage = new MemoryStorage();
+    appendOnPageHistory(storage, historyEntry({ id: uuid(1) }));
+    storage.setItem = () => {
+      throw new Error("quota exceeded");
+    };
+
+    const stored = appendOnPageHistory(
+      storage,
+      historyEntry({ id: uuid(2), createdAt: 2_000 }),
+    );
+
+    expect(stored.map((entry) => entry.id)).toEqual([uuid(1)]);
+  });
+});
 
 describe("on-page draft slot", () => {
   it("stores and resumes what the visitor typed", () => {

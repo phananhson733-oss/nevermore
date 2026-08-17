@@ -1783,6 +1783,49 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
   });
 
+  /**
+   * The handoff exists so the Agent asks the checker's question. Restoring the
+   * fields and then not sending them is the whole feature missing, and the only
+   * assertions that existed stopped at the restored fields.
+   */
+  it("carries the handed-over queries and page role into the request", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json(
+          successEnvelope("seo", "astrologywiki.com/chart"),
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    await flushAsyncWork();
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(String(bodies[0]))).toEqual({
+      url: "astrologywiki.com/chart",
+      // Order is the visitor's, and the wire treats it as significant.
+      targetQueries: ["natal chart", "birth chart"],
+      pageRole: "guide",
+    });
+  });
+
   it("keeps a page-focused launch out of an ordinary Agent request", async () => {
     // No handoff: the request body must be byte-for-byte what it was before the
     // keyword layer existed.

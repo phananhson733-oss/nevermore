@@ -3,7 +3,15 @@
 // @pos    -- wire types for the keyword layer, deliberately absent from SeoAuditReport
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import type { TextUnitsBasis } from "./text-units.ts";
+import { TEXT_UNITS_VERSION, type TextUnitsBasis } from "./text-units.ts";
+
+/**
+ * Re-exported so the wire guard can compare against the exact literal instead of
+ * accepting any string. A response computed under a different counting
+ * algorithm is not readable under these rules, and a guard that took `string`
+ * would let one through as current.
+ */
+export { TEXT_UNITS_VERSION };
 import type { QueryTokenization, SlotState } from "./match.ts";
 
 /**
@@ -131,7 +139,7 @@ export interface KeywordEvidenceUnavailable {
 export interface KeywordEvidenceAvailable {
   readonly availability: "available";
   readonly version: typeof KEYWORD_EVIDENCE_VERSION;
-  readonly textUnitsVersion: string;
+  readonly textUnitsVersion: typeof TEXT_UNITS_VERSION;
   readonly pageRole: KeywordEvidencePageRole | null;
   readonly queries: readonly KeywordEvidenceQuery[];
   readonly focus: KeywordEvidenceFocus;

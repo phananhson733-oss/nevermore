@@ -13,17 +13,45 @@ import {
   type SeoAuditTargetPageExtract,
 } from "@sf/public-tools";
 
-vi.mock("next-intl", () => ({
-  useTranslations: () => {
-    const translate = (key: string, values?: Record<string, unknown>) =>
-      values === undefined
-        ? key
-        : `${key}:${Object.entries(values)
-            .map(([name, value]) => `${name}=${String(value)}`)
-            .join(",")}`;
-    return translate;
-  },
-}));
+/**
+ * The mock resolves against the real English catalogue.
+ *
+ * A mock that echoed the key made every render assertion here an assertion
+ * about the mock: `not.toContain("score")` passed because no key contains the
+ * word, not because the page publishes no score, and a key that did not exist
+ * looked identical to one that did. Resolving the real messages means these
+ * tests read the sentences that actually ship — and a missing key renders as its
+ * dotted path, exactly as next-intl does in production.
+ */
+vi.mock("next-intl", async () => {
+  const catalogue = (
+    await import("../../i18n/messages/en.json", { with: { type: "json" } })
+  ).default as unknown as Record<string, unknown>;
+
+  return {
+    useTranslations: (namespace: string) => {
+      const translate = (key: string, values?: Record<string, unknown>) => {
+        const path = `${namespace}.${key}`;
+        const raw = path
+          .split(".")
+          .reduce<unknown>(
+            (node, part) =>
+              typeof node === "object" && node !== null
+                ? (node as Record<string, unknown>)[part]
+                : undefined,
+            catalogue,
+          );
+        if (typeof raw !== "string") return path;
+        if (values === undefined) return raw;
+        return raw.replaceAll(
+          /\{(\w+)\}/g,
+          (_match: string, name: string) => String(values[name] ?? `{${name}}`),
+        );
+      };
+      return translate;
+    },
+  };
+});
 
 const { OnPageChecker } = await import("./on-page-checker");
 
@@ -38,17 +66,23 @@ const extract: SeoAuditTargetPageExtract = {
   truncatedLists: false,
 };
 
-function evidenceFor(raw: readonly string[]) {
+function evidenceFor(
+  raw: readonly string[],
+  pageRole: "homepage" | "product" | "tool" | "guide" = "product",
+) {
   const normalized = normalizeTargetQueries(raw);
   if (!normalized.ok) throw new Error(normalized.reason);
-  return buildKeywordEvidence(extract, normalized.queries, "product", true);
+  return buildKeywordEvidence(extract, normalized.queries, pageRole, true);
 }
 
-function auditResponse(queries: readonly string[]): Response {
+function auditResponse(
+  queries: readonly string[],
+  cache: "hit" | "miss" = "miss",
+): Response {
   return Response.json(
     {
       data: {
-        run: { source: { cache: { status: "miss" } } },
+        run: { source: { cache: { status: cache } } },
         result: {
           targetUrl: extract.url,
           scannedAt: "2026-08-17T12:00:00.000Z",
@@ -62,6 +96,33 @@ function auditResponse(queries: readonly string[]): Response {
           },
           targetPageExtract: extract,
           keywordEvidence: evidenceFor(queries),
+        },
+      },
+    },
+    { status: 200 },
+  );
+}
+
+/** The same answer, computed for a page the visitor declared as a guide. */
+function guideResponse(queries: readonly string[]): Response {
+  return Response.json(
+    {
+      data: {
+        run: { source: { cache: { status: "miss" } } },
+        result: {
+          targetUrl: extract.url,
+          scannedAt: "2026-08-17T12:00:00.000Z",
+          targetInspected: true,
+          inspectedTargetUrl: extract.url,
+          coverage: {
+            availability: "available",
+            pagesInspected: 12,
+            urlsSkipped: 0,
+            urlsBlocked: 0,
+            urlsErrored: 0,
+          },
+          targetPageExtract: extract,
+          keywordEvidence: evidenceFor(queries, "guide"),
         },
       },
     },
@@ -123,6 +184,23 @@ async function type(input: HTMLInputElement, value: string): Promise<void> {
   });
 }
 
+async function select(
+  host: HTMLElement,
+  id: string,
+  value: string,
+): Promise<void> {
+  const element = host.querySelector(`#${id}`) as HTMLSelectElement | null;
+  if (!element) throw new Error(`no select ${id}`);
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  await act(async () => {
+    setter?.call(element, value);
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
   const found = [...host.querySelectorAll("button")].find((candidate) =>
     (candidate.textContent ?? "").includes(text),
@@ -139,11 +217,11 @@ async function fillAndRun(
   for (const query of queries) {
     await type(field(host, "onpage-query"), query);
     await act(async () => {
-      buttonWith(host, "actions.addQuery").click();
+      buttonWith(host, "Add").click();
     });
   }
   await act(async () => {
-    buttonWith(host, "actions.run").click();
+    buttonWith(host, "Check this page").click();
   });
 }
 
@@ -160,7 +238,7 @@ describe("On-Page checker request", () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe("/api/agents/seo/audit");
+    expect(url).toBe("/api/tools/on-page-seo-check");
     expect(JSON.parse(String(init.body))).toEqual({
       url: "acme.test/pricing",
       targetQueries: ["pricing", "plans"],
@@ -177,17 +255,17 @@ describe("On-Page checker request", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     await act(async () => {
-      buttonWith(host, "actions.run").click();
+      buttonWith(host, "Check this page").click();
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(host.textContent).toContain("errors.urlRequired");
+    expect(host.textContent).toContain("Add the page URL you want checked.");
 
     await type(field(host, "onpage-url"), "acme.test/pricing");
     await act(async () => {
-      buttonWith(host, "actions.run").click();
+      buttonWith(host, "Check this page").click();
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(host.textContent).toContain("errors.queryRequired");
+    expect(host.textContent).toContain("Add at least one target query.");
   });
 
   it("refuses a sixth query in the browser as well as on the wire", async () => {
@@ -195,15 +273,15 @@ describe("On-Page checker request", () => {
     for (const query of ["a", "b", "c", "d", "e"]) {
       await type(field(host, "onpage-query"), query);
       await act(async () => {
-        buttonWith(host, "actions.addQuery").click();
+        buttonWith(host, "Add").click();
       });
     }
     await type(field(host, "onpage-query"), "f");
     await act(async () => {
-      buttonWith(host, "actions.addQuery").click();
+      buttonWith(host, "Add").click();
     });
 
-    expect(host.textContent).toContain("errors.queryLimit");
+    expect(host.textContent).toContain("Up to 5 queries.");
   });
 });
 
@@ -216,16 +294,21 @@ describe("On-Page checker result", () => {
     const host = await render();
     await fillAndRun(host);
 
+    const text = host.textContent ?? "";
     // Covered in the title, and said so rather than scored.
-    expect(host.textContent).toContain("slotStates.covered");
-    expect(host.textContent).toContain("focus.summary:");
-    expect(host.textContent).toContain("focus.notAScore");
-    expect(host.textContent).toContain("density.value:");
-    expect(host.textContent).toContain(
-      "limitations.density_basis_captured_text_only",
-    );
-    // No score anywhere: this surface publishes counts.
-    expect(host.textContent).not.toContain("score");
+    expect(text).toContain("yes (1)");
+    expect(text).toMatch(/Covered \d+ of \d+ checkable places/);
+    expect(text).toContain("A count of places, not a score");
+    // The density names the unit it counted, not just a percentage.
+    expect(text).toMatch(/% of \d+ collected words/);
+    /**
+     * No score is published anywhere. Asserting the absence of the word "score"
+     * cannot express that — the copy has to use the word to deny one — so the
+     * rule is about the shapes a score takes.
+     */
+    expect(text).not.toMatch(/\b\d{1,3}\s*(?:\/|out of)\s*100\b/);
+    expect(text.toLowerCase()).not.toContain("overall score");
+    expect(text.toLowerCase()).not.toContain("your score");
   });
 
   it("shows an absent field as not applicable rather than as a zero", async () => {
@@ -259,7 +342,7 @@ describe("On-Page checker result", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("slotStates.not_applicable");
+    expect(host.textContent).toContain("n/a");
   });
 
   it("names why an unavailable region is unavailable and that it is not zero", async () => {
@@ -287,8 +370,10 @@ describe("On-Page checker result", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("unavailable.target_page_not_captured");
-    expect(host.textContent).toContain("unavailable.notZero");
+    expect(host.textContent).toContain(
+      "did not collect this page as a readable HTML response",
+    );
+    expect(host.textContent).toContain("This is not a score of zero");
   });
 });
 
@@ -299,14 +384,14 @@ describe("On-Page checker local state", () => {
     ) as unknown as typeof fetch;
 
     const host = await render();
-    expect(host.textContent).toContain("history.empty");
+    expect(host.textContent).toContain("No checks yet.");
 
     await fillAndRun(host);
 
     const stored = localStorage.getItem("gengrowth:onpage-history:v1");
     expect(stored).not.toBeNull();
     expect(JSON.parse(String(stored))).toHaveLength(1);
-    expect(host.textContent).toContain("history.localOnly");
+    expect(host.textContent).toContain("Kept in this browser only");
   });
 
   it("does not remember a run that failed", async () => {
@@ -317,7 +402,10 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("errors.scan_failed");
+    // The shared account of this failure, not a second one written here.
+    expect(host.textContent).toContain(
+      "The public site could not be audited from this environment.",
+    );
     expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
   });
 
@@ -349,7 +437,9 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("unavailable.target_page_not_captured");
+    expect(host.textContent).toContain(
+      "did not collect this page as a readable HTML response",
+    );
     expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
   });
 
@@ -361,7 +451,7 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await fillAndRun(host, ["pricing"]);
 
-    expect(host.textContent).toContain("errors.auth_required");
+    expect(host.textContent).toContain("Sign in to run a check.");
     const draft = sessionStorage.getItem("gengrowth:onpage-draft:v1");
     expect(draft).not.toBeNull();
     expect(JSON.parse(String(draft))).toMatchObject({
@@ -377,6 +467,102 @@ describe("On-Page checker local state", () => {
     });
   });
 
+  /**
+   * The declared page role has to travel and has to change something. Both were
+   * true only for the default before: every case here submitted "homepage", so
+   * turning the selector into a decoration broke nothing.
+   */
+  it("sends the page role the visitor chose and answers for that role", async () => {
+    const fetchMock = vi.fn(async () => guideResponse(["pricing"]));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await type(field(host, "onpage-query"), "pricing");
+    await act(async () => {
+      buttonWith(host, "Add").click();
+    });
+    await select(host, "onpage-role", "guide");
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).pageRole).toBe("guide");
+    // And the advice is the guide's, not the homepage's.
+    expect(host.textContent).toContain("A guide is found by the question it answers");
+    expect(host.textContent).not.toContain("A homepage is judged on whether");
+  });
+
+  it("says which page was read, when it was collected, and from where", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"], "hit"),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host);
+
+    const text = host.textContent ?? "";
+    // The audited URL, not the string that was typed.
+    expect(text).toContain("https://acme.test/pricing");
+    // And that this answer came out of a crawl that was already held, which is
+    // the difference between a fresh reading and one up to an hour old.
+    expect(text).toContain("which was already held");
+    expect(text).not.toContain("Read out of a crawl this check started");
+  });
+
+  it("says so when two spellings of one query were measured once", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    /**
+     * Two queries the browser accepts as distinct and the wire merges. The
+     * client compares lower-cased text; the wire applies NFKC first, so these
+     * full-width characters normalize onto the plain ones. Nothing is wrong with
+     * either rule — what would be wrong is a query disappearing without a word.
+     */
+    await fillAndRun(host, ["pricing", "\uFF50\uFF52\uFF49\uFF43\uFF49\uFF4E\uFF47"]);
+
+    expect(host.textContent).toContain("You submitted 2 queries and 1 are");
+  });
+
+  it("says that market and language are not part of the check", async () => {
+    const host = await render();
+
+    expect(host.textContent).toContain(
+      "Market and language are not part of this check",
+    );
+    const market = field(host, "onpage-country");
+    expect(market.getAttribute("aria-describedby")).toBe("onpage-market-scope");
+  });
+
+  /**
+   * The draft survives one sign-in round trip and no more. Left behind, it
+   * refills the form with an earlier visitor's URL on every visit inside the TTL.
+   */
+  it("consumes the resumed draft instead of leaving it to reappear", async () => {
+    sessionStorage.setItem(
+      "gengrowth:onpage-draft:v1",
+      JSON.stringify({
+        url: "acme.test/plans",
+        targetQueries: ["plans"],
+        country: "GB",
+        locale: "en",
+        pageType: "guide",
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 600_000,
+      }),
+    );
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("acme.test/plans");
+    expect(field(host, "onpage-country").value).toBe("GB");
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+  });
+
   it("shows a retry time only when the server gave a usable one", async () => {
     globalThis.fetch = vi.fn(async () =>
       Response.json(
@@ -388,7 +574,7 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("errors.retryAfter:seconds=45");
+    expect(host.textContent).toContain("Retry in 45 seconds.");
   });
 
   it("ignores a Retry-After that is not a plain number of seconds", async () => {
@@ -405,7 +591,9 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await fillAndRun(host);
 
-    expect(host.textContent).toContain("errors.target_busy");
-    expect(host.textContent).not.toContain("errors.retryAfter");
+    expect(host.textContent).toContain(
+      "This site has been crawled several times in the last hour",
+    );
+    expect(host.textContent).not.toContain("Retry in");
   });
 });

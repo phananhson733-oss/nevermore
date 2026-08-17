@@ -204,6 +204,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const profileRefreshIntent = useRef<PendingAgentIntent | null>(null);
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  /**
+   * The same value, reachable from `runAudit`.
+   *
+   * `runAudit` is memoized on `[agent]`, so it closes over the first render's
+   * state and would read `null` here forever — the handoff restored the fields
+   * and then sent a request without them, which is the entire feature missing
+   * while every field-level assertion passed.
+   */
+  const handoffQueriesRef = useRef(handoffQueries);
+  handoffQueriesRef.current = handoffQueries;
 
   const runAudit = useCallback(
     async (
@@ -223,10 +233,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           url: confirmedProfile.targetUrl,
           // Only when this visit came from the page checker. Without a handoff
           // the request is byte-for-byte what it was before the keyword layer.
-          ...(handoffQueries === null
+          ...(handoffQueriesRef.current === null
             ? {}
             : {
-                targetQueries: handoffQueries,
+                targetQueries: handoffQueriesRef.current,
                 pageRole: confirmedProfile.pageType,
               }),
         }),
@@ -976,6 +986,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       // The page role now travels with a handoff and is measured, so changing it
       // changes what was asked — a captured report no longer answers it.
       (handoffQueries !== null && next.pageType !== profile.pageType);
+    // The handed-over queries are deliberately not compared here. They are set
+    // once, by the effect that consumes the intent and deletes it, so within one
+    // mount they cannot change from one question to another; a second handoff is
+    // a fresh navigation. And the captured report publishes the queries it
+    // measured inside its own evidence region, so it cannot be read as an answer
+    // to different ones.
     if (auditIdentityChanged) {
       activeOperationController.current?.abort();
       activeOperationController.current = null;

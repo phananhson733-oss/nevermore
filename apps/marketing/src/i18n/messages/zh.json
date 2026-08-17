@@ -2017,7 +2017,8 @@
         "queries": "目标关键词（最多 {max} 个）",
         "market": "市场",
         "language": "语言",
-        "pageRole": "页面角色"
+        "pageRole": "页面角色",
+        "marketScope": "市场与语言不参与这次检查：请求只带页面 URL、关键词和页面角色。它们会在你从这里打开 SEO Agent 时一并带过去。"
       },
       "pageRoles": {
         "homepage": "首页",
@@ -2042,12 +2043,12 @@
       "waiting": {
         "headline": "正在采集站点，然后从里面读出你这一页。",
         "elapsed": "已用 {seconds} 秒",
-        "body": "采集自身上限是 4 分钟、2000 个页面，整个请求会比采集本身更久。",
+        "body": "采集在两次请求之间至少间隔 250 毫秒，并在四分钟处停止，因此最多约 950 个页面；整个请求会比采集本身更久。",
         "noEstimate": "不显示进度估计：浏览器拿不到还剩多少页，所以不猜。"
       },
       "focus": {
         "summary": "在 {applicable} 个可检查位置中覆盖了 {covered} 个。",
-        "notAScore": "这是位置计数，不是评分。页面本身没有的字段不计入分母，也不算作扣分。",
+        "notAScore": "这是位置计数，不是评分，而且是所有关键词累加的总数，不是这一页自己的数字。页面本身没有的字段不计入分母，也不算作扣分。",
         "short": "{covered}/{applicable}"
       },
       "table": {
@@ -2067,8 +2068,13 @@
         "not_applicable": "不适用"
       },
       "density": {
-        "value": "{query}：{percent}%，分母为已采文本 {units} 个单位，出现 {occurrences} 次。",
-        "unavailable": "{query}：密度不可用，没有可作分母的已采文本。"
+        "value": "{query}：{percent}%，分母为已采文本 {units} 个{unitsBasis}，出现 {occurrences} 次。",
+        "unavailable": "{query}：密度不可用，没有可作分母的已采文本。",
+        "units": {
+          "words": "词",
+          "cjk_chars": "中日韩字符",
+          "mixed": "词与中日韩字符的混合单位"
+        }
       },
       "limitations": {
         "sub_headings_h2_h6_merged_no_levels": "副标题是 H2 到 H6 合并成一份清单：采集不保留标题层级，因此无法区分 H2 和 H4。",
@@ -2097,17 +2103,7 @@
         "queryLimit": "最多 {max} 个关键词。要加新的先移除一个。",
         "queryTooLong": "每个关键词最多 {max} 个字符。",
         "auth_required": "登录后才能检查。你填的内容会保留，并且不会自动开跑。",
-        "invalid_url": "这看起来不像一个公开页面的 URL。",
-        "invalid_request": "请检查 URL 和关键词：最多 5 个、每个不超过 80 个字符。",
-        "scan_in_progress": "这个站点已经在被采集了——最常见的原因是你自己在另一个标签页或 SEO Agent 里发起了同站扫描。等那一次跑完。",
-        "target_busy": "这个站点正被另一位访客的运行占用。稍后再试。",
-        "rate_limited": "来自这里的检查太频繁了。稍后再试。",
-        "scan_timeout": "采集在读到你这一页之前就超时了。",
-        "scan_failed": "采集没能完成。没有量到关于这一页的任何事实。",
-        "robots_disallowed": "这个站点的 robots 规则要求爬虫不要进入，所以没有读取该页。",
-        "robots_unreachable": "读不到这个站点的 robots 规则，因此没有采集任何内容。",
-        "retryAfter": "{seconds} 秒后可重试。",
-        "unknown": "检查没有完成。没有量到关于这一页的任何事实。"
+        "retryAfter": "{seconds} 秒后可重试。"
       },
       "faq": {
         "title": "它能告诉你什么、不能告诉你什么",
@@ -2133,6 +2129,13 @@
         "tool": "工具页靠「它能做什么」被找到。title 和 H1 应该读起来就是访客要做的那件事，正文开头应该说明工具就在本页可用，而不是从外部描述它。",
         "guide": "指南靠它回答的问题被找到。把问题本身的措辞放进 title 和 H1，用副标题承载子问题，让扫读的人看得出答案就在这里。",
         "basis": "针对你所声明的页面角色给出的建议。它不改变上面任何一个计数，也不构成任何关于排名的判断。"
+      },
+      "provenance": {
+        "page": "读取的页面：{url}",
+        "hit": "读自本站已有的一次采集（采集于 {time}）——这次检查没有发起新的抓取。",
+        "miss": "读自这次检查发起的采集，采集于 {time}。",
+        "unknown": "采集于 {time}。这次采集是新发起的还是复用已有的，响应没有说明。",
+        "queriesMerged": "你提交了 {submitted} 个关键词，下面量到 {measured} 个：同一个关键词的两种写法只算一次。"
       }
     }
   },

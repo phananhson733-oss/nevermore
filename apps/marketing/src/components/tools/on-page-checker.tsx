@@ -12,6 +12,7 @@ import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidenc
 
 import {
   appendOnPageHistory,
+  clearOnPageDraft,
   clearOnPageStorage,
   newOnPageHistoryId,
   readOnPageDraft,
@@ -34,18 +35,45 @@ const PAGE_ROLES: readonly OnPageCheckerPageType[] = [
   "guide",
 ];
 
-/** Codes this surface has its own wording for; anything else reads as generic. */
-const KNOWN_ERROR_CODES = new Set([
-  "auth_required",
+/**
+ * The checker's own boundary over the SEO Agent's audit handler.
+ *
+ * It runs the identical engine, gate and cache as `/api/agents/seo/audit`; the
+ * separate path exists so a run started here is recorded in the credit ledger as
+ * this tool rather than as an Agent audit.
+ */
+const ON_PAGE_CHECK_ENDPOINT = "/api/tools/on-page-seo-check";
+
+/**
+ * The only code this surface words for itself.
+ *
+ * Everything else the crawl and its gate can return is explained by the shared
+ * `tools.seoAudit.errors` catalogue, and deliberately not re-explained here.
+ * Writing a second sentence for the same 409 produced two contradictory
+ * accounts of it — this page told the visitor a same-site scan was already
+ * running, when the limit is per network address and not per site, and the
+ * shared message (which an existing honesty test pins) already said so.
+ *
+ * `auth_required` stays local because the checker's answer is different: what
+ * was typed is kept and nothing runs until the visitor says so.
+ */
+const LOCAL_ERROR_CODES = new Set(["auth_required"]);
+
+/** Every code the shared catalogue words, so an unknown one still reads sanely. */
+const CRAWL_ERROR_CODES = new Set([
   "invalid_url",
   "invalid_request",
+  "payload_too_large",
+  "unsupported_media_type",
   "scan_in_progress",
   "target_busy",
   "rate_limited",
+  "quota_unavailable",
   "scan_timeout",
   "scan_failed",
   "robots_disallowed",
   "robots_unreachable",
+  "unknown",
 ]);
 
 interface AuditResponse {
@@ -74,14 +102,60 @@ function errorCodeOf(body: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-function integerAt(
+/**
+ * A count the response actually carried, or `null`.
+ *
+ * Never 0 for a missing number: this value is stored and read back later, and a
+ * zero there says "we looked and there were none" about something we were never
+ * told. The house rule is that unavailable is not zero, and a crawl that
+ * reported nothing about skipped URLs is unavailable, not clean.
+ */
+function countAt(
   source: Readonly<Record<string, unknown>> | undefined,
   key: string,
-): number {
+): number | null {
   const value = source?.[key];
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
-    : 0;
+    : null;
+}
+
+function coverageAvailabilityOf(
+  source: Readonly<Record<string, unknown>> | undefined,
+): "available" | "partial" | "unavailable" {
+  const value = source?.["availability"];
+  return value === "available" || value === "partial" ? value : "unavailable";
+}
+
+/**
+ * Elapsed time comes off a clock that cannot go backwards.
+ *
+ * `Date.now()` moves when the system clock is corrected or the machine wakes
+ * from sleep, and this counter runs for up to four minutes beside a claim about
+ * how long the visitor has waited.
+ */
+function monotonicNow(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
+/**
+ * The collection time, in the reader's own locale.
+ *
+ * Rendered only after a client-side run, so there is no server pass to disagree
+ * with. An unparsable timestamp reads as the raw value rather than as a date we
+ * made up.
+ */
+function formatCollectedAt(scannedAt: string, locale: string): string {
+  const parsed = new Date(scannedAt);
+  if (Number.isNaN(parsed.getTime())) return scannedAt;
+  try {
+    return parsed.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return parsed.toISOString();
+  }
 }
 
 function hostOf(url: string): string {
@@ -119,6 +193,8 @@ type RunState =
 
 export function OnPageChecker({ locale }: { readonly locale: string }) {
   const t = useTranslations("tools.onPageChecker");
+  /** One account of the crawl gate, shared with the tool that owns it. */
+  const tCrawl = useTranslations("tools.seoAudit.errors");
   const [url, setUrl] = useState("");
   const [queries, setQueries] = useState<readonly string[]>([]);
   const [queryDraft, setQueryDraft] = useState("");
@@ -175,6 +251,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         setCountry(draft.country);
         setLanguage(draft.locale);
         setPageRole(draft.pageType);
+        // Consumed, not just read. It exists to survive one sign-in round trip;
+        // leaving it behind means every visit inside the TTL refills the form
+        // with someone's earlier URL, on a shared machine included.
+        clearOnPageDraft(session);
       }
     }
     const store = webStore("local");
@@ -184,7 +264,8 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   useEffect(() => {
     if (run.kind !== "running") return;
     const timer = setInterval(() => {
-      if (mounted.current) setElapsed(Math.round((Date.now() - run.startedAt) / 1000));
+      if (mounted.current)
+        setElapsed(Math.round((monotonicNow() - run.startedAt) / 1000));
     }, 1_000);
     return () => clearInterval(timer);
   }, [run]);
@@ -237,13 +318,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     setCopied("idle");
     setFallbackReport(null);
     setElapsed(0);
-    setRun({ kind: "running", startedAt: Date.now() });
+    setRun({ kind: "running", startedAt: monotonicNow() });
 
     const controller = new AbortController();
     inFlight.current = controller;
     let response: Response;
     try {
-      response = await fetch("/api/agents/seo/audit", {
+      response = await fetch(ON_PAGE_CHECK_ENDPOINT, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -300,7 +381,8 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       return;
     }
 
-    const cacheStatus = (body as AuditResponse).data?.run?.source?.cache?.status;
+    const cacheStatus = (body as AuditResponse).data?.run?.source?.cache
+      ?.status;
     const cache =
       cacheStatus === "hit" || cacheStatus === "miss" ? cacheStatus : "unknown";
     const targetUrl =
@@ -308,7 +390,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     const scannedAt =
       typeof result?.scannedAt === "string" ? result.scannedAt : "";
 
-    setRun({ kind: "done", evidence, targetUrl, scannedAt, cacheStatus: cache });
+    setRun({
+      kind: "done",
+      evidence,
+      targetUrl,
+      scannedAt,
+      cacheStatus: cache,
+    });
 
     // Only a whole success is remembered, so the list never suggests a run
     // produced something it did not.
@@ -327,10 +415,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             pageType: pageRole,
             focus: evidence.focus,
             coverage: {
-              pagesInspected: integerAt(result?.coverage, "pagesInspected"),
-              urlsSkipped: integerAt(result?.coverage, "urlsSkipped"),
-              urlsBlocked: integerAt(result?.coverage, "urlsBlocked"),
-              urlsErrored: integerAt(result?.coverage, "urlsErrored"),
+              availability: coverageAvailabilityOf(result?.coverage),
+              pagesInspected: countAt(result?.coverage, "pagesInspected"),
+              urlsSkipped: countAt(result?.coverage, "urlsSkipped"),
+              urlsBlocked: countAt(result?.coverage, "urlsBlocked"),
+              urlsErrored: countAt(result?.coverage, "urlsErrored"),
             },
             cacheStatus: cache,
           }),
@@ -395,7 +484,9 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
 
   const evidence = run.kind === "done" ? run.evidence : null;
   const available =
-    evidence !== null && evidence.availability === "available" ? evidence : null;
+    evidence !== null && evidence.availability === "available"
+      ? evidence
+      : null;
 
   return (
     <div className="mt-10 grid gap-10">
@@ -426,6 +517,8 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               id="onpage-url"
               inputMode="url"
               maxLength={2_048}
+              aria-describedby="onpage-url-notice"
+              aria-invalid={urlNotice !== null}
               onChange={(event) => {
                 setUrl(event.target.value);
                 setUrlNotice(null);
@@ -433,7 +526,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               placeholder="example.com/pricing"
               value={url}
             />
-            <p aria-live="polite" className="mt-1.5 text-[12.5px] text-brand-error" role="alert">
+            {/* `role="alert"` is already an assertive live region; declaring a
+                polite one beside it asks for two different behaviours. */}
+            <p
+              className="mt-1.5 text-[12.5px] text-brand-error"
+              id="onpage-url-notice"
+              role="alert"
+            >
               {urlNotice ?? ""}
             </p>
           </div>
@@ -450,6 +549,8 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 className="w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 id="onpage-query"
                 maxLength={MAX_QUERY_CHARS}
+                aria-describedby="onpage-query-notice"
+                aria-invalid={queryNotice !== null}
                 onChange={(event) => {
                   setQueryDraft(event.target.value);
                   setQueryNotice(null);
@@ -470,7 +571,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 {t("actions.addQuery")}
               </button>
             </div>
-            <p aria-live="polite" className="mt-1.5 text-[12.5px] text-brand-error" role="alert">
+            <p
+              className="mt-1.5 text-[12.5px] text-brand-error"
+              id="onpage-query-notice"
+              role="alert"
+            >
               {queryNotice ?? ""}
             </p>
             {queries.length > 0 && (
@@ -484,7 +589,9 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                     >
                       {query}
                       <span aria-hidden="true"> ×</span>
-                      <span className="sr-only">{t("actions.removeQuery")}</span>
+                      <span className="sr-only">
+                        {t("actions.removeQuery")}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -502,9 +609,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               </label>
               <input
                 className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 font-mono text-[14px] text-text-dark-primary uppercase"
+                aria-describedby="onpage-market-scope"
                 id="onpage-country"
                 maxLength={2}
-                onChange={(event) => setCountry(event.target.value.toUpperCase())}
+                onChange={(event) =>
+                  setCountry(event.target.value.toUpperCase())
+                }
                 value={country}
               />
             </div>
@@ -517,6 +627,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               </label>
               <input
                 className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 font-mono text-[14px] text-text-dark-primary"
+                aria-describedby="onpage-market-scope"
                 id="onpage-language"
                 maxLength={16}
                 onChange={(event) => setLanguage(event.target.value)}
@@ -547,6 +658,21 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             </div>
           </div>
 
+          {/*
+            Market and language do not reach the check.
+
+            The request carries the URL, the queries and the page role, and
+            nothing else — so these two are carried into the SEO Agent when the
+            visitor opens it, and change nothing about the numbers below. Asking
+            for them without saying so reads as "checked for that market".
+          */}
+          <p
+            className="text-[12.5px] leading-[1.6] text-text-dark-faint"
+            id="onpage-market-scope"
+          >
+            {t("fields.marketScope")}
+          </p>
+
           <div className="flex flex-wrap items-center gap-3">
             <button
               className="rounded-lg bg-brand-accent px-4 py-2 text-[14px] font-medium text-brand-on-accent disabled:opacity-60"
@@ -566,9 +692,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         </div>
       </section>
 
+      {/*
+        No live region on the section itself.
+
+        The elapsed counter below ticks every second inside it, so a page-level
+        polite region announced the whole panel about 240 times over one crawl.
+        The announcements belong on the state blocks, which change once each.
+      */}
       <section
         aria-labelledby="onpage-stage-evidence"
-        aria-live="polite"
         className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7"
       >
         <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
@@ -588,11 +720,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         )}
 
         {run.kind === "running" && (
-          <div className="mt-4 grid gap-2">
+          <div className="mt-4 grid gap-2" role="status">
             <p className="text-[14px] text-text-dark-primary">
               {t("waiting.headline")}
             </p>
-            <p className="font-mono text-[13px] text-text-dark-secondary">
+            {/* Visible progress, deliberately not announced once a second. */}
+            <p
+              aria-hidden="true"
+              className="font-mono text-[13px] text-text-dark-secondary"
+            >
               {t("waiting.elapsed", { seconds: elapsed })}
             </p>
             <p className="text-[12.5px] leading-[1.6] text-text-dark-faint">
@@ -607,9 +743,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         {run.kind === "failed" && (
           <div className="mt-4 grid gap-2" role="status">
             <p className="text-[14px] text-brand-error">
-              {KNOWN_ERROR_CODES.has(run.code)
+              {LOCAL_ERROR_CODES.has(run.code)
                 ? t(`errors.${run.code}`)
-                : t("errors.unknown")}
+                : CRAWL_ERROR_CODES.has(run.code)
+                  ? tCrawl(run.code)
+                  : tCrawl("unknown")}
             </p>
             {run.retryAfter !== null && (
               <p className="text-[13px] text-text-dark-secondary">
@@ -630,8 +768,25 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
         )}
 
-        {available !== null && (
+        {available !== null && run.kind === "done" && (
           <div className="mt-5 grid gap-4">
+            {/*
+              What was read, and when.
+
+              Without this a cache hit up to an hour old is indistinguishable
+              from a crawl that just finished, and a normalized target URL is
+              indistinguishable from the one that was typed.
+            */}
+            <div className="grid gap-1">
+              <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
+                {t("provenance.page", { url: run.targetUrl })}
+              </p>
+              <p className="text-[12.5px] text-text-dark-faint">
+                {t(`provenance.${run.cacheStatus}`, {
+                  time: formatCollectedAt(run.scannedAt, locale),
+                })}
+              </p>
+            </div>
             <p className="text-[14px] text-text-dark-primary">
               {t("focus.summary", {
                 covered: available.focus.covered,
@@ -641,12 +796,29 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             <p className="text-[12.5px] text-text-dark-faint">
               {t("focus.notAScore")}
             </p>
+            {/*
+              A query the visitor typed can be absent from the table: the wire
+              normalizes and de-duplicates, so two spellings of one query arrive
+              as one. Saying so is cheaper than letting them hunt for it.
+            */}
+            {available.queries.length < queries.length && (
+              <p className="text-[12.5px] text-brand-warning">
+                {t("provenance.queriesMerged", {
+                  submitted: queries.length,
+                  measured: available.queries.length,
+                })}
+              </p>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[13.5px]">
                 <thead>
                   <tr className="text-text-dark-faint">
-                    <th className="py-2 pr-3 font-normal">{t("table.query")}</th>
-                    <th className="py-2 pr-3 font-normal">{t("table.title")}</th>
+                    <th className="py-2 pr-3 font-normal">
+                      {t("table.query")}
+                    </th>
+                    <th className="py-2 pr-3 font-normal">
+                      {t("table.title")}
+                    </th>
                     <th className="py-2 pr-3 font-normal">
                       {t("table.description")}
                     </th>
@@ -721,6 +893,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                         query: query.displayQuery,
                         percent: (query.density.value * 100).toFixed(2),
                         units: query.density.denominatorUnits,
+                        // Words and CJK characters are both "units" and are not
+                        // the same thing; a reader comparing two pages has to
+                        // be able to see which was counted.
+                        unitsBasis: t(
+                          `density.units.${query.density.unitsBasis}`,
+                        ),
                         occurrences: query.capturedOccurrences,
                       })}
                 </li>
@@ -763,7 +941,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               >
                 {t("actions.copyReport")}
               </button>
-              <p aria-live="polite" className="text-[12.5px] text-text-dark-faint" role="status">
+              <p
+                aria-live="polite"
+                className="text-[12.5px] text-text-dark-faint"
+                role="status"
+              >
                 {copied === "done"
                   ? t("actions.copyDone")
                   : copied === "failed"
