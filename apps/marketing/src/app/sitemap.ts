@@ -22,6 +22,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "",
     "/agents",
     "/agents/seo",
+    "/agents/geo",
     "/agents/tech",
     "/resources",
     "/prompts",
@@ -48,6 +49,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
               page === "/skills"
             ? 0.9
             : page === "/agents/seo" ||
+                page === "/agents/geo" ||
                 page === "/agents/tech" ||
                 page === "/blog" ||
                 page === "/pricing"
