@@ -71,6 +71,17 @@ update public.credit_settings set referral_daily_cap = 0, updated_at = now() whe
 
 这条是安全的：被拒的申领**不会**烧掉被邀请人的 `first_tool_run_at`，恢复上限后他们下次成功运行仍能拿到奖励。
 
+## Phase 2 待恢复清单（开始计费时一起做）
+
+福利期刻意**不在工具页展示任何积分文案**：开关关掉时页面要和上线前完全一致，而客户端组件读不到非 `NEXT_PUBLIC_` 的环境变量，做不到跟着开关走。文案连同定价一起等正式计费时统一改。
+
+到时候要做的四件事：
+
+1. **恢复工具页与 Agent 页的价格标注。** 完整实现（含 EN/ZH 文案、`ConnectedToolContent.creditPrice` 字段、slug 映射表、三条渲染测试）在 commit `dd9669b8` 里，可直接 cherry-pick 后按当时的定价调整。恢复时给它加上开关，别再让它脱离 `MARKETING_CREDITS_ENABLED`。
+2. **把三个 Search Console 工具接回合格运行清单**（`credits-config.ts` 的 `QUALIFYING_TOOLS`）。它们现在被排除，是因为准入用的是 `gg_id` 这个 Google 封印 cookie，而账本记的是 Supabase user id，两个身份之间没有绑定——一个 Google 账号能给任意多个 Supabase 账号刷出合格运行。Phase 2 本来就要把这三个工具改成 Supabase 登录专享，改完这层错配自然消失，那时再把它们加回去。
+3. **重新评估合格门槛的经济性。** 现在只剩 agent-audit 和 profile-refresh 合格，而这两个只需要一个公开 URL，不构成真实摩擦。开闸前先跑刷量审计（见设计文档 §1 Phase 2 前置门），可疑账户先 `status = 'frozen'`。
+4. **补齐 LLM 单价**，据此复核工具定价与毛利（设计文档 §6 明确这是开闸前置条件）。
+
 ## 不在本次范围
 
 扣费（`credits_consume` / `credits_refund` / `credit_charges` / migration `0005`）与充值（`credit_purchase_orders` / Airwallex / migration `0006`）属于 Phase 2 和 Phase 3，各有独立开关与独立的上线门。`credit_settings.mode` 与 `consumption_paused` 两列现在就存在，但在 Phase 2 之前没有任何代码读取它们做扣费决策。

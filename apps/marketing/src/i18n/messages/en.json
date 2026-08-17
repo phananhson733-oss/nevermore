@@ -3170,10 +3170,6 @@
       "entryFallback": "Credit change",
       "signedOut": "Sign in to see your credits.",
       "unavailable": "Credits are temporarily unavailable."
-    },
-    "toolNotice": {
-      "free": "Free during testing",
-      "price": "{price} credits per run once pricing starts"
     }
   }
 }

@@ -7,7 +7,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it } from "vitest";
 
-import { CREDIT_TOOL_PRICES } from "../../lib/credits/credits-config.ts";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import {
@@ -123,38 +122,3 @@ describe("ConnectedToolPage hero CTA", () => {
   });
 });
 
-/**
- * The page slugs and the pricing slugs share no spelling at all, so the mapping
- * is hand-written and a swap between two tools would be invisible on the page —
- * both would still show a plausible number. The three prices differ, which is
- * what lets these assertions catch one.
- */
-describe("free-during-testing notice", () => {
-  it.each([
-    ["seo-quick-wins", CREDIT_TOOL_PRICES["quick-wins"]],
-    ["traffic-drop-diagnosis", CREDIT_TOOL_PRICES["traffic-drop"]],
-    ["low-competition-keywords", CREDIT_TOOL_PRICES["keyword-opportunities"]],
-  ] as const)("quotes %s at its own price", (tool, price) => {
-    expect(getConnectedToolContent("en", tool).creditPrice).toBe(price);
-    expect(getConnectedToolContent("zh", tool).creditPrice).toBe(price);
-
-    const markup = render("en", tool);
-    expect(markup).toContain(en.credits.toolNotice.free);
-    expect(markup).toContain(`${price} credits per run once pricing starts`);
-  });
-
-  it("keeps the notice up for a connected visitor too", () => {
-    // The connect panel disappears once the grant exists; what a run will cost
-    // does not stop being true at that point.
-    const markup = render("en", "seo-quick-wins", true);
-    expect(markup).toContain(en.credits.toolNotice.free);
-  });
-
-  it("reads as Chinese product copy rather than a translation of the price", () => {
-    const markup = render("zh", "low-competition-keywords");
-    expect(markup).toContain(zh.credits.toolNotice.free);
-    expect(markup).toContain(
-      `正式计费后每次 ${CREDIT_TOOL_PRICES["keyword-opportunities"]} 积分`,
-    );
-  });
-});

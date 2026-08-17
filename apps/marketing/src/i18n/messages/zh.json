@@ -3170,10 +3170,6 @@
       "entryFallback": "积分变动",
       "signedOut": "登录后查看你的积分。",
       "unavailable": "积分暂时不可用。"
-    },
-    "toolNotice": {
-      "free": "测试期限免",
-      "price": "正式计费后每次 {price} 积分"
     }
   }
 }
