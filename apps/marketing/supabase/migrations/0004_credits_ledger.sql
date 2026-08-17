@@ -464,9 +464,14 @@ $$;
  * qualify tomorrow. Stamping first would silently and permanently void a
  * legitimate invitee's reward on a busy day.
  *
- * Reciprocal pairs qualifying at the same instant can deadlock on the two
- * account rows. That is acceptable: Postgres aborts one, the whole transaction
- * rolls back including the stamp, and the next successful run retries.
+ * Any referral chain qualifying at the same instant can deadlock, not only
+ * reciprocal pairs: with A referred by B and B referred by C, A's transaction
+ * holds A and wants B while B's holds B and wants the same counter row. That is
+ * acceptable rather than fixed, because the failure is self-healing: Postgres
+ * aborts one side, the whole transaction rolls back INCLUDING the first-run
+ * stamp, and the invitee's next successful run claims the reward. Ordering the
+ * locks would mean reading referred_by before locking the invitee, which
+ * reintroduces the check-then-write race this function exists to remove.
  */
 create or replace function public.credits_reward_referral(
   p_invitee_id uuid,
