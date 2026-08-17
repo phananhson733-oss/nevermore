@@ -2,12 +2,7 @@
 // @output — 顶部主导航、Agents / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import type {
-  NavItem,
-  FooterLink,
-  NavMenuGroup,
-  NavMenuItem,
-} from "@/types";
+import type { NavItem, FooterLink, NavMenuGroup, NavMenuItem } from "@/types";
 
 export function menuItemPath(
   basePath: string,
@@ -31,6 +26,12 @@ export const agentsMenuGroups: NavMenuGroup[] = [
         labelKey: "nav.agentsMenu.seo.label",
         descriptionKey: "nav.agentsMenu.seo.description",
         icon: "ScanSearch",
+      },
+      {
+        slug: "geo",
+        labelKey: "nav.agentsMenu.geo.label",
+        descriptionKey: "nav.agentsMenu.geo.description",
+        icon: "Radar",
       },
       {
         slug: "tech",
