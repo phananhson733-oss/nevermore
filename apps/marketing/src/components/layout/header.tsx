@@ -17,6 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
+import { CreditsBadge } from "../credits/credits-badge";
 import { NavSubmenu, NavSubmenuMobile } from "./tools-menu";
 import {
   SignInControl,
@@ -85,6 +86,9 @@ export function Header() {
 
         {/* Right */}
         <div className="flex items-center gap-4">
+          {/* Hides itself for everyone who has no balance to see, so the slot
+              is unchanged for the anonymous majority of this site's readers. */}
+          <CreditsBadge />
           <LanguageSwitcher />
           <SignInControl onSignIn={() => setSignInOpen(true)} />
 
