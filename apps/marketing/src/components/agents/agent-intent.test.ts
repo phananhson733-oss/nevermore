@@ -18,6 +18,7 @@ import {
   storeAgentProfileRefreshIntent,
   storeAgentProfileSearchIntent,
   storeConfirmedAgentRunIntent,
+  storePageFocusedAgentIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
 import {
@@ -87,7 +88,7 @@ describe("Agent pending intents", () => {
     );
 
     expect(pendingAgentIntentKey("seo")).toBe(
-      "gengrowth:agent-intent:seo:v2",
+      "gengrowth:agent-intent:seo:v3",
     );
     expect(prepared?.purpose).toBe("prepare_profile");
     expect(readPendingAgentIntent(storage, "seo", 1_001)?.purpose).toBe(
@@ -169,9 +170,11 @@ describe("Agent pending intents", () => {
     expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });
 
-  it("removes the legacy v1 slot instead of interpreting an unversioned purpose", () => {
+  it.each([
+    "gengrowth:agent-intent:seo:v1",
+    "gengrowth:agent-intent:seo:v2",
+  ])("removes the superseded slot %s rather than reading it", (legacyKey) => {
     const storage = new MemoryStorage();
-    const legacyKey = "gengrowth:agent-intent:seo:v1";
     storage.setItem(
       legacyKey,
       JSON.stringify({
@@ -184,6 +187,63 @@ describe("Agent pending intents", () => {
 
     expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
     expect(storage.getItem(legacyKey)).toBeNull();
+  });
+
+  it("carries a page-focused launch without making it runnable", () => {
+    const storage = new MemoryStorage();
+    const stored = storePageFocusedAgentIntent(
+      storage,
+      "https://example.com/pricing",
+      1_000,
+    );
+
+    expect(stored?.purpose).toBe("page_focused_launch");
+    expect(stored?.scope).toBe("page");
+
+    const resumed = readPendingAgentIntent(storage, "seo", 1_001);
+    expect(resumed?.scope).toBe("page");
+    // Coming back from sign-in restores the form; it never starts the crawl.
+    expect(resumed && isRunnablePendingAgentIntent(resumed)).toBe(false);
+  });
+
+  it("keeps a page-focused launch on the SEO Agent only", () => {
+    const storage = new MemoryStorage();
+    storePageFocusedAgentIntent(storage, "https://example.com/", 1_000);
+
+    expect(readPendingAgentIntent(storage, "tech", 1_001)).toBeNull();
+  });
+
+  it("rejects a stored scope outside the known values", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "prepare_profile",
+        url: "https://example.com",
+        scope: "everything",
+        createdAt: 1_000,
+        expiresAt: 2_000,
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
+  });
+
+  it("rejects a purpose that is not in the known set", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "publish_everything",
+        url: "https://example.com",
+        createdAt: 1_000,
+        expiresAt: 2_000,
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
   });
 
   it("never resumes an intent on the other Agent", () => {

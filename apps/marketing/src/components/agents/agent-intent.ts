@@ -43,7 +43,26 @@ export type PendingAgentIntentPurpose =
   | "prepare_profile"
   | "run_confirmed_profile"
   | "refresh_profile"
-  | "search_profile";
+  | "search_profile"
+  | "page_focused_launch";
+
+/**
+ * Every purpose, as a value the compiler checks for completeness.
+ *
+ * The guard below used to repeat the union as an OR chain, where adding a
+ * member type-checked fine and silently rejected the new intent at runtime.
+ * A `Record` keyed by the union cannot be written without every member.
+ */
+const KNOWN_PURPOSES: Readonly<Record<PendingAgentIntentPurpose, true>> = {
+  prepare_profile: true,
+  run_confirmed_profile: true,
+  refresh_profile: true,
+  search_profile: true,
+  page_focused_launch: true,
+};
+
+/** Whether the visitor arrived asking about one page or about the site. */
+export type PendingAgentIntentScope = "site" | "page";
 
 export type AgentProfileRefreshMode = "prefer_cache" | "refresh";
 
@@ -60,14 +79,32 @@ export interface PendingAgentIntent {
   readonly refreshMode?: AgentProfileRefreshMode;
   /** Present only for a search-landscape request interrupted by authentication. */
   readonly searchProfile?: AgentProfileDraft;
+  /**
+   * Which scope the visitor came in asking about.
+   *
+   * Carried so a handoff from the page checker opens on that page instead of
+   * on the site view, which would answer a different question than the one
+   * they had already framed.
+   */
+  readonly scope?: PendingAgentIntentScope;
 }
 
 export function pendingAgentIntentKey(agent: AgentKind): string {
-  return `gengrowth:agent-intent:${agent}:v2`;
+  return `gengrowth:agent-intent:${agent}:v3`;
 }
 
-function legacyPendingAgentIntentKey(agent: AgentKind): string {
-  return `gengrowth:agent-intent:${agent}:v1`;
+/**
+ * Superseded slots, cleared whenever this module writes.
+ *
+ * A stored intent is a few minutes of resume state, not a record worth
+ * migrating, and leaving an old slot behind means a stale URL can outlive the
+ * shape that could still read it.
+ */
+function legacyPendingAgentIntentKeys(agent: AgentKind): readonly string[] {
+  return [
+    `gengrowth:agent-intent:${agent}:v1`,
+    `gengrowth:agent-intent:${agent}:v2`,
+  ];
 }
 
 function isPendingIntent(
@@ -77,10 +114,12 @@ function isPendingIntent(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<PendingAgentIntent>;
   const purposeIsKnown =
-    candidate.purpose === "prepare_profile" ||
-    candidate.purpose === "run_confirmed_profile" ||
-    candidate.purpose === "refresh_profile" ||
-    candidate.purpose === "search_profile";
+    typeof candidate.purpose === "string" &&
+    Object.hasOwn(KNOWN_PURPOSES, candidate.purpose);
+  const scopeIsValid =
+    candidate.scope === undefined ||
+    candidate.scope === "site" ||
+    candidate.scope === "page";
   const confirmedProfileIsValid =
     candidate.confirmedProfile === undefined ||
     (candidate.purpose === "run_confirmed_profile" &&
@@ -98,6 +137,7 @@ function isPendingIntent(
   return (
     candidate.agent === agent &&
     purposeIsKnown &&
+    scopeIsValid &&
     searchProfileIsValid &&
     typeof candidate.url === "string" &&
     candidate.url.trim().length > 0 &&
@@ -165,8 +205,43 @@ export function storePendingAgentIntent(
     expiresAt: now + AGENT_INTENT_TTL_MS,
   };
   try {
-    storage.removeItem(legacyPendingAgentIntentKey(agent));
+    for (const legacy of legacyPendingAgentIntentKeys(agent)) {
+      storage.removeItem(legacy);
+    }
     storage.setItem(pendingAgentIntentKey(agent), JSON.stringify(intent));
+    return intent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Store a page-scoped launch handed over from the page checker.
+ *
+ * Deliberately not runnable: the visitor picked a page and a set of queries,
+ * not a crawl, and coming back from sign-in restores what they typed rather
+ * than spending four minutes on their behalf. Always the SEO Agent, which is
+ * the only surface that reads the keyword layer.
+ */
+export function storePageFocusedAgentIntent(
+  storage: IntentStorage,
+  url: string,
+  now = Date.now(),
+): PendingAgentIntent | null {
+  if (!url.trim() || url.length > 2_048 || !Number.isFinite(now)) return null;
+  const intent: PendingAgentIntent = {
+    agent: "seo",
+    purpose: "page_focused_launch",
+    url: url.trim(),
+    scope: "page",
+    createdAt: now,
+    expiresAt: now + AGENT_INTENT_TTL_MS,
+  };
+  try {
+    for (const legacy of legacyPendingAgentIntentKeys("seo")) {
+      storage.removeItem(legacy);
+    }
+    storage.setItem(pendingAgentIntentKey("seo"), JSON.stringify(intent));
     return intent;
   } catch {
     return null;
@@ -192,7 +267,9 @@ export function storeConfirmedAgentRunIntent(
   };
   if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
   try {
-    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    for (const legacy of legacyPendingAgentIntentKeys(profile.agent)) {
+      storage.removeItem(legacy);
+    }
     storage.setItem(
       pendingAgentIntentKey(profile.agent),
       JSON.stringify(intent),
@@ -221,7 +298,9 @@ export function storeAgentProfileRefreshIntent(
   };
   if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
   try {
-    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    for (const legacy of legacyPendingAgentIntentKeys(profile.agent)) {
+      storage.removeItem(legacy);
+    }
     storage.setItem(
       pendingAgentIntentKey(profile.agent),
       JSON.stringify(intent),
@@ -256,7 +335,9 @@ export function storeAgentProfileSearchIntent(
     return null;
   }
   try {
-    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    for (const legacy of legacyPendingAgentIntentKeys(profile.agent)) {
+      storage.removeItem(legacy);
+    }
     storage.setItem(
       pendingAgentIntentKey(profile.agent),
       JSON.stringify(intent),
@@ -319,7 +400,9 @@ export function restorePendingAgentIntent(
     return null;
   }
   try {
-    storage.removeItem(legacyPendingAgentIntentKey(agent));
+    for (const legacy of legacyPendingAgentIntentKeys(agent)) {
+      storage.removeItem(legacy);
+    }
     storage.setItem(pendingAgentIntentKey(agent), JSON.stringify(intent));
     return intent;
   } catch {
@@ -341,7 +424,9 @@ export function readPendingAgentIntent(
   try {
     // v1 had no purpose. Delete rather than guess whether it was a homepage
     // prefill or a visitor-confirmed run.
-    storage.removeItem(legacyPendingAgentIntentKey(agent));
+    for (const legacy of legacyPendingAgentIntentKeys(agent)) {
+      storage.removeItem(legacy);
+    }
     raw = storage.getItem(key);
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as unknown;
@@ -383,7 +468,9 @@ export function clearPendingAgentIntent(
 ): void {
   try {
     storage.removeItem(pendingAgentIntentKey(agent));
-    storage.removeItem(legacyPendingAgentIntentKey(agent));
+    for (const legacy of legacyPendingAgentIntentKeys(agent)) {
+      storage.removeItem(legacy);
+    }
   } catch {
     // The server still authorizes every run; storage is only a UX handoff.
   }
