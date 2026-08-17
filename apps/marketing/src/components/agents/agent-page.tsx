@@ -2,12 +2,13 @@
 // @output -- breadcrumb, concise Agent hero, boundaries, workbench, and method
 // @pos    -- shared server-rendered frame for the independent SEO and Tech routes
 
-import { Check, Database, LockKeyhole, ScanSearch } from "lucide-react";
+import { Check, Coins, Database, LockKeyhole, ScanSearch } from "lucide-react";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 
 import { BreadcrumbJsonLd } from "../seo/json-ld/breadcrumb-json-ld";
 import { VisibleBreadcrumb } from "../seo/visible-breadcrumb";
+import { CREDIT_TOOL_PRICES } from "../../lib/credits/credits-config.ts";
 import { localePath, localeUrl } from "../../lib/locale-path";
 import { AgentWorkbench } from "./agent-workbench";
 import { AGENT_PATH, type AgentKind } from "./agent-types";
@@ -19,8 +20,9 @@ export async function AgentPage({
   readonly agent: AgentKind;
   readonly locale: string;
 }) {
-  const [t, messages] = await Promise.all([
+  const [t, credits, messages] = await Promise.all([
     getTranslations({ locale, namespace: `agents.${agent}` }),
+    getTranslations({ locale, namespace: "credits.toolNotice" }),
     getMessages(),
   ]);
   const home = locale === "zh" ? "首页" : "Home";
@@ -95,6 +97,25 @@ export async function AgentPage({
                   </h2>
                   <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
                     {t("dataBoundaryBody")}
+                  </p>
+                </div>
+              </div>
+              {/* The third boundary a reader weighs before running anything:
+                  what it costs. Saying so now is what keeps the day pricing
+                  starts from reading as a paywall put up overnight. */}
+              <div className="flex gap-3 bg-brand-panel-sunken p-4">
+                <Coins
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-brand-accent-text"
+                />
+                <div>
+                  <h2 className="text-[12.5px] font-semibold text-text-dark-primary">
+                    {credits("free")}
+                  </h2>
+                  <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+                    {credits("price", {
+                      price: CREDIT_TOOL_PRICES["agent-audit"],
+                    })}
                   </p>
                 </div>
               </div>

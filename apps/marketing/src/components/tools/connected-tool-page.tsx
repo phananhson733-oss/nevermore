@@ -6,6 +6,7 @@ import Link from "next/link";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
 // aliased imports would make this file untestable from the unit project.
 import type { ConnectedToolContent } from "./connected-tool-content";
+import { CreditsToolNotice } from "../credits/credits-tool-notice.tsx";
 import { localePath } from "../../lib/locale-path";
 
 /**
@@ -107,6 +108,9 @@ export function ConnectedToolPage({
             <p className="mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]">
               {content.description}
             </p>
+            {/* Above the connect panel on purpose: what a run costs is part of
+                deciding whether to grant access at all. */}
+            <CreditsToolNotice price={content.creditPrice} />
             {connected ? null : (
               <div className="rounded-card border-brand-border-card bg-brand-panel mt-8 grid max-w-3xl gap-3 border p-[22px] md:grid-cols-[auto_1fr]">
                 <ShieldCheck

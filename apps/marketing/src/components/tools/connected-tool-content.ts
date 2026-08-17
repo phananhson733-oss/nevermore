@@ -2,6 +2,10 @@
 // @output -- truthful public copy for tools that require a connected data source
 // @pos    -- content boundary between marketing acquisition and the authenticated product
 
+// Relative with an explicit extension: the shared Vitest config maps `@/` to
+// apps/web only, so an aliased import would not resolve from the unit project.
+import { CREDIT_TOOL_PRICES } from "../../lib/credits/credits-config.ts";
+
 export type ConnectedTool =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
@@ -31,6 +35,15 @@ void CONNECTED_TOOLS_ARE_COMPLETE;
 
 export interface ConnectedToolContent {
   readonly path: `/tools/${ConnectedTool}`;
+  /**
+   * What one run will cost once pricing starts, shown today only as the
+   * free-during-testing notice.
+   *
+   * Taken from CREDIT_TOOL_PRICES, whose slugs are the ones written on ledger
+   * rows and share not one spelling with the page slugs above. Every entry
+   * below therefore names its price slug explicitly rather than deriving it.
+   */
+  readonly creditPrice: number;
   readonly eyebrow: string;
   readonly title: string;
   readonly description: string;
@@ -68,6 +81,7 @@ export interface ConnectedToolContent {
 const EN: Record<ConnectedTool, ConnectedToolContent> = {
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
+    creditPrice: CREDIT_TOOL_PRICES["quick-wins"],
     eyebrow: "Search performance evidence",
     title: "Find SEO Opportunities in Google Search Console",
     description:
@@ -187,6 +201,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   },
   "traffic-drop-diagnosis": {
     path: "/tools/traffic-drop-diagnosis",
+    creditPrice: CREDIT_TOOL_PRICES["traffic-drop"],
     eyebrow: "Search performance diagnosis",
     title: "Investigate a sudden drop in organic traffic with your own data",
     description:
@@ -293,6 +308,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   },
   "low-competition-keywords": {
     path: "/tools/low-competition-keywords",
+    creditPrice: CREDIT_TOOL_PRICES["keyword-opportunities"],
     eyebrow: "Content opportunity planning",
     title: "Find low competition keywords with a weak site already on page one",
     description:
@@ -369,6 +385,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
 const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
+    creditPrice: CREDIT_TOOL_PRICES["quick-wins"],
     eyebrow: "搜索表现证据",
     title: "在 Google Search Console 中找出 SEO 机会",
     description:
@@ -487,6 +504,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   },
   "traffic-drop-diagnosis": {
     path: "/tools/traffic-drop-diagnosis",
+    creditPrice: CREDIT_TOOL_PRICES["traffic-drop"],
     eyebrow: "搜索表现诊断",
     title: "用自己的数据排查自然流量突然下降",
     description:
@@ -592,6 +610,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   },
   "low-competition-keywords": {
     path: "/tools/low-competition-keywords",
+    creditPrice: CREDIT_TOOL_PRICES["keyword-opportunities"],
     eyebrow: "内容机会规划",
     title: "找出第一页已经有弱站排上去的低竞争关键词",
     description:
