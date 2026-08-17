@@ -264,11 +264,20 @@ describe("buildCopyReport", () => {
      * implementation that discarded every limitation and returned the last-ditch
      * notice would satisfy the count assertion above while publishing none of
      * the caveats it had room for.
+     *
+     * Counting bullets does not express that — the header contributes three of
+     * its own ("- Page:", "- Collected at:", "- Crawl cache:"), so a report with
+     * no limitation in it still has bullets. The assertion has to name a
+     * limitation, inside the limitations section.
      */
-    const bullets = text.split("\n").filter((line) => line.startsWith("- "));
     if (targetUrl.length < 200) {
-      expect(bullets.length).toBeGreaterThan(0);
       expect(text).toContain("## Limitations");
+      const section = text.slice(text.indexOf("## Limitations"));
+      // The rendered form of a real limitation, shortened or whole. Derived
+      // from the same sentence the fixture supplies so it cannot drift.
+      expect(section).toContain(
+        `- ${"Density is measured inside the collected text only.".slice(0, 16)}`,
+      );
     }
   });
 
