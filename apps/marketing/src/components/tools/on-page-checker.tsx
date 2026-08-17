@@ -13,7 +13,7 @@ import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidenc
 import {
   appendOnPageHistory,
   clearOnPageDraft,
-  clearOnPageStorage,
+  clearOwnOnPageStorage,
   newOnPageHistoryId,
   readOnPageDraft,
   readOnPageHistory,
@@ -478,7 +478,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   }, [country, language, locale, pageRole, queries, url, webStore]);
 
   const clearHistory = useCallback(() => {
-    clearOnPageStorage(webStore("local"), webStore("session"));
+    clearOwnOnPageStorage(webStore("local"), webStore("session"));
     setHistory([]);
   }, [webStore]);
 

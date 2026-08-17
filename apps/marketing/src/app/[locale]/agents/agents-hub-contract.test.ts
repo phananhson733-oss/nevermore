@@ -53,6 +53,18 @@ function sourceFiles(directory: string): readonly string[] {
  */
 const RETIRED_PRODUCT_NAME = "Tech Agent";
 
+/**
+ * Match the name as the reader sees it, not as the file stores it.
+ *
+ * A contiguous `includes` passed while a live Chinese cookie policy still said
+ * "SEO 与 Tech Agent" — with the line wrapped between "Tech" and "Agent". The
+ * rendered page has no newline there; the markdown source does. Any run of
+ * whitespace counts as one space before the check.
+ */
+function asRendered(source: string): string {
+  return source.replace(/\s+/gu, " ");
+}
+
 function walk(node: unknown, visit: (text: string) => void): void {
   if (typeof node === "string") {
     visit(node);
@@ -77,7 +89,7 @@ describe("the product is one Agent with a technical focus", () => {
   ) => {
     const offenders: string[] = [];
     walk(catalogue, (text) => {
-      if (text.includes(RETIRED_PRODUCT_NAME)) offenders.push(text);
+      if (asRendered(text).includes(RETIRED_PRODUCT_NAME)) offenders.push(text);
     });
 
     expect(offenders).toEqual([]);
@@ -106,7 +118,7 @@ describe("the product is one Agent with a technical focus", () => {
       for (const entry of readdirSync(directory)) {
         if (!entry.endsWith(".md")) continue;
         const source = readFileSync(`${directory}/${entry}`, "utf8");
-        if (source.includes(RETIRED_PRODUCT_NAME)) {
+        if (asRendered(source).includes(RETIRED_PRODUCT_NAME)) {
           offenders.push(`${locale}/${entry}`);
         }
       }
@@ -118,7 +130,7 @@ describe("the product is one Agent with a technical focus", () => {
     const offenders: string[] = [];
     for (const path of sourceFiles(SOURCE_ROOT.replace(/\/$/, ""))) {
       const source = readFileSync(path, "utf8");
-      if (!source.includes(RETIRED_PRODUCT_NAME)) continue;
+      if (!asRendered(source).includes(RETIRED_PRODUCT_NAME)) continue;
       offenders.push(path.slice(SOURCE_ROOT.length));
     }
 
@@ -145,7 +157,7 @@ describe("the product is one Agent with a technical focus", () => {
         "independent SEO or Tech",
         "独立的 SEO 或 Tech",
       ]) {
-        if (source.includes(phrase)) {
+        if (asRendered(source).includes(phrase)) {
           offenders.push(`${path.slice(SOURCE_ROOT.length)}: ${phrase}`);
         }
       }

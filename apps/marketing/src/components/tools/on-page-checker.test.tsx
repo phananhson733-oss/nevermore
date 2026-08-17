@@ -518,6 +518,96 @@ describe("On-Page checker local state", () => {
     expect(host.textContent).not.toContain("A homepage is judged on whether");
   });
 
+  /**
+   * The success CTA is the other half of the bridge. It looked like a plain link
+   * and stored nothing, so a visitor who framed a page and then opened the Agent
+   * arrived at an empty site-wide form — the same loss the sign-in path was
+   * fixed for.
+   */
+  it("hands the whole frame over when the visitor opens the Agent", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign } as unknown as Location);
+
+    const host = await render();
+    await fillAndRun(host);
+    await select(host, "onpage-role", "guide");
+    await act(async () => {
+      buttonWith(host, "Open the SEO Agent").click();
+    });
+
+    expect(JSON.parse(String(sessionStorage.getItem("gengrowth:onpage-draft:v1")))).toMatchObject({
+      url: "acme.test/pricing",
+      targetQueries: ["pricing"],
+      pageType: "guide",
+    });
+    expect(
+      JSON.parse(String(sessionStorage.getItem("gengrowth:agent-intent:seo:v3"))),
+    ).toMatchObject({ purpose: "page_focused_launch", scope: "page" });
+    expect(assign).toHaveBeenCalledWith("/agents/seo");
+  });
+
+  /**
+   * The copy for a refused clipboard tells the visitor to select the report and
+   * copy it, which needs a report on the page to select.
+   */
+  it("puts the report on the page when the clipboard refuses it", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        writeText: vi.fn(async () => {
+          throw new Error("denied");
+        }),
+      },
+    } as unknown as Navigator);
+
+    const host = await render();
+    await fillAndRun(host);
+    expect(host.querySelector("textarea")).toBeNull();
+    await act(async () => {
+      buttonWith(host, "Copy report for an assistant").click();
+    });
+
+    expect(host.textContent).toContain("Could not reach the clipboard.");
+    const fallback = host.querySelector("textarea");
+    expect(fallback).not.toBeNull();
+    expect((fallback as HTMLTextAreaElement).value).toContain(
+      "# On-page keyword check",
+    );
+    expect((fallback as HTMLTextAreaElement).readOnly).toBe(true);
+  });
+
+  /**
+   * The visitor's own Clear owns what this tool wrote, and nothing else. The
+   * Agent-intent prefix is shared with confirmed-run, profile-refresh and
+   * profile-search intents, which a visitor clearing a list of checks did not
+   * ask to cancel.
+   */
+  it("clears its own history without cancelling an unrelated Agent intent", async () => {
+    sessionStorage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({ purpose: "profile_refresh", url: "other.test" }),
+    );
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host);
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).not.toBeNull();
+
+    await act(async () => {
+      buttonWith(host, "Clear").click();
+    });
+
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:agent-intent:seo:v3")).not.toBeNull();
+  });
+
   it("says which page was read, when it was collected, and from where", async () => {
     globalThis.fetch = vi.fn(async () =>
       auditResponse(["pricing"], "hit"),
@@ -549,7 +639,7 @@ describe("On-Page checker local state", () => {
      */
     await fillAndRun(host, ["pricing", "\uFF50\uFF52\uFF49\uFF43\uFF49\uFF4E\uFF47"]);
 
-    expect(host.textContent).toContain("You submitted 2 queries and 1 are");
+    expect(host.textContent).toContain("Measured 1 of the 2 queries you submitted");
   });
 
   it("says that market and language are not part of the check", async () => {

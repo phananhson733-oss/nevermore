@@ -2135,7 +2135,7 @@
         "hit": "Read out of a crawl of this site collected at {time}, which was already held — this check started no new crawl.",
         "miss": "Read out of a crawl this check started, collected at {time}.",
         "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
-        "queriesMerged": "You submitted {submitted} queries and {measured} are measured below: two spellings of the same query are counted once."
+        "queriesMerged": "Measured {measured} of the {submitted} queries you submitted: two spellings of the same query are counted once."
       }
     }
   },

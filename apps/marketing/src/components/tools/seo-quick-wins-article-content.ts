@@ -353,7 +353,7 @@ const ZH: QuickWinsArticle = {
         "无需连接 Search Console 即可检查公开 HTML；抓取前必须验证账号。",
     },
     {
-      label: "Technical focus",
+      label: "技术焦点",
       href: "/agents/tech",
       description: "检查抓取、索引性与内链证据，本次运行不会保存。",
     },

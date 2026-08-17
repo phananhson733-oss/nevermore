@@ -21,10 +21,20 @@ export const ON_PAGE_STORAGE_PREFIX = "gengrowth:onpage-";
  * leaving the intent behind lets the next account in the same tab inherit the
  * previous visitor's page URL for the rest of its ten-minute window.
  */
-const CLEARED_PREFIXES: readonly string[] = [
+const SIGN_OUT_PREFIXES: readonly string[] = [
   ON_PAGE_STORAGE_PREFIX,
   "gengrowth:agent-intent:",
 ];
+
+/**
+ * What the visitor's own "Clear" button owns.
+ *
+ * Deliberately narrower than the sign-out sweep. The Agent-intent prefix is
+ * shared with the confirmed-run, profile-refresh and profile-search intents,
+ * which this tool did not write and the visitor did not ask to lose: clearing a
+ * list of recent checks must not cancel a diagnosis waiting on a sign-in.
+ */
+const OWN_PREFIXES: readonly string[] = [ON_PAGE_STORAGE_PREFIX];
 
 export const ON_PAGE_DRAFT_KEY = `${ON_PAGE_STORAGE_PREFIX}draft:v1`;
 export const ON_PAGE_HISTORY_KEY = `${ON_PAGE_STORAGE_PREFIX}history:v1`;
@@ -519,10 +529,29 @@ export function appendOnPageHistory(
 export function clearOnPageStorage(
   ...storages: readonly (OnPageCheckerStorage | null | undefined)[]
 ): void {
+  clearPrefixes(SIGN_OUT_PREFIXES, storages);
+}
+
+/**
+ * Delete only what this tool wrote.
+ *
+ * For the visitor-facing "Clear" action: the recent-checks list and the draft,
+ * and nothing that belongs to an Agent run.
+ */
+export function clearOwnOnPageStorage(
+  ...storages: readonly (OnPageCheckerStorage | null | undefined)[]
+): void {
+  clearPrefixes(OWN_PREFIXES, storages);
+}
+
+function clearPrefixes(
+  prefixes: readonly string[],
+  storages: readonly (OnPageCheckerStorage | null | undefined)[],
+): void {
   for (const storage of storages) {
     if (!storage) continue;
     try {
-      for (const key of keysUnder(storage, CLEARED_PREFIXES)) {
+      for (const key of keysUnder(storage, prefixes)) {
         storage.removeItem(key);
       }
     } catch {

@@ -284,6 +284,15 @@ describe("buildCopyReport", () => {
     expect(text).toContain("## Limitations");
     expect(text).toContain("x".repeat(200));
     expect(text).not.toContain("## Coverage");
+    // Every limitation is still here; the long one is shortened and says so.
+    expect(text).toContain("[cut]");
+    const effective = {
+      ...limitationText,
+      density_basis_captured_text_only: "x".repeat(COPY_REPORT_MAX_CHARS * 2),
+    };
+    for (const sentence of Object.values(effective)) {
+      expect(text).toContain(sentence.slice(0, 16));
+    }
   });
 
   /**
@@ -318,7 +327,7 @@ describe("buildCopyReport", () => {
       // not a truncation and owes no notice.
       if (rowsShown < 3) {
         expect(text).toMatch(
-          /more rows omitted to fit|Coverage table omitted to fit|Detail omitted to fit|Cut to fit/,
+          /more rows omitted to fit|Coverage table omitted to fit|Detail omitted to fit|shortened to fit/,
         );
       }
 
@@ -344,6 +353,26 @@ describe("buildCopyReport", () => {
             text.includes(sentence),
             `filler ${filler}: a limitation was cut`,
           ).toBe(true);
+        }
+      } else {
+        /**
+         * Past that point the limitations may not all fit whole, and the rule
+         * becomes "all present, and any shortening is marked". A whole caveat
+         * going missing is the loss a reader cannot see; a shortened sentence
+         * announces itself.
+         */
+        for (const sentence of allLimitations) {
+          if (sentence === "") continue;
+          expect(
+            text.includes(sentence.slice(0, 16)),
+            `filler ${filler}: a limitation vanished entirely`,
+          ).toBe(true);
+          if (!text.includes(sentence)) {
+            expect(
+              text,
+              `filler ${filler}: a limitation was shortened without saying so`,
+            ).toContain("[cut]");
+          }
         }
       }
     },

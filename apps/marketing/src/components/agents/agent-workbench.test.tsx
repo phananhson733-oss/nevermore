@@ -363,6 +363,15 @@ function setRunContext(
   }
 }
 
+/** The value rendered under one Profile fact, addressed by its own label. */
+function factValue(label: string): string {
+  for (const term of document.querySelectorAll("dt")) {
+    if ((term.textContent ?? "").trim() !== label) continue;
+    return (term.nextElementSibling?.textContent ?? "").trim();
+  }
+  throw new Error(`no fact labelled ${label}`);
+}
+
 function confirmProfile(): void {
   act(() => {
     (
@@ -1824,6 +1833,94 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       targetQueries: ["natal chart", "birth chart"],
       pageRole: "guide",
     });
+  });
+
+  /**
+   * The rest of what the checker handed over, each of which could be reverted
+   * without any existing assertion noticing: the page-only scope, the first query
+   * as the Profile's own label, and the page role.
+   */
+  it("maps the handoff into the Profile it will run under", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    vi.stubGlobal("fetch", vi.fn());
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    const facts = document.body.textContent ?? "";
+    // The visitor asked about one page, so the run is scoped to that page.
+    expect(facts).toContain("options.auditScope.page-only");
+    expect(facts).toContain("options.pageType.guide");
+    /**
+     * The first query labels the Profile. Read off that fact's own value: the
+     * queries appear elsewhere on the page, so "somewhere in the body" passed
+     * even with the mapping removed.
+     */
+    expect(factValue("fields.targetQuery")).toBe("natal chart");
+  });
+
+  /**
+   * The page role is measured once it travels, so changing it changes what was
+   * asked and a captured report no longer answers it.
+   */
+  it("discards a captured page-focused report when the page role changes", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com/chart"));
+      }),
+    );
+
+    renderStrict("seo");
+    await flushAsyncWork();
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    // The page-role selector lives behind the Review disclosure.
+    const review = [...document.querySelectorAll("button")].find((candidate) =>
+      (candidate.textContent ?? "").includes("actions.review"),
+    );
+    expect(review).not.toBeUndefined();
+    act(() => {
+      review?.click();
+    });
+    const pageType = document.querySelector(
+      '[aria-label="fields.pageType"]',
+    ) as HTMLSelectElement | null;
+    expect(pageType).not.toBeNull();
+    const setter = Object.getOwnPropertyDescriptor(
+      pageType?.constructor.prototype ?? window.HTMLSelectElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(pageType, "product");
+      pageType?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
   });
 
   it("keeps a page-focused launch out of an ordinary Agent request", async () => {

@@ -245,17 +245,53 @@ export function buildCopyReport(input: CopyReportInput): string {
     .replace(/\n{3,}/g, "\n\n");
   if (essential.length <= COPY_REPORT_MAX_CHARS) return essential;
 
-  // The limitations alone exceed the budget, so one of them is what gets cut.
-  // The notice goes above them, where the slice cannot reach it: a report that
-  // stops mid-sentence without saying it was cut reads as a complete one.
-  const bare = [
+  /**
+   * The limitations alone exceed the budget.
+   *
+   * Slicing the assembled text would take whole limitations off the end, and
+   * "every limitation is published" is the rule this whole ordering exists to
+   * keep — a report missing one reads as a page that has one fewer caveat.
+   * So every limitation stays present and each one is shortened to an equal
+   * share of what is left, marked where it was cut. Losing the tail of a
+   * sentence is a visible loss; losing a whole caveat is an invisible one.
+   */
+  const bareHeader = [
     ...header,
     "",
-    "_Cut to fit: the limitations below are incomplete, and the coverage table",
-    "and the sections explaining the measurement are omitted._",
-    ...limitations,
-  ]
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n");
-  return bare.slice(0, COPY_REPORT_MAX_CHARS);
+    "_Every limitation below is shortened to fit, each marked where it was cut.",
+    "The coverage table and the sections explaining the measurement are omitted._",
+    "",
+    "## Limitations",
+    "",
+  ];
+  const codes = evidence.limitations;
+  const cutMark = "…[cut]";
+  const render = (share: number): string =>
+    [
+      ...bareHeader,
+      ...codes.map((code) => {
+        const text = input.limitationText[code] ?? code;
+        return `- ${
+          text.length <= share ? text : `${text.slice(0, share)}${cutMark}`
+        }`;
+      }),
+      "",
+    ]
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n");
+
+  // Search for a share that fits rather than computing one. Arithmetic here has
+  // to account for the marker, the bullet, the newline and the blank-line
+  // collapse, and getting it slightly wrong puts the last limitation's own cut
+  // marker past the end — which is the failure this whole branch exists to
+  // avoid. Halving converges in a handful of steps and cannot overshoot.
+  let share = COPY_REPORT_MAX_CHARS;
+  let rendered = render(share);
+  while (rendered.length > COPY_REPORT_MAX_CHARS && share > 16) {
+    share = Math.max(16, Math.floor(share / 2));
+    rendered = render(share);
+  }
+  // At share 16 the limitation texts cannot be what overflows: only the header
+  // and the codes themselves can, and both are bounded by the frozen vocabulary.
+  return rendered.slice(0, COPY_REPORT_MAX_CHARS);
 }
