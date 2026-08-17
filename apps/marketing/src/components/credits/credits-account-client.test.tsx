@@ -166,6 +166,59 @@ describe("CreditsAccountClient", () => {
     expect(host.textContent).not.toContain("of 600");
   });
 
+  /**
+   * Regression: ISSUE-004 — an account that has accrued the whole welfare pool
+   * is stamped as granted today and paid nothing, so the page told it
+   * "+20 added today" every day while the balance never moved.
+   * Found by /qa on 2026-08-17; reachable by any account 30 days after signup.
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("stops claiming a daily grant once the welfare pool is fully accrued", async () => {
+    stubFetch(
+      answer(200, {
+        data: {
+          ...BALANCE.data,
+          dailyGrant: {
+            grantedToday: true,
+            amount: 20,
+            welfareRemaining: 0,
+            welfareCap: 600,
+          },
+        },
+      }),
+      [answer(200, FIRST_PAGE)],
+    );
+    await mount();
+
+    const text = host.textContent ?? "";
+    expect(text).toContain("You have earned all 600 testing credits.");
+    expect(text).not.toContain("+20 added today");
+    expect(text).not.toContain("0 of 600 testing credits left to earn");
+  });
+
+  /** Live mode resets the daily balance, so a zero remaining means nothing there. */
+  it("keeps the ordinary check-in line in live mode", async () => {
+    stubFetch(
+      answer(200, {
+        data: {
+          ...BALANCE.data,
+          mode: "live",
+          dailyGrant: {
+            grantedToday: true,
+            amount: 20,
+            welfareRemaining: 0,
+            welfareCap: 600,
+          },
+        },
+      }),
+      [answer(200, FIRST_PAGE)],
+    );
+    await mount();
+
+    expect(host.textContent).toContain("+20 added today");
+    expect(host.textContent).not.toContain("You have earned all");
+  });
+
   it("says tomorrow rather than today when nothing was granted yet", async () => {
     stubFetch(
       answer(200, {
