@@ -16,7 +16,7 @@
 
 1. **`node_modules` 不存在**：本 worktree 是 `signalframe-mvp-app` 的 git worktree，尚未安装依赖。Task 1 必须先装。
 2. **`@/` 别名在 vitest 里只指向 `apps/web/src`**。营销站里任何需要被单测导入的模块，**必须用相对路径 + 显式 `.ts` 扩展名**互相引用（`@/` 只能出现在不被单测导入的文件里）。这是本仓最常见的踩坑点。
-3. **营销站 migration 由 Owner 手工执行**。代码必须在表还不存在时优雅降级（503 + 稳定错误码），照抄 `apps/waitlist` 的 `MISSING_STORE_CODES = new Set(["PGRST205","42P01"])`。
+3. **营销站 migration 由 Owner 手工执行**。代码必须在表还不存在时优雅降级（503 + 稳定错误码），照抄 `apps/marketing/src/app/api/waitlist/route.ts:19` 的 `MISSING_STORE_CODES = new Set(["PGRST205", "42P01"])`。
 4. **`pnpm lint` 禁 unused vars**（`^_` 豁免）、`pnpm typecheck` 必须过。仓库**没有 formatter**，不要引入 prettier。
 5. 每个新建源文件都要带房规头注释：`// @input  -- …` / `// @output -- …` / `// @pos    -- …`（`_DIR.md` 那句可以省略，仓库里根本没有 `_DIR.md`）。
 6. **`console.error("[module-name]", …)` 是本目录被接受的日志写法**，尽管有全局 no-console 规则。
@@ -74,7 +74,7 @@
 | `apps/marketing/src/components/layout/header.tsx` | 右侧插槽加徽章 |
 | `apps/marketing/src/app/[locale]/layout.tsx` | `shellMessages` 加 `credits: messages.credits` |
 | `apps/marketing/src/i18n/messages/en.json` / `zh.json` | 新增 `credits` 顶层命名空间（两边必须同步，否则 `messages.test.ts` 红） |
-| `apps/marketing/src/components/tools/connected-tool-content.ts` | `ConnectedToolContent` 加 `creditsNotice`，EN/ZH 各补 |
+| `apps/marketing/src/components/tools/connected-tool-content.ts` | `ConnectedToolContent` 加 `creditPrice: number`，EN/ZH 各补 |
 | `apps/marketing/src/components/tools/connected-tool-page.tsx` | 渲染限免标注 |
 | `apps/marketing/src/components/agents/agent-page.tsx` | Agent 页限免标注 |
 
@@ -947,18 +947,29 @@ pnpm install
 
 编辑根 `vitest.config.ts`：
 
-(a) 在 `integration` project 的 `include` 中删掉 `"apps/**/*.integration.test.ts"`，改为 `"apps/web/**/*.integration.test.ts"`，并在其上方加注释：
+(a) 在 `integration` project 的 **`exclude`** 里加 `"apps/marketing/**"`——**`include` 保持不动**：
 
 ```ts
-          include: [
-            "packages/**/*.integration.test.ts",
+          exclude: [
+            "**/node_modules/**",
+            "**/.next/**",
             // apps/marketing persists to a DIFFERENT Postgres (its own Supabase
-            // project, public schema) than DATABASE_URL, and this project's
-            // setup applies the 53 product migrations. Marketing SQL gets its
-            // own project below rather than the wrong database.
-            "apps/web/**/*.integration.test.ts",
-            "e2e/**/*.integration.vitest.ts",
+            // project, public schema) than DATABASE_URL, and this setup file
+            // applies the 53 product migrations. Marketing SQL gets its own
+            // project below rather than the wrong database. Excluded here
+            // rather than by narrowing `include` to apps/web, which would
+            // silently drop the apps/worker integration files from every
+            // project at once.
+            "apps/marketing/**",
           ],
+```
+
+**为什么不能改 `include`**：把 `"apps/**/*.integration.test.ts"` 收窄成 `"apps/web/**"` 会让 `apps/worker` 的 12 个集成测试不属于任何 project——unit 排除了 `*.integration.test.ts`，marketing-sql 只收 marketing。它们不会报错，只会再也不跑。改完必须验证：
+
+```bash
+npx vitest list --project integration --filesOnly | grep -c "apps/worker"     # 必须是 12
+npx vitest list --project integration --filesOnly | grep -c "apps/marketing"  # 必须是 0
+npx vitest list --project marketing-sql --filesOnly | grep -c "apps/marketing" # 必须是 1
 ```
 
 (b) 在 `projects` 数组末尾追加：
@@ -1415,7 +1426,9 @@ describe("ledger integrity", () => {
 ```bash
 MARKETING_TEST_DATABASE_URL="postgres://$(whoami)@127.0.0.1:5432/signalframe_ci_credits" pnpm test:sql:marketing
 ```
-Expected: 全部 PASS。**任何一条红都说明 Task 3 的 SQL 有真 bug，回去改 SQL，不要改测试的期望值。**
+Expected: 全部 PASS。**默认假设是「SQL 有真 bug，回去改 SQL，不要改测试的期望值」。**
+
+唯一的例外（不要误改 SQL）：如果失败是 `duplicate key value violates unique constraint "credit_ledger_idempotency_key_key"` 且发生在同一个 UTC 日内伪造二次发放的用例里，那是**测试装置**的问题——每日幂等键含日期（`daily:{userId}:{YYYY-MM-DD}`），同日二次发放本就该被拒。正确做法是把「跨日」场景改成预置 `daily_granted_on = current_date - 1` 再 touch 一次，**绝不能**去松动幂等键：它是这张财务表上唯一的防重放约束。
 
 - [ ] **Step 6: 确认单测 project 没有把它捡走**
 
@@ -1624,6 +1637,7 @@ Expected: FAIL — 模块不存在。
 - `MISSING_STORE_CODES = new Set(["PGRST205", "42P01"])`，与 waitlist 路由同源。
 - `unwrapRow(data)`：`Array.isArray(data) ? data[0] : data`，无行返回 `null`。
 - 每个导出函数签名尾部带 `dependencies: CreditsStoreDependencies = DEFAULT_CREDITS_STORE_DEPENDENCIES`。
+- **admin 客户端必须在函数内惰性构造**（照 `shared-rate-limit.ts` 的 `callQuotaViaSupabase` 写法），绝不能在模块顶层 `createAdminSupabaseClient()`。这个模块会经 `report-first-run.ts` 被 5 个工具 handler 的 `DEFAULT_*` 传递性导入——顶层构造一旦因缺环境变量抛错，五条工具路由会一起 500。
 - `console.error("[credits-store] …", reason)` 记录 unavailable 的真实原因，返回值里的 reason 供路由日志用、**不进 HTTP 响应体**。
 - 导出四个函数：`ensureAccount(userId, referralCode)`、`touchDaily(userId)`、`rewardReferral(userId, toolSlug)`、`readLedger(userId, {limit, cursor})`。
 
@@ -1783,6 +1797,21 @@ git commit -m "feat(marketing): land referral links and remember the code"
 断言：未登录 401；`limit` 超过 `LEDGER_PAGE_SIZE` 被夹住；返回 `{data:{entries:[…], nextCursor:"<createdAt>|<id>"|null}}`；游标格式非法 → 400；表缺失 → 503。
 
 - [ ] **Step 4: 实现 ledger 路由**
+
+响应与游标钉死（不要临场发挥）：
+
+```jsonc
+{ "data": {
+    "entries": [
+      { "id": "12", "type": "daily_grant", "amount": 20,
+        "balanceAfter": 120, "toolSlug": null, "createdAt": "2026-08-17T00:12:03.114Z" }
+    ],
+    "nextCursor": "2026-08-17T00:12:03.114Z|12" } }
+```
+
+- `nextCursor` = `` `${createdAt}|${id}` ``，解析时按最后一个 `|` 切分（ISO 时间串里不含 `|`）；任一半缺失或 `id` 非数字 → 400 `invalid_cursor`。
+- 查询用 `.order("created_at", {ascending:false}).order("id", {ascending:false}).limit(pageSize + 1)`，多取的那一行只用来判断有没有下一页，不返回。
+- `balanceAfter` = `balance_daily_after + balance_permanent_after`（用户看到的是一个总额，不是两个池）。
 
 - [ ] **Step 5: 跑测试 + typecheck**
 
@@ -2146,7 +2175,7 @@ client 组件职责：
 - [ ] **Step 3: 跑测试 + 确认路由没被短链兜底吞掉**
 
 ```bash
-pnpm test apps/marketing/src/app/[locale]/account apps/marketing/src/components/credits
+pnpm test "apps/marketing/src/app/[locale]/account" apps/marketing/src/components/credits
 pnpm test apps/marketing/src/proxy
 ```
 
@@ -2171,7 +2200,17 @@ git commit -m "feat(marketing): add the credits account page"
 
 - [ ] **Step 1: 给 `ConnectedToolContent` 加字段**
 
-加 `readonly creditPrice: number;`，EN 与 ZH 两个 `Record<ConnectedTool, Content>` 各自补齐——`Record` 的完整性由 TypeScript 强制，漏一个就编译不过（这正是这个模式的价值）。价格从 `credits-config.ts` 的 `CREDIT_TOOL_PRICES` 取，不要手写数字。
+加 `readonly creditPrice: number;`，EN 与 ZH 两个 `Record<ConnectedTool, Content>` 各自补齐——`Record` 的完整性由 TypeScript 强制，漏一个就编译不过（这正是这个模式的价值）。
+
+**两套 slug 没有一个字面量重合**，必须按下表逐条手写映射，不要指望名字能对上：
+
+| `ConnectedTool`（页面 slug） | `CreditToolSlug`（计价 slug） | 积分 |
+|---|---|---|
+| `"seo-quick-wins"` | `CREDIT_TOOL_PRICES["quick-wins"]` | 5 |
+| `"traffic-drop-diagnosis"` | `CREDIT_TOOL_PRICES["traffic-drop"]` | 3 |
+| `"low-competition-keywords"` | `CREDIT_TOOL_PRICES["keyword-opportunities"]` | 25 |
+
+价格一律从 `credits-config.ts` 取，不要手写数字。
 
 - [ ] **Step 2: 在 `connected-tool-page.tsx` 渲染**
 
