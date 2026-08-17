@@ -204,6 +204,44 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("was not collected as a readable HTML response");
   });
 
+  /**
+   * The step below shortening: even the shortest sentences do not fit.
+   *
+   * Unreachable for the six frozen limitation codes — it takes an input the
+   * exported type permits and this tool never produces — which is exactly why it
+   * needs a test. The rule at this depth is that a dropped caveat is counted
+   * rather than silently sliced off the end.
+   */
+  it("counts the limitations it had to drop when even shortening will not fit", () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 400 }, (_entry, index) => [
+        `code_${index}`,
+        `Limitation number ${index} says something about the measurement.`,
+      ]),
+    );
+    const normalized = normalizeTargetQueries(["pricing"]);
+    if (!normalized.ok) throw new Error(normalized.reason);
+    const evidence = buildKeywordEvidence(extract, normalized.queries, "product");
+    if (evidence.availability !== "available") throw new Error("unavailable");
+
+    const text = buildCopyReport({
+      targetUrl: `https://example.com/${"deep/".repeat(2_000)}`,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: {
+        ...evidence,
+        limitations: Object.keys(many) as unknown as typeof evidence.limitations,
+      },
+      limitationText: many,
+    });
+
+    expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
+    // Whatever went missing is counted, not silently absent.
+    expect(text).toMatch(/\d+ more limitations omitted to fit|could not be rendered/);
+    // And the report never ends mid-sentence pretending to be complete.
+    expect(text.trimEnd().endsWith("_")).toBe(true);
+  });
+
   it("keeps a pipe in a query from splitting the table row it sits in", () => {
     // A code span does not protect a cell: GFM splits on the pipe first, so
     // `plan | tier` becomes two cells and every later column shifts.
@@ -286,6 +324,7 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("## Coverage");
     // Every limitation is still here; the long one is shortened and says so.
     expect(text).toContain("[cut]");
+    expect(text).toContain("Cut to fit");
     const effective = {
       ...limitationText,
       density_basis_captured_text_only: "x".repeat(COPY_REPORT_MAX_CHARS * 2),
@@ -327,7 +366,7 @@ describe("buildCopyReport", () => {
       // not a truncation and owes no notice.
       if (rowsShown < 3) {
         expect(text).toMatch(
-          /more rows omitted to fit|Coverage table omitted to fit|Detail omitted to fit|shortened to fit/,
+          /more rows omitted to fit|Coverage table omitted to fit|Detail omitted to fit|Cut to fit|limitations omitted to fit/,
         );
       }
 

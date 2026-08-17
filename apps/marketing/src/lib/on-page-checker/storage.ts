@@ -27,14 +27,16 @@ const SIGN_OUT_PREFIXES: readonly string[] = [
 ];
 
 /**
- * What the visitor's own "Clear" button owns.
+ * The recent-checks list, and nothing beside it.
  *
- * Deliberately narrower than the sign-out sweep. The Agent-intent prefix is
- * shared with the confirmed-run, profile-refresh and profile-search intents,
- * which this tool did not write and the visitor did not ask to lose: clearing a
- * list of recent checks must not cancel a diagnosis waiting on a sign-in.
+ * The visitor's own "Clear" sits under "Recent checks" and means that list.
+ * Two wider readings were both wrong: the sign-out sweep also cancels Agent
+ * intents this tool never wrote, and even the narrower `gengrowth:onpage-*`
+ * sweep deletes the draft while leaving the `page_focused_launch` intent that
+ * was written with it — the Agent then resumes on the URL with the queries and
+ * the page role gone, which is half a question rather than none.
  */
-const OWN_PREFIXES: readonly string[] = [ON_PAGE_STORAGE_PREFIX];
+const HISTORY_FAMILY = `${ON_PAGE_STORAGE_PREFIX}history:`;
 
 export const ON_PAGE_DRAFT_KEY = `${ON_PAGE_STORAGE_PREFIX}draft:v1`;
 export const ON_PAGE_HISTORY_KEY = `${ON_PAGE_STORAGE_PREFIX}history:v1`;
@@ -533,15 +535,16 @@ export function clearOnPageStorage(
 }
 
 /**
- * Delete only what this tool wrote.
+ * Delete the recent-checks list.
  *
- * For the visitor-facing "Clear" action: the recent-checks list and the draft,
- * and nothing that belongs to an Agent run.
+ * For the visitor-facing "Clear" action. Any older history slot goes with it, so
+ * a list written by a previous shape cannot come back; the draft and any pending
+ * handoff are left alone, because they are not what the button names.
  */
-export function clearOwnOnPageStorage(
+export function clearOnPageHistory(
   ...storages: readonly (OnPageCheckerStorage | null | undefined)[]
 ): void {
-  clearPrefixes(OWN_PREFIXES, storages);
+  clearPrefixes([HISTORY_FAMILY], storages);
 }
 
 function clearPrefixes(

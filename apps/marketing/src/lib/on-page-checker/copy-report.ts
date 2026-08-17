@@ -90,9 +90,22 @@ function slotRow(
  * Render the report.
  *
  * The order is fixed: what was measured, then the coverage table, then the
- * numbers, then every limitation in full. If the whole thing will not fit, the
- * table loses rows from the end and says so — the metadata and the limitations
- * are the parts that keep the numbers honest, so they are never what gets cut.
+ * numbers, then every limitation. Everything here fits inside a hard character
+ * bound, so the question is not whether something is dropped but what — and the
+ * answer is an ordering, not a promise that nothing is.
+ *
+ * The metadata and the limitations are what keep the numbers above them honest,
+ * so the budget is spent on them last, in this order:
+ *
+ *  1. the coverage table loses rows from the end, and says how many;
+ *  2. the whole coverage table goes, and says so;
+ *  3. the sections explaining the measurement go, and say so;
+ *  4. individual limitation sentences are shortened, each marked where it was
+ *     cut — every limitation stays present, because a missing caveat reads as a
+ *     page that has one fewer and a shortened one does not;
+ *  5. only if even that will not fit, whole limitations are dropped from the
+ *     end and the report says how many. This last step is unreachable for the
+ *     six frozen codes and exists because the input type does not bound them.
  */
 export function buildCopyReport(input: CopyReportInput): string {
   const header = [
@@ -248,18 +261,16 @@ export function buildCopyReport(input: CopyReportInput): string {
   /**
    * The limitations alone exceed the budget.
    *
-   * Slicing the assembled text would take whole limitations off the end, and
-   * "every limitation is published" is the rule this whole ordering exists to
-   * keep — a report missing one reads as a page that has one fewer caveat.
-   * So every limitation stays present and each one is shortened to an equal
-   * share of what is left, marked where it was cut. Losing the tail of a
-   * sentence is a visible loss; losing a whole caveat is an invisible one.
+   * Every limitation stays present, and the ones too long for the space left are
+   * shortened and marked. Losing the tail of a sentence is a visible loss;
+   * losing a whole caveat is an invisible one.
    */
   const bareHeader = [
     ...header,
     "",
-    "_Every limitation below is shortened to fit, each marked where it was cut.",
-    "The coverage table and the sections explaining the measurement are omitted._",
+    "_Cut to fit: any limitation below that was too long is shortened and marked",
+    "`…[cut]`. The coverage table and the sections explaining the measurement are",
+    "omitted._",
     "",
     "## Limitations",
     "",
@@ -291,7 +302,37 @@ export function buildCopyReport(input: CopyReportInput): string {
     share = Math.max(16, Math.floor(share / 2));
     rendered = render(share);
   }
-  // At share 16 the limitation texts cannot be what overflows: only the header
-  // and the codes themselves can, and both are bounded by the frozen vocabulary.
-  return rendered.slice(0, COPY_REPORT_MAX_CHARS);
+  if (rendered.length <= COPY_REPORT_MAX_CHARS) return rendered;
+
+  /**
+   * Even at the shortest share it does not fit.
+   *
+   * Unreachable for the six frozen codes — it takes a header or a limitation
+   * list the exported input type permits but this tool never produces. Slicing
+   * here is what the whole branch exists to avoid, so instead whole limitations
+   * come off the end and the report says how many went, which is a loss the
+   * reader can at least see and count.
+   */
+  for (let kept = codes.length - 1; kept >= 0; kept -= 1) {
+    const dropped = codes.length - kept;
+    const truncated = [
+      ...bareHeader,
+      ...codes
+        .slice(0, kept)
+        .map(
+          (code) =>
+            `- ${(input.limitationText[code] ?? code).slice(0, 16)}${cutMark}`,
+        ),
+      "",
+      `_${dropped} more limitations omitted to fit._`,
+      "",
+    ]
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n");
+    if (truncated.length <= COPY_REPORT_MAX_CHARS) return truncated;
+  }
+
+  // Nothing but the notice fits. Say that, rather than return a fragment of a
+  // sentence that reads like a finished report.
+  return `# On-page keyword check\n\n_This report could not be rendered within its size limit; nothing below it is complete._\n`;
 }

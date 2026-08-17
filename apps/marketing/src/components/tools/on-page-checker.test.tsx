@@ -582,12 +582,15 @@ describe("On-Page checker local state", () => {
   });
 
   /**
-   * The visitor's own Clear owns what this tool wrote, and nothing else. The
-   * Agent-intent prefix is shared with confirmed-run, profile-refresh and
-   * profile-search intents, which a visitor clearing a list of checks did not
-   * ask to cancel.
+   * "Clear" sits under "Recent checks" and means that list.
+   *
+   * Two wider readings were both wrong. The sign-out sweep cancels Agent intents
+   * this tool never wrote — a diagnosis waiting on a sign-in. And deleting the
+   * draft while leaving the intent that was written with it sends the Agent to
+   * the right URL with the queries and the page role gone, which reads as a
+   * page-focused launch and is not one.
    */
-  it("clears its own history without cancelling an unrelated Agent intent", async () => {
+  it("clears the recent checks and leaves every handoff record intact", async () => {
     sessionStorage.setItem(
       "gengrowth:agent-intent:seo:v3",
       JSON.stringify({ purpose: "profile_refresh", url: "other.test" }),
@@ -595,9 +598,15 @@ describe("On-Page checker local state", () => {
     globalThis.fetch = vi.fn(async () =>
       auditResponse(["pricing"]),
     ) as unknown as typeof fetch;
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign } as unknown as Location);
 
     const host = await render();
     await fillAndRun(host);
+    // A pending handoff, written by this tool: draft and intent together.
+    await act(async () => {
+      buttonWith(host, "Open the SEO Agent").click();
+    });
     expect(localStorage.getItem("gengrowth:onpage-history:v1")).not.toBeNull();
 
     await act(async () => {
@@ -605,7 +614,40 @@ describe("On-Page checker local state", () => {
     });
 
     expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
-    expect(sessionStorage.getItem("gengrowth:agent-intent:seo:v3")).not.toBeNull();
+    // The pair survives whole, so the Agent still gets the whole question.
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).not.toBeNull();
+    expect(
+      JSON.parse(String(sessionStorage.getItem("gengrowth:agent-intent:seo:v3"))),
+    ).toMatchObject({ purpose: "page_focused_launch" });
+  });
+
+  /**
+   * The pair is written together and read together; a sweep that takes one and
+   * leaves the other is what produced a half-restored launch.
+   */
+  it("never leaves a page-focused intent without its draft", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign } as unknown as Location);
+
+    const host = await render();
+    await fillAndRun(host);
+    await act(async () => {
+      buttonWith(host, "Open the SEO Agent").click();
+    });
+    await act(async () => {
+      buttonWith(host, "Clear").click();
+    });
+
+    const intent = sessionStorage.getItem("gengrowth:agent-intent:seo:v3");
+    const draft = sessionStorage.getItem("gengrowth:onpage-draft:v1");
+    const pageFocused =
+      intent !== null &&
+      (JSON.parse(intent) as { purpose?: string }).purpose ===
+        "page_focused_launch";
+    expect(pageFocused && draft === null).toBe(false);
   });
 
   it("says which page was read, when it was collected, and from where", async () => {
