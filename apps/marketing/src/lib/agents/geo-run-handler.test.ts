@@ -3,7 +3,10 @@
 // @pos    -- focused tests for the GEO Agent run boundary
 
 import { describe, expect, it, vi } from "vitest";
-import { isGeoReportSuccessEnvelope } from "./geo-report-contract.ts";
+import {
+  isGeoReportSuccessEnvelope,
+  AGENT_GEO_REPORT_SCHEMA_VERSION,
+} from "./geo-report-contract.ts";
 import { GeoProviderError } from "./geo-provider.ts";
 import {
   handleGeoRunRequest,
@@ -12,6 +15,7 @@ import {
 } from "./geo-run-handler.ts";
 
 const BODY = {
+  schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
   targetUrl: "https://acme.test/",
   marketCode: "US",
   languageCode: "en",
@@ -189,12 +193,47 @@ describe("handleGeoRunRequest", () => {
     expect(response.status).toBe(503);
   });
 
+  /**
+   * A tab opened before a deploy runs the previous bundle, whose guard
+   * recomputes the previous contract and refuses this server's response. The
+   * cost of finding that out late is 24 billed provider calls and an error the
+   * visitor cannot act on, so the mismatch is caught on the request instead.
+   */
+  it.each([
+    ["no version at all — what a pre-deploy client sends", undefined],
+    ["a superseded version", "agent_geo_report.v1"],
+    ["a version from the future", "agent_geo_report.v3"],
+  ] as const)(
+    "refuses %s before the budget or the provider is touched",
+    async (_label, schemaVersion) => {
+      const claimDailyBudget = vi.fn(async () =>
+        Promise.resolve({ kind: "allowed" as const, runsToday: 1 }),
+      );
+      const observe = vi.fn(async () => answer());
+      const body: Record<string, unknown> = { ...BODY };
+      if (schemaVersion === undefined) delete body["schemaVersion"];
+      else body["schemaVersion"] = schemaVersion;
+
+      const response = await handleGeoRunRequest(
+        request(body),
+        dependencies({ claimDailyBudget, createProvider: () => ({ observe }) }),
+      );
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: { code: "geo_client_outdated" },
+      });
+      expect(claimDailyBudget).not.toHaveBeenCalled();
+      expect(observe).not.toHaveBeenCalled();
+    },
+  );
+
   it("refuses an invalid body without claiming the budget", async () => {
     const claimDailyBudget = vi.fn(async () =>
       Promise.resolve({ kind: "allowed" as const, runsToday: 1 }),
     );
     const response = await handleGeoRunRequest(
-      request({ targetUrl: "nope" }),
+      request({ ...BODY, targetUrl: "nope" }),
       dependencies({ claimDailyBudget }),
     );
 

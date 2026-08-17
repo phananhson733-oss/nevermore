@@ -73,7 +73,14 @@ function question(
       admissibleSamples,
       targetCitedIn,
       targetMentionedIn: samples.filter((s) => s.state === "mentioned").length,
-      verdict: geoQuestionVerdict(admissibleSamples, targetCitedIn),
+      verdict: geoQuestionVerdict({
+        totalSamples: samples.length,
+        admissibleSamples,
+        targetCitedIn,
+        searchNotPerformed: samples.filter(
+          (s) => s.state === "search_not_performed",
+        ).length,
+      }),
     },
   };
 }
@@ -167,6 +174,23 @@ const unavailableReport = report([
   question("q-2", ["unavailable", "unavailable", "unavailable"]),
 ]);
 
+/**
+ * Fixture 4 — a wholly search-free question beside an ordinary one.
+ *
+ * The first real run had seven of eight questions come back with no web search
+ * on any sample. The report has to carry that as a finding rather than as an
+ * absence, so this pairs one such question with a normal one to prove the guard
+ * accepts the two side by side.
+ */
+const answeredFromMemoryReport = report([
+  question("q-1", [
+    "search_not_performed",
+    "search_not_performed",
+    "search_not_performed",
+  ]),
+  question("q-2", ["cited", "cited_others_only", "cited"]),
+]);
+
 type Mutable = {
   data: {
     run: Record<string, unknown> & { provider: Record<string, unknown> };
@@ -185,6 +209,26 @@ function mutate(base: GeoReportSuccessEnvelope): Mutable {
 }
 
 describe("isGeoReportSuccessEnvelope", () => {
+  it("accepts a question every sample answered without searching", () => {
+    expect(isGeoReportSuccessEnvelope(answeredFromMemoryReport)).toBe(true);
+    expect(
+      (answeredFromMemoryReport.data.questions[0] as { aggregate: unknown })
+        .aggregate,
+    ).toMatchObject({ admissibleSamples: 0, verdict: "answered_from_memory" });
+  });
+
+  it("rejects a search-free question relabelled as inconclusive", () => {
+    const malformed = mutate(answeredFromMemoryReport);
+    malformed.data.questions[0]!["aggregate"] = {
+      admissibleSamples: 0,
+      targetCitedIn: 0,
+      targetMentionedIn: 0,
+      verdict: "inconclusive",
+    };
+
+    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+  });
+
   it("accepts the complete run fixture", () => {
     expect(isGeoReportSuccessEnvelope(completeReport)).toBe(true);
     expect(completeReport.data.questions).toHaveLength(GEO_QUESTIONS_PER_RUN);
@@ -416,7 +460,7 @@ describe("isGeoReportSuccessEnvelope", () => {
 
   it("rejects an unknown schema version", () => {
     const malformed = mutate(completeReport);
-    malformed.data.run["schemaVersion"] = "agent_geo_report.v2";
+    malformed.data.run["schemaVersion"] = "agent_geo_report.v3";
 
     expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
   });
@@ -465,29 +509,69 @@ describe("isGeoReportSuccessEnvelope", () => {
 
 describe("geoQuestionVerdict", () => {
   it.each([
-    [0, 0, "inconclusive"],
+    [3, 0, 0, 0, "inconclusive"],
     // One usable sample can support neither "cited every time" nor "not
     // cited" — that inference is exactly what the measured empty intersection
     // across four samples says is unavailable.
-    [1, 0, "inconclusive"],
-    [1, 1, "inconclusive"],
-    [2, 0, "not_observed"],
-    [2, 1, "intermittent"],
-    [2, 2, "stable_cited"],
-    [3, 0, "not_observed"],
-    [3, 1, "intermittent"],
-    [3, 2, "intermittent"],
-    [3, 3, "stable_cited"],
+    [3, 1, 0, 0, "inconclusive"],
+    [3, 1, 1, 0, "inconclusive"],
+    [3, 2, 0, 0, "not_observed"],
+    [3, 2, 1, 0, "intermittent"],
+    [3, 2, 2, 0, "stable_cited"],
+    [3, 3, 0, 0, "not_observed"],
+    [3, 3, 1, 0, "intermittent"],
+    [3, 3, 2, 0, "intermittent"],
+    [3, 3, 3, 0, "stable_cited"],
+    // Every sample, and only every sample, showed the model answering without
+    // searching: nobody was cited, so nobody lost a citation.
+    [3, 0, 0, 3, "answered_from_memory"],
+    // A short sample set is not a pattern, whatever its records said: a missing
+    // call is exactly as unknown as a failed one, and the question was
+    // contracted to run three times.
+    [2, 0, 0, 2, "inconclusive"],
+    [1, 0, 0, 1, "inconclusive"],
+    // A failed call among them could have searched, so the pattern is not
+    // provable and the verdict stays "we do not know".
+    [3, 0, 0, 2, "inconclusive"],
+    // Contradictory counts reaching the search-free branch — an all-unsearched
+    // set that also claims a citation — are refused rather than relabelled.
+    [3, 0, 1, 3, "inconclusive"],
+    [3, 1, 1, 3, "inconclusive"],
+    // Search-free samples alongside a usable one are still not a pattern.
+    [3, 1, 1, 2, "inconclusive"],
+    // A citation result always wins over the search-free reading.
+    [3, 2, 2, 1, "stable_cited"],
+    [0, 0, 0, 0, "inconclusive"],
   ] as const)(
-    "maps %i admissible and %i cited to %s",
-    (admissible, cited, expected) => {
-      expect(geoQuestionVerdict(admissible, cited)).toBe(expected);
+    "maps %i samples / %i admissible / %i cited / %i unsearched to %s",
+    (
+      totalSamples,
+      admissibleSamples,
+      targetCitedIn,
+      searchNotPerformed,
+      expected,
+    ) => {
+      expect(
+        geoQuestionVerdict({
+          totalSamples,
+          admissibleSamples,
+          targetCitedIn,
+          searchNotPerformed,
+        }),
+      ).toBe(expected);
     },
   );
 
   it("never claims a stable verdict from a single usable sample", () => {
     for (const cited of [0, 1]) {
-      expect(geoQuestionVerdict(1, cited)).toBe("inconclusive");
+      expect(
+        geoQuestionVerdict({
+          totalSamples: 3,
+          admissibleSamples: 1,
+          targetCitedIn: cited,
+          searchNotPerformed: 1,
+        }),
+      ).toBe("inconclusive");
     }
   });
 });

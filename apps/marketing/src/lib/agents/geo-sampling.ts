@@ -5,6 +5,7 @@
 import {
   geoQuestionVerdict,
   normalizeReportHost,
+  GEO_ADMISSIBLE_SAMPLE_STATES,
   GEO_MAX_CITED_HOSTS_PER_SAMPLE,
   GEO_SAMPLES_PER_QUESTION,
   type GeoQuestionObservation,
@@ -12,11 +13,14 @@ import {
   type GeoSample,
   type GeoSampleState,
 } from "./geo-report-contract.ts";
+
 import {
   GeoProviderError,
   type GeoProviderClient,
   type GeoProviderObservation,
 } from "./geo-provider.ts";
+
+const ADMISSIBLE_STATES = new Set<GeoSampleState>(GEO_ADMISSIBLE_SAMPLE_STATES);
 
 /**
  * How many provider calls may be in flight at once.
@@ -160,9 +164,11 @@ export function aggregateSamples(
   samples: readonly GeoSample[],
 ): GeoQuestionObservation {
   const ordered = [...samples].sort((a, b) => a.sampleIndex - b.sampleIndex);
-  const admissibleSamples = ordered.filter(
-    (sample) =>
-      sample.state !== "search_not_performed" && sample.state !== "unavailable",
+  // The contract's own allowlist, not a local "everything except these two"
+  // rule. A denylist written here would silently admit any state added later,
+  // and the guard — which uses the allowlist — would then reject the run.
+  const admissibleSamples = ordered.filter((sample) =>
+    ADMISSIBLE_STATES.has(sample.state),
   ).length;
   const targetCitedIn = ordered.filter(
     (sample) => sample.state === "cited",
@@ -175,7 +181,14 @@ export function aggregateSamples(
       admissibleSamples,
       targetCitedIn,
       targetMentionedIn: ordered.filter((s) => s.state === "mentioned").length,
-      verdict: geoQuestionVerdict(admissibleSamples, targetCitedIn),
+      verdict: geoQuestionVerdict({
+        totalSamples: ordered.length,
+        admissibleSamples,
+        targetCitedIn,
+        searchNotPerformed: ordered.filter(
+          (sample) => sample.state === "search_not_performed",
+        ).length,
+      }),
     },
   };
 }
@@ -251,19 +264,13 @@ export async function collectGeoSamples(
       // does not hold a reservation it will never spend.
       if (dependencies.remainingMs() < GEO_MIN_BUDGET_FOR_CALL_MS) {
         collected[next.questionIndex]?.push(
-          unavailableSample(
-            next.sampleIndex,
-            "time_budget",
-          ),
+          unavailableSample(next.sampleIndex, "time_budget"),
         );
         continue;
       }
       if (!dependencies.admitCall()) {
         collected[next.questionIndex]?.push(
-          unavailableSample(
-            next.sampleIndex,
-            "cost_ceiling",
-          ),
+          unavailableSample(next.sampleIndex, "cost_ceiling"),
         );
         continue;
       }

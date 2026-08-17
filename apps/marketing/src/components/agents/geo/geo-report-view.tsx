@@ -16,6 +16,9 @@ const VERDICT_TONE: Readonly<Record<string, string>> = {
   stable_cited: "border-brand-accent/50 text-brand-accent-text",
   intermittent: "border-brand-accent-2/50 text-brand-accent-2",
   not_observed: "border-brand-border-strong text-text-dark-secondary",
+  // A real finding about the question, not a gap in the data, so it keeps
+  // readable secondary text; only `inconclusive` drops to the faintest tier.
+  answered_from_memory: "border-brand-border-dashed text-text-dark-secondary",
   inconclusive: "border-brand-border-dashed text-text-dark-tertiary",
 };
 

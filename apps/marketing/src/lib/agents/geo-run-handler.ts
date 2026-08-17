@@ -223,6 +223,20 @@ export async function handleGeoRunRequest(
   }
 
   const body = await readBoundedBody(request);
+
+  // Before anything is billed, not after. A tab opened before a deploy runs the
+  // previous client, whose guard recomputes the previous contract and refuses
+  // this response — so without this check the visitor pays for 24 provider
+  // calls and is shown an invalid-report error for a version mismatch that was
+  // knowable from the request. The old client sends no version at all, which is
+  // exactly the signal, and the answer tells them to reload rather than retry.
+  if (
+    !isObject(body) ||
+    body.schemaVersion !== AGENT_GEO_REPORT_SCHEMA_VERSION
+  ) {
+    return errorResponse("geo_client_outdated", 409);
+  }
+
   const input = parseGeoRunInput(body);
   if (input === null) return errorResponse("invalid_request", 400);
 
