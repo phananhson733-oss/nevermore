@@ -2438,6 +2438,12 @@
         "scope": "Metadata · 页面结构 · 结构化数据",
         "cta": "打开 SEO Agent"
       },
+      "geo": {
+        "title": "GEO Agent",
+        "description": "把买家真正会问的问题各问三遍，看 AI 的回答引用了谁。",
+        "scope": "买家问题 · 重复采样 · 引用",
+        "cta": "打开 GEO Agent"
+      },
       "tech": {
         "title": "Tech Agent",
         "description": "检查有边界抓取中观测到的响应、静态索引指令和内链情况。",

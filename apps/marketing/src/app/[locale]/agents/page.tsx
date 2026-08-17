@@ -3,7 +3,7 @@
 // @pos    -- /agents marketing acquisition hub
 
 import Link from "next/link";
-import { ArrowRight, CodeXml, ScanSearch } from "lucide-react";
+import { ArrowRight, CodeXml, Radar, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld/breadcrumb-json-ld";
@@ -38,6 +38,7 @@ export default async function AgentsHubPage({
   const home = locale === "zh" ? "首页" : "Home";
   const cards = [
     { id: "seo", icon: ScanSearch, path: "/agents/seo" },
+    { id: "geo", icon: Radar, path: "/agents/geo" },
     { id: "tech", icon: CodeXml, path: "/agents/tech" },
   ] as const;
 
