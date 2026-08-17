@@ -285,7 +285,8 @@ export async function ensureAccount(
   const row = result.value[0];
   // This function creates the account, so an empty answer is not "no account",
   // it is the store contradicting itself.
-  if (row === undefined) return unavailable("credits_ensure_account returned no row");
+  if (row === undefined)
+    return unavailable("credits_ensure_account returned no row");
   return mapped(row, toSnapshot);
 }
 
@@ -389,6 +390,20 @@ export async function readLedger(
 }
 
 /**
+ * What PostgreSQL prints for a `timestamptz`, which is the only thing that ever
+ * legitimately reaches this parser — nextCursor is built from a row's own
+ * createdAt.
+ *
+ * The shape has to be checked before Date.parse, because Date.parse is far more
+ * permissive than PostgreSQL: it reads "1" as the year 2001 and "2026" as a
+ * whole year, so a cursor of `1|1` used to pass this gate, reach the database as
+ * a timestamptz literal, and come back as a 503. That reported a caller's typo
+ * as our outage.
+ */
+const ISO_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/**
  * Split on the LAST separator: an ISO timestamp never contains one, but a
  * malformed cursor might, and guessing wrong would silently reset paging.
  */
@@ -398,6 +413,10 @@ export function decodeLedgerCursor(value: string | null): LedgerCursor | null {
   if (separator <= 0 || separator === value.length - 1) return null;
   const createdAt = value.slice(0, separator);
   const id = value.slice(separator + 1);
-  if (!/^\d+$/.test(id) || !Number.isFinite(Date.parse(createdAt))) return null;
+  if (!/^\d+$/.test(id)) return null;
+  // Shape first, then reality: the pattern admits 2026-13-45, Date.parse does
+  // not.
+  if (!ISO_TIMESTAMP.test(createdAt)) return null;
+  if (!Number.isFinite(Date.parse(createdAt))) return null;
   return { createdAt, id };
 }
