@@ -151,5 +151,16 @@ function alphanumeric(value: string): string {
 export function urlCovered(identity: string, url: string): boolean {
   const needle = alphanumeric(identity);
   if (needle === "") return false;
-  return alphanumeric(url).includes(needle);
+  // The recorded URL keeps its percent escapes, so a CJK slug arrives as
+  // %E5%8D%A0%E6%98%9F and would never match the characters the visitor typed.
+  // Decoding is best effort: a malformed escape means we compare the raw form
+  // and answer no, rather than throwing on someone else's bad URL.
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {
+    decoded = url;
+  }
+  const haystack = alphanumeric(decoded);
+  return haystack.includes(needle) || alphanumeric(url).includes(needle);
 }

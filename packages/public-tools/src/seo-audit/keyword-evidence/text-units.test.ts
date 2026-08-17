@@ -47,6 +47,16 @@ describe("countTextUnits", () => {
     expect(countTextUnits("   ")).toEqual({ units: 0, basis: "words" });
   });
 
+  it("removes CJK rather than splitting the run it sat inside", () => {
+    // The frozen unit removes CJK code points; replacing them with a space
+    // would count "SEO工具checker" as four units instead of three and change
+    // every density computed from it.
+    expect(countTextUnits("SEO工具checker")).toEqual({
+      units: 3,
+      basis: "mixed",
+    });
+  });
+
   it("is stable across repeated calls (no shared regex lastIndex leak)", () => {
     const first = countTextUnits("占星 astrology 占星");
     const second = countTextUnits("占星 astrology 占星");
@@ -77,6 +87,16 @@ describe("cjkShare", () => {
 
   it("ignores whitespace when measuring the share", () => {
     expect(cjkShare("  占星  ")).toBe(1);
+  });
+
+  it("measures the share in code points, not UTF-16 units", () => {
+    // Four emoji are eight code units. Dividing by code units puts a page that
+    // is 43% CJK under a 30% threshold and publishes the word count the
+    // threshold exists to withhold.
+    expect(cjkShare("占星图\u{1F600}\u{1F600}\u{1F600}\u{1F600}")).toBeCloseTo(
+      3 / 7,
+      5,
+    );
   });
 
   it("returns 0 for text with no countable characters", () => {

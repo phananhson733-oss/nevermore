@@ -115,8 +115,33 @@ describe("buildTargetPageExtract", () => {
     expect(extract.truncatedLists).toBe(true);
   });
 
+  it("never cuts a character in half", () => {
+    const long = `${"a".repeat(MAX_EXTRACT_ENTRY_CHARS - 1)}\u{1F600}`;
+    const kept = buildTargetPageExtract(
+      projection({ h1: [long], headings: [long] }),
+    ).h1[0];
+
+    // Slicing by code unit leaves an orphaned high surrogate, which is
+    // corrupted text in the response and can fail the JSONB cache write.
+    expect(kept).not.toMatch(/[\uD800-\uDBFF]$/u);
+    expect(kept).toBe("a".repeat(MAX_EXTRACT_ENTRY_CHARS - 1));
+  });
+
   it("passes a Latin page's word count straight through", () => {
     expect(buildTargetPageExtract(projection()).staticBodyWords).toBe(1631);
+  });
+
+  it("withholds the word count when emoji inflate the code-unit count", () => {
+    // 3 CJK of 7 code points is 43%; measured in code units it reads as 27%
+    // and slips under the threshold.
+    expect(
+      buildTargetPageExtract(
+        projection({
+          bodyExcerpt: "\u5360\u661F\u56FE\u{1F600}\u{1F600}\u{1F600}\u{1F600}",
+          wordCount: 1,
+        }),
+      ).staticBodyWords,
+    ).toBeNull();
   });
 
   it("withholds the word count for a page written without word gaps", () => {

@@ -757,21 +757,46 @@ describe("handleAgentAuditRequest", () => {
     expect("keywordEvidence" in body.data.result).toBe(false);
   });
 
-  it("reports the region unavailable rather than zero when the page was not captured", async () => {
-    const response = await handleAgentAuditRequest(
-      keywordRequest(["birth chart"]),
-      "seo",
-      dependencies({ delegate: vi.fn(async () => success()) }),
-    );
+  it.each([
+    // Two different facts, two different answers. Telling someone their page
+    // was unreachable when it was collected and read fine is a wrong answer,
+    // not a vague one.
+    [true, "extract_missing"],
+    [false, "target_page_not_captured"],
+  ])(
+    "names why the region is unavailable when targetInspected is %s",
+    async (targetInspected, reason) => {
+      const response = await handleAgentAuditRequest(
+        keywordRequest(["birth chart"]),
+        "seo",
+        dependencies({
+          delegate: vi.fn(async () =>
+            Response.json({
+              data: {
+                ...upstreamPayload,
+                result: {
+                  ...upstreamPayload.result,
+                  targetInspected,
+                  inspectedTargetUrl: targetInspected
+                    ? upstreamPayload.result.inspectedTargetUrl
+                    : null,
+                  targetPageExtract: null,
+                },
+              },
+            }),
+          ),
+        }),
+      );
 
-    const body = (await response.json()) as {
-      data: { result: { keywordEvidence?: { availability: string; reason?: string } } };
-    };
-    expect(body.data.result.keywordEvidence?.availability).toBe("unavailable");
-    expect(body.data.result.keywordEvidence?.reason).toBe(
-      "target_page_not_captured",
-    );
-  });
+      const body = (await response.json()) as {
+        data: {
+          result: { keywordEvidence?: { availability: string; reason?: string } };
+        };
+      };
+      expect(body.data.result.keywordEvidence?.availability).toBe("unavailable");
+      expect(body.data.result.keywordEvidence?.reason).toBe(reason);
+    },
+  );
 
   it("rejects a sixth query before delegating anything", async () => {
     const delegate = vi.fn(async () => successWithExtract());

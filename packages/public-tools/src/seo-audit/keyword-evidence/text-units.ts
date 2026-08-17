@@ -46,7 +46,11 @@ const CJK_PATTERN = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/gu;
 export function countTextUnits(text: string): TextUnits {
   const cjkMatches = text.match(CJK_PATTERN);
   const cjkUnits = cjkMatches === null ? 0 : cjkMatches.length;
-  const remainder = text.replace(CJK_PATTERN, " ");
+  // Removed, not replaced with a space. The frozen unit takes the CJK code
+  // points out and splits what is left, so `SEO工具checker` is three units.
+  // Substituting a space would split that remainder in two and change every
+  // density derived from it.
+  const remainder = text.replace(CJK_PATTERN, "");
   const wordUnits = remainder.split(/\s+/u).filter(Boolean).length;
 
   const units = cjkUnits + wordUnits;
@@ -74,7 +78,11 @@ export function withoutCjk(text: string): string {
  */
 export function cjkShare(text: string): number {
   const dense = text.replace(/\s+/gu, "");
-  if (dense.length === 0) return 0;
+  // Code points, not UTF-16 units. One emoji is two units, so a code-unit
+  // denominator reads a 43%-CJK page as 27% and publishes the word count this
+  // share exists to withhold.
+  const total = [...dense].length;
+  if (total === 0) return 0;
   const matches = dense.match(CJK_PATTERN);
-  return (matches === null ? 0 : matches.length) / dense.length;
+  return (matches === null ? 0 : matches.length) / total;
 }

@@ -393,6 +393,7 @@ export async function handleAgentAuditRequest(
               result.targetPageExtract,
               input.value.targetQueries,
               input.value.pageRole,
+              result.targetInspected,
             ),
           }),
     },

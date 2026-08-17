@@ -87,7 +87,12 @@ function brandCandidateOf(
   identity: string,
   targetUrl: string,
 ): KeywordEvidenceBrandCandidate {
-  if (hasCjk(identity) && !/\p{ASCII}*[a-z]/u.test(identity)) {
+  // Not applicable only for a single CJK token with no Latin letters in it.
+  // A multi-token query, or one carrying Latin letters, can be compared against
+  // the hostname labels like any other: answering "not applicable" there would
+  // hide a real negative behind a claim that the question does not apply.
+  const isSingleToken = identity.split(" ").filter(Boolean).length === 1;
+  if (isSingleToken && hasCjk(identity) && !/[a-z]/u.test(identity)) {
     return "not_applicable";
   }
   const candidates = brandTermCandidates(targetUrl);
@@ -259,9 +264,20 @@ export function buildKeywordEvidence(
   extract: SeoAuditTargetPageExtract | null,
   queries: readonly NormalizedTargetQuery[],
   pageRole: KeywordEvidencePageRole | null,
+  /**
+   * Whether the crawl collected the submitted page at all.
+   *
+   * Without it a missing extract has one explanation for two different facts:
+   * the page was never collected, or it was collected and the text is missing
+   * anyway. Telling a visitor their page was not reachable when it was is a
+   * wrong answer, not a vague one.
+   */
+  targetInspected = false,
 ): KeywordEvidence {
   if (extract === null) {
-    return keywordEvidenceUnavailable("target_page_not_captured");
+    return keywordEvidenceUnavailable(
+      targetInspected ? "extract_missing" : "target_page_not_captured",
+    );
   }
 
   const denominator = countTextUnits(normalizeForMatch(capturedText(extract)));

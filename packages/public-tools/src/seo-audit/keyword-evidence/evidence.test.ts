@@ -57,6 +57,17 @@ describe("buildKeywordEvidence — unavailable states", () => {
     });
   });
 
+  it("distinguishes a page that was never collected from one whose text is missing", () => {
+    // One reason for two different facts would tell a visitor their page was
+    // unreachable when it was collected and read fine.
+    expect(
+      buildKeywordEvidence(null, queries(["astrology"]), null, false),
+    ).toMatchObject({ reason: "target_page_not_captured" });
+    expect(
+      buildKeywordEvidence(null, queries(["astrology"]), null, true),
+    ).toMatchObject({ reason: "extract_missing" });
+  });
+
   it("never emits zeros or crosses in place of an unavailable region", () => {
     const built = buildKeywordEvidence(null, queries(["astrology"]), null);
     expect(JSON.stringify(built)).not.toContain("not_covered");
@@ -272,11 +283,34 @@ describe("buildKeywordEvidence — brand candidate", () => {
     expect(query.density).not.toBeNull();
   });
 
-  it("reports not_applicable for a CJK query instead of a false negative", () => {
+  it("reports not_applicable for a single CJK token with no Latin letters", () => {
     const built = available(
       buildKeywordEvidence(extract, queries(["占星"]), null),
     );
     expect(queryNamed(built, "占星").brandCandidate).toBe("not_applicable");
+  });
+
+  it("stays not_applicable for a CJK token carrying only digits", () => {
+    // The candidates are Latin labels from a hostname. Digits do not make a
+    // CJK word comparable to them, so a bare "no" would still be a claim we
+    // cannot support.
+    const built = available(
+      buildKeywordEvidence(extract, queries(["品牌123"]), null),
+    );
+    expect(queryNamed(built, "品牌123").brandCandidate).toBe("not_applicable");
+  });
+
+  it.each([
+    ["a multi-token CJK query", "占星 工具"],
+    ["a CJK query carrying Latin letters", "seo工具"],
+  ])("still compares %s and answers not_matched", (_name, query) => {
+    // These can be compared against the hostname labels like any other query;
+    // calling them inapplicable hides a real negative behind a claim that the
+    // question does not apply.
+    const built = available(
+      buildKeywordEvidence(extract, queries([query]), null),
+    );
+    expect(queryNamed(built, query).brandCandidate).toBe("not_matched");
   });
 });
 

@@ -128,8 +128,17 @@ describe("urlCovered", () => {
     );
   });
 
-  it("matches CJK slugs after percent-decoding is already applied upstream", () => {
+  it("matches a CJK slug in the form the crawler actually records", () => {
+    // canonical-url.v1 preserves non-unreserved percent encodings, so a real
+    // fetchUrl carries %E5%8D%A0%E6%98%9F rather than the characters.
+    expect(
+      urlCovered("占星", "https://example.com/%E5%8D%A0%E6%98%9F/"),
+    ).toBe(true);
     expect(urlCovered("占星", "https://example.com/占星/")).toBe(true);
+  });
+
+  it("survives a malformed percent escape instead of throwing", () => {
+    expect(urlCovered("chart", "https://example.com/%E0%A4%A")).toBe(false);
   });
 
   it("returns false for an unusable url", () => {

@@ -23,8 +23,18 @@ export const MAX_EXTRACT_ENTRY_CHARS = 200;
  */
 const CJK_WORD_COUNT_THRESHOLD = 0.3;
 
+/**
+ * Cut to a UTF-16 budget without splitting a character.
+ *
+ * `slice` counts code units, so cutting mid-pair leaves an orphaned surrogate:
+ * corrupted text in the response, and a JSONB write that can fail on it and
+ * send us back to re-crawl the same page. The crawl projection documents the
+ * same hazard for its own limits.
+ */
 function truncate(value: string, max: number): string {
-  return value.length > max ? value.slice(0, max) : value;
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  return /[\uD800-\uDBFF]$/u.test(cut) ? cut.slice(0, -1) : cut;
 }
 
 function capList(
