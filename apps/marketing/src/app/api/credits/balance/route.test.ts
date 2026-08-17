@@ -245,9 +245,35 @@ describe("GET /api/credits/balance", () => {
       data: {
         balance: { permanent: 120, daily: 0, total: 120 },
         mode: "welfare",
-        dailyGrant: { grantedToday: true, amount: 20, welfareRemaining: 480 },
+        dailyGrant: {
+          grantedToday: true,
+          amount: 20,
+          welfareRemaining: 480,
+          welfareCap: 600,
+        },
         referral: { code: "ab3kd9xz", rewardedCount: 0, cap: 20 },
       },
+    });
+  });
+
+  /**
+   * Regression: ISSUE-003 — the account page printed a compiled-in cap next to
+   * a live remaining, so editing credit_settings (which the rollout runbook
+   * says takes effect without a deploy) made the two disagree.
+   * Found by /qa on 2026-08-17.
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("reports the cap the database is actually enforcing, not the seed", async () => {
+    mocks.touchDaily.mockResolvedValue(
+      touch({ welfareAccrualCap: 1000, welfareRemaining: 980 }),
+    );
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.data.dailyGrant).toMatchObject({
+      welfareCap: 1000,
+      welfareRemaining: 980,
     });
   });
 

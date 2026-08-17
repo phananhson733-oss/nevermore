@@ -17,6 +17,7 @@ interface AccountSnapshot {
   /** Null when the answer did not carry it; the line is dropped rather than guessed. */
   readonly dailyAmount: number | null;
   readonly welfareRemaining: number | null;
+  readonly welfareCap: number;
   readonly referralCode: string;
   readonly rewardedCount: number;
   readonly referralCap: number;
@@ -66,6 +67,12 @@ function readSnapshot(body: unknown): AccountSnapshot | null {
     grantedToday: dailyGrant?.grantedToday === true,
     dailyAmount: finiteNumber(dailyGrant?.amount),
     welfareRemaining: finiteNumber(dailyGrant?.welfareRemaining),
+    // Both caps prefer the live answer and keep the seed only as a fallback:
+    // credit_settings is edited in production without a deploy, and a compiled
+    // -in number printed next to a live one is how "980 of 600" happens.
+    welfareCap:
+      finiteNumber(dailyGrant?.welfareCap) ??
+      CREDITS_SETTINGS_SEED.welfareAccrualCap,
     referralCode: code,
     rewardedCount: finiteNumber(referral?.rewardedCount) ?? 0,
     referralCap:
@@ -258,7 +265,7 @@ export function CreditsAccountClient() {
             <p className="mt-2 font-mono text-[11.5px] text-text-dark-faint">
               {t("welfareRemaining", {
                 remaining: snapshot.welfareRemaining,
-                cap: CREDITS_SETTINGS_SEED.welfareAccrualCap,
+                cap: snapshot.welfareCap,
               })}
             </p>
           )}

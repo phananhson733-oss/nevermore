@@ -122,6 +122,11 @@ export async function GET(): Promise<Response> {
           grantedToday,
           amount: daily.value.dailyAmount,
           welfareRemaining: daily.value.welfareRemaining,
+          // Sent for the same reason referral.cap is: credit_settings is
+          // editable in production and takes effect without a deploy, so a page
+          // that printed a compiled-in cap next to a live remaining would
+          // eventually print "980 of 600 left".
+          welfareCap: daily.value.welfareAccrualCap,
         },
         referral: {
           code: account.value.referralCode,
