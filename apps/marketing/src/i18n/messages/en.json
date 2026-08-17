@@ -2438,6 +2438,12 @@
         "scope": "Metadata · Structure · Structured data",
         "cta": "Open SEO Agent"
       },
+      "geo": {
+        "title": "GEO Agent",
+        "description": "Ask a real AI assistant your buyers' questions three times each and see which sources it cited.",
+        "scope": "Buyer questions · Repeated sampling · Citations",
+        "cta": "Open GEO Agent"
+      },
       "tech": {
         "title": "Tech Agent",
         "description": "Review crawl responses, static indexability directives, and internal-link conditions observed in the bounded crawl.",
