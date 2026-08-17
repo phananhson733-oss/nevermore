@@ -268,6 +268,30 @@ describe("On-Page checker request", () => {
     expect(host.textContent).toContain("Add at least one target query.");
   });
 
+  it.each([
+    ["nothing typed", "", "Type a query before adding it."],
+    ["a query already in the list", "pricing", "That query is already in the list."],
+  ])("refuses %s", async (_name, second, message) => {
+    const host = await render();
+    await type(field(host, "onpage-query"), "pricing");
+    await act(async () => {
+      buttonWith(host, "Add").click();
+    });
+    await type(field(host, "onpage-query"), second);
+    await act(async () => {
+      buttonWith(host, "Add").click();
+    });
+
+    expect(host.textContent).toContain(message);
+    // The one query that was accepted is still the only one.
+    expect(
+      host.querySelectorAll("ul li button").length,
+    ).toBe(1);
+    const notice = host.querySelector("#onpage-query-notice");
+    expect(notice?.textContent).toContain(message);
+    expect(field(host, "onpage-query").getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("refuses a sixth query in the browser as well as on the wire", async () => {
     const host = await render();
     for (const query of ["a", "b", "c", "d", "e"]) {
