@@ -143,6 +143,27 @@ alter table public.credit_settings       enable row level security;
 alter table public.credit_daily_counters enable row level security;
 
 /**
+ * RLS is not enough on its own: Supabase provisions service_role with BYPASSRLS
+ * and ALL privileges on public, and that is the role every server route here
+ * connects as. Without this revoke, one stray `update credit_accounts set
+ * permanent_balance = ...` from any future route, repair script or SQL editor
+ * session silently desynchronises the snapshot from the append-only ledger, and
+ * afterwards there is no way to tell which of the two is lying. Making the
+ * ledger immutable while leaving the balance writable would protect the copy
+ * and not the original.
+ *
+ * SELECT stays granted: /api/credits/ledger reads the table directly through
+ * PostgREST. Writes have exactly one door, the SECURITY DEFINER functions
+ * below, which run as the owner and are unaffected by this.
+ */
+revoke insert, update, delete, truncate on
+    public.credit_accounts,
+    public.credit_ledger,
+    public.credit_settings,
+    public.credit_daily_counters
+  from anon, authenticated, service_role;
+
+/**
  * A referral code is an identifier, not a secret: the worst case for a guessed
  * code is that a stranger gets credited with someone's signup. random() is
  * therefore sufficient, and it keeps the migration free of a pgcrypto
@@ -516,10 +537,16 @@ begin
          updated_at        = now()
    where a.user_id = p_invitee_id;
 
-  perform public.credits__append_entry(
-    p_invitee_id, 'referral_reward_invitee', 0, v_reward, p_tool_slug,
-    'referral-invitee:' || p_invitee_id::text,
-    jsonb_build_object('inviter', v_inviter));
+  -- Guarded like the signup and daily grants above. The settings table permits
+  -- a reward of zero, and an operator reaching for it to stop payouts would
+  -- otherwise hit the ledger's amount > 0 check, roll the whole transaction
+  -- back, and make every later qualifying run raise the same error forever.
+  if v_reward > 0 then
+    perform public.credits__append_entry(
+      p_invitee_id, 'referral_reward_invitee', 0, v_reward, p_tool_slug,
+      'referral-invitee:' || p_invitee_id::text,
+      jsonb_build_object('inviter', v_inviter));
+  end if;
 
   -- Atomic claim against the inviter's lifetime cap: a plain read-then-write
   -- lets twenty concurrent invitees push a cap of twenty to twenty-one.
@@ -531,7 +558,7 @@ begin
      and a.referral_rewarded_count < v_inviter_cap;
   get diagnostics v_inviter_rows = row_count;
 
-  if v_inviter_rows > 0 then
+  if v_inviter_rows > 0 and v_reward > 0 then
     perform public.credits__append_entry(
       v_inviter, 'referral_reward_inviter', 0, v_reward, p_tool_slug,
       'referral-inviter:' || p_invitee_id::text,

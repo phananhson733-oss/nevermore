@@ -32,15 +32,21 @@ export function assertDisposable(url: string): void {
 }
 
 /**
- * Supabase ships these roles; a bare Postgres does not, and the migration's
- * grants name them. Creating them here keeps the migration file byte-identical
- * to what the owner runs in the Supabase SQL editor.
+ * Reproduce Supabase's roles as Supabase actually provisions them.
+ *
+ * Getting this wrong makes the permission tests pass for the wrong reason. A
+ * bare `create role service_role` has no table privileges and no BYPASSRLS, so
+ * every direct-table probe is denied whether or not the migration revoked
+ * anything — a missing revoke would look exactly like a present one. Supabase
+ * gives service_role BYPASSRLS and ALL on public (that is how the existing
+ * waitlist route writes through PostgREST at all), so the test database has to
+ * as well before "the ledger cannot be written around" means anything.
  */
 const ROLE_SETUP = `
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'service_role') then
-    create role service_role nologin;
+    create role service_role nologin bypassrls;
   end if;
   if not exists (select 1 from pg_roles where rolname = 'anon') then
     create role anon nologin;
@@ -51,10 +57,15 @@ begin
 end
 $$;
 
--- Supabase grants these by default on the public schema. Without them the
--- migration's closing REVOKE/GRANT block would be untestable: every role would
--- already be unable to reach anything, so a missing revoke would look correct.
-grant usage on schema public to anon, authenticated, service_role;`;
+alter role service_role bypassrls;
+grant usage on schema public to anon, authenticated, service_role;
+
+-- Supabase hands every role ALL on tables in public through ALTER DEFAULT
+-- PRIVILEGES, so the grant lands as each table is created. Emulating it with a
+-- blanket GRANT after the migrations would instead undo the migration's own
+-- revoke and hide the very thing the test exists to prove.
+alter default privileges in schema public
+  grant all on tables to anon, authenticated, service_role;`;
 
 function requireTestDatabaseUrl(): string {
   const url = process.env.MARKETING_TEST_DATABASE_URL;

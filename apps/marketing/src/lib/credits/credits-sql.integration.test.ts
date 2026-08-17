@@ -514,6 +514,97 @@ describe("ledger integrity", () => {
    * session that actually wears the role, which is why the harness recreates
    * Supabase's roles and schema grants.
    */
+  /**
+   * The balance is a snapshot of the ledger, and service_role is the role every
+   * server route connects as. If it can move the snapshot directly, the ledger
+   * being append-only protects nothing: the two silently disagree, and nothing
+   * afterwards can say which of them lied.
+   *
+   * This assertion only means something because the harness gives service_role
+   * BYPASSRLS and Supabase's default table grants. Against a bare-Postgres role
+   * every probe below would be denied for want of privilege rather than because
+   * the migration revoked anything, and a missing revoke would look identical.
+   */
+  it("stops service_role from writing a balance around the ledger", async () => {
+    await ensure(db, USER_A);
+    const client = await openConcurrentClient();
+    try {
+      await client.query("set role service_role");
+      await expect(
+        client.query(
+          "update public.credit_accounts set permanent_balance = 999999 where user_id = $1",
+          [USER_A],
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client.query(
+          `insert into public.credit_ledger
+             (user_id, entry_type, amount, permanent_delta, balance_daily_after,
+              balance_permanent_after, idempotency_key)
+           values ($1, 'adjustment', 500, 500, 0, 600, 'forged:1')`,
+          [USER_A],
+        ),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client.query("update public.credit_settings set signup_bonus = 100000"),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client.query("delete from public.credit_daily_counters"),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await client.query("reset role");
+      await client.end();
+    }
+
+    const { rows } = await db.query<{ permanent_balance: number }>(
+      "select permanent_balance from public.credit_accounts where user_id = $1",
+      [USER_A],
+    );
+    expect(rows[0]?.permanent_balance).toBe(100);
+  });
+
+  it("still lets service_role read the ledger, which the account page needs", async () => {
+    await ensure(db, USER_A);
+    const client = await openConcurrentClient();
+    try {
+      await client.query("set role service_role");
+      const { rows } = await client.query<{ n: number }>(
+        "select count(*)::int as n from public.credit_ledger where user_id = $1",
+        [USER_A],
+      );
+      expect(rows[0]?.n).toBe(1);
+    } finally {
+      await client.query("reset role");
+      await client.end();
+    }
+  });
+
+  /**
+   * The settings table permits a reward of zero, and it is the lever an
+   * operator would reach for to stop payouts. It must stop them, not poison
+   * every later qualifying run with a constraint violation.
+   */
+  it("stops paying, rather than erroring, when the reward is set to zero", async () => {
+    const inviter = await ensure(db, USER_A);
+    await ensure(db, USER_B, inviter.referral_code);
+    await db.query(
+      "update public.credit_settings set referral_reward = 0 where id = 1",
+    );
+
+    expect(await reward(db, USER_B)).toMatchObject({ rewarded: true });
+
+    const { rows } = await db.query<{
+      user_id: string;
+      permanent_balance: number;
+    }>(
+      "select user_id, permanent_balance from public.credit_accounts order by user_id",
+    );
+    expect(rows).toEqual([
+      { user_id: USER_A, permanent_balance: 100 },
+      { user_id: USER_B, permanent_balance: 100 },
+    ]);
+  });
+
   it("exposes the grant functions to service_role and nothing else", async () => {
     const client = await openConcurrentClient();
     try {
@@ -533,15 +624,22 @@ describe("ledger integrity", () => {
         ),
       ).rejects.toThrow(/permission denied/);
 
-      // RLS is enabled with no policy, so the tables are unreachable directly.
+      // A leaked publishable key reaches nothing. Note the two failure modes
+      // differ and both matter: the table query is ALLOWED by grant and
+      // returns zero rows because RLS has no policy, while the function is
+      // refused outright by the revoke. Asserting "permission denied" on the
+      // table would pass only against an under-privileged test role and would
+      // stop testing RLS at all.
       await client.query("set role anon");
-      await expect(
-        client.query("select * from public.credit_accounts"),
-      ).rejects.toThrow(/permission denied/);
+      const leaked = await client.query("select * from public.credit_accounts");
+      expect(leaked.rows).toHaveLength(0);
       await expect(
         client.query("select * from public.credits_ensure_account($1)", [
           USER_B,
         ]),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client.query("update public.credit_accounts set permanent_balance = 1"),
       ).rejects.toThrow(/permission denied/);
     } finally {
       await client.query("reset role");
