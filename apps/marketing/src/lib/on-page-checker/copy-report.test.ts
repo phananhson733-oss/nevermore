@@ -212,34 +212,90 @@ describe("buildCopyReport", () => {
    * needs a test. The rule at this depth is that a dropped caveat is counted
    * rather than silently sliced off the end.
    */
-  it("counts the limitations it had to drop when even shortening will not fit", () => {
-    const many = Object.fromEntries(
-      Array.from({ length: 400 }, (_entry, index) => [
-        `code_${index}`,
-        `Limitation number ${index} says something about the measurement.`,
-      ]),
-    );
+  /**
+   * The two steps below shortening, both reached with type-valid input.
+   *
+   * Neither is reachable for the six frozen codes at their real lengths, which
+   * is exactly why they need tests: the rule at this depth is that a caveat that
+   * goes missing is counted, never quietly absent. The earlier version of this
+   * test reached the edge with an `unknown` cast past the limitation union and
+   * accepted an uncounted fallback, so an implementation that discarded every
+   * limitation would have passed it.
+   */
+  it.each([
+    [
+      "a limitation list long enough to crowd itself out",
+      "https://example.com/pricing",
+      1_000,
+    ],
+    [
+      "a page URL longer than the whole report",
+      `https://example.com/${"deep/".repeat(4_000)}`,
+      6,
+    ],
+  ])("counts what it dropped: %s", (_name, targetUrl, count) => {
     const normalized = normalizeTargetQueries(["pricing"]);
     if (!normalized.ok) throw new Error(normalized.reason);
     const evidence = buildKeywordEvidence(extract, normalized.queries, "product");
     if (evidence.availability !== "available") throw new Error("unavailable");
+    // A valid code, repeated: the union bounds the vocabulary, not the length.
+    const code = "density_basis_captured_text_only" as const;
 
     const text = buildCopyReport({
-      targetUrl: `https://example.com/${"deep/".repeat(2_000)}`,
+      targetUrl,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
         ...evidence,
-        limitations: Object.keys(many) as unknown as typeof evidence.limitations,
+        limitations: Array.from({ length: count }, () => code),
       },
-      limitationText: many,
+      limitationText: {
+        [code]: "Density is measured inside the collected text only.",
+      },
     });
 
     expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
-    // Whatever went missing is counted, not silently absent.
-    expect(text).toMatch(/\d+ more limitations omitted to fit|could not be rendered/);
+    // A number, always. "It did not fit" without one hides what went missing.
+    expect(text).toMatch(/\d+ (?:more )?limitations? (?:are )?omitted/);
     // And the report never ends mid-sentence pretending to be complete.
     expect(text.trimEnd().endsWith("_")).toBe(true);
+    /**
+     * And it keeps what it can. A count is necessary, not sufficient: an
+     * implementation that discarded every limitation and returned the last-ditch
+     * notice would satisfy the count assertion above while publishing none of
+     * the caveats it had room for.
+     */
+    const bullets = text.split("\n").filter((line) => line.startsWith("- "));
+    if (targetUrl.length < 200) {
+      expect(bullets.length).toBeGreaterThan(0);
+      expect(text).toContain("## Limitations");
+    }
+  });
+
+  it("does not mark a limitation as cut when nothing was removed from it", () => {
+    const normalized = normalizeTargetQueries(["pricing"]);
+    if (!normalized.ok) throw new Error(normalized.reason);
+    const evidence = buildKeywordEvidence(extract, normalized.queries, "product");
+    if (evidence.availability !== "available") throw new Error("unavailable");
+    const code = "density_basis_captured_text_only" as const;
+
+    const text = buildCopyReport({
+      targetUrl: "https://example.com/pricing",
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: {
+        ...evidence,
+        // Enough repetitions to force the deepest branch even at this length.
+        limitations: Array.from({ length: 4_000 }, () => code),
+      },
+      // Short enough that shortening it removes nothing.
+      limitationText: { [code]: "Captured text." },
+    });
+
+    // The deepest branch really is the one under test.
+    expect(text).toMatch(/\d+ more limitations omitted to fit/);
+    expect(text).toContain("- Captured text.");
+    expect(text).not.toContain("Captured text.…[cut]");
   });
 
   it("keeps a pipe in a query from splitting the table row it sits in", () => {

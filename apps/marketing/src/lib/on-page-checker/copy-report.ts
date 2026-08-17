@@ -317,12 +317,13 @@ export function buildCopyReport(input: CopyReportInput): string {
     const dropped = codes.length - kept;
     const truncated = [
       ...bareHeader,
-      ...codes
-        .slice(0, kept)
-        .map(
-          (code) =>
-            `- ${(input.limitationText[code] ?? code).slice(0, 16)}${cutMark}`,
-        ),
+      ...codes.slice(0, kept).map((code) => {
+        // Only mark what was actually shortened. A short limitation printed as
+        // "x…[cut]" claims a loss that did not happen, which is the same kind
+        // of untruth as hiding one that did.
+        const text = input.limitationText[code] ?? code;
+        return `- ${text.length <= 16 ? text : `${text.slice(0, 16)}${cutMark}`}`;
+      }),
       "",
       `_${dropped} more limitations omitted to fit._`,
       "",
@@ -332,7 +333,17 @@ export function buildCopyReport(input: CopyReportInput): string {
     if (truncated.length <= COPY_REPORT_MAX_CHARS) return truncated;
   }
 
-  // Nothing but the notice fits. Say that, rather than return a fragment of a
-  // sentence that reads like a finished report.
-  return `# On-page keyword check\n\n_This report could not be rendered within its size limit; nothing below it is complete._\n`;
+  /**
+   * Not even one limitation fits beside the header — reachable only when the
+   * header itself is over budget, which takes a page URL longer than the whole
+   * report. Every limitation is gone, so the count goes here: "the report did
+   * not fit" without it hides exactly what this ordering exists to keep.
+   */
+  return [
+    "# On-page keyword check",
+    "",
+    `_This report did not fit its size limit. ${codes.length} limitations omitted,`,
+    "and so is everything that was measured._",
+    "",
+  ].join("\n");
 }
