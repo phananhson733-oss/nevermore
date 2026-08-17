@@ -106,6 +106,46 @@ export interface SeoAuditSiteResources {
   readonly sitemapFetched: boolean;
 }
 
+/**
+ * Static text of the submitted target page, kept for keyword comparison.
+ *
+ * Visitor-neutral on purpose: it holds what the page says, never what anyone
+ * asked about it, so one crawl can be reused across visitors while keyword
+ * evidence itself is derived per request and never cached.
+ *
+ * Every field is *static extraction* — decoded, whitespace-normalized and
+ * truncated markup text. It is not byte-level source, and it is not browser
+ * visibility: paired `nav`/`footer`/`aside`/`script` blocks are removed, but
+ * CSS, `hidden` and client rendering are not evaluated.
+ */
+export interface SeoAuditTargetPageExtract {
+  readonly url: string;
+  readonly title: string | null;
+  readonly metaDescription: string | null;
+  readonly h1: readonly string[];
+  /**
+   * H2–H6 as one merged list, or null when it could not be derived.
+   *
+   * Heading levels are not retained by the crawl projection, so this is the
+   * headings list minus the H1 texts. Null means the H1 collector hit its own
+   * cap, which makes that subtraction unsound — reported as unavailable rather
+   * than as a list we cannot stand behind.
+   */
+  readonly subHeadings: readonly string[] | null;
+  /** First 500 characters of the statically extracted body, or null. */
+  readonly openingText: string | null;
+  /**
+   * Whitespace-separated word count of the full static body.
+   *
+   * Null for pages written mostly in a script with no word gaps, where the
+   * count would be off by an order of magnitude. A known-wrong number does not
+   * get published just because a number is expected.
+   */
+  readonly staticBodyWords: number | null;
+  /** True when a list field was cut to its own budget before publication. */
+  readonly truncatedLists: boolean;
+}
+
 export interface SeoAuditReport {
   /** The submitted URL, retained even when the site redirects to its canonical origin. */
   readonly targetUrl: string;
@@ -127,6 +167,12 @@ export interface SeoAuditReport {
    * parameter), and report its problems as a clean pass.
    */
   readonly inspectedTargetUrl: string | null;
+  /**
+   * Static text of the inspected target page, or null when there was no such
+   * page. Visitor-neutral, so it travels with the cached crawl; keyword
+   * evidence is derived from it per request and is never cached.
+   */
+  readonly targetPageExtract: SeoAuditTargetPageExtract | null;
   readonly records: readonly SeoAuditRecord[];
   readonly pages: readonly SeoAuditPage[];
 }

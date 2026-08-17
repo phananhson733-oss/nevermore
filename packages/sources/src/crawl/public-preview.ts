@@ -20,6 +20,13 @@ import {
 import type { CrawlBudget, CrawlFetcher, CrawlRaw } from "./types.ts";
 
 export type { CrawlRaw } from "./types.ts";
+/**
+ * Re-exported so public tools can read a single collected page without
+ * importing the package barrel, which pulls the whole crawl engine into
+ * anything that touches it.
+ */
+export { CRAWL_PROJECTION_LIMITS } from "./types.ts";
+export type { CrawlPageProjection } from "../observations.ts";
 
 export const PUBLIC_PREVIEW_CRAWL_USER_AGENT =
   "GenGrowth-Public-Tools-Crawler/1.0 (+https://gengrowth.ai/tools)";
