@@ -878,7 +878,7 @@
       "scopeShort": "No account and no sign-up. One run collects up to about 950 public same-origin static pages — the crawler paces itself to at least 250 ms between requests and stops at four minutes — and fewer if your robots.txt asks for a slower rate. Larger sites return partial coverage, labelled as such.",
       "errors": {
         "invalid_url": "Enter a valid public HTTP or HTTPS URL. Private and local network destinations are blocked.",
-        "invalid_request": "The request must contain exactly one URL.",
+        "invalid_request": "Check the website URL, and if you added target keywords, keep it to five of up to 80 characters each.",
         "payload_too_large": "The submitted request is too large.",
         "unsupported_media_type": "Send the request as JSON.",
         "scan_failed": "The public site could not be audited from this environment.",

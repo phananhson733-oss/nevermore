@@ -18,6 +18,7 @@ import {
   readPendingAgentIntent,
   storeAgentProfileRefreshIntent,
   storeConfirmedAgentRunIntent,
+  storePageFocusedAgentIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
 import {
@@ -1736,6 +1737,26 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         .value,
     ).toBe("astrologywiki.com/chart");
     expect(document.body.textContent).toContain("AstrologyWiki");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("resumes a page-focused launch on that page instead of discarding it", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    // Before this was handled, the intent fell through to the runnable check
+    // and was deleted as unusable, so the handoff lost the page and the
+    // visitor landed on an empty site-wide form.
+    expect(
+      (document.querySelector("#seo-profile-target-url") as HTMLInputElement)
+        .value,
+    ).toBe("astrologywiki.com/chart");
+    // Restored, never started: the visitor asked about a page, not for a crawl.
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });

@@ -878,7 +878,7 @@
       "scopeShort": "无需账户，无需注册。单次运行最多采集约 950 个同源公开静态页面——爬虫在两次请求之间至少间隔 250 毫秒，并在四分钟处停止；若你的 robots.txt 要求更慢的速率，实际页数会更少。超出这个规模的站点会返回部分覆盖，并明确标注。",
       "errors": {
         "invalid_url": "请输入有效的公开 HTTP 或 HTTPS URL。私有网络和本机地址会被拦截。",
-        "invalid_request": "请求中只能包含一个 URL。",
+        "invalid_request": "请检查网站 URL；如果填了目标关键词，最多 5 个、每个不超过 80 个字符。",
         "payload_too_large": "提交的请求体过大。",
         "unsupported_media_type": "请使用 JSON 格式提交请求。",
         "scan_failed": "当前环境无法完成对该公开网站的审计。",

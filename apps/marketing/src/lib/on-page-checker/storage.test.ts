@@ -7,6 +7,7 @@ import {
   ON_PAGE_DRAFT_TTL_MS,
   ON_PAGE_HISTORY_KEY,
   ON_PAGE_HISTORY_MAX_ENTRIES,
+  newOnPageHistoryId,
   readOnPageDraft,
   readOnPageHistory,
   storeOnPageDraft,
@@ -53,11 +54,17 @@ const draftInput = {
   pageType: "product" as const,
 };
 
+/** Deterministic, valid UUIDs so a fixture cannot depend on generation order. */
+function uuid(seed: number): string {
+  const tail = seed.toString(16).padStart(12, "0");
+  return `11111111-1111-4111-8111-${tail}`;
+}
+
 function historyEntry(
   overrides: Partial<OnPageHistoryEntry> = {},
 ): OnPageHistoryEntry {
   return {
-    id: "11111111-1111-4111-8111-111111111111",
+    id: uuid(1),
     createdAt: 1_000,
     url: "https://example.com/pricing",
     host: "example.com",
@@ -156,12 +163,12 @@ describe("on-page recent checks", () => {
 
   it("keeps repeats of the same page so a trend is visible", () => {
     const storage = new MemoryStorage();
-    appendOnPageHistory(storage, historyEntry({ id: "a", createdAt: 1 }));
-    appendOnPageHistory(storage, historyEntry({ id: "b", createdAt: 2 }));
+    appendOnPageHistory(storage, historyEntry({ id: uuid(1), createdAt: 1 }));
+    appendOnPageHistory(storage, historyEntry({ id: uuid(2), createdAt: 2 }));
 
     expect(readOnPageHistory(storage).map((entry) => entry.id)).toEqual([
-      "a",
-      "b",
+      uuid(1),
+      uuid(2),
     ]);
   });
 
@@ -170,14 +177,14 @@ describe("on-page recent checks", () => {
     for (let index = 0; index < ON_PAGE_HISTORY_MAX_ENTRIES + 3; index += 1) {
       appendOnPageHistory(
         storage,
-        historyEntry({ id: `entry-${index}`, createdAt: index + 1 }),
+        historyEntry({ id: uuid(index), createdAt: index + 1 }),
       );
     }
 
     const entries = readOnPageHistory(storage);
     expect(entries).toHaveLength(ON_PAGE_HISTORY_MAX_ENTRIES);
-    expect(entries[0]?.id).toBe("entry-3");
-    expect(entries.at(-1)?.id).toBe(`entry-${ON_PAGE_HISTORY_MAX_ENTRIES + 2}`);
+    expect(entries[0]?.id).toBe(uuid(3));
+    expect(entries.at(-1)?.id).toBe(uuid(ON_PAGE_HISTORY_MAX_ENTRIES + 2));
   });
 
   it("refuses an entry that is not the shape it claims", () => {
@@ -209,16 +216,45 @@ describe("on-page recent checks", () => {
 
   it("keeps the run alive when the quota refuses the write", () => {
     const storage = new MemoryStorage();
-    appendOnPageHistory(storage, historyEntry({ id: "kept", createdAt: 1 }));
+    appendOnPageHistory(storage, historyEntry({ id: uuid(1), createdAt: 1 }));
     storage.failOnWrite = true;
 
     // The list is a convenience; the answer the visitor asked for is not.
     expect(() =>
-      appendOnPageHistory(storage, historyEntry({ id: "new", createdAt: 2 })),
+      appendOnPageHistory(storage, historyEntry({ id: uuid(2), createdAt: 2 })),
     ).not.toThrow();
     expect(readOnPageHistory(storage).map((entry) => entry.id)).toEqual([
-      "kept",
+      uuid(1),
     ]);
+  });
+});
+
+describe("history entry identity and shape", () => {
+  it("generates a unique identity rather than trusting the caller", () => {
+    const first = newOnPageHistoryId();
+    const second = newOnPageHistoryId();
+    expect(first).not.toBe(second);
+    expect(appendOnPageHistory(new MemoryStorage(), historyEntry({ id: first })))
+      .toHaveLength(1);
+  });
+
+  it.each([
+    ["an id that is not a uuid", { id: "entry-1" }],
+    ["a fractional timestamp", { createdAt: 1.5 }],
+    ["a negative timestamp", { createdAt: -1 }],
+  ])("refuses %s", (_name, override) => {
+    const storage = new MemoryStorage();
+    expect(
+      appendOnPageHistory(storage, historyEntry(override)),
+    ).toEqual([]);
+  });
+
+  it("refuses an entry carrying a field it does not recognize", () => {
+    const storage = new MemoryStorage();
+    const extra = { ...historyEntry(), evidence: { queries: [] } };
+    expect(
+      appendOnPageHistory(storage, extra as unknown as OnPageHistoryEntry),
+    ).toEqual([]);
   });
 });
 

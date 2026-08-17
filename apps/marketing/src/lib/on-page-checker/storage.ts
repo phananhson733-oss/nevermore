@@ -61,6 +61,33 @@ export interface OnPageHistoryEntry {
   readonly cacheStatus: "hit" | "miss" | "unknown";
 }
 
+const HISTORY_KEYS: ReadonlySet<string> = new Set([
+  "id",
+  "createdAt",
+  "url",
+  "host",
+  "targetQueries",
+  "country",
+  "locale",
+  "pageType",
+  "focus",
+  "coverage",
+  "cacheStatus",
+]);
+
+/**
+ * Entry identity is a UUID, generated here rather than accepted.
+ *
+ * A caller-supplied id can collide across tabs, and a list whose identities are
+ * not unique cannot be de-duplicated or pointed at later.
+ */
+export function newOnPageHistoryId(): string {
+  return crypto.randomUUID();
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const PAGE_TYPES: ReadonlySet<string> = new Set([
   "homepage",
   "product",
@@ -233,6 +260,9 @@ export function readOnPageDraft(
 
 function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
   if (!isObject(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== HISTORY_KEYS.size) return null;
+  if (keys.some((key) => !HISTORY_KEYS.has(key))) return null;
   const {
     id,
     createdAt,
@@ -249,8 +279,8 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
 
   if (
     typeof id !== "string" ||
-    id === "" ||
-    !isFiniteNumber(createdAt) ||
+    !UUID_PATTERN.test(id) ||
+    !isNonNegativeInteger(createdAt) ||
     typeof url !== "string" ||
     url === "" ||
     typeof host !== "string" ||

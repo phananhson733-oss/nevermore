@@ -802,8 +802,20 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       resumeIntent.current;
     if (!pending) return;
 
-    if (pending.purpose === "prepare_profile") {
-      setProfile(createAgentProfileDraft(agent, pending.url, locale));
+    if (
+      pending.purpose === "prepare_profile" ||
+      pending.purpose === "page_focused_launch"
+    ) {
+      const draft = createAgentProfileDraft(agent, pending.url, locale);
+      setProfile(
+        // A visitor who came in asking about one page comes back asking about
+        // the same page. Without this the handoff resumes on the site view and
+        // answers a question they did not ask — and before it, this intent fell
+        // through to the runnable check and was deleted as unusable.
+        pending.scope === "page"
+          ? { ...draft, auditScope: "page-only" }
+          : draft,
+      );
       if (storage) clearPendingAgentIntent(storage, agent);
       return;
     }
