@@ -2455,8 +2455,8 @@
       "heroCta": "运行 GEO Agent",
       "accountBoundaryTitle": "账号访问门",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每次运行会产生 24 次计费的服务商调用，因此不提供匿名使用。",
-      "dataBoundaryTitle": "一次快照，保留 7 天",
-      "dataBoundaryBody": "报告记录被引用的域名、计数和时间戳，不保存助手的回答正文，并在七天后过期——它是一次快照，不是一份历史。",
+      "dataBoundaryTitle": "不做任何存储",
+      "dataBoundaryBody": "报告只返回到当前页面，不写入任何地方：没有账号历史，也不在服务端保存助手的回答正文。离开页面即结束，需要的内容请先自行复制。",
       "howEyebrow": "工作方式",
       "howTitle": "从买家问题到可核对的引用",
       "howBody": "报告里的每个数字都由它下面的采样重新算出；两种「什么都没观察到」的状态单独列出，不会被当成 0 计入。",
@@ -2505,7 +2505,7 @@
         "coverageUnavailable": "不可用",
         "coverageNote": "未执行联网搜索的采样和失败的采样，都被排除在下面所有计数之外，不会被读作 0。",
         "sampledAt": "采样于 {date}",
-        "expiresAt": "可读至 {date}",
+        "notStored": "本报告不会被保存，离开页面即结束。",
         "model": "模型",
         "market": "市场",
         "citedHosts": "被引用",
@@ -2533,6 +2533,16 @@
         "answer_had_no_citations": "完全没有引用",
         "search_not_performed": "未联网搜索",
         "unavailable": "不可用"
+      },
+      "sampleLimitations": {
+        "time_budget": "本次运行在采集这次采样前已用完时间预算。",
+        "cost_ceiling": "本次运行在采集这次采样前已达到成本上限。",
+        "provider_not_configured": "本站点尚未配置回答服务商。",
+        "provider_timeout": "服务商未在时间预算内作答。",
+        "provider_rate_limited": "服务商的速率限制导致这次采样不可用。",
+        "provider_auth_failed": "回答服务商拒绝了本站点的凭据。",
+        "provider_no_answer": "服务商没有为这次采样返回可用的答案。",
+        "provider_failed": "服务商无法回答这次采样。"
       },
       "limitations": {
         "title": "这份报告不能告诉你什么",

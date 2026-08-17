@@ -7,6 +7,7 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
+import { brandTokensForHost } from "../tools/keyword-prompts.ts";
 import {
   consumeGeoDailyBudget,
   createGeoCostAccumulator,
@@ -45,9 +46,6 @@ export const GEO_PROVIDER_MODEL = "gpt-5-2025-08-07";
  * and on this route that envelope is 24 answers the visitor already paid for.
  */
 export const GEO_RUN_BUDGET_MS = 240_000;
-
-/** How long a stored report stays readable. */
-export const GEO_REPORT_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
 const MAX_BRAND_TOKENS = 6;
 const MAX_COMPETITOR_HOSTS = 20;
@@ -169,17 +167,18 @@ export function parseGeoRunInput(body: unknown): GeoRunInput | null {
     // The host's own label is always a brand token: a site cited by name is
     // the case the report exists to catch, and requiring the client to send it
     // would make the answer depend on what the client remembered to include.
-    brandTokens: [...new Set([...brandTokens, hostLabel(targetHost)])].filter(
-      (token) => token.length > 0,
-    ),
+    //
+    // Derived with the shared helper rather than by taking the penultimate DNS
+    // label. That shortcut is wrong for every multi-label public suffix, and
+    // wrong in both directions: "acme.com.au" would yield "com", which matches
+    // any answer that names some other .com site, and "acme.co.uk" would yield
+    // "co", which is dropped for being too short so a real mention is missed.
+    // The client sends no tokens by default, so this is the normal path.
+    brandTokens: [
+      ...new Set([...brandTokens, ...brandTokensForHost(targetHost)]),
+    ].filter((token) => token.length > 0),
     competitorHosts: competitorHosts.filter((host) => host !== targetHost),
   };
-}
-
-/** The registrable label of a host, used as a last-resort brand token. */
-function hostLabel(host: string): string {
-  const labels = host.split(".").filter((label) => label !== "");
-  return labels.length >= 2 ? (labels[labels.length - 2] ?? "") : "";
 }
 
 async function readBoundedBody(request: Request): Promise<unknown | null> {
@@ -227,6 +226,17 @@ export async function handleGeoRunRequest(
   const input = parseGeoRunInput(body);
   if (input === null) return errorResponse("invalid_request", 400);
 
+  // Built before the budget claim, not after. The daily bucket is account-wide
+  // and never refunded, so an unconfigured deployment would otherwise let a
+  // handful of clicks burn the whole day's allowance for every visitor while
+  // making zero provider calls.
+  let provider: GeoProviderClient;
+  try {
+    provider = dependencies.createProvider();
+  } catch {
+    return errorResponse("geo_provider_unavailable", 503);
+  }
+
   // Claimed before the first paid call, so a refused run has spent nothing.
   const budget = await dependencies.claimDailyBudget();
   if (budget.kind === "exhausted") {
@@ -245,7 +255,7 @@ export async function handleGeoRunRequest(
 
   const sampledAtMs = dependencies.now();
   const questions = await collectGeoSamples(input.questions, context, {
-    provider: dependencies.createProvider(),
+    provider,
     model: GEO_PROVIDER_MODEL,
     marketCode: input.marketCode,
     // Two independent budgets. Whichever binds first stops the run, and both
@@ -253,7 +263,7 @@ export async function handleGeoRunRequest(
     // was already paid for.
     remainingMs,
     admitCall: () => costs.admit(),
-    settleCall: (costUsd: number) => costs.settle(costUsd),
+    settleCall: (costUsd: number | null) => costs.settle(costUsd),
   });
 
   const samples = questions.flatMap((question) => question.samples);
@@ -266,10 +276,9 @@ export async function handleGeoRunRequest(
     run: {
       agent: "geo",
       mode: "authenticated_agent",
-      persistence: "expiring",
+      persistence: "none",
       schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
       sampledAt: new Date(sampledAtMs).toISOString(),
-      expiresAt: new Date(sampledAtMs + GEO_REPORT_TTL_MS).toISOString(),
       targetHost: input.targetHost,
       provider: {
         tool: "dataforseo_chat_gpt_llm_responses",
@@ -294,6 +303,13 @@ export async function handleGeoRunRequest(
     },
     questions,
   };
+
+  // The only record of what this run spent. Without it a run is invisible in
+  // the DataForSEO invoice, which is the sibling keyword guard's stated
+  // doctrine and the reason its own reporter exists.
+  console.info(
+    `[geo-run] host=${input.targetHost} questions=${questions.length} samples=${samples.length} observed=${observed} spend=$${costs.spent().toFixed(4)} unpriced=${costs.unpricedCalls()} capped=${String(costs.capped())}`,
+  );
 
   const envelope = { data };
   // Validated against the same guard the client uses. An assembly bug should

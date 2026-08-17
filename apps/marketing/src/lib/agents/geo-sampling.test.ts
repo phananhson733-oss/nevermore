@@ -262,7 +262,7 @@ function dependencies(
     readonly admitCall?: () => boolean;
   } = {},
 ) {
-  const costs: number[] = [];
+  const costs: Array<number | null> = [];
   return {
     deps: {
       provider,
@@ -270,7 +270,7 @@ function dependencies(
       marketCode: "US",
       remainingMs: overrides.remainingMs ?? ((): number => 300_000),
       admitCall: overrides.admitCall ?? ((): boolean => true),
-      settleCall: (cost: number): void => {
+      settleCall: (cost: number | null): void => {
         costs.push(cost);
       },
     },
@@ -324,9 +324,7 @@ describe("collectGeoSamples", () => {
     expect(result[0]!.aggregate.verdict).toBe("inconclusive");
     for (const sample of result[0]!.samples) {
       expect(sample.state).toBe("unavailable");
-      expect(sample.limitation).toBe(
-        "The provider rate limit made this sample unavailable.",
-      );
+      expect(sample.limitation).toBe("provider_rate_limited");
     }
   });
 
@@ -343,7 +341,8 @@ describe("collectGeoSamples", () => {
     const result = await collectGeoSamples(questions(1), CONTEXT, deps);
 
     for (const sample of result[0]!.samples) {
-      expect(sample.limitation).not.toContain("quotable");
+      // A code, never the provider's own words.
+      expect(sample.limitation).toBe("provider_failed");
     }
   });
 
@@ -367,7 +366,7 @@ describe("collectGeoSamples", () => {
       .flatMap((q) => q.samples)
       .filter((s) => s.state === "unavailable");
     expect(unavailable).toHaveLength(8);
-    expect(unavailable[0]!.limitation).toContain("cost ceiling");
+    expect(unavailable[0]!.limitation).toBe("cost_ceiling");
   });
 
   it("stops paying for samples once the budget cannot fit another call", async () => {
@@ -421,10 +420,9 @@ describe("collectGeoSamples", () => {
         run: {
           agent: "geo",
           mode: "authenticated_agent",
-          persistence: "expiring",
+          persistence: "none",
           schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
           sampledAt: "2026-08-17T09:00:00.000Z",
-          expiresAt: "2026-08-24T09:00:00.000Z",
           targetHost: CONTEXT.targetHost,
           provider: {
             tool: "dataforseo_chat_gpt_llm_responses",
@@ -432,7 +430,10 @@ describe("collectGeoSamples", () => {
             marketCode: "US",
             languageCode: "en",
             samplesPerQuestion: GEO_SAMPLES_PER_QUESTION,
-            costUsd: costs.reduce((total, cost) => total + cost, 0),
+            costUsd: costs.reduce<number>(
+              (total, cost) => total + (cost ?? 0),
+              0,
+            ),
           },
         },
         coverage: {

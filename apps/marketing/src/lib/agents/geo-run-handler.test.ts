@@ -73,6 +73,29 @@ describe("parseGeoRunInput", () => {
     expect(input?.brandTokens).toContain("acme");
   });
 
+  it.each([
+    ["acme.com.au", "acme"],
+    ["acme.co.uk", "acme"],
+    ["acme.com", "acme"],
+    ["shop.acme.co.jp", "acme"],
+  ] as const)(
+    "derives the brand token of %s as %s, not its public suffix",
+    (host, token) => {
+      // Taking the penultimate DNS label yields "com" for acme.com.au, which
+      // then matches any answer naming some other .com site, and "co" for
+      // acme.co.uk, which is dropped as too short so a real mention is missed.
+      const input = parseGeoRunInput({
+        ...BODY,
+        targetUrl: `https://${host}/`,
+        brandTokens: [],
+      });
+
+      expect(input?.brandTokens).toContain(token);
+      expect(input?.brandTokens).not.toContain("com");
+      expect(input?.brandTokens).not.toContain("co");
+    },
+  );
+
   it("never lets the target host masquerade as its own competitor", () => {
     const input = parseGeoRunInput({
       ...BODY,
@@ -227,7 +250,7 @@ describe("handleGeoRunRequest", () => {
     );
     const body = (await response.json()) as {
       data: {
-        run: { provider: { costUsd: number }; expiresAt: string };
+        run: { provider: { costUsd: number }; persistence: string };
         coverage: { samplesAttempted: number; availability: string };
       };
     };
@@ -236,7 +259,8 @@ describe("handleGeoRunRequest", () => {
     expect(body.data.coverage.samplesAttempted).toBe(6);
     expect(body.data.coverage.availability).toBe("available");
     expect(body.data.run.provider.costUsd).toBeCloseTo(0.2742, 4);
-    expect(body.data.run.expiresAt).toBe("2026-08-24T09:00:00.000Z");
+    // No storage exists yet, so the payload must not advertise an expiry.
+    expect(body.data.run.persistence).toBe("none");
   });
 
   it("degrades to a partial report when some samples fail", async () => {

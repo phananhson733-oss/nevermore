@@ -92,7 +92,7 @@ export interface GeoCostAccumulator {
    * silently switch the ceiling off, because every comparison against NaN is
    * false and `admit` would answer "yes" forever.
    */
-  readonly settle: (costUsd: number) => void;
+  readonly settle: (costUsd: number | null) => void;
   readonly spent: () => number;
   readonly unpricedCalls: () => number;
   readonly capped: () => boolean;
@@ -122,6 +122,7 @@ export function createGeoCostAccumulator(): GeoCostAccumulator {
     settle: (costUsd) => {
       reserved = Math.max(0, reserved - GEO_CALL_P50_COST_USD);
       if (
+        costUsd === null ||
         typeof costUsd !== "number" ||
         !Number.isFinite(costUsd) ||
         costUsd < 0

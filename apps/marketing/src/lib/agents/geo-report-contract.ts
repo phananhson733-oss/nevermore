@@ -109,6 +109,35 @@ export type GeoQuestionVerdict =
   | "not_observed"
   | "inconclusive";
 
+/**
+ * Why a sample carries no observation, as a code rather than a sentence.
+ *
+ * A sentence written here reaches the report verbatim, so an English one lands
+ * untranslated in the middle of an otherwise Chinese page — and these are the
+ * lines that explain why a sample was excluded from the denominator, which is
+ * the honesty claim the whole report rests on. The client renders the code.
+ */
+export type GeoSampleLimitation =
+  | "time_budget"
+  | "cost_ceiling"
+  | "provider_not_configured"
+  | "provider_timeout"
+  | "provider_rate_limited"
+  | "provider_auth_failed"
+  | "provider_no_answer"
+  | "provider_failed";
+
+const SAMPLE_LIMITATIONS = new Set<GeoSampleLimitation>([
+  "time_budget",
+  "cost_ceiling",
+  "provider_not_configured",
+  "provider_timeout",
+  "provider_rate_limited",
+  "provider_auth_failed",
+  "provider_no_answer",
+  "provider_failed",
+]);
+
 export interface GeoSample {
   /** 1-based position in the question's sample sequence. */
   readonly sampleIndex: number;
@@ -120,7 +149,7 @@ export interface GeoSample {
   readonly citedHosts: readonly string[];
   /** The subset of citedHosts that matched a known competitor. */
   readonly competitorHosts: readonly string[];
-  readonly limitation: string | null;
+  readonly limitation: GeoSampleLimitation | null;
 }
 
 export interface GeoQuestionAggregate {
@@ -162,17 +191,17 @@ export interface GeoReportRun {
   readonly agent: "geo";
   readonly mode: "authenticated_agent";
   /**
-   * Unlike every other marketing Agent, which pins `persistence: "none"`.
+   * Nothing is stored, exactly like every other marketing Agent.
    *
-   * A GEO run bills 24 provider calls, so losing it to a closed tab or a
-   * double-click is a real cost rather than a re-run. The record expires
-   * instead of living forever: it is a snapshot of one moment's answers, and
-   * the design deliberately refuses to imply a history it cannot support.
+   * A GEO run bills 24 provider calls, so losing it to a closed tab is a real
+   * cost and durable storage is genuinely wanted — but until a store exists,
+   * this field says `none`, because a payload that announces an expiry it
+   * cannot honour is a promise to the visitor that the code does not keep.
+   * Adding the store is what changes this literal, not the other way round.
    */
-  readonly persistence: "expiring";
+  readonly persistence: "none";
   readonly schemaVersion: typeof AGENT_GEO_REPORT_SCHEMA_VERSION;
   readonly sampledAt: string;
-  readonly expiresAt: string;
   readonly targetHost: string;
   readonly provider: GeoProviderProvenance;
 }
@@ -232,24 +261,53 @@ function isNonEmptyString(value: unknown, maxLength: number): value is string {
 }
 
 /**
- * Hosts as the report stores them: lowercase, no scheme, no `www.`, no port.
+ * Reduce a URL or bare host to the form the report compares on.
  *
- * Normalized at the boundary rather than compared loosely later, because the
- * provider's citation URLs arrive with tracking query strings and mixed case,
- * and a target-host match that sometimes fails is indistinguishable from a
- * site that sometimes is not cited — the exact confusion this report exists to
- * remove.
+ * Lives here, beside the guard that validates the result, because a producer
+ * with its own copy of this logic is how a paid run ends in a 502: the sampler
+ * emitted a host its own guard then refused, and 24 billed answers were
+ * discarded over a spelling. Every caller must use this one function.
+ *
+ * `www.` is stripped repeatedly and the DNS root dot removed, because a
+ * target-host comparison that fails on `www.www.acme.test` or `acme.test.` is
+ * indistinguishable from a site that was genuinely not cited — the exact
+ * confusion this report exists to remove.
  */
+export function normalizeReportHost(value: string): string | null {
+  let hostname: string;
+  if (/^[a-z][a-z\d+.-]*:/iu.test(value)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return null;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    hostname = parsed.hostname;
+  } else {
+    hostname = value;
+  }
+
+  let host = hostname.toLowerCase().replace(/\.+$/u, "");
+  while (host.startsWith("www.")) host = host.slice(4);
+  if (
+    host.length === 0 ||
+    host.length > 253 ||
+    !host.includes(".") ||
+    host.includes("/") ||
+    host.includes(":") ||
+    host.includes(" ")
+  ) {
+    return null;
+  }
+  return host;
+}
+
+/** Exactly the shape {@link normalizeReportHost} produces, and nothing else. */
 function isNormalizedHost(value: unknown): value is string {
-  return (
-    isNonEmptyString(value, 253) &&
-    value === value.toLowerCase() &&
-    !value.startsWith("www.") &&
-    !value.includes("/") &&
-    !value.includes(":") &&
-    !value.includes(" ") &&
-    value.includes(".")
-  );
+  return isNonEmptyString(value, 253) && normalizeReportHost(value) === value;
 }
 
 function isUniqueNormalizedHosts(
@@ -264,8 +322,15 @@ function isUniqueNormalizedHosts(
   );
 }
 
-/** One answer cannot plausibly cite more distinct hosts than this. */
-const MAX_CITED_HOSTS_PER_SAMPLE = 40;
+/**
+ * Most distinct hosts one sample may report.
+ *
+ * Exported so the producer truncates to the same number the guard enforces.
+ * When only the guard knew it, an unusually wide answer — calibration already
+ * saw one cite 14 hosts — made the guard refuse the whole envelope and turned
+ * 24 billed answers into a 502.
+ */
+export const GEO_MAX_CITED_HOSTS_PER_SAMPLE = 40;
 
 function isSample(value: unknown, targetHost: string): value is GeoSample {
   if (
@@ -285,12 +350,16 @@ function isSample(value: unknown, targetHost: string): value is GeoSample {
     typeof value.state !== "string" ||
     !SAMPLE_STATES.has(value.state as GeoSampleState) ||
     typeof value.webSearchPerformed !== "boolean" ||
-    !isUniqueNormalizedHosts(value.citedHosts, MAX_CITED_HOSTS_PER_SAMPLE) ||
+    !isUniqueNormalizedHosts(
+      value.citedHosts,
+      GEO_MAX_CITED_HOSTS_PER_SAMPLE,
+    ) ||
     !isUniqueNormalizedHosts(
       value.competitorHosts,
-      MAX_CITED_HOSTS_PER_SAMPLE,
+      GEO_MAX_CITED_HOSTS_PER_SAMPLE,
     ) ||
-    (value.limitation !== null && !isNonEmptyString(value.limitation, 500))
+    (value.limitation !== null &&
+      !SAMPLE_LIMITATIONS.has(value.limitation as GeoSampleLimitation))
   ) {
     return false;
   }
@@ -334,9 +403,13 @@ function isSample(value: unknown, targetHost: string): value is GeoSample {
   if (state === "answer_had_no_citations") return citedHosts.length === 0;
   if (state === "cited") return targetCited;
   // `mentioned` means the brand appeared in prose while the site was not cited;
-  // `cited_others_only` means somebody else was. Both require the target absent.
-  if (targetCited) return false;
-  if (state === "cited_others_only") return citedHosts.length > 0;
+  // `cited_others_only` means somebody else was. Both require the target absent
+  // AND at least one citation: an answer that cited nobody is
+  // `answer_had_no_citations`, which is the state the classifier produces for
+  // it. Accepting a citation-free `mentioned` here would let a hand-assembled
+  // payload report a mention count the sampler can never produce, and the guard
+  // exists precisely to make those two agree.
+  if (targetCited || citedHosts.length === 0) return false;
   return true;
 }
 
@@ -395,7 +468,12 @@ export function geoQuestionVerdict(
   admissibleSamples: number,
   targetCitedIn: number,
 ): GeoQuestionVerdict {
-  if (admissibleSamples === 0) return "inconclusive";
+  // Two, not one. A single usable sample cannot support "cited every time" or
+  // "not cited" — that is the whole premise of sampling three times, and
+  // emitting either verdict off n=1 would state exactly the inference the
+  // measured empty intersection says is unavailable. A partial run reports
+  // `inconclusive` and still shows its raw "N of M" underneath.
+  if (admissibleSamples < 2) return "inconclusive";
   if (targetCitedIn === 0) return "not_observed";
   return targetCitedIn === admissibleSamples ? "stable_cited" : "intermittent";
 }
@@ -520,24 +598,20 @@ function isRun(value: unknown): value is GeoReportRun {
       "persistence",
       "schemaVersion",
       "sampledAt",
-      "expiresAt",
       "targetHost",
       "provider",
     ]) ||
     value.agent !== "geo" ||
     value.mode !== "authenticated_agent" ||
-    value.persistence !== "expiring" ||
+    value.persistence !== "none" ||
     value.schemaVersion !== AGENT_GEO_REPORT_SCHEMA_VERSION ||
     !isCanonicalIsoTimestamp(value.sampledAt) ||
-    !isCanonicalIsoTimestamp(value.expiresAt) ||
     !isNormalizedHost(value.targetHost) ||
     !isProvider(value.provider)
   ) {
     return false;
   }
-  // An expiry at or before the sampling instant would render a report that is
-  // already gone, which is a contradiction rather than an edge case.
-  return Date.parse(value.expiresAt) > Date.parse(value.sampledAt);
+  return true;
 }
 
 export function isGeoReportSuccessEnvelope(

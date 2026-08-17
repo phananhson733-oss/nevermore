@@ -197,6 +197,31 @@ describe("createGeoProviderClient", () => {
     expect(observation.citedUrls).toEqual(["https://acme.test/"]);
   });
 
+  it("ignores a bare url object with none of a citation's other fields", async () => {
+    // A missing `type` is how every real citation arrives, so it cannot be
+    // rejected on its own — but neither is it sufficient evidence.
+    const fetchImpl = respondWith(
+      payload({
+        items: [
+          {
+            type: "message",
+            sections: [
+              {
+                type: "text",
+                text: "No source is cited in this sentence.",
+                annotations: [{ url: "https://injected.test/article" }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const observation = await client(fetchImpl).observe(REQUEST);
+
+    expect(observation.citedUrls).toEqual([]);
+  });
+
   it.each([
     ["url_citation", ["https://acme.test/"]],
     ["file_citation", []],
@@ -210,7 +235,9 @@ describe("createGeoProviderClient", () => {
               {
                 type: "text",
                 text: "An answer.",
-                annotations: [{ type, url: "https://acme.test/" }],
+                annotations: [
+                  { type, url: "https://acme.test/", title: "Acme" },
+                ],
               },
             ],
           },

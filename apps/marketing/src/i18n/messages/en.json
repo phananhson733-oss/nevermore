@@ -2455,8 +2455,8 @@
       "heroCta": "Run GEO Agent",
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Each run makes 24 billed provider calls, so it is not available anonymously.",
-      "dataBoundaryTitle": "One snapshot, kept 7 days",
-      "dataBoundaryBody": "The report records cited hosts, counts and timestamps. It does not store the assistant's answer text, and it expires after seven days rather than becoming a history.",
+      "dataBoundaryTitle": "Nothing is stored",
+      "dataBoundaryBody": "The report is returned to this page and never written down: no account history, no server copy of the assistant's answer. Leaving the page ends it, so copy anything you need before you go.",
       "howEyebrow": "How it works",
       "howTitle": "From buyer questions to observed citations",
       "howBody": "Every number in the report is recomputed from the samples underneath it, and the two states that observe nothing are reported separately instead of counting as a zero.",
@@ -2505,7 +2505,7 @@
         "coverageUnavailable": "Unavailable",
         "coverageNote": "Samples without a web search, and samples that failed, are excluded from every count below rather than read as a zero.",
         "sampledAt": "Sampled {date}",
-        "expiresAt": "Readable until {date}",
+        "notStored": "This report is not saved. Leaving the page ends it.",
         "model": "Model",
         "market": "Market",
         "citedHosts": "Cited",
@@ -2533,6 +2533,16 @@
         "answer_had_no_citations": "No citations at all",
         "search_not_performed": "No web search",
         "unavailable": "Unavailable"
+      },
+      "sampleLimitations": {
+        "time_budget": "The run reached its time budget before this sample was taken.",
+        "cost_ceiling": "The run reached its cost ceiling before this sample was taken.",
+        "provider_not_configured": "The answer provider is not configured for this site.",
+        "provider_timeout": "The provider did not answer within the time budget.",
+        "provider_rate_limited": "The provider rate limit made this sample unavailable.",
+        "provider_auth_failed": "The answer provider rejected this site's credentials.",
+        "provider_no_answer": "The provider returned no usable answer for this sample.",
+        "provider_failed": "The provider could not answer this sample."
       },
       "limitations": {
         "title": "What this cannot tell you",

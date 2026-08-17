@@ -36,12 +36,14 @@ function SampleRow({
   stateLabel,
   sampleLabel,
   noCitations,
+  limitationLabel,
 }: {
   readonly sample: GeoSample;
   readonly competitorLabel: string;
   readonly stateLabel: string;
   readonly sampleLabel: string;
   readonly noCitations: string;
+  readonly limitationLabel: string | null;
 }) {
   const competitors = new Set(sample.competitorHosts);
   return (
@@ -57,7 +59,10 @@ function SampleRow({
       <div className="min-w-0">
         {sample.citedHosts.length === 0 ? (
           <p className="text-[11.5px] text-text-dark-tertiary">
-            {sample.limitation ?? noCitations}
+            {/* A sample that never searched observed nothing, so it must not
+                read as "no sources were cited" — that is the report's own rule
+                about never rendering an absence of observation as a finding. */}
+            {limitationLabel ?? (sample.webSearchPerformed ? noCitations : "")}
           </p>
         ) : (
           <ul className="flex flex-wrap gap-1.5">
@@ -126,6 +131,11 @@ function QuestionCard({
               index: sample.sampleIndex,
             })}
             noCitations={t("results.noCitedHosts")}
+            limitationLabel={
+              sample.limitation === null
+                ? null
+                : t(`sampleLimitations.${sample.limitation}`)
+            }
           />
         ))}
       </ul>
@@ -161,8 +171,6 @@ export function GeoReportView({
         <p className="mt-1 font-mono text-[11px] text-text-dark-tertiary">
           {t("results.sampledAt", { date: formatDate(run.sampledAt, locale) })}
           {" · "}
-          {t("results.expiresAt", { date: formatDate(run.expiresAt, locale) })}
-          {" · "}
           {t("results.model")}: {run.provider.model}
           {" · "}
           {t("results.market")}: {run.provider.marketCode}
@@ -185,6 +193,9 @@ export function GeoReportView({
         </dl>
         <p className="mt-2.5 text-[11.5px] leading-[1.55] text-text-dark-secondary">
           {t("results.coverageNote")}
+        </p>
+        <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-tertiary">
+          {t("results.notStored")}
         </p>
       </div>
 

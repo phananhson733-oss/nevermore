@@ -65,13 +65,18 @@ export type GeoProviderFailureReason =
 
 export class GeoProviderError extends Error {
   readonly reason: GeoProviderFailureReason;
-  /** Billed even on some failures; the caller still has to book it. */
-  readonly costUsd: number;
+  /**
+   * Billed even on some failures, so the caller still has to book it.
+   *
+   * Null when the provider gave no price — distinct from a genuine zero, which
+   * would understate the run instead of flagging it as unpriced.
+   */
+  readonly costUsd: number | null;
 
   constructor(
     reason: GeoProviderFailureReason,
     message: string,
-    costUsd = 0,
+    costUsd: number | null = null,
   ) {
     super(message);
     this.name = "GeoProviderError";
@@ -92,7 +97,7 @@ export interface GeoProviderObservation {
   readonly webSearchPerformed: boolean;
   readonly answerText: string;
   readonly citedUrls: readonly string[];
-  readonly costUsd: number;
+  readonly costUsd: number | null;
   readonly model: string;
 }
 
@@ -296,6 +301,18 @@ function readCitationUrls(items: readonly unknown[]): readonly string[] {
         ) {
           continue;
         }
+        // A missing `type` is how every real citation arrives, so it cannot be
+        // rejected — but on its own it is not evidence either. Every observed
+        // annotation also carried the anchor text and title of the passage it
+        // cites; requiring one of those keeps a bare `{url}` object, which the
+        // provider has never emitted, from being counted as a citation the
+        // answer never made.
+        if (
+          typeof annotation.title !== "string" &&
+          typeof annotation.text !== "string"
+        ) {
+          continue;
+        }
         const url = annotation.url;
         if (typeof url !== "string") continue;
         let parsed: URL;
@@ -314,10 +331,19 @@ function readCitationUrls(items: readonly unknown[]): readonly string[] {
   return [...urls];
 }
 
-function readCost(value: unknown): number {
+/**
+ * The provider's price for one call, or null when it did not give one.
+ *
+ * Null rather than 0. A call whose price is unknown was still billed, and
+ * reporting it as zero is the house's oldest red line — an unavailable number
+ * is null, never a zero that reads as "measured, and it was free". The
+ * accumulator counts a null as an unpriced call so the gap stays visible
+ * instead of quietly understating the run.
+ */
+function readCost(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
-    : 0;
+    : null;
 }
 
 class HttpGeoProviderClient implements GeoProviderClient {
@@ -383,21 +409,18 @@ class HttpGeoProviderClient implements GeoProviderClient {
     try {
       let response: Response;
       try {
-        response = await fetchImpl(
-          DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL,
-          {
-            method: "POST",
-            headers: {
-              Authorization: authorization,
-              "Content-Type": "application/json",
-            },
-            body,
-            // A redirect would re-send the credentials to whatever host the
-            // response named. This endpoint has no legitimate redirect.
-            redirect: "error",
-            signal: controller.signal,
+        response = await fetchImpl(DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL, {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
           },
-        );
+          body,
+          // A redirect would re-send the credentials to whatever host the
+          // response named. This endpoint has no legitimate redirect.
+          redirect: "error",
+          signal: controller.signal,
+        });
       } catch {
         throw new GeoProviderError(
           timedOut ? "timeout" : "network_error",
@@ -407,7 +430,10 @@ class HttpGeoProviderClient implements GeoProviderClient {
 
       if (timedOut) {
         cancelBody(response.body);
-        throw new GeoProviderError("timeout", "The provider request timed out.");
+        throw new GeoProviderError(
+          "timeout",
+          "The provider request timed out.",
+        );
       }
       if (!response.ok) {
         cancelBody(response.body);
@@ -442,7 +468,7 @@ class HttpGeoProviderClient implements GeoProviderClient {
     }
 
     const task = tasks[0];
-    const cost = readCost(task.cost) || envelopeCost;
+    const cost = readCost(task.cost) ?? envelopeCost;
     const taskStatus = task.status_code;
     if (taskStatus === PROVIDER_EMPTY_RESULT_STATUS) {
       throw new GeoProviderError(

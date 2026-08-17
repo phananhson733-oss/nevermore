@@ -4,8 +4,11 @@
 
 import {
   geoQuestionVerdict,
+  normalizeReportHost,
+  GEO_MAX_CITED_HOSTS_PER_SAMPLE,
   GEO_SAMPLES_PER_QUESTION,
   type GeoQuestionObservation,
+  type GeoSampleLimitation,
   type GeoSample,
   type GeoSampleState,
 } from "./geo-report-contract.ts";
@@ -66,22 +69,11 @@ export function mentionsBrand(
 /**
  * Reduce a citation URL to the host the report compares on.
  *
- * Lowercased, `www.` removed, port removed, query and path discarded. The
- * provider returns citation URLs carrying `?utm_source=openai` and mixed case,
- * and a target-host comparison that sometimes fails on those is
- * indistinguishable from a site that sometimes is not cited.
+ * Delegates to the contract's own normalizer rather than repeating it: a
+ * second copy here is what made a doubled `www.` or a trailing root dot
+ * produce a host the guard then refused, turning 24 billed answers into a 502.
  */
-export function normalizeCitedHost(url: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  const host = parsed.hostname.toLowerCase().replace(/^www\./u, "");
-  return host.includes(".") && host.length <= 253 ? host : null;
-}
+export { normalizeReportHost as normalizeCitedHost } from "./geo-report-contract.ts";
 
 export interface GeoSamplingContext {
   /** Normalized host of the site under test. */
@@ -104,13 +96,16 @@ export function classifyObservation(
   observation: GeoProviderObservation,
   context: GeoSamplingContext,
 ): GeoSample {
+  // Truncated to the number the guard accepts. Without this an unusually wide
+  // answer — calibration saw one cite 14 hosts — makes the guard refuse the
+  // whole envelope, and 24 already-billed answers are discarded over a length.
   const citedHosts = [
     ...new Set(
       observation.citedUrls
-        .map((url) => normalizeCitedHost(url))
+        .map((url) => normalizeReportHost(url))
         .filter((host): host is string => host !== null),
     ),
-  ];
+  ].slice(0, GEO_MAX_CITED_HOSTS_PER_SAMPLE);
   const competitors = new Set(context.competitorHosts);
   const competitorHosts = citedHosts.filter((host) => competitors.has(host));
 
@@ -140,7 +135,7 @@ export function classifyObservation(
 /** The sample recorded when a call never produced an answer. */
 export function unavailableSample(
   sampleIndex: number,
-  limitation: string,
+  limitation: GeoSampleLimitation,
 ): GeoSample {
   return {
     sampleIndex,
@@ -205,7 +200,7 @@ export interface GeoCollectionDependencies {
    */
   readonly admitCall: () => boolean;
   /** Settle the reservation with what the call actually cost. */
-  readonly settleCall: (costUsd: number) => void;
+  readonly settleCall: (costUsd: number | null) => void;
 }
 
 /**
@@ -258,7 +253,7 @@ export async function collectGeoSamples(
         collected[next.questionIndex]?.push(
           unavailableSample(
             next.sampleIndex,
-            "The run reached its time budget before this sample was taken.",
+            "time_budget",
           ),
         );
         continue;
@@ -267,7 +262,7 @@ export async function collectGeoSamples(
         collected[next.questionIndex]?.push(
           unavailableSample(
             next.sampleIndex,
-            "The run reached its cost ceiling before this sample was taken.",
+            "cost_ceiling",
           ),
         );
         continue;
@@ -293,12 +288,9 @@ export async function collectGeoSamples(
           );
           continue;
         }
-        dependencies.settleCall(0);
+        dependencies.settleCall(null);
         collected[next.questionIndex]?.push(
-          unavailableSample(
-            next.sampleIndex,
-            "This sample could not be collected.",
-          ),
+          unavailableSample(next.sampleIndex, "provider_failed"),
         );
       }
     }
@@ -317,22 +309,22 @@ export async function collectGeoSamples(
 }
 
 /**
- * A visitor-facing reason, chosen from the failure class rather than the
- * provider's own message, which may quote a third party's text.
+ * The failure class as a renderable code, never the provider's own message,
+ * which may quote a third party's text.
  */
-function providerLimitation(error: GeoProviderError): string {
+function providerLimitation(error: GeoProviderError): GeoSampleLimitation {
   switch (error.reason) {
     case "not_configured":
-      return "The answer provider is not configured for this site.";
+      return "provider_not_configured";
     case "timeout":
-      return "The provider did not answer within the time budget.";
+      return "provider_timeout";
     case "rate_limited":
-      return "The provider rate limit made this sample unavailable.";
+      return "provider_rate_limited";
     case "auth_failed":
-      return "The answer provider rejected this site's credentials.";
+      return "provider_auth_failed";
     case "invalid_response":
-      return "The provider returned no usable answer for this sample.";
+      return "provider_no_answer";
     default:
-      return "The provider could not answer this sample.";
+      return "provider_failed";
   }
 }

@@ -18,7 +18,6 @@ import {
 
 const TARGET_HOST = "acme.test";
 const SAMPLED_AT = "2026-08-17T09:00:00.000Z";
-const EXPIRES_AT = "2026-08-24T09:00:00.000Z";
 
 const ADMISSIBLE = new Set<GeoSampleState>([
   "cited",
@@ -52,8 +51,7 @@ function sample(sampleIndex: number, state: GeoSampleState): GeoSample {
       state !== "unavailable" && state !== "search_not_performed",
     citedHosts,
     competitorHosts: citedHosts.filter((host) => host === "rival.test"),
-    limitation:
-      state === "unavailable" ? "The provider returned no answer." : null,
+    limitation: state === "unavailable" ? "provider_no_answer" : null,
   };
 }
 
@@ -91,10 +89,9 @@ function report(
       run: {
         agent: "geo",
         mode: "authenticated_agent",
-        persistence: "expiring",
+        persistence: "none",
         schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
         sampledAt: SAMPLED_AT,
-        expiresAt: EXPIRES_AT,
         targetHost: TARGET_HOST,
         provider: {
           tool: "dataforseo_chat_gpt_llm_responses",
@@ -326,6 +323,18 @@ describe("isGeoReportSuccessEnvelope", () => {
     expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
   });
 
+  it("rejects a mentioned sample that carries no citations at all", () => {
+    // The classifier can never produce this: with no citations it returns
+    // answer_had_no_citations. A guard that accepted it would let a
+    // hand-assembled payload report a mention count the sampler cannot.
+    const malformed = mutate(completeReport);
+    const target = malformed.data.questions[2]!.samples[1]!;
+    target["citedHosts"] = [];
+    target["competitorHosts"] = [];
+
+    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+  });
+
   it("rejects an answer_had_no_citations sample that carries citations", () => {
     const malformed = mutate(completeReport);
     const target = malformed.data.questions[4]!.samples[0]!;
@@ -362,6 +371,16 @@ describe("isGeoReportSuccessEnvelope", () => {
     expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
   });
 
+  it("rejects a limitation written as prose instead of a renderable code", () => {
+    // A sentence here reaches the report verbatim and lands untranslated in
+    // the Chinese page, in exactly the column that explains the denominator.
+    const malformed = mutate(unavailableReport);
+    malformed.data.questions[0]!.samples[0]!["limitation"] =
+      "The provider returned no answer.";
+
+    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+  });
+
   it("rejects a competitor host that was never cited", () => {
     const malformed = mutate(completeReport);
     malformed.data.questions[0]!.samples[0]!["competitorHosts"] = [
@@ -388,16 +407,9 @@ describe("isGeoReportSuccessEnvelope", () => {
     expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
   });
 
-  it("rejects an expiry that is not after the sampling instant", () => {
+  it("rejects a run that claims to be stored when nothing stores it", () => {
     const malformed = mutate(completeReport);
-    malformed.data.run["expiresAt"] = SAMPLED_AT;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a run that claims another agent's persistence", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.run["persistence"] = "none";
+    malformed.data.run["persistence"] = "expiring";
 
     expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
   });
@@ -454,18 +466,30 @@ describe("isGeoReportSuccessEnvelope", () => {
 describe("geoQuestionVerdict", () => {
   it.each([
     [0, 0, "inconclusive"],
-    [1, 0, "not_observed"],
+    // One usable sample can support neither "cited every time" nor "not
+    // cited" — that inference is exactly what the measured empty intersection
+    // across four samples says is unavailable.
+    [1, 0, "inconclusive"],
+    [1, 1, "inconclusive"],
+    [2, 0, "not_observed"],
+    [2, 1, "intermittent"],
+    [2, 2, "stable_cited"],
     [3, 0, "not_observed"],
     [3, 1, "intermittent"],
     [3, 2, "intermittent"],
     [3, 3, "stable_cited"],
-    [1, 1, "stable_cited"],
   ] as const)(
     "maps %i admissible and %i cited to %s",
     (admissible, cited, expected) => {
       expect(geoQuestionVerdict(admissible, cited)).toBe(expected);
     },
   );
+
+  it("never claims a stable verdict from a single usable sample", () => {
+    for (const cited of [0, 1]) {
+      expect(geoQuestionVerdict(1, cited)).toBe("inconclusive");
+    }
+  });
 });
 
 describe("geoCoverageAvailability", () => {
