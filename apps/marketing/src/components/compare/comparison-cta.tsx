@@ -23,7 +23,7 @@ export function ComparisonCta({
   return (
     <>
       {/* 「下一步」容器走虚线 + 微渐变底，与实线的内容区分开 */}
-      <div className="mt-16 rounded-[16px] border border-dashed border-brand-border-dashed bg-[linear-gradient(135deg,rgba(61,220,151,0.04),rgba(76,195,250,0.05))] p-7 text-center md:p-10">
+      <div className="mt-16 rounded-[16px] border border-dashed border-brand-border-dashed bg-dashed-wash p-7 text-center md:p-10">
         <p className="mx-auto max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {ctaSubtitle}
         </p>

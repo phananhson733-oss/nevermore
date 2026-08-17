@@ -51,7 +51,7 @@ export default function TemplatesPageClient() {
         />
         <div
           aria-hidden="true"
-          className="absolute -top-30 right-[6%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
+          className="absolute -top-30 right-[6%] hidden h-70 w-100 rounded-full bg-page-glow blur-[12px] md:block"
         />
         <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
           <motion.h1 {...fadeInUp} className="text-text-dark-primary">

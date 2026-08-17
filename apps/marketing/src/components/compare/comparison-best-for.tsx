@@ -26,7 +26,7 @@ export function ComparisonBestFor({
       </h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* GenGrowth —— 走强调卡片配方（左侧 inset 高亮条） */}
-        <div className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97]">
+        <div className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-rail-accent">
           <h3 className="mb-4 text-[15.5px] font-semibold text-brand-accent-text">
             {gengrowthLabel}
           </h3>

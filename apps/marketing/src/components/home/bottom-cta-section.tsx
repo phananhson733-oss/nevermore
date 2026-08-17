@@ -23,7 +23,7 @@ export function BottomCtaSection({
       {/* GLOW_03 — 底部 CTA 地平线光，全站三处光效的最后一处 */}
       <div
         aria-hidden="true"
-        className="absolute -bottom-45 left-1/2 h-95 w-190 -translate-x-1/2 bg-[radial-gradient(ellipse,rgba(61,220,151,0.22),rgba(76,195,250,0.1)_60%,transparent_75%)] blur-[8px]"
+        className="absolute -bottom-45 left-1/2 h-95 w-190 -translate-x-1/2 bg-cta-glow blur-[8px]"
       />
       <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
         <motion.h2

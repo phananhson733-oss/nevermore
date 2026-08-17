@@ -8,7 +8,9 @@
     "signIn": "登录",
     "signOut": "登出",
     "getStarted": "免费开始",
-    "runAudit": "运行网站审计"
+    "runAudit": "运行网站审计",
+    "switchToLight": "当前深色主题，切换到浅色",
+    "switchToDark": "当前浅色主题，切换到深色"
   },
   "auth": {
     "title": "登录 GenGrowth",

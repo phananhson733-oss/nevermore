@@ -56,18 +56,18 @@ export function HeroSection() {
       />
       <div
         aria-hidden="true"
-        className="absolute -top-55 left-[12%] h-115 w-160 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.16),transparent_65%)] blur-[12px]"
+        className="absolute -top-55 left-[12%] h-115 w-160 rounded-full bg-hero-glow blur-[12px]"
       />
       <div
         aria-hidden="true"
-        className="absolute -top-40 right-[6%] h-105 w-140 rounded-full bg-[radial-gradient(ellipse,rgba(76,195,250,0.12),transparent_65%)] blur-[12px]"
+        className="absolute -top-40 right-[6%] h-105 w-140 rounded-full bg-hero-glow-2 blur-[12px]"
       />
 
       <div className="max-w-content relative mx-auto px-6 pt-21 text-center md:px-8">
-        <p className="animate-hero-fade-in-up inline-flex items-center gap-2.5 rounded-md border border-brand-accent/25 bg-brand-accent/[0.06] px-3.5 py-[7px] font-mono text-[11.5px] tracking-[0.14em] text-brand-accent-text uppercase shadow-[0_0_24px_rgba(61,220,151,0.12)]">
+        <p className="animate-hero-fade-in-up inline-flex items-center gap-2.5 rounded-md border border-brand-accent/25 bg-brand-accent/[0.06] px-3.5 py-[7px] font-mono text-[11.5px] tracking-[0.14em] text-brand-accent-text uppercase shadow-brand-eyebrow">
           <span
             aria-hidden="true"
-            className="animate-subtle-pulse size-1.5 rounded-full bg-brand-accent shadow-[0_0_8px_rgba(61,220,151,0.9)]"
+            className="animate-subtle-pulse size-1.5 rounded-full bg-brand-accent shadow-brand-pulse-dot"
           />
           {t("eyebrow")}
         </p>

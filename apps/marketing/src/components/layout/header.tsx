@@ -17,6 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
+import { ThemeToggle } from "./theme-toggle";
 import { NavSubmenu, NavSubmenuMobile } from "./tools-menu";
 import {
   SignInControl,
@@ -85,6 +86,7 @@ export function Header() {
 
         {/* Right */}
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           <LanguageSwitcher />
           <SignInControl onSignIn={() => setSignInOpen(true)} />
 

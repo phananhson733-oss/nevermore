@@ -26,7 +26,7 @@ export function ComparisonHero({
       />
       <div
         aria-hidden="true"
-        className="absolute -top-30 right-[4%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
+        className="absolute -top-30 right-[4%] hidden h-70 w-100 rounded-full bg-page-glow blur-[12px] md:block"
       />
       <div className="relative">
         <h1 className="max-w-3xl text-text-dark-primary">{title}</h1>
