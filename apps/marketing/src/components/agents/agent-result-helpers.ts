@@ -15,7 +15,7 @@ export interface AgentRecordSummary {
   readonly notObserved: number;
 }
 
-export type AgentRecommendationPriority = "P0" | "P1" | "P2" | "P3";
+export type AgentRecommendationPriority = "P0" | "P1" | "P2";
 
 export interface RankedAgentRecommendation {
   readonly id: string;
@@ -28,25 +28,70 @@ export interface RankedAgentRecommendation {
   readonly primaryForAgent: boolean;
 }
 
+/**
+ * A check this run could not evaluate, with the reason it could not.
+ *
+ * "Waiting on a source we have not integrated" and "the crawl could not attribute
+ * this to your page" are different problems with different next steps; reporting
+ * both as a missing data source sends the reader after integrations they already
+ * have.
+ */
+export type AgentUnevaluatedReason =
+  | "source_not_integrated"
+  | "not_attributable_to_target"
+  | "not_measurable_this_run";
+
+export interface AgentDataSourceGap {
+  readonly id: string;
+  readonly agent: AgentKind;
+  readonly check: AgentAuditEvaluatedCheck;
+  readonly reason: AgentUnevaluatedReason;
+}
+
+function unevaluatedReason(
+  check: AgentAuditEvaluatedCheck,
+): AgentUnevaluatedReason {
+  if (check.engine === "access-required" || check.engine === "not-integrated") {
+    return "source_not_integrated";
+  }
+  return check.truth === "partial" || check.truth === "not-observed"
+    ? "not_attributable_to_target"
+    : "not_measurable_this_run";
+}
+
+export interface AgentRecommendationAnalysis {
+  readonly ranked: readonly RankedAgentRecommendation[];
+  /** Actionable recommendations found before the display limit was applied. */
+  readonly rankedTotal: number;
+  readonly displayLimit: number;
+  readonly hiddenCount: number;
+  readonly dataSourceGaps: readonly AgentDataSourceGap[];
+}
+
 export interface RankAgentRecommendationOptions {
   readonly targetUrl?: string;
   readonly limit?: number;
 }
 
+export const AGENT_RECOMMENDATION_DISPLAY_LIMIT = 3;
+
+/** Only these result states describe something this run actually observed. */
+const ACTIONABLE_RESULTS: ReadonlySet<string> = new Set([
+  "blocker",
+  "warning",
+  "tip",
+]);
+
 const RESULT_RANK: Readonly<Record<string, number>> = {
-  blocker: 4,
-  warning: 3,
-  tip: 2,
-  excluded: 1,
-  pass: 0,
+  blocker: 3,
+  warning: 2,
+  tip: 1,
 };
 
 const RESULT_PRIORITY: Readonly<Record<string, AgentRecommendationPriority>> = {
   blocker: "P0",
   warning: "P1",
   tip: "P2",
-  excluded: "P3",
-  pass: "P3",
 };
 
 function comparableUrl(value: string | null | undefined): string | null {
@@ -91,19 +136,55 @@ function recommendationEvidenceRecords(
 }
 
 /**
+ * Sibling records of one check observe the same population, so an affected URL
+ * seen in several records is still one affected URL. Site-level observations
+ * carry no URL and are counted on their own.
+ */
+function observedReach(records: readonly SeoAuditRecord[]): number {
+  const affectedUrls = new Set<string>();
+  let siteLevelAffected = 0;
+  for (const record of records) {
+    for (const observation of record.observations) {
+      if (observation.url === null) siteLevelAffected += 1;
+      else affectedUrls.add(observation.url);
+    }
+  }
+  return affectedUrls.size + siteLevelAffected;
+}
+
+/**
  * Rank decisions, not raw crawl rows. Severity and collected evidence lead;
  * Agent ownership decides otherwise-equivalent candidates; observed reach is
- * only the final supporting tie-breaker.
+ * only the final supporting tie-breaker. The confirmed Profile is deliberately
+ * not part of this ordering.
+ *
+ * Passes and checks this run could not evaluate never enter the ranking: an
+ * excluded check has no observation to act on, so it is reported as a data
+ * source gap instead.
  */
-export function rankAgentRecommendations(
+export function analyzeAgentRecommendations(
   agent: AgentKind,
   checks: readonly AgentAuditEvaluatedCheck[],
   records: readonly SeoAuditRecord[],
   options: RankAgentRecommendationOptions = {},
-): readonly RankedAgentRecommendation[] {
+): AgentRecommendationAnalysis {
   const recordsById = new Map(records.map((record) => [record.id, record]));
+  const displayLimit = Math.max(
+    0,
+    options.limit ?? AGENT_RECOMMENDATION_DISPLAY_LIMIT,
+  );
 
-  return checks
+  const dataSourceGaps = checks
+    .filter((check) => String(check.result) === "excluded")
+    .map((check) => ({
+      id: `${agent}:${check.check.scope}:${check.check.id}`,
+      agent,
+      check,
+      reason: unevaluatedReason(check),
+    }));
+
+  const ordered = checks
+    .filter((check) => ACTIONABLE_RESULTS.has(String(check.result)))
     .map((check, index) => {
       const evidenceRecords = recommendationEvidenceRecords(
         check,
@@ -113,25 +194,20 @@ export function rankAgentRecommendations(
       const observedEvidence = evidenceRecords.filter(
         (record) => record.state === "observed" && record.affected > 0,
       );
-      const result = String(check.result);
       return {
         recommendation: {
           id: `${agent}:${check.check.scope}:${check.check.id}`,
           agent,
           check,
-          priority: RESULT_PRIORITY[result] ?? "P3",
+          priority: RESULT_PRIORITY[String(check.result)] ?? "P2",
           evidenceAvailable: observedEvidence.length > 0,
           evidenceRecords,
-          reach: observedEvidence.reduce(
-            (total, record) => total + record.affected,
-            0,
-          ),
+          reach: observedReach(observedEvidence),
           primaryForAgent: check.check.primaryAgent === agent,
         } satisfies RankedAgentRecommendation,
         index,
       };
     })
-    .filter(({ recommendation }) => recommendation.check.result !== "pass")
     .toSorted(
       (left, right) =>
         (RESULT_RANK[String(right.recommendation.check.result)] ?? 0) -
@@ -143,8 +219,25 @@ export function rankAgentRecommendations(
         right.recommendation.reach - left.recommendation.reach ||
         left.index - right.index,
     )
-    .slice(0, Math.max(0, options.limit ?? 3))
     .map(({ recommendation }) => recommendation);
+
+  const ranked = ordered.slice(0, displayLimit);
+  return {
+    ranked,
+    rankedTotal: ordered.length,
+    displayLimit,
+    hiddenCount: ordered.length - ranked.length,
+    dataSourceGaps,
+  };
+}
+
+export function rankAgentRecommendations(
+  agent: AgentKind,
+  checks: readonly AgentAuditEvaluatedCheck[],
+  records: readonly SeoAuditRecord[],
+  options: RankAgentRecommendationOptions = {},
+): readonly RankedAgentRecommendation[] {
+  return analyzeAgentRecommendations(agent, checks, records, options).ranked;
 }
 
 export function summarizeAgentRecords(

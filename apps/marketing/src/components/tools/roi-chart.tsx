@@ -73,16 +73,16 @@ export function ROIChart({
               <XAxis
                 dataKey="name"
                 tick={{
-                  fill: "#8B96A5",
+                  fill: "var(--sc-text-secondary)",
                   fontSize: 11,
                   fontFamily: "var(--font-mono)",
                 }}
-                axisLine={{ stroke: "#1B2430" }}
+                axisLine={{ stroke: "var(--sc-border)" }}
                 tickLine={false}
               />
               <YAxis
                 tick={{
-                  fill: "#8B96A5",
+                  fill: "var(--sc-text-secondary)",
                   fontSize: 11,
                   fontFamily: "var(--font-mono)",
                 }}
@@ -91,13 +91,13 @@ export function ROIChart({
                 tickFormatter={formatDollar}
               />
               <Tooltip
-                cursor={{ fill: "rgba(76,195,250,0.06)" }}
+                cursor={{ fill: "color-mix(in oklab, var(--sc-accent-2) 6%, transparent)" }}
                 formatter={(value: unknown) => formatDollar(Number(value))}
                 contentStyle={{
-                  backgroundColor: "#0E141C",
-                  border: "1px solid #1E2937",
+                  backgroundColor: "var(--sc-panel)",
+                  border: "1px solid var(--sc-border-card)",
                   borderRadius: 10,
-                  color: "#E8EDF2",
+                  color: "var(--sc-text-primary)",
                   fontSize: 12.5,
                   fontFamily: "var(--font-mono)",
                 }}
@@ -109,14 +109,14 @@ export function ROIChart({
                */}
               <Bar
                 dataKey={t("manual")}
-                fill="rgba(76,195,250,0.14)"
-                stroke="#4CC3FA"
+                fill="color-mix(in oklab, var(--sc-accent-2) 14%, transparent)"
+                stroke="var(--sc-accent-2)"
                 strokeWidth={1.5}
                 radius={[3, 3, 0, 0]}
               />
               <Bar
                 dataKey={t("automated")}
-                fill="#3DDC97"
+                fill="var(--sc-accent)"
                 radius={[3, 3, 0, 0]}
               />
             </BarChart>

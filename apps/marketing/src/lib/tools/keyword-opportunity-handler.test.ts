@@ -168,7 +168,8 @@ function deps(
       Promise.resolve(
         keywords.map((keyword) => ({
           keyword,
-          domains: ["small-blog.example"],
+          results: [{ domain: "small-blog.example", position: 3 }],
+          pageItemTypes: null,
         })),
       ),
     // 40 is below the weak-domain ceiling, so the default page one reads as
@@ -1192,7 +1193,8 @@ describe("handleKeywordOpportunitiesRequest", () => {
         Promise.resolve(
           keywords.map((keyword) => ({
             keyword,
-            domains: ["small-blog.example"],
+            results: [{ domain: "small-blog.example", position: 3 }],
+            pageItemTypes: null,
           })),
         ),
     );
@@ -1225,7 +1227,8 @@ describe("handleKeywordOpportunitiesRequest", () => {
         Promise.resolve(
           keywords.map((keyword) => ({
             keyword,
-            domains: ["small-blog.example"],
+            results: [{ domain: "small-blog.example", position: 3 }],
+            pageItemTypes: null,
           })),
         ),
     );
@@ -1413,7 +1416,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
         Promise.resolve(
-          keywords.map((keyword) => ({ keyword, domains: ["small.example"] })),
+          keywords.map((keyword) => ({
+            keyword,
+            results: [{ domain: "small.example", position: 2 }],
+            pageItemTypes: null,
+          })),
         ),
     );
     await handleKeywordOpportunitiesRequest(
@@ -1445,7 +1452,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
         Promise.resolve(
-          keywords.map((keyword) => ({ keyword, domains: ["small.example"] })),
+          keywords.map((keyword) => ({
+            keyword,
+            results: [{ domain: "small.example", position: 2 }],
+            pageItemTypes: null,
+          })),
         ),
     );
 
@@ -1494,7 +1505,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
         Promise.resolve(
-          keywords.map((keyword) => ({ keyword, domains: ["small.example"] })),
+          keywords.map((keyword) => ({
+            keyword,
+            results: [{ domain: "small.example", position: 2 }],
+            pageItemTypes: null,
+          })),
         ),
     );
 

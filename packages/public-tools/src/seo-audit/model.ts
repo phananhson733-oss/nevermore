@@ -12,12 +12,22 @@ import type {
   SeoAuditPayload,
   SeoAuditRecord,
   SeoAuditRecordState,
+  SeoAuditRecordPopulation,
   SeoAuditRecordUnit,
   SeoAuditReport,
 } from "./types.ts";
 import type { SeoAuditRaw } from "./scan.ts";
 
 const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
+
+/**
+ * Reviewed working ranges, not official limits. Google truncates titles and
+ * descriptions by rendered pixel width, not character count, so these bounds
+ * only flag lengths far enough outside common practice to be worth a look.
+ */
+const TITLE_LENGTH = { min: 15, max: 70 } as const;
+const DESCRIPTION_LENGTH = { min: 50, max: 165 } as const;
+const CLICK_DEPTH_LIMIT = 4;
 
 function usage(raw: CrawlRaw, key: string): number {
   const value = raw.providerUsage[key];
@@ -49,6 +59,8 @@ interface RecordInput {
   readonly id: string;
   readonly category: SeoAuditCategory;
   readonly unit?: SeoAuditRecordUnit;
+  /** Defaults to the whole collected population; say so when it is narrower. */
+  readonly population?: SeoAuditRecordPopulation;
   readonly tested: number;
   readonly observations: readonly SeoAuditObservation[];
   readonly limitation?: string | null;
@@ -68,6 +80,7 @@ function record(input: RecordInput): SeoAuditRecord {
           ? "observed"
           : "not_observed"),
     unit: input.unit ?? "pages",
+    population: input.population ?? "every_collected_page",
     tested: input.tested,
     affected: observations.length,
     observations,
@@ -183,6 +196,11 @@ function buildRecords(
     string,
     { readonly page: SeoAuditPage; readonly sources: Set<string> }
   >();
+  /** Broken internal link targets keyed by the page that links to them. */
+  const brokenLinkSources = new Map<string, Set<string>>();
+  const htmlSubjects = new Set(htmlPages.map((page) => page.subjectUrl));
+  /** Sitemap membership is only testable when a sitemap was actually collected. */
+  const sitemapWasFetched = raw.sitemap.fetched;
 
   for (const source of raw.pages) {
     for (const link of source.projection.internalOutlinks) {
@@ -201,12 +219,22 @@ function buildRecords(
       };
       current.sources.add(source.projection.fetchUrl);
       linkTargetErrors.set(target.subjectUrl, current);
+
+      // Only pages inside the tested population may become source rows, or the
+      // record reports more affected pages than it tested.
+      if (htmlSubjects.has(source.subjectUrl)) {
+        const owned =
+          brokenLinkSources.get(source.projection.fetchUrl) ?? new Set<string>();
+        owned.add(target.subjectUrl);
+        brokenLinkSources.set(source.projection.fetchUrl, owned);
+      }
     }
   }
 
   const records: SeoAuditRecord[] = [
     record({
       id: "robots_resource",
+      population: "site_resource",
       category: "crawl",
       unit: "site_resource",
       tested: raw.robots.fetched ? 1 : 0,
@@ -229,6 +257,7 @@ function buildRecords(
     }),
     record({
       id: "sitemap_resource",
+      population: "site_resource",
       category: "crawl",
       unit: "site_resource",
       tested: raw.sitemap.fetched ? 1 : 0,
@@ -334,6 +363,8 @@ function buildRecords(
     }),
     record({
       id: "title_duplicate",
+      // Tested population: self-canonical pages that have a title.
+      population: "conditional_subset",
       category: "metadata",
       tested: selfCanonicalHtmlPages.filter((page) => page.title !== null)
         .length,
@@ -354,6 +385,8 @@ function buildRecords(
     }),
     record({
       id: "meta_description_duplicate",
+      // Tested population: self-canonical pages that have a description.
+      population: "conditional_subset",
       category: "metadata",
       tested: selfCanonicalHtmlPages.filter(
         (page) => page.metaDescription !== null,
@@ -383,6 +416,8 @@ function buildRecords(
     }),
     record({
       id: "sitemap_page_without_observed_inlink",
+      // Tested population: sitemap members other than the root.
+      population: "conditional_subset",
       category: "links",
       tested: pages.filter((page) => page.sitemapMember).length,
       observations: pages
@@ -402,6 +437,8 @@ function buildRecords(
     }),
     record({
       id: "internal_target_http_error",
+      // Tested population: collected internal link targets.
+      population: "conditional_subset",
       category: "links",
       unit: "link_targets",
       tested: new Set(
@@ -418,6 +455,108 @@ function buildRecords(
         }),
       ),
       limitation: "uncollected_link_targets_not_classified",
+    }),
+    record({
+      id: "page_outbound_broken_link",
+      category: "links",
+      tested: htmlPages.length,
+      observations: [...brokenLinkSources.entries()]
+        .map(([sourceUrl, brokenTargets]) => ({
+          url: sourceUrl,
+          values: values({ broken_link_targets: brokenTargets.size }),
+        })),
+      limitation: "uncollected_link_targets_not_classified",
+    }),
+    record({
+      id: "page_not_in_sitemap",
+      // Tested population: collected pages, only when a sitemap was retrieved.
+      population: "conditional_subset",
+      category: "crawl",
+      tested: sitemapWasFetched ? htmlPages.length : 0,
+      observations: sitemapWasFetched
+        ? htmlPages
+            .filter((page) => !page.sitemapMember)
+            .map((page) => pageObservation(page, { sitemap_member: false }))
+        : [],
+      limitation: sitemapWasFetched
+        ? null
+        : "no_sitemap_collected_membership_not_testable",
+    }),
+    record({
+      id: "title_length_outside_range",
+      // Tested population: pages that have a title.
+      population: "conditional_subset",
+      category: "metadata",
+      tested: htmlPages.filter((page) => page.title !== null).length,
+      observations: htmlPages
+        .filter(
+          (page) =>
+            page.title !== null &&
+            (page.title.trim().length < TITLE_LENGTH.min ||
+              page.title.trim().length > TITLE_LENGTH.max),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            title_characters: page.title!.trim().length,
+            reviewed_range: `${TITLE_LENGTH.min}-${TITLE_LENGTH.max}`,
+          }),
+        ),
+      limitation: "character_count_only_rendered_pixel_width_not_measured",
+    }),
+    record({
+      id: "meta_description_length_outside_range",
+      // Tested population: pages that have a description.
+      population: "conditional_subset",
+      category: "metadata",
+      tested: htmlPages.filter((page) => page.metaDescription !== null).length,
+      observations: htmlPages
+        .filter(
+          (page) =>
+            page.metaDescription !== null &&
+            (page.metaDescription.trim().length < DESCRIPTION_LENGTH.min ||
+              page.metaDescription.trim().length > DESCRIPTION_LENGTH.max),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            description_characters: page.metaDescription!.trim().length,
+            reviewed_range: `${DESCRIPTION_LENGTH.min}-${DESCRIPTION_LENGTH.max}`,
+          }),
+        ),
+      limitation: "character_count_only_rendered_pixel_width_not_measured",
+    }),
+    record({
+      id: "page_without_outbound_internal_link",
+      category: "links",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.outboundLinks === 0)
+        .map((page) =>
+          pageObservation(page, { observed_outbound_internal_links: 0 }),
+        ),
+      limitation: "bounded_static_html_crawl_outlinks_only",
+    }),
+    record({
+      id: "click_depth_beyond_reviewed_limit",
+      category: "links",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.depth > CLICK_DEPTH_LIMIT)
+        .map((page) =>
+          pageObservation(page, {
+            observed_click_depth: page.depth,
+            reviewed_limit: CLICK_DEPTH_LIMIT,
+          }),
+        ),
+      limitation: "depth_from_bounded_crawl_entry_point_only",
+    }),
+    record({
+      id: "json_ld_missing",
+      category: "structured_data",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => page.jsonLdTypes.length === 0)
+        .map((page) => pageObservation(page, { json_ld_blocks: 0 })),
+      limitation: "static_html_json_ld_only",
     }),
     record({
       id: "json_ld_parse_error",
@@ -440,8 +579,20 @@ function buildRecords(
 
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
+  const requestedSubject = subjectUrlOf(raw.requestedUrl);
+  const inspectedTarget =
+    pages.find(
+      (page) =>
+        page.subjectUrl === requestedSubject &&
+        page.finalStatus !== null &&
+        page.finalStatus >= 200 &&
+        page.finalStatus < 300 &&
+        isHtml(page.contentType),
+    ) ?? null;
   return {
     targetUrl: raw.requestedUrl,
+    targetInspected: inspectedTarget !== null,
+    inspectedTargetUrl: inspectedTarget?.url ?? null,
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
@@ -473,7 +624,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

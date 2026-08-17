@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
 import { CreditsBadge } from "../credits/credits-badge";
+import { ThemeToggle } from "./theme-toggle";
 import { NavSubmenu, NavSubmenuMobile } from "./tools-menu";
 import {
   SignInControl,
@@ -89,6 +90,7 @@ export function Header() {
           {/* Hides itself for everyone who has no balance to see, so the slot
               is unchanged for the anonymous majority of this site's readers. */}
           <CreditsBadge />
+          <ThemeToggle />
           <LanguageSwitcher />
           <SignInControl onSignIn={() => setSignInOpen(true)} />
 

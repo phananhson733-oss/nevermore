@@ -70,7 +70,7 @@ export function ROIResultsGrid({ result }: ROIResultsGridProps) {
           <div
             key={card.label}
             className={`bg-brand-panel-sunken px-5 py-4 ${
-              card.highlight ? "shadow-[inset_2px_0_0_#3DDC97]" : ""
+              card.highlight ? "shadow-rail-accent" : ""
             }`}
           >
             <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">

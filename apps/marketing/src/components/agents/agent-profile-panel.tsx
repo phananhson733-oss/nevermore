@@ -269,23 +269,21 @@ function Fact({
     readonly label: string;
   };
 }) {
+  // Provenance stays machine-readable and available to assistive tech, but it
+  // is no longer printed under every fact: a page of "inferred · high
+  // confidence · live public page" chips buries the values they describe.
   return (
-    <div className="min-w-0 border-t border-brand-border-faint pt-2.5">
+    <div
+      className="min-w-0 border-t border-brand-border-faint pt-2.5"
+      data-profile-provenance={provenance?.derivation}
+      data-profile-source-class={provenance?.sourceClass}
+    >
       <dt className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
         {label}
       </dt>
       <dd className="mt-1 text-[11.5px] leading-[1.5] text-text-dark-secondary">
         {value}
       </dd>
-      {provenance ? (
-        <dd
-          data-profile-provenance={provenance.derivation}
-          data-profile-source-class={provenance.sourceClass}
-          className="mt-2 inline-flex max-w-full rounded border border-brand-border-faint bg-brand-panel-raised px-1.5 py-0.5 font-mono text-[9.5px] leading-[1.35] tracking-[0.04em] text-text-dark-secondary uppercase"
-        >
-          {provenance.label}
-        </dd>
-      ) : null}
     </div>
   );
 }
@@ -1622,7 +1620,10 @@ export function AgentProfilePanel({
                 ) : null}
               </div>
               <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                {profile.firstOutcome}
+                {(fieldProvenance("firstOutcome")?.derivation ?? "missing") ===
+                "missing"
+                  ? t("values.confirmationRequired")
+                  : profile.firstOutcome}
               </h3>
             </div>
             <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2 xl:grid-cols-3">

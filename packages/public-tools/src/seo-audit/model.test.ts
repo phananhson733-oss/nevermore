@@ -153,7 +153,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v3",
+      schemaVersion: "seo_audit.sitewide.v4",
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
@@ -510,5 +510,114 @@ describe("site-wide SEO audit model", () => {
       tested: 0,
       affected: 0,
     });
+  });
+});
+
+describe("seo audit record invariants", () => {
+  it("keeps every record's affected count inside the population it tested", () => {
+    // A 404 page is still parsed, so its outbound links can name a broken
+    // target. Counting those pages as affected while the denominator only
+    // counts 2xx HTML made `affected > tested`, which the payload guard
+    // rejects — taking the whole audit down instead of reporting the links.
+    const broken = page("https://acme.test/broken", {
+      finalStatus: 404,
+      status: 404,
+    });
+    const errorPageA = page("https://acme.test/gone-a", {
+      finalStatus: 404,
+      status: 404,
+      internalOutlinks: [
+        { targetSubjectUrl: "https://acme.test/broken", rel: null, anchorText: "x" },
+      ],
+    });
+    const errorPageB = page("https://acme.test/gone-b", {
+      finalStatus: 404,
+      status: 404,
+      internalOutlinks: [
+        { targetSubjectUrl: "https://acme.test/broken", rel: null, anchorText: "y" },
+      ],
+    });
+    const entry = page(
+      "https://acme.test/",
+      {
+        internalOutlinks: [
+          { targetSubjectUrl: "https://acme.test/broken", rel: null, anchorText: "z" },
+        ],
+      },
+      0,
+    );
+
+    const report = buildSeoAuditReport(
+      raw({ pages: [entry, broken, errorPageA, errorPageB] }),
+    );
+
+    for (const record of report.records) {
+      expect(
+        record.affected,
+        `${record.id} reported ${record.affected} affected of ${record.tested} tested`,
+      ).toBeLessThanOrEqual(record.tested);
+    }
+    expect(isSeoAuditPayload(buildSeoAuditPayload(raw({
+      pages: [entry, broken, errorPageA, errorPageB],
+    })))).toBe(true);
+  });
+
+  it("declares which records only tested a qualifying subset of pages", () => {
+    const report = buildSeoAuditReport(raw());
+    const populations = new Map(
+      report.records.map((record) => [record.id, record.population]),
+    );
+
+    // Absence from these says nothing about a page that never qualified.
+    expect(populations.get("title_length_outside_range")).toBe(
+      "conditional_subset",
+    );
+    expect(populations.get("meta_description_duplicate")).toBe(
+      "conditional_subset",
+    );
+    expect(populations.get("sitemap_page_without_observed_inlink")).toBe(
+      "conditional_subset",
+    );
+    // These ran over everything collected, so absence is real evidence.
+    expect(populations.get("noindex_directive")).toBe("every_collected_page");
+    expect(populations.get("json_ld_missing")).toBe("every_collected_page");
+  });
+
+  it("reports the collected page that is the submitted target", () => {
+    const report = buildSeoAuditReport(raw());
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/");
+  });
+
+  it("matches the target through entry normalisation rather than raw string equality", () => {
+    // The visitor submits a URL without the trailing slash the site serves.
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://acme.test/about/" }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
+  });
+
+  it("does not claim a target that was never collected as inspected", () => {
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://acme.test/never-crawled" }),
+    );
+
+    expect(report.targetInspected).toBe(false);
+    expect(report.inspectedTargetUrl).toBeNull();
+  });
+
+  it("only tests sitemap membership when a sitemap was collected", () => {
+    const withoutSitemap = buildSeoAuditReport(
+      raw({ sitemap: { fetched: false, urlCount: 0, subjectUrls: [] } }),
+    );
+    const record = withoutSitemap.records.find(
+      (entry) => entry.id === "page_not_in_sitemap",
+    );
+
+    expect(record?.state).toBe("unverified");
+    expect(record?.tested).toBe(0);
   });
 });

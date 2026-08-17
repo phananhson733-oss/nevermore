@@ -9,12 +9,14 @@ import {
   clearPendingAgentIntent,
   getSessionIntentStorage,
   isProfileRefreshPendingAgentIntent,
+  isProfileSearchPendingAgentIntent,
   isRunnablePendingAgentIntent,
   pendingAgentIntentKey,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
   storeAgentProfileRefreshIntent,
+  storeAgentProfileSearchIntent,
   storeConfirmedAgentRunIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
@@ -394,5 +396,48 @@ describe("Agent pending intents", () => {
     );
     expect(readPendingAgentIntent(storage, "tech", now + AGENT_INTENT_TTL_MS)).toBeNull();
     expect(intent.expiresAt).toBe(now + AGENT_INTENT_TTL_MS);
+  });
+
+  it("carries a search-landscape draft across the sign-in reload", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://astrologywiki.com"),
+      { country: "US", locale: "en-US", productName: "AstrologyWiki" },
+    );
+    const now = 5_000;
+    const intent = storeAgentProfileSearchIntent(storage, profile, now)!;
+
+    const restored = readPendingAgentIntent(storage, "seo", now + 1)!;
+    expect(isProfileSearchPendingAgentIntent(restored)).toBe(true);
+    expect(restored.searchProfile?.productName).toBe("AstrologyWiki");
+    expect(restored.searchProfile?.country).toBe("US");
+    expect(intent.expiresAt).toBe(now + AGENT_INTENT_TTL_MS);
+  });
+
+  it("never lets a search draft resume as a run or a refresh", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    const stored = storeAgentProfileSearchIntent(storage, profile, 1_000)!;
+
+    expect(isRunnablePendingAgentIntent(stored)).toBe(false);
+    expect(isProfileRefreshPendingAgentIntent(stored)).toBe(false);
+  });
+
+  it("expires a search draft on the same TTL and stays Agent-scoped", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("tech", "https://astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    const now = 5_000;
+    storeAgentProfileSearchIntent(storage, profile, now);
+
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(
+      readPendingAgentIntent(storage, "tech", now + AGENT_INTENT_TTL_MS),
+    ).toBeNull();
   });
 });

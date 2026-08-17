@@ -60,7 +60,7 @@ export function SolutionSection() {
               {...staggerItem}
               className={`bg-brand-bg-alt p-[26px] ${
                 i === 0
-                  ? "bg-[linear-gradient(180deg,rgba(61,220,151,0.06),transparent)]"
+                  ? "bg-column-wash"
                   : ""
               }`}
             >

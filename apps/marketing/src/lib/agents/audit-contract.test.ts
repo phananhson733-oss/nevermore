@@ -26,6 +26,13 @@ const RECORD_SPECS = [
   ["sitemap_page_without_observed_inlink", "links"],
   ["internal_target_http_error", "links"],
   ["json_ld_parse_error", "structured_data"],
+  ["page_outbound_broken_link", "links"],
+  ["page_not_in_sitemap", "crawl"],
+  ["title_length_outside_range", "metadata"],
+  ["meta_description_length_outside_range", "metadata"],
+  ["page_without_outbound_internal_link", "links"],
+  ["click_depth_beyond_reviewed_limit", "links"],
+  ["json_ld_missing", "structured_data"],
 ] as const;
 
 const success = {
@@ -36,7 +43,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v3",
+        schemaVersion: "seo_audit.sitewide.v4",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -45,6 +52,8 @@ const success = {
       targetUrl: "https://acme.test/",
       siteOrigin: "https://acme.test",
       scannedAt: "2026-08-12T09:00:00.000Z",
+      targetInspected: true,
+      inspectedTargetUrl: "https://acme.test/",
       coverage: {
         availability: "available",
         pagesInspected: 1,
@@ -67,6 +76,7 @@ const success = {
         category,
         state: index === 0 ? ("observed" as const) : ("not_observed" as const),
         unit: "pages" as const,
+        population: "every_collected_page" as const,
         tested: 1,
         affected: index === 0 ? 1 : 0,
         observations:
@@ -96,7 +106,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       };
 
       expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
-      expect(envelope.data.result.records).toHaveLength(17);
+      expect(envelope.data.result.records).toHaveLength(24);
       expect("pages" in envelope.data.result).toBe(false);
     },
   );
@@ -245,7 +255,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
     const malformed = structuredClone(success) as unknown as {
       data: { run: { source: { schemaVersion: string } } };
     };
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v4";
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

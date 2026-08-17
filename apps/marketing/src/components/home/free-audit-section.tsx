@@ -47,7 +47,7 @@ export function FreeAuditSection() {
         <div className="relative">
           <div
             aria-hidden="true"
-            className="absolute -top-17 -right-15 size-70 rounded-full bg-[radial-gradient(circle,rgba(61,220,151,0.1),transparent_70%)] blur-[10px]"
+            className="absolute -top-17 -right-15 size-70 rounded-full bg-page-glow blur-[10px]"
           />
           <div className="relative rounded-[16px] border border-brand-border-card bg-brand-panel p-5 shadow-panel md:p-7">
             <div className="mb-4.5 flex items-center justify-between font-mono text-[10px] tracking-[0.1em] text-text-dark-secondary uppercase">

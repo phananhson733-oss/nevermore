@@ -44,14 +44,22 @@ const NO_PROVIDER_DATA: KeywordOpportunityValidation = {
 const WINNABLE: KeywordOpportunitySerpEvidence = {
   verdict: "winnable_evidence",
   weakestTopTenDomainRank: 41,
+  weakestTopTenDomain: "small.test",
+  weakestTopTenPosition: 3,
   topTenDomains: ["small.test", "big.test"],
+  topTenDomainRanks: [41, 900],
+  pageOneItemTypes: null,
   isEstimate: false,
 };
 
 const CONTESTED: KeywordOpportunitySerpEvidence = {
   verdict: "contested_evidence",
   weakestTopTenDomainRank: 780,
+  weakestTopTenDomain: "big.test",
+  weakestTopTenPosition: 1,
   topTenDomains: ["big.test", "bigger.test"],
+  topTenDomainRanks: [780, 950],
+  pageOneItemTypes: null,
   isEstimate: false,
 };
 
@@ -647,6 +655,32 @@ describe("buildKeywordOpportunityResult withheld", () => {
       "serp_sample_budget_exhausted",
       "page_one_contested",
       "no_supporting_page",
+    ]);
+  });
+
+  it("tells a sampled page whose ranks never resolved apart from a budget miss", () => {
+    // Both end as `no_serp_evidence`, but only the budget miss changes on a
+    // seeded re-run — the resolved-nothing case hits the same provider gap
+    // again, at the same cost. The domains list is the witness that the page
+    // was actually opened.
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [
+          seo("ledger reconciliation", {
+            serp: {
+              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+              topTenDomains: ["unknown-a.test", "unknown-b.test"],
+              topTenDomainRanks: [null, null],
+            },
+          }),
+          seo("invoice software", { serp: KEYWORD_OPPORTUNITY_UNSAMPLED }),
+        ],
+      }),
+    );
+
+    expect(result.withheld.map((entry) => entry.reason)).toEqual([
+      "page_one_ranks_unresolved",
+      "serp_sample_budget_exhausted",
     ]);
   });
 

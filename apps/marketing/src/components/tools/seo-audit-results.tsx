@@ -228,7 +228,7 @@ function PageInventory({ report }: { readonly report: SeoAuditReport }) {
     >
       <summary
         data-testid="seo-audit-pages-toggle"
-        className="grid cursor-pointer list-none gap-4 px-5 py-5 transition-colors hover:bg-white/[0.018] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"
+        className="grid cursor-pointer list-none gap-4 px-5 py-5 transition-colors hover:bg-hover-wash focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"
       >
         <div>
           <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">

@@ -150,15 +150,18 @@ describe("repository-backed blog content", () => {
     // the historically ranked slug.
     // 70 → 72 on 2026-08-13: main added the reviewed Ahrefs and Semrush
     // alternative comparison articles before this closeout landed.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(72);
+    // 72 → 73 on 2026-08-17: dcece74e added the August algorithm-update post
+    // and did not move this number with it.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(73);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    // Newest-first ordering. The evidence-boundary correction is the newest
-    // published record after the 2026-08-13 migration closeout.
-    expect(posts[0]?.published_at).toBe("2026-08-13T00:00:00.000Z");
+    // Newest-first ordering. The August algorithm-update post (dcece74e) is
+    // the newest published record; this and the count above move together
+    // every time an article lands.
+    expect(posts[0]?.published_at).toBe("2026-08-17T00:00:00.000Z");
   });
 
   it("publishes the evidence-reviewed English recovery articles", async () => {

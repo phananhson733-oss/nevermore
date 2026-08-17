@@ -21,11 +21,23 @@ import type {
   AgentAuditEngineState,
   AgentAuditResultState,
   AgentAuditScope,
+  AgentAuditScopeView,
   AgentAuditTruthState,
   AgentAuditViewModel,
   AgentAuditPolicyOverride,
   AgentAuditPolicyOverrides,
 } from "./agent-audit-model";
+
+/**
+ * Fewest scored checks a scope must contribute before a 0-100 health number is
+ * shown at all.
+ *
+ * A weighted mean over one or two checks is arithmetically valid and
+ * editorially worthless: a single clean observation in one group would render
+ * as "100/100" for a 27-check scope. Below this floor the card states the
+ * evidence gap instead of a number.
+ */
+const MIN_SCORED_CHECKS_FOR_HEALTH = 3;
 
 const RESULT_STYLE: Readonly<Record<AgentAuditResultState, string>> = {
   blocker: "border-brand-error/35 bg-brand-error/10 text-brand-error",
@@ -44,40 +56,107 @@ const RESULT_ICON = {
   excluded: CircleHelp,
 } as const;
 
-const ENGINE_KEY: Readonly<Record<AgentAuditEngineState, string>> = {
+/**
+ * Axis states this surface can actually render.
+ *
+ * The shared unions still carry `needs_integration`, `documented`, `inferred`,
+ * and `illustrative`, but no branch of the audit evaluator returns them, so
+ * labelling them here promised badges a visitor could never see. The maps cover
+ * the reachable states exactly — adding a reachable state breaks the build —
+ * and the lookup below stays total for the wider union.
+ */
+type RenderedEngineState = Exclude<AgentAuditEngineState, "needs_integration">;
+type RenderedTruthState = Exclude<
+  AgentAuditTruthState,
+  "documented" | "inferred" | "illustrative"
+>;
+
+const ENGINE_KEY: Readonly<Record<RenderedEngineState, string>> = {
   ready: "ready",
-  needs_integration: "needsIntegration",
   needs_supplement: "needsSupplement",
   not_integrated: "notIntegrated",
   access_required: "accessRequired",
 };
 
-const TRUTH_KEY: Readonly<Record<AgentAuditTruthState, string>> = {
+const TRUTH_KEY: Readonly<Record<RenderedTruthState, string>> = {
   observed: "observed",
   not_observed: "notObserved",
-  documented: "documented",
-  inferred: "inferred",
   partial: "partial",
   source_gated: "sourceGated",
   unavailable: "unavailable",
-  illustrative: "illustrative",
 };
 
-function valueOrUnavailable(value: string | number | null, unavailable: string) {
-  return value === null ? unavailable : String(value);
+/**
+ * Message suffix for an axis state, or null when this build has no label for it.
+ * A null renders as an explicit "unrecognised" chip rather than dropping the
+ * axis, so an engine that ships a new state ahead of the UI stays visible.
+ */
+function axisMessageKey<State extends string>(
+  labels: Readonly<Record<State, string>>,
+  state: string,
+): string | null {
+  return Object.hasOwn(labels, state)
+    ? (labels as Readonly<Record<string, string>>)[state]!
+    : null;
+}
+
+function valueOrFallback(value: string | number | null, fallback: string) {
+  return value === null ? fallback : String(value);
+}
+
+/**
+ * Checks that actually moved the health number.
+ *
+ * `evaluated` counts a different population: a check can be evaluated and still
+ * carry no score, because page group 1 is judged but never scored and excluded
+ * checks contribute nothing. The scope summary exposes no scored count, so it
+ * is derived here from the per-check contract instead.
+ */
+function countScoredChecks(scopeView: AgentAuditScopeView): number {
+  return scopeView.groups.reduce(
+    (total, group) =>
+      total +
+      group.checks.filter(
+        (check) => check.scored && check.scoreContribution !== null,
+      ).length,
+    0,
+  );
+}
+
+/**
+ * Data sources that would actually raise the score if they arrived.
+ *
+ * Only scored checks count: an excluded check that never scores (page group 1
+ * is judged, not scored) would still contribute nothing after its source lands,
+ * so listing it here would promise a number this source cannot deliver.
+ */
+function pendingDataSources(scopeView: AgentAuditScopeView): readonly string[] {
+  const sources = new Set<string>();
+  for (const group of scopeView.groups) {
+    if (group.total === 0) continue;
+    for (const check of group.checks) {
+      if (check.result === "excluded" && check.scored) {
+        sources.add(check.dataSource);
+      }
+    }
+  }
+  return [...sources];
 }
 
 function AxisChip({
   label,
   value,
+  describedBy,
   className,
 }: {
   readonly label: string;
   readonly value: string;
+  readonly describedBy?: string;
   readonly className?: string;
 }) {
   return (
     <span
+      aria-describedby={describedBy}
       className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[9px] tracking-[0.07em] uppercase ${className ?? "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"}`}
     >
       <span className="text-text-dark-faint">{label}</span>
@@ -86,13 +165,22 @@ function AxisChip({
   );
 }
 
-function CheckState({ check }: { readonly check: AgentAuditCheckView }) {
+function CheckState({
+  check,
+  axisPrefix,
+}: {
+  readonly check: AgentAuditCheckView;
+  readonly axisPrefix: string;
+}) {
   const t = useTranslations("agents.workbench.diagnosis");
   const Icon = RESULT_ICON[check.result];
+  const engineKey = axisMessageKey(ENGINE_KEY, check.engine);
+  const truthKey = axisMessageKey(TRUTH_KEY, check.truth);
 
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <span
+        aria-describedby={`${axisPrefix}-result`}
         className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[9px] tracking-[0.07em] uppercase ${RESULT_STYLE[check.result]}`}
       >
         <Icon aria-hidden="true" className="size-3" />
@@ -103,13 +191,52 @@ function CheckState({ check }: { readonly check: AgentAuditCheckView }) {
       </span>
       <AxisChip
         label={t("axes.engine")}
-        value={t(`engines.${ENGINE_KEY[check.engine]}`)}
+        value={
+          engineKey === null
+            ? t("axes.unknownState")
+            : t(`engines.${engineKey}`)
+        }
+        describedBy={`${axisPrefix}-engine`}
       />
       <AxisChip
         label={t("axes.truth")}
-        value={t(`truth.${TRUTH_KEY[check.truth]}`)}
+        value={
+          truthKey === null ? t("axes.unknownState") : t(`truth.${truthKey}`)
+        }
+        describedBy={`${axisPrefix}-truth`}
       />
     </span>
+  );
+}
+
+/** Visible, screen-reader-referenced explanation of the three badge axes. */
+function AxisLegend({ axisPrefix }: { readonly axisPrefix: string }) {
+  const t = useTranslations("agents.workbench.diagnosis");
+  const axes = [
+    ["result", t("axes.result"), t("axisLegend.result")],
+    ["engine", t("axes.engine"), t("axisLegend.engine")],
+    ["truth", t("axes.truth"), t("axisLegend.truth")],
+  ] as const;
+
+  return (
+    <dl
+      data-testid="diagnosis-axis-legend"
+      className="mt-4 grid gap-3 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-3 sm:grid-cols-3"
+    >
+      {axes.map(([axis, term, description]) => (
+        <div key={axis} className="min-w-0">
+          <dt className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+            {term}
+          </dt>
+          <dd
+            id={`${axisPrefix}-${axis}`}
+            className="mt-1 text-[12px] leading-[1.55] text-text-dark-primary"
+          >
+            {description}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -132,6 +259,16 @@ function DetailFact({
   );
 }
 
+/**
+ * Local threshold and weight editor.
+ *
+ * NOT MOUNTED IN PRODUCTION. `AgentResults` never passes `onSavePolicy`, so the
+ * whole section is unreachable on the shipped Workbench; only tests render it.
+ * Editing a threshold here also never rejudges anything: the evaluator runs
+ * once against real evidence, and saving records a local review rule only,
+ * which is what the closing line says. Kept pending an owner decision on
+ * whether local policy ships at all.
+ */
 function PolicyEditor({
   scope,
   check,
@@ -142,7 +279,10 @@ function PolicyEditor({
   readonly scope: AgentAuditScope;
   readonly check: AgentAuditCheckView;
   readonly override: AgentAuditPolicyOverride | undefined;
-  readonly onSave: (checkId: string, override: AgentAuditPolicyOverride) => void;
+  readonly onSave: (
+    checkId: string,
+    override: AgentAuditPolicyOverride,
+  ) => void;
   readonly onReset: (checkId: string) => void;
 }) {
   const t = useTranslations("agents.workbench.diagnosis.policy");
@@ -193,7 +333,7 @@ function PolicyEditor({
           <h4 className="text-[12.5px] font-semibold text-text-dark-primary">
             {t("title")}
           </h4>
-          <p className="mt-1 text-[10.5px] leading-[1.55] text-text-dark-secondary">
+          <p className="mt-1 text-[12px] leading-[1.55] text-text-dark-primary">
             {officialLocked ? t("officialLocked") : t("adjustable")}
           </p>
         </div>
@@ -260,7 +400,7 @@ function PolicyEditor({
           {t("resetCheck")}
         </button>
       </div>
-      <p className="mt-3 text-[10.5px] leading-[1.55] text-text-dark-secondary">
+      <p className="mt-3 text-[12px] leading-[1.55] text-text-dark-primary">
         {dirty ? t("rerunRequired") : t("doesNotRejudge")}
       </p>
     </section>
@@ -300,9 +440,7 @@ export function AgentDiagnosis({
   const t = useTranslations("agents.workbench.diagnosis");
   const activeScope = model.scopes[scope];
   const defaultGroupId =
-    scope === "site"
-      ? model.defaults.siteGroupId
-      : model.defaults.pageGroupId;
+    scope === "site" ? model.defaults.siteGroupId : model.defaults.pageGroupId;
   const activeGroup =
     activeScope.groups.find((group) => group.id === selectedGroupId) ??
     activeScope.groups.find((group) => group.id === defaultGroupId) ??
@@ -320,6 +458,13 @@ export function AgentDiagnosis({
   const activePolicy = activeCheck
     ? policyOverrides[activeCheck.id]
     : undefined;
+  const axisPrefix = `${model.agent}-diagnosis-axis`;
+  const scoredChecks = countScoredChecks(activeScope);
+  const healthReportable =
+    activeScope.health !== null && scoredChecks >= MIN_SCORED_CHECKS_FOR_HEALTH;
+  const pendingSources = healthReportable
+    ? []
+    : pendingDataSources(activeScope);
 
   return (
     <section
@@ -363,10 +508,13 @@ export function AgentDiagnosis({
             [t("context.pageType"), model.context.pageType],
             [
               t("context.targetQuery"),
-              model.context.targetQuery || t("healthUnavailable"),
+              model.context.targetQuery || t("context.targetQueryUnconfirmed"),
             ],
           ].map(([label, value]) => (
-            <div key={label} className="min-w-0 bg-brand-panel-sunken px-3.5 py-3">
+            <div
+              key={label}
+              className="min-w-0 bg-brand-panel-sunken px-3.5 py-3"
+            >
               <p className="font-mono text-[8.5px] tracking-[0.09em] text-text-dark-faint uppercase">
                 {label}
               </p>
@@ -406,7 +554,10 @@ export function AgentDiagnosis({
                         : "text-text-dark-secondary hover:text-text-dark-primary"
                     }`}
                   >
-                    {t(`scopes.${candidate}`)}
+                    {t(`scopes.${candidate}`, {
+                      groups: model.scopes[candidate].groups.length,
+                      checks: model.scopes[candidate].total,
+                    })}
                   </button>
                 );
               })}
@@ -427,9 +578,7 @@ export function AgentDiagnosis({
               className="rounded-[8px] border border-brand-border-strong px-3 py-2 font-mono text-[9.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-45"
             >
               {t(
-                scopePolicyDirty
-                  ? "policy.resetScope"
-                  : "policy.scopeAtPreset",
+                scopePolicyDirty ? "policy.resetScope" : "policy.scopeAtPreset",
               )}
             </button>
           ) : null}
@@ -444,11 +593,13 @@ export function AgentDiagnosis({
             <strong className="mt-2 block text-[25px] font-semibold text-text-dark-primary">
               {activeScope.blockers}
             </strong>
-            <p className="mt-1 text-[10.5px] text-text-dark-secondary">
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
               {t("blockersHint")}
             </p>
           </article>
           <article
+            data-testid="diagnosis-health"
+            data-health-state={healthReportable ? "scored" : "insufficient"}
             className={`rounded-row border p-4 ${
               activeScope.healthDimmed
                 ? "border-brand-border bg-brand-panel-sunken opacity-70"
@@ -459,14 +610,46 @@ export function AgentDiagnosis({
               <Gauge aria-hidden="true" className="size-3.5" />
               {t("health")}
             </p>
-            <strong className="mt-2 block text-[25px] font-semibold text-text-dark-primary">
-              {activeScope.health === null
-                ? t("healthUnavailable")
-                : `${activeScope.health}/100`}
-            </strong>
-            <p className="mt-1 text-[10.5px] text-text-dark-secondary">
+            {healthReportable ? (
+              <>
+                <strong className="mt-2 block text-[25px] font-semibold text-text-dark-primary">
+                  {activeScope.health}/100
+                </strong>
+                <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
+                  {t("healthScoredCount", { scored: scoredChecks })}
+                </p>
+              </>
+            ) : (
+              <>
+                <strong className="mt-2 block text-[13.5px] leading-[1.45] font-semibold text-text-dark-primary">
+                  {t("healthInsufficient")}
+                </strong>
+                <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
+                  {t("healthInsufficientHint", {
+                    scored: scoredChecks,
+                    minimum: MIN_SCORED_CHECKS_FOR_HEALTH,
+                  })}
+                </p>
+                {pendingSources.length > 0 ? (
+                  <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
+                    {t("healthPendingSources", {
+                      sources: pendingSources.join(" · "),
+                    })}
+                  </p>
+                ) : null}
+              </>
+            )}
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
               {t("healthHint")}
             </p>
+            {activeScope.healthDimmed ? (
+              <p
+                data-health-dimmed="true"
+                className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary"
+              >
+                {t("healthDimmedReason", { blockers: activeScope.blockers })}
+              </p>
+            ) : null}
           </article>
           <article className="rounded-row border border-brand-border bg-brand-panel-sunken p-4">
             <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.09em] text-text-dark-faint uppercase">
@@ -479,7 +662,7 @@ export function AgentDiagnosis({
                 total: activeScope.total,
               })}
             </strong>
-            <p className="mt-1 text-[10.5px] text-text-dark-secondary">
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
               {activeScope.excluded} {t("results.excluded")}
             </p>
           </article>
@@ -494,7 +677,7 @@ export function AgentDiagnosis({
                 total: activeScope.total,
               })}
             </strong>
-            <p className="mt-1 text-[10.5px] text-text-dark-secondary">
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-text-dark-primary">
               {t("inventoryCoverage", {
                 ready: activeScope.inventoryReady,
                 total: activeScope.total,
@@ -503,7 +686,10 @@ export function AgentDiagnosis({
           </article>
         </div>
 
-        <p className="mt-3 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[11px] leading-[1.55] text-text-dark-secondary">
+        <p
+          data-testid="diagnosis-boundary"
+          className="mt-3 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-text-dark-primary"
+        >
           {t("excludedBoundary")}
         </p>
       </div>
@@ -567,6 +753,8 @@ export function AgentDiagnosis({
             </span>
           </div>
 
+          <AxisLegend axisPrefix={axisPrefix} />
+
           <div className="mt-4 grid gap-2">
             {activeGroup?.checks.map((check) => {
               const selected = check.id === activeCheck?.id;
@@ -592,7 +780,7 @@ export function AgentDiagnosis({
                       {check.title}
                     </strong>
                   </span>
-                  <CheckState check={check} />
+                  <CheckState check={check} axisPrefix={axisPrefix} />
                 </button>
               );
             })}
@@ -624,7 +812,7 @@ export function AgentDiagnosis({
               {t("headingPreset.softRule")}
             </span>
           </div>
-          <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-primary">
             {t("headingPreset.boundary")}
           </p>
         </aside>
@@ -645,13 +833,13 @@ export function AgentDiagnosis({
                   {activeCheck.title}
                 </h3>
               </div>
-              <CheckState check={activeCheck} />
+              <CheckState check={activeCheck} axisPrefix={axisPrefix} />
             </header>
             <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <DetailFact label={t("detail.measuredValue")}>
-                {valueOrUnavailable(
+                {valueOrFallback(
                   activeCheck.measurement,
-                  t("healthUnavailable"),
+                  t("detail.notMeasured"),
                 )}
               </DetailFact>
               <DetailFact label={t("detail.threshold")}>
@@ -670,9 +858,9 @@ export function AgentDiagnosis({
                 {activeCheck.howToFix}
               </DetailFact>
               <DetailFact label={t("detail.scoreContribution")}>
-                {valueOrUnavailable(
+                {valueOrFallback(
                   activeCheck.scoreContribution,
-                  t("healthUnavailable"),
+                  t("detail.notScored"),
                 )}
               </DetailFact>
               <DetailFact label={t("detail.boundary")}>

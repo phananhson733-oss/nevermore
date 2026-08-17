@@ -48,7 +48,7 @@ function TierCard({
       {...staggerItem}
       className={`relative flex flex-col rounded-card border p-[26px] ${
         isPro
-          ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-[inset_2px_0_0_#3DDC97]"
+          ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-rail-accent"
           : "border-brand-border-card bg-brand-panel"
       }`}
     >

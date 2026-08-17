@@ -15,7 +15,12 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { SeoAuditEvidenceValue, SeoAuditRecord } from "@sf/public-tools";
-import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
+import type {
+  AgentAuditEngineState,
+  AgentAuditEvaluatedCheck,
+  AgentAuditResultState,
+  AgentAuditTruthState,
+} from "@sf/public-tools/agent-audit";
 
 import type { AgentKind } from "./agent-types";
 import type { AgentProfileDraft } from "./agent-profile";
@@ -26,6 +31,72 @@ import {
 import { solutionTemplate } from "./agent-solution-templates";
 
 type SupportedLocale = "en" | "zh";
+
+/**
+ * Why the selected recommendation has no displayable observation.
+ *
+ * The three cases carry different truths and must never share one badge:
+ * a source-gated check has no public evidence at all, a not-observed check
+ * was measured and found nothing affected, and a not-captured check simply
+ * kept no record for the selected page.
+ */
+type EvidencePresence =
+  | "observed"
+  | "not-observed"
+  | "source-gated"
+  | "not-captured";
+
+const ENGINE_MESSAGE_KEY: Readonly<Record<AgentAuditEngineState, string>> = {
+  ready: "ready",
+  "needs-integration": "needsIntegration",
+  "needs-supplement": "needsSupplement",
+  "not-integrated": "notIntegrated",
+  "access-required": "accessRequired",
+};
+
+const TRUTH_MESSAGE_KEY: Readonly<Record<AgentAuditTruthState, string>> = {
+  observed: "observed",
+  "not-observed": "notObserved",
+  documented: "documented",
+  inferred: "inferred",
+  partial: "partial",
+  "source-gated": "sourceGated",
+  unavailable: "unavailable",
+  illustrative: "illustrative",
+};
+
+const RESULT_MESSAGE_KEY: Readonly<Record<AgentAuditResultState, string>> = {
+  blocker: "blocker",
+  warning: "warning",
+  tip: "tip",
+  pass: "pass",
+  excluded: "excluded",
+};
+
+function axisLabel(
+  translate: (key: string) => string,
+  group: string,
+  segment: string | undefined,
+  raw: string,
+): string {
+  return segment === undefined ? raw : translate(`${group}.${segment}`);
+}
+
+function evidencePresence(
+  recommendation: RankedAgentRecommendation,
+): EvidencePresence {
+  if (recommendation.evidenceAvailable) return "observed";
+  const truth = String(recommendation.check.truth);
+  if (truth === "not-observed") return "not-observed";
+  if (
+    truth === "source-gated" ||
+    truth === "unavailable" ||
+    truth === "illustrative"
+  ) {
+    return "source-gated";
+  }
+  return "not-captured";
+}
 
 function localized(
   value: Readonly<Record<SupportedLocale, string>> | string | null,
@@ -41,23 +112,52 @@ function evidenceValue(value: SeoAuditEvidenceValue): string {
   return String(value);
 }
 
+const EMPTY_EVIDENCE_COPY: Readonly<
+  Record<Exclude<EvidencePresence, "observed">, readonly [string, string]>
+> = {
+  "source-gated": ["evidenceUnavailable", "sourceGatedBoundary"],
+  "not-observed": ["evidenceNotObservedTitle", "evidenceNotObservedBody"],
+  "not-captured": ["evidenceNoObservationTitle", "evidenceNoObservationBody"],
+};
+
 function EvidenceList({
   records,
+  presence,
 }: {
   readonly records: readonly SeoAuditRecord[];
+  readonly presence: EvidencePresence;
 }) {
   const auditT = useTranslations("tools.seoAudit");
   const t = useTranslations("agents.workbench.recommendations");
 
-  if (records.length === 0) {
+  const hasObservations = records.some(
+    (record) => record.observations.length > 0,
+  );
+
+  if (!hasObservations) {
+    const [titleKey, bodyKey] =
+      EMPTY_EVIDENCE_COPY[presence === "observed" ? "not-captured" : presence];
+    const gated = presence === "source-gated";
     return (
-      <div className="rounded-row border border-brand-warning/25 bg-brand-warning/[0.06] p-4">
-        <p className="flex items-center gap-2 text-[12px] font-semibold text-brand-warning">
+      <div
+        data-testid="agent-evidence-empty"
+        data-presence={presence === "observed" ? "not-captured" : presence}
+        className={`rounded-row border p-4 ${
+          gated
+            ? "border-brand-warning/25 bg-brand-warning/[0.06]"
+            : "border-brand-border bg-brand-panel-sunken"
+        }`}
+      >
+        <p
+          className={`flex items-center gap-2 text-[12px] font-semibold ${
+            gated ? "text-brand-warning" : "text-text-dark-primary"
+          }`}
+        >
           <CircleHelp aria-hidden="true" className="size-3.5" />
-          {t("evidenceUnavailable")}
+          {t(titleKey)}
         </p>
         <p className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-          {t("sourceGatedBoundary")}
+          {t(bodyKey)}
         </p>
       </div>
     );
@@ -127,37 +227,52 @@ function SelectedSolution({
   readonly profile: AgentProfileDraft;
 }) {
   const t = useTranslations("agents.workbench.recommendations");
-  const template = solutionTemplate(
-    recommendation.agent,
-    recommendation.check,
-  );
-  const check = recommendation.check.check;
-  const unavailable = !recommendation.evidenceAvailable;
+  const diagnosisT = useTranslations("agents.workbench.diagnosis");
+  const profileT = useTranslations("agents.workbench.profile");
+  const evaluated = recommendation.check;
+  const check = evaluated.check;
+  const presence = evidencePresence(recommendation);
+  const gated = presence === "source-gated";
+  const deviceLabel = profileT(`options.device.${profile.device}`);
+  const pageTypeLabel = profileT(`options.pageType.${profile.pageType}`);
+  const pageContext = [
+    pageTypeLabel,
+    deviceLabel,
+    profileT(`options.auditScope.${profile.auditScope}`),
+  ].join(" · ");
+  const searchContext = [profile.country, profile.locale, deviceLabel]
+    .filter((value) => value.trim().length > 0)
+    .join(" · ");
+  const measurement = evaluated.measurement
+    ? localized(evaluated.measurement, locale)
+    : null;
+  const template = solutionTemplate(recommendation.agent, evaluated, {
+    fillIn: t("previewFillIn"),
+    notCaptured: t("previewNotCaptured"),
+    targetUrl: profile.targetUrl,
+    productName: profile.productName,
+    targetQuery: profile.targetQuery,
+    pageType: pageTypeLabel,
+    searchContext,
+    measurement,
+    evidenceRecords: recommendation.evidenceRecords,
+  });
   const contextFacts =
     recommendation.agent === "seo"
       ? [
           [t("productLabel"), profile.productName],
           [t("ctaLabel"), profile.primaryCta],
-          [
-            t("queryLabel"),
-            profile.targetQuery || t("unconfirmedValue"),
-          ],
+          [t("queryLabel"), profile.targetQuery || t("unconfirmedValue")],
           [t("audienceLabel"), profile.primaryIcp],
           [t("outcomeLabel"), profile.firstOutcome],
         ]
       : [
           [t("targetLabel"), profile.targetUrl],
           [t("productLabel"), profile.productName],
-          [
-            t("pageContextLabel"),
-            `${profile.pageType} · ${profile.device} · ${profile.auditScope}`,
-          ],
+          [t("pageContextLabel"), pageContext],
           [t("audienceLabel"), profile.primaryIcp],
           [t("outcomeLabel"), profile.firstOutcome],
         ];
-  const previewContext = contextFacts
-    .map(([label, value]) => `${label}: ${value}`)
-    .join("\n");
 
   return (
     <article
@@ -178,15 +293,25 @@ function SelectedSolution({
             {t("stage4Body")}
           </p>
         </div>
-        <span className="rounded border border-brand-warning/30 bg-brand-warning/10 px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] text-brand-warning uppercase">
-          {unavailable ? t("unavailableInvestigation") : t("previewOnly")}
+        <span
+          data-testid="agent-solution-boundary"
+          className={`rounded border px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] uppercase ${
+            gated
+              ? "border-brand-warning/30 bg-brand-warning/10 text-brand-warning"
+              : "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
+          }`}
+        >
+          {gated ? t("unavailableInvestigation") : t("previewOnly")}
         </span>
       </header>
 
       <div className="mt-5 grid gap-5">
         <DetailSection icon={AlertTriangle} label={t("issueLabel")}>
           <p>{localized(check.impact, locale)}</p>
-          <p className="mt-2 text-text-dark-primary">
+          <p
+            data-testid="agent-solution-recommendation"
+            className="mt-2 text-text-dark-primary"
+          >
             {t(template.recommendationKey.replace("recommendations.", ""))}
           </p>
         </DetailSection>
@@ -198,9 +323,7 @@ function SelectedSolution({
                 {t("measuredLabel")}
               </span>
               <p className="mt-1 text-[11px] text-text-dark-primary">
-                {recommendation.check.measurement
-                  ? localized(recommendation.check.measurement, locale)
-                  : t("evidenceUnavailable")}
+                {measurement ?? t("evidenceUnavailable")}
               </p>
             </div>
             <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
@@ -212,13 +335,18 @@ function SelectedSolution({
               </p>
             </div>
           </div>
-          <EvidenceList records={recommendation.evidenceRecords} />
+          <EvidenceList
+            records={recommendation.evidenceRecords}
+            presence={presence}
+          />
         </DetailSection>
 
         <DetailSection icon={Braces} label={t("fixLabel")}>
           <p className="mb-3">{localized(check.howToFix, locale)}</p>
           <pre className="overflow-x-auto whitespace-pre-wrap rounded-row border border-brand-border-dashed bg-brand-panel-sunken p-4 font-mono text-[10.5px] leading-[1.7] text-text-dark-strong">
-            {`${unavailable ? `${t("unavailableInvestigation")}\n` : ""}${previewContext}\n\n${template.preview}`}
+            {gated
+              ? `${t("unavailableInvestigation")}\n\n${template.preview}`
+              : template.preview}
           </pre>
         </DetailSection>
 
@@ -241,15 +369,39 @@ function SelectedSolution({
               </div>
             ))}
           </dl>
-          <p className="mt-2 font-mono text-[10px] text-text-dark-faint">
-            {t("statesLabel")}: {String(recommendation.check.result)} ·{" "}
-            {String(recommendation.check.engine)} ·{" "}
-            {String(recommendation.check.truth)}
+          <p
+            data-testid="agent-solution-states"
+            className="mt-2 font-mono text-[10px] text-text-dark-faint"
+          >
+            {t("statesLabel")}:{" "}
+            {axisLabel(
+              diagnosisT,
+              "results",
+              RESULT_MESSAGE_KEY[evaluated.result],
+              String(evaluated.result),
+            )}{" "}
+            ·{" "}
+            {axisLabel(
+              diagnosisT,
+              "engines",
+              ENGINE_MESSAGE_KEY[evaluated.engine],
+              String(evaluated.engine),
+            )}{" "}
+            ·{" "}
+            {axisLabel(
+              diagnosisT,
+              "truth",
+              TRUTH_MESSAGE_KEY[evaluated.truth],
+              String(evaluated.truth),
+            )}
           </p>
         </DetailSection>
 
         <DetailSection icon={CheckCircle2} label={t("validationLabel")}>
-          <ol className="grid gap-2 pl-5 [list-style:decimal]">
+          <ol
+            data-testid="agent-solution-validation"
+            className="grid gap-2 pl-5 [list-style:decimal]"
+          >
             {template.validationKeys.map((key) => (
               <li key={key}>{t(key.replace("recommendations.", ""))}</li>
             ))}
@@ -258,15 +410,21 @@ function SelectedSolution({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <DetailSection icon={Gauge} label={t("impactLabel")}>
-            <p>{t(template.impactSurfaceKey.replace("recommendations.", ""))}</p>
+            <p data-testid="agent-solution-impact">
+              {t(template.impactSurfaceKey.replace("recommendations.", ""))}
+            </p>
           </DetailSection>
           <DetailSection icon={ShieldAlert} label={t("risksLabel")}>
-            <p>{t(template.risksKey.replace("recommendations.", ""))}</p>
+            <p data-testid="agent-solution-risks">
+              {t(template.risksKey.replace("recommendations.", ""))}
+            </p>
           </DetailSection>
         </div>
 
         <DetailSection icon={CircleHelp} label={t("limitsLabel")}>
-          <p>{t(template.limitsKey.replace("recommendations.", ""))}</p>
+          <p data-testid="agent-solution-limits">
+            {t(template.limitsKey.replace("recommendations.", ""))}
+          </p>
           <p className="mt-2 rounded-row border border-brand-warning/25 bg-brand-warning/[0.06] p-3 text-brand-warning">
             {t("previewBoundary")}
           </p>
@@ -300,6 +458,7 @@ export function AgentRecommendations({
   className = "",
 }: AgentRecommendationsProps) {
   const t = useTranslations("agents.workbench.recommendations");
+  const diagnosisT = useTranslations("agents.workbench.diagnosis");
   const recommendations = rankAgentRecommendations(
     agent,
     evaluatedChecks,
@@ -315,7 +474,9 @@ export function AgentRecommendations({
 
   if (!selected) {
     return (
-      <section className={`rounded-card border border-brand-border-card bg-brand-panel p-6 ${className}`}>
+      <section
+        className={`rounded-card border border-brand-border-card bg-brand-panel p-6 ${className}`}
+      >
         <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
           {t("stage3")}
         </p>
@@ -356,6 +517,7 @@ export function AgentRecommendations({
           {recommendations.map((recommendation) => {
             const active = recommendation.id === selected.id;
             const check = recommendation.check.check;
+            const presence = evidencePresence(recommendation);
             return (
               <li key={recommendation.id}>
                 <button
@@ -372,12 +534,18 @@ export function AgentRecommendations({
                 >
                   <span className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-mono text-[9px] tracking-[0.08em] text-brand-accent-text uppercase">
-                      {recommendation.priority} · {String(recommendation.check.result)}
+                      {recommendation.priority} ·{" "}
+                      {axisLabel(
+                        diagnosisT,
+                        "results",
+                        RESULT_MESSAGE_KEY[recommendation.check.result],
+                        String(recommendation.check.result),
+                      )}
                     </span>
                     <span className="font-mono text-[9px] text-text-dark-faint">
-                      {recommendation.evidenceAvailable
+                      {presence === "observed"
                         ? t("reach", { count: recommendation.reach })
-                        : t("evidenceUnavailable")}
+                        : t(EMPTY_EVIDENCE_COPY[presence][0])}
                     </span>
                   </span>
                   <strong className="mt-3 block text-[13px] leading-[1.45] font-semibold text-text-dark-primary">

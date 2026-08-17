@@ -1271,21 +1271,23 @@ function isCompleteFieldProvenance(
   );
 }
 
+/**
+ * The context a run actually consumes.
+ *
+ * The audit itself is decided by crawl evidence alone, so blocking a run on
+ * fifteen positioning fields bought nothing. These five are the ones the run
+ * reads back: they label the evidence and fill the Stage 04 solution preview.
+ *
+ * The first desired outcome is deliberately not here. It ships with a prompt
+ * for a placeholder ("Confirm the first search-growth outcome.") and the page
+ * renders it as the section heading, so a visitor reading the card sees a
+ * sentence, not an empty field — gating a run on it stops the run with no
+ * visible way to satisfy it.
+ */
 export const AGENT_PROFILE_READY_FIELDS = [
   "productName",
-  "oneLinePositioning",
-  "valueProposition",
-  "coreFeatures",
-  "categories",
-  "businessModel",
   "primaryCta",
   "primaryIcp",
-  "buyer",
-  "user",
-  "triggerPain",
-  "icpPain",
-  "jtbd",
-  "useCases",
   "country",
   "locale",
 ] as const satisfies readonly AgentProfileEditableField[];

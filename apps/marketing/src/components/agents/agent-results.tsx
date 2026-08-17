@@ -18,6 +18,7 @@ import { AgentDiagnosis } from "./agent-diagnosis";
 import type { AgentProfileDraft } from "./agent-profile";
 import { AgentRecommendations } from "./agent-recommendations";
 import {
+  analyzeAgentRecommendations,
   notCollectedUrlCount,
   summarizeAgentRecords,
 } from "./agent-result-helpers";
@@ -49,6 +50,12 @@ function profileContext(profile: AgentProfileDraft): AgentDiagnosisContext {
     targetQuery: profile.targetQuery,
     auditScope: profile.auditScope,
   };
+}
+
+interface CapturedFact {
+  readonly label: string;
+  readonly value: number | string | null;
+  readonly hint: string | null;
 }
 
 export interface AgentResultsProps {
@@ -91,6 +98,42 @@ export function AgentResults({
   >({ site: null, page: null });
   const summary = summarizeAgentRecords(data.result.records);
   const notCollected = notCollectedUrlCount(data.result.coverage);
+  const scopedChecks = useMemo(
+    () => model.evaluatedChecks.filter((check) => check.check.scope === scope),
+    [model, scope],
+  );
+  const recommendationAnalysis = useMemo(
+    () =>
+      analyzeAgentRecommendations(agent, scopedChecks, data.result.records, {
+        targetUrl: data.result.targetUrl,
+      }),
+    [agent, data.result.records, data.result.targetUrl, scopedChecks],
+  );
+  /**
+   * Evidence records are collected measurements, so they are labelled as
+   * records here. The Diagnosis panel counts checks, which is a different unit.
+   */
+  const capturedFacts: readonly CapturedFact[] = [
+    {
+      label: t("pagesInspected"),
+      value: data.result.coverage.pagesInspected,
+      hint: null,
+    },
+    {
+      label: t("linksObserved"),
+      value: data.result.coverage.linksObserved,
+      hint: null,
+    },
+    { label: t("notCollected"), value: notCollected, hint: null },
+    {
+      label: t("evidenceRecords"),
+      value: `${summary.evaluated} / ${summary.total}`,
+      hint: t("evaluatedBreakdown", {
+        observed: summary.observed,
+        notObserved: summary.notObserved,
+      }),
+    },
+  ];
 
   function handleScopeChange(nextScope: AgentAuditScope): void {
     setScope(nextScope);
@@ -124,7 +167,8 @@ export function AgentResults({
               {data.result.targetUrl}
             </h2>
             <p className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">
-              {t("capturedAt")}: {formatCapturedAt(data.result.scannedAt, locale)}
+              {t("capturedAt")}:{" "}
+              {formatCapturedAt(data.result.scannedAt, locale)}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -141,22 +185,25 @@ export function AgentResults({
         </div>
 
         <dl className="mt-5 grid gap-px overflow-hidden rounded-row border border-brand-border-card bg-brand-border-card sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            [t("pagesInspected"), data.result.coverage.pagesInspected],
-            [t("linksObserved"), data.result.coverage.linksObserved],
-            [t("notCollected"), notCollected],
-            [t("evaluatedChecks"), `${summary.evaluated} / ${summary.total}`],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="bg-brand-panel-sunken p-4">
+          {capturedFacts.map(({ label, value, hint }) => (
+            <div key={label} className="bg-brand-panel-sunken p-4">
               <dt className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
                 {label}
               </dt>
               <dd className="mt-2 font-mono text-[18px] font-medium text-text-dark-primary">
                 {value === null ? auditT("availability.unavailable") : value}
               </dd>
+              {hint ? (
+                <dd className="mt-1.5 font-mono text-[9.5px] text-text-dark-faint">
+                  {hint}
+                </dd>
+              ) : null}
             </div>
           ))}
         </dl>
+        <p className="mt-2 text-[10.5px] leading-[1.6] text-text-dark-faint">
+          {t("evidenceRecordsBoundary")}
+        </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="flex items-start gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-3.5">
@@ -210,9 +257,7 @@ export function AgentResults({
         agent={agent}
         locale={locale}
         targetUrl={data.result.targetUrl}
-        evaluatedChecks={model.evaluatedChecks.filter(
-          (check) => check.check.scope === scope,
-        )}
+        evaluatedChecks={scopedChecks}
         records={data.result.records}
         profile={profile}
         selectedRecommendationId={selectedRecommendationIds[scope]}
@@ -223,6 +268,33 @@ export function AgentResults({
           }))
         }
       />
+
+      {recommendationAnalysis.hiddenCount > 0 ||
+      recommendationAnalysis.dataSourceGaps.length > 0 ? (
+        <div
+          data-testid="agent-recommendation-disclosure"
+          data-ranked-shown={recommendationAnalysis.ranked.length}
+          data-ranked-total={recommendationAnalysis.rankedTotal}
+          data-source-gaps={recommendationAnalysis.dataSourceGaps.length}
+          className="rounded-row border border-brand-border bg-brand-panel-sunken px-4 py-3"
+        >
+          {recommendationAnalysis.hiddenCount > 0 ? (
+            <p className="text-[11.5px] leading-[1.6] text-text-dark-secondary">
+              {t("recommendations.rankedDisclosure", {
+                shown: recommendationAnalysis.ranked.length,
+                total: recommendationAnalysis.rankedTotal,
+              })}
+            </p>
+          ) : null}
+          {recommendationAnalysis.dataSourceGaps.length > 0 ? (
+            <p className="mt-1.5 text-[11.5px] leading-[1.6] text-text-dark-secondary">
+              {t("recommendations.dataSourceGaps", {
+                count: recommendationAnalysis.dataSourceGaps.length,
+              })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <p className="text-center font-mono text-[9.5px] tracking-[0.05em] text-text-dark-faint">
         {t("runBoundary", {

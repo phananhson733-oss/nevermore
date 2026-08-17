@@ -9,6 +9,7 @@ import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { routing } from "@/i18n/routing";
 import { PageShell } from "@/components/layout/page-shell";
 import { localePath } from "@/lib/locale-path";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // Signal Console v1 排印：IBM Plex Sans 承担拉丁阅读文字，mono 只用于数据、
 // eyebrow 和小标签；中文由 globals.css 的本地系统字体栈回退，避免构建依赖远程分片。
@@ -68,6 +69,17 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
+        {/*
+          主题必须在首帧之前定下来，所以这段脚本是同步的、内联的，且排在
+          <head> 的最前面。它读 localStorage 把 data-theme 写到 <html> 上；
+          选了浅色的访客因此不会在每次导航时先闪一下深色底。
+
+          这是本站唯一一处 dangerouslySetInnerHTML：内容是 lib/theme.ts 里的
+          常量字符串，不接受任何外部输入，没有可注入的面。<html> 上的
+          suppressHydrationWarning 就是为它准备的——服务端发出的 HTML 上没有
+          这个属性，客户端 hydrate 时它已经在了。
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <link
           rel="alternate"
           type="application/rss+xml"
