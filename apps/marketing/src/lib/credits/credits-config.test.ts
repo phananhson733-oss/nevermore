@@ -30,6 +30,7 @@ describe("credits-config", () => {
     expect(Object.keys(CREDIT_TOOL_PRICES).sort()).toEqual([
       "agent-audit",
       "keyword-opportunities",
+      "on-page-seo-check",
       "profile-refresh",
       "profile-search",
       "quick-wins",
@@ -44,6 +45,9 @@ describe("credits-config", () => {
     expect(CREDIT_TOOL_PRICES["profile-refresh"]).toBe(5);
     expect(CREDIT_TOOL_PRICES["traffic-drop"]).toBe(3);
     expect(CREDIT_TOOL_PRICES["profile-search"]).toBe(2);
+    // Same crawl as agent-audit, priced against the competitor's page check
+    // instead. Recorded here so Phase 2 cannot ship the gap unnoticed.
+    expect(CREDIT_TOOL_PRICES["on-page-seo-check"]).toBe(1);
   });
 
   /**
