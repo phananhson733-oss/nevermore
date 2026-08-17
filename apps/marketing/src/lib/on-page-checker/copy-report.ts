@@ -3,7 +3,7 @@
 // @pos    -- the only place page-sourced text is rendered as document markup
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import type { KeywordEvidence } from "@sf/public-tools";
+import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
 
 /** Everything past the limitations is detail; the report never exceeds this. */
 export const COPY_REPORT_MAX_CHARS = 16 * 1024;

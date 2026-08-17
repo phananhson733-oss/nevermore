@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
-import type { KeywordEvidence } from "@sf/public-tools";
+import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
 
 import {
   appendOnPageHistory,

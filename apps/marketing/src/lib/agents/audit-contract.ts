@@ -8,9 +8,19 @@ import type {
   SeoAuditPayload,
   SeoAuditReport,
   SeoAuditSiteResources,
-  KeywordEvidence,
-} from "@sf/public-tools";
-import { KEYWORD_EVIDENCE_VERSION } from "@sf/public-tools";
+} from "@sf/public-tools/seo-audit/types";
+/**
+ * From the narrow path, never the package barrel.
+ *
+ * This module is imported by a client component. The barrel re-exports the
+ * crawl scanner, so one value import from it pulls `node:net` into the browser
+ * bundle — which typecheck and the unit suite both pass, and only the
+ * production build catches.
+ */
+import {
+  KEYWORD_EVIDENCE_VERSION,
+  type KeywordEvidence,
+} from "@sf/public-tools/seo-audit/keyword-evidence/types";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
