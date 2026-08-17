@@ -153,7 +153,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v4",
+      schemaVersion: "seo_audit.sitewide.v5",
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",

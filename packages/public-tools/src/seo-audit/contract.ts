@@ -4,6 +4,7 @@ import type {
   SeoAuditPayload,
   SeoAuditRecord,
   SeoAuditSiteResources,
+  SeoAuditTargetPageExtract,
 } from "./types.ts";
 
 type UnknownObject = Readonly<Record<string, unknown>>;
@@ -20,8 +21,7 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-const CANONICAL_ISO_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const CANONICAL_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 /** Accept only the UTC millisecond form emitted by `Date#toISOString`. */
 export function isCanonicalIsoTimestamp(value: unknown): value is string {
@@ -102,9 +102,7 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
   return (
     value.affected === value.observations.length &&
     value.affected <= value.tested &&
-    (value.state === "observed"
-      ? value.affected > 0
-      : value.affected === 0)
+    (value.state === "observed" ? value.affected > 0 : value.affected === 0)
   );
 }
 
@@ -142,7 +140,8 @@ function isSeoAuditPage(value: unknown): value is SeoAuditPage {
     typeof value.subjectUrl === "string" &&
     typeof value.finalUrl === "string" &&
     isNonNegativeInteger(value.depth) &&
-    (value.initialStatus === null || isNonNegativeInteger(value.initialStatus)) &&
+    (value.initialStatus === null ||
+      isNonNegativeInteger(value.initialStatus)) &&
     (value.finalStatus === null || isNonNegativeInteger(value.finalStatus)) &&
     isNonNegativeInteger(value.redirectHops) &&
     isNullableString(value.contentType) &&
@@ -164,6 +163,36 @@ function isSeoAuditPage(value: unknown): value is SeoAuditPage {
   );
 }
 
+function isStringList(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
+}
+
+/**
+ * Runtime authority for the target page extract.
+ *
+ * Checks every field for real. A guard that accepted the shape without reading
+ * it would let a payload through whose text fields are missing, and the
+ * keyword layer would then report "not covered" for a page it never read.
+ */
+function isTargetPageExtract(
+  value: unknown,
+): value is SeoAuditTargetPageExtract {
+  return (
+    isObject(value) &&
+    typeof value.url === "string" &&
+    isNullableString(value.title) &&
+    isNullableString(value.metaDescription) &&
+    isStringList(value.h1) &&
+    (value.subHeadings === null || isStringList(value.subHeadings)) &&
+    isNullableString(value.openingText) &&
+    (value.staticBodyWords === null ||
+      isNonNegativeInteger(value.staticBodyWords)) &&
+    typeof value.truncatedLists === "boolean"
+  );
+}
+
 /** Runtime authority for the current buffered site-wide SEO audit payload. */
 export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   if (!isObject(value) || !isObject(value.run) || !isObject(value.result)) {
@@ -173,7 +202,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v4" &&
+    run.schemaVersion === "seo_audit.sitewide.v5" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&
@@ -183,6 +212,8 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
     typeof result.targetInspected === "boolean" &&
     (result.inspectedTargetUrl === null ||
       typeof result.inspectedTargetUrl === "string") &&
+    (result.targetPageExtract === null ||
+      isTargetPageExtract(result.targetPageExtract)) &&
     isCanonicalIsoTimestamp(result.scannedAt) &&
     isCoverage(result.coverage) &&
     isSiteResources(result.siteResources) &&

@@ -81,7 +81,7 @@ const raw = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v4",
+    schemaVersion: "seo_audit.sitewide.v5",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -93,6 +93,7 @@ const payload = {
     scannedAt: "2026-07-30T09:00:00.000Z",
     targetInspected: true,
     inspectedTargetUrl: "https://acme.test/",
+    targetPageExtract: null,
     coverage: {
       availability: "available",
       pagesInspected: 0,

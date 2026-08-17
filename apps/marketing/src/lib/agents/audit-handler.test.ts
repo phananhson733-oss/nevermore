@@ -71,7 +71,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v4",
+    schemaVersion: "seo_audit.sitewide.v5",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -83,6 +83,7 @@ const upstreamPayload = {
     scannedAt: "2026-08-12T09:00:00.000Z",
     targetInspected: true,
     inspectedTargetUrl: "https://acme.test/",
+    targetPageExtract: null,
     coverage: {
       availability: "partial",
       pagesInspected: 2,
@@ -216,7 +217,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v4",
+            schemaVersion: "seo_audit.sitewide.v5",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -589,7 +590,7 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            schemaVersion: "seo_audit.sitewide.v5",
+            schemaVersion: "seo_audit.sitewide.v6",
           },
         },
       }),
