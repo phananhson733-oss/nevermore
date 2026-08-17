@@ -678,13 +678,12 @@ describe("AgentProfilePanel", () => {
       "live_public_page",
       "missing",
     ]) {
-      const chip = document.querySelector(
+      const fact = document.querySelector(
         `[data-profile-source-class="${sourceClass}"]`,
       );
-      expect(chip, sourceClass).not.toBeNull();
-      expect(chip?.textContent).toContain(
-        `provenance.sourceClasses.${sourceClass}`,
-      );
+      expect(fact, sourceClass).not.toBeNull();
+      // The derivation travels with the fact instead of being printed under it.
+      expect(fact?.getAttribute("data-profile-provenance")).toBeTruthy();
     }
     expect(
       document
@@ -1142,9 +1141,9 @@ describe("AgentProfilePanel", () => {
       expect(fact(label)?.querySelector("dd")?.textContent).toBe(
         "values.confirmationRequired",
       );
-      expect(
-        fact(label)?.querySelector('[data-profile-provenance="missing"]'),
-      ).not.toBeNull();
+      expect(fact(label)?.getAttribute("data-profile-provenance")).toBe(
+        "missing",
+      );
     }
   });
 
@@ -1204,9 +1203,11 @@ describe("AgentProfilePanel", () => {
     expect(declaredBusinessFrame?.textContent).toContain(
       "observed-two.example",
     );
-    expect(declaredBusinessFrame?.textContent).toContain(
-      "search.review.systemSuggestionProvenance",
-    );
+    expect(
+      declaredBusinessFrame?.querySelector(
+        '[data-profile-source-class="inferred"]',
+      ),
+    ).not.toBeNull();
     expect(declaredBusinessFrame?.textContent).not.toContain(
       "search.review.awaitingClassification",
     );
@@ -1304,10 +1305,15 @@ describe("AgentProfilePanel", () => {
     );
     expect(declaredBusinessFrame?.textContent).toContain("seed-one.example");
     expect(declaredBusinessFrame?.textContent).toContain("seed-two.example");
-    expect(declaredBusinessFrame?.textContent).toContain(
-      "search.review.systemSuggestionProvenance",
-    );
-    expect(competitor?.textContent).toContain("search.seedSerpBoundary");
+    expect(
+      declaredBusinessFrame?.querySelector(
+        '[data-profile-source-class="inferred"]',
+      ),
+    ).not.toBeNull();
+    // The panel description carries the boundary once; result blocks no longer
+    // repeat it over every candidate list.
+    expect(competitor?.textContent).toContain("search.description");
+    expect(competitor?.textContent).not.toContain("search.seedSerpBoundary");
     expect(competitor?.textContent).toContain(
       "search.review.seedSerpEvidence",
     );

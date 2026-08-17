@@ -1156,9 +1156,11 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, primaryCta: "" }),
     ).toBe(false);
+    // The first desired outcome ships as a placeholder sentence rendered as a
+    // heading, so it labels the run without gating it.
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, firstOutcome: "" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({
         ...suppliedWithRunMarket,
