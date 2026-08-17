@@ -52,11 +52,15 @@ const ZERO_WIDTH_PATTERN = /\u200B|\u200C|\u200D|\uFEFF/gu;
  * shown back to the visitor next to the query itself.
  */
 function cleanup(value: string): string {
+  // NFKC, drop zero-width, trim, collapse — the order the versioned algorithm
+  // states. Trimming after collapsing is equivalent today, but the algorithm
+  // is published with a version and read by people implementing against it, so
+  // it is followed rather than approximated.
   return value
     .normalize("NFKC")
     .replace(ZERO_WIDTH_PATTERN, "")
-    .replace(/\s+/gu, " ")
-    .trim();
+    .trim()
+    .replace(/\s+/gu, " ");
 }
 
 /**
