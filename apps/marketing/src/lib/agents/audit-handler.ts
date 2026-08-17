@@ -14,6 +14,8 @@ import {
 import type { QualifyingTool } from "../credits/credits-config.ts";
 import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
+import { readSeoAuditInput } from "../tools/seo-audit-input.ts";
+import { buildKeywordEvidence } from "@sf/public-tools";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
@@ -299,6 +301,20 @@ export async function handleAgentAuditRequest(
     return errorResponse("auth_required", 401);
   }
 
+  // Both layers need the body: this one to build the keyword region, the
+  // delegate to run the crawl. A body can only be read once, so this reads a
+  // clone and hands the delegate the request it was given — rebuilding it
+  // would drop everything a NextRequest carries beyond method, headers and
+  // bytes. Both sides validate with the same reader, so they cannot disagree
+  // about what the visitor asked for.
+  let input: ReturnType<typeof readSeoAuditInput>;
+  try {
+    input = readSeoAuditInput(await request.clone().json());
+  } catch {
+    return errorResponse("invalid_request", 400);
+  }
+  if (!input.ok) return errorResponse("invalid_request", 400);
+
   const upstream = await dependencies.delegate(request);
   if (!upstream.ok) return projectUpstreamError(upstream);
 
@@ -345,9 +361,21 @@ export async function handleAgentAuditRequest(
       scannedAt: result.scannedAt,
       targetInspected: result.targetInspected,
       inspectedTargetUrl: result.inspectedTargetUrl,
+      targetPageExtract: result.targetPageExtract,
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
       records: result.records.map(projectRecord),
+      // Derived here, never cached: a cache row is shared by host, so a stored
+      // region would answer the next visitor with this one's queries.
+      ...(input.value.targetQueries === null
+        ? {}
+        : {
+            keywordEvidence: buildKeywordEvidence(
+              result.targetPageExtract,
+              input.value.targetQueries,
+              input.value.pageRole,
+            ),
+          }),
     },
   };
 

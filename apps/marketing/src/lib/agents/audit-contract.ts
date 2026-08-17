@@ -8,7 +8,9 @@ import type {
   SeoAuditPayload,
   SeoAuditReport,
   SeoAuditSiteResources,
+  KeywordEvidence,
 } from "@sf/public-tools";
+import { KEYWORD_EVIDENCE_VERSION } from "@sf/public-tools";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
@@ -79,10 +81,22 @@ export type AgentAuditResult = Pick<
   | "scannedAt"
   | "targetInspected"
   | "inspectedTargetUrl"
+  | "targetPageExtract"
   | "coverage"
   | "siteResources"
   | "records"
->;
+> & {
+  /**
+   * Present only when the caller sent target queries.
+   *
+   * Deliberately absent from `SeoAuditReport`, which is exactly the cached
+   * payload: this region is derived from one visitor's queries, and a shared
+   * cache row that carried it would hand the next visitor someone else's
+   * question. Deriving it here, per request, makes that impossible to get
+   * wrong by accident rather than by discipline.
+   */
+  readonly keywordEvidence?: KeywordEvidence;
+};
 
 export interface AgentAuditSuccessData {
   readonly run: AgentAuditRun;
@@ -178,6 +192,22 @@ function hasCompleteNeutralRecordLedger(
   return observedIds.size === AGENT_AUDIT_RECORD_IDS.length;
 }
 
+/**
+ * Shape check for the derived keyword region.
+ *
+ * Only the discriminant and version are read here: the region is built in this
+ * process from a validated extract, so the value at risk is a wrong or stale
+ * version reaching a client that would then read the numbers under the wrong
+ * rules.
+ */
+function isKeywordEvidenceShape(value: unknown): value is KeywordEvidence {
+  if (!isObject(value)) return false;
+  if (value.version !== KEYWORD_EVIDENCE_VERSION) return false;
+  return (
+    value.availability === "available" || value.availability === "unavailable"
+  );
+}
+
 function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
@@ -189,7 +219,15 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !isCoverage(value.coverage) ||
     !isSiteResources(value.siteResources) ||
     !Array.isArray(value.records) ||
-    !value.records.every(isSeoAuditRecord)
+    !value.records.every(isSeoAuditRecord) ||
+    !(
+      value.targetPageExtract === null ||
+      isObject(value.targetPageExtract)
+    ) ||
+    !(
+      value.keywordEvidence === undefined ||
+      isKeywordEvidenceShape(value.keywordEvidence)
+    )
   ) {
     return false;
   }

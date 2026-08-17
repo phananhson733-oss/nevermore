@@ -120,6 +120,52 @@ function request(accept = "application/json"): Request {
   });
 }
 
+function keywordRequest(
+  targetQueries: readonly string[],
+  pageRole?: string,
+): Request {
+  return new Request("https://gengrowth.ai/api/agents/seo/audit", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-real-ip": "203.0.113.9",
+    },
+    body: JSON.stringify({
+      url: "acme.test",
+      targetQueries,
+      ...(pageRole === undefined ? {} : { pageRole }),
+    }),
+  });
+}
+
+/** An upstream payload whose target page actually carries readable text. */
+function successWithExtract(
+  headers: Readonly<Record<string, string>> = {},
+): Response {
+  return Response.json(
+    {
+      data: {
+        ...upstreamPayload,
+        result: {
+          ...upstreamPayload.result,
+          targetPageExtract: {
+            url: "https://acme.test/",
+            title: "Acme birth chart calculator",
+            metaDescription: "Calculate a birth chart.",
+            h1: ["Birth chart calculator"],
+            subHeadings: ["How the chart is drawn"],
+            openingText: "A birth chart maps the sky at a moment in time.",
+            staticBodyWords: 900,
+            truncatedLists: false,
+          },
+        },
+      },
+    },
+    { status: 200, headers },
+  );
+}
+
 function success(
   headers: Readonly<Record<string, string>> = {},
 ): Response {
@@ -228,6 +274,7 @@ describe("handleAgentAuditRequest", () => {
           scannedAt: upstreamPayload.result.scannedAt,
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+          targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
@@ -288,6 +335,7 @@ describe("handleAgentAuditRequest", () => {
       scannedAt: upstreamPayload.result.scannedAt,
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+      targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
@@ -622,5 +670,113 @@ describe("handleAgentAuditRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "audit_response_invalid" },
     });
+  });
+  /**
+   * The gate the contract calls unskippable: six wiring steps sit between the
+   * upstream payload and the client, and a break in any one of them leaves the
+   * unit tests green while the browser never sees a keyword region.
+   */
+  it("delivers the keyword region to the client end to end", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"], "tool"),
+      "seo",
+      dependencies({ delegate: vi.fn(async () => successWithExtract()) }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          targetPageExtract: { title: string } | null;
+          keywordEvidence?: {
+            availability: string;
+            pageRole: string | null;
+            queries: readonly {
+              displayQuery: string;
+              slots: { title: { state: string } };
+            }[];
+          };
+        };
+      };
+    };
+
+    expect(body.data.result.targetPageExtract?.title).toBe(
+      "Acme birth chart calculator",
+    );
+    const evidence = body.data.result.keywordEvidence;
+    expect(evidence?.availability).toBe("available");
+    expect(evidence?.pageRole).toBe("tool");
+    expect(evidence?.queries[0]?.displayQuery).toBe("birth chart");
+    expect(evidence?.queries[0]?.slots.title.state).toBe("covered");
+  });
+
+  it("answers two callers asking about the same page with their own queries", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+
+    const first = (await (
+      await handleAgentAuditRequest(
+        keywordRequest(["birth chart"]),
+        "seo",
+        dependencies({ delegate }),
+      )
+    ).json()) as { data: { result: { keywordEvidence?: { queries: readonly { displayQuery: string }[] } } } };
+    const second = (await (
+      await handleAgentAuditRequest(
+        keywordRequest(["horoscope"]),
+        "seo",
+        dependencies({ delegate }),
+      )
+    ).json()) as { data: { result: { keywordEvidence?: { queries: readonly { displayQuery: string }[] } } } };
+
+    expect(first.data.result.keywordEvidence?.queries[0]?.displayQuery).toBe(
+      "birth chart",
+    );
+    expect(second.data.result.keywordEvidence?.queries[0]?.displayQuery).toBe(
+      "horoscope",
+    );
+  });
+
+  it("omits the region entirely when no queries were submitted", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ delegate: vi.fn(async () => successWithExtract()) }),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+    expect("keywordEvidence" in body.data.result).toBe(false);
+  });
+
+  it("reports the region unavailable rather than zero when the page was not captured", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"]),
+      "seo",
+      dependencies({ delegate: vi.fn(async () => success()) }),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: { keywordEvidence?: { availability: string; reason?: string } } };
+    };
+    expect(body.data.result.keywordEvidence?.availability).toBe("unavailable");
+    expect(body.data.result.keywordEvidence?.reason).toBe(
+      "target_page_not_captured",
+    );
+  });
+
+  it("rejects a sixth query before delegating anything", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["a", "b", "c", "d", "e", "f"]),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(delegate).not.toHaveBeenCalled();
   });
 });

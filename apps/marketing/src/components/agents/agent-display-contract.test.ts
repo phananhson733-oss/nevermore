@@ -26,6 +26,7 @@ function data(): AgentAuditSuccessData {
       scannedAt: "2026-08-12T00:00:00.000Z",
       targetInspected: true,
       inspectedTargetUrl: "https://acme.test/",
+      targetPageExtract: null,
       coverage: {
         availability: "available",
         pagesInspected: 1,

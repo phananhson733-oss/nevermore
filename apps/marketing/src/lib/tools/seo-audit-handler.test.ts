@@ -395,6 +395,71 @@ describe("handleSeoAuditRequest", () => {
     expect(scan).not.toHaveBeenCalled();
   });
 
+  it("accepts the keyword layer's optional fields", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({ scan });
+
+    const response = await handleSeoAuditRequest(
+      request({
+        url: "acme.test",
+        targetQueries: ["birth chart"],
+        pageRole: "homepage",
+      }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("still rejects a field outside the allowed set", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({ scan });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test", targetQueries: ["chart"], persist: true }),
+      deps,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it("rejects the whole request past the query limit instead of truncating", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({ scan });
+
+    const response = await handleSeoAuditRequest(
+      request({
+        url: "acme.test",
+        targetQueries: ["a", "b", "c", "d", "e", "f"],
+      }),
+      deps,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown page role", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({ scan });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test", pageRole: "article" }),
+      deps,
+    );
+
+    expect(response.status).toBe(400);
+    expect(scan).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown input fields before scanning", async () => {
     const scan = vi.fn(async () => raw);
     const deps = dependencies({ scan });

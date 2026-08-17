@@ -178,6 +178,7 @@ function auditData({
       scannedAt: "2026-08-13T00:00:00.000Z",
       targetInspected,
       inspectedTargetUrl: inspectedTargetUrl ?? (targetInspected ? TARGET_URL : null),
+      targetPageExtract: null,
       coverage: {
         availability,
         pagesInspected: availability === "unavailable" ? 0 : 24,

@@ -15,6 +15,7 @@ import {
 } from "@sf/public-tools/seo-audit/contract";
 import { extractClientIp } from "../rate-limit.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
+import { readSeoAuditInput } from "./seo-audit-input.ts";
 import {
   openCrawlGate,
   type CrawlGateResult,
@@ -162,24 +163,6 @@ const SCAN_ERROR_STATUS: Readonly<Record<string, number>> = {
   scan_failed: 502,
 };
 
-function inputUrl(
-  body: unknown,
-): { readonly ok: true; readonly value: unknown } | { readonly ok: false } {
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    Array.isArray(body) ||
-    Object.keys(body).length !== 1 ||
-    !Object.hasOwn(body, "url")
-  ) {
-    return { ok: false };
-  }
-  return {
-    ok: true,
-    value: (body as { readonly url?: unknown }).url,
-  };
-}
-
 /** A cache row is reusable only when both its payload and provenance are current. */
 function cachedSeoAuditMatches(
   cached: { readonly payload: unknown; readonly capturedAt: string },
@@ -208,11 +191,11 @@ export async function handleSeoAuditRequest(
     return json(createPublicToolError(body.code), status);
   }
 
-  const input = inputUrl(body.value);
+  const input = readSeoAuditInput(body.value);
   if (!input.ok) {
     return json(createPublicToolError("invalid_request"), 400);
   }
-  const normalized = dependencies.normalizeUrl(input.value);
+  const normalized = dependencies.normalizeUrl(input.value.url);
   if (!normalized.ok) {
     return json(createPublicToolError(normalized.code), 400);
   }
@@ -220,10 +203,7 @@ export async function handleSeoAuditRequest(
   const ip = dependencies.extractClientIp(request.headers);
   const gate = await dependencies.openGate(ip, normalized.url);
   if (!gate.ok) return gate.response;
-  if (
-    gate.kind === "cached" &&
-    cachedSeoAuditMatches(gate, normalized.url)
-  ) {
+  if (gate.kind === "cached" && cachedSeoAuditMatches(gate, normalized.url)) {
     gate.release();
     // The payload carries the timestamp of the crawl that produced it, which
     // both tools render, so a cached answer never reads as a fresh one.
