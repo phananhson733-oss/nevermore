@@ -126,7 +126,7 @@ create table public.credit_ledger (
   balance_permanent_after integer not null check (balance_permanent_after >= 0),
   tool_slug        text check (char_length(tool_slug) <= 64),
   idempotency_key  text not null unique check (char_length(idempotency_key) <= 128),
-  metadata         jsonb not null default '{}'::jsonb check (pg_column_size(metadata) <= 4096),
+  metadata         jsonb not null default '{}'::jsonb,   -- 大小上限在 RPC 内校验（CHECK 不接受非 immutable 函数）
   created_at       timestamptz not null default now(),
   check (amount = daily_delta + permanent_delta),
   check (case entry_type
@@ -148,7 +148,10 @@ create table public.credit_settings (
   consumption_paused boolean not null default false,
   daily_amount integer not null default 20,
   welfare_accrual_cap integer not null default 600,
-  referral_daily_cap integer not null default 200,   -- 全局计奖熔断阈值，RPC 自读
+  referral_daily_cap integer not null default 200,     -- 全局计奖熔断阈值
+  signup_bonus integer not null default 100,
+  referral_reward integer not null default 50,
+  referral_inviter_cap integer not null default 20,
   updated_at timestamptz not null default now()
 );
 -- migration 内 INSERT 单例种子行；所有 RPC 读不到该行时 RAISE（fail-closed），绝不回退默认值
@@ -290,9 +293,9 @@ create table public.credit_webhook_events (
 ### 5.3 邀请
 
 - 每账户固定 ≤16 位小写 base32 邀请码（去易混淆字符），建户时生成，冲突重试。
-- 链接 `gengrowth.ai/r/{code}`：302 到首页 + 落 `gg_ref` cookie（**HttpOnly、Secure、SameSite=Lax、Domain=注册域（同 session cookie，覆盖 apex/www）、30 天、last-touch**；无效/自己的码不落 cookie）。`/r` 路由加进 `proxy.ts` 排除清单（§1）。
+- 链接 `gengrowth.ai/r/{code}`：302 到首页 + 落 `gg_ref` cookie（**HttpOnly、Secure、SameSite=Lax、host-only（不设 Domain）、Path=/、30 天、last-touch**；格式不合法的码不落 cookie）。**host-only 是刻意选择**：`sealed-cookie.ts` 明确拒绝 domain 级 cookie（"a domain-wide cookie would hand the SaaS app's XSS blast radius to the marketing site and back"），而邀请落地页与 One Tap 登录都发生在营销站同一 host，跨 apex/www 的丢失属于已声明的 best-effort 范围。`/r/` 加进 `proxy.ts` 的排除分支，`r` 与 `account` 加进 `reservedRootPaths`（§1）。
 - 归因：`ensure_account` 时读 cookie，校验码存在且非本人，写 `referred_by` 并清 cookie。账户已存在且 `referred_by` 为空时不补归因（一次性，防事后改绑）。归因是 **best-effort**：跨域名跳转、OAuth 中转或用户清 cookie 导致的丢失可接受，不做补偿链路。
-- **计奖门槛：被邀请人完成首次"合格工具运行"**——quick-wins / traffic-drop / keyword stage 2 / agent audit / profile-refresh 的登录态成功运行（这些都要求连接真实 Search Console 或爬取真实站点，抬高刷量成本）；profile-search 不合格（太廉价）。上报机制：每次合格成功运行都调 `reward_referral`（RPC 内部以 `first_tool_run_at IS NULL` 判首次，否则 no-op）——上报失败不影响工具响应，下次成功运行自动重试，**自愈**。
+- **计奖门槛：被邀请人完成首次"合格工具运行"**——quick-wins / traffic-drop / keyword stage 2 / agent audit / profile-refresh 的登录态成功运行（这些都要求连接真实 Search Console 或爬取真实站点，抬高刷量成本）；profile-search 不合格（太廉价）。**爬虫缓存命中同样算合格**（agent audit 的 cache hit、profile-refresh 的 cached 分支）：对攻击者而言命中与否成本相同（都只需一个 URL），把命中排除只会让正常用户的资格取决于别人刚才爬没爬过，不可预期。上报机制：每次合格成功运行都调 `reward_referral`（RPC 内部以 `first_tool_run_at IS NULL` 判首次，否则 no-op）——上报失败不影响工具响应，下次成功运行自动重试，**自愈**。
 - 双边各 +50（永久池）；邀请方累计 20 次计奖封顶（原子占位，见 §3 RPC 表）；达顶后被邀方仍得 +50。
 - **防滥用分层**（codex P1-11/20 的 v1 回应）：①个体上限（签到 600 封顶 / 邀请 20 次封顶 / 注册奖一次）；②**全局熔断（DB 原子）**：每 UTC 日全平台计奖邀请数上限（初始 200），在 `credits_reward_referral` 事务内经 `credit_daily_counters` 原子占位强制——多实例并发不可能越界（阈值同时进 `credits-config.ts` 供 UI/告警引用）；③监控：邀请双方同 IP、同设备簇记结构化日志，另对**每日注册奖发放总量**设告警阈值（发放不设硬顶，避免误伤正常增长，但异常增速必须可见）；④`credit_accounts.status='frozen'` 冻结开关：冻结账户不发放、不消耗、不计奖；⑤Phase 2 开闸前对存量余额跑刷量审计（§1）。v1 明确不做：设备指纹、支付验证门槛、注册硬顶。剩余风险的定价（显式接受）：Sybil 团伙的注册奖+签到负债在绝对值上无上界，但福利期积分在 live 前无消耗价值，开闸审计 + 冻结清退（`adjustment` + 治理流程）是最终兜底。
 
@@ -302,7 +305,7 @@ create table public.credit_webhook_events (
 
 ## 6. 定价常量（单一真源 + 防漂移测试）
 
-**双真源边界（明确声明）**：运行时行为的权威是 `credit_settings`（mode / consumption_paused / daily_amount / welfare_accrual_cap / referral_daily_cap），RPC 只读 DB；`apps/marketing/src/lib/credits/credits-config.ts` 是**接线层与 UI 的真源**（工具价、可退款终态码、注册奖、邀请数额与个体封顶、匿名试用次数、balance 限频、积分包）**兼 `credit_settings` 的种子值记录**。§11 增加一致性 pin 测试：config 中的种子值与 0004 migration 的 DEFAULT 逐项相等，防两处漂移。UI 展示层复制品同样用测试 pin 回 config（oracle 价格一致性测试思路）。
+**双真源边界（明确声明）**：运行时行为与**全部经济数额**的权威是 `credit_settings`（mode / consumption_paused / daily_amount / welfare_accrual_cap / referral_daily_cap / signup_bonus / referral_reward / referral_inviter_cap），RPC 只读 DB、应用层不传任何金额（滚动发布期间两个实例不可能发出不同数额）；`apps/marketing/src/lib/credits/credits-config.ts` 是**接线层与 UI 的真源**（工具价、可退款终态码、注册奖、邀请数额与个体封顶、匿名试用次数、balance 限频、积分包）**兼 `credit_settings` 的种子值记录**。§11 增加一致性 pin 测试：config 中的种子值与 0004 migration 的 DEFAULT 逐项相等，防两处漂移。UI 展示层复制品同样用测试 pin 回 config（oracle 价格一致性测试思路）。
 
 零售锚定：**1 积分 ≈ $0.01**。
 
@@ -376,7 +379,7 @@ env（名称沿用 oracle）：`AIRWALLEX_CLIENT_ID` / `AIRWALLEX_API_KEY` / `AI
 ## 11. 测试策略
 
 - **单元（vitest）**：服务层准入/发放/退款/幂等分支、每工具可退款终态映射、credits-config 与 UI 展示一致性、**credits-config 种子值与 0004 DEFAULT 一致性 pin**、`/r/[code]` 归因与 cookie 语义。
-- **SQL 集成（disposable PostgreSQL，沿用仓库 `signalframe_ci*` 纪律）**（codex P1-27）：把 0004+（及后续期次）migration 实际应用到一次性库，多连接并发回归：同 runId 双 consume 只扣一次、双 refund 只退一次、**settle vs refund vs 清扫 cron 三方竞争恰好一个终态**、跨日退款 daily 部分作废、touch/refund 乱序结果确定、**mode 切换/紧急暂停并发于 consume 时无双模窗口**、20 邀请封顶并发不越界、全局计奖熔断并发不越界、welfare 封顶并发不超发、webhook 双投只结算一次、settings 行缺失时全部 RPC fail-closed；最后**用 ledger 重放校验快照余额一致**。
+- **SQL 集成（disposable PostgreSQL，沿用仓库 `signalframe_ci*` 纪律）**（codex P1-27）：营销站此前**没有任何** SQL 会被测试（`packages/db` 的 integration setup 只跑产品迁移），因此需要新增一个 vitest project `marketing-sql` + 独立 setup（建 `service_role`/`anon`/`authenticated` 角色、重建 public schema、按序应用 `apps/marketing/supabase/migrations/*.sql`），由 `MARKETING_TEST_DATABASE_URL` 指向 loopback 上的一次性库。把 0004+（及后续期次）migration 实际应用到该库，多连接并发回归：同 runId 双 consume 只扣一次、双 refund 只退一次、**settle vs refund vs 清扫 cron 三方竞争恰好一个终态**、跨日退款 daily 部分作废、touch/refund 乱序结果确定、**mode 切换/紧急暂停并发于 consume 时无双模窗口**、20 邀请封顶并发不越界、全局计奖熔断并发不越界、welfare 封顶并发不超发、webhook 双投只结算一次、settings 行缺失时全部 RPC fail-closed；最后**用 ledger 重放校验快照余额一致**。
 - **mock e2e**：登录 → 徽章 → 签到入账 → 流水 → 邀请链接归因 →（Phase 2）扣费/不足弹窗/失败退款。
 - **支付 e2e 边界**：只能测到 HPP 跳转前；Phase 3 开闸门见 §1。
 - 时序敏感用例不靠重跑（仓库既有纪律）。
