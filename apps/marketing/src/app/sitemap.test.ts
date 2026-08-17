@@ -33,6 +33,22 @@ vi.mock("../config/sitemap-tools", () => ({
 }));
 
 describe("canonical marketing sitemap", () => {
+  /**
+   * `/agents/tech` keeps serving and keeps its URL, but it is canonical to
+   * `/agents/seo`. Advertising it here would ask for crawl budget on a page
+   * whose own markup says not to index it, on a site that sells finding
+   * exactly that mistake.
+   */
+  it("leaves the consolidated Tech Agent route out", async () => {
+    const { default: sitemap } = await import("./sitemap");
+    const urls = (await sitemap()).map((entry) => entry.url);
+
+    expect(urls).toContain("https://gengrowth.ai/agents/seo");
+    expect(urls).toContain("https://gengrowth.ai/zh/agents/seo");
+    expect(urls).not.toContain("https://gengrowth.ai/agents/tech");
+    expect(urls).not.toContain("https://gengrowth.ai/zh/agents/tech");
+  });
+
   it("keeps legacy /en URLs out of the normal sitemap", async () => {
     const { default: sitemap } = await import("./sitemap");
     const entries = await sitemap();
