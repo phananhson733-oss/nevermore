@@ -36,6 +36,7 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",
+    "test:sql:marketing": "vitest run --project marketing-sql",
     "test:coverage": "vitest run --coverage",
     "coverage:unit-gaps": "node scripts/report-unit-coverage-gaps.mjs",
     "test:e2e": "pnpm test:e2e:real && pnpm test:e2e:mock",
