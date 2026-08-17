@@ -192,7 +192,9 @@ describe("AgentProfileSearch", () => {
     });
 
     const results = host.querySelector('[data-profile-search-results="available"]');
-    expect(results?.textContent).toContain(COPY.organicBoundary);
+    // The boundary is stated once in the panel description, not repeated
+    // over every result block.
+    expect(results?.textContent).not.toContain(COPY.organicBoundary);
     expect(results?.textContent).toContain("rival.com");
     expect(results?.textContent).toContain("12");
     expect(results?.textContent).toContain("4.5");
@@ -440,7 +442,9 @@ describe("AgentProfileSearch", () => {
     render({ data: SERP_DATA });
 
     const results = host.querySelector('[data-profile-search-results="available"]');
-    expect(results?.textContent).toContain(COPY.serpBoundary);
+    // The boundary is stated once in the panel description, not repeated
+    // over every result block.
+    expect(results?.textContent).not.toContain(COPY.serpBoundary);
     expect(results?.textContent).toContain("rival.cn");
     expect(results?.textContent).toContain("2");
     expect(results?.textContent).not.toContain(COPY.intersectionsLabel);
@@ -479,7 +483,9 @@ describe("AgentProfileSearch", () => {
     const candidate = host.querySelector(
       '[data-profile-competitor-candidate="seed-rival.com"]',
     );
-    expect(results?.textContent).toContain(COPY.seedSerpBoundary);
+    // The boundary is stated once in the panel description, not repeated
+    // over every result block.
+    expect(results?.textContent).not.toContain(COPY.seedSerpBoundary);
     expect(results?.textContent).toContain(COPY.seedSerpEvidenceLabel);
     expect(results?.textContent).toContain(COPY.seedSerpObservedLabel);
     expect(results?.textContent).toContain(COPY.suggestedIndirectLabel);

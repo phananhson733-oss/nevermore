@@ -1706,9 +1706,15 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       (document.querySelector('[aria-label="fields.primaryIcp"]') as HTMLInputElement)
         .value,
     ).toBe("未知——请确认主要受众。");
+    // The card heading now says the outcome is unconfirmed, so the draft's
+    // language is asserted on the field itself.
     expect(
-      document.querySelector('[data-profile-card="context"]')?.textContent,
-    ).toContain("确认首个技术可靠性目标。");
+      (
+        document.querySelector(
+          '[aria-label="fields.firstOutcome"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("确认首个技术可靠性目标。");
   });
 
   it("consumes a homepage preparation intent into Stage 01 without probing or posting", async () => {

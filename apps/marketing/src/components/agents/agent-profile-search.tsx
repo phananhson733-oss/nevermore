@@ -211,10 +211,6 @@ export function AgentProfileSearch({
     >
       <div className="grid min-w-0 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:p-5">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 font-mono text-[8.5px] tracking-[0.1em] text-brand-accent-text uppercase">
-            <DatabaseZap aria-hidden="true" className="size-3" />
-            {copy.eyebrow}
-          </p>
           <h4
             id={titleId}
             className="mt-2 text-[14px] font-semibold text-text-dark-primary"
@@ -282,9 +278,6 @@ export function AgentProfileSearch({
         ) : data?.availability === "available" ? (
           <div data-profile-search-results="available" className="min-w-0">
             <div className="flex min-w-0 flex-col gap-2.5 border-b border-brand-border-faint pb-3 sm:flex-row sm:items-start sm:justify-between">
-              <p className="min-w-0 text-[10.5px] leading-[1.5] text-brand-warning">
-                {boundary}
-              </p>
               <p className="shrink-0 font-mono text-[8.5px] tracking-[0.05em] text-text-dark-faint">
                 {data.targetHost} · {data.market.code}
               </p>
