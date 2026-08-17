@@ -24,9 +24,20 @@ const migrationPath = fileURLToPath(
 
 describe("credits-config", () => {
   it("prices every tool the credits system knows about", () => {
-    expect(Object.keys(CREDIT_TOOL_PRICES).sort()).toEqual(
-      [...QUALIFYING_TOOLS, "profile-search"].sort(),
-    );
+    // The price table covers every tool Phase 2 will charge for. The
+    // qualifying list is a strict subset of it: a tool can cost credits
+    // without being able to earn a referral.
+    expect(Object.keys(CREDIT_TOOL_PRICES).sort()).toEqual([
+      "agent-audit",
+      "keyword-opportunities",
+      "profile-refresh",
+      "profile-search",
+      "quick-wins",
+      "traffic-drop",
+    ]);
+    for (const tool of QUALIFYING_TOOLS) {
+      expect(CREDIT_TOOL_PRICES).toHaveProperty(tool);
+    }
     expect(CREDIT_TOOL_PRICES["keyword-opportunities"]).toBe(25);
     expect(CREDIT_TOOL_PRICES["agent-audit"]).toBe(10);
     expect(CREDIT_TOOL_PRICES["quick-wins"]).toBe(5);
@@ -35,8 +46,14 @@ describe("credits-config", () => {
     expect(CREDIT_TOOL_PRICES["profile-search"]).toBe(2);
   });
 
-  it("excludes profile-search from the qualifying run list", () => {
-    expect(QUALIFYING_TOOLS).not.toContain("profile-search");
+  /**
+   * The Search Console tools admit on the sealed gg_id Google cookie while the
+   * ledger keys on the Supabase user id, so a run there proves nothing about
+   * the account being credited. profile-search is out for a simpler reason:
+   * one DataForSEO call is not work.
+   */
+  it("qualifies only the tools the Supabase session admits", () => {
+    expect([...QUALIFYING_TOOLS]).toEqual(["agent-audit", "profile-refresh"]);
   });
 
   /**

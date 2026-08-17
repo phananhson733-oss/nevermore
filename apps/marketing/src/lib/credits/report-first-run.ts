@@ -1,6 +1,6 @@
 // @input  -- the slug of a tool run that just succeeded, inside a request scope
 // @output -- nothing; the referral reward is claimed after the response is sent
-// @pos    -- the single side effect the tool handlers gained in the welfare phase
+// @pos    -- the single side effect the two Agent handlers gained
 
 import { after } from "next/server";
 
@@ -36,10 +36,10 @@ export const DEFAULT_FIRST_RUN_DEPENDENCIES: FirstRunReporterDependencies = {
  *
  * Two properties this function must never lose:
  *
- * 1. It cannot throw. Four of the five call sites sit inside a try whose catch
- *    turns any throw into an error envelope, and agents/audit-handler.ts has no
- *    catch at all, so a throw there becomes a 500. A credit is worth strictly
- *    less than the run the visitor already waited for.
+ * 1. It cannot throw. agents/audit-handler.ts returns its success outside any
+ *    try/catch, so a throw there becomes a 500 on a run that already produced
+ *    its evidence, and profile-refresh would turn one into an error envelope.
+ *    A credit is worth strictly less than the work the visitor waited for.
  *
  * 2. It cannot await. The handlers release their in-flight gate slot in a
  *    finally that runs after the success expression is evaluated, so awaiting

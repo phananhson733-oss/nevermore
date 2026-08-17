@@ -13,8 +13,6 @@ import {
   type TrafficQueryEvidence,
 } from "@sf/public-tools";
 import type { GrantResolution } from "../auth/grant-cookie.ts";
-import type { QualifyingTool } from "../credits/credits-config.ts";
-import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import {
   openGscGate,
   refuseWithoutGrant,
@@ -108,15 +106,6 @@ export interface TrafficDropHandlerDependencies {
    * branches without a quota store.
    */
   readonly openGate: (clientIp: string) => Promise<GscGateResult>;
-  /**
-   * Records that a run completed, so a referred visitor's first qualifying run
-   * can pay its reward.
-   *
-   * Optional and never awaited: the reporter defers its own work past the
-   * response, and a run that produced a diagnosis must not fail because a
-   * credit could not be recorded.
-   */
-  readonly reportFirstRun?: (tool: QualifyingTool) => void;
 }
 
 function json(
@@ -332,7 +321,6 @@ export async function handleTrafficDropRequest(
         ? firstPass
         : buildTrafficDropReport({ ...base, queryEvidence });
 
-    dependencies.reportFirstRun?.("traffic-drop");
     return json({ data: { ...envelope, series: daily } }, 200);
   } catch {
     // Never substitute an estimate for data we could not read.
@@ -364,7 +352,7 @@ async function readQueryEvidenceSoftly(
 
 export const DEFAULT_TRAFFIC_DROP_DEPENDENCIES: Pick<
   TrafficDropHandlerDependencies,
-  "readSession" | "resolveGrant" | "now" | "openGate" | "reportFirstRun"
+  "readSession" | "resolveGrant" | "now" | "openGate"
 > = {
   // The route builds its own readers so the access token stays in the request
   // scope; these defaults carry everything that does not depend on it.
@@ -372,5 +360,4 @@ export const DEFAULT_TRAFFIC_DROP_DEPENDENCIES: Pick<
   resolveGrant: resolveTrafficDropGrant,
   now: () => new Date(),
   openGate: (clientIp) => openGscGate(clientIp),
-  reportFirstRun: reportFirstToolRun,
 };

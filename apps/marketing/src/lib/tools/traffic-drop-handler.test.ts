@@ -184,33 +184,6 @@ describe("handleTrafficDropRequest", () => {
     expect(body.error.code).toBe("no_gsc_data");
   });
 
-  /**
-   * The one place in this set where a successful-looking response is not a
-   * successful run: an empty series answers 200 carrying an error envelope.
-   * Anchoring the report on the status code instead of the return site would
-   * pay a referral for a diagnosis that was never produced.
-   */
-  it("does not report a run for the no_gsc_data envelope", async () => {
-    const reportFirstRun = vi.fn();
-    const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY, ...ANSWERED }),
-      deps({ readDailySeries: () => Promise.resolve([]), reportFirstRun }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(reportFirstRun).not.toHaveBeenCalled();
-  });
-
-  it("reports a run once the diagnosis is produced", async () => {
-    const reportFirstRun = vi.fn();
-    await handleTrafficDropRequest(
-      request({ property: PROPERTY, ...ANSWERED }),
-      deps({ reportFirstRun }),
-    );
-
-    expect(reportFirstRun).toHaveBeenCalledExactlyOnceWith("traffic-drop");
-  });
-
   it("rejects a body that does not name a property", async () => {
     const response = await handleTrafficDropRequest(
       request({ site: PROPERTY }),

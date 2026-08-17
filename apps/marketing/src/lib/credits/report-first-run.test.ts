@@ -54,7 +54,7 @@ afterEach(() => {
 describe("reportFirstToolRun", () => {
   it("returns synchronously, so the caller never awaits it", () => {
     const { schedule } = collectTask();
-    expect(reportFirstToolRun("quick-wins", deps({ schedule }))).toBeUndefined();
+    expect(reportFirstToolRun("agent-audit", deps({ schedule }))).toBeUndefined();
   });
 
   it("claims the referral for the signed-in visitor", async () => {
@@ -77,7 +77,7 @@ describe("reportFirstToolRun", () => {
     const collected = collectTask();
     const readUser = vi.fn();
     reportFirstToolRun(
-      "quick-wins",
+      "agent-audit",
       deps({ schedule: collected.schedule, readUser, enabled: () => false }),
     );
     await collected.run();
@@ -90,7 +90,7 @@ describe("reportFirstToolRun", () => {
       const collected = collectTask();
       const reward = vi.fn();
       reportFirstToolRun(
-        "traffic-drop",
+        "profile-refresh",
         deps({
           schedule: collected.schedule,
           readUser: async () => ({ status }),
@@ -103,16 +103,15 @@ describe("reportFirstToolRun", () => {
   );
 
   /**
-   * Four of the five call sites sit inside a try whose catch turns any throw
-   * into an error envelope, and agents/audit-handler.ts has no catch at all — a
-   * throw there turns a completed audit into a 500. A credit is worth strictly
-   * less than the run the visitor already waited for.
+   * agents/audit-handler.ts returns its success outside any try/catch, so a
+   * throw here becomes a 500 on a run that already produced its evidence. A
+   * credit is worth strictly less than the work the visitor waited for.
    */
   it("swallows a scheduler that throws", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(() =>
       reportFirstToolRun(
-        "quick-wins",
+        "agent-audit",
         deps({
           schedule: () => {
             throw new Error("after() outside a request scope");
@@ -147,7 +146,7 @@ describe("reportFirstToolRun", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collected = collectTask();
     reportFirstToolRun(
-      "keyword-opportunities",
+      "agent-audit",
       deps({
         schedule: collected.schedule,
         readUser: async () => {

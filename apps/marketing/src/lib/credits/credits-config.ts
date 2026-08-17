@@ -49,16 +49,19 @@ export const CREDIT_TOOL_PRICES: Readonly<Record<CreditToolSlug, number>> = {
 /**
  * A referral is earned by finishing one of these, not by signing up.
  *
- * Each one needs either a connected Search Console property or a real site to
- * crawl, and that friction is what makes farming cost something. profile-search
- * is a single DataForSEO call with no such requirement, so it is excluded.
+ * Only tools whose ADMISSION is the Supabase session are listed. The three
+ * Search Console tools authorize against the sealed `gg_id` Google cookie
+ * instead, so the identity that did the work and the identity that would be
+ * credited are different things with nothing binding them: one Google account
+ * could qualify an unlimited number of Supabase accounts. Rather than bridge
+ * the two, they are excluded until Phase 2 puts them behind the same Supabase
+ * login (design §1 Phase 2), at which point the binding is free.
+ *
+ * profile-search stays out on its own merits: one DataForSEO call is not work.
  */
 export const QUALIFYING_TOOLS = [
-  "keyword-opportunities",
   "agent-audit",
-  "quick-wins",
   "profile-refresh",
-  "traffic-drop",
 ] as const satisfies ReadonlyArray<CreditToolSlug>;
 
 export type QualifyingTool = (typeof QUALIFYING_TOOLS)[number];

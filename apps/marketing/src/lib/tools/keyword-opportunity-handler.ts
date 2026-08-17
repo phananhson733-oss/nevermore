@@ -43,8 +43,6 @@ import {
 } from "./keyword-llm-client.ts";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
-import type { QualifyingTool } from "../credits/credits-config.ts";
-import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
 import {
   openGscGate,
@@ -331,16 +329,6 @@ export interface KeywordOpportunityDependencies {
   readonly costs: KeywordCostAccumulator;
   readonly now: () => Date;
   readonly extractClientIp: (headers: Headers) => string;
-  /**
-   * Records that a stage-two run completed, so a referred visitor's first
-   * qualifying run can pay its reward.
-   *
-   * Optional and never awaited, alongside the cost report just above it: a run
-   * that produced opportunities must not fail because a credit could not be
-   * recorded. Stage one is deliberately not reported — it spends nothing at a
-   * provider and would make the reward free to farm.
-   */
-  readonly reportFirstRun?: (tool: QualifyingTool) => void;
 }
 
 function json(
@@ -915,7 +903,6 @@ export async function handleKeywordOpportunitiesRequest(
       llm: dependencies.llmUsage?.(),
     });
 
-    dependencies.reportFirstRun?.("keyword-opportunities");
     return json({ data: payload }, 200);
   } catch (error) {
     if (error instanceof KeywordLlmError) {
@@ -956,7 +943,6 @@ export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
   | "openGscGate"
   | "consumeDailyBudget"
   | "now"
-  | "reportFirstRun"
 > = {
   readIdentity: async () => {
     const sub = identitySubFrom((await cookies()).get("gg_id")?.value);
@@ -967,5 +953,4 @@ export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
   openGscGate: (clientIp) => openGscGate(clientIp),
   consumeDailyBudget: () => consumeKeywordDailyBudget(),
   now: () => new Date(),
-  reportFirstRun: reportFirstToolRun,
 };

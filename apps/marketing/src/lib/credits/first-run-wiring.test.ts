@@ -1,4 +1,4 @@
-// @input  -- the five tool handlers' default dependency objects
+// @input  -- the Agent handlers' default dependency objects
 // @output -- assertions that production actually reports a qualifying run
 // @pos    -- covers the one seam no handler test can see
 
@@ -6,9 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_DEPENDENCIES as DEFAULT_AUDIT_DEPENDENCIES } from "../agents/audit-handler.ts";
 import { DEFAULT_DEPENDENCIES as DEFAULT_PROFILE_REFRESH_DEPENDENCIES } from "../agents/profile-refresh-handler.ts";
-import { DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES } from "../tools/keyword-opportunity-handler.ts";
-import { DEFAULT_QUICK_WINS_DEPENDENCIES } from "../tools/quick-wins-handler.ts";
-import { DEFAULT_TRAFFIC_DROP_DEPENDENCIES } from "../tools/traffic-drop-handler.ts";
+import { QUALIFYING_TOOLS } from "./credits-config.ts";
 import { reportFirstToolRun } from "./report-first-run.ts";
 
 /**
@@ -23,12 +21,18 @@ import { reportFirstToolRun } from "./report-first-run.ts";
  */
 describe("first-run reporting is wired into production", () => {
   it.each([
-    ["quick-wins", DEFAULT_QUICK_WINS_DEPENDENCIES],
-    ["traffic-drop", DEFAULT_TRAFFIC_DROP_DEPENDENCIES],
-    ["keyword-opportunities", DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES],
     ["agent-audit", DEFAULT_AUDIT_DEPENDENCIES],
     ["profile-refresh", DEFAULT_PROFILE_REFRESH_DEPENDENCIES],
   ])("%s carries the real reporter", (_name, dependencies) => {
     expect(dependencies.reportFirstRun).toBe(reportFirstToolRun);
+  });
+
+  /**
+   * The Search Console tools admit on the sealed gg_id cookie, not on the
+   * Supabase session the ledger keys on. Listing one here would credit an
+   * identity that did not do the work.
+   */
+  it("qualifies only tools the Supabase session admits", () => {
+    expect([...QUALIFYING_TOOLS]).toEqual(["agent-audit", "profile-refresh"]);
   });
 });

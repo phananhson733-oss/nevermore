@@ -630,22 +630,6 @@ describe("handleKeywordContextRequest", () => {
     ).toEqual([["見出し"]]);
   });
 
-  /**
-   * Stage one crawls the visitor's own site and spends nothing at a provider.
-   * Rewarding it would make the referral free to farm with any URL, so the
-   * qualifying run is stage two and only stage two.
-   */
-  it("does not report a run for a stage-one context crawl", async () => {
-    const reportFirstRun = vi.fn();
-    const response = await handleKeywordContextRequest(
-      request(CONTEXT_BODY),
-      deps({ reportFirstRun }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(reportFirstRun).not.toHaveBeenCalled();
-  });
-
   it("returns the crawl summary sealed to the identity that asked for it", async () => {
     const response = await handleKeywordContextRequest(
       request(CONTEXT_BODY),
@@ -846,19 +830,6 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
 
     expect(response.status).toBe(200);
-  });
-
-  it("reports the run once opportunities are returned", async () => {
-    const reportFirstRun = vi.fn();
-    const response = await handleKeywordOpportunitiesRequest(
-      body(),
-      deps({ reportFirstRun }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(reportFirstRun).toHaveBeenCalledExactlyOnceWith(
-      "keyword-opportunities",
-    );
   });
 
   it("refuses a valid token that was issued to somebody else", async () => {
