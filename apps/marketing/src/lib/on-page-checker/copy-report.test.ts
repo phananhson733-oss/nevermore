@@ -141,6 +141,30 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("## Coverage");
   });
 
+  it("keeps a pipe in a query from splitting the table row it sits in", () => {
+    // A code span does not protect a cell: GFM splits on the pipe first, so
+    // `plan | tier` becomes two cells and every later column shifts.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: evidenceFor(["plan | tier"]),
+      limitationText,
+    });
+
+    const header = text
+      .split("\n")
+      .find((line) => line.startsWith("| Query |"));
+    const row = text
+      .split("\n")
+      .find((line) => line.startsWith("|") && line.includes("plan"));
+    const cells = (line: string) =>
+      line.split(/(?<!\\)\|/).length;
+    expect(header).toBeDefined();
+    expect(row).toBeDefined();
+    expect(cells(row ?? "")).toBe(cells(header ?? ""));
+  });
+
   it("quotes page-sourced text so it cannot reformat the report", () => {
     const text = buildCopyReport({
       targetUrl: "https://example.com/a|b",
@@ -175,6 +199,62 @@ describe("buildCopyReport", () => {
     expect(text).toContain("## What was measured");
     expect(text).toContain("## Limitations");
   });
+
+  it("holds the budget even when the fixed sections alone exceed it", () => {
+    // Translation grows these sentences. The bound is a promise to whoever
+    // pastes this somewhere with a limit, so it holds with no table at all.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: evidenceFor(["pricing"]),
+      limitationText: {
+        ...limitationText,
+        density_basis_captured_text_only: "x".repeat(COPY_REPORT_MAX_CHARS * 2),
+      },
+    });
+
+    expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
+    expect(text).toContain("Report truncated to fit.");
+  });
+
+  /**
+   * Across the whole range where translated sentences crowd out the table, the
+   * report never exceeds the budget and never cuts anything silently. Asserting
+   * one magic filler size would only prove the branch that size happens to hit;
+   * five rows of at most eighty characters cannot blow a 16K budget on their
+   * own, so the interesting cases all live in this range.
+   */
+  it.each([0, 8_000, 14_000, 15_000, 15_400, 16_000, 40_000])(
+    "stays within the budget and says when it cut something (filler %i)",
+    (filler) => {
+      const long = "x".repeat(78);
+      const text = buildCopyReport({
+        targetUrl: extract.url,
+        scannedAt: "2026-08-17T12:00:00.000Z",
+        cacheStatus: "miss",
+        evidence: evidenceFor([`${long}a`, `${long}b`, `${long}c`]),
+        limitationText: {
+          ...limitationText,
+          density_basis_captured_text_only: "y".repeat(filler),
+        },
+      });
+
+      expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
+
+      const rowsShown = text
+        .split("\n")
+        .filter((line) => line.startsWith("| `")).length;
+      // Rows may only go missing with the notice that says so. A report that
+      // happens to land exactly on the budget without dropping anything is
+      // not a truncation and owes no notice.
+      if (rowsShown < 3) {
+        expect(text).toMatch(
+          /more rows omitted to fit|Coverage table omitted to fit|Report truncated to fit/,
+        );
+      }
+    },
+  );
 
   it("reports the declared page role when there is one", () => {
     expect(report()).toContain("`product`");

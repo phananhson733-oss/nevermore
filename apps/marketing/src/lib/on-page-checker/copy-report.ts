@@ -35,6 +35,23 @@ export interface CopyReportInput {
  * unlikely to break.
  */
 export function inlineCode(value: string): string {
+  return codeSpan(value);
+}
+
+/**
+ * The same span, escaped for a table cell.
+ *
+ * A code span does not protect a cell. GFM splits the row on pipes before it
+ * looks at spans, so `plan | tier` becomes two cells and every column after it
+ * shifts one to the left — the coverage table would report one query's numbers
+ * under another query's heading. The pipe has to be backslash-escaped, and
+ * that escape is what the surrounding backticks then carry.
+ */
+export function tableCell(value: string): string {
+  return codeSpan(value).replace(/\|/g, "\\|");
+}
+
+function codeSpan(value: string): string {
   const flat = value.replace(/\r?\n|\r/g, " ").trim();
   if (flat === "") return "``";
   const longestRun = Math.max(
@@ -58,7 +75,7 @@ function slotRow(
 
   const { slots } = query;
   return [
-    inlineCode(query.displayQuery),
+    tableCell(query.displayQuery),
     query.isPrimary ? "yes" : "no",
     cell(slots.title.state, slots.title.occurrences),
     cell(slots.description.state, slots.description.occurrences),
@@ -158,7 +175,6 @@ export function buildCopyReport(input: CopyReportInput): string {
   ];
 
   const rows = evidence.queries.map(slotRow);
-  const fixed = [...header, ...basis, ...numbers, ...limitations];
 
   for (let kept = rows.length; kept >= 0; kept -= 1) {
     const truncated = kept < rows.length;
@@ -172,8 +188,29 @@ export function buildCopyReport(input: CopyReportInput): string {
     const report = [...header, ...basis, ...table, ...numbers, ...limitations]
       .join("\n")
       .replace(/\n{3,}/g, "\n\n");
-    if (report.length <= COPY_REPORT_MAX_CHARS || kept === 0) return report;
+    if (report.length <= COPY_REPORT_MAX_CHARS) return report;
   }
 
-  return fixed.join("\n");
+  // Even with no rows the fixed sections can exceed the budget once their
+  // sentences are translated. The bound is a promise to whoever pastes this
+  // somewhere with a limit, so it is enforced rather than approximated — and
+  // dropping the coverage table entirely is still a cut, so it is announced.
+  // A report that quietly lost its table would read as a page with nothing to
+  // report about.
+  const droppedTable = [
+    ...header,
+    ...basis,
+    "",
+    "## Coverage",
+    "",
+    `_Coverage table omitted to fit: ${rows.length} rows._`,
+    ...numbers,
+    ...limitations,
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+  if (droppedTable.length <= COPY_REPORT_MAX_CHARS) return droppedTable;
+
+  const notice = "\n\n_Report truncated to fit._\n";
+  return `${droppedTable.slice(0, COPY_REPORT_MAX_CHARS - notice.length)}${notice}`;
 }

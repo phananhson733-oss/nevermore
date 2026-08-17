@@ -203,8 +203,125 @@ function hasCompleteNeutralRecordLedger(
 function isKeywordEvidenceShape(value: unknown): value is KeywordEvidence {
   if (!isObject(value)) return false;
   if (value.version !== KEYWORD_EVIDENCE_VERSION) return false;
+
+  if (value.availability === "unavailable") {
+    return (
+      value.reason === "target_page_not_captured" ||
+      value.reason === "extract_missing"
+    );
+  }
+  if (value.availability !== "available") return false;
+
+  // Read the region rather than glance at it. A guard that stopped at the
+  // discriminant would pass `queries: "none"` and `focus: null` through to a
+  // client that then renders whatever that turns into.
   return (
-    value.availability === "available" || value.availability === "unavailable"
+    typeof value.textUnitsVersion === "string" &&
+    (value.pageRole === null ||
+      value.pageRole === "homepage" ||
+      value.pageRole === "product" ||
+      value.pageRole === "tool" ||
+      value.pageRole === "guide") &&
+    isObject(value.focus) &&
+    isNonNegativeInteger(value.focus.covered) &&
+    isNonNegativeInteger(value.focus.applicable) &&
+    value.focus.covered <= value.focus.applicable &&
+    Array.isArray(value.limitations) &&
+    value.limitations.every((entry) => typeof entry === "string") &&
+    Array.isArray(value.queries) &&
+    value.queries.length >= 1 &&
+    value.queries.length <= 5 &&
+    value.queries.every(isKeywordEvidenceQuery)
+  );
+}
+
+/**
+ * The extract as the Agent publishes it: exactly these keys, nothing else.
+ *
+ * The upstream guard already bounds the values; this one exists because the
+ * projection is what decides what reaches a browser, and "whatever the payload
+ * had" is not a decision.
+ */
+function isAgentTargetPageExtract(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  const keys = Object.keys(value);
+  return (
+    keys.length === AGENT_EXTRACT_KEYS.length &&
+    keys.every((key) => AGENT_EXTRACT_KEYS.includes(key))
+  );
+}
+
+const AGENT_EXTRACT_KEYS: readonly string[] = [
+  "url",
+  "title",
+  "metaDescription",
+  "h1",
+  "subHeadings",
+  "openingText",
+  "staticBodyWords",
+  "truncatedLists",
+];
+
+const SLOT_STATES: readonly string[] = [
+  "covered",
+  "not_covered",
+  "not_applicable",
+];
+
+function isTextSlot(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  if (typeof value.state !== "string" || !SLOT_STATES.includes(value.state)) {
+    return false;
+  }
+  // `not_applicable` must never carry a number: a zero there would read as
+  // "we looked and it was absent" for a field that does not exist.
+  return value.state === "not_applicable"
+    ? value.occurrences === null
+    : isNonNegativeInteger(value.occurrences);
+}
+
+function isKeywordEvidenceQuery(value: unknown): boolean {
+  if (!isObject(value) || !isObject(value.slots)) return false;
+  const { slots } = value;
+  return (
+    typeof value.displayQuery === "string" &&
+    typeof value.isPrimary === "boolean" &&
+    (value.primaryReason === undefined ||
+      value.primaryReason === "most_fields_covered" ||
+      value.primaryReason === "longest" ||
+      value.primaryReason === "submission_order") &&
+    (value.brandCandidate === "matched" ||
+      value.brandCandidate === "not_matched" ||
+      value.brandCandidate === "not_applicable") &&
+    (value.tokenization === "whitespace" ||
+      value.tokenization === "cjk_chars" ||
+      value.tokenization === "mixed") &&
+    isTextSlot(slots.title) &&
+    isTextSlot(slots.description) &&
+    isTextSlot(slots.h1) &&
+    isTextSlot(slots.subHeadings) &&
+    isTextSlot(slots.openingText) &&
+    isObject(slots.url) &&
+    typeof slots.url.state === "string" &&
+    SLOT_STATES.includes(slots.url.state) &&
+    slots.url.occurrences === undefined &&
+    isNonNegativeInteger(value.capturedOccurrences) &&
+    (value.density === null || isDensity(value.density))
+  );
+}
+
+function isDensity(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.value === "number" &&
+    Number.isFinite(value.value) &&
+    value.basis === "captured_text" &&
+    (value.unitsBasis === "words" ||
+      value.unitsBasis === "cjk_chars" ||
+      value.unitsBasis === "mixed") &&
+    isNonNegativeInteger(value.numeratorUnits) &&
+    isNonNegativeInteger(value.denominatorUnits) &&
+    value.denominatorUnits > 0
   );
 }
 
@@ -222,7 +339,7 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !value.records.every(isSeoAuditRecord) ||
     !(
       value.targetPageExtract === null ||
-      isObject(value.targetPageExtract)
+      isAgentTargetPageExtract(value.targetPageExtract)
     ) ||
     !(
       value.keywordEvidence === undefined ||

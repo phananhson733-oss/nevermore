@@ -859,4 +859,73 @@ describe("handleAgentAuditRequest", () => {
     expect(response.status).toBe(415);
     expect(delegate).not.toHaveBeenCalled();
   });
+
+  it("does not forward a field an upstream extract was not supposed to carry", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"]),
+      "seo",
+      dependencies({
+        delegate: vi.fn(async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetPageExtract: {
+                  url: "https://acme.test/",
+                  title: "Acme",
+                  metaDescription: null,
+                  h1: [],
+                  subHeadings: null,
+                  openingText: null,
+                  staticBodyWords: null,
+                  truncatedLists: false,
+                  rawHtml: "<html>everything the crawler held</html>",
+                },
+              },
+            },
+          }),
+        ),
+      }),
+    );
+
+    // The upstream guard rejects the unknown key outright, which is the answer
+    // that cannot leak: a projection that merely copied the named fields would
+    // still have accepted the payload.
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
+    });
+  });
+
+  it("bounds the extract instead of publishing whatever length arrived", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"]),
+      "seo",
+      dependencies({
+        delegate: vi.fn(async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetPageExtract: {
+                  url: "https://acme.test/",
+                  title: "x".repeat(5_000),
+                  metaDescription: null,
+                  h1: [],
+                  subHeadings: null,
+                  openingText: null,
+                  staticBodyWords: null,
+                  truncatedLists: false,
+                },
+              },
+            },
+          }),
+        ),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+  });
 });

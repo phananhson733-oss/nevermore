@@ -24,6 +24,7 @@ import { buildKeywordEvidence } from "@sf/public-tools";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
+  type AgentAuditResult,
   type AgentAuditSuccessData,
   type AgentKind,
 } from "./audit-contract.ts";
@@ -298,6 +299,27 @@ async function projectUpstreamError(upstream: Response): Promise<Response> {
   );
 }
 
+/**
+ * Copy exactly the extract fields the Agent contract names.
+ *
+ * The upstream guard bounds the values; this decides what leaves the boundary.
+ */
+function projectTargetPageExtract(
+  extract: AgentAuditResult["targetPageExtract"],
+): AgentAuditResult["targetPageExtract"] {
+  if (extract === null) return null;
+  return {
+    url: extract.url,
+    title: extract.title,
+    metaDescription: extract.metaDescription,
+    h1: [...extract.h1],
+    subHeadings: extract.subHeadings === null ? null : [...extract.subHeadings],
+    openingText: extract.openingText,
+    staticBodyWords: extract.staticBodyWords,
+    truncatedLists: extract.truncatedLists,
+  };
+}
+
 export async function handleAgentAuditRequest(
   request: Request,
   agent: AgentKind,
@@ -380,7 +402,10 @@ export async function handleAgentAuditRequest(
       scannedAt: result.scannedAt,
       targetInspected: result.targetInspected,
       inspectedTargetUrl: result.inspectedTargetUrl,
-      targetPageExtract: result.targetPageExtract,
+      // Rebuilt field by field, like every other projected value. Forwarding
+      // the object would publish whatever an upstream or cached payload
+      // happened to carry beside these fields.
+      targetPageExtract: projectTargetPageExtract(result.targetPageExtract),
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
       records: result.records.map(projectRecord),
