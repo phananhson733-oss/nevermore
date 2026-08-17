@@ -18,6 +18,7 @@ import {
   GEO_MIN_BUDGET_FOR_CALL_MS,
   mentionsBrand,
   normalizeCitedHost,
+  unavailableSample,
   type GeoSamplingContext,
 } from "./geo-sampling.ts";
 
@@ -206,7 +207,27 @@ describe("aggregateSamples", () => {
     expect(question.aggregate.verdict).toBe("intermittent");
   });
 
-  it("reports a question with no admissible sample as inconclusive", () => {
+  it("reports a wholly search-free question as answered from memory", () => {
+    // Not `inconclusive`. The run learned something definite here: the model
+    // answers this question out of its own weights and cites nobody, so there
+    // is no citation for this site or any competitor to win.
+    const samples = [1, 2, 3].map((index) =>
+      classifyObservation(
+        index,
+        observation({ webSearchPerformed: false }),
+        CONTEXT,
+      ),
+    );
+
+    expect(
+      aggregateSamples("q-1", "A question?", samples).aggregate,
+    ).toMatchObject({
+      admissibleSamples: 0,
+      verdict: "answered_from_memory",
+    });
+  });
+
+  it("stays inconclusive when a failed call sits among the search-free ones", () => {
     const samples = [
       classifyObservation(
         1,
@@ -218,13 +239,11 @@ describe("aggregateSamples", () => {
         observation({ webSearchPerformed: false }),
         CONTEXT,
       ),
-      classifyObservation(
-        3,
-        observation({ webSearchPerformed: false }),
-        CONTEXT,
-      ),
+      unavailableSample(3, "provider_timeout"),
     ];
 
+    // The call that never returned might have searched, so "it never searches"
+    // is not something these three samples can support.
     expect(
       aggregateSamples("q-1", "A question?", samples).aggregate,
     ).toMatchObject({

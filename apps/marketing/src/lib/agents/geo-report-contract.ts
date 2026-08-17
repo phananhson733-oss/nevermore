@@ -2,7 +2,16 @@
 // @output -- exact v1 sampled-observation types and a strict browser-safe guard
 // @pos    -- public wire contract for the repeated-sampling GEO visibility report
 
-export const AGENT_GEO_REPORT_SCHEMA_VERSION = "agent_geo_report.v1" as const;
+/**
+ * v2 adds the `answered_from_memory` verdict.
+ *
+ * The literal is bumped because the verdict is derived, not carried: a client
+ * on v1 recomputes the old rule, disagrees, and refuses the payload. That
+ * refusal is correct — it must not render a report whose headline word its own
+ * rule does not produce — and the version makes it deliberate rather than
+ * incidental.
+ */
+export const AGENT_GEO_REPORT_SCHEMA_VERSION = "agent_geo_report.v2" as const;
 
 /**
  * How many independent samples every buyer question is asked for.
@@ -102,11 +111,21 @@ const SAMPLE_STATES = new Set<GeoSampleState>([
  * `stable_cited`: on calibration data it is the most common truthful answer,
  * and a report that renders it as "insufficient data" would be hiding its
  * single most representative result.
+ *
+ * `answered_from_memory` is a finding too, and the reason it was added. When
+ * every sample of a question came back without a web search, the run learned
+ * something definite — the assistant answers that question out of its own
+ * weights and cites nobody, this site and every competitor alike — and the
+ * first version reported it as `inconclusive`, which reads as a broken tool.
+ * It is deliberately separate from `not_observed`: nobody was cited here, so
+ * there is no citation to lose, whereas `not_observed` means somebody could
+ * have been cited and this site was not.
  */
 export type GeoQuestionVerdict =
   | "stable_cited"
   | "intermittent"
   | "not_observed"
+  | "answered_from_memory"
   | "inconclusive";
 
 /**
@@ -446,6 +465,9 @@ function isAggregateOf(
   const mentioned = samples.filter(
     (sample) => sample.state === "mentioned",
   ).length;
+  const notSearched = samples.filter(
+    (sample) => sample.state === "search_not_performed",
+  ).length;
 
   if (
     value.admissibleSamples !== admissible ||
@@ -455,7 +477,23 @@ function isAggregateOf(
     return false;
   }
 
-  return value.verdict === geoQuestionVerdict(admissible, cited);
+  return (
+    value.verdict ===
+    geoQuestionVerdict({
+      totalSamples: samples.length,
+      admissibleSamples: admissible,
+      targetCitedIn: cited,
+      searchNotPerformed: notSearched,
+    })
+  );
+}
+
+/** Everything the verdict rule reads, recomputed from the samples by both sides. */
+export interface GeoVerdictCounts {
+  readonly totalSamples: number;
+  readonly admissibleSamples: number;
+  readonly targetCitedIn: number;
+  readonly searchNotPerformed: number;
 }
 
 /**
@@ -465,17 +503,42 @@ function isAggregateOf(
  * against; a second implementation is how the two drift.
  */
 export function geoQuestionVerdict(
-  admissibleSamples: number,
-  targetCitedIn: number,
+  counts: GeoVerdictCounts,
 ): GeoQuestionVerdict {
+  const { totalSamples, admissibleSamples, targetCitedIn, searchNotPerformed } =
+    counts;
+
   // Two, not one. A single usable sample cannot support "cited every time" or
   // "not cited" — that is the whole premise of sampling three times, and
   // emitting either verdict off n=1 would state exactly the inference the
   // measured empty intersection says is unavailable. A partial run reports
   // `inconclusive` and still shows its raw "N of M" underneath.
-  if (admissibleSamples < 2) return "inconclusive";
-  if (targetCitedIn === 0) return "not_observed";
-  return targetCitedIn === admissibleSamples ? "stable_cited" : "intermittent";
+  if (admissibleSamples >= 2) {
+    if (targetCitedIn === 0) return "not_observed";
+    return targetCitedIn === admissibleSamples
+      ? "stable_cited"
+      : "intermittent";
+  }
+
+  // Every sample the question was contracted to take, and only then, showed the
+  // assistant answering without searching. Each term is load-bearing:
+  //
+  // - the full count, not just "all the records present". One failed call among
+  //   them makes this unprovable — the call that never returned might have
+  //   searched — and a sample that is simply MISSING is exactly as unknown as
+  //   one that failed. Requiring the run's own sample count refuses both.
+  // - no admissible sample and no citation, so the four counts cannot
+  //   contradict each other. A payload asserting a citation alongside an
+  //   all-unsearched set is refused rather than relabelled.
+  if (
+    totalSamples === GEO_SAMPLES_PER_QUESTION &&
+    searchNotPerformed === GEO_SAMPLES_PER_QUESTION &&
+    admissibleSamples === 0 &&
+    targetCitedIn === 0
+  ) {
+    return "answered_from_memory";
+  }
+  return "inconclusive";
 }
 
 function isQuestion(

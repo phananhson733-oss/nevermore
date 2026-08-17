@@ -14,6 +14,7 @@ import {
   type GeneratedGeoQuestion,
 } from "../../../lib/agents/geo-questions";
 import {
+  AGENT_GEO_REPORT_SCHEMA_VERSION,
   GEO_QUESTIONS_PER_RUN,
   GEO_SAMPLES_PER_QUESTION,
   isGeoReportSuccessEnvelope,
@@ -89,6 +90,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         "auth_required",
         "auth_unavailable",
         "invalid_request",
+        "geo_client_outdated",
         "geo_budget_exhausted",
         "geo_budget_unavailable",
         "geo_report_invalid",
@@ -147,6 +149,11 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         cache: "no-store",
         signal: controller.signal,
         body: JSON.stringify({
+          // Declares which contract this bundle can read. A tab left open
+          // across a deploy still runs the previous guard, and the server
+          // refuses the run on this field alone rather than after billing 24
+          // provider calls for a report this client would then discard.
+          schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
           targetUrl: url.trim(),
           marketCode: "US",
           languageCode: locale === "zh" ? "zh" : "en",
