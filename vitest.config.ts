@@ -118,14 +118,21 @@ export default defineConfig({
           name: "integration",
           include: [
             "packages/**/*.integration.test.ts",
-            // apps/marketing persists to a DIFFERENT Postgres (its own Supabase
-            // project, `public` schema) than DATABASE_URL, and this project's
-            // setup applies the 53 product migrations. Marketing SQL gets its
-            // own project below rather than the wrong database.
-            "apps/web/**/*.integration.test.ts",
+            "apps/**/*.integration.test.ts",
             "e2e/**/*.integration.vitest.ts",
           ],
-          exclude: ["**/node_modules/**", "**/.next/**"],
+          exclude: [
+            "**/node_modules/**",
+            "**/.next/**",
+            // apps/marketing persists to a DIFFERENT Postgres (its own Supabase
+            // project, `public` schema) than DATABASE_URL, and this setup file
+            // applies the 53 product migrations. Marketing SQL gets its own
+            // project below rather than the wrong database. Excluded here
+            // rather than by narrowing `include` to apps/web, which would
+            // silently drop the apps/worker integration files from every
+            // project at once.
+            "apps/marketing/**",
+          ],
           environment: "node",
           testTimeout: 60_000,
           hookTimeout: 60_000,

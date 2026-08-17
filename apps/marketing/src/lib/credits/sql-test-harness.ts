@@ -18,7 +18,8 @@ const migrationsDir = fileURLToPath(
  */
 export function assertDisposable(url: string): void {
   const parsed = new URL(url);
-  const host = parsed.hostname.toLowerCase();
+  // URL keeps the brackets on an IPv6 host, so "::1" alone never matches.
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
     throw new Error(`refusing a non-loopback test database host: ${host}`);
   }
@@ -48,7 +49,12 @@ begin
     create role authenticated nologin;
   end if;
 end
-$$;`;
+$$;
+
+-- Supabase grants these by default on the public schema. Without them the
+-- migration's closing REVOKE/GRANT block would be untestable: every role would
+-- already be unable to reach anything, so a missing revoke would look correct.
+grant usage on schema public to anon, authenticated, service_role;`;
 
 function requireTestDatabaseUrl(): string {
   const url = process.env.MARKETING_TEST_DATABASE_URL;
@@ -78,7 +84,10 @@ export async function connectFreshMarketingSchema(): Promise<Client> {
   return client;
 }
 
-/** A second connection, so a test can prove two transactions really race. */
+/**
+ * A second connection, so a test can prove two transactions really race.
+ * Goes through the same guard: a helper that skips it is a hole in the guard.
+ */
 export async function openConcurrentClient(): Promise<Client> {
   const client = new Client({ connectionString: requireTestDatabaseUrl() });
   await client.connect();

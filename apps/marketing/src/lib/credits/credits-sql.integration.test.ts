@@ -508,6 +508,47 @@ describe("ledger integrity", () => {
     }
   });
 
+  /**
+   * The migration's closing REVOKE/GRANT block is the whole isolation model:
+   * RLS with no policies plus service-role-only execute. Asserting it needs a
+   * session that actually wears the role, which is why the harness recreates
+   * Supabase's roles and schema grants.
+   */
+  it("exposes the grant functions to service_role and nothing else", async () => {
+    const client = await openConcurrentClient();
+    try {
+      await client.query("set role service_role");
+      await expect(
+        client.query("select * from public.credits_ensure_account($1)", [
+          USER_A,
+        ]),
+      ).resolves.toBeDefined();
+
+      // The internal helper is revoked even from service_role; only the
+      // SECURITY DEFINER functions above may reach it.
+      await expect(
+        client.query(
+          "select public.credits__append_entry($1, 'adjustment', 0, 1, null, 'x', '{}'::jsonb)",
+          [USER_A],
+        ),
+      ).rejects.toThrow(/permission denied/);
+
+      // RLS is enabled with no policy, so the tables are unreachable directly.
+      await client.query("set role anon");
+      await expect(
+        client.query("select * from public.credit_accounts"),
+      ).rejects.toThrow(/permission denied/);
+      await expect(
+        client.query("select * from public.credits_ensure_account($1)", [
+          USER_B,
+        ]),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await client.query("reset role");
+      await client.end();
+    }
+  });
+
   it("fails closed when the settings row is missing", async () => {
     await ensure(db, USER_A);
     await db.query("delete from public.credit_settings");
