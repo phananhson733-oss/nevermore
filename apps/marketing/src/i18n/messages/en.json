@@ -1996,6 +1996,136 @@
         "gsc_revoked": "This browser no longer holds a usable Search Console authorization. Reconnect to run the map.",
         "gsc_temporarily_unavailable": "Google could not renew your authorization just now. Nothing about your access changed — try again shortly."
       }
+    },
+    "onPageChecker": {
+      "eyebrow": "TOOL · ONE PAGE · ONE SET OF QUERIES",
+      "title": "Does this page actually cover the words you want it found for?",
+      "intro": "Submit one page and up to five target queries. You get where each query does and does not appear on that page, how often, and what is not measurable from public HTML.",
+      "stages": {
+        "target": {
+          "eyebrow": "STAGE 01",
+          "title": "The page and the queries"
+        },
+        "evidence": {
+          "eyebrow": "STAGE 02",
+          "title": "What the page shows",
+          "empty": "Nothing yet. Add a page and at least one query."
+        }
+      },
+      "fields": {
+        "url": "Page URL",
+        "queries": "Target queries (up to {max})",
+        "market": "Market",
+        "language": "Language",
+        "pageRole": "Page role"
+      },
+      "pageRoles": {
+        "homepage": "Homepage",
+        "product": "Product page",
+        "tool": "Tool page",
+        "guide": "Guide or article"
+      },
+      "actions": {
+        "addQuery": "Add",
+        "removeQuery": "Remove this query",
+        "run": "Check this page",
+        "running": "Checking…",
+        "copyReport": "Copy report for an assistant",
+        "copyDone": "Copied.",
+        "copyFailed": "Could not reach the clipboard. Select the report and copy it.",
+        "openAgent": "Open the SEO Agent for the whole site"
+      },
+      "boundaries": {
+        "accountFree": "Account required, free while the tools are being tested.",
+        "projection": "This reads the page out of the same site-wide crawl the SEO Agent runs, so a first check on a site takes as long as that crawl does. Nothing is saved to an app project."
+      },
+      "waiting": {
+        "headline": "Collecting the site, then reading your page out of it.",
+        "elapsed": "{seconds}s elapsed",
+        "body": "The crawl caps itself at four minutes and 2,000 pages, and the whole request takes longer than the crawl alone.",
+        "noEstimate": "No progress estimate: the browser is not told how many pages remain, so it does not guess."
+      },
+      "focus": {
+        "summary": "Covered {covered} of {applicable} checkable positions.",
+        "notAScore": "A count of positions, not a score. Positions the page has no field for are left out of the total rather than counted against it.",
+        "short": "{covered}/{applicable}"
+      },
+      "table": {
+        "query": "Query",
+        "title": "Title",
+        "description": "Description",
+        "h1": "H1",
+        "subHeadings": "Sub-headings",
+        "openingText": "Opening text",
+        "url": "URL",
+        "primary": "primary",
+        "brand": "brand"
+      },
+      "slotStates": {
+        "covered": "yes",
+        "not_covered": "no",
+        "not_applicable": "n/a"
+      },
+      "density": {
+        "value": "{query}: {percent}% of {units} collected units, {occurrences} occurrences.",
+        "unavailable": "{query}: density unavailable, no collected text to measure against."
+      },
+      "limitations": {
+        "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
+        "sub_headings_underivable_h1_cap_reached": "Sub-headings could not be separated on this page, because its H1 list hit the collector's own limit. Reported as unavailable rather than guessed.",
+        "opening_text_first_500_chars_static_extraction": "Opening text is the first 500 characters of the statically extracted body, after nav, footer and aside blocks are removed. It is not what a browser paints.",
+        "density_basis_captured_text_only": "Density is measured inside the collected text — title, description, headings and that opening text — not across the whole page body, which is not collected.",
+        "static_body_words_unavailable_for_cjk": "The page word count is withheld: this page is written mostly without word gaps, where splitting on spaces is off by an order of magnitude.",
+        "extract_lists_truncated": "A heading list was cut to its own limit before publication, so a keyword further down the page may not be counted."
+      },
+      "unavailable": {
+        "target_page_not_captured": "The crawl did not collect this page as a readable HTML response, so nothing about its keywords was measured.",
+        "extract_missing": "The page was collected but its text did not come through, so nothing about its keywords was measured.",
+        "notZero": "This is not a score of zero, and not a finding about the page."
+      },
+      "history": {
+        "title": "Recent checks",
+        "empty": "No checks yet.",
+        "clear": "Clear",
+        "localOnly": "Kept in this browser only. Not an account archive: clearing site data, switching browsers or signing out removes it."
+      },
+      "errors": {
+        "urlRequired": "Add the page URL you want checked.",
+        "queryRequired": "Add at least one target query.",
+        "queryEmpty": "Type a query before adding it.",
+        "queryDuplicate": "That query is already in the list.",
+        "queryLimit": "Up to {max} queries. Remove one to add another.",
+        "queryTooLong": "Up to {max} characters per query.",
+        "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
+        "invalid_url": "That does not look like a public page URL.",
+        "invalid_request": "Check the URL and the queries: up to five, of at most 80 characters each.",
+        "scan_in_progress": "This site is already being collected — most often by you, in another tab or in the SEO Agent. Wait for that run to finish.",
+        "target_busy": "This site is busy with another visitor's run. Try again shortly.",
+        "rate_limited": "Too many checks from here. Try again shortly.",
+        "scan_timeout": "The collection ran past its time limit before your page was reached.",
+        "scan_failed": "The collection could not finish. Nothing about this page was measured.",
+        "robots_disallowed": "This site's robots rules tell crawlers to stay out, so the page was not read.",
+        "robots_unreachable": "This site's robots rules could not be read, so nothing was collected.",
+        "retryAfter": "Retry in {seconds} seconds.",
+        "unknown": "The check did not finish. Nothing about this page was measured."
+      },
+      "faq": {
+        "title": "What this does and does not tell you",
+        "items": [
+          {
+            "q": "Is this a score?",
+            "a": "No. You get a count of which positions carry each query and how often, plus what could not be measured. There is no single number, because one number cannot say which part of a page is wrong."
+          },
+          {
+            "q": "Why does the first check take minutes?",
+            "a": "Your page is read out of a site-wide collection rather than fetched on its own. Once a site has been collected, a second check on it is fast."
+          },
+          {
+            "q": "Will a high count rank the page?",
+            "a": "No. Where a keyword sits on a page is one input among site authority, page experience, competition and behaviour. This measures the input it can actually see."
+          }
+        ]
+      }
     }
   },
   "compare": {

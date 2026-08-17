@@ -44,6 +44,16 @@ const DIAGNOSIS_TOOLS = [
     category: "diagnosis",
   },
   {
+    slug: "on-page-seo-check",
+    title: { en: "On-Page SEO Checker", zh: "On-Page SEO 检查器" },
+    description: {
+      en: "Check one page against up to five target queries: where each appears, how often, and what public HTML cannot measure.",
+      zh: "用最多五个目标关键词检查一个页面：每个词出现在哪些位置、出现多少次，以及哪些事实公开 HTML 量不出来。",
+    },
+    cta: { en: "Check a page", zh: "检查一个页面" },
+    category: "diagnosis",
+  },
+  {
     slug: "seo-audit",
     title: { en: "Site-wide SEO Audit", zh: "全站 SEO 审计" },
     description: {
