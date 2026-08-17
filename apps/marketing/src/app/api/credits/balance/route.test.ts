@@ -54,6 +54,7 @@ function account(overrides: Record<string, unknown> = {}) {
       referralRewardedCount: 0,
       firstToolRunAt: null,
       created: false,
+      attributed: false,
       ...overrides,
     },
   };
@@ -73,6 +74,7 @@ function touch(overrides: Record<string, unknown> = {}) {
       welfareAccrualCap: 600,
       welfareRemaining: 480,
       dailyGrantedOn: TODAY,
+      referralInviterCap: 20,
       ...overrides,
     },
   };
@@ -309,7 +311,9 @@ describe("GET /api/credits/balance", () => {
 
   it("clears the referral cookie once the attribution has stuck", async () => {
     mocks.referralCookie = "ab3kd9xz";
-    mocks.ensureAccount.mockResolvedValue(account({ referredBy: "inviter-1" }));
+    mocks.ensureAccount.mockResolvedValue(
+      account({ referredBy: "inviter-1", attributed: true }),
+    );
 
     const response = await GET();
     const setCookie = response.headers.get("set-cookie") ?? "";
@@ -328,7 +332,12 @@ describe("GET /api/credits/balance", () => {
    */
   it("keeps the cookie when the code did not become this account's referrer", async () => {
     mocks.referralCookie = "ab3kd9xz";
-    mocks.ensureAccount.mockResolvedValue(account({ referredBy: null }));
+    // The account already belongs to someone else's invite. referredBy is
+    // non-null here on purpose: reading it instead of `attributed` is exactly
+    // the bug, and a fixture with referredBy: null could never catch it.
+    mocks.ensureAccount.mockResolvedValue(
+      account({ referredBy: "an-earlier-inviter", attributed: false }),
+    );
 
     const response = await GET();
 
@@ -336,7 +345,9 @@ describe("GET /api/credits/balance", () => {
   });
 
   it("sets no cookie at all when the visitor arrived without one", async () => {
-    mocks.ensureAccount.mockResolvedValue(account({ referredBy: "inviter-1" }));
+    mocks.ensureAccount.mockResolvedValue(
+      account({ referredBy: "inviter-1", attributed: true }),
+    );
 
     const response = await GET();
 

@@ -266,7 +266,8 @@ returns table (
   referred_by             uuid,
   referral_rewarded_count integer,
   first_tool_run_at       timestamptz,
-  created                 boolean
+  created                 boolean,
+  attributed              boolean
 )
 language plpgsql
 security definer
@@ -279,6 +280,7 @@ declare
   v_attempt integer;
   v_inviter uuid;
   v_signup  integer;
+  v_attributed boolean := false;
 begin
   if p_user_id is null then
     raise exception 'p_user_id is required';
@@ -334,6 +336,11 @@ begin
        where a.user_id = p_user_id
          and a.referred_by is null
          and a.first_tool_run_at is null;
+      -- Reported separately from referred_by so the caller can tell "this code
+      -- stuck" from "some earlier code stuck". Only the first clears the
+      -- visitor's cookie; a code that lost the race is still theirs to use on
+      -- another account.
+      v_attributed := found;
     end if;
   end if;
 
@@ -341,7 +348,7 @@ begin
     select a.user_id, a.status, a.daily_balance, a.permanent_balance,
            a.daily_granted_on, a.daily_accrued_total, a.referral_code,
            a.referred_by, a.referral_rewarded_count, a.first_tool_run_at,
-           v_created
+           v_created, v_attributed
       from public.credit_accounts as a
      where a.user_id = p_user_id;
 end;
@@ -366,7 +373,8 @@ returns table (
   daily_accrued_total integer,
   daily_amount        integer,
   welfare_accrual_cap integer,
-  daily_granted_on    date
+  daily_granted_on    date,
+  referral_inviter_cap integer
 )
 language plpgsql
 security definer
@@ -378,13 +386,14 @@ declare
   v_mode    text;
   v_amount  integer;
   v_cap     integer;
+  v_inviter_cap integer;
   v_account public.credit_accounts%rowtype;
   v_grant   integer := 0;
   v_expire  integer := 0;
   v_key     text := to_char(current_date, 'YYYY-MM-DD');
 begin
-  select s.mode, s.daily_amount, s.welfare_accrual_cap
-    into v_mode, v_amount, v_cap
+  select s.mode, s.daily_amount, s.welfare_accrual_cap, s.referral_inviter_cap
+    into v_mode, v_amount, v_cap, v_inviter_cap
     from public.credit_settings as s
    where s.id = 1;
   if v_mode is null then
@@ -439,7 +448,8 @@ begin
 
   return query
     select v_mode, v_grant, a.daily_balance, a.permanent_balance,
-           a.daily_accrued_total, v_amount, v_cap, a.daily_granted_on
+           a.daily_accrued_total, v_amount, v_cap, a.daily_granted_on,
+           v_inviter_cap
       from public.credit_accounts as a
      where a.user_id = p_user_id;
 end;

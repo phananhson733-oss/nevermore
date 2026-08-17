@@ -8,7 +8,6 @@ import { NextResponse } from "next/server";
 import { getServerAuthenticatedUser } from "../../../../lib/auth/server-auth-user.ts";
 import {
   BALANCE_RATE_LIMIT,
-  CREDITS_SETTINGS_SEED,
   creditsEnabled,
 } from "../../../../lib/credits/credits-config.ts";
 import {
@@ -127,18 +126,19 @@ export async function GET(): Promise<Response> {
         referral: {
           code: account.value.referralCode,
           rewardedCount: account.value.referralRewardedCount,
-          cap: CREDITS_SETTINGS_SEED.referralInviterCap,
+          cap: daily.value.referralInviterCap,
         },
       },
     },
     200,
   );
 
-  // Only once the code actually became this account's referrer. Attribution is
-  // one-shot in SQL, so a code that did not stick may still be the visitor's to
-  // use elsewhere, and the clear has to carry the attributes that wrote it or
-  // the browser keeps the cookie for another thirty days.
-  if (referralCode !== null && account.value.referredBy !== null) {
+  // Only when THIS call attached the referrer. Attribution is one-shot in SQL,
+  // so an account that already had one keeps it, and the code that lost is
+  // still the visitor's to use on another account — reading referredBy here
+  // would throw it away. The clear has to carry the attributes that wrote the
+  // cookie or the browser keeps it for another thirty days.
+  if (referralCode !== null && account.value.attributed) {
     response.cookies.set(
       REFERRAL_COOKIE_NAME,
       "",

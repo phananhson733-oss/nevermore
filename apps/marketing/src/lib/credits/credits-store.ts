@@ -56,6 +56,8 @@ export interface CreditAccountSnapshot {
   readonly referralRewardedCount: number;
   readonly firstToolRunAt: string | null;
   readonly created: boolean;
+  /** True only when THIS call attached the referrer, not merely that one exists. */
+  readonly attributed: boolean;
 }
 
 export interface DailyTouch {
@@ -69,6 +71,8 @@ export interface DailyTouch {
   readonly welfareAccrualCap: number;
   readonly welfareRemaining: number;
   readonly dailyGrantedOn: string | null;
+  /** Read from credit_settings, so the page cannot advertise a stale cap. */
+  readonly referralInviterCap: number;
 }
 
 export interface ReferralVerdict {
@@ -192,14 +196,45 @@ async function rows(
   }
 }
 
+/** Maps a row, turning a malformed one into the same fail-closed outcome. */
+function mapped<T>(
+  row: Record<string, unknown>,
+  map: (row: Record<string, unknown>) => T,
+): CreditsResult<T> {
+  try {
+    return { kind: "ok", value: map(row) };
+  } catch (error) {
+    if (error instanceof MalformedRowError) {
+      return unavailable(`malformed credits row: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Thrown when a row is missing a number the caller is about to treat as money.
+ *
+ * The repository rule is that an unavailable figure is null, never zero. A
+ * schema-cache mismatch or a changed return type must not be able to render a
+ * funded account as an empty one, so a malformed row fails the whole read
+ * instead of being smoothed into a plausible lie.
+ */
+class MalformedRowError extends Error {}
+
 function int(row: Record<string, unknown>, key: string): number {
   const value = row[key];
-  return typeof value === "number" ? value : 0;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new MalformedRowError(`${key} is not a number`);
+  }
+  return value;
 }
 
 function str(row: Record<string, unknown>, key: string): string {
   const value = row[key];
-  return typeof value === "string" ? value : "";
+  if (typeof value !== "string") {
+    throw new MalformedRowError(`${key} is not a string`);
+  }
+  return value;
 }
 
 function nullableStr(row: Record<string, unknown>, key: string): string | null {
@@ -207,12 +242,19 @@ function nullableStr(row: Record<string, unknown>, key: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function readStatus(row: Record<string, unknown>): "active" | "frozen" {
+  if (row.status === "active" || row.status === "frozen") return row.status;
+  throw new MalformedRowError("status is not a known value");
+}
+
 function toSnapshot(row: Record<string, unknown>): CreditAccountSnapshot {
   const daily = int(row, "daily_balance");
   const permanent = int(row, "permanent_balance");
   return {
     userId: str(row, "user_id"),
-    status: row.status === "frozen" ? "frozen" : "active",
+    // A status this build does not recognise is not "active"; treating it as
+    // active is how a frozen-for-fraud account would keep earning.
+    status: readStatus(row),
     dailyBalance: daily,
     permanentBalance: permanent,
     totalBalance: daily + permanent,
@@ -223,6 +265,7 @@ function toSnapshot(row: Record<string, unknown>): CreditAccountSnapshot {
     referralRewardedCount: int(row, "referral_rewarded_count"),
     firstToolRunAt: nullableStr(row, "first_tool_run_at"),
     created: row.created === true,
+    attributed: row.attributed === true,
   };
 }
 
@@ -243,7 +286,7 @@ export async function ensureAccount(
   // This function creates the account, so an empty answer is not "no account",
   // it is the store contradicting itself.
   if (row === undefined) return unavailable("credits_ensure_account returned no row");
-  return { kind: "ok", value: toSnapshot(row) };
+  return mapped(row, toSnapshot);
 }
 
 export async function touchDaily(
@@ -258,24 +301,25 @@ export async function touchDaily(
   const row = result.value[0];
   if (row === undefined) return { kind: "missing" };
 
-  const daily = int(row, "daily_balance");
-  const permanent = int(row, "permanent_balance");
-  const cap = int(row, "welfare_accrual_cap");
-  return {
-    kind: "ok",
-    value: {
-      mode: str(row, "mode"),
-      granted: int(row, "granted"),
+  return mapped(row, (source) => {
+    const daily = int(source, "daily_balance");
+    const permanent = int(source, "permanent_balance");
+    const cap = int(source, "welfare_accrual_cap");
+    const accrued = int(source, "daily_accrued_total");
+    return {
+      mode: str(source, "mode"),
+      granted: int(source, "granted"),
       dailyBalance: daily,
       permanentBalance: permanent,
       totalBalance: daily + permanent,
-      dailyAccruedTotal: int(row, "daily_accrued_total"),
-      dailyAmount: int(row, "daily_amount"),
+      dailyAccruedTotal: accrued,
+      dailyAmount: int(source, "daily_amount"),
       welfareAccrualCap: cap,
-      welfareRemaining: Math.max(cap - int(row, "daily_accrued_total"), 0),
-      dailyGrantedOn: nullableStr(row, "daily_granted_on"),
-    },
-  };
+      welfareRemaining: Math.max(cap - accrued, 0),
+      dailyGrantedOn: nullableStr(source, "daily_granted_on"),
+      referralInviterCap: int(source, "referral_inviter_cap"),
+    };
+  });
 }
 
 export async function rewardReferral(
@@ -316,18 +360,22 @@ export async function readLedger(
   if (result.kind !== "ok") return result;
 
   const kept = result.value.slice(0, page.limit);
-  const entries = kept.map((row) => ({
-    id: String(row.id ?? ""),
-    type: str(row, "entry_type"),
-    amount: int(row, "amount"),
-    // One number, because the split into pools is an implementation detail of
-    // expiry, not something a reader of their own history should have to model.
-    balanceAfter:
-      int(row, "balance_daily_after") + int(row, "balance_permanent_after"),
-    toolSlug: nullableStr(row, "tool_slug"),
-    createdAt: str(row, "created_at"),
+  const page_ = mapped({}, () => ({
+    entries: kept.map((row) => ({
+      id: String(row.id ?? ""),
+      type: str(row, "entry_type"),
+      amount: int(row, "amount"),
+      // One number, because the split into pools is an implementation detail of
+      // expiry, not something a reader of their own history should have to model.
+      balanceAfter:
+        int(row, "balance_daily_after") + int(row, "balance_permanent_after"),
+      toolSlug: nullableStr(row, "tool_slug"),
+      createdAt: str(row, "created_at"),
+    })),
   }));
+  if (page_.kind !== "ok") return page_;
 
+  const entries = page_.value.entries;
   const last = entries[entries.length - 1];
   const hasMore = result.value.length > page.limit;
   return {

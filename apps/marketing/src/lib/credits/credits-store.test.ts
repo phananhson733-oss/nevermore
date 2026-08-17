@@ -26,6 +26,7 @@ const ACCOUNT_ROW = {
   referral_rewarded_count: 0,
   first_tool_run_at: null,
   created: false,
+  attributed: false,
 };
 
 function deps(
@@ -57,6 +58,7 @@ describe("ensureAccount", () => {
         referralRewardedCount: 0,
         firstToolRunAt: null,
         created: false,
+        attributed: false,
       },
     });
   });
@@ -134,6 +136,37 @@ describe("failure handling", () => {
   });
 
   /**
+   * A funded account must never be renderable as an empty one. A schema-cache
+   * mismatch or a changed RPC return type is an outage, not a zero balance, and
+   * this repository's rule is that an unavailable figure is null and never 0.
+   */
+  it("refuses a row whose balance is missing rather than calling it zero", async () => {
+    const { permanent_balance: _dropped, ...withoutBalance } = ACCOUNT_ROW;
+    const result = await ensureAccount(
+      USER,
+      null,
+      deps({
+        callRpc: async () => ({ kind: "ok" as const, data: [withoutBalance] }),
+      }),
+    );
+    expect(result.kind).toBe("unavailable");
+  });
+
+  it("refuses a status this build does not know, rather than assuming active", async () => {
+    const result = await ensureAccount(
+      USER,
+      null,
+      deps({
+        callRpc: async () => ({
+          kind: "ok" as const,
+          data: [{ ...ACCOUNT_ROW, status: "suspended_pending_review" }],
+        }),
+      }),
+    );
+    expect(result.kind).toBe("unavailable");
+  });
+
+  /**
    * createAdminSupabaseClient throws when the environment is half-configured.
    * This module is reachable from five tool handlers, so a throw here would
    * turn a successful audit into a 500.
@@ -162,6 +195,7 @@ describe("touchDaily", () => {
     daily_amount: 20,
     welfare_accrual_cap: 600,
     daily_granted_on: "2026-08-17",
+    referral_inviter_cap: 20,
   };
 
   it("maps the grant outcome", async () => {
@@ -184,6 +218,7 @@ describe("touchDaily", () => {
         welfareAccrualCap: 600,
         welfareRemaining: 580,
         dailyGrantedOn: "2026-08-17",
+        referralInviterCap: 20,
       },
     });
   });
