@@ -95,9 +95,33 @@ export async function GET(): Promise<Response> {
   const account = await ensureAccount(userId, referralCode);
   if (account.kind !== "ok") return failure("credits_unavailable", 503);
 
+  /**
+   * ensureAccount has already committed. Whatever happens after this line, the
+   * referrer is attached and this code has spent itself, so every exit from
+   * here on has to carry the clear — including the error ones.
+   *
+   * Leaving it on a 503 was not harmless: the retry finds the account already
+   * attributed, reports `attributed=false`, and the cookie then survives its
+   * full thirty days. Sign a second Supabase account in from the same browser
+   * inside that window and one link pays out twice.
+   */
+  const spent = referralCode !== null && account.value.attributed;
+  const clearIfSpent = (response: NextResponse): NextResponse => {
+    if (spent) {
+      response.cookies.set(
+        REFERRAL_COOKIE_NAME,
+        "",
+        referralCookieClearAttributes(),
+      );
+    }
+    return response;
+  };
+
   const daily = await touchDaily(userId);
   // "missing" here would mean the row ensureAccount just returned is gone.
-  if (daily.kind !== "ok") return failure("credits_unavailable", 503);
+  if (daily.kind !== "ok") {
+    return clearIfSpent(failure("credits_unavailable", 503));
+  }
 
   /**
    * Two ways to be granted today, and the second one matters: an account that
@@ -143,12 +167,5 @@ export async function GET(): Promise<Response> {
   // still the visitor's to use on another account — reading referredBy here
   // would throw it away. The clear has to carry the attributes that wrote the
   // cookie or the browser keeps it for another thirty days.
-  if (referralCode !== null && account.value.attributed) {
-    response.cookies.set(
-      REFERRAL_COOKIE_NAME,
-      "",
-      referralCookieClearAttributes(),
-    );
-  }
-  return response;
+  return clearIfSpent(response);
 }

@@ -370,6 +370,49 @@ describe("GET /api/credits/balance", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
+  /**
+   * Regression: ISSUE-005 — ensureAccount commits the referrer on its own, so a
+   * touchDaily failure after it returned a 503 that left gg_ref in place. The
+   * retry sees an account that already has a referrer, reports
+   * attributed: false, and the cookie then rides along for its full thirty
+   * days — long enough for a second Supabase account signed in from the same
+   * browser to claim the same link a second time.
+   * Found by /qa on 2026-08-17 (cross-model review, codex C2).
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("clears a spent referral cookie even when the rest of the call fails", async () => {
+    mocks.referralCookie = "ab3kd9xz";
+    mocks.ensureAccount.mockResolvedValue(
+      account({ referredBy: "inviter-1", attributed: true }),
+    );
+    mocks.touchDaily.mockResolvedValue({
+      kind: "unavailable",
+      reason: "store_missing",
+    });
+
+    const response = await GET();
+    const setCookie = response.headers.get("set-cookie") ?? "";
+
+    expect(response.status).toBe(503);
+    expect(setCookie).toContain("gg_ref=");
+    expect(setCookie).toContain("Max-Age=0");
+    expect(setCookie).toContain("Path=/");
+  });
+
+  /** A failure before the attribution committed has nothing to clear. */
+  it("leaves the cookie alone when the failure came before attribution", async () => {
+    mocks.referralCookie = "ab3kd9xz";
+    mocks.ensureAccount.mockResolvedValue({
+      kind: "unavailable",
+      reason: "store_missing",
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
   it("sets no cookie at all when the visitor arrived without one", async () => {
     mocks.ensureAccount.mockResolvedValue(
       account({ referredBy: "inviter-1", attributed: true }),
