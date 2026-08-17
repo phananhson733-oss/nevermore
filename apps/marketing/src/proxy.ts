@@ -19,6 +19,7 @@ const rootShortCodePath = /^\/([a-z0-9][a-z0-9-]{5,79})$/i;
 const reservedRootPaths = new Set([
   "api",
   "about",
+  "account",
   "agents",
   "blog",
   "compare",
@@ -84,11 +85,18 @@ export function proxy(request: NextRequest): NextResponse {
     );
   }
 
+  // /r/{code} is a referral landing: it sets one cookie and redirects, and has
+  // no locale to resolve. Left to next-intl it would be rewritten to
+  // /en/r/{code}, which matches no route and answers 404 — the two-segment path
+  // is also invisible to the single-segment short-code fallback below, so
+  // nothing else would catch it either.
   if (
     pathname.startsWith("/api/") ||
     pathname === "/go" ||
     pathname.startsWith("/go/") ||
-    localeGoPath.test(pathname)
+    localeGoPath.test(pathname) ||
+    pathname === "/r" ||
+    pathname.startsWith("/r/")
   ) {
     return NextResponse.next();
   }
