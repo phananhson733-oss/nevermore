@@ -271,6 +271,15 @@ function render(
 }
 
 /** Markup of one element, from its test id to the end of its open element. */
+/** The rendered <p> carrying an exact sentence, so a size rule names its target. */
+function paragraphContaining(html: string, sentence: string): string {
+  const end = html.indexOf(sentence);
+  expect(end).toBeGreaterThan(-1);
+  const start = html.lastIndexOf("<p ", end);
+  expect(start).toBeGreaterThan(-1);
+  return html.slice(start, end);
+}
+
 function element(html: string, testId: string, closingTag: string): string {
   const start = html.indexOf(`data-testid="${testId}"`);
   expect(start).toBeGreaterThan(-1);
@@ -441,10 +450,30 @@ describe("AgentDiagnosis", () => {
 
       expect(boundary).toContain("text-[12.5px]");
       expect(boundary).toContain("text-text-dark-primary");
-      expect(healthCard).toContain("text-[12px]");
-      expect(healthCard).not.toContain("text-[10.5px]");
-      expect(html).not.toContain("text-[10.5px]");
-      expect(html).not.toContain("text-[8.5px] tracking-[0.09em] hint");
+
+      // Assert on the honesty sentences themselves. Banning a size string from
+      // the whole card also caught the card's own eyebrow — a label, not
+      // honesty copy — so the rule fired on the wrong element and blocked
+      // raising the legibility floor everywhere else.
+      for (const sentence of [
+        "Derived from 5 scored checks",
+        "Excluded checks never become zero.",
+      ]) {
+        const line = paragraphContaining(healthCard, sentence);
+        expect(line).toContain("text-[12px]");
+        expect(line).toContain("text-text-dark-primary");
+      }
+    });
+
+    it("renders nothing below the 10.5px legibility floor", () => {
+      const html = render("site", "E", richEvidence);
+      // Derived from what actually rendered rather than from a list of known
+      // offenders: a new 9px label added tomorrow has to trip this too.
+      const sizes = [...html.matchAll(/text-\[(\d+(?:\.\d+)?)px\]/g)].map(
+        (match) => Number(match[1]),
+      );
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10.5);
     });
   });
 

@@ -3086,7 +3086,7 @@
         "healthHint": "Health uses evaluated, weighted checks only",
         "evaluatedTotal": "{evaluated} / {total} evaluated",
         "engineCoverage": "{ready} / {total} engines ready",
-        "inventoryCoverage": "Requirements inventory: {ready} / {total} ready; this is not proof of the current run",
+        "inventoryCoverage": "{ready} / {total} checks have a detector; the rest cannot return a verdict, and each one says why",
         "groupsLabel": "Audit groups",
         "checksLabel": "Checks",
         "selectCheck": "Inspect {check}",

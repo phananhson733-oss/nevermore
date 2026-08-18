@@ -23,7 +23,30 @@ describe("v2 Agent audit catalog", () => {
     expect(SITE_AUDIT_GROUPS.reduce((sum, group) => sum + (group.weight ?? 0), 0)).toBe(100);
     expect(PAGE_AUDIT_GROUPS.reduce((sum, group) => sum + (group.weight ?? 0), 0)).toBe(100);
     const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap((group) => group.checks);
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(47);
+    // Inventory readiness is derived, not listed, so it cannot drift from the
+    // detectors again. A hand-kept list is what let 47 checks advertise
+    // readiness while only 24 could ever produce a verdict.
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(24);
+    for (const check of all) {
+      expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
+    }
+    // A check with no detector must say so rather than borrow the state that
+    // means "the detector ran and matched nothing".
+    for (const check of all) {
+      if (check.engine !== "needs-integration") continue;
+      expect(check.evidenceRecordIds).toEqual([]);
+      // D1 and 4.5 have a detector; it is held behind the P6 gate, and their
+      // data source names that instead — a more specific reason, not a looser one.
+      expect(check.dataSource.en).toContain(
+        check.id === "D1" || check.id === "4.5" ? "P6" : "no detector",
+      );
+    }
+    // Impression shares only exist in Search Console, whatever supplies the URLs.
+    for (const id of ["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5"]) {
+      expect(all.find((check) => check.id === id)?.engine).toBe(
+        "access-required",
+      );
+    }
     expect(AGENT_AUDIT_DEFAULT_GROUPS).toEqual({
       seo: { site: "D", page: "2" },
       tech: { site: "C", page: "1" },

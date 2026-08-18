@@ -126,16 +126,6 @@ const PAGE_GROUPS = [
   ["9", "Search opportunity", "搜索机会", 25],
 ] as const;
 
-const SITE_READY = new Set([
-  "A2", "A5", "A6", "A7", "A8", "B1", "B2", "B3", "B4", "B5", "C1", "C2",
-  "C3", "C4", "C6", "D2", "D3", "D4", "D5", "D6", "D7", "E1", "E2", "E3", "E4",
-]);
-const PAGE_READY = new Set([
-  "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "2.1", "2.2",
-  "2.4", "2.5", "3.1", "3.4", "3.5", "4.1", "5.1", "6.1", "6.2",
-  "6.3", "6.4", "7.1", "9.5",
-]);
-
 const BLOCKER_CAPABLE = new Set([
   "A1",
   "A2",
@@ -233,12 +223,26 @@ function authority(id: string): AgentAuditThresholdAuthority {
   return "industry";
 }
 
+/**
+ * Why this run cannot decide a check, when it cannot.
+ *
+ * `access-required` and `not-integrated` name a source outside this codebase:
+ * Search Console for the impression and index checks, CrUX or a SERP provider
+ * for the rest. `needs-integration` names one inside it — the crawl already
+ * collected the material and no code reads it yet. Keeping the two apart is the
+ * point of the state: `needs-supplement` belongs to the evaluator, which uses it
+ * for a detector that ran and matched nothing. That is a measurement, not a gap,
+ * and reading it as a gap is what made the panel look uniformly unfinished.
+ */
 function engine(id: string, ready: boolean): AgentAuditEngineState {
-  if (["A1", "A3", "E1", "E2", "E3", "E4", "9.5"].includes(id)) {
+  // A2 and E5 read like crawl checks because the crawl supplies the URL set,
+  // but both are impression shares and an impression only exists in Search
+  // Console. They are gated exactly like E1-E4.
+  if (["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5", "9.5"].includes(id)) {
     return "access-required";
   }
   if (/^8\./.test(id) || /^9\.[1-4]$/.test(id)) return "not-integrated";
-  return ready ? "ready" : "needs-supplement";
+  return ready ? "ready" : "needs-integration";
 }
 
 function impact(scope: AgentAuditScope, groupId: string): AgentAuditLocalizedText {
@@ -303,7 +307,11 @@ function fix(scope: AgentAuditScope, groupId: string): AgentAuditLocalizedText {
 function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefinition {
   const [id, titleEn, titleZh, thresholdEn, thresholdZh] = seed;
   const groupId = scope === "site" ? id[0]! : id.split(".")[0]!;
-  const ready = (scope === "site" ? SITE_READY : PAGE_READY).has(id);
+  // A detector exists for this check exactly when something emits an evidence
+  // record it reads. The two hand-kept "ready" sets this replaces had drifted to
+  // 47 entries against 24 real detectors, so the panel advertised what the
+  // requirements document covered as though it were working code.
+  const ready = (EVIDENCE[id] ?? []).length > 0;
   const blockerEvidenceRecordIds =
     scope === "page"
       ? id === "1.1"
@@ -344,14 +352,18 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
         ? "Authorized search source required"
         : engine(id, ready) === "not-integrated"
           ? "Required engine not integrated"
-          : "Bounded crawl or documented engine inventory",
+          : ready
+            ? "Bounded crawl"
+            : "Crawl collects the material; no detector reads it yet",
       id === "D1" || id === "4.5"
         ? "检测器受 P6 假阳性上线门槛阻断"
         : engine(id, ready) === "access-required"
         ? "需要授权搜索来源"
         : engine(id, ready) === "not-integrated"
           ? "所需引擎尚未接入"
-          : "有边界抓取或需求文档引擎库存",
+          : ready
+            ? "有边界抓取"
+            : "抓取已采到原料，尚无检测器读取",
     ),
     scoreWeight: id === "2.3" || id === "6.1" ? 2 : 1,
     scored,
@@ -369,13 +381,13 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
       id === "D1" || id === "4.5"
         ? "P6 hard gate: exclude canonical-converged variants and pass known true-positive and false-positive fixtures before this check can run."
         : ready
-        ? "Requirements inventory only until this run exposes a matching measurement."
-        : "Excluded from scoring until the named source or engine is available.",
+          ? "Decided only where this bounded run exposed a matching measurement."
+          : "Excluded from scoring until a detector or the named source exists.",
       id === "D1" || id === "4.5"
         ? "P6 硬门槛：必须排除已 Canonical 收敛变体，并通过已知真阳性和假阳性 fixture 后，此检查才能运行。"
         : ready
-        ? "仅代表需求文档库存；本次运行暴露匹配实测值后才可判定。"
-        : "在指定来源或引擎可用前排除评分。",
+          ? "仅在本次有边界运行暴露匹配实测值处判定。"
+          : "在检测器或指定来源具备之前排除评分。",
     ),
   };
 }
