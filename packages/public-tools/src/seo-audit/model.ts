@@ -169,10 +169,71 @@ function buildPages(raw: CrawlRaw): readonly SeoAuditPage[] {
       inboundLinks: inbound.get(page.subjectUrl) ?? 0,
       outboundLinks: page.projection.internalOutlinks.length,
       sitemapMember: page.projection.sitemapMember,
+      assets: page.assets ?? null,
       jsonLdTypes: page.projection.jsonLd.types,
       jsonLdErrorCount: page.projection.jsonLd.errorCount,
     };
   });
+}
+
+/** Image formats a modern-format check treats as current. */
+const MODERN_IMAGE_FORMATS = new Set(["webp", "avif"]);
+
+/**
+ * The file extension of an image reference, or null when it has none.
+ *
+ * Read from the URL text and nothing else. A data URI, a query-string image
+ * service and an extensionless CDN path all return null, which keeps them out
+ * of the ratio entirely — an unreadable format is not an old format, and
+ * guessing one would publish a share of something never measured.
+ */
+function imageExtension(src: string | null): string | null {
+  if (src === null) return null;
+  const withoutQuery = src.split(/[?#]/)[0] ?? "";
+  const match = /\.([a-z0-9]{2,5})$/i.exec(withoutQuery);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function readableFormats(page: SeoAuditPage): readonly string[] {
+  return (page.assets?.images ?? [])
+    .map((image) => imageExtension(image.src))
+    .filter((extension): extension is string => extension !== null);
+}
+
+/** Share of format-readable images that are not WebP or AVIF. */
+function legacyFormatShare(page: SeoAuditPage): number {
+  const formats = readableFormats(page);
+  if (formats.length === 0) return 0;
+  const legacy = formats.filter(
+    (extension) => !MODERN_IMAGE_FORMATS.has(extension),
+  ).length;
+  return legacy / formats.length;
+}
+
+/**
+ * The first place the heading outline jumps a level, or null.
+ *
+ * Counts from the first heading the document actually has rather than from a
+ * notional level zero. Starting at zero makes a page whose first heading is an
+ * `<h2>` — a nav heading above the title, which is ordinary — report a skip it
+ * does not have, and that false positive is the whole reason this check needs
+ * its own level scan in the first place.
+ */
+function firstSkippedLevel(
+  page: SeoAuditPage,
+): { readonly from: number; readonly to: number } | null {
+  const levels = page.assets?.headingLevels ?? [];
+  let previous: number | null = null;
+  for (const level of levels) {
+    if (previous !== null && level > previous + 1) {
+      return { from: previous, to: level };
+    }
+    // Compared against the heading immediately before it, in document order.
+    // Coming back up to a shallower level is how every document is structured
+    // and is never a skip; only a jump downward past a level is.
+    previous = level;
+  }
+  return null;
 }
 
 function buildRecords(
@@ -203,6 +264,12 @@ function buildRecords(
   // A homepage has nothing above it to put in a breadcrumb, so including the
   // root would make every correctly-built site fail 7.5 by exactly one page.
   const belowRootHtmlPages = htmlPages.filter((page) => page.depth > 0);
+  // A page with no images cannot fail an image check, and counting it as
+  // tested would report a text-only site as fully covered rather than as not
+  // applicable.
+  const pagesWithImages = htmlPages.filter(
+    (page) => (page.assets?.images.length ?? 0) > 0,
+  );
   const linkTargetErrors = new Map<
     string,
     { readonly page: SeoAuditPage; readonly sources: Set<string> }
@@ -723,7 +790,7 @@ function buildRecords(
       id: "page_disallowed_for_search_crawler",
       category: "crawl",
       tested: robotsReadable ? pages.length : 0,
-      state: robotsReadable ? undefined : "unverified",
+      ...(robotsReadable ? {} : { state: "unverified" as const }),
       observations: (robotsReadable ? pages : [])
         .filter((page) => searchCrawlerMayFetch(raw.robots, page.url) === false)
         .map((page) =>
@@ -749,8 +816,12 @@ function buildRecords(
       unit: "site_resource",
       population: "site_resource",
       tested:
-        robotsReadable && raw.sitemap.fetched ? raw.sitemap.subjectUrls.length : 0,
-      state: robotsReadable && raw.sitemap.fetched ? undefined : "unverified",
+        robotsReadable && raw.sitemap.fetched
+          ? raw.sitemap.subjectUrls.length
+          : 0,
+      ...(robotsReadable && raw.sitemap.fetched
+        ? {}
+        : { state: "unverified" as const }),
       observations: (robotsReadable && raw.sitemap.fetched
         ? raw.sitemap.subjectUrls
         : []
@@ -800,6 +871,139 @@ function buildRecords(
           }),
         ),
       limitation: "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
+    }),
+    record({
+      // D4 and 5.1 read the same condition at two scales. `alt=""` counts as
+      // covered: an empty alt is how correct markup marks a decorative image,
+      // and calling it a defect would push every accessible site below the bar.
+      id: "image_without_alt_text",
+      category: "structure",
+      // Every collected page, not the image-carrying subset. A page with no
+      // images has no image missing alt, which is a true pass — and it is the
+      // only shape the page projection can read: for a conditional subset it
+      // cannot tell a clean page from one that never qualified, so every
+      // correctly-marked-up page came back "excluded".
+      tested: htmlPages.length,
+      observations: pagesWithImages
+        .filter((page) =>
+          (page.assets?.images ?? []).some((image) => !image.hasAltAttribute),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            images_without_alt: (page.assets?.images ?? []).filter(
+              (image) => !image.hasAltAttribute,
+            ).length,
+            images_observed: page.assets?.images.length ?? 0,
+            images_on_page: page.assets?.imageCount ?? 0,
+          }),
+        ),
+      limitation:
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
+    }),
+    record({
+      // D4. A share of the pages that carry images, which is what the
+      // published threshold is about. Counting every collected page instead
+      // would let a mostly-text site dilute its way past the bar with five
+      // percent image pages that are all broken.
+      id: "image_alt_coverage",
+      category: "structure",
+      unit: "site_resource",
+      population: "site_resource",
+      tested: pagesWithImages.length,
+      ...(pagesWithImages.length === 0
+        ? { state: "unverified" as const }
+        : {}),
+      observations:
+        pagesWithImages.length === 0
+          ? []
+          : [
+              {
+                url: null,
+                values: values({
+                  alt_coverage_share: Number(
+                    (
+                      1 -
+                      pagesWithImages.filter((page) =>
+                        (page.assets?.images ?? []).some(
+                          (image) => !image.hasAltAttribute,
+                        ),
+                      ).length /
+                        pagesWithImages.length
+                    ).toFixed(4),
+                  ),
+                  pages_with_images: pagesWithImages.length,
+                  pages_with_uncovered_images: pagesWithImages.filter((page) =>
+                    (page.assets?.images ?? []).some(
+                      (image) => !image.hasAltAttribute,
+                    ),
+                  ).length,
+                }),
+              },
+            ],
+      limitation:
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
+    }),
+    record({
+      // 5.3. The denominator is images whose extension is readable at all, so
+      // a data URI or an extensionless CDN path leaves the ratio rather than
+      // counting against it — an unreadable format is not an old format.
+      id: "image_in_legacy_format",
+      category: "structure",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => legacyFormatShare(page) > 0)
+        .map((page) => {
+          const readable = readableFormats(page);
+          return pageObservation(page, {
+            modern_format_share: Number(
+              (1 - legacyFormatShare(page)).toFixed(4),
+            ),
+            legacy_format_share: Number(legacyFormatShare(page).toFixed(4)),
+            images_with_readable_format: readable.length,
+            images_on_page: page.assets?.imageCount ?? 0,
+          });
+        }),
+      limitation:
+        "format_read_from_the_url_extension_only_not_from_the_response",
+    }),
+    record({
+      // 2.6. All three or none: a card that renders a title and no image is
+      // not two-thirds of a share preview, it is a share preview that looks
+      // broken.
+      id: "open_graph_incomplete",
+      category: "metadata",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => {
+          const og = page.assets?.openGraph;
+          return og !== undefined && !(og.title && og.description && og.image);
+        })
+        .map((page) =>
+          pageObservation(page, {
+            open_graph_title: page.assets?.openGraph.title ?? false,
+            open_graph_description: page.assets?.openGraph.description ?? false,
+            open_graph_image: page.assets?.openGraph.image ?? false,
+          }),
+        ),
+      limitation: "static_html_meta_tags_only",
+    }),
+    record({
+      // 3.3. Levels come from their own scan, so an icon-only heading still
+      // occupies its level; the text collector drops it, and a level dropped
+      // between h1 and h3 fabricates exactly the skip this reports.
+      id: "heading_level_skipped",
+      category: "structure",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => firstSkippedLevel(page) !== null)
+        .map((page) =>
+          pageObservation(page, {
+            skipped_from_level: firstSkippedLevel(page)?.from ?? null,
+            skipped_to_level: firstSkippedLevel(page)?.to ?? null,
+            heading_levels_observed: page.assets?.headingLevels.length ?? 0,
+          }),
+        ),
+      limitation: "heading_levels_read_from_static_html_in_document_order",
     }),
     record({
       id: "json_ld_parse_error",

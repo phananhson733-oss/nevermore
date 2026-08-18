@@ -16,7 +16,12 @@ import type {
   CrawlJsonLdProjection,
   CrawlLinkProjection,
 } from "../observations.ts";
-import { boundChars, CRAWL_PROJECTION_LIMITS } from "./types.ts";
+import {
+  boundChars,
+  CRAWL_PROJECTION_LIMITS,
+  type CrawlImageObservation,
+  type CrawlPageAssets,
+} from "./types.ts";
 import {
   parseHtmlLanguageDeclaration,
   type HtmlLanguageDeclaration,
@@ -58,6 +63,8 @@ export interface ParsedPage {
   readonly jsonLd: CrawlJsonLdProjection;
   readonly paragraphs: readonly string[];
   readonly bodyExcerpt: string | null;
+  /** Ephemeral audit inputs; never copied into `crawl.page.v1`. */
+  readonly assets: CrawlPageAssets;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +195,61 @@ function collectHeadings(html: string): readonly string[] {
     if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadings) break;
   }
   return out;
+}
+
+/**
+ * Heading levels in document order.
+ *
+ * Separate from `collectHeadings` on purpose, and matching neither of its two
+ * filters. That one keeps only headings with text and only those with a closing
+ * tag, both of which are right for a list of heading strings and wrong for a
+ * level sequence: an icon-only `<h2>` still occupies a level, and dropping it
+ * invents a skip from h1 to h3 that the document does not contain.
+ */
+function collectHeadingLevels(html: string): readonly number[] {
+  const out: number[] = [];
+  for (const match of html.matchAll(/<h([1-6])\b[^>]*>/gi)) {
+    const level = Number(match[1]);
+    if (Number.isInteger(level)) out.push(level);
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadingLevels) break;
+  }
+  return out;
+}
+
+function collectImages(html: string): {
+  readonly images: readonly CrawlImageObservation[];
+  readonly imageCount: number;
+} {
+  const images: CrawlImageObservation[] = [];
+  let imageCount = 0;
+  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+    imageCount += 1;
+    if (images.length >= CRAWL_PROJECTION_LIMITS.maxImages) continue;
+    const tag = match[0];
+    const alt = attr(tag, "alt");
+    const src = attr(tag, "src");
+    images.push({
+      src:
+        src === null
+          ? null
+          : truncate(decodeHtml(src), CRAWL_PROJECTION_LIMITS.maxUrlChars),
+      // Present-but-empty and absent are different statements. `alt=""` marks
+      // an image as decorative, which is correct markup; no attribute at all
+      // is the omission the check is about.
+      hasAltAttribute: alt !== null,
+      altHasText: (alt ?? "").trim().length > 0,
+    });
+  }
+  return { images, imageCount };
+}
+
+/** Whether a `<meta>` tag declares the given Open Graph property with content. */
+function hasOpenGraph(metaTags: readonly string[], property: string): boolean {
+  return metaTags.some(
+    (tag) =>
+      attr(tag, "property")?.trim().toLowerCase() === property &&
+      (attr(tag, "content") ?? "").trim().length > 0,
+  );
 }
 
 function collectParagraphs(html: string): readonly string[] {
@@ -447,11 +509,28 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
   );
   const bodyText = extractNormalisedBody(html);
+  // Left exactly as it was. `wordCount` is a field of the frozen crawl.page.v1
+  // projection, so changing how it is derived changes the meaning of a number
+  // already stored against that version. Measures it cannot express — a CJK
+  // page splits into one or two "words" — are taken from `assets.bodyText` by
+  // whoever needs them, at their own declared version.
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
+  const collectedImages = collectImages(html);
   const outlinks = collectInternalOutlinks(html, pageUrl, pageOrigin);
   const htmlTag = firstTag(html, /<html\b[^>]*>/i);
 
   return {
+    assets: {
+      images: collectedImages.images,
+      imageCount: collectedImages.imageCount,
+      openGraph: {
+        title: hasOpenGraph(metaTags, "og:title"),
+        description: hasOpenGraph(metaTags, "og:description"),
+        image: hasOpenGraph(metaTags, "og:image"),
+      },
+      headingLevels: collectHeadingLevels(html),
+      bodyText: bodyText || null,
+    },
     htmlLanguage: parseHtmlLanguageDeclaration(attr(htmlTag, "lang")),
     title: tagText(html, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: description,

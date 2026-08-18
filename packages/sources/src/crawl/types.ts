@@ -85,6 +85,8 @@ export const CRAWL_PROJECTION_LIMITS = {
   maxUserAgentChars: 256,
   maxSitemaps: 50,
   maxSitemapUrls: 2_000,
+  maxImages: 300,
+  maxHeadingLevels: 100,
 } as const;
 
 /** Crawl budget knobs (spec §7.2, §7.3). Overridable only for tests/fixtures. */
@@ -135,10 +137,56 @@ export interface CrawlParams {
  * Evidence/PageSnapshot lineage; projection status/finalStatus describe that
  * journey's initial/terminal responses and redirectChain retains its targets.
  */
+/**
+ * What one `<img>` contributes to the image checks.
+ *
+ * `src` is kept verbatim rather than resolved: the only thing read from it is
+ * the file extension, and resolving it against the page would turn a broken or
+ * templated reference into a URL that looks measured.
+ */
+export interface CrawlImageObservation {
+  readonly src: string | null;
+  /** Whether an alt attribute was present at all, empty or not. */
+  readonly hasAltAttribute: boolean;
+  /** Whether that attribute carried text. An empty alt is a deliberate mark. */
+  readonly altHasText: boolean;
+}
+
+/**
+ * Page facts the audit reads that `crawl.page.v1` does not carry.
+ *
+ * Deliberately on the record and not on the projection. The projection is a
+ * persisted, versioned contract read back by a `.strict()` Zod schema in the
+ * product app, so one added field would fail validation on every row already
+ * stored. These live beside it, in memory, for the length of one run — the same
+ * place `htmlLanguage` and the frontier targets already live.
+ */
+export interface CrawlPageAssets {
+  readonly images: readonly CrawlImageObservation[];
+  /** True count, so a page past `maxImages` still reports its real total. */
+  readonly imageCount: number;
+  readonly openGraph: {
+    readonly title: boolean;
+    readonly description: boolean;
+    readonly image: boolean;
+  };
+  /**
+   * Heading levels in document order, collected independently of the text
+   * filter and of the closing-tag requirement the text collector applies.
+   * An icon-only `<h2>` still occupies a level, and dropping it would
+   * fabricate a skip that the document does not contain.
+   */
+  readonly headingLevels: readonly number[];
+  /** Normalised body text, for measures the frozen `wordCount` cannot express. */
+  readonly bodyText: string | null;
+}
+
 export interface CrawlPageRecord {
   readonly subjectUrl: string;
   readonly depth: number;
   readonly projection: CrawlPageProjection;
+  /** Absent for a record built before this existed, or by a fixture. */
+  readonly assets?: CrawlPageAssets;
 }
 
 /**

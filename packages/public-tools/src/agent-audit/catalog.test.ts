@@ -26,7 +26,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(37);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(42);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -120,7 +120,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(37);
+    expect(decidable).toHaveLength(42);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its

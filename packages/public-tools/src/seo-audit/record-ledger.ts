@@ -56,6 +56,11 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   page_disallowed_for_search_crawler: "crawl",
   sitemap_url_disallowed_by_robots: "crawl",
   page_without_breadcrumb_list: "structured_data",
+  image_without_alt_text: "structure",
+  image_alt_coverage: "structure",
+  image_in_legacy_format: "structure",
+  open_graph_incomplete: "metadata",
+  heading_level_skipped: "structure",
 } as const satisfies Readonly<Record<string, SeoAuditCategory>>;
 
 export const SEO_AUDIT_RECORD_IDS = Object.keys(SEO_AUDIT_RECORD_CATEGORIES);
@@ -107,6 +112,21 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "pages_measured",
   "robots_user_agent",
   "robots_allowed",
+  "images_without_alt",
+  "alt_coverage_share",
+  "pages_with_images",
+  "pages_with_uncovered_images",
+  "images_observed",
+  "images_on_page",
+  "modern_format_share",
+  "legacy_format_share",
+  "images_with_readable_format",
+  "open_graph_title",
+  "open_graph_description",
+  "open_graph_image",
+  "skipped_from_level",
+  "skipped_to_level",
+  "heading_levels_observed",
 ];
 
 /**
@@ -133,6 +153,10 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "redirect_destination_status_not_observed_for_every_redirect",
   "robots_rules_read_for_one_search_crawler_token_only",
   "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
+  "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
+  "format_read_from_the_url_extension_only_not_from_the_response",
+  "static_html_meta_tags_only",
+  "heading_levels_read_from_static_html_in_document_order",
 ];
 
 /** Limitation codes the per-visitor search region publishes. */

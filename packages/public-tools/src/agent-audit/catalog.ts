@@ -42,7 +42,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["D1", "Duplicate title rate", "重复 Title 占比", "Below 2%; otherwise Warning; exclude canonical-converged variants", "低于 2%；否则为警告；排除已 Canonical 收敛变体"],
   ["D2", "Duplicate meta description rate", "重复 Meta description 占比", "Below 5%; otherwise Tip", "低于 5%；否则为提示"],
   ["D3", "Pages missing title or H1", "缺失 Title 或 H1 的页数", "0 pages; above 0 is Warning", "0 页；大于 0 为警告"],
-  ["D4", "Image alt coverage", "图片 alt 覆盖率", "100%; below 95% is Warning", "100%；低于 95% 为警告"],
+  ["D4", "Image alt coverage", "图片 alt 覆盖率", "100% of the pages carrying images have alt on all of them; below 95% is Warning. An empty alt marks a decorative image and counts as covered.", "含图片的页面中，100% 的页面其图片都带 alt；低于 95% 为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["D5", "Schema coverage", "Schema 覆盖率", "At least 90%; otherwise Warning", "至少 90%；否则为警告"],
   ["D6", "hreflang cluster completeness", "hreflang 簇完整性", "100% valid targets; any 404 target is Blocker", "目标 100% 有效；任何 404 目标均为阻断"],
   ["D7", "Pages whose canonical points at another page", "Canonical 指向他页的页数", "Listed for review, not judged: cross-page canonicals are often deliberate consolidation. Confirm each target is the intended one.", "仅列出待复核，不作判定：跨页 Canonical 常是有意收敛。请确认每个目标都是预期页面。"],
@@ -79,9 +79,9 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
   ["4.4", "Content-to-code ratio", "内容与代码比", "Internal heuristic only. No documented ratio threshold exists; treat it as a rendering-weight hint.", "仅为内部启发式。不存在有据可查的比例阈值；仅作渲染体积提示。"],
   ["4.5", "Similarity with other site pages", "与站内其他页相似度", "Below 70%; otherwise Warning; P6 false-positive gate required", "低于 70%；否则为警告；必须通过 P6 假阳性门禁"],
-  ["5.1", "Images missing alt text", "无 alt 图片数", "0 images; otherwise Warning with proportional deduction", "0 张图片；否则为警告并按比例扣分"],
+  ["5.1", "Images missing alt text", "无 alt 图片数", "0 images with no alt attribute; otherwise Warning. An empty alt marks a decorative image and counts as covered.", "没有 alt 属性的图片为 0 张；否则为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
-  ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF; otherwise Tip", "WebP 或 AVIF 至少 80%；否则为提示"],
+  ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF among images whose format the URL states; otherwise Tip. An unreadable extension leaves the ratio rather than counting against it.", "在 URL 能读出格式的图片中，WebP 或 AVIF 至少占 80%；否则为提示。读不出扩展名的图片不计入该比例，也不算作旧格式。"],
   ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "No; otherwise Warning", "否；否则为警告"],
   ["6.1", "Inbound internal link count", "入站内链数", "At least 1; zero is Warning; 2× check weight", "至少 1 条；0 条为警告；检查权重 2 倍"],
   ["6.2", "Outbound internal link count", "出站内链数", "At least 1 observed outbound internal link; zero is Warning", "至少观察到 1 条出站内链；0 条为警告"],
@@ -197,6 +197,11 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   A5: ["sitemap_url_disallowed_by_robots"],
   "1.2": ["page_disallowed_for_search_crawler"],
   "7.5": ["page_without_breadcrumb_list"],
+  D4: ["image_alt_coverage"],
+  "5.1": ["image_without_alt_text"],
+  "5.3": ["image_in_legacy_format"],
+  "2.6": ["open_graph_incomplete"],
+  "3.3": ["heading_level_skipped"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -290,6 +295,27 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       label: "low_click_position_impression_share",
       passAtOrBelow: 0.4,
       failAbove: 0.6,
+    },
+  ],
+  D4: [
+    {
+      recordId: "image_alt_coverage",
+      kind: "aggregate-min",
+      label: "alt_coverage_share",
+      passAtOrAbove: 1,
+      failBelow: 0.95,
+    },
+  ],
+  "5.3": [
+    {
+      // Published as "at least 80% modern", executed as "at most 20% legacy".
+      // The same bound, written in the direction the rule kind can express;
+      // the modern share is published beside it because that is the number the
+      // threshold names and the reader will look for.
+      recordId: "image_in_legacy_format",
+      kind: "observation-value-max",
+      label: "legacy_format_share",
+      max: 0.2,
     },
   ],
   "9.5": [
@@ -542,6 +568,26 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   E3: l(
     "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
     "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
+  ),
+  D4: l(
+    "Group the uncovered pages by path shape before writing anything. If they share one, the template behind them renders images without an alt attribute and one edit covers the group; if they do not, the alt was skipped page by page and this is a content pass, not a code one. Write what the image conveys in the sentence it sits in, not what it depicts — the same photograph is \"the finished dashboard after setup\" on one page and \"our team in 2024\" on another. An image that carries no meaning takes alt=\"\", which this check already counts as covered.",
+    "动手写之前，先按路径形状给未覆盖的页面分组。如果它们共用一种路径，说明背后的模板渲染图片时就没带 alt 属性，改一处即可覆盖一整组；如果不共用，那是逐页漏掉的，这就是一轮内容工作而不是代码工作。写的是这张图在它所处的句子里传达了什么，而不是它画了什么——同一张照片，在一个页面上是「配置完成后的仪表盘」，在另一个页面上是「2024 年的团队」。不承载信息的图片写 alt=\"\" 即可，本检查已经把它计为已覆盖。",
+  ),
+  "5.1": l(
+    "Each image here has no alt attribute at all, so a reader using a screen reader is told nothing about it and a search system has only the file name. Write the alt from what the image is doing on this page: the instruction it illustrates, the state it shows, the person it names. Do not start with \"image of\" — the assistive technology already says that. If the image is purely decorative, give it alt=\"\" rather than leaving the attribute off; the empty form is a statement that there is nothing to say, and this check accepts it.",
+    "这里的每张图片都完全没有 alt 属性，用读屏软件的读者因此得不到任何信息，搜索系统能拿到的也只有文件名。按这张图在本页面上正在做的事情来写：它说明的操作、它展示的状态、它指认的人。开头不要写「图片：」——辅助技术自己会先说这一句。如果图片纯粹是装饰，给它 alt=\"\" 而不是干脆不写这个属性；空写法本身就是「这里没有需要说的内容」这个陈述，本检查接受它。",
+  ),
+  "5.3": l(
+    "These images are served in a format that costs more bytes than the same picture needs. The cheapest version of this fix is not a re-export: point the pipeline that already serves them at a format-negotiating layer — an image CDN, or your framework's own image component — so a browser that supports AVIF gets AVIF and one that does not still gets what it gets today. Do the largest files first; a single hero image usually outweighs every icon on the page. Images whose URL states no extension are not counted here at all, so this share is of what could be read.",
+    "这些图片使用的格式，比同一张画面实际需要的字节数更贵。最便宜的修法不是重新导出：把已经在提供这些图片的链路指向一个能协商格式的层——图片 CDN，或者你所用框架自带的图片组件——让支持 AVIF 的浏览器拿到 AVIF，不支持的仍然拿到今天这一份。先处理体积最大的；单张首屏大图往往比页面上所有图标加起来还重。URL 里读不出扩展名的图片完全不计入这里，所以这个占比只针对能读出格式的那部分。",
+  ),
+  "2.6": l(
+    "This page is missing at least one of og:title, og:description and og:image, so when someone shares it the platform falls back to whatever it can scrape — often the page title and a logo, sometimes nothing. Add all three or none: a card that renders a title with no image is not two-thirds of a preview, it is a preview that looks broken. The image is the part worth spending time on, because it is what a reader sees before any text, and it needs to be readable at the small size a timeline renders it at.",
+    "这个页面缺少 og:title、og:description、og:image 中的至少一项，别人分享它时，平台只能退回去抓能抓到的东西——通常是页面标题加一个 logo，有时什么都没有。要加就三项都加，否则不如不加：只渲染出标题、没有图的卡片不是三分之二的预览，而是一个看起来坏掉的预览。其中最值得花时间的是那张图，因为读者在看到任何文字之前先看到它，而它必须在时间线渲染的那个小尺寸下依然读得清。",
+  ),
+  "3.3": l(
+    "The outline jumps a level here — an h2 followed directly by an h4, say — which tells a reader navigating by headings that a section exists that does not. Almost always the cause is styling: someone picked the heading tag that looked right rather than the one that was right. Fix it by choosing the level from the document structure and moving the appearance into CSS. Levels are counted in document order from the page's first heading, including headings that contain only an icon, so what is reported is the sequence the markup actually declares.",
+    "这里的标题层级跳了一级——比如 h2 后面直接接 h4——这会告诉靠标题导航的读者：存在一个其实并不存在的小节。成因几乎总是样式：有人挑了看起来对的标题标签，而不是结构上对的那个。修法是按文档结构选层级，把外观交给 CSS。层级是从页面的第一个标题开始、按文档顺序统计的，也包含只有图标没有文字的标题，所以这里报出来的就是标记实际声明的那个序列。",
   ),
   A5: l(
     "Each of these URLs is on the sitemap, which is the site asking for it to be indexed, and is also matched by a Disallow rule, which forbids fetching it. Both cannot be intended. Decide which one is right before editing anything: if the page should be indexed, remove or narrow the Disallow — it is usually a prefix that grew wider than it was meant to. If it should not be, take it out of the sitemap instead, and note that Disallow does not remove an already-indexed URL. That needs noindex, which requires the crawler to be allowed to fetch the page and read it.",

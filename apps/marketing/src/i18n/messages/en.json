@@ -960,7 +960,11 @@
         "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "The page rows hit this run's cap, so a page that does have impressions may be missing from the list.",
         "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown.",
         "robots_rules_read_for_one_search_crawler_token_only": "robots.txt rules were read for a single search-crawler token. A group written for a different crawler is not reflected here.",
-        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "Only whether BreadcrumbList markup exists. Whether it matches the breadcrumb a reader sees is not checked here."
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "Only whether BreadcrumbList markup exists. Whether it matches the breadcrumb a reader sees is not checked here.",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "Only <img> tags in the static HTML. Images inserted by CSS or by script are not seen here.",
+        "format_read_from_the_url_extension_only_not_from_the_response": "Format is read from the URL extension, not from the response. An image served as WebP from an extensionless URL is not counted either way.",
+        "static_html_meta_tags_only": "Read from the static HTML meta tags only. Tags added by script after load are not seen.",
+        "heading_levels_read_from_static_html_in_document_order": "Heading levels are read from the static HTML in document order, counting from the page's first heading."
       },
       "records": {
         "robots_resource": {
@@ -1106,6 +1110,26 @@
         "page_without_breadcrumb_list": {
           "title": "Pages below the root without BreadcrumbList",
           "description": "Collected pages deeper than the site root that declare no BreadcrumbList in their JSON-LD. Presence only: this run keeps no visible breadcrumb trail to compare the markup against."
+        },
+        "image_without_alt_text": {
+          "title": "Pages with an image that has no alt attribute",
+          "description": "Collected pages carrying at least one <img> with no alt attribute at all. An empty alt marks a decorative image and counts as covered. Read from static HTML, so images inserted by CSS or script are not seen."
+        },
+        "image_in_legacy_format": {
+          "title": "Pages serving images in a legacy format",
+          "description": "Collected pages where fewer than 80% of the images whose URL states a format are WebP or AVIF. An image whose extension cannot be read leaves the ratio rather than counting against it."
+        },
+        "open_graph_incomplete": {
+          "title": "Pages missing an Open Graph property",
+          "description": "Collected pages that do not declare all three of og:title, og:description and og:image with content. Read from static meta tags only."
+        },
+        "heading_level_skipped": {
+          "title": "Pages whose heading outline skips a level",
+          "description": "Collected pages where the heading sequence jumps past a level in document order — an h2 followed directly by an h4, for example. Levels are counted from the page's first heading and include headings that contain only an icon."
+        },
+        "image_alt_coverage": {
+          "title": "Image alt coverage across the site",
+          "description": "Share of the collected pages that carry images and have an alt attribute on every one of them. Pages with no images are outside this denominator, so a mostly-text site cannot dilute its way past the bar. An empty alt counts as covered."
         }
       },
       "evidence": {
@@ -1160,7 +1184,22 @@
         "queries_confirmed": "Queries confirmed",
         "clicks_total": "Clicks",
         "robots_user_agent": "Crawler token",
-        "robots_allowed": "Allowed by robots.txt"
+        "robots_allowed": "Allowed by robots.txt",
+        "images_without_alt": "Images with no alt attribute",
+        "images_observed": "Images read",
+        "images_on_page": "Images on page",
+        "modern_format_share": "Modern format share",
+        "legacy_format_share": "Legacy format share",
+        "images_with_readable_format": "Images with a readable format",
+        "open_graph_title": "og:title",
+        "open_graph_description": "og:description",
+        "open_graph_image": "og:image",
+        "skipped_from_level": "Skipped from level",
+        "skipped_to_level": "Skipped to level",
+        "heading_levels_observed": "Heading levels read",
+        "alt_coverage_share": "Alt coverage",
+        "pages_with_images": "Pages with images",
+        "pages_with_uncovered_images": "Pages with an uncovered image"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

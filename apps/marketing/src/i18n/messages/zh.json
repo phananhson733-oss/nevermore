@@ -960,7 +960,11 @@
         "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "页面行数触到了本次运行的上限，确实有曝光的页面可能不在这份清单里。",
         "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。",
         "robots_rules_read_for_one_search_crawler_token_only": "robots.txt 规则只按单一搜索抓取器标记读取。为其他抓取器单独写的分组不体现在这里。",
-        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "只判定 BreadcrumbList 标记是否存在。它与读者实际看到的面包屑是否一致，这里不作检查。"
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "只判定 BreadcrumbList 标记是否存在。它与读者实际看到的面包屑是否一致，这里不作检查。",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "仅统计静态 HTML 中的 <img> 标签。由 CSS 或脚本插入的图片在这里看不到。",
+        "format_read_from_the_url_extension_only_not_from_the_response": "格式依据 URL 扩展名读取，不依据响应内容。以 WebP 提供、但 URL 无扩展名的图片两个方向都不计。",
+        "static_html_meta_tags_only": "仅依据静态 HTML 的 meta 标签。加载后由脚本追加的标签在这里看不到。",
+        "heading_levels_read_from_static_html_in_document_order": "标题层级依据静态 HTML 按文档顺序读取，从页面的第一个标题开始计。"
       },
       "records": {
         "robots_resource": {
@@ -1106,6 +1110,26 @@
         "page_without_breadcrumb_list": {
           "title": "根目录以下缺少 BreadcrumbList 的页面",
           "description": "层级深于站点根目录、且 JSON-LD 中没有声明 BreadcrumbList 的已采集页面。仅判定是否存在：本次运行不保留可见面包屑路径，无法与标记比对。"
+        },
+        "image_without_alt_text": {
+          "title": "存在无 alt 属性图片的页面",
+          "description": "已采集页面中，至少有一张 <img> 完全没有 alt 属性的页面。空 alt 是装饰性图片的标记，计为已覆盖。依据静态 HTML 读取，由 CSS 或脚本插入的图片看不到。"
+        },
+        "image_in_legacy_format": {
+          "title": "以旧格式提供图片的页面",
+          "description": "已采集页面中，URL 能读出格式的图片里 WebP 或 AVIF 占比低于 80% 的页面。读不出扩展名的图片不计入该比例，也不算作旧格式。"
+        },
+        "open_graph_incomplete": {
+          "title": "缺少 Open Graph 属性的页面",
+          "description": "已采集页面中，未同时带内容声明 og:title、og:description、og:image 三项的页面。仅依据静态 meta 标签。"
+        },
+        "heading_level_skipped": {
+          "title": "标题层级跳级的页面",
+          "description": "已采集页面中，按文档顺序标题层级跳过了某一级的页面——例如 h2 后面直接接 h4。层级从页面的第一个标题开始统计，也包含只有图标没有文字的标题。"
+        },
+        "image_alt_coverage": {
+          "title": "全站图片 alt 覆盖率",
+          "description": "在含图片的已采集页面中，每张图片都带 alt 属性的页面所占比例。没有图片的页面不在这个分母里，因此以文字为主的站点无法靠稀释混过这条线。空 alt 计为已覆盖。"
         }
       },
       "evidence": {
@@ -1160,7 +1184,22 @@
         "queries_confirmed": "已确认目标词数",
         "clicks_total": "点击",
         "robots_user_agent": "抓取器标记",
-        "robots_allowed": "robots.txt 是否放行"
+        "robots_allowed": "robots.txt 是否放行",
+        "images_without_alt": "无 alt 属性的图片数",
+        "images_observed": "已读取图片数",
+        "images_on_page": "页面图片总数",
+        "modern_format_share": "现代格式占比",
+        "legacy_format_share": "旧格式占比",
+        "images_with_readable_format": "可读出格式的图片数",
+        "open_graph_title": "og:title",
+        "open_graph_description": "og:description",
+        "open_graph_image": "og:image",
+        "skipped_from_level": "从第几级跳",
+        "skipped_to_level": "跳到第几级",
+        "heading_levels_observed": "已读取标题层级数",
+        "alt_coverage_share": "alt 覆盖率",
+        "pages_with_images": "含图片的页面数",
+        "pages_with_uncovered_images": "存在未覆盖图片的页面数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
