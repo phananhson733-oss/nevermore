@@ -22,6 +22,16 @@ import {
 } from "./geo-sampling.ts";
 import { deriveGeoSourceLandscape } from "./geo-source-landscape.ts";
 
+/**
+ * The retrieval half, because the landscape never totals the two modes.
+ *
+ * A probe asked three times and a one-shot natural question are not
+ * interchangeable samples, so there is no combined number to assert against.
+ */
+function retrievalOf(report: ReturnType<typeof reportOf>) {
+  return deriveGeoSourceLandscape(report).byMode.retrieval_probe;
+}
+
 const CONTEXT: GeoSamplingContext = {
   targetHost: "acme.test",
   brandAliases: [
@@ -152,7 +162,7 @@ describe("deriveGeoSourceLandscape", () => {
     // rival.test is cited in every sample of one question; wide.test appears
     // once in each of two questions. A single count would make them look the
     // same, and they are not the same finding.
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([
         questionOf(probe(), [
           observation(["https://rival.test/a"]),
@@ -185,7 +195,7 @@ describe("deriveGeoSourceLandscape", () => {
     // The evidence list keeps every annotation span, because the same page
     // cited twice in one answer is two observations. Reach is a different
     // question and must not inherit that multiplicity.
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([
         questionOf(probe({ samplesPlanned: 1 }), [
           observation([
@@ -205,7 +215,7 @@ describe("deriveGeoSourceLandscape", () => {
   it("excludes a retrieval sample that never searched, like the coverage block", () => {
     // The denominator has to be the one printed above this table. A landscape
     // counting an unsearched probe would disagree with the numbers beside it.
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([
         questionOf(probe(), [
           observation(["https://rival.test/a"]),
@@ -220,7 +230,7 @@ describe("deriveGeoSourceLandscape", () => {
   });
 
   it("marks the customer's own host and says so at the run level", () => {
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([
         questionOf(probe({ samplesPlanned: 1 }), [
           observation(["https://acme.test/pricing", "https://rival.test/a"]),
@@ -237,8 +247,40 @@ describe("deriveGeoSourceLandscape", () => {
     ).toBe(false);
   });
 
+  // Regression: the first version summed both modes into one denominator, which
+  // is the shared-denominator the coverage block above this table exists to
+  // refuse. Found by cross-model review on 2026-08-18.
+  it("never totals a three-sample probe with a one-shot natural question", () => {
+    const report = reportOf([
+      questionOf(probe(), [
+        observation(["https://rival.test/a"]),
+        observation(["https://rival.test/a"]),
+        observation(["https://rival.test/a"]),
+      ]),
+      questionOf(
+        probe({
+          queryId: "core-jtbd_outcome",
+          slot: "jtbd_outcome",
+          mode: "natural_demand",
+          samplesPlanned: 1,
+        }),
+        [observation(["https://rival.test/a"])],
+      ),
+    ]);
+    const landscape = deriveGeoSourceLandscape(report);
+
+    expect(landscape.byMode.retrieval_probe.citationEvaluableSamples).toBe(3);
+    expect(landscape.byMode.natural_demand.citationEvaluableSamples).toBe(1);
+    expect(
+      landscape.byMode.retrieval_probe.sources[0]?.citedInSamples,
+    ).toBe(3);
+    expect(landscape.byMode.natural_demand.sources[0]?.citedInSamples).toBe(1);
+    // No combined view exists to be misread.
+    expect(Object.keys(landscape)).toEqual(["byMode"]);
+  });
+
   it("is empty, not wrong, when nothing was cited", () => {
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([questionOf(probe({ samplesPlanned: 1 }), [observation([])])]),
     );
 
@@ -249,7 +291,7 @@ describe("deriveGeoSourceLandscape", () => {
   });
 
   it("orders by sample reach, then question reach, then host", () => {
-    const landscape = deriveGeoSourceLandscape(
+    const landscape = retrievalOf(
       reportOf([
         questionOf(probe(), [
           observation(["https://b.test/x", "https://a.test/x"]),

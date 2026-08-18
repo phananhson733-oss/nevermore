@@ -173,7 +173,14 @@ export function GeoActionPanel({
                   >
                     {t(`actionKinds.${candidate.kind}`)}
                   </span>
-                  {t(`assetTypes.${candidate.assetType}`)}
+                  {/*
+                    An avoid is not a proposal to build an asset, so naming one
+                    made it read as the same row as the inventory check with a
+                    different chip. Its own sentence is the label.
+                  */}
+                  {candidate.kind === "avoid"
+                    ? t(`actionReasons.${candidate.reason}`)
+                    : t(`assetTypes.${candidate.assetType}`)}
                 </span>
                 <span className="text-[11.5px] leading-[1.5] text-text-dark-secondary">
                   {candidate.reasonCounts === null

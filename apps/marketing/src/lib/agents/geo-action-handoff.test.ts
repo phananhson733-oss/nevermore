@@ -27,6 +27,7 @@ import {
   checkGeoPacketBounds,
   sanitizeGeoExportUrl,
   serializeGeoActionHandoff,
+  serializeGeoActionHandoffMarkdown,
   GEO_HANDOFF_PREAMBLE,
   GEO_MAX_PACKET_BYTES,
 } from "./geo-action-handoff.ts";
@@ -730,5 +731,83 @@ describe("selection and evidence integrity", () => {
 
     expect(urls).toContain("https://acme.test/pricing");
     for (const url of urls) expect(url).not.toContain("?");
+  });
+
+  // The readable half had no test at all: it could have returned the JSON, used
+  // the wrong timestamp or dropped its content and the button-label assertion in
+  // the panel would still have passed. Found by cross-model review 2026-08-18.
+  describe("serializeGeoActionHandoffMarkdown", () => {
+    it("does not claim an observation time it does not carry", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      // generatedAt is when the packet was built, not when the run was sampled,
+      // and the packet does not carry the latter at all.
+      expect(markdown).toContain("Packet generated");
+      expect(markdown).not.toContain("Sampled ");
+    });
+
+    it("states the authority denial without asserting the world's state", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      expect(markdown).toContain("grants no authority");
+      // "Nothing here is published" is a claim about work elsewhere that the
+      // authority block cannot support.
+      expect(markdown).not.toContain("Nothing here is approved");
+    });
+
+    it("keeps epistemic gaps and prohibitions in separate sections", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+      const couldNot = markdown.slice(
+        markdown.indexOf("## What this run could not establish"),
+        markdown.indexOf("## Out of scope for this packet"),
+      );
+
+      // The prohibitions are policy, not something the run failed to establish.
+      expect(couldNot).not.toContain("do_not_publish");
+      expect(markdown).toContain("## Out of scope for this packet");
+      for (const unknown of result.packet.unknowns) {
+        expect(couldNot).toContain(unknown);
+      }
+    });
+
+    it("carries the same counts the JSON does, as samples", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      for (const action of result.packet.selectedActions) {
+        if (action.reasonCounts === null) continue;
+        expect(markdown).toContain(
+          `observed in ${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples`,
+        );
+      }
+    });
+  });
+
+  it("never translates a do-not into an instruction to build", async () => {
+    // `tasks` is the machine-readable half. A receiver that reads it rather than
+    // reinterpreting `selectedActions` must not be told to construct work for
+    // the entry that says not to.
+    const result = await packetFor(await dirtyReport());
+    if (!result.ok) throw new Error("expected a packet");
+
+    for (const action of result.packet.selectedActions) {
+      const task = result.packet.tasks.find(
+        (entry) => entry.params["actionId"] === action.actionId,
+      );
+      if (action.kind === "avoid") {
+        expect(task?.kind).toBe("do_not_propose_asset");
+      }
+      if (action.kind === "external_data") {
+        expect(task?.kind).toBe("collect_missing_input");
+      }
+      if (action.kind === "do") expect(task?.kind).toBe("propose_asset");
+    }
   });
 });

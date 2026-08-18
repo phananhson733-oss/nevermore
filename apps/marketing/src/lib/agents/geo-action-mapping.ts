@@ -8,7 +8,7 @@ import type {
   GeoQuestionObservationV3,
   GeoReportDataV3,
 } from "./geo-report-contract.ts";
-import { deriveGeoSourceLandscape } from "./geo-source-landscape.ts";
+import { isGeoSampleCitationEvaluable } from "./geo-report-derive.ts";
 
 /**
  * Why the reason is an enum and not a sentence.
@@ -297,36 +297,55 @@ function mergeByAsset(
 /**
  * The one thing this run can say not to do.
  *
- * Established only when all three hold across the run: the citation denominator
- * is not empty, the customer's host was cited in none of it, and the answers did
- * cite other hosts. That combination says a new page is not the pattern these
- * answers are drawing from — it does not say what is, and this candidate does
- * not pretend to. The reader is pointed at the sources the run actually observed
- * before spending a week writing.
+ * Measured by recurrence, not by variety. Counting distinct hosts made a single
+ * sparse answer that happened to link two pages outweigh eighteen answers that
+ * all reached for the same one — the strongest source pattern a run can show
+ * would have been withheld while the weakest fired. What matters is how many of
+ * the countable answers went to somebody else, so that is what is counted and
+ * what is printed beside it.
  *
- * Withheld when nothing else was cited either: an answer set that cited nobody
- * is a run with no source pattern to learn from, and "do not build a page"
- * would then rest on nothing.
+ * Established only when all of these hold: the customer's host was cited in none
+ * of the countable answers, and at least two of them cited someone else. That
+ * says a new page is not the pattern these answers draw from. It does not say
+ * what is, and this candidate does not pretend to.
+ *
+ * Attributed only to the questions that actually produced those citations. An
+ * action that claimed every question in the report would put unrelated and
+ * unevaluable questions in its own basis line.
  */
 function avoidNewPageFirst(
   report: GeoReportDataV3,
 ): Omit<GeoActionCandidateV1, "kind"> | null {
-  const landscape = deriveGeoSourceLandscape(report);
-  if (landscape.citationEvaluableSamples === 0) return null;
-  if (landscape.targetObserved) return null;
-  const others = landscape.sources.filter((source) => !source.isTarget);
-  if (others.length < 2) return null;
+  let evaluable = 0;
+  let othersCited = 0;
+  const fromQueries: string[] = [];
+
+  for (const question of report.questions) {
+    let contributed = false;
+    for (const sample of question.samples) {
+      if (!isGeoSampleCitationEvaluable(sample, question.mode)) continue;
+      evaluable += 1;
+      if (sample.citationStatus === "observed_target") return null;
+      if (sample.citationStatus === "observed_others_only") {
+        othersCited += 1;
+        contributed = true;
+      }
+    }
+    if (contributed) fromQueries.push(question.queryId);
+  }
+
+  if (evaluable === 0 || othersCited < 2) return null;
 
   return {
     actionId: "act-avoid-new-page-first",
     assetType: "existing_page_enhancement",
     title: "avoid_new_page_as_first_step",
     reason: "avoid_new_page_as_first_step",
-    reasonCounts: {
-      observed: others.length,
-      evaluable: landscape.citationEvaluableSamples,
-    },
-    queryIds: report.questions.map((question) => question.queryId),
+    // The same sentence every other candidate prints: how many of the countable
+    // answers, out of how many. A host count rendered through that sentence
+    // would assert a sample-level fact nothing measured.
+    reasonCounts: { observed: othersCited, evaluable },
+    queryIds: fromQueries,
     sampleIds: [],
     evidenceIds: [],
     targetUrl: null,

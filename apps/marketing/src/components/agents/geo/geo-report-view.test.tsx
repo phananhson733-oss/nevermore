@@ -271,14 +271,45 @@ describe("GeoReportView", () => {
   // hand. Added 2026-08-18 after reading the first real report.
   it("aggregates who the answers cited, against the same denominator", async () => {
     render(await buildReport());
-    const text = host.textContent ?? "";
+    // Scoped to the table. Both hosts already appear in the identity and
+    // per-sample rows, so an unscoped substring match stays green with the
+    // table's body removed.
+    const table = host.querySelector('[data-testid="geo-sources-retrieval_probe"]');
+    const text = table?.textContent ?? "";
 
-    expect(text).toContain("Who these answers actually cited");
-    // The customer's own host and the third party both appear, counted.
+    expect(host.textContent).toContain("Who these answers actually cited");
     expect(text).toContain("acme.test");
     expect(text).toContain("rival.test");
-    // Named as counts against the printed denominator, never as a bare number.
-    expect(text).toMatch(/hosts cited across \d+ citation-evaluable samples/);
+    // The fixture's retrieval probe has three citation-evaluable samples, and
+    // that exact number has to be the one printed — a loose \d+ passes on the
+    // run total, which is the blend this table exists to avoid.
+    expect(text).toContain("3 citation-evaluable samples");
+    expect(text).toContain("acme.test is among them.");
+  });
+
+  // Regression: the first version totalled both modes into one denominator,
+  // treating one repeat of a three-sample probe as interchangeable with a whole
+  // one-shot question. Found by cross-model review on 2026-08-18.
+  it("keeps the two modes' source tables apart", async () => {
+    render(await buildReport());
+    const retrieval = host.querySelector(
+      '[data-testid="geo-sources-retrieval_probe"]',
+    );
+    const natural = host.querySelector(
+      '[data-testid="geo-sources-natural_demand"]',
+    );
+
+    // The retrieval half counts its own three samples. The natural-demand
+    // question in this fixture cited nobody, so its table says so rather than
+    // borrowing the retrieval denominator.
+    expect(retrieval?.textContent).toContain("3 citation-evaluable samples");
+    expect(natural?.textContent).toContain(
+      "No citation-evaluable sample cited anything",
+    );
+    expect(natural?.textContent).not.toContain("citation-evaluable samples.");
+    // And no blended total exists anywhere: four scheduled samples across the
+    // two modes must never become one denominator.
+    expect(host.textContent).not.toContain("4 citation-evaluable samples");
   });
 
   it("does not label what any cited host is", async () => {

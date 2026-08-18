@@ -21,6 +21,7 @@ import type {
 import type { GeoContextSnapshotV1 } from "../../../lib/agents/geo-context";
 import {
   deriveGeoSourceLandscape,
+  type GeoModeSourcesV1,
   type GeoSourceLandscapeV1,
 } from "../../../lib/agents/geo-source-landscape";
 import { GeoActionPanel } from "./geo-action-panel";
@@ -307,48 +308,50 @@ function SampleRow({ sample }: { readonly sample: GeoSampleV3 }) {
  *
  * Everything here is a count of records already rendered above it, so the two
  * views can be read side by side without a second denominator to reconcile.
+ * One table per mode and never a total: a retrieval probe is asked three times
+ * and a natural-demand question once, so a blended row would treat one repeat
+ * of a calibrated probe as interchangeable with a whole one-shot question.
+ *
  * Deliberately no classification of what any host *is* — the sampler refuses to
- * guess that from a URL, and a table that guessed it would put a made-up label
- * on the most-read line of the report.
+ * guess that from a URL, and a table that guessed would put a made-up label on
+ * the most-read line of the report.
  */
-function SourceLandscape({
-  landscape,
+function ModeSourceTable({
+  mode,
+  sources,
   targetHost,
 }: {
-  readonly landscape: GeoSourceLandscapeV1;
+  readonly mode: "retrieval_probe" | "natural_demand";
+  readonly sources: GeoModeSourcesV1;
   readonly targetHost: string;
 }) {
   const t = useTranslations("agents.geo");
 
   return (
-    <div>
-      <h3 className="text-[14px] font-semibold text-text-dark-primary">
-        {t("sources.title")}
-      </h3>
-      <p className="mt-1 text-[12px] leading-[1.6] text-text-dark-secondary">
-        {t("sources.note")}
-      </p>
-
-      {landscape.sources.length === 0 ? (
-        <p className="mt-2 text-[12.5px] text-text-dark-secondary">
+    <div data-testid={`geo-sources-${mode}`} className="mt-3">
+      <h4 className="text-[11.5px] font-semibold text-text-dark-primary">
+        {t(`sources.mode.${mode}`)}
+      </h4>
+      {sources.sources.length === 0 ? (
+        <p className="mt-1 text-[12px] text-text-dark-secondary">
           {t("sources.empty")}
         </p>
       ) : (
         <>
-          <p className="mt-2 font-mono text-[11px] text-text-dark-secondary">
+          <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
             {t("sources.denominator", {
-              domains: landscape.distinctDomains,
-              samples: landscape.citationEvaluableSamples,
-              questions: landscape.citationEvaluableQuestions,
+              domains: sources.distinctDomains,
+              samples: sources.citationEvaluableSamples,
+              questions: sources.citationEvaluableQuestions,
             })}{" "}
             {t(
-              landscape.targetObserved
+              sources.targetObserved
                 ? "sources.targetPresent"
                 : "sources.targetAbsent",
               { host: targetHost },
             )}
           </p>
-          <div className="mt-2 overflow-x-auto rounded-card border border-brand-border-card">
+          <div className="mt-1.5 overflow-x-auto rounded-card border border-brand-border-card">
             <table className="w-full border-collapse bg-brand-panel text-[12px]">
               <thead>
                 <tr className="border-b border-brand-border-card">
@@ -364,7 +367,7 @@ function SourceLandscape({
                 </tr>
               </thead>
               <tbody>
-                {landscape.sources.map((source) => (
+                {sources.sources.map((source) => (
                   <tr
                     key={source.domain}
                     className="border-t border-brand-border-card"
@@ -388,13 +391,13 @@ function SourceLandscape({
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
                       {t("sources.sampleShare", {
                         cited: source.citedInSamples,
-                        total: landscape.citationEvaluableSamples,
+                        total: sources.citationEvaluableSamples,
                       })}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
                       {t("sources.questionShare", {
                         cited: source.citedInQuestions,
-                        total: landscape.citationEvaluableQuestions,
+                        total: sources.citationEvaluableQuestions,
                       })}
                     </td>
                   </tr>
@@ -404,6 +407,37 @@ function SourceLandscape({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function SourceLandscape({
+  landscape,
+  targetHost,
+}: {
+  readonly landscape: GeoSourceLandscapeV1;
+  readonly targetHost: string;
+}) {
+  const t = useTranslations("agents.geo");
+
+  return (
+    <div>
+      <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        {t("sources.title")}
+      </h3>
+      <p className="mt-1 text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("sources.note")}
+      </p>
+      <ModeSourceTable
+        mode="retrieval_probe"
+        sources={landscape.byMode.retrieval_probe}
+        targetHost={targetHost}
+      />
+      <ModeSourceTable
+        mode="natural_demand"
+        sources={landscape.byMode.natural_demand}
+        targetHost={targetHost}
+      />
     </div>
   );
 }

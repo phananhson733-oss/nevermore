@@ -2,6 +2,7 @@
 // @output -- who the answers actually cited, counted against the same denominators
 // @pos    -- the aggregate view of evidence the per-question list cannot show
 
+import type { GeoQueryMode } from "./geo-query-contract.ts";
 import type {
   GeoQuestionObservationV3,
   GeoReportDataV3,
@@ -27,8 +28,27 @@ export interface GeoCitedSourceV1 {
   readonly urls: readonly string[];
 }
 
+/** One mode's sources, counted only against that mode's own denominator. */
+export interface GeoModeSourcesV1 {
+  readonly sources: readonly GeoCitedSourceV1[];
+  /** The denominator both per-source counts are read against. */
+  readonly citationEvaluableSamples: number;
+  /** Questions that had at least one citation-evaluable sample. */
+  readonly citationEvaluableQuestions: number;
+  /** Distinct hosts cited in this mode, including the customer's own. */
+  readonly distinctDomains: number;
+  /** True when the customer's host appears among this mode's cited sources. */
+  readonly targetObserved: boolean;
+}
+
 /**
  * What the run observed about sources, as counts and nothing else.
+ *
+ * Split by mode, and never totalled. A retrieval probe is asked three times and
+ * a natural-demand question once, so a blended count would treat one repeat of a
+ * calibrated probe as interchangeable with a whole one-shot question — the
+ * shared denominator the coverage block above this table exists to refuse, and
+ * the ordering would inherit the same distortion.
  *
  * Deliberately carries no classification of what any host *is*. A URL does not
  * say whether a page is a review, a marketplace, a community thread or a vendor's
@@ -37,15 +57,7 @@ export interface GeoCitedSourceV1 {
  * than leaving the reader to open the link.
  */
 export interface GeoSourceLandscapeV1 {
-  readonly sources: readonly GeoCitedSourceV1[];
-  /** The denominator both per-source counts are read against. */
-  readonly citationEvaluableSamples: number;
-  /** Questions that had at least one citation-evaluable sample. */
-  readonly citationEvaluableQuestions: number;
-  /** Distinct hosts cited anywhere in the run, including the customer's own. */
-  readonly distinctDomains: number;
-  /** True when the customer's host appears among the cited sources. */
-  readonly targetObserved: boolean;
+  readonly byMode: Readonly<Record<GeoQueryMode, GeoModeSourcesV1>>;
 }
 
 interface Accumulator {
@@ -95,14 +107,14 @@ function accumulate(
  * Sorted by sample reach, then question reach, then host, so two runs of the same
  * report produce the same order.
  */
-export function deriveGeoSourceLandscape(
-  report: GeoReportDataV3,
-): GeoSourceLandscapeV1 {
+function modeSources(
+  questions: readonly GeoQuestionObservationV3[],
+): GeoModeSourcesV1 {
   const into = new Map<string, Accumulator>();
   let citationEvaluableSamples = 0;
   let citationEvaluableQuestions = 0;
 
-  for (const question of report.questions) {
+  for (const question of questions) {
     for (const sample of question.samples) {
       if (isGeoSampleCitationEvaluable(sample, question.mode)) {
         citationEvaluableSamples += 1;
@@ -134,5 +146,26 @@ export function deriveGeoSourceLandscape(
     citationEvaluableQuestions,
     distinctDomains: sources.length,
     targetObserved: sources.some((source) => source.isTarget),
+  };
+}
+
+/**
+ * Aggregate the evidence the per-question list already shows.
+ *
+ * Every number here is a count of records already rendered further up the page,
+ * so this view can be read beside them without a second denominator to reconcile.
+ * Sorted by sample reach, then question reach, then host, so two runs of the same
+ * report produce the same order.
+ */
+export function deriveGeoSourceLandscape(
+  report: GeoReportDataV3,
+): GeoSourceLandscapeV1 {
+  const of = (mode: GeoQueryMode): GeoModeSourcesV1 =>
+    modeSources(report.questions.filter((question) => question.mode === mode));
+  return {
+    byMode: {
+      retrieval_probe: of("retrieval_probe"),
+      natural_demand: of("natural_demand"),
+    },
   };
 }

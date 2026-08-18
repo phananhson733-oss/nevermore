@@ -94,6 +94,20 @@ export function sanitizeGeoExportUrl(exactUrl: string): GeoSafeUrl {
   return { safeUrl, urlOmissionReason: null, queryRemoved };
 }
 
+/**
+ * One task verb per action kind, so the two halves of the packet agree.
+ *
+ * `tasks` is the machine-readable half. Translating every selection into
+ * "propose_asset" told a receiver that reads it to construct work for the one
+ * entry that says not to construct anything, which is exactly what carrying an
+ * explicit kind was for.
+ */
+const TASK_KIND: Readonly<Record<GeoActionKind, string>> = {
+  do: "propose_asset",
+  external_data: "collect_missing_input",
+  avoid: "do_not_propose_asset",
+};
+
 export interface GeoActionHandoffV2 {
   readonly schemaVersion: typeof GEO_ACTION_HANDOFF_SCHEMA_VERSION;
   readonly generatedAt: string;
@@ -472,11 +486,16 @@ export function buildGeoActionHandoff(
     }));
 
   const tasks = [
+    // The task kind follows the candidate's own kind. Translating every
+    // selection into "propose_asset" told a receiver that reads `tasks` — the
+    // machine-readable half — to construct work for the one entry that says not
+    // to construct it, which is exactly what carrying the kind was for.
     ...selected.map((candidate) => ({
-      kind: "propose_asset",
+      kind: TASK_KIND[candidate.kind],
       params: {
         actionId: candidate.actionId,
         assetType: candidate.assetType,
+        actionKind: candidate.kind,
         reason: candidate.reason,
       },
     })),
@@ -600,10 +619,14 @@ export function serializeGeoActionHandoffMarkdown(
   const lines: string[] = [
     `# GEO run — ${packet.targetHost}`,
     "",
-    `Sampled ${packet.generatedAt}. Run ${packet.runId}.`,
+    // The packet does not carry the observation time, so this cannot claim one.
+    `Packet generated ${packet.generatedAt}. Run ${packet.runId}.`,
     `Surface: ${packet.provenance.surface}. Market: ${packet.provenance.webSearchCountryIsoCodeRequested}. Model observed: ${packet.provenance.modelObserved.join(", ") || "unavailable"}.`,
     "",
-    "Nothing here is approved, scheduled or published. Every item needs human review.",
+    // The authority block says this packet grants nothing. It says nothing about
+    // whether work elsewhere has already been scheduled or published, and the
+    // readable half must not upgrade a denial into a claim about the world.
+    "This packet grants no authority: it does not approve, schedule, publish or deploy anything. Every item needs human review.",
     "",
     "## Selected next steps",
     "",
@@ -627,7 +650,14 @@ export function serializeGeoActionHandoffMarkdown(
 
   lines.push(
     "",
+    // `unknowns` are the epistemic gaps; `nonGoals` are prohibitions. Printing
+    // the prohibitions under this heading turned "do not publish" into a thing
+    // the run failed to establish, and dropped the real gaps entirely.
     "## What this run could not establish",
+    "",
+    ...packet.unknowns.map((entry) => `- ${entry}`),
+    "",
+    "## Out of scope for this packet",
     "",
     ...packet.nonGoals.map((entry) => `- ${entry}`),
     "",

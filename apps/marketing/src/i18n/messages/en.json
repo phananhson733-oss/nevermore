@@ -3235,7 +3235,7 @@
         "target_not_observed_in_samples": "Observed in {observed} of {evaluable} citation-evaluable samples.",
         "target_observed_in_minority_of_samples": "Observed in {observed} of {evaluable} citation-evaluable samples — present sometimes, not always.",
         "citation_source_pattern_observed": "Observed in {observed} of {evaluable} citation-evaluable samples, while other hosts were cited. This is an off-site problem before it is a page problem.",
-        "avoid_new_page_as_first_step": "{evaluable} citation-evaluable samples cited {observed} other hosts and never yours. Read those hosts before writing anything."
+        "avoid_new_page_as_first_step": "{observed} of {evaluable} citation-evaluable samples cited someone else and never you. Read those hosts before writing anything."
       },
       "sources": {
         "title": "Who these answers actually cited",
@@ -3250,7 +3250,11 @@
         "questionShare": "{cited} of {total}",
         "targetAbsent": "{host} is not among them.",
         "targetPresent": "{host} is among them.",
-        "showUrls": "Show the {count} URLs on this host"
+        "showUrls": "Show the {count} URLs on this host",
+        "mode": {
+          "retrieval_probe": "Retrieval probes · asked three times each",
+          "natural_demand": "Natural-demand questions · asked once each"
+        }
       },
       "actionKinds": {
         "do": "Do",

@@ -263,9 +263,23 @@ describe("GeoActionPanel", () => {
       .map((node) => node.textContent?.trim())
       .filter((text) => text === "Do" || text === "Look up" || text === "Do not");
 
-    // The free lookup is labelled as one rather than reading as a build.
+    // The free lookup is labelled as one rather than reading as a build, and the
+    // one entry that says not to build is visibly not a build. All three of this
+    // fixture's countable answers cited somebody else and never the customer,
+    // which is exactly what the avoid rule measures.
     expect(kinds).toContain("Look up");
     expect(kinds).toContain("Do");
+    expect(kinds).toContain("Do not");
+  });
+
+  it("shows the do-not row with the sample count behind it", async () => {
+    await render(await GAP());
+
+    expect(host.textContent).toContain("Do not start with a new page");
+    // The sentence is about samples: three of three answers went elsewhere.
+    expect(host.textContent).toContain(
+      "3 of 3 citation-evaluable samples cited someone else and never you",
+    );
   });
 
   it("names the questions an item was derived from", async () => {

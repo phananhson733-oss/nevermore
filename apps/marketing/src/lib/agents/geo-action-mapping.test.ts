@@ -189,12 +189,61 @@ describe("deriveGeoActionPlan", () => {
     const avoid = plan.candidates.find((c) => c.kind === "avoid");
 
     expect(avoid?.reason).toBe("avoid_new_page_as_first_step");
-    // The counts are the sentence: two other hosts across two evaluable
-    // samples, never yours.
-    expect(avoid?.reasonCounts).toEqual({ observed: 2, evaluable: 3 });
+    // The counts are the sentence, and the sentence is about samples: all three
+    // countable answers went to somebody else. A distinct-host count rendered
+    // through the same sentence would assert a sample fact nothing measured.
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
     // Ranked above every proposal to build something, below the free lookup.
     const kinds = plan.candidates.map((c) => c.kind);
     expect(kinds.indexOf("avoid")).toBeLessThan(kinds.indexOf("do"));
+  });
+
+  // Regression: the first version counted distinct hosts, so one sparse answer
+  // that happened to link two pages outweighed eighteen answers that all reached
+  // for the same one. Found by cross-model review on 2026-08-18.
+  it("fires on a single host cited in every countable answer", () => {
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a"],
+          ["https://rival.test/b"],
+          ["https://rival.test/c"],
+        ]),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
+  });
+
+  it("withholds the avoid when only one answer cited anyone", () => {
+    // Two distinct hosts in one of three answers is not a source pattern; the
+    // old distinct-host rule fired here.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a", "https://other.test/b"],
+          [],
+          [],
+        ]),
+      ]),
+    );
+
+    expect(plan.candidates.some((c) => c.kind === "avoid")).toBe(false);
+  });
+
+  it("attributes the avoid only to the questions that produced those citations", () => {
+    // Claiming every query id put unevaluable and unrelated questions in the
+    // basis line the panel prints.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [...NO_CITATIONS]),
+        question("due_diligence", [...TWO_RIVALS]),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.queryIds).toEqual(["core-due_diligence"]);
   });
 
   it("withholds the avoid when the answers cited nobody at all", () => {
