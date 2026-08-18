@@ -2018,11 +2018,12 @@
       },
       "fields": {
         "url": "Page URL",
-        "queries": "Target queries (up to {max})",
+        "queries": "Target queries (up to {max}, comma-separated)",
         "market": "Market",
         "language": "Language",
         "pageRole": "Page role",
-        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent."
+        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent.",
+        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart"
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2031,8 +2032,6 @@
         "guide": "Guide or article"
       },
       "actions": {
-        "addQuery": "Add",
-        "removeQuery": "Remove this query",
         "run": "Check this page",
         "running": "Checking…",
         "copyReport": "Copy report for an assistant",
@@ -2102,10 +2101,9 @@
       "errors": {
         "urlRequired": "Add the page URL you want checked.",
         "queryRequired": "Add at least one target query.",
-        "queryEmpty": "Type a query before adding it.",
-        "queryDuplicate": "That query is already in the list.",
-        "queryLimit": "Up to {max} queries. Remove one to add another.",
-        "queryTooLong": "Up to {max} characters per query.",
+        "queryDuplicate": "Folded {folded} repeat(s) so the same question is asked once.",
+        "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
+        "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
         "retryAfter": "Retry in {seconds} seconds."
       },
@@ -2123,6 +2121,46 @@
           {
             "q": "Will a high count rank the page?",
             "a": "No. Where a keyword sits on a page is one input among site authority, page experience, competition and behaviour. This measures the input it can actually see."
+          },
+          {
+            "q": "How many queries can I check at once, and how do I type them?",
+            "a": "Up to five, all in the one field, separated by commas — both the ASCII comma and the full-width one, and a newline counts too. Repeats are folded into one, anything past five is not submitted, and the field says how many it dropped. One query is marked primary: most fields covered wins, then the longer query, then the order you typed them. Topic focus in the score reads that one query only, so adding exploratory words alongside your real target cannot lower the page's score."
+          },
+          {
+            "q": "Are brand terms treated differently?",
+            "a": "They are labelled, and that is all — no points either way. The test is mechanical: the hostname is split into labels and compared against what you typed. The result is published as an observation, never as score, because a brand term sits at a density that would read as thin for a topic term and judging the same number twice is not honest. A single CJK word has no Latin label to compare against, so it is marked not applicable rather than not matched."
+          },
+          {
+            "q": "Why is keyword density not scored?",
+            "a": "Because two different denominators appear on this page and mixing them produces opposite conclusions. The per-query density is measured inside the captured text — title, description, the heading set and the opening passage — where a normally optimised page already sits near 20%, so the familiar 0.5%–3% band would call a well-built page keyword stuffing. The whole-page term tables use the page body's counting units instead. Both numbers name their own denominator, but they cannot be compared, so we report them and grade neither."
+          },
+          {
+            "q": "How do I read the whole-page term tables?",
+            "a": "The page body is cut into one- to five-word combinations, with the top 15 kept for each length. Term density is occurrences divided by total units. Occupancy density is occurrences times phrase length divided by total units, so phrases of different lengths can be compared — overlapping occurrences are counted each time, which is why a long phrase on a page that repeats one word can exceed 100%. Function words are removed from the single-word table only; phrase tables keep them, because \"the astrology of\" is how people actually write."
+          },
+          {
+            "q": "Why is JavaScript not executed?",
+            "a": "The crawl reads the HTML the server returned, so body copy, components and links mounted by front-end script are invisible to this tool. It does not pretend otherwise: one check reports whether the body text is in the static HTML at all. When it is not, the word count and the coverage on this page were both measured under that condition — do not read them as what a browser finishes rendering."
+          },
+          {
+            "q": "Where does the search-results section get its data?",
+            "a": "From a third-party search-results source, for the market and language you picked above, as one desktop sample of page one: who holds the top positions, whether you are among them, and how many carry sitelinks. Results move daily, so this is a snapshot rather than a ranking history or a difficulty score. It is also the one paid call this tool makes, which is why market and language are lists — an unsupported pair never leaves a request at all."
+          },
+          {
+            "q": "Does it work on Chinese pages?",
+            "a": "Yes. Body length counts one unit per CJK character. Title and description length is measured in display width, with CJK characters counted as two, which lands closer to where a search result actually truncates. The term tables split on the same basis."
+          },
+          {
+            "q": "Where are my past checks stored?",
+            "a": "In this browser only. It is not an account archive: clearing storage, switching browsers or signing out loses it. When one page has been checked more than once, the list shows how its score and coverage moved."
+          },
+          {
+            "q": "How is this different from the SEO Agent?",
+            "a": "They run the same site-wide crawl. This tool reads the one page you named out of that crawl and answers around the queries you gave; the Agent reads the whole site. That is why the first check waits for the crawl, and why the same site checked again within the hour comes back in seconds. The report hands this page and its queries straight to the Agent."
+          },
+          {
+            "q": "Does it cost credits?",
+            "a": "No. The tool is free while it is being tested."
           }
         ]
       },
@@ -2551,6 +2589,37 @@
           "site": "Site context",
           "serp": "The results page"
         }
+      },
+      "related": {
+        "title": "Where to go next",
+        "intro": "This page answers how far one page gets on its own. The rest of the questions live in the other tools.",
+        "items": [
+          {
+            "href": "/agents/seo",
+            "name": "Site-wide SEO Audit",
+            "blurb": "The same crawl, read across the whole site: duplicate titles, broken links, click depth."
+          },
+          {
+            "href": "/agents/tech",
+            "name": "Internal Link Audit",
+            "blurb": "Which pages nobody links to, where the links come from, and how deep they sit."
+          },
+          {
+            "href": "/tools/low-competition-keywords",
+            "name": "Keyword Opportunity Map",
+            "blurb": "Search terms with measured demand and a weak site already on page one."
+          },
+          {
+            "href": "/tools/seo-quick-wins",
+            "name": "GSC Opportunity Finder",
+            "blurb": "High-impression, low-click queries from your own Search Console data."
+          },
+          {
+            "href": "/tools/traffic-drop-diagnosis",
+            "name": "Traffic Drop Diagnosis",
+            "blurb": "Compare two periods before deciding why organic traffic changed."
+          }
+        ]
       }
     }
   },

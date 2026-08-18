@@ -53,6 +53,11 @@ vi.mock("next-intl", async () => {
   };
 });
 
+import {
+  SERP_LANGUAGES,
+  SERP_LOCATIONS,
+} from "../../lib/tools/serp-markets.ts";
+
 const { OnPageChecker } = await import("./on-page-checker");
 
 const extract: SeoAuditTargetPageExtract = {
@@ -239,12 +244,7 @@ async function fillAndRun(
   queries: readonly string[] = ["pricing"],
 ): Promise<void> {
   await type(field(host, "onpage-url"), "acme.test/pricing");
-  for (const query of queries) {
-    await type(field(host, "onpage-query"), query);
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
-  }
+  await type(field(host, "onpage-query"), queries.join(", "));
   await act(async () => {
     buttonWith(host, "Check this page").click();
   });
@@ -297,44 +297,79 @@ describe("On-Page checker request", () => {
     expect(host.textContent).toContain("Add at least one target query.");
   });
 
-  it.each([
-    ["nothing typed", "", "Type a query before adding it."],
-    ["a query already in the list", "pricing", "That query is already in the list."],
-  ])("refuses %s", async (_name, second, message) => {
+  it("submits exactly the queries the comma-separated line spells out", async () => {
+    const fetchMock = vi.fn(async () =>
+      auditResponse(["astrology", "birth chart"]),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
     const host = await render();
-    await type(field(host, "onpage-query"), "pricing");
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await type(field(host, "onpage-query"), " astrology ,  birth chart ");
     await act(async () => {
-      buttonWith(host, "Add").click();
-    });
-    await type(field(host, "onpage-query"), second);
-    await act(async () => {
-      buttonWith(host, "Add").click();
+      buttonWith(host, "Check this page").click();
     });
 
-    expect(host.textContent).toContain(message);
-    // The one query that was accepted is still the only one.
-    expect(
-      host.querySelectorAll("ul li button").length,
-    ).toBe(1);
-    const notice = host.querySelector("#onpage-query-notice");
-    expect(notice?.textContent).toContain(message);
-    expect(field(host, "onpage-query").getAttribute("aria-invalid")).toBe("true");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      readonly targetQueries: readonly string[];
+    };
+    // The separator is a parser the visitor cannot watch run, so what it
+    // produced has to be what the request carries.
+    expect(body.targetQueries).toEqual(["astrology", "birth chart"]);
   });
 
-  it("refuses a sixth query in the browser as well as on the wire", async () => {
+  it("shows the parsed list, because a separator can be read wrong", async () => {
     const host = await render();
-    for (const query of ["a", "b", "c", "d", "e"]) {
-      await type(field(host, "onpage-query"), query);
-      await act(async () => {
-        buttonWith(host, "Add").click();
-      });
-    }
-    await type(field(host, "onpage-query"), "f");
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
+    await type(field(host, "onpage-query"), "占星，星盘");
 
-    expect(host.textContent).toContain("Up to 5 queries.");
+    // The full-width comma is what this audience's keyboard produces. Taking
+    // the pair as one query reported it absent from a page covering both.
+    const parsed = [
+      ...(host.querySelector("#onpage-query-parsed")?.children ?? []),
+    ].map((node) => node.textContent);
+    expect(parsed).toEqual(["占星", "星盘"]);
+  });
+
+  it("names what it dropped past the cap rather than dropping it quietly", async () => {
+    const host = await render();
+    await type(field(host, "onpage-query"), "a, b, c, d, e, f, g");
+
+    expect(host.textContent).toContain(
+      "Up to 5 queries; the 2 past that were not submitted.",
+    );
+    expect(
+      host.querySelector("#onpage-query-parsed")?.children,
+    ).toHaveLength(5);
+  });
+
+  it("says a repeat was folded instead of asking the same thing twice", async () => {
+    const host = await render();
+    await type(field(host, "onpage-query"), "pricing, Pricing");
+
+    expect(host.textContent).toContain("Folded 1 repeat(s)");
+    expect(
+      host.querySelector("#onpage-query-parsed")?.children,
+    ).toHaveLength(1);
+  });
+
+  it("offers markets and languages the paid lookup already accepts", async () => {
+    const host = await render();
+    const market = host.querySelector("#onpage-country") as HTMLSelectElement;
+    const language = host.querySelector("#onpage-language") as HTMLSelectElement;
+
+    // Both were free-text boxes. The lookup is billed per call and its provider
+    // rejects an unknown code only after billing, so a typo bought an error.
+    expect(market.tagName).toBe("SELECT");
+    expect(language.tagName).toBe("SELECT");
+    expect(market.value).toBe("US");
+    expect(language.value).toBe("en");
+
+    const offered = [...market.options].map((option) => option.value);
+    expect(offered).toEqual(Object.keys(SERP_LOCATIONS));
+    for (const option of language.options) {
+      expect(SERP_LANGUAGES.has(option.value), option.value).toBe(true);
+    }
   });
 });
 
@@ -532,9 +567,6 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await type(field(host, "onpage-url"), "acme.test/pricing");
     await type(field(host, "onpage-query"), "pricing");
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
     await select(host, "onpage-role", "guide");
     await act(async () => {
       buttonWith(host, "Check this page").click();

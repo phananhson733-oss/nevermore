@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { hostKey, readSerpLandscape, SERP_LOCATIONS } from "./serp-landscape.ts";
+import {
+  DEFAULT_SERP_LANGUAGE,
+  DEFAULT_SERP_MARKET,
+  SERP_LANGUAGE_OPTIONS,
+  SERP_MARKET_OPTIONS,
+} from "./serp-markets.ts";
 
 function clientReturning(rows: readonly unknown[], itemTypes: unknown = null) {
   const serpOrganic = vi.fn(async () => ({
@@ -304,5 +310,69 @@ describe("hostKey", () => {
   it("matches the provider's own spelling of a host", () => {
     expect(hostKey("https://WWW.Acme.test/pricing?x=1")).toBe("acme.test");
     expect(hostKey("not a url")).toBeNull();
+  });
+});
+
+describe("what the form offers is what this lookup accepts", () => {
+  /**
+   * Crossing the boundary on purpose.
+   *
+   * Comparing the option list against the same table the options are built from
+   * proves nothing. These run the real lookup for every code the selector can
+   * emit, so a market that the form offers and this function refuses fails here
+   * rather than as a visitor's spent-nothing "market not supported".
+   */
+  it.each(SERP_MARKET_OPTIONS.map((option) => option.code))(
+    "looks up %s instead of refusing it",
+    async (market) => {
+      const { client, serpOrganic } = clientReturning(ROWS);
+      const result = await readSerpLandscape(
+        {
+          query: "q",
+          market,
+          language: DEFAULT_SERP_LANGUAGE,
+          targetUrl: "https://a.test/",
+        },
+        { client },
+      );
+      expect(serpOrganic).toHaveBeenCalled();
+      expect(result.availability).toBe("available");
+    },
+  );
+
+  it.each(SERP_LANGUAGE_OPTIONS.map((option) => option.code))(
+    "accepts %s instead of refusing it",
+    async (language) => {
+      const { client, serpOrganic } = clientReturning(ROWS);
+      const result = await readSerpLandscape(
+        {
+          query: "q",
+          market: DEFAULT_SERP_MARKET,
+          language,
+          targetUrl: "https://a.test/",
+        },
+        { client },
+      );
+      expect(serpOrganic).toHaveBeenCalled();
+      expect(result.availability).toBe("available");
+    },
+  );
+
+  it("starts the form on a pair this lookup can serve", () => {
+    expect(SERP_LOCATIONS[DEFAULT_SERP_MARKET]).toBeTypeOf("number");
+    expect(
+      SERP_MARKET_OPTIONS.some((o) => o.code === DEFAULT_SERP_MARKET),
+    ).toBe(true);
+    expect(
+      SERP_LANGUAGE_OPTIONS.some((o) => o.code === DEFAULT_SERP_LANGUAGE),
+    ).toBe(true);
+  });
+
+  it("gives every offered code a name that is not the code", () => {
+    // An option reading "ZA (ZA)" means the label table missed an entry, which
+    // the fallback hides.
+    for (const option of [...SERP_MARKET_OPTIONS, ...SERP_LANGUAGE_OPTIONS]) {
+      expect(option.label, option.code).not.toBe(option.code);
+    }
   });
 });

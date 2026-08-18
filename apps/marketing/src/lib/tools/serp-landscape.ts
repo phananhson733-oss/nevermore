@@ -15,69 +15,20 @@ import {
  * `node:net` — one dropped `type` keyword away from a client chunk.
  */
 import type { SerpLandscape } from "../agents/audit-contract.ts";
+import { SERP_LANGUAGES, SERP_LOCATIONS } from "./serp-markets.ts";
 
 /**
- * Markets this tool will look up, mapped to the provider's location ids.
+ * The markets and languages this lookup accepts.
  *
- * An allow-list, not a passthrough: the provider bills per task and answers an
- * unknown location with an error only after the call is made, so an unmapped
- * code would be a paid round trip to learn the visitor typed something wrong.
- *
- * Wider than the keyword tool's list on purpose. That one is scoped to markets
- * whose copy and coverage window were reasoned about; this one only reads a
- * results page back, and refusing a Chinese-language market on a
- * Chinese-first product would have been the tool telling most of its own
- * audience that their market does not exist.
+ * Defined in a module with no imports so the form can offer exactly these codes
+ * without the browser bundle reaching `@sf/sources` through this file. Still
+ * re-exported here: this is where the enforcement lives, and the tests that
+ * pin the enforcement read the list from the module that enforces it.
  */
-export const SERP_LOCATIONS: Readonly<Record<string, number>> = {
-  US: 2840,
-  GB: 2826,
-  CA: 2124,
-  AU: 2036,
-  IE: 2372,
-  NZ: 2554,
-  DE: 2276,
-  FR: 2250,
-  ES: 2724,
-  IT: 2380,
-  NL: 2528,
-  SE: 2752,
-  NO: 2578,
-  DK: 2208,
-  FI: 2246,
-  PL: 2616,
-  PT: 2620,
-  BR: 2076,
-  MX: 2484,
-  IN: 2356,
-  JP: 2392,
-  KR: 2410,
-  SG: 2702,
-  HK: 2344,
-  TW: 2158,
-  MY: 2458,
-  TH: 2764,
-  ID: 2360,
-  VN: 2704,
-  PH: 2608,
-  AE: 2784,
-  ZA: 2710,
-  CN: 2156,
-};
-
-/**
- * Languages this tool will ask the provider for.
- *
- * An allow-list for the same reason the market list is one: the provider bills
- * per task and rejects an unknown language only after the call is made. The
- * market was allow-listed and the language was not, so `language: "zz"` passed
- * both the request validator and this lookup and bought a provider error.
- */
-export const SERP_LANGUAGES: ReadonlySet<string> = new Set([
-  "en", "zh", "ja", "ko", "de", "fr", "es", "it", "pt", "nl", "sv", "no", "da",
-  "fi", "pl", "ru", "tr", "ar", "hi", "th", "vi", "id", "ms", "he", "cs", "el",
-  "hu", "ro", "uk",
-]);
+export {
+  SERP_LANGUAGES,
+  SERP_LOCATIONS,
+} from "./serp-markets.ts";
 
 /** Results read back. One page, because that is what "page one" means. */
 const SERP_DEPTH = 10;

@@ -1,11 +1,11 @@
 "use client";
 
-// @input  -- one page URL, up to five target queries, a market, a language, a page role
+// @input  -- one page URL, a comma-separated query line, a market, a language, a page role
 // @output -- keyword coverage for that page, its fixes, and a local list of recent checks
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
@@ -14,6 +14,17 @@ import {
   buildOnPageScore,
   type OnPageScore,
 } from "../../lib/on-page-checker/scoring.ts";
+import {
+  MAX_QUERIES,
+  MAX_QUERY_CHARS,
+  parseTargetQueries,
+} from "../../lib/on-page-checker/parse-queries.ts";
+import {
+  DEFAULT_SERP_LANGUAGE,
+  DEFAULT_SERP_MARKET,
+  SERP_LANGUAGE_OPTIONS,
+  SERP_MARKET_OPTIONS,
+} from "../../lib/tools/serp-markets.ts";
 import {
   coverageAvailabilityOf,
   countAt,
@@ -46,9 +57,6 @@ import {
 import { buildCopyReport } from "../../lib/on-page-checker/copy-report";
 import { storePageFocusedAgentIntent } from "../agents/agent-intent";
 import { localePath } from "../../lib/locale-path";
-
-const MAX_QUERIES = 5;
-const MAX_QUERY_CHARS = 80;
 
 const PAGE_ROLES: readonly OnPageCheckerPageType[] = [
   "homepage",
@@ -131,10 +139,16 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   /** One account of the crawl gate, shared with the tool that owns it. */
   const tCrawl = useTranslations("tools.seoAudit.errors");
   const [url, setUrl] = useState("");
-  const [queries, setQueries] = useState<readonly string[]>([]);
-  const [queryDraft, setQueryDraft] = useState("");
-  const [country, setCountry] = useState("US");
-  const [language, setLanguage] = useState(locale === "zh" ? "zh" : "en");
+  /**
+   * The typed line is the source of truth; the list is read out of it.
+   *
+   * Holding both a list and a draft meant the visitor could type a keyword,
+   * not press the button beside it, and have the run go without the word
+   * still sitting in the field.
+   */
+  const [queryText, setQueryText] = useState("");
+  const [country, setCountry] = useState(DEFAULT_SERP_MARKET);
+  const [language, setLanguage] = useState(DEFAULT_SERP_LANGUAGE);
   const [pageRole, setPageRole] = useState<OnPageCheckerPageType>("homepage");
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [queryNotice, setQueryNotice] = useState<string | null>(null);
@@ -151,6 +165,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   const [elapsed, setElapsed] = useState(0);
   const mounted = useRef(true);
   const inFlight = useRef<AbortController | null>(null);
+
+  /**
+   * Everything the field departed from what was typed, counted.
+   *
+   * A field that silently drops the sixth keyword answers about five words when
+   * six were asked about, and nothing on screen accounts for the difference.
+   */
+  const parsed = useMemo(() => parseTargetQueries(queryText), [queryText]);
+  const queries = parsed.queries;
 
   // Web Storage can throw on access alone, and the prefix walk needs `key`
   // and `length`, which the narrower intent storage interface does not carry.
@@ -182,9 +205,21 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       const draft = readOnPageDraft(session);
       if (draft) {
         setUrl(draft.url);
-        setQueries(draft.targetQueries);
-        setCountry(draft.country);
-        setLanguage(draft.locale);
+        setQueryText(draft.targetQueries.join(", "));
+        // A draft outlives the list it was written against. Restoring a code
+        // this build no longer offers would leave the selector showing its
+        // first option while the state held something else, and the run would
+        // go to a market the visitor never saw named.
+        setCountry(
+          SERP_MARKET_OPTIONS.some((option) => option.code === draft.country)
+            ? draft.country
+            : DEFAULT_SERP_MARKET,
+        );
+        setLanguage(
+          SERP_LANGUAGE_OPTIONS.some((option) => option.code === draft.locale)
+            ? draft.locale
+            : DEFAULT_SERP_LANGUAGE,
+        );
         setPageRole(draft.pageType);
         // Consumed, not just read. It exists to survive one sign-in round trip;
         // leaving it behind means every visit inside the TTL refills the form
@@ -204,37 +239,6 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     }, 1_000);
     return () => clearInterval(timer);
   }, [run]);
-
-  const addQuery = useCallback(() => {
-    const value = queryDraft.trim();
-    if (value === "") {
-      setQueryNotice(t("errors.queryEmpty"));
-      return;
-    }
-    if (value.length > MAX_QUERY_CHARS) {
-      setQueryNotice(t("errors.queryTooLong", { max: MAX_QUERY_CHARS }));
-      return;
-    }
-    if (queries.some((entry) => entry.toLowerCase() === value.toLowerCase())) {
-      setQueryNotice(t("errors.queryDuplicate"));
-      return;
-    }
-    if (queries.length >= MAX_QUERIES) {
-      setQueryNotice(t("errors.queryLimit", { max: MAX_QUERIES }));
-      return;
-    }
-    setQueries([...queries, value]);
-    setQueryDraft("");
-    setQueryNotice(null);
-  }, [queries, queryDraft, t]);
-
-  const removeQuery = useCallback(
-    (index: number) => {
-      setQueries(queries.filter((_entry, at) => at !== index));
-      setQueryNotice(null);
-    },
-    [queries],
-  );
 
   const submit = useCallback(async () => {
     if (url.trim() === "") {
@@ -512,33 +516,27 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             >
               {t("fields.queries", { max: MAX_QUERIES })}
             </label>
-            <div className="mt-1.5 flex gap-2">
-              <input
-                className="w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
-                id="onpage-query"
-                maxLength={MAX_QUERY_CHARS}
-                aria-describedby="onpage-query-notice"
-                aria-invalid={queryNotice !== null}
-                onChange={(event) => {
-                  setQueryDraft(event.target.value);
-                  setQueryNotice(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addQuery();
-                  }
-                }}
-                value={queryDraft}
-              />
-              <button
-                className="shrink-0 rounded-lg border border-brand-border-card px-3 text-[13.5px] text-text-dark-secondary hover:border-brand-accent/40 hover:text-text-dark-primary"
-                onClick={addQuery}
-                type="button"
-              >
-                {t("actions.addQuery")}
-              </button>
-            </div>
+            {/*
+              One field, no button beside it.
+
+              The pair used to be a draft box and an "add" button, which meant a
+              keyword could be typed, sit there unadded, and be missing from the
+              run the visitor then started — the field looked filled and was
+              not. The typed line is the list now, so what is on screen is what
+              gets submitted.
+            */}
+            <input
+              className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
+              id="onpage-query"
+              aria-describedby="onpage-query-notice onpage-query-parsed"
+              aria-invalid={queryNotice !== null}
+              onChange={(event) => {
+                setQueryText(event.target.value);
+                setQueryNotice(null);
+              }}
+              placeholder={t("fields.queriesPlaceholder")}
+              value={queryText}
+            />
             <p
               className="mt-1.5 text-[12.5px] text-brand-error"
               id="onpage-query-notice"
@@ -546,23 +544,54 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             >
               {queryNotice ?? ""}
             </p>
+            {/*
+              What the separator did, said out loud.
+
+              A comma-separated field is a parser the visitor cannot see running,
+              and the failure it produces is silent: `占星，星盘` submitted whole
+              comes back absent from a page that covers both words. Printing the
+              parsed list turns that into something readable before the run.
+            */}
             {queries.length > 0 && (
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {queries.map((query, index) => (
-                  <li key={query}>
-                    <button
-                      className="rounded-full border border-brand-border-card px-3 py-1 font-mono text-[12px] text-text-dark-secondary hover:border-brand-accent/40"
-                      onClick={() => removeQuery(index)}
-                      type="button"
-                    >
-                      {query}
-                      <span aria-hidden="true"> ×</span>
-                      <span className="sr-only">
-                        {t("actions.removeQuery")}
-                      </span>
-                    </button>
+              <ul
+                className="mt-2 flex flex-wrap gap-2"
+                id="onpage-query-parsed"
+              >
+                {queries.map((query) => (
+                  <li
+                    className="rounded-full border border-brand-border-card px-3 py-1 font-mono text-[12px] text-text-dark-secondary"
+                    key={query}
+                  >
+                    {query}
                   </li>
                 ))}
+              </ul>
+            )}
+            {(parsed.overflow > 0 ||
+              parsed.duplicates > 0 ||
+              parsed.tooLong.length > 0) && (
+              <ul className="mt-2 grid gap-1">
+                {parsed.overflow > 0 && (
+                  <li className="text-[12.5px] text-brand-warning">
+                    {t("errors.queryLimit", {
+                      max: MAX_QUERIES,
+                      dropped: parsed.overflow,
+                    })}
+                  </li>
+                )}
+                {parsed.tooLong.length > 0 && (
+                  <li className="text-[12.5px] text-brand-warning">
+                    {t("errors.queryTooLong", {
+                      max: MAX_QUERY_CHARS,
+                      dropped: parsed.tooLong.length,
+                    })}
+                  </li>
+                )}
+                {parsed.duplicates > 0 && (
+                  <li className="text-[12.5px] text-text-dark-faint">
+                    {t("errors.queryDuplicate", { folded: parsed.duplicates })}
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -575,16 +604,28 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               >
                 {t("fields.market")}
               </label>
-              <input
-                className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 font-mono text-[14px] text-text-dark-primary uppercase"
+              {/*
+                A list, not a free-text box.
+
+                The lookup is a paid call whose provider rejects an unknown
+                market only after it has been billed, so the two-letter box let
+                a typo buy an error. Every option here is a code the lookup
+                already maps, and the list is derived from that map rather than
+                kept beside it.
+              */}
+              <select
+                className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 aria-describedby="onpage-market-scope"
                 id="onpage-country"
-                maxLength={2}
-                onChange={(event) =>
-                  setCountry(event.target.value.toUpperCase())
-                }
+                onChange={(event) => setCountry(event.target.value)}
                 value={country}
-              />
+              >
+                {SERP_MARKET_OPTIONS.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label} ({option.code})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label
@@ -593,14 +634,19 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               >
                 {t("fields.language")}
               </label>
-              <input
-                className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 font-mono text-[14px] text-text-dark-primary"
+              <select
+                className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 aria-describedby="onpage-market-scope"
                 id="onpage-language"
-                maxLength={16}
                 onChange={(event) => setLanguage(event.target.value)}
                 value={language}
-              />
+              >
+                {SERP_LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label} ({option.code})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label
