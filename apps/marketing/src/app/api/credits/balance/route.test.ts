@@ -245,9 +245,35 @@ describe("GET /api/credits/balance", () => {
       data: {
         balance: { permanent: 120, daily: 0, total: 120 },
         mode: "welfare",
-        dailyGrant: { grantedToday: true, amount: 20, welfareRemaining: 480 },
+        dailyGrant: {
+          grantedToday: true,
+          amount: 20,
+          welfareRemaining: 480,
+          welfareCap: 600,
+        },
         referral: { code: "ab3kd9xz", rewardedCount: 0, cap: 20 },
       },
+    });
+  });
+
+  /**
+   * Regression: ISSUE-003 — the account page printed a compiled-in cap next to
+   * a live remaining, so editing credit_settings (which the rollout runbook
+   * says takes effect without a deploy) made the two disagree.
+   * Found by /qa on 2026-08-17.
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("reports the cap the database is actually enforcing, not the seed", async () => {
+    mocks.touchDaily.mockResolvedValue(
+      touch({ welfareAccrualCap: 1000, welfareRemaining: 980 }),
+    );
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(body.data.dailyGrant).toMatchObject({
+      welfareCap: 1000,
+      welfareRemaining: 980,
     });
   });
 
@@ -341,6 +367,49 @@ describe("GET /api/credits/balance", () => {
 
     const response = await GET();
 
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  /**
+   * Regression: ISSUE-005 — ensureAccount commits the referrer on its own, so a
+   * touchDaily failure after it returned a 503 that left gg_ref in place. The
+   * retry sees an account that already has a referrer, reports
+   * attributed: false, and the cookie then rides along for its full thirty
+   * days — long enough for a second Supabase account signed in from the same
+   * browser to claim the same link a second time.
+   * Found by /qa on 2026-08-17 (cross-model review, codex C2).
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("clears a spent referral cookie even when the rest of the call fails", async () => {
+    mocks.referralCookie = "ab3kd9xz";
+    mocks.ensureAccount.mockResolvedValue(
+      account({ referredBy: "inviter-1", attributed: true }),
+    );
+    mocks.touchDaily.mockResolvedValue({
+      kind: "unavailable",
+      reason: "store_missing",
+    });
+
+    const response = await GET();
+    const setCookie = response.headers.get("set-cookie") ?? "";
+
+    expect(response.status).toBe(503);
+    expect(setCookie).toContain("gg_ref=");
+    expect(setCookie).toContain("Max-Age=0");
+    expect(setCookie).toContain("Path=/");
+  });
+
+  /** A failure before the attribution committed has nothing to clear. */
+  it("leaves the cookie alone when the failure came before attribution", async () => {
+    mocks.referralCookie = "ab3kd9xz";
+    mocks.ensureAccount.mockResolvedValue({
+      kind: "unavailable",
+      reason: "store_missing",
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(503);
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 

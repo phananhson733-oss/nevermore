@@ -78,10 +78,25 @@ function requireTestDatabaseUrl(): string {
   return url;
 }
 
+/**
+ * Every credits function runs `set timezone = 'UTC'`, so a test session on a
+ * different zone is comparing two different calendars.
+ *
+ * On a machine in UTC+8 between local midnight and 08:00, a fixture that stages
+ * `daily_granted_on = current_date - 1` writes the date the RPC still calls
+ * today, the grant is correctly refused, and the suite fails for eight hours a
+ * day and passes for sixteen. Pinning the session removes the wall clock from
+ * the answer instead of teaching each fixture to subtract an offset.
+ */
+async function pinSessionToUtc(client: Client): Promise<void> {
+  await client.query("set time zone 'UTC'");
+}
+
 /** Drops and rebuilds `public`, then applies every marketing migration in order. */
 export async function connectFreshMarketingSchema(): Promise<Client> {
   const client = new Client({ connectionString: requireTestDatabaseUrl() });
   await client.connect();
+  await pinSessionToUtc(client);
   await client.query("drop schema if exists public cascade");
   await client.query("create schema public");
   await client.query(ROLE_SETUP);
@@ -102,5 +117,6 @@ export async function connectFreshMarketingSchema(): Promise<Client> {
 export async function openConcurrentClient(): Promise<Client> {
   const client = new Client({ connectionString: requireTestDatabaseUrl() });
   await client.connect();
+  await pinSessionToUtc(client);
   return client;
 }
