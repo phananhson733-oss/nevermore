@@ -1,41 +1,13 @@
-// @input  -- /api/auth/session、/api/auth/sign-out、localePath、common.*
-// @output — 登录/登出控制与指向 SEO Agent 的主审计按钮
+// @input  -- the header 的共享登录态、localePath、common.*
+// @output — 未登录时的登录按钮与指向 SEO Agent 的主审计按钮（登出在 account-menu）
 // @pos    -- Header 右侧的登录入口，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { localePath } from "../../lib/locale-path";
-import { clearOnPageStorage } from "../../lib/on-page-checker/storage.ts";
-
-/**
- * End the session and re-render against the cleared cookies.
- *
- * A full reload rather than local state: the cookie is what the server reads,
- * and every other surface on the page that asked about the session did so in a
- * mount-only effect. Flipping one component's state would leave the rest
- * believing the session still exists.
- */
-async function signOut(): Promise<void> {
-  const result = await fetch("/api/auth/sign-out", { method: "POST" });
-  if (!result.ok) return;
-  // The endpoint clears cookies. Anything this site left in Web Storage is
-  // still here, and on a shared machine that is the previous person's URLs and
-  // queries sitting on the page for whoever signs in next. Cleared before the
-  // reload, because after it this component is gone.
-  clearOnPageStorage(readableStorage("localStorage"), readableStorage("sessionStorage"));
-  window.location.reload();
-}
-
-/** Web Storage can throw on access alone; a refusal is the same as empty. */
-function readableStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
-  try {
-    return window[kind];
-  } catch {
-    return null;
-  }
-}
+import type { AccountState } from "../../lib/auth/use-account.ts";
+import { signOut } from "./sign-out-action.ts";
 
 /**
  * The header's sign-in affordance.
@@ -64,54 +36,25 @@ function readableStorage(kind: "localStorage" | "sessionStorage"): Storage | nul
  * session exists, so whoever held one had no way to see it again.
  */
 export function SignInControl({
+  account,
   onSignIn,
 }: {
+  readonly account: AccountState;
   readonly onSignIn: () => void;
 }) {
   const t = useTranslations();
   const locale = useLocale();
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/auth/session", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { signedIn?: boolean } | null) => {
-        if (!controller.signal.aborted) setSignedIn(body?.signedIn === true);
-      })
-      .catch(() => {
-        // Unreachable session endpoint: fall back to offering sign-in, which is
-        // never harmful — the panel degrades to the app's own login page.
-        if (!controller.signal.aborted) setSignedIn(false);
-      });
-    return () => controller.abort();
-  }, []);
-
-  const handleSignOut = useCallback(() => {
-    setSigningOut(true);
-    void signOut().catch(() => setSigningOut(false));
-  }, []);
 
   const secondaryClass =
     "hidden h-9.5 items-center rounded-lg border border-brand-border-card px-[14px] text-[13.5px] text-text-dark-secondary transition-colors hover:border-brand-accent/40 hover:text-text-dark-primary disabled:opacity-60 md:inline-flex";
 
   return (
     <>
-      {signedIn === false ? (
+      {/* Signed in, this slot is empty: AccountMenu draws the avatar next to
+          it, and sign-out lives inside that panel. */}
+      {account.status === "signed-out" ? (
         <button type="button" onClick={onSignIn} className={secondaryClass}>
           {t("common.signIn")}
-        </button>
-      ) : null}
-
-      {signedIn === true ? (
-        <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={signingOut}
-          className={secondaryClass}
-        >
-          {t("common.signOut")}
         </button>
       ) : null}
 
@@ -132,28 +75,17 @@ export function SignInControl({
  * sheet's, so leaving the sheet open would stack two focus traps.
  */
 export function SignInControlMobile({
+  account,
   onNavigate,
   onSignIn,
 }: {
+  readonly account: AccountState;
   readonly onNavigate: () => void;
   readonly onSignIn: () => void;
 }) {
   const t = useTranslations();
   const locale = useLocale();
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/auth/session", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { signedIn?: boolean } | null) => {
-        if (!controller.signal.aborted) setSignedIn(body?.signedIn === true);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setSignedIn(false);
-      });
-    return () => controller.abort();
-  }, []);
+  const signedIn = account.status === "signed-in";
 
   return (
     <>

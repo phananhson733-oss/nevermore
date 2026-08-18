@@ -17,16 +17,20 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
-import { CreditsBadge } from "../credits/credits-badge";
 import { ThemeToggle } from "./theme-toggle";
 import { NavSubmenu, NavSubmenuMobile } from "./tools-menu";
 import {
   SignInControl,
   SignInControlMobile,
 } from "@/components/auth/sign-in-control";
+import {
+  AccountMenu,
+  AccountSummaryMobile,
+} from "@/components/auth/account-menu";
 import { SignInDialog } from "@/components/auth/sign-in-dialog";
 import { headerNavItems } from "@/config/navigation";
 import { localePath } from "@/lib/locale-path";
+import { useAccount } from "@/lib/auth/use-account";
 
 export function Header() {
   const t = useTranslations();
@@ -35,6 +39,10 @@ export function Header() {
   // Owned here rather than by either trigger: the mobile trigger lives inside
   // the sheet, and a dialog nested there would unmount as the sheet closed.
   const [signInOpen, setSignInOpen] = useState(false);
+  // Asked once, here. The sign-in button and the account avatar are answers to
+  // the same question, and two independent probes could disagree — rendering a
+  // "sign in" button beside the avatar of the account already signed in.
+  const account = useAccount();
 
   return (
     <header className="fixed top-0 right-0 left-0 z-50 border-b border-brand-border/80 bg-brand-bg/75 backdrop-blur-[14px]">
@@ -87,12 +95,15 @@ export function Header() {
 
         {/* Right */}
         <div className="flex items-center gap-4">
-          {/* Hides itself for everyone who has no balance to see, so the slot
-              is unchanged for the anonymous majority of this site's readers. */}
-          <CreditsBadge />
           <ThemeToggle />
           <LanguageSwitcher />
-          <SignInControl onSignIn={() => setSignInOpen(true)} />
+          <SignInControl
+            account={account}
+            onSignIn={() => setSignInOpen(true)}
+          />
+          {/* Renders nothing for anyone signed out, so the slot is unchanged
+              for the anonymous majority of this site's readers. */}
+          <AccountMenu account={account} />
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -138,8 +149,13 @@ export function Header() {
                   ),
                 )}
                 <SignInControlMobile
+                  account={account}
                   onNavigate={() => setMobileOpen(false)}
                   onSignIn={() => setSignInOpen(true)}
+                />
+                <AccountSummaryMobile
+                  account={account}
+                  onNavigate={() => setMobileOpen(false)}
                 />
               </nav>
             </SheetContent>

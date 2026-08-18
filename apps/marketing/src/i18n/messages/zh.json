@@ -3690,5 +3690,13 @@
       "signedOut": "登录后查看你的积分。",
       "unavailable": "积分暂时不可用。"
     }
+  },
+  "account": {
+    "menu": {
+      "label": "账户",
+      "balance": "积分",
+      "welfareRemaining": "测试期还能攒 {remaining}",
+      "ledger": "查看积分明细"
+    }
   }
 }
