@@ -23,7 +23,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["A1", "Index coverage rate", "索引覆盖率", "At least 90%; below 70% is Blocker, 70–90% is Warning", "至少 90%；低于 70% 为阻断，70–90% 为警告"],
   ["A2", "Deprecated URL impression share", "废弃 URL 曝光占比", "Below 5%; above 20% is Blocker", "低于 5%；高于 20% 为阻断"],
   ["A3", "Discovered, currently not indexed rate", "已发现但尚未编入索引占比", "Below 10%; otherwise Warning", "低于 10%；否则为警告"],
-  ["A4", "Soft 404 page count", "软 404 页数", "0 pages; above 0 is Blocker", "0 页；大于 0 为阻断"],
+  ["A4", "Soft 404 page count", "软 404 页数", "0 pages; above 0 is Blocker. A page counts only when it answers 200, states a not-found phrase, and has less body text than the published floor — both signals, never one.", "0 页；大于 0 为阻断。只有同时满足三点才计入：返回 200、出现「找不到」类措辞、正文量低于公布的下限——两个信号缺一不可。"],
   ["A5", "Sitemap URLs robots.txt blocks from search", "robots.txt 拦截的 sitemap URL 数", "0 URLs; above 0 is Blocker. Counts URLs the sitemap declares for indexing that robots.txt forbids Google's crawler from fetching.", "0 个 URL；大于 0 为阻断。统计 sitemap 声明要收录、而 robots.txt 又禁止 Google 抓取的 URL。"],
   ["A6", "Redirect destinations returning an error", "跳转终点返回错误的 URL 数", "0 URLs; above 0 is Warning. Counts any 4xx or 5xx destination, so a 5xx one is also counted under crawl efficiency.", "0 个 URL；大于 0 为警告。统计任何 4xx 或 5xx 终点，因此 5xx 终点也会同时计入抓取效率。"],
   ["A7", "Pages carrying a noindex directive", "带 noindex 指令的页数", "Listed for review, not judged: noindex is often deliberate. Confirm each page is meant to stay out of the index.", "仅列出待复核，不作判定：noindex 常常是有意为之。请逐页确认确实不希望被索引。"],
@@ -61,7 +61,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
   ["1.7", "hreflang target validity", "hreflang 目标有效性", "Every target returns 200; a 404 target is Blocker", "所有目标均返回 200；指向 404 为阻断"],
-  ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response with empty-shell content; a soft 404 is Blocker", "不是 200 空壳内容；软 404 为阻断"],
+  ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
   ["2.1", "Title length", "Title 长度", "Reviewed working range 15–70 characters; Google truncates by rendered width, not character count", "已审阅工作区间 15–70 个字符；Google 按渲染宽度截断，而非字符数"],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.3", "Title contains the target query", "Title 含目标词", "Contains the confirmed target query as a token sequence; otherwise Warning; 2× check weight. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为警告；检查权重 2 倍。不做同义词或词形还原。"],
@@ -156,6 +156,8 @@ const BLOCKER_CAPABLE = new Set([
  * executed severity are tied together by a test rather than by discipline.
  */
 const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
+  A4: ["soft_404_page"],
+  "1.8": ["soft_404_page"],
   "1.1": ["non_2xx_final_status"],
   "1.3": ["noindex_directive"],
   "1.6": ["non_2xx_final_status"],
@@ -202,6 +204,8 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "5.3": ["image_in_legacy_format"],
   "2.6": ["open_graph_incomplete"],
   "3.3": ["heading_level_skipped"],
+  A4: ["soft_404_page"],
+  "1.8": ["soft_404_page"],
   "2.3": ["title_without_target_query"],
   "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
@@ -578,6 +582,14 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "3.2": l(
     "The H1 does not contain the confirmed query as a token sequence. This is a Tip rather than a Warning because the H1 is read after the click, not before it, so it changes what a reader confirms rather than whether they arrive. Make it agree with the title without repeating it word for word: the title is the promise and the H1 is the first line of keeping it. Matching is a token sequence with no synonyms and no stemming, so a heading that means the same thing in different words is reported here and is not necessarily wrong.",
     "H1 里没有以词序列的形式包含已确认的目标词。这一项是提示而不是警告，因为 H1 是点击之后才被读到的，不是点击之前，所以它影响的是读者进来之后确认了什么，而不是他们会不会进来。让它与 title 一致，但不要逐字重复：title 是承诺，H1 是兑现承诺的第一句。匹配按词序列进行，不做同义词也不做词形还原，所以一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。",
+  ),
+  A4: l(
+    "Each of these answers 200, says it cannot find something, and has almost nothing else on it. To a search system that reads as a real page, so it gets crawled, considered for indexing, and competes with the pages you meant. Answer 404 or 410 for a URL that is genuinely gone — that is the whole fix and it is usually one route handler. If the URL should exist, the finding is the opposite one: the page is failing to render its content and the status is the only thing still correct. Check the linking pages either way, because a URL nothing links to and nothing lists does not need a status at all.",
+    "这些页面都返回 200，页面上写着找不到东西，除此之外几乎什么都没有。在搜索系统看来这就是一个真实页面，于是它会被抓取、被考虑收录，并和你真正想要的页面竞争。如果这个 URL 确实已经没有了，就返回 404 或 410——这就是全部的修法，通常改一处路由处理即可。如果这个 URL 本该存在，那结论正好相反：是页面没能渲染出内容，而状态码是唯一还正确的东西。无论哪种情况都去看一下链到它的页面，因为一个没人链接、也不在任何清单里的 URL，根本不需要状态码。",
+  ),
+  "1.8": l(
+    "This page answers 200 while telling the reader it has nothing. Both signals had to be present for it to be reported — the not-found wording and a body below the published floor — so a short page that says nothing of the kind is not here, and neither is an article about error pages. Serve 404 or 410 if the URL is gone; if it should exist, treat this as a rendering failure and fix what the page is not producing. Do not add noindex as the fix: the URL still resolves, still consumes crawl budget, and still collects internal links.",
+    "这个页面返回 200，却在告诉读者它什么都没有。要被报出来必须两个信号同时成立——「找不到」类措辞，以及正文量低于公布的下限——所以内容少但没说这类话的页面不在这里，讲错误页的文章也不在这里。如果这个 URL 已经没有了，就返回 404 或 410；如果它本该存在，就把这当作渲染失败来查，修的是页面没能产出的东西。不要用 noindex 当修法：URL 依然解析得通，依然消耗抓取预算，依然在收内链。",
   ),
   D4: l(
     "Group the uncovered pages by path shape before writing anything. If they share one, the template behind them renders images without an alt attribute and one edit covers the group; if they do not, the alt was skipped page by page and this is a content pass, not a code one. Write what the image conveys in the sentence it sits in, not what it depicts — the same photograph is \"the finished dashboard after setup\" on one page and \"our team in 2024\" on another. An image that carries no meaning takes alt=\"\", which this check already counts as covered.",

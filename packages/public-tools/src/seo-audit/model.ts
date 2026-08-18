@@ -1,5 +1,9 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import {
+  SOFT_404_BODY_FLOOR_UNITS,
+  softNotFoundVerdict,
+} from "./soft-404.ts";
+import {
   searchCrawlerMayFetch,
   SEARCH_CRAWLER_USER_AGENT,
 } from "./robots-allowance.ts";
@@ -1022,6 +1026,31 @@ function buildRecords(
           }),
         ),
       limitation: "heading_levels_read_from_static_html_in_document_order",
+    }),
+    record({
+      // A4 and 1.8. Both Blocker-capable, so the detection needs two
+      // independent signals: a page that says it is missing AND has nothing
+      // else on it. Thin content alone is a short page, which other checks
+      // report; a not-found phrase alone is an article about error pages.
+      id: "soft_404_page",
+      category: "indexability",
+      tested: htmlPages.length,
+      observations: htmlPages.flatMap((page) => {
+        const verdict = softNotFoundVerdict(page);
+        return verdict === null
+          ? []
+          : [
+              pageObservation(page, {
+                final_status: page.finalStatus,
+                matched_phrase: verdict.matchedPhrase,
+                body_text_units: verdict.bodyUnits.units,
+                text_units_basis: verdict.bodyUnits.basis,
+                text_units_floor: SOFT_404_BODY_FLOOR_UNITS,
+              }),
+            ];
+      }),
+      limitation:
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
     }),
     record({
       id: "json_ld_parse_error",

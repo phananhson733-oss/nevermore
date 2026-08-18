@@ -970,7 +970,8 @@
         "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "The page text extract was missing, so no part of the page could be compared to the query.",
         "this_page_has_no_title_so_there_was_no_text_to_compare": "This page has no title at all, which is reported by its own check. There was no text here to compare to the query.",
         "this_page_has_no_h1_so_there_was_no_text_to_compare": "This page has no H1 at all, which is reported by its own check. There was no text here to compare to the query.",
-        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "Matched as a token sequence on the confirmed query. No synonyms, no stemming, and multi-word queries must appear adjacent and in order."
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "Matched as a token sequence on the confirmed query. No synonyms, no stemming, and multi-word queries must appear adjacent and in order.",
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "A page is reported only when it states a not-found phrase AND falls below the published body floor. A soft 404 with a long body of suggestions is not detected here."
       },
       "records": {
         "robots_resource": {
@@ -1144,6 +1145,10 @@
         "h1_without_target_query": {
           "title": "H1 does not contain the target query",
           "description": "The confirmed target query does not appear in this page's H1 as a token sequence. A heading that means the same thing in different words is reported here and is not necessarily wrong."
+        },
+        "soft_404_page": {
+          "title": "Pages that answer 200 while saying they have nothing",
+          "description": "Collected pages that return 200, state a not-found phrase in their title or opening text, and carry less body text than the published floor. Both signals are required: thin content alone is a short page, and the phrase alone is an article about error pages."
         }
       },
       "evidence": {
@@ -1217,7 +1222,11 @@
         "target_query": "Target query",
         "query_tokenization": "How the query was split",
         "slot_occurrences": "Occurrences here",
-        "source_pages": "Linking pages"
+        "source_pages": "Linking pages",
+        "matched_phrase": "Phrase found",
+        "body_text_units": "Body text units",
+        "text_units_basis": "Counted as",
+        "text_units_floor": "Floor"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

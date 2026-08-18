@@ -970,7 +970,8 @@
         "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "页面文本提取缺失，因此页面上没有任何部分能与目标词比对。",
         "this_page_has_no_title_so_there_was_no_text_to_compare": "这个页面根本没有 title，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
         "this_page_has_no_h1_so_there_was_no_text_to_compare": "这个页面根本没有 H1，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
-        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "按已确认目标词的词序列匹配。不做同义词、不做词形还原，多词查询必须相邻且保持顺序。"
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "按已确认目标词的词序列匹配。不做同义词、不做词形还原，多词查询必须相邻且保持顺序。",
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "只有同时满足「出现『找不到』类措辞」与「正文量低于公布下限」才会被报出。一个带有大量推荐内容、正文很长的软 404 在这里检测不到。"
       },
       "records": {
         "robots_resource": {
@@ -1144,6 +1145,10 @@
         "h1_without_target_query": {
           "title": "H1 未包含目标词",
           "description": "已确认的目标词没有以词序列的形式出现在这个页面的 H1 里。一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。"
+        },
+        "soft_404_page": {
+          "title": "返回 200 却声称什么都没有的页面",
+          "description": "已采集页面中，返回 200、在标题或开头文本里出现「找不到」类措辞、且正文量低于公布下限的页面。两个信号必须同时成立：仅内容少只是短页面，仅有措辞则可能是讲错误页的文章。"
         }
       },
       "evidence": {
@@ -1217,7 +1222,11 @@
         "target_query": "目标词",
         "query_tokenization": "目标词的切分方式",
         "slot_occurrences": "此处出现次数",
-        "source_pages": "链到这里的页面"
+        "source_pages": "链到这里的页面",
+        "matched_phrase": "命中的措辞",
+        "body_text_units": "正文计量单位数",
+        "text_units_basis": "计量方式",
+        "text_units_floor": "下限"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
