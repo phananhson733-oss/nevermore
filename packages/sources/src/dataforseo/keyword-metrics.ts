@@ -141,6 +141,16 @@ export interface DataForSeoSerpOrganicRow {
   readonly rankGroup: number;
   /** Hostname, lowercased with a leading `www.` removed so ranks can join. */
   readonly domain: string;
+  /**
+   * Sitelinks Google chose to show under this result.
+   *
+   * Zero for a result that has none *and* for one the provider did not describe
+   * — those are the same shape on the wire, so a caller reading a low number as
+   * "Google showed nothing extra" would be adding a claim this does not carry.
+   */
+  readonly sitelinkCount: number;
+  /** The result's own URL, or null when the provider did not give one. */
+  readonly url: string | null;
 }
 
 export interface DataForSeoSerpOrganicResponse {
@@ -656,7 +666,12 @@ function collectSerpOrganicRows(
       continue;
     }
     if (rows.length >= depth) continue;
-    rows.push({ rankGroup, domain });
+    rows.push({
+      rankGroup,
+      domain,
+      sitelinkCount: Array.isArray(item.links) ? item.links.length : 0,
+      url: typeof item.url === "string" && item.url !== "" ? item.url : null,
+    });
   }
   return { rows, unresolvedItemCount };
 }

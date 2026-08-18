@@ -29,7 +29,47 @@ import {
   isSeoAuditTargetPageExtract,
 } from "@sf/public-tools/seo-audit/contract";
 
+
 export { isCanonicalIsoTimestamp };
+
+export interface SerpLandscapeRow {
+  readonly position: number;
+  /** Sitelinks shown under this result; zero also covers "not described". */
+  readonly sitelinkCount: number;
+  readonly domain: string;
+  readonly isTarget: boolean;
+}
+
+/**
+ * Page one for one query, in one market.
+ *
+ * Declared here rather than beside the lookup that fills it: this module is the
+ * wire contract both the route and the browser read, and the lookup builds a
+ * provider client whose graph reaches `node:net`. Keeping the shape on this
+ * side means the client never has a reason to name that module at all.
+ */
+export type SerpLandscape =
+  | {
+      readonly availability: "available";
+      readonly query: string;
+      readonly market: string;
+      readonly language: string;
+      readonly resultsObserved: number;
+      /** Results showing sitelinks, the strength signal the reference tool uses. */
+      readonly withSitelinks: number;
+      /** Feature blocks on the page, or null when the provider named none. */
+      readonly features: readonly string[] | null;
+      /** Where this page's own host sits, or null when it is not on page one. */
+      readonly targetPosition: number | null;
+      readonly rows: readonly SerpLandscapeRow[];
+    }
+  | {
+      readonly availability: "unavailable";
+      readonly reason:
+        | "no_target_query"
+        | "market_not_supported"
+        | "provider_unavailable";
+    };
 
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
@@ -108,6 +148,14 @@ export type AgentAuditResult = Pick<
    * wrong by accident rather than by discipline.
    */
   readonly keywordEvidence?: KeywordEvidence;
+  /**
+   * Page one for the primary query, when this boundary looked it up.
+   *
+   * Absent from the cached payload for the same reason the keyword region is:
+   * a results page is a fact about one query in one market, and the cache row
+   * is shared by every visitor to the host.
+   */
+  readonly serpLandscape?: SerpLandscape;
 };
 
 export interface AgentAuditSuccessData {
@@ -327,6 +375,71 @@ function isDensity(value: unknown): boolean {
   );
 }
 
+const SERP_UNAVAILABLE_REASONS: readonly string[] = [
+  "no_target_query",
+  "market_not_supported",
+  "provider_unavailable",
+];
+
+/**
+ * The results-page region, checked all the way down.
+ *
+ * Its rows carry a domain that the report prints, so they are bounded here the
+ * way every other printed string is. Ten results at most, because one page is
+ * what was asked for.
+ */
+function isSerpLandscapeShape(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  if (value.availability === "unavailable") {
+    return (
+      Object.keys(value).length === 2 &&
+      typeof value.reason === "string" &&
+      SERP_UNAVAILABLE_REASONS.includes(value.reason)
+    );
+  }
+  if (value.availability !== "available") return false;
+  if (
+    typeof value.query !== "string" ||
+    value.query.length > 200 ||
+    typeof value.market !== "string" ||
+    !/^[A-Z]{2}$/.test(value.market) ||
+    typeof value.language !== "string" ||
+    !/^[a-z]{2,3}$/.test(value.language) ||
+    !isNonNegativeInteger(value.resultsObserved) ||
+    !isNonNegativeInteger(value.withSitelinks) ||
+    value.withSitelinks > value.resultsObserved ||
+    !(
+      value.targetPosition === null ||
+      (isNonNegativeInteger(value.targetPosition) && value.targetPosition > 0)
+    ) ||
+    !(
+      value.features === null ||
+      (Array.isArray(value.features) &&
+        value.features.length <= 40 &&
+        value.features.every(
+          (entry) => typeof entry === "string" && entry.length <= 64,
+        ))
+    ) ||
+    !Array.isArray(value.rows) ||
+    value.rows.length > 10 ||
+    value.rows.length !== value.resultsObserved
+  ) {
+    return false;
+  }
+  return value.rows.every(
+    (row) =>
+      isObject(row) &&
+      Object.keys(row).length === 4 &&
+      isNonNegativeInteger(row.position) &&
+      row.position > 0 &&
+      typeof row.domain === "string" &&
+      row.domain.length > 0 &&
+      row.domain.length <= 253 &&
+      isNonNegativeInteger(row.sitelinkCount) &&
+      typeof row.isTarget === "boolean",
+  );
+}
+
 function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
@@ -346,6 +459,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.keywordEvidence === undefined ||
       isKeywordEvidenceShape(value.keywordEvidence)
+    ) ||
+    !(
+      value.serpLandscape === undefined ||
+      isSerpLandscapeShape(value.serpLandscape)
     )
   ) {
     return false;

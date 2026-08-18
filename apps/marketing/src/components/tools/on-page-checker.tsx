@@ -22,6 +22,8 @@ import { OnPageScoreCard } from "./on-page-score-card.tsx";
 import { OnPageCheckList } from "./on-page-check-list.tsx";
 import { OnPageSerpPreview } from "./on-page-serp-preview.tsx";
 import { OnPageTermTables } from "./on-page-term-tables.tsx";
+import { OnPageSerpLandscape } from "./on-page-serp-landscape.tsx";
+import type { SerpLandscape } from "../../lib/agents/audit-contract.ts";
 
 import {
   appendOnPageHistory,
@@ -106,6 +108,7 @@ interface AuditResponse {
       readonly siteResources?: SeoAuditSiteResources;
       readonly records?: readonly SeoAuditRecord[];
       readonly keywordEvidence?: KeywordEvidence;
+      readonly serpLandscape?: SerpLandscape;
     };
   };
   readonly error?: { readonly code?: unknown };
@@ -209,6 +212,8 @@ type RunState =
        * ever disagreeing about the same run.
        */
       readonly score: OnPageScore | null;
+      /** Page one for the primary query, or null when it was not looked up. */
+      readonly landscape: SerpLandscape | null;
     }
   | {
       readonly kind: "failed";
@@ -219,6 +224,7 @@ type RunState =
 export function OnPageChecker({ locale }: { readonly locale: string }) {
   const t = useTranslations("tools.onPageChecker");
   const tTerms = useTranslations("tools.onPageChecker.terms");
+  const tLandscape = useTranslations("tools.onPageChecker.landscape");
   /** One account of the crawl gate, shared with the tool that owns it. */
   const tCrawl = useTranslations("tools.seoAudit.errors");
   const [url, setUrl] = useState("");
@@ -360,6 +366,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           url: url.trim(),
           targetQueries: queries,
           pageRole,
+          // These two used to stop at the form. They reach the results-page
+          // lookup now, and nothing else: the crawl ignores both.
+          market: country,
+          language,
         }),
         signal: controller.signal,
       });
@@ -438,6 +448,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       cacheStatus: cache,
       extract,
       score,
+      landscape: result?.serpLandscape ?? null,
     });
 
     // Only a whole success is remembered, so the list never suggests a run
@@ -707,12 +718,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
 
           {/*
-            Market and language do not reach the check.
-
-            The request carries the URL, the queries and the page role, and
-            nothing else — so these two are carried into the SEO Agent when the
-            visitor opens it, and change nothing about the numbers below. Asking
-            for them without saying so reads as "checked for that market".
+            Market and language reach exactly one thing: the results-page
+            lookup. The crawl and every check built on it are the same in every
+            market, and saying so is cheaper than letting a visitor read the
+            whole report as "checked for that market".
           */}
           <p
             className="text-[12.5px] leading-[1.6] text-text-dark-faint"
@@ -866,6 +875,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                   {t("sections.checksHeading")}
                 </h3>
                 <OnPageCheckList categories={run.score.categories} />
+              </section>
+            )}
+
+            {run.landscape !== null && (
+              <section className="grid gap-3">
+                <h3 className="text-[15px] text-text-dark-primary">
+                  {tLandscape("heading")}
+                </h3>
+                <OnPageSerpLandscape landscape={run.landscape} />
               </section>
             )}
 

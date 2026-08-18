@@ -301,6 +301,8 @@ describe("handleAgentAuditRequest", () => {
             url: "acme.test",
             targetQueries: null,
             pageRole: null,
+            market: null,
+            language: null,
           });
           return success();
         },
@@ -990,5 +992,117 @@ describe("handleAgentAuditRequest", () => {
     );
 
     expect(response.status).toBe(502);
+  });
+});
+
+/**
+ * The results-page lookup, which only one of the two routes pays for.
+ *
+ * It runs after the crawl has already succeeded, so every one of its outcomes
+ * has to leave the check intact — including the one where the provider is down.
+ */
+describe("the results-page region", () => {
+  function landscapeRequest(): Request {
+    return new Request("https://gengrowth.ai/api/tools/on-page-seo-check", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-real-ip": "203.0.113.9",
+      },
+      body: JSON.stringify({
+        url: "acme.test",
+        targetQueries: ["acme pricing", "pricing plans"],
+        market: "GB",
+        language: "en",
+      }),
+    });
+  }
+
+  it("looks up the query the evidence layer already called primary", async () => {
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "provider_unavailable" as const,
+    }));
+
+    await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({ readSerpLandscape, delegate: async () => successWithExtract() }),
+    );
+
+    expect(readSerpLandscape).toHaveBeenCalledOnce();
+    const [input] = readSerpLandscape.mock.calls[0] as unknown as [
+      { query: string; market: string; language: string; targetUrl: string },
+    ];
+    // The evidence layer's own primary, not a second choice made here: two
+    // choosers would let the results page and the coverage table disagree
+    // about which word the page is being judged on.
+    expect(input.query).toBe("acme pricing");
+    expect(input.market).toBe("GB");
+    expect(input.language).toBe("en");
+  });
+
+  it("looks nothing up when the page was never read", async () => {
+    // The default fixture has no extract, so there is no evidence and no
+    // primary query. A lookup here would be a paid call about a page we could
+    // not open.
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "no_target_query" as const,
+    }));
+
+    await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({ readSerpLandscape }),
+    );
+
+    const [input] = readSerpLandscape.mock.calls[0] as unknown as [
+      { query: string | null },
+    ];
+    expect(input.query).toBeNull();
+  });
+
+  it("publishes what it found", async () => {
+    const response = await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({
+        readSerpLandscape: async () => ({
+          availability: "available" as const,
+          query: "acme pricing",
+          market: "GB",
+          language: "en",
+          resultsObserved: 2,
+          withSitelinks: 1,
+          features: ["organic"],
+          targetPosition: 2,
+          rows: [
+            { position: 1, domain: "big.com", sitelinkCount: 3, isTarget: false },
+            { position: 2, domain: "acme.test", sitelinkCount: 0, isTarget: true },
+          ],
+        }),
+      }),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: { serpLandscape?: { targetPosition: number } } };
+    };
+    expect(body.data.result.serpLandscape?.targetPosition).toBe(2);
+  });
+
+  it("leaves the check whole when the lookup is not attached", async () => {
+    const response = await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies(),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+    expect(response.status).toBe(200);
+    expect(Object.hasOwn(body.data.result, "serpLandscape")).toBe(false);
   });
 });

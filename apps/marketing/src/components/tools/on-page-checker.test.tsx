@@ -251,7 +251,7 @@ async function fillAndRun(
 }
 
 describe("On-Page checker request", () => {
-  it("sends the page, the queries and the page role", async () => {
+  it("sends the page, the queries, the role and the market to look up", async () => {
     const fetchMock = vi.fn(async () => auditResponse(["pricing", "plans"]));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -268,6 +268,10 @@ describe("On-Page checker request", () => {
       url: "acme.test/pricing",
       targetQueries: ["pricing", "plans"],
       pageRole: "homepage",
+      // Read by the results-page lookup and by nothing else. They used to stop
+      // at the form, which is why the copy beside them had to apologise.
+      market: "US",
+      language: "en",
     });
   });
 
@@ -709,11 +713,11 @@ describe("On-Page checker local state", () => {
     expect(host.textContent).toContain("Measured 1 of the 2 queries you submitted");
   });
 
-  it("says that market and language are not part of the check", async () => {
+  it("says what market and language are actually used for", async () => {
     const host = await render();
 
     expect(host.textContent).toContain(
-      "Market and language are not part of this check",
+      "Market and language are used for one thing",
     );
     const market = field(host, "onpage-country");
     expect(market.getAttribute("aria-describedby")).toBe("onpage-market-scope");

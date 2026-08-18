@@ -2022,7 +2022,7 @@
         "market": "市场",
         "language": "语言",
         "pageRole": "页面角色",
-        "marketScope": "市场与语言不参与这次检查：请求只带页面 URL、关键词和页面角色。它们会在你从这里打开 SEO Agent 时一并带过去。"
+        "marketScope": "市场和语言只用于查询搜索结果页（下方「搜索结果页」一节），抓取与其余检查项在任何市场下都一样。它们也会随「打开 SEO Agent」一起带过去。"
       },
       "pageRoles": {
         "homepage": "首页",
@@ -2492,6 +2492,25 @@
         "legend": "绿色表示这一行完整包含了你提交的某个目标词，黄色表示只共用了其中一部分。",
         "stopWords": "单个词的榜单里去掉了「的、是、the、and」这类功能词，短语榜单不去——「the astrology of」这种写法本身就是真实的表达。",
         "unavailable": "这次采集没有取到正文，因此没有词频榜。"
+      },
+      "landscape": {
+        "heading": "搜索结果页",
+        "position": "位次",
+        "domain": "域名",
+        "sitelinkColumn": "站内链接",
+        "you": "（这一页的域名）",
+        "summary": {
+          "present": "在「{query}」（{market}）的第一页上，这一页的域名排在第 {position} 位。",
+          "absent": "在「{query}」（{market}）的前 {results} 条结果里没有这一页的域名。这只说明它不在我们读到的这一页上，不代表没有排名。"
+        },
+        "sitelinks": "前 {results} 条里有 {withSitelinks} 条带站内链接。站内链接跟着品牌和导航型需求走，所以这个数字说的是 Google 已经把谁当成目的地，而不是「这个词有多难」。",
+        "features": "这一页还出现了：{features}。",
+        "basis": "查询「{query}」，市场 {market}，语言 {language}，桌面端第一页，一次采样。搜索结果每天都在变，这是这一刻的样子。",
+        "unavailable": {
+          "no_target_query": "没有提交目标关键词，因此没有查询搜索结果页。",
+          "market_not_supported": "这个市场或语言不在我们能查询的范围内，因此没有发起查询（也没有产生费用）。",
+          "provider_unavailable": "搜索结果页这次没查到。其余检查项不受影响。"
+        }
       }
     }
   },

@@ -2022,7 +2022,7 @@
         "market": "Market",
         "language": "Language",
         "pageRole": "Page role",
-        "marketScope": "Market and language are not part of this check: the request carries the page URL, the queries and the page role. They are carried over when you open the SEO Agent from here."
+        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent."
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2492,6 +2492,25 @@
         "legend": "Green means the row contains one of your target queries in full; amber means it shares part of one.",
         "stopWords": "The one-word table leaves out function words like “the” and “and”. Phrase tables keep them — “the astrology of” is how people actually write.",
         "unavailable": "This crawl did not capture body text, so there is no term leaderboard."
+      },
+      "landscape": {
+        "heading": "The results page",
+        "position": "Position",
+        "domain": "Domain",
+        "sitelinkColumn": "Sitelinks",
+        "you": "(this page's domain)",
+        "summary": {
+          "present": "On page one for “{query}” ({market}), this page's domain sits at position {position}.",
+          "absent": "This page's domain is not among the top {results} results for “{query}” ({market}). That means it is not on the page we read, not that it does not rank."
+        },
+        "sitelinks": "{withSitelinks} of the top {results} results show sitelinks. Sitelinks follow brand and navigational demand, so the number says who Google already treats as a destination — a different sentence from “this query is hard”.",
+        "features": "Also on that page: {features}.",
+        "basis": "Query “{query}”, market {market}, language {language}, desktop page one, sampled once. Results move daily; this is how it looked at that moment.",
+        "unavailable": {
+          "no_target_query": "No target query was submitted, so no results page was looked up.",
+          "market_not_supported": "This market or language is outside what we look up, so no call was made and nothing was spent.",
+          "provider_unavailable": "The results page could not be read this time. Every other check is unaffected."
+        }
       }
     }
   },
