@@ -19,8 +19,12 @@ afterEach(() => {
 });
 
 describe("geo cost constants", () => {
-  it("fixes the call count at three samples of eight questions", () => {
-    expect(GEO_CALLS_PER_RUN).toBe(24);
+  it("fixes the call count at the §2.2 retrieval/natural mix", () => {
+    // Five retrieval probes at three samples plus three natural-demand
+    // questions at one. Pinned as a literal because the ceiling below is
+    // derived from it: a call count that changed without this failing would
+    // leave a ceiling that no longer bounds anything.
+    expect(GEO_CALLS_PER_RUN).toBe(18);
   });
 
   it("keeps the per-run ceiling above the measured worst case", () => {
@@ -31,7 +35,7 @@ describe("geo cost constants", () => {
   });
 
   it("leaves the daily breaker above a single run", () => {
-    expect(GEO_RUN_P50_COST_USD).toBeCloseTo(1.0968, 4);
+    expect(GEO_RUN_P50_COST_USD).toBeCloseTo(0.8226, 4);
     expect(GEO_DAILY_RUN_MAX).toBeGreaterThan(1);
   });
 });

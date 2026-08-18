@@ -7,17 +7,30 @@ import {
   DEFAULT_SHARED_QUOTA_DEPENDENCIES,
   type SharedQuotaDependencies,
 } from "../tools/shared-rate-limit.ts";
-import {
-  GEO_QUESTIONS_PER_RUN,
-  GEO_SAMPLES_PER_QUESTION,
-} from "./geo-report-contract.ts";
+import { GEO_PLANNED_CALLS_PER_RUN } from "./geo-query-contract.ts";
 
-/** Provider calls one full run issues: every question, sampled three times. */
-export const GEO_CALLS_PER_RUN =
-  GEO_QUESTIONS_PER_RUN * GEO_SAMPLES_PER_QUESTION;
+/**
+ * Provider calls one full run issues.
+ *
+ * Eighteen, not twenty-four: five retrieval probes at three samples plus three
+ * natural-demand questions at one. The mix is deliberate, and the ceiling below
+ * follows it rather than the other way round.
+ */
+export const GEO_CALLS_PER_RUN = GEO_PLANNED_CALLS_PER_RUN;
 
 /** Measured mean cost of one answer at the 4096-token ceiling (2026-08-17). */
 export const GEO_CALL_P50_COST_USD = 0.0457;
+
+/**
+ * The most any single answer cost across the calibration, in USD.
+ *
+ * The admission reservation, because reserving the MEAN under concurrency lets
+ * a batch of above-average calls settle past the ceiling after they have
+ * already been paid for. Reserving the observed maximum still admits a full
+ * eighteen-call run — 18 x 0.052 is $0.94, well inside the cap — while making
+ * the guard bind before the money leaves rather than after.
+ */
+export const GEO_CALL_MAX_OBSERVED_COST_USD = 0.052;
 
 /** Measured cost of one full run, at that mean. */
 export const GEO_RUN_P50_COST_USD = GEO_CALL_P50_COST_USD * GEO_CALLS_PER_RUN;
@@ -25,13 +38,14 @@ export const GEO_RUN_P50_COST_USD = GEO_CALL_P50_COST_USD * GEO_CALLS_PER_RUN;
 /**
  * Hard ceiling on provider spend inside one run, in USD.
  *
- * 1.90 is about 1.7x the measured p50 of $1.10, deliberately tighter than the
+ * 1.45 is about 1.8x the measured p50 of $0.82, deliberately tighter than the
  * 3x the keyword tool allows itself. The reason the keyword cap is loose is
  * that its call COUNT varies with how much data the provider holds; this run's
  * count is fixed at {@link GEO_CALLS_PER_RUN}, so the only variable is the
  * per-call price, measured across twelve calls at $0.035-$0.052. A worst case
- * of 24 x $0.052 is $1.25, and 1.90 leaves room for a provider price change
- * without leaving room for a runaway.
+ * of 18 x $0.052 is $0.94, and 1.45 leaves room for a provider price change
+ * without leaving room for a runaway. It moved down with the call count: a
+ * ceiling left at the 24-call figure would have stopped bounding anything.
  *
  * Its precision has a floor set by concurrency. Reservations are the measured
  * mean, so if real prices land far above it one already-dispatched batch can
@@ -40,7 +54,7 @@ export const GEO_RUN_P50_COST_USD = GEO_CALL_P50_COST_USD * GEO_CALLS_PER_RUN;
  * It is not an exact spending limit, and nothing cheaper is, short of refusing
  * to issue calls concurrently at all.
  */
-export const GEO_MAX_PROVIDER_COST_USD = 1.9;
+export const GEO_MAX_PROVIDER_COST_USD = 1.45;
 
 /**
  * Account-level exposure one day may create, in USD.
@@ -58,11 +72,15 @@ export const GEO_DAILY_BUDGET_USD = 15;
  *
  * A count, not a dollar ledger, for the same reason the keyword tool uses one:
  * the durable store already counts hits inside a window, and a dollar-accurate
- * breaker would need its own table and its own failure mode. The per-run cap
- * above is what keeps the per-run estimate from drifting far enough to matter.
+ * breaker would need its own table and its own failure mode.
+ *
+ * Divided by the per-run CEILING rather than by the median. Dividing by the
+ * median admitted eighteen runs, and eighteen runs each costing a legal $1.40
+ * is $25.20 against a constant named "daily budget" that says $15. A budget
+ * that does not bound the budget is not a budget.
  */
 export const GEO_DAILY_RUN_MAX = Math.floor(
-  GEO_DAILY_BUDGET_USD / GEO_RUN_P50_COST_USD,
+  GEO_DAILY_BUDGET_USD / GEO_MAX_PROVIDER_COST_USD,
 );
 
 /** Window handed to the quota RPC; the bucket key already carries the date. */
@@ -70,6 +88,19 @@ export const GEO_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
 
 function roundUsd(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Convert a provider price to integer micro-USD.
+ *
+ * The report carries micros rather than a float because a required
+ * `costUsd: number` total pressures a null per-call price into a zero, and
+ * "unavailable is not zero" is the house's oldest red line. Rounding is done
+ * once, here, so the guard can compare integers exactly instead of comparing
+ * floats approximately.
+ */
+export function toCostMicros(costUsd: number): number {
+  return Math.round(costUsd * 1_000_000);
 }
 
 export interface GeoCostAccumulator {
@@ -94,6 +125,8 @@ export interface GeoCostAccumulator {
    */
   readonly settle: (costUsd: number | null) => void;
   readonly spent: () => number;
+  /** The same settled total in integer micro-USD, for the report contract. */
+  readonly spentMicros: () => number;
   readonly unpricedCalls: () => number;
   readonly capped: () => boolean;
 }
@@ -103,24 +136,46 @@ export const GEO_MAX_CONCURRENCY_HINT = 8;
 
 export function createGeoCostAccumulator(): GeoCostAccumulator {
   let settled = 0;
+  let settledMicros = 0;
   let reserved = 0;
+  /**
+   * What the unpriced calls probably cost.
+   *
+   * An unpriced call is a call that happened. Releasing its reservation and
+   * adding nothing would treat an unknown charge as $0 — the house's oldest red
+   * line, at the one boundary where it costs real money: if the provider
+   * stopped pricing every call, the ceiling would never bind again.
+   */
+  let unpricedLiability = 0;
   let unpriced = 0;
+  let admitted = 0;
   let capped = false;
+
+  const liability = (): number => settled + reserved + unpricedLiability;
 
   return {
     admit: () => {
+      // A hard count as well as a hard dollar cap. The dollar cap alone would
+      // admit thirty-one calls at the estimated price, so a retry loop or a
+      // future collector change could quietly triple a run the visitor was told
+      // costs eighteen calls.
+      if (admitted >= GEO_CALLS_PER_RUN) {
+        capped = true;
+        return false;
+      }
       if (
-        settled + reserved + GEO_CALL_P50_COST_USD >
+        liability() + GEO_CALL_MAX_OBSERVED_COST_USD >
         GEO_MAX_PROVIDER_COST_USD
       ) {
         capped = true;
         return false;
       }
-      reserved += GEO_CALL_P50_COST_USD;
+      reserved += GEO_CALL_MAX_OBSERVED_COST_USD;
+      admitted += 1;
       return true;
     },
     settle: (costUsd) => {
-      reserved = Math.max(0, reserved - GEO_CALL_P50_COST_USD);
+      reserved = Math.max(0, reserved - GEO_CALL_MAX_OBSERVED_COST_USD);
       if (
         costUsd === null ||
         typeof costUsd !== "number" ||
@@ -128,11 +183,22 @@ export function createGeoCostAccumulator(): GeoCostAccumulator {
         costUsd < 0
       ) {
         unpriced += 1;
-        return;
+        // At the reservation rate, not the median. An unknown price treated as
+        // cheaper than a reserved one is an unknown treated as a discount, and
+        // this is the boundary where that costs real money.
+        unpricedLiability += GEO_CALL_MAX_OBSERVED_COST_USD;
+      } else {
+        settled += costUsd;
+        settledMicros += toCostMicros(costUsd);
       }
-      settled += costUsd;
+      // Set here too, not only on a refused admission. Concurrency means the
+      // ceiling can be crossed by settlements after the last call was admitted,
+      // and a run that overran while reporting `capped: false` would be lying
+      // in the one field an operator reads to find out.
+      if (liability() > GEO_MAX_PROVIDER_COST_USD) capped = true;
     },
     spent: () => roundUsd(settled),
+    spentMicros: () => settledMicros,
     unpricedCalls: () => unpriced,
     capped: () => capped,
   };
