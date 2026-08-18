@@ -4,12 +4,25 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_AUDIT_COVERAGE,
   PAGE_AUDIT_GROUPS,
   SITE_AUDIT_GROUPS,
 } from "@sf/public-tools/agent-audit";
 
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
+
+/** Every leaf with its path, so a failure names the string that broke. */
+function leafEntries(
+  value: unknown,
+  prefix = "",
+): readonly (readonly [string, string])[] {
+  if (typeof value === "string") return [[prefix, value]];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value).flatMap(([key, child]) =>
+    leafEntries(child, prefix ? `${prefix}.${key}` : key),
+  );
+}
 
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -338,7 +351,8 @@ describe("Agent message catalogs", () => {
         "indexability",
         "links",
       ] as const) {
-        const template = messages.agents.workbench.categories[category].implementation;
+        const template =
+          messages.agents.workbench.categories[category].implementation;
         expect(template).not.toMatch(/[{}<]/);
       }
     }
@@ -372,13 +386,19 @@ describe("Agent message catalogs", () => {
 
     for (const messages of [en, zh]) {
       for (const group of ["A", "B", "C", "D", "E"]) {
-        messageAt(messages, `agents.workbench.auditCatalog.site.groups.${group}`);
+        messageAt(
+          messages,
+          `agents.workbench.auditCatalog.site.groups.${group}`,
+        );
       }
       for (const id of SITE_CHECK_IDS) {
         messageAt(messages, `agents.workbench.auditCatalog.site.checks.${id}`);
       }
       for (const group of ["1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
-        messageAt(messages, `agents.workbench.auditCatalog.page.groups.${group}`);
+        messageAt(
+          messages,
+          `agents.workbench.auditCatalog.page.groups.${group}`,
+        );
       }
       for (const id of PAGE_CHECK_IDS) {
         messageAt(messages, `agents.workbench.auditCatalog.page.checks.${id}`);
@@ -390,11 +410,15 @@ describe("Agent message catalogs", () => {
     const english = JSON.stringify(en.agents.workbench.profile);
     const chinese = JSON.stringify(zh.agents.workbench.profile);
 
-    expect(english).toMatch(/Product|Positioning|Value proposition|Core features/);
+    expect(english).toMatch(
+      /Product|Positioning|Value proposition|Core features/,
+    );
     expect(english).toMatch(/Business model|Primary CTA/);
     expect(english).toMatch(/ICP|Use cases|Desired outcomes|Barriers/);
     expect(english).toMatch(/JTBD/);
-    expect(english).toMatch(/Country|Locale|Device|Page type|Target query|Audit scope/);
+    expect(english).toMatch(
+      /Country|Locale|Device|Page type|Target query|Audit scope/,
+    );
     expect(english).toMatch(/Source-backed|Supplied/);
     expect(english).toMatch(/Inferred|Confirm before use/);
     expect(english).toMatch(/Review & adjust/);
@@ -452,15 +476,25 @@ describe("Agent message catalogs", () => {
 
   it("gives SEO and Tech distinct, evidence-honest recommendation contracts", () => {
     const englishSeo = JSON.stringify(en.agents.workbench.recommendations.seo);
-    const englishTech = JSON.stringify(en.agents.workbench.recommendations.tech);
+    const englishTech = JSON.stringify(
+      en.agents.workbench.recommendations.tech,
+    );
     const chineseSeo = JSON.stringify(zh.agents.workbench.recommendations.seo);
-    const chineseTech = JSON.stringify(zh.agents.workbench.recommendations.tech);
+    const chineseTech = JSON.stringify(
+      zh.agents.workbench.recommendations.tech,
+    );
 
     expect(englishSeo).not.toBe(englishTech);
-    expect(englishSeo).toMatch(/search intent|title|heading|internal link|schema/i);
-    expect(englishSeo).toMatch(/does not (?:infer|invent|measure).*(?:demand|ranking)/i);
+    expect(englishSeo).toMatch(
+      /search intent|title|heading|internal link|schema/i,
+    );
+    expect(englishSeo).toMatch(
+      /does not (?:infer|invent|measure).*(?:demand|ranking)/i,
+    );
     expect(englishTech).toMatch(/code|configuration|framework|owner/i);
-    expect(englishTech).toMatch(/no (?:site edit|apply|pull request|PR|deploy)/i);
+    expect(englishTech).toMatch(
+      /no (?:site edit|apply|pull request|PR|deploy)/i,
+    );
     expect(chineseSeo).toMatch(/搜索意图|标题|内链|结构化数据/);
     expect(chineseSeo).toMatch(/不.*(?:需求|排名)/);
     expect(chineseTech).toMatch(/代码|配置|框架|负责人/);
@@ -471,9 +505,7 @@ describe("Agent message catalogs", () => {
     expect(en.agents.seo.dataBoundaryBody).not.toMatch(
       /does not use an? (?:ICP|profile)/i,
     );
-    expect(zh.agents.seo.dataBoundaryBody).not.toMatch(
-      /不使用.*(?:ICP|画像)/,
-    );
+    expect(zh.agents.seo.dataBoundaryBody).not.toMatch(/不使用.*(?:ICP|画像)/);
   });
 
   it("keeps previews and run context free of unsupported product promises", () => {
@@ -487,5 +519,52 @@ describe("Agent message catalogs", () => {
         /anonymous audit|free audit|automatically (?:edit|apply|publish|deploy)|will (?:edit|apply|publish|deploy)|real (?:traffic|ranking)|匿名审计|免费审计|自动(?:编辑|应用|发布|部署)|将(?:编辑|应用|发布|部署)|真实(?:流量|排名)/i,
       );
     }
+  });
+
+  it("never writes a catalogue count down in the copy", () => {
+    // The shipped string said "24 of the 81 catalogue checks" long after the
+    // code decided 33 of 80. Nobody noticed because nothing tied the sentence
+    // to the catalogue, and every batch of work moves both numbers at once.
+    for (const messages of [en, zh]) {
+      for (const [path, text] of leafEntries(messages.agents)) {
+        expect(
+          text,
+          `${path} states a catalogue count as a literal`,
+        ).not.toMatch(/\d+\s*(?:项)?目录|\d+\s+(?:of the\s+)?\d*\s*catalogue/i);
+      }
+    }
+  });
+
+  it("states the coverage from the catalogue, in both locales", () => {
+    for (const messages of [en, zh]) {
+      for (const agent of ["seo", "tech"] as const) {
+        const body = messages.agents[agent].step3Body;
+        for (const name of ["total", "decided", "sourceGated"] as const) {
+          expect(body, `${agent}.step3Body`).toContain(`{${name}}`);
+        }
+        // Every placeholder must be one the render actually hands over.
+        // next-intl throws on a missing value, so a renamed field would take
+        // the whole Agent page down rather than degrade a sentence — and no
+        // unit test that only reads the message file would see it.
+        for (const [, name] of body.matchAll(/\{(\w+)\}/g)) {
+          expect(
+            Object.keys(AGENT_AUDIT_COVERAGE),
+            `${agent}.step3Body references {${name}}`,
+          ).toContain(name);
+        }
+      }
+    }
+    // And the values it will be handed are the catalogue's own, not a second
+    // opinion computed beside it.
+    expect(AGENT_AUDIT_COVERAGE.total).toBe(
+      SITE_CHECK_IDS.length + PAGE_CHECK_IDS.length,
+    );
+    expect(AGENT_AUDIT_COVERAGE.decided).toBeGreaterThan(0);
+    expect(AGENT_AUDIT_COVERAGE.decided).toBeLessThanOrEqual(
+      AGENT_AUDIT_COVERAGE.total,
+    );
+    expect(AGENT_AUDIT_COVERAGE.sourceGated).toBeLessThanOrEqual(
+      AGENT_AUDIT_COVERAGE.decided,
+    );
   });
 });

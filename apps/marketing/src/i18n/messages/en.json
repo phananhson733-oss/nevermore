@@ -2767,7 +2767,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "No project persistence",
-      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. This report does not claim GSC, traffic, or ranking data.",
+      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. Search Console figures appear only for a property you have connected; without that connection the report claims no traffic or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "A bounded path from URL to review",
       "howBody": "The Agent separates collected evidence, unverified checks, and adaptable guidance so a limitation never becomes a pass or a score.",
@@ -2776,7 +2776,7 @@
       "step2Title": "Inspect public HTML",
       "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected SEO solution",
       "step4Body": "Prioritize evidence and the confirmed search context, then inspect a page-specific change and validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
@@ -2801,7 +2801,7 @@
       "step2Title": "Inspect bounded responses",
       "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected technical solution",
       "step4Body": "Trace the affected response, directive, link, template, or configuration and inspect a code-oriented validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."

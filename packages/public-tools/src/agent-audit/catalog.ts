@@ -667,6 +667,35 @@ export const SITE_AUDIT_GROUPS = makeGroups("site", SITE_GROUPS, SITE_TITLES);
 export const PAGE_AUDIT_GROUPS = makeGroups("page", PAGE_GROUPS, PAGE_TITLES);
 
 /**
+ * How much of its own catalogue this build can decide.
+ *
+ * Derived on purpose. The visitor-facing method copy quotes these numbers, and
+ * the hand-written pair drifted the moment the catalogue moved: the shipped
+ * string read "24 of the 81 checks" while the code decided 33 of 80 — a smaller
+ * promise than the product keeps, citing a total that no longer exists.
+ * Anything that states the coverage must read it from here.
+ *
+ * `sourceGated` is the subset that has a detector but still needs the visitor
+ * to connect a source, so the copy can name it instead of implying every
+ * decided check lands on an anonymous run.
+ */
+function countCoverage(): {
+  readonly total: number;
+  readonly decided: number;
+  readonly sourceGated: number;
+} {
+  const checks = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap((group) => group.checks);
+  const decided = checks.filter((check) => check.inventoryReady);
+  return {
+    total: checks.length,
+    decided: decided.length,
+    sourceGated: decided.filter((check) => check.engine === "access-required").length,
+  };
+}
+
+export const AGENT_AUDIT_COVERAGE = countCoverage();
+
+/**
  * Where each Agent opens.
  *
  * The default has to land on a group this run can actually decide, or the first

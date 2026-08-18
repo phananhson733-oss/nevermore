@@ -2767,7 +2767,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "不保存到项目",
-      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。本报告不声称使用了 GSC、流量或排名数据。",
+      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。只有你已连接的 Search Console 资源才会出现搜索表现数据；未连接时报告不声称任何流量或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "从 URL 到检查结论的有界路径",
       "howBody": "Agent 将已采集证据、无法核验项和可调整建议分开呈现，不会把限制误写成通过或评分。",
@@ -2776,7 +2776,7 @@
       "step2Title": "检查公开 HTML",
       "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的 SEO 方案",
       "step4Body": "结合证据和已确认的搜索上下文确定优先级，再检查页面级变更与验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
@@ -2801,7 +2801,7 @@
       "step2Title": "检查有边界响应",
       "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的技术方案",
       "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"

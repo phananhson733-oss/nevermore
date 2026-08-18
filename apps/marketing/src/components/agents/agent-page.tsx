@@ -5,6 +5,7 @@
 import { Check, Database, LockKeyhole, ScanSearch } from "lucide-react";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
+import { AGENT_AUDIT_COVERAGE } from "@sf/public-tools/agent-audit";
 
 import { BreadcrumbJsonLd } from "../seo/json-ld/breadcrumb-json-ld";
 import { VisibleBreadcrumb } from "../seo/visible-breadcrumb";
@@ -145,7 +146,10 @@ export async function AgentPage({
                       {t(`step${step}Title`)}
                     </h3>
                     <p className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-                      {t(`step${step}Body`)}
+                      {/* Read from the catalogue, never written down: the
+                          shipped copy said "24 of 81" while the code decided
+                          33 of 80, and every batch below moves both numbers. */}
+                      {t(`step${step}Body`, AGENT_AUDIT_COVERAGE)}
                     </p>
                   </li>
                 ))}
