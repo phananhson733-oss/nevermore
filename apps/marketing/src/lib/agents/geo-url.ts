@@ -120,6 +120,29 @@ export function isNormalizedGeoCitationUrl(value: unknown): value is string {
 }
 
 /**
+ * Normalize the site the visitor typed, which is not a citation.
+ *
+ * A citation always arrives from the provider with a scheme, so
+ * {@link normalizeGeoCitationUrl} requires one. A person typing their own site
+ * types `acme.com`, which is what this field's placeholder shows and what the
+ * sibling public tools accept, and reusing the citation rule here rejected it —
+ * two steps after it was entered, with the reason rendered off-screen.
+ *
+ * Only a missing scheme is supplied. A value that already declares one keeps it,
+ * so `javascript:` and `ftp://` still fail the http/https check below rather
+ * than being rewritten into something that passes.
+ */
+export function normalizeGeoTargetUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const candidate = /^[a-z][a-z\d+.-]*:/iu.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  return normalizeGeoCitationUrl(candidate);
+}
+
+/**
  * The canonical host of an already-normalized citation URL.
  *
  * Always recomputed from the URL. A `domain` field carried alongside the URL and

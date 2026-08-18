@@ -12,6 +12,7 @@ import {
   isNormalizedGeoHost,
   normalizeGeoCitationUrl,
   normalizeGeoHost,
+  normalizeGeoTargetUrl,
 } from "./geo-url.ts";
 
 describe("normalizeGeoHost", () => {
@@ -109,7 +110,9 @@ describe("normalizeGeoCitationUrl", () => {
 
 describe("geoCitationDomain and ownership", () => {
   it("recomputes the domain from the URL", () => {
-    expect(geoCitationDomain("https://www.acme.test/pricing")).toBe("acme.test");
+    expect(geoCitationDomain("https://www.acme.test/pricing")).toBe(
+      "acme.test",
+    );
   });
 
   it("treats www and bare host as the same site", () => {
@@ -125,9 +128,9 @@ describe("geoCitationDomain and ownership", () => {
     expect(isGeoTargetCitation("https://blog.acme.test/x", "acme.test")).toBe(
       false,
     );
-    expect(isGeoTargetCitation("https://acme.test.evil.test/x", "acme.test")).toBe(
-      false,
-    );
+    expect(
+      isGeoTargetCitation("https://acme.test.evil.test/x", "acme.test"),
+    ).toBe(false);
   });
 
   it("distinguishes two paths on the same host", () => {
@@ -136,5 +139,35 @@ describe("geoCitationDomain and ownership", () => {
 
     expect(first).not.toBe(second);
     expect(geoCitationDomain(first!)).toBe(geoCitationDomain(second!));
+  });
+});
+
+describe("normalizeGeoTargetUrl", () => {
+  // Regression: the site field's own placeholder is a bare hostname, and the
+  // citation rule rejected it — two steps after it was typed, with the reason
+  // rendered off-screen. Found by /qa on 2026-08-18.
+  it.each(["acme.com", "www.acme.com", "acme.com/pricing", "  acme.com  "])(
+    "accepts the scheme-less host a visitor types: %s",
+    (typed) => {
+      expect(normalizeGeoTargetUrl(typed)).not.toBeNull();
+    },
+  );
+
+  it("supplies https only when no scheme was declared", () => {
+    expect(normalizeGeoTargetUrl("acme.com")).toBe("https://acme.com/");
+    expect(normalizeGeoTargetUrl("http://acme.com")).toBe("http://acme.com/");
+  });
+
+  // Prefixing must never rescue a value the citation rule would refuse: a
+  // declared scheme is kept, so these still fail the http/https check.
+  it.each([
+    "javascript:alert(1)",
+    "ftp://acme.com",
+    "data:text/html,x",
+    "https://user:pw@acme.com",
+    "",
+    "   ",
+  ])("still refuses %s", (hostile) => {
+    expect(normalizeGeoTargetUrl(hostile)).toBeNull();
   });
 });
