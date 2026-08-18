@@ -107,11 +107,14 @@ describe("sitemap tool list", () => {
 });
 
 describe("sitemap Agent routes", () => {
-  it("includes the directory and the unified Agent in the locale loop", () => {
+  it("includes the directory and both Agents in the locale loop", () => {
     const source = readFileSync(SITEMAP_MODULE, "utf8");
     expect(source).toContain('const locales = ["en", "zh"]');
     expect(source).toContain('"/agents"');
     expect(source).toContain('"/agents/seo"');
+    // GEO is its own Agent on its own evidence, so it is listed. The technical
+    // route is a focus of the SEO Agent and is deliberately not — see below.
+    expect(source).toContain('"/agents/geo"');
     expect(source).toMatch(/for \(const locale of locales\)/);
     expect(source).toMatch(/for \(const page of staticPages\)/);
   });
@@ -168,9 +171,10 @@ describe("connected tool paths", () => {
     expect(slugs.length).toBeGreaterThan(0);
     const routed = new Set(routedToolSlugs());
     for (const slug of slugs) {
-      expect(routed, `the hub links /tools/${slug}, which has no route`).toContain(
-        slug,
-      );
+      expect(
+        routed,
+        `the hub links /tools/${slug}, which has no route`,
+      ).toContain(slug);
     }
     // And in the other direction. Checking only that present cards resolve
     // would pass with the card deleted outright — the tool would simply be

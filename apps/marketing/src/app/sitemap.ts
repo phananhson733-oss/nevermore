@@ -22,9 +22,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "",
     "/agents",
     "/agents/seo",
+    "/agents/geo",
     // `/agents/tech` is deliberately absent: it is canonical to `/agents/seo`,
     // and listing a page here while its own markup points elsewhere asks for
-    // the crawl budget of a page we are asking not to be indexed.
+    // the crawl budget of a page we are asking not to be indexed. GEO is listed
+    // because it is its own Agent on its own evidence, not a focus of another.
     "/resources",
     "/prompts",
     "/skills",
@@ -50,6 +52,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
               page === "/skills"
             ? 0.9
             : page === "/agents/seo" ||
+                page === "/agents/geo" ||
                 page === "/blog" ||
                 page === "/pricing"
               ? 0.8

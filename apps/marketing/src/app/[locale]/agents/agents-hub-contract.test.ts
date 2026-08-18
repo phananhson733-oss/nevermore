@@ -187,15 +187,34 @@ describe("the product is one Agent with a technical focus", () => {
     }
   });
 
-  it("renders a single primary card and no card loop", () => {
+  /**
+   * Peer cards are for Agents, and the technical route is not one.
+   *
+   * The rule used to be "no card list at all", which was right when SEO and
+   * Tech were the only two things on this page and wrong the moment GEO landed:
+   * GEO asks a live assistant real questions and reads back who it cited, which
+   * is a different capability on different evidence. What must not come back is
+   * the technical route sitting in that list as a third product — it renders the
+   * same workbench over the same engine as SEO and differs only in which checks
+   * open first.
+   */
+  it("lists the Agents as peers and keeps the technical route out of that list", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
 
-    expect(source).toContain('t("seo.title")');
-    expect(source).toContain('localePath(locale, "/agents/seo")');
-    // The technical route stays reachable, subordinate to it.
+    const cardList = /const cards = \[([\s\S]*?)\] as const;/.exec(source)?.[1];
+    expect(cardList, "the hub no longer declares its Agent cards").toBeTruthy();
+    const ids = [...(cardList ?? "").matchAll(/id: "([a-z]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(ids).toEqual(["seo", "geo"]);
+
+    // Both Agents reachable from their own card.
+    expect(source).toContain('t(`${id}.title`)');
+    expect(source).toContain('{ id: "seo", icon: ScanSearch, path: "/agents/seo" }');
+    expect(source).toContain('{ id: "geo", icon: Radar, path: "/agents/geo" }');
+    // The technical route stays reachable, below them, outside the card list.
     expect(source).toContain('localePath(locale, "/agents/tech")');
-    // A map over a card list is what made them peers.
-    expect(source).not.toMatch(/cards\.map/);
-    expect(source).not.toMatch(/md:grid-cols-2/);
+    const afterCards = source.slice(source.indexOf("] as const;"));
+    expect(afterCards).toContain('t("tech.title")');
   });
 });

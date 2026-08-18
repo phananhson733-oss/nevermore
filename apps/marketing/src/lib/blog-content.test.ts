@@ -152,16 +152,20 @@ describe("repository-backed blog content", () => {
     // alternative comparison articles before this closeout landed.
     // 72 → 73 on 2026-08-17: dcece74e added the August algorithm-update post
     // and did not move this number with it.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(73);
+    // 73 → 74 on 2026-08-18: main added another post in the GEO Agent series
+    // and again did not move this number, so the count was red on main before
+    // this branch merged it. Bumped here rather than left red.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(74);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    // Newest-first ordering. The August algorithm-update post (dcece74e) is
-    // the newest published record; this and the count above move together
-    // every time an article lands.
-    expect(posts[0]?.published_at).toBe("2026-08-17T00:00:00.000Z");
+    // Newest-first ordering. The Outrank alternatives post is the newest
+    // published record; this and the count above move together every time an
+    // article lands, and both were left behind by the post that landed on main
+    // on 2026-08-18.
+    expect(posts[0]?.published_at).toBe("2026-08-18T00:00:00.000Z");
   });
 
   it("publishes the evidence-reviewed English recovery articles", async () => {
