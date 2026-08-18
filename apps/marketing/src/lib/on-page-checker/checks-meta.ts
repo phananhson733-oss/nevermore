@@ -10,8 +10,12 @@ import { check, observation, type CheckInput, type OnPageCheck } from "./check-t
  *
  * Google truncates by rendered pixel width, not by character count, so these
  * only flag lengths far enough outside common practice to be worth a look. CJK
- * characters are counted as two, which is how the same bounds are applied in
- * the site-wide audit.
+ * characters count as two, because they occupy roughly twice the width.
+ *
+ * These are NOT the site-wide audit's bounds: `model.ts` flags 15–70 / 50–165
+ * measured on raw `.length`. Two tools, two conventions, one product — so a
+ * title can be flagged here and not there. Worth reconciling; recorded rather
+ * than quietly assumed away.
  */
 export const TITLE_LENGTH = { min: 15, max: 60 } as const;
 export const DESCRIPTION_LENGTH = { min: 50, max: 160 } as const;
@@ -91,21 +95,24 @@ export function metaChecks(input: CheckInput): readonly OnPageCheck[] {
   }
 
   const canonical = extract.response.canonicalTarget;
-  checks.push(
-    canonical === null
-      ? check("canonical", "meta", "warn", 0, 3, "canonical.missing")
-      : check(
-          "canonical",
-          "meta",
-          "pass",
-          3,
-          3,
-          canonical === extract.url
-            ? "canonical.selfReferencing"
-            : "canonical.pointsElsewhere",
-          { canonical },
-        ),
-  );
+  if (canonical === null) {
+    checks.push(check("canonical", "meta", "warn", 0, 3, "canonical.missing"));
+  } else if (canonical === extract.url) {
+    checks.push(
+      check("canonical", "meta", "pass", 3, 3, "canonical.selfReferencing", {
+        canonical,
+      }),
+    );
+  } else {
+    // A canonical pointing away is a deliberate choice on a duplicate and a
+    // serious accident on the page someone is trying to rank. It scored a full
+    // green pass, which reads as approval of the second case.
+    checks.push(
+      check("canonical", "meta", "warn", 1, 3, "canonical.pointsElsewhere", {
+        canonical,
+      }),
+    );
+  }
 
   // A noindex page can be perfectly built and still never appear. It is the one
   // meta check whose failure is not about degree.

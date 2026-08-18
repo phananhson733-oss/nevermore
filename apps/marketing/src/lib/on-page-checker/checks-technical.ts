@@ -70,6 +70,7 @@ export function linkChecks(input: CheckInput): readonly OnPageCheck[] {
           count: external.total,
           nofollow: external.nofollow,
         }),
+    // `rel=noreferrer` implies noopener, and the crawler counts it as safe.
     external.blankWithoutNoopener === 0
       ? check("linkSafety", "links", "pass", 1, 1, "linkSafety.ok")
       : check("linkSafety", "links", "warn", 0, 1, "linkSafety.unsafe", {
@@ -183,20 +184,27 @@ export function technicalChecks(input: CheckInput): readonly OnPageCheck[] {
   }
 
   const jsonLdTypes = response.jsonLdTypes;
-  if (jsonLdTypes.length === 0) {
+  // Errors first: a page whose only JSON-LD block fails to parse yields zero
+  // types AND an error, and reporting "none" there hides a broken block behind
+  // the same sentence as a page that never had one.
+  if (response.jsonLdErrorCount > 0 && jsonLdTypes.length === 0) {
     checks.push(
-      check("jsonLd", "technical", "warn", 0, 4, "jsonLd.none"),
+      check("jsonLd", "social", "warn", 1, 4, "jsonLd.allMalformed", {
+        errors: response.jsonLdErrorCount,
+      }),
     );
+  } else if (jsonLdTypes.length === 0) {
+    checks.push(check("jsonLd", "social", "warn", 0, 4, "jsonLd.none"));
   } else if (response.jsonLdErrorCount > 0) {
     checks.push(
-      check("jsonLd", "technical", "warn", 2, 4, "jsonLd.malformed", {
+      check("jsonLd", "social", "warn", 2, 4, "jsonLd.malformed", {
         types: jsonLdTypes.join(", "),
         errors: response.jsonLdErrorCount,
       }),
     );
   } else {
     checks.push(
-      check("jsonLd", "technical", "pass", 4, 4, "jsonLd.valid", {
+      check("jsonLd", "social", "pass", 4, 4, "jsonLd.valid", {
         types: jsonLdTypes.join(", "),
         count: jsonLdTypes.length,
       }),

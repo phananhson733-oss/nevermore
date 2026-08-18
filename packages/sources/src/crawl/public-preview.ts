@@ -32,6 +32,11 @@ export type { CrawlPageProjection } from "../observations.ts";
  * public tools read them; nothing persists them.
  */
 export type { ParsedOnPageFacts } from "./parse-page.ts";
+/**
+ * The parser itself, so a test can drive the real collectors over real HTML.
+ * Every payload guard in the public tools is written against what this emits.
+ */
+export { parsePage } from "./parse-page.ts";
 
 export const PUBLIC_PREVIEW_CRAWL_USER_AGENT =
   "GenGrowth-Public-Tools-Crawler/1.0 (+https://gengrowth.ai/tools)";

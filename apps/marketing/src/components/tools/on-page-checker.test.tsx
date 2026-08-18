@@ -898,8 +898,10 @@ describe("On-Page checker report depth", () => {
     expect(text).toContain("Self-referencing");
     // Counted, not merely ticked: one image without alt out of five.
     expect(text).toContain("1 of 5 images carry no alt attribute");
-    // The unsafe-window finding a single-page tool would also catch.
-    expect(text).toMatch(/1 target=_blank links? lack noopener/);
+    // The unsafe-window finding a single-page tool would also catch. Worded
+    // without the 2021-era claim that the opened page gets a window handle:
+    // browsers have isolated `target=_blank` by default since then.
+    expect(text).toMatch(/1 target=_blank links? carry neither noopener nor noreferrer/);
     // The site-wide finding a single-page tool cannot reach at all.
     expect(text).toContain("this title is unique");
   });

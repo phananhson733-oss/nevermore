@@ -127,12 +127,45 @@ export interface ParsedOnPageFacts {
 // Low-level regex helpers (vendor-copied from page.ts / extract.ts).
 // ---------------------------------------------------------------------------
 
+/**
+ * Read one attribute off a tag.
+ *
+ * Walks the tag attribute by attribute instead of searching it for a name,
+ * because a name can appear inside another attribute's *value* and a search
+ * cannot tell the two apart. Both shapes were measured returning confident
+ * wrong answers:
+ *
+ * - `<img src="…/pic.jpg?alt=media&token=…">` — the standard Firebase Storage
+ *   image URL — was read as an image carrying alt text, flipping "1 of 1
+ *   images carry no alt" into "all 1 images carry alt".
+ * - `<meta name="description" content="How to declare charset=utf-8">` was read
+ *   as the page declaring an encoding it never declares.
+ *
+ * A `\b` boundary made it worse still: `\balt` matches `data-alt`, so every
+ * `data-*` mirror was read as the real attribute.
+ *
+ * Quoted values are consumed whole, so nothing inside them is ever scanned for
+ * attribute names. A valueless attribute yields `""`, not null: it is present.
+ */
+const ATTRIBUTE_PATTERN =
+  /([-a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
 function attr(tag: string | undefined, name: string): string | null {
   if (!tag) return null;
-  const match = tag.match(
-    new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"),
-  );
-  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+  const wanted = name.toLowerCase();
+  // Drop `<tagname` so the element's own name is never read as an attribute.
+  const body = tag.replace(/^<\s*[a-zA-Z][^\s/>]*/, "");
+  const pattern = new RegExp(ATTRIBUTE_PATTERN.source, "g");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(body)) !== null) {
+    if (match[0] === "") {
+      pattern.lastIndex += 1;
+      continue;
+    }
+    if (match[1]?.toLowerCase() !== wanted) continue;
+    return match[2] ?? match[3] ?? match[4] ?? "";
+  }
+  return null;
 }
 
 function firstTag(html: string, pattern: RegExp): string | undefined {
@@ -525,7 +558,11 @@ function collectExternalLinkFacts(
     const relTokens = new Set(rel.split(/\s+/).filter(Boolean));
     if (relTokens.has("nofollow")) nofollow += 1;
     const opensNewWindow = (attr(tag, "target") ?? "").toLowerCase() === "_blank";
-    if (opensNewWindow && !relTokens.has("noopener")) blankWithoutNoopener += 1;
+    // `noreferrer` implies `noopener` per HTML, so a link carrying it is not
+    // handing anything over and must not be counted as if it were.
+    const opensSafely =
+      relTokens.has("noopener") || relTokens.has("noreferrer");
+    if (opensNewWindow && !opensSafely) blankWithoutNoopener += 1;
   }
   return { total, nofollow, blankWithoutNoopener };
 }
@@ -551,27 +588,44 @@ function collectHreflang(html: string): readonly string[] {
 function collectCharset(metaTags: readonly string[]): string | null {
   for (const tag of metaTags) {
     const direct = attr(tag, "charset");
-    if (direct !== null && direct.trim() !== "") return direct.trim().toLowerCase();
+    // Bounded like every other published string. An unbounded value here built
+    // a payload that the audit's own exact-key validator then rejected, which
+    // silently disables the crawl cache rather than erroring anywhere.
+    if (direct !== null && direct.trim() !== "") {
+      return boundChars(
+        direct.trim().toLowerCase(),
+        CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars,
+      );
+    }
   }
   const equiv = metaTags.find(
     (tag) => attr(tag, "http-equiv")?.toLowerCase() === "content-type",
   );
   const declared = attr(equiv, "content")?.match(/charset\s*=\s*([\w-]+)/i)?.[1];
-  return declared ? declared.toLowerCase() : null;
+  return declared
+    ? boundChars(
+        declared.toLowerCase(),
+        CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars,
+      )
+    : null;
 }
 
 function collectFaviconDeclared(html: string): boolean {
   for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
     const rel = (attr(match[0], "rel") ?? "").toLowerCase();
     const tokens = new Set(rel.split(/\s+/).filter(Boolean));
-    if (
+    const isIconRel =
       tokens.has("icon") ||
-      tokens.has("shortcut") ||
       tokens.has("apple-touch-icon") ||
-      tokens.has("mask-icon")
-    ) {
-      return true;
-    }
+      tokens.has("mask-icon") ||
+      // `shortcut` is only an icon relation paired with `icon`; alone it is a
+      // different (legacy) relation entirely.
+      (tokens.has("shortcut") && tokens.has("icon"));
+    if (!isIconRel) continue;
+    // A relation with nothing to point at declares no icon. Reporting one
+    // would tell a visitor a file exists that no browser can fetch.
+    const href = attr(match[0], "href");
+    if (href !== null && href.trim() !== "") return true;
   }
   return false;
 }
@@ -583,6 +637,8 @@ function collectOnPageFacts(
   pageOrigin: string,
   bodyText: string,
   htmlTag: string | undefined,
+  /** The document as transferred, comments included: this is what weighs. */
+  rawHtml: string,
 ): ParsedOnPageFacts {
   return {
     lang: normalisedAttributeText(
@@ -601,7 +657,7 @@ function collectOnPageFacts(
     hreflang: collectHreflang(html),
     images: collectImageFacts(html),
     externalLinks: collectExternalLinkFacts(html, pageUrl, pageOrigin),
-    htmlBytes: UTF8.encode(html).length,
+    htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,
   };
 }
@@ -611,7 +667,20 @@ function collectOnPageFacts(
  * canonical URL of the page (used as the base for resolving links and as the
  * same-origin reference for internal-link filtering).
  */
-export function parsePage(html: string, pageUrl: string): ParsedPage {
+export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
+  /**
+   * Commented-out markup is not on the page.
+   *
+   * Every collector below reads tags out of a string, and a comment is just
+   * more string. A page carrying
+   * `<!-- <meta name="viewport" content="w"><link rel="icon"> -->` was reported
+   * as declaring both — facts about markup a browser never sees. Stripped once
+   * here so no collector has to remember to.
+   *
+   * Byte sizes are still measured against the original document, because that
+   * is what was transferred.
+   */
+  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, "");
   let pageOrigin: string;
   try {
     pageOrigin = new URL(pageUrl).origin;
@@ -665,6 +734,7 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     pageOrigin,
     bodyText,
     htmlTag,
+    rawHtml,
   );
 
   return {

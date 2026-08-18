@@ -33,12 +33,22 @@ export interface CategoryScore {
 /**
  * Why a score can be capped below what the points add up to.
  *
- * Two failures make the rest of the sheet beside the point. A page that is not
- * about the keyword can have flawless markup and still never rank for it, and
- * a page with almost no copy has nothing for the other checks to be about.
- * Without a cap, both would score in the eighties on structure alone.
+ * Some failures make the rest of the sheet beside the point, and a weighted sum
+ * cannot express that: each is worth a few points against a hundred, so a page
+ * that fails one still lands in the nineties on everything else. Measured on a
+ * page returning 404 under `noindex` but otherwise flawless, the uncapped score
+ * was 95 — an A for a page that does not exist and may not be indexed.
+ *
+ * A cap is therefore not a penalty. It is the ceiling on what any score can
+ * honestly claim while that condition holds.
  */
-export type ScoreCap = "topic_focus" | "body_words";
+export type ScoreCap =
+  | "topic_focus"
+  | "body_words"
+  | "body_bytes"
+  | "not_indexable"
+  | "not_reachable"
+  | "keyword_unmeasured";
 
 export interface OnPageScore {
   readonly version: typeof SCORING_VERSION;
@@ -88,6 +98,43 @@ const WORD_CAPS: readonly { readonly below: number; readonly ceiling: number }[]
     { below: 600, ceiling: 75 },
   ];
 
+/**
+ * The same ceilings for a page whose words cannot be counted.
+ *
+ * A body written without word gaps has `staticBodyWords` withheld upstream,
+ * because a whitespace count there is wrong by two orders of magnitude. That
+ * withholding used to remove the thin-content ceiling entirely: a hundred-
+ * character Chinese page scored 100. Visible-text bytes are the measure that
+ * survives, at roughly three bytes per CJK character — so these thresholds are
+ * the word ones restated in bytes rather than a second, looser standard.
+ */
+const BYTE_CAPS: readonly { readonly below: number; readonly ceiling: number }[] =
+  [
+    { below: 400, ceiling: 35 },
+    { below: 1_000, ceiling: 55 },
+    { below: 2_000, ceiling: 75 },
+  ];
+
+/**
+ * Ceiling while the page cannot be indexed or does not resolve.
+ *
+ * Not a judgement about the markup, which may be perfect. It is that no amount
+ * of on-page work reaches a search result from here, so no score above this can
+ * mean what a visitor would read it to mean.
+ */
+const BLOCKED_CEILING = 30;
+const UNREACHABLE_CEILING = 20;
+
+/**
+ * Ceiling when the keyword region could not be derived at all.
+ *
+ * Keyword placement is the largest graded category and the input to the topic
+ * cap. Without it the remaining checks still grade, but they grade structure on
+ * a page whose subject was never established — and dividing by a smaller
+ * denominator made that page score *higher*, not lower. Measured: 100/A.
+ */
+const KEYWORD_UNMEASURED_CEILING = 60;
+
 function gradeOf(score: number): ScoreGrade {
   if (score >= 90) return "A";
   if (score >= 80) return "B";
@@ -136,15 +183,48 @@ export function buildOnPageScore(input: {
   const raw = available === 0 ? 0 : Math.round((earned / available) * 100);
 
   const focus = topicFocus(checkInput);
-  const caps: { readonly reason: ScoreCap; readonly ceiling: number }[] = [];
-  const focusCeiling = lowestCeiling(focus, FOCUS_CAPS);
-  if (focusCeiling !== null && focusCeiling < raw) {
-    caps.push({ reason: "topic_focus", ceiling: focusCeiling });
-  }
-  const wordCeiling = lowestCeiling(input.extract.staticBodyWords, WORD_CAPS);
-  if (wordCeiling !== null && wordCeiling < raw) {
-    caps.push({ reason: "body_words", ceiling: wordCeiling });
-  }
+  const candidates: { readonly reason: ScoreCap; readonly ceiling: number | null }[] =
+    [
+      { reason: "topic_focus", ceiling: lowestCeiling(focus, FOCUS_CAPS) },
+      // Words when they could be counted, bytes when they could not. Never
+      // both: a page measured in bytes has no word count to also cap on.
+      input.extract.staticBodyWords === null
+        ? {
+            reason: "body_bytes" as const,
+            ceiling: lowestCeiling(
+              input.extract.declared?.visibleTextBytes ?? null,
+              BYTE_CAPS,
+            ),
+          }
+        : {
+            reason: "body_words" as const,
+            ceiling: lowestCeiling(input.extract.staticBodyWords, WORD_CAPS),
+          },
+      {
+        reason: "not_reachable",
+        ceiling:
+          input.extract.response.finalStatus !== null &&
+          input.extract.response.finalStatus >= 400
+            ? UNREACHABLE_CEILING
+            : null,
+      },
+      {
+        reason: "not_indexable",
+        ceiling: input.extract.response.robotsIndexable ? null : BLOCKED_CEILING,
+      },
+      {
+        reason: "keyword_unmeasured",
+        ceiling:
+          input.evidence.availability === "available"
+            ? null
+            : KEYWORD_UNMEASURED_CEILING,
+      },
+    ];
+
+  const caps = candidates.filter(
+    (candidate): candidate is { readonly reason: ScoreCap; readonly ceiling: number } =>
+      candidate.ceiling !== null && candidate.ceiling < raw,
+  );
   const score = caps.reduce((value, cap) => Math.min(value, cap.ceiling), raw);
 
   const categories = CATEGORY_ORDER.map((category) => {

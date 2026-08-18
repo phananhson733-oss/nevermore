@@ -4,7 +4,7 @@ import type {
   SeoAuditRecord,
   SeoAuditTargetPageExtract,
 } from "@sf/public-tools/seo-audit/types";
-import { buildOnPageScore } from "./scoring.ts";
+import { buildOnPageScore, type ScoreCap } from "./scoring.ts";
 
 function extract(
   overrides: Partial<SeoAuditTargetPageExtract> = {},
@@ -208,9 +208,10 @@ describe("buildOnPageScore", () => {
         subHeadings: [],
         staticBodyWords: 500,
         declared: null,
+        // Deliberately still indexable and still 200: those are their own
+        // ceilings now, and this case is about a ceiling that does NOT bite.
         response: {
           ...base.response,
-          robotsIndexable: false,
           canonicalTarget: null,
           jsonLdTypes: [],
           internalOutlinks: 0,
@@ -309,5 +310,145 @@ describe("buildOnPageScore", () => {
     const robots = result.checks.find((entry) => entry.id === "robots");
     expect(robots?.state).toBe("fail");
     expect(robots?.score).toBe(0);
+  });
+});
+
+/**
+ * Every branch that can reach the screen must have wording for it.
+ *
+ * next-intl renders a missing key as its own dotted path and throws nothing, so
+ * a cap the visitor actually hits shows up as literal
+ * `tools.onPageChecker.score.caps.not_indexable`. A render test only covers the
+ * caps a fixture happens to trigger; this walks the union itself, so a cap
+ * added later fails here rather than in front of someone.
+ */
+describe("score cap wording", () => {
+  const ALL_CAPS: readonly ScoreCap[] = [
+    "topic_focus",
+    "body_words",
+    "body_bytes",
+    "not_indexable",
+    "not_reachable",
+    "keyword_unmeasured",
+  ];
+
+  it.each(["en", "zh"])("%s carries a sentence for every cap reason", async (locale) => {
+    const catalogue = (await import(`../../i18n/messages/${locale}.json`, {
+      with: { type: "json" },
+    })) as unknown as { default: Record<string, never> };
+    const caps = (
+      catalogue.default as unknown as {
+        tools: { onPageChecker: { score: { caps: Record<string, string> } } };
+      }
+    ).tools.onPageChecker.score.caps;
+
+    for (const cap of ALL_CAPS) {
+      expect(caps[cap], `missing wording for cap "${cap}" in ${locale}`).toBeTypeOf(
+        "string",
+      );
+      // The ceiling is the whole point of the sentence; a cap that does not say
+      // what it capped to is not an explanation.
+      expect(caps[cap]).toContain("{ceiling}");
+    }
+    // And nothing stale: a reason removed from the union must lose its wording.
+    expect(Object.keys(caps).sort()).toEqual([...ALL_CAPS].sort());
+  });
+});
+
+/**
+ * Verdicts that were confidently wrong before review.
+ *
+ * Each of these scored in the nineties on a page no one should be told is good.
+ * The weighted sum could not express them: each failure is worth a few points
+ * against a hundred, so failing one still left an A.
+ */
+describe("verdicts a weighted sum cannot express", () => {
+  it("does not grade a 404 page as excellent", () => {
+    const r = score({
+      extract: {
+        response: { ...extract().response, status: 404, finalStatus: 404 },
+      },
+    });
+
+    expect(r.caps.map((cap) => cap.reason)).toContain("not_reachable");
+    expect(r.grade).not.toBe("A");
+    expect(r.score).toBeLessThanOrEqual(20);
+  });
+
+  it("does not grade a noindex page as excellent", () => {
+    const r = score({
+      extract: {
+        response: { ...extract().response, robotsIndexable: false },
+      },
+    });
+
+    expect(r.caps.map((cap) => cap.reason)).toContain("not_indexable");
+    expect(r.grade).not.toBe("A");
+  });
+
+  it("holds a page whose keywords could not be measured", () => {
+    // Previously this REMOVED the largest category from the denominator, so the
+    // page scored 100 — higher than it would have with its keywords measured.
+    const r = score({
+      evidence: {
+        availability: "unavailable",
+        reason: "extract_missing",
+      } as unknown as KeywordEvidence,
+    });
+
+    expect(r.caps.map((cap) => cap.reason)).toContain("keyword_unmeasured");
+    expect(r.score).toBeLessThanOrEqual(60);
+  });
+
+  it("holds a thin page whose language cannot be counted in words", () => {
+    const r = score({
+      extract: {
+        staticBodyWords: null,
+        declared: { ...extract().declared!, visibleTextBytes: 300 },
+      },
+    });
+
+    expect(r.caps.map((cap) => cap.reason)).toContain("body_bytes");
+    expect(r.score).toBeLessThanOrEqual(35);
+  });
+
+  it("does not cap on words and bytes at once", () => {
+    // One body, one measure. Capping twice would be two verdicts on one fact.
+    const r = score({ extract: { staticBodyWords: 50 } });
+
+    const reasons = r.caps.map((cap) => cap.reason);
+    expect(reasons).toContain("body_words");
+    expect(reasons).not.toContain("body_bytes");
+  });
+
+  it("does not lower the score just because more queries were submitted", () => {
+    // Topic focus is the PRIMARY query's coverage. Summing across every query
+    // meant adding exploratory words to the form capped an unchanged page.
+    const onePerfect = score({ evidence: evidence({ covered: 6 }) });
+    const samePagePlusFourStrays = buildOnPageScore({
+      extract: extract(),
+      evidence: {
+        ...(evidence({ covered: 6 }) as unknown as Record<string, unknown>),
+        // The panel's own summed count: 6 covered of 30 applicable.
+        focus: { covered: 6, applicable: 30 },
+      } as unknown as KeywordEvidence,
+      siteResources: SITE_RESOURCES,
+      siteRecords: [],
+    });
+
+    expect(samePagePlusFourStrays.score).toBe(onePerfect.score);
+    expect(samePagePlusFourStrays.caps).toEqual([]);
+  });
+
+  it("publishes density without grading it", () => {
+    const r = score();
+    const density = r.checks.find((entry) => entry.id === "keyword.density");
+
+    // The denominator is the region a keyword is meant to be dense in, so no
+    // defensible band exists for it yet.
+    expect(density?.max).toBe(0);
+    expect(density?.state).toBe("info");
+    // And the occurrence count must be the one the evidence table shows.
+    expect(density?.detail.values?.["occurrences"]).toBe(8);
   });
 });

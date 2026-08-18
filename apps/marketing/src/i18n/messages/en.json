@@ -2113,8 +2113,8 @@
         "title": "What this does and does not tell you",
         "items": [
           {
-            "q": "Is this a score?",
-            "a": "No. You get a count of which positions carry each query and how often, plus what could not be measured. There is no single number, because one number cannot say which part of a page is wrong."
+            "q": "Where does the score come from?",
+            "a": "Each check on this page is worth a set number of points; the score is their sum, restated out of 100. The weights are ours, not Google's — the number measures how well this page does the part it controls, not whether it will rank. A few conditions hold the score down on their own: a page that declares noindex, returns an error status, carries almost no copy, or is not about the keyword you gave. In those cases no amount of other work reaches a search result."
           },
           {
             "q": "Why does the first check take minutes?",
@@ -2169,7 +2169,7 @@
           "_label": "Canonical",
           "missing": "No canonical declared. Where one page has several URLs, Google picks.",
           "selfReferencing": "Self-referencing.",
-          "pointsElsewhere": "Points at {canonical} — this page defers to that one."
+          "pointsElsewhere": "Points at {canonical} — this page defers to that one. Fine if deliberate on a duplicate; if not, you are excluding the page you are trying to rank."
         },
         "robots": {
           "_label": "Robots directives",
@@ -2264,9 +2264,7 @@
           "density": {
             "_label": "Keyword density",
             "unavailable": "No usable denominator, so no density figure is published.",
-            "ok": "“{query}” at {percent}% ({occurrences} in {units} captured units).",
-            "low": "“{query}” at only {percent}% ({occurrences} in {units} units) — the copy has not got round to this word.",
-            "high": "“{query}” at {percent}% ({occurrences} in {units} units), high enough to read as written for a crawler."
+            "observed": "“{query}” appears {occurrences} times in the captured text, a density of {percent}% (over {units} units: title, description, headings and the opening of the body — not the whole page). Not graded: that denominator is exactly where a keyword is meant to be concentrated, and we have not measured what a good range over it looks like. A threshold we cannot defend is worse than none."
           },
           "brand": {
             "_label": "Brand term",
@@ -2282,7 +2280,7 @@
         "anchorText": {
           "_label": "Anchor text",
           "notApplicable": "No internal links to check anchor text on.",
-          "allDescribed": "All {count} internal links carry descriptive anchor text.",
+          "allDescribed": "All {count} internal links carry anchor text. This checks only that text exists; it does not judge generic anchors like “click here” or “read more”.",
           "someEmpty": "{empty} of {count} internal links carry no anchor text."
         },
         "externalLinks": {
@@ -2293,7 +2291,7 @@
         "linkSafety": {
           "_label": "New-window link safety",
           "ok": "New-window outbound links carry noopener (or there are none).",
-          "unsafe": "{count} target=_blank links lack noopener, handing the opened page a handle on this window."
+          "unsafe": "{count} target=_blank links carry neither noopener nor noreferrer. Modern browsers isolate by default, but declaring it is still the safe habit."
         },
         "images": {
           "_label": "Image alt",
@@ -2335,16 +2333,17 @@
           "_label": "JSON-LD",
           "none": "No JSON-LD structured data found.",
           "valid": "{count} JSON-LD type(s): {types}",
-          "malformed": "Found {types}, with {errors} block(s) that failed to parse."
+          "malformed": "Found {types}, with {errors} block(s) that failed to parse.",
+          "allMalformed": "{errors} JSON-LD block(s), all of which failed to parse — not absent structured data, but broken structured data."
         },
         "robotsTxt": {
           "_label": "robots.txt",
           "reachable": "robots.txt is reachable, with {groups} rule group(s) observed.",
-          "unreachable": "robots.txt could not be fetched."
+          "unreachable": "No robots.txt was fetched. The site may not have one — which is legal and reads as allow-all — or the fetch may have failed. This cannot tell those apart."
         },
         "sitemap": {
           "_label": "Sitemap",
-          "reachable": "robots.txt declares {references} sitemap(s), and they are reachable.",
+          "reachable": "A sitemap was fetched ({references} declared in robots.txt; zero means it was found at the conventional /sitemap.xml).",
           "unreachable": "No sitemap was fetched."
         },
         "sitemapMember": {
@@ -2410,7 +2409,11 @@
         "disclaimer": "This score covers only what this page itself controls. Ranking also depends on site authority, page experience, how strong the competition is, and what visitors do — none of which this tool measures. The weights behind the number are ours, not Google's.",
         "caps": {
           "topic_focus": "Held at {ceiling}: this page is not sufficiently about the target keyword, and structure alone will not earn that term.",
-          "body_words": "Held at {ceiling}: the body is too short for the rest of the sheet to stand on."
+          "body_words": "Held at {ceiling}: the body is too short for the rest of the sheet to stand on.",
+          "not_indexable": "Held at {ceiling}: this page declares noindex and will not be indexed. However well it is built, it does not reach a search result.",
+          "not_reachable": "Held at {ceiling}: this page returned an error status. Right now it does not exist.",
+          "body_bytes": "Held at {ceiling}: too little visible text by byte count (this page's language cannot be counted in words, so bytes stand in).",
+          "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
         }
       },
       "vitals": {

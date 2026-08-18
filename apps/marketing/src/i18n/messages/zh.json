@@ -2113,8 +2113,8 @@
         "title": "它能告诉你什么、不能告诉你什么",
         "items": [
           {
-            "q": "这是一个评分吗？",
-            "a": "不是。你拿到的是每个关键词落在哪些位置、出现多少次，以及哪些量不出来。这里没有单一总分，因为一个数字说不出页面哪一部分不对。"
+            "q": "这个分数是怎么来的？",
+            "a": "把这一页的每一项检查按各自的分值加起来，再折算成 0-100。权重是我们定的，不是谷歌的口径——它衡量的是「这一页自己能改的部分做到什么程度」，不是「能不能排上去」。另外有几种情况会直接压低总分：页面声明了 noindex、返回错误状态码、正文太短、或者内容根本不围绕你给的关键词——这几种情况下其余各项做得再好也换不来搜索结果。"
           },
           {
             "q": "为什么第一次检查要几分钟？",
@@ -2169,7 +2169,7 @@
           "_label": "Canonical 规范链接",
           "missing": "没有声明 canonical。同一内容有多个 URL 时，由谷歌自己挑一个。",
           "selfReferencing": "已自引用声明。",
-          "pointsElsewhere": "指向 {canonical}——这一页把权重让给了那一页。"
+          "pointsElsewhere": "指向 {canonical}——这一页把权重让给了那一页。如果这是有意的（比如它确实是重复页），没问题；如果不是，你正在把想排名的这一页排除掉。"
         },
         "robots": {
           "_label": "Robots 收录指令",
@@ -2263,10 +2263,8 @@
           },
           "density": {
             "_label": "关键词密度",
-            "unavailable": "没有可用的密度分母，因此不给这个数字。",
-            "ok": "「{query}」密度 {percent}%（已采文本 {units} 单位中出现 {occurrences} 次）。",
-            "low": "「{query}」密度只有 {percent}%（{units} 单位中 {occurrences} 次），文案还没围绕这个词展开。",
-            "high": "「{query}」密度 {percent}%（{units} 单位中 {occurrences} 次），高到读起来像是写给爬虫的。"
+            "unavailable": "没有可用的分母，因此不给密度数字。",
+            "observed": "「{query}」在已采文本中出现 {occurrences} 次，密度 {percent}%（分母是 {units} 个单位：标题、描述、标题组和正文开头，不是整页正文）。这里不判分——这个分母正是关键词本该密集的地方，我们没有实测过它的合理区间，就不拿一个说不清的阈值去判你的页面。"
           },
           "brand": {
             "_label": "品牌词",
@@ -2282,7 +2280,7 @@
         "anchorText": {
           "_label": "锚文本",
           "notApplicable": "没有站内链接，无从检查锚文本。",
-          "allDescribed": "{count} 条站内链接都有描述性锚文本。",
+          "allDescribed": "{count} 条站内链接都带了锚文本。这里只查了「有没有」，没有判断「点击这里」「阅读更多」这类泛用锚文本。",
           "someEmpty": "{count} 条站内链接里有 {empty} 条没有锚文本。"
         },
         "externalLinks": {
@@ -2293,7 +2291,7 @@
         "linkSafety": {
           "_label": "新窗口外链安全",
           "ok": "新窗口外链都带了 noopener（或没有这类链接）。",
-          "unsafe": "有 {count} 条 target=_blank 的外链没带 noopener，被打开的页面能拿到本页的窗口句柄。"
+          "unsafe": "有 {count} 条 target=_blank 的外链既没有 noopener 也没有 noreferrer。现代浏览器已默认隔离，但显式声明仍是稳妥做法。"
         },
         "images": {
           "_label": "图片 Alt",
@@ -2335,16 +2333,17 @@
           "_label": "结构化数据 JSON-LD",
           "none": "没有检测到 JSON-LD 结构化数据。",
           "valid": "{count} 类 JSON-LD：{types}",
-          "malformed": "检测到 {types}，其中 {errors} 个块解析失败。"
+          "malformed": "检测到 {types}，其中 {errors} 个块解析失败。",
+          "allMalformed": "有 {errors} 个 JSON-LD 块，但全部解析失败——不是没有结构化数据，是有但坏了。"
         },
         "robotsTxt": {
           "_label": "robots.txt",
           "reachable": "robots.txt 可访问，观测到 {groups} 组规则。",
-          "unreachable": "没有取到 robots.txt。"
+          "unreachable": "没有取到 robots.txt。可能是站点没有这个文件（合法，等同于全部允许），也可能是取的时候失败了——这两种情况这里区分不了。"
         },
         "sitemap": {
           "_label": "Sitemap 站点地图",
-          "reachable": "robots.txt 中声明了 {references} 个 sitemap，且可访问。",
+          "reachable": "取到了 sitemap（robots.txt 中声明了 {references} 个；为 0 时是按 /sitemap.xml 的惯例位置找到的）。",
           "unreachable": "没有取到 sitemap。"
         },
         "sitemapMember": {
@@ -2410,7 +2409,11 @@
         "disclaimer": "分数只覆盖这一页自己能改的部分。排名还取决于站点权重、页面体验、竞争强弱和用户行为，这些都不在本工具的量程里。每项的权重是我们定的，不是谷歌的口径。",
         "caps": {
           "topic_focus": "总分已被压到 {ceiling}：这一页围绕目标关键词的程度不够，结构分再高也换不来这个词的排名。",
-          "body_words": "总分已被压到 {ceiling}：正文太短，其余各项没有足够的内容可依附。"
+          "body_words": "总分已被压到 {ceiling}：正文太短，其余各项没有足够的内容可依附。",
+          "not_indexable": "总分已被压到 {ceiling}：这一页声明了 noindex，不会进入索引。页面本身做得再好，也到不了搜索结果里。",
+          "not_reachable": "总分已被压到 {ceiling}：这一页返回的是错误状态码，它现在根本不存在。",
+          "body_bytes": "总分已被压到 {ceiling}：这一页的正文按可见文本字节算太少了（这一页的语言数不出词数，所以改用字节）。",
+          "keyword_unmeasured": "总分已被压到 {ceiling}：这一轮没能量到关键词落在哪里，而那是这个工具最大的一块。其余各项仍然判了分，但它们判的是一个主题未被确认的页面。"
         }
       },
       "vitals": {

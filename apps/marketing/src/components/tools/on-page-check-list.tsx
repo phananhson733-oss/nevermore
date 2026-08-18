@@ -52,7 +52,17 @@ export function OnPageCheckList({
       {categories.map((category) => {
         const failed = category.checks.some((entry) => entry.state === "fail");
         const warned = category.checks.some((entry) => entry.state === "warn");
-        const mark: CheckState = failed ? "fail" : warned ? "warn" : "pass";
+        // A category holding nothing but observations was never graded, and a
+        // green tick on it reads as "we checked these and they passed". The
+        // page with no images was the case that exposed it.
+        const graded = category.max > 0;
+        const mark: CheckState = !graded
+          ? "info"
+          : failed
+            ? "fail"
+            : warned
+              ? "warn"
+              : "pass";
         return (
           <details
             className="rounded-xl border border-brand-border-card bg-brand-panel"

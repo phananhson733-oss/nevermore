@@ -183,6 +183,25 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "declared",
 ];
 
+/**
+ * Characters, counted the way the producer counts them.
+ *
+ * The crawl projection bounds its strings with `boundChars`, which slices by
+ * Unicode code point so a cut never orphans a surrogate half. These guards used
+ * `.length`, which counts UTF-16 code units. One astral character — any emoji —
+ * is 1 to the producer and 2 to the checker, and `boundChars` returns a string
+ * untouched once its code points fit, so an emoji-dense value ships at up to
+ * twice the bound and is then refused here.
+ *
+ * That is not a dead cache. `isSeoAuditPayload` also gates the Agent response,
+ * so a rocket emoji in a hero headline turned the whole tool into a 502 for
+ * that page. Same seam, same shape as the timestamp disagreement before it:
+ * both sides individually right, no test between them.
+ */
+function characterLength(value: string): number {
+  return [...value].length;
+}
+
 function isBoundedStringList(
   value: unknown,
   maxEntries: number,
@@ -191,7 +210,9 @@ function isBoundedStringList(
   return (
     Array.isArray(value) &&
     value.length <= maxEntries &&
-    value.every((entry) => typeof entry === "string" && entry.length <= maxChars)
+    value.every(
+      (entry) => typeof entry === "string" && characterLength(entry) <= maxChars,
+    )
   );
 }
 
@@ -200,7 +221,8 @@ function isBoundedNullableString(
   maxChars: number,
 ): value is string | null {
   return (
-    value === null || (typeof value === "string" && value.length <= maxChars)
+    value === null ||
+    (typeof value === "string" && characterLength(value) <= maxChars)
   );
 }
 
@@ -332,7 +354,7 @@ function isTargetPageExtract(
 
   return (
     typeof value.url === "string" &&
-    value.url.length <= 2_048 &&
+    characterLength(value.url) <= 2_048 &&
     isBoundedNullableString(value.title, 512) &&
     isBoundedNullableString(value.metaDescription, 2_048) &&
     isBoundedStringList(value.h1, 10, 200) &&

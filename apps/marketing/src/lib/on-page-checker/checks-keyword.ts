@@ -15,14 +15,20 @@ import {
 } from "./check-types.ts";
 
 /**
- * Density band for a single-word query, as a ratio of captured text.
+ * Density is published, not graded.
  *
- * Deliberately wide. Density is a symptom, not a target: the useful reading is
- * "the copy never gets round to this word" at the bottom and "this reads like
- * it was written for a crawler" at the top. Anything between says little, so
- * the band between them scores full marks rather than pretending to rank.
+ * The denominator is the captured text — title, description, headings and the
+ * first 500 characters — which is precisely the region a keyword is *supposed*
+ * to be concentrated in. Measured on a correctly optimised page (keyword in
+ * title, description, H1, one sub-heading, once in the opening), density over
+ * that region reads around 20%: a band borrowed from whole-body density would
+ * tell that page it "reads as written for a crawler".
+ *
+ * We could invent a band for this denominator, but we have not measured what a
+ * good one looks like, and a threshold we cannot defend is worse than no
+ * threshold. So the number is shown with its basis stated and no verdict
+ * attached — which is also what the density figure honestly supports.
  */
-export const DENSITY_BAND = { low: 0.005, high: 0.05 } as const;
 
 /** Slots scored, and what each is worth. Title and H1 carry the most. */
 const SLOT_POINTS: Readonly<Record<KeywordEvidenceTextSlot | "url", number>> = {
@@ -111,37 +117,21 @@ export function keywordChecks(input: CheckInput): readonly OnPageCheck[] {
   }
 
   const density = query.density;
-  if (density === null) {
-    checks.push(
-      observation("keyword.density", "keyword", "keyword.density.unavailable", {
-        query: query.displayQuery,
-      }),
-    );
-  } else {
-    const percent = Math.round(density.value * 10_000) / 100;
-    const tooLow = density.value < DENSITY_BAND.low;
-    const tooHigh = density.value > DENSITY_BAND.high;
-    checks.push(
-      check(
-        "keyword.density",
-        "keyword",
-        tooLow || tooHigh ? "warn" : "pass",
-        tooLow || tooHigh ? 1 : 3,
-        3,
-        tooLow
-          ? "keyword.density.low"
-          : tooHigh
-            ? "keyword.density.high"
-            : "keyword.density.ok",
-        {
+  checks.push(
+    density === null
+      ? observation("keyword.density", "keyword", "keyword.density.unavailable", {
           query: query.displayQuery,
-          percent,
-          occurrences: density.numeratorUnits,
+        })
+      : observation("keyword.density", "keyword", "keyword.density.observed", {
+          query: query.displayQuery,
+          percent: Math.round(density.value * 10_000) / 100,
+          // The occurrence count the evidence table shows. `numeratorUnits` is
+          // occurrences × query length, so publishing it here put two different
+          // numbers for one query on the same screen.
+          occurrences: query.capturedOccurrences,
           units: density.denominatorUnits,
-        },
-      ),
-    );
-  }
+        }),
+  );
 
   // Published as an observation, never as points: a brand term is expected to
   // sit at a density that would read as thin for a topic term, and we do not
@@ -158,15 +148,31 @@ export function keywordChecks(input: CheckInput): readonly OnPageCheck[] {
 }
 
 /**
- * How much of the page is actually about the primary query, 0–1.
+ * How much of the page is actually about the PRIMARY query, 0–1.
+ *
+ * Derived here from that one query's slots rather than read off
+ * `evidence.focus`, which sums coverage across every submitted query. Under the
+ * summed figure a page that covers its real target perfectly, submitted beside
+ * four exploratory words, scored 6/30 = 20% and was capped at 45 — so adding
+ * words to the form lowered the score of an unchanged page, under a message
+ * that says "the target keyword", singular. The evidence panel still shows the
+ * summed count, and says in its own copy that it is a count and not a score.
  *
  * Built from the slots that could be checked, so a page with no meta
- * description is not marked down for a field it does not have. This is the
- * figure the score cap reads.
+ * description is not marked down for a field it does not have.
  */
 export function topicFocus(input: CheckInput): number | null {
-  if (input.evidence.availability !== "available") return null;
-  const { covered, applicable } = input.evidence.focus;
+  const query = primaryQuery(input);
+  if (query === null) return null;
+
+  let covered = 0;
+  let applicable = 0;
+  for (const slot of SLOT_ORDER) {
+    const { state } = slotState(query, slot);
+    if (state === "not_applicable") continue;
+    applicable += 1;
+    if (state === "covered") covered += 1;
+  }
   if (applicable === 0) return null;
   return covered / applicable;
 }
