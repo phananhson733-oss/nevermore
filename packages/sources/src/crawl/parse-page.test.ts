@@ -598,7 +598,22 @@ describe("parsePage on-page facts", () => {
       withAlt: 1,
       withEmptyAlt: 1,
       withoutAlt: 1,
+      withDimensions: 0,
+      lazyLoaded: 0,
     });
+  });
+
+  it("counts the declarations that reserve a box and defer a fetch", () => {
+    const html = `<!doctype html><html><head><title>Media</title></head><body>
+      <img src="/a.png" alt="a" width="800" height="600">
+      <img src="/b.png" alt="b" width="800">
+      <img src="/c.png" alt="c" loading="lazy">
+    </body></html>`;
+    const page = parsePage(html, BASE);
+
+    // Width without height reserves nothing: the box still collapses.
+    expect(page.onPage.images.withDimensions).toBe(1);
+    expect(page.onPage.images.lazyLoaded).toBe(1);
   });
 
   it("counts external links and the ones that open unsafely", () => {
@@ -608,6 +623,50 @@ describe("parsePage on-page facts", () => {
     expect(page.onPage.externalLinks.nofollow).toBe(1);
     // target=_blank without noopener hands the opened page a window handle.
     expect(page.onPage.externalLinks.blankWithoutNoopener).toBe(1);
+  });
+
+  it("counts external destinations, not anchor elements", () => {
+    // The same partner in the nav, the body and the footer. Counted per <a>
+    // this read "3 external links" beside an internal figure that dedupes by
+    // target and would have called the same thing 1.
+    const html = `<!doctype html><html><body>
+      <a href="https://partner.com/">Nav</a>
+      <a href="https://partner.com/">Body</a>
+      <a href="https://partner.com/" target="_blank">Footer</a>
+    </body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.externalLinks.total).toBe(1);
+    // One unsafe occurrence is one handle handed over, so the destination counts.
+    expect(page.onPage.externalLinks.blankWithoutNoopener).toBe(1);
+  });
+
+  it("does not call a destination nofollowed when one link follows it", () => {
+    const html = `<!doctype html><html><body>
+      <a href="https://partner.com/" rel="nofollow">Sponsored slot</a>
+      <a href="https://partner.com/">Editorial mention</a>
+      <a href="https://other.com/" rel="nofollow">Only ever nofollowed</a>
+    </body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.externalLinks.total).toBe(2);
+    expect(page.onPage.externalLinks.nofollow).toBe(1);
+  });
+
+  it("classifies www and the apex the same way both collectors do", () => {
+    // Deliberately NOT folded together. Treating them as one site here while
+    // `collectInternalOutlinks` still requires an exact origin made the link
+    // vanish from both populations at once — external skipped it as internal,
+    // internal skipped it as cross-origin. Widening the internal side instead
+    // would change the frozen projection the product persists.
+    const html = `<!doctype html><html><body>
+      <a href="https://www.example.com/pricing">Pricing</a>
+      <a href="https://elsewhere.com/">Elsewhere</a>
+    </body></html>`;
+    const page = parsePage(html, "https://example.com/");
+
+    expect(page.onPage.externalLinks.total).toBe(2);
+    expect(page.internalOutlinks).toHaveLength(0);
   });
 
   it("measures bytes rather than characters", () => {
@@ -621,6 +680,100 @@ describe("parsePage on-page facts", () => {
     expect(page.onPage.visibleTextBytes).toBeLessThanOrEqual(
       page.onPage.htmlBytes,
     );
+  });
+
+  it("does not lose an attribute to a greater-than sign inside a value", () => {
+    // `[^>]*` ended the tag at the first `>` in the source, and `>` is ordinary
+    // text inside a value. This image was published as carrying no alt.
+    const html = `<!doctype html><html><body><img src="/a.png" title="a > b" alt="Real alt"></body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.images.withAlt).toBe(1);
+    expect(page.onPage.images.withoutAlt).toBe(0);
+  });
+
+  it("does not read markup that lives inside a script or a template", () => {
+    const html = `<!doctype html><html><body>
+      <p>Real copy.</p>
+      <script>document.write('<img src="/ghost.png">');</script>
+      <template><img src="/never-rendered.png"><a href="https://ghost.com/">x</a></template>
+      <img src="/real.png" alt="Real">
+    </body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.images.total).toBe(1);
+    expect(page.onPage.externalLinks.total).toBe(0);
+  });
+
+  it("decodes alt before deciding whether it says anything", () => {
+    // `alt="&nbsp;"` is a decorative declaration written the long way. Read
+    // raw, it looked like a description.
+    const html = `<!doctype html><html><body><img src="/a.png" alt="&nbsp;"></body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.images.withEmptyAlt).toBe(1);
+    expect(page.onPage.images.withAlt).toBe(0);
+  });
+
+  it("accepts a twitter card declared with property=", () => {
+    // Twitter's own parser accepts it, so the card works and calling it
+    // missing marked the page down for a tag it has.
+    const html = `<!doctype html><html><head><meta property="twitter:card" content="summary"></head><body><p>x</p></body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.twitterCard).toBe("summary");
+  });
+
+  it("does not honour a declared base, and says so", () => {
+    // A browser resolves these against the base. This parser does not, because
+    // `canonicalTarget` and `internalOutlinks` are the frozen `crawl.page.v1`
+    // metric the product persists — changing what they mean under an unchanged
+    // metric key would leave stored observations with no way to say which
+    // meaning produced them. Pinned so the gap is a decision, not a surprise.
+    const html = `<!doctype html><html><head>
+      <base href="https://example.com/shop/">
+      <link rel="canonical" href="hats">
+    </head><body><a href="caps">Caps</a></body></html>`;
+    const page = parsePage(html, "https://example.com/deep/page");
+
+    expect(page.canonicalTarget).toBe("https://example.com/deep/hats");
+    expect(page.internalOutlinks.map((link) => link.targetSubjectUrl)).toEqual([
+      "https://example.com/deep/caps",
+    ]);
+  });
+
+  it("counts the elements a visitor can act through", () => {
+    const html = `<!doctype html><html><body>
+      <form action="/search"><input type="search" name="q"><button type="submit">Go</button></form>
+      <canvas id="chart"></canvas>
+    </body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.interactive.forms).toBe(1);
+    expect(page.onPage.interactive.inputs).toBe(1);
+    expect(page.onPage.interactive.buttons).toBe(1);
+    expect(page.onPage.interactive.canvases).toBe(1);
+  });
+
+  it("measures the whole body in units, not a sample of it", () => {
+    // English opening, Chinese body: the old sample-based share read this as
+    // a Latin page and published a word count wrong by two orders of magnitude.
+    const html = `<!doctype html><html><body><p>An English opening sentence.</p><p>${"中".repeat(400)}</p></body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.textMetrics.cjkChars).toBe(400);
+    expect(page.onPage.textMetrics.nonCjkWords).toBe(4);
+    expect(page.onPage.textMetrics.denseChars).toBeGreaterThan(400);
+    // The whitespace count the projection publishes, for contrast: five.
+    expect(page.wordCount).toBe(5);
+  });
+
+  it("separates the bytes that are program from the bytes that are content", () => {
+    const html = `<!doctype html><html><body><div id="root"></div><script>${"x".repeat(500)}</script></body></html>`;
+    const page = parsePage(html, BASE);
+
+    expect(page.onPage.scriptBytes).toBe(500);
+    expect(page.onPage.visibleTextBytes).toBe(0);
   });
 
   it("reports absence as absence rather than as a default", () => {

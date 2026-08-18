@@ -40,7 +40,7 @@ const SLOT_POINTS: Readonly<Record<KeywordEvidenceTextSlot | "url", number>> = {
   url: 2,
 };
 
-const SLOT_ORDER: readonly (KeywordEvidenceTextSlot | "url")[] = [
+export const SLOT_ORDER: readonly (KeywordEvidenceTextSlot | "url")[] = [
   "title",
   "description",
   "h1",

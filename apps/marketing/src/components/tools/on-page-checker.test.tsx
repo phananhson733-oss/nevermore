@@ -63,6 +63,8 @@ const extract: SeoAuditTargetPageExtract = {
   subHeadings: ["What each plan includes"],
   openingText: "Every Acme plan includes the pricing calculator.",
   staticBodyWords: 900,
+  staticBodyUnits: null,
+  termFrequencies: null,
   truncatedLists: false,
   response: {
     status: 200,
@@ -249,7 +251,7 @@ async function fillAndRun(
 }
 
 describe("On-Page checker request", () => {
-  it("sends the page, the queries and the page role", async () => {
+  it("sends the page, the queries, the role and the market to look up", async () => {
     const fetchMock = vi.fn(async () => auditResponse(["pricing", "plans"]));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -266,6 +268,10 @@ describe("On-Page checker request", () => {
       url: "acme.test/pricing",
       targetQueries: ["pricing", "plans"],
       pageRole: "homepage",
+      // Read by the results-page lookup and by nothing else. They used to stop
+      // at the form, which is why the copy beside them had to apologise.
+      market: "US",
+      language: "en",
     });
   });
 
@@ -707,11 +713,11 @@ describe("On-Page checker local state", () => {
     expect(host.textContent).toContain("Measured 1 of the 2 queries you submitted");
   });
 
-  it("says that market and language are not part of the check", async () => {
+  it("says what market and language are actually used for", async () => {
     const host = await render();
 
     expect(host.textContent).toContain(
-      "Market and language are not part of this check",
+      "Market and language are used for one thing",
     );
     const market = field(host, "onpage-country");
     expect(market.getAttribute("aria-describedby")).toBe("onpage-market-scope");
@@ -808,10 +814,28 @@ describe("On-Page checker report depth", () => {
         charset: "utf-8",
         faviconDeclared: true,
         hreflang: ["en", "zh-CN"],
-        images: { total: 5, withAlt: 4, withEmptyAlt: 0, withoutAlt: 1 },
+        images: {
+      total: 5,
+      withAlt: 4,
+      withEmptyAlt: 0,
+      withoutAlt: 1,
+      withDimensions: 0,
+      lazyLoaded: 0,
+    },
         externalLinks: { total: 3, nofollow: 1, blankWithoutNoopener: 1 },
         htmlBytes: 51_200,
         visibleTextBytes: 15_000,
+        scriptBytes: 0,
+        interactive: {
+          forms: 0,
+          inputs: 0,
+          buttons: 0,
+          selects: 0,
+          textareas: 0,
+          canvases: 0,
+          media: 0,
+          iframes: 0,
+        },
       },
     };
     return Response.json(
@@ -837,6 +861,7 @@ describe("On-Page checker report depth", () => {
                 state: "observed",
                 unit: "page",
                 population: "every_collected_page",
+                targetTested: null,
                 tested: 120,
                 affected: 0,
                 observations: [],

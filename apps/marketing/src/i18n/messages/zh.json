@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
         "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。",
         "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
-        "character_count_only_rendered_pixel_width_not_measured": "仅统计字符数。未测量 Google 实际据以截断的渲染像素宽度。",
+        "display_width_approximation_rendered_pixel_width_not_measured": "按显示宽度近似（中日韩字符计两格）。未测量 Google 实际据以截断的渲染像素宽度。",
         "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
         "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。"
       },
@@ -1068,8 +1068,8 @@
         "malformed_blocks": "格式错误的 JSON-LD 块",
         "types_observed": "已观测 JSON-LD 类型",
         "broken_link_targets": "断链目标数",
-        "title_characters": "Title 字符数",
-        "description_characters": "Description 字符数",
+        "title_display_width": "Title 显示宽度",
+        "description_display_width": "Description 显示宽度",
         "reviewed_range": "审阅区间",
         "observed_outbound_internal_links": "观察到的出站内链数",
         "observed_click_depth": "观察到的点击深度",
@@ -2022,7 +2022,7 @@
         "market": "市场",
         "language": "语言",
         "pageRole": "页面角色",
-        "marketScope": "市场与语言不参与这次检查：请求只带页面 URL、关键词和页面角色。它们会在你从这里打开 SEO Agent 时一并带过去。"
+        "marketScope": "市场和语言只用于查询搜索结果页（下方「搜索结果页」一节），抓取与其余检查项在任何市场下都一样。它们也会随「打开 SEO Agent」一起带过去。"
       },
       "pageRoles": {
         "homepage": "首页",
@@ -2084,7 +2084,7 @@
         "sub_headings_h2_h6_merged_no_levels": "副标题是 H2 到 H6 合并成一份清单：采集不保留标题层级，因此无法区分 H2 和 H4。",
         "sub_headings_underivable_h1_cap_reached": "这一页的副标题无法分离，因为它的 H1 数量触到了采集器自身上限。这里报为不可用，而不是猜一个。",
         "opening_text_first_500_chars_static_extraction": "正文开头取静态提取正文的前 500 个字符，已剔除 nav、footer、aside 等区块。它不等于浏览器实际渲染出来的内容。",
-        "density_basis_captured_text_only": "密度是在已采文本内测的——标题、描述、标题组和那段正文开头——不是整页正文，整页正文并未被采集。",
+        "density_basis_captured_text_only": "密度是在已采文本内测的——标题、描述、标题组和那段正文开头——不是整页正文。整页的词频另有一份榜单，分母是整页正文的计数单位，两者不能直接比。",
         "static_body_words_unavailable_for_cjk": "本页词数不予给出：这一页主要以不写词间空格的文字写成，按空格切分会差一个量级。",
         "extract_lists_truncated": "某个标题清单在发布前被截到了自身上限，因此页面更下方的关键词可能没有被计入。"
       },
@@ -2184,7 +2184,9 @@
         "charset": {
           "_label": "字符编码声明",
           "missing": "没有声明 charset，非 ASCII 文本可能被按错误编码解读。",
-          "declared": "已声明 {charset}。"
+          "declared": "已声明 {charset}。",
+          "fromHeader": "HTTP 响应头声明了 {charset}，这就是浏览器实际用来解码的那个值。",
+          "conflict": "响应头说 {header}，标记里的 meta 说 {meta}。浏览器按响应头解码，两个声明不一致，其中一个是错的。"
         },
         "lang": {
           "_label": "HTML lang 语言声明",
@@ -2199,8 +2201,11 @@
         "h1": {
           "_label": "H1 主标题",
           "missing": "没有 H1。",
-          "single": "唯一 H1「{h1}」，宽度 {width}。",
-          "multiple": "有 {count} 个 H1（首个为「{first}」）。多个 H1 会把「这一页是关于什么的」说成好几件事。"
+          "single": "只有一个 H1「{h1}」，宽度 {width}，落在 {min}–{max} 的常见区间内。",
+          "multiple": "有 {count} 个 H1（首个为「{first}」）。多个 H1 会把「这一页是关于什么的」说成好几件事。",
+          "tooShort": "H1「{h1}」宽度只有 {width}，短于常见的 {min}——标题是这一页对搜索者的承诺，太短说不清是什么。",
+          "tooLong": "H1「{h1}」宽度 {width}，超过常见的 {max}——太长的标题在结果页和目录里都会被截断。",
+          "tooLongClipped": "H1 宽度至少 {width}（这里显示的是截断到 200 字符后的值），远超常见的 {max}。"
         },
         "bodyWords": {
           "_label": "正文词数",
@@ -2208,7 +2213,11 @@
           "thin": "只有 {words} 个词。内容这么少，其余各项做得再好也难以支撑排名。",
           "low": "{words} 个词，偏少。",
           "fair": "{words} 个词。",
-          "good": "{words} 个词，篇幅充分。"
+          "good": "{words} 个词，篇幅充分。",
+          "thinUnits": "正文只有约 {words} 个字——低于 300 的页面通常撑不起一个主题。",
+          "lowUnits": "正文约 {words} 个字，偏短。",
+          "fairUnits": "正文约 {words} 个字，够写清楚一件事。",
+          "goodUnits": "正文约 {words} 个字，篇幅充足。"
         },
         "subHeadings": {
           "_label": "小标题",
@@ -2394,6 +2403,36 @@
             "clear": "从首页出发 4 次点击以内可以到这一页。",
             "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
           }
+        },
+        "imageDimensions": {
+          "_label": "图片尺寸声明",
+          "all": "{total} 张图片全部在标记里写了 width 和 height，浏览器可以先占好位置。",
+          "some": "{total} 张图片里有 {missing} 张没同时写 width 和 height。这项只看标记——CSS 的 aspect-ratio 同样能占位，我们看不到样式表。"
+        },
+        "imageLoading": {
+          "_label": "图片懒加载",
+          "none": "{total} 张图片都没有声明 loading=\"lazy\"。",
+          "some": "{total} 张图片里有 {lazy} 张声明了 loading=\"lazy\"。这里不判分：首屏那张图懒加载反而会拖慢访客等的东西，而我们看不出哪张在首屏。"
+        },
+        "urlShape": {
+          "_label": "URL 形态",
+          "unavailable": "这一页的 URL 无法解析，因此不作判定。",
+          "clean": "路径 {characters} 个字符、{segments} 层，读得出也记得住。",
+          "parameters": "URL 带了 {parameters} 个查询参数，不容易被记住或分享{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "uppercase": "路径里有大写字母，同一页面容易因此出现两个 URL{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "deep": "路径有 {segments} 层，比常见的层级深{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "long": "路径有 {characters} 个字符，偏长{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "underscores": "路径用下划线分词，搜索引擎更认连字符{others, plural, =0 {} other {，另有 # 处可以更好读}}。"
+        },
+        "rendering": {
+          "_label": "内容是否在静态 HTML 里",
+          "serverSide": "静态 HTML 里就有 {textBytes} 字节的正文（脚本 {scriptKb} KB），抓取时不必等 JavaScript。",
+          "clientSide": "静态 HTML 里几乎没有正文（{textBytes} 字节），脚本却有 {scriptKb} KB——正文很可能由 JavaScript 渲染。搜索引擎会执行 JavaScript，所以这不是错误，但要多花一次渲染排队。"
+        },
+        "demandCapture": {
+          "_label": "本页能否承接需求",
+          "none": "静态 HTML 里没有表单、输入框、按钮或画布。注意：由前端脚本挂载的组件不在传输的 HTML 里，我们看不到，所以这条只描述静态文档，不代表这一页没有功能。",
+          "present": "静态 HTML 里有 {controls} 个可交互元素（表单 {forms}、输入 {inputs}、按钮 {buttons}）——访客可以在本页直接动手。"
         }
       },
       "grades": {
@@ -2442,6 +2481,76 @@
         "checksHeading": "逐项结论",
         "previewHeading": "它在别处长什么样",
         "keywordHeading": "关键词落点"
+      },
+      "terms": {
+        "heading": "全页词频与密度",
+        "sizeLabel": "{size} 词",
+        "phrase": "短语",
+        "count": "出现次数",
+        "frequencyDensity": "词频密度",
+        "occupancyDensity": "占位密度",
+        "basis": "分母是这一页正文的 {total} 个计数单位——中日韩字符一个字算一个，其余按空格切分。词频密度 = 次数 ÷ 总数；占位密度 = 次数 × 词数 ÷ 总数，用来比较长短不同的短语。重叠出现会被重复计入，所以在同一个词高频重复的页面上，长短语的占位密度可能超过 100%。",
+        "legend": "绿色表示这一行完整包含了你提交的某个目标词，黄色表示只共用了其中一部分。",
+        "stopWords": "单个词的榜单里去掉了「的、是、the、and」这类功能词，短语榜单不去——「the astrology of」这种写法本身就是真实的表达。",
+        "unavailable": "这次采集没有取到正文，因此没有词频榜。"
+      },
+      "landscape": {
+        "heading": "搜索结果页",
+        "position": "位次",
+        "domain": "域名",
+        "sitelinkColumn": "站内链接",
+        "you": "（你的域名）",
+        "summary": {
+          "present": "在「{query}」（{market}）的第一页上，这一页的域名排在第 {position} 位。",
+          "absent": "在「{query}」（{market}）的前 {results} 条结果里没有这一页的域名。这只说明它不在我们读到的这一页上，不代表没有排名。",
+          "otherPage": "在「{query}」（{market}）的第一页上，你的域名排在第 {position} 位，但占住这个位置的是站内另一页，不是你检查的这一页。"
+        },
+        "sitelinks": "前 {results} 条里有 {withSitelinks} 条带站内链接。站内链接跟着品牌和导航型需求走，所以这个数字说的是 Google 已经把谁当成目的地，而不是「这个词有多难」。",
+        "features": "这一页还出现了：{features}。",
+        "basis": "查询「{query}」，市场 {market}，语言 {language}，桌面端第一页，一次采样。搜索结果每天都在变，这是这一刻的样子。",
+        "unavailable": {
+          "no_target_query": "没有提交目标关键词，因此没有查询搜索结果页。",
+          "market_not_supported": "这个市场或语言不在我们能查询的范围内，因此没有发起查询（也没有产生费用）。",
+          "provider_not_configured": "这个环境里没有配置搜索结果查询所需的凭据，因此这一节没有数据。其余检查项不受影响。",
+          "provider_unavailable": "搜索结果页这次没查到。其余检查项不受影响。"
+        },
+        "youThisPage": "（就是这一页）",
+        "youOtherPage": "（你的域名，但是另一页）"
+      },
+      "coverage": {
+        "title": "这个工具检测什么、不检测什么",
+        "intro": "下面是它真正读得到的东西。凡是没列进来的，它就不会给结论——把边界写在这里，好过让你从一份没提到的报告里自己猜。",
+        "checks": {
+          "meta": "标题、描述、canonical、robots 指令、viewport、编码、语言、favicon。长度按显示宽度算，中日韩字符按两格。",
+          "content": "正文长度（中文按字数）、H1 数量与长度、H2–H6 副标题数量、正文与代码的比例、本页有没有可交互元素。",
+          "keyword": "你提交的词在标题、描述、H1、副标题、正文开头和 URL 里的落点，以及一份全页 1–5 词的词频榜。",
+          "links": "站内出链数量、锚文本是否为空、站外出链数量与 rel 安全性。",
+          "media": "图片 alt 覆盖、是否声明 width/height、是否懒加载。",
+          "social": "Open Graph 三件套、Twitter 卡片、JSON-LD 结构化数据类型与解析错误。",
+          "technical": "HTTPS、状态码与跳转、响应时间、URL 形态、HTML 体积、hreflang、robots.txt 与 sitemap 可达性、本页是否在 sitemap 里、正文是否在静态 HTML 里。",
+          "site": "只有全站采集才能回答的：标题/描述是否与别的页面重复、sitemap 里有没有页面没人链、出链有没有断、点击深度。",
+          "serp": "你的主关键词在指定市场的搜索结果第一页：谁在前十、你在不在、有几条带站内链接。"
+        },
+        "notTitle": "它不做这些",
+        "not": {
+          "rendering": "不执行 JavaScript。由前端脚本挂载的内容、组件和链接，这个工具看不到——它会告诉你正文是不是在静态 HTML 里，但看不到脚本跑完之后的样子。",
+          "css": "不读样式表。用 CSS 隐藏的文字、用 aspect-ratio 占位的图片，它都判断不了。",
+          "ranking": "不预测排名，也不打「难度分」。搜索结果那一节是当下的一次采样，不是趋势。",
+          "backlinks": "不看外链、域名权重或流量。这一页自己改不了的部分，不在这个工具的范围里。",
+          "headings": "不给标题层级大纲。采集不保留 H2–H6 的层级，所以副标题只能给一份合并清单。",
+          "density": "不对关键词密度打分。密度的分母是已采文本，正常优化过的页面在这个口径下就有 20% 左右，套用整页密度的常见区间会把做对的页面判成堆砌。"
+        },
+        "labels": {
+          "meta": "元信息",
+          "content": "内容",
+          "keyword": "关键词",
+          "links": "链接",
+          "media": "图片",
+          "social": "分享与结构化数据",
+          "technical": "技术",
+          "site": "全站上下文",
+          "serp": "搜索结果页"
+        }
       }
     }
   },

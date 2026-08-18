@@ -7,12 +7,18 @@ import { getMessages, getTranslations } from "next-intl/server";
 
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld/breadcrumb-json-ld";
 import { FaqPageJsonLd } from "@/components/seo/json-ld/faq-page-json-ld";
+import {
+  COVERAGE_EXCLUSIONS,
+  COVERAGE_GROUPS,
+} from "@/lib/on-page-checker/coverage-chapter";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { OnPageChecker } from "@/components/tools/on-page-checker";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
 const PATH = "/tools/on-page-seo-check";
+
+
 
 interface FaqItem {
   readonly q: string;
@@ -109,6 +115,49 @@ export default async function OnPageSeoCheckPage({
         >
           <OnPageChecker locale={locale} />
         </NextIntlClientProvider>
+
+        {/*
+          The boundary, written down where a visitor reads the report.
+
+          It was only ever in a pull request description, so a page that got no
+          verdict on something read as a hole rather than as a stated limit —
+          and the tool this one is measured against publishes exactly this
+          chapter.
+        */}
+        <section className="mt-14 border-t border-brand-border pt-10">
+          <h2 className="text-[21px] text-text-dark-primary">
+            {t("coverage.title")}
+          </h2>
+          <p className="mt-3 max-w-[720px] text-[14px] leading-[1.7] text-text-dark-secondary">
+            {t("coverage.intro")}
+          </p>
+          <dl className="mt-6 grid gap-4 md:grid-cols-2">
+            {COVERAGE_GROUPS.map((group) => (
+              <div key={group}>
+                <dt className="text-[14px] text-text-dark-primary">
+                  {t(`coverage.labels.${group}`)}
+                </dt>
+                <dd className="mt-1 text-[13.5px] leading-[1.7] text-text-dark-secondary">
+                  {t(`coverage.checks.${group}`)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          <h3 className="mt-10 text-[16px] text-text-dark-primary">
+            {t("coverage.notTitle")}
+          </h3>
+          <ul className="mt-3 grid max-w-[760px] gap-2">
+            {COVERAGE_EXCLUSIONS.map((entry) => (
+              <li
+                className="text-[13.5px] leading-[1.7] text-text-dark-secondary"
+                key={entry}
+              >
+                {t(`coverage.not.${entry}`)}
+              </li>
+            ))}
+          </ul>
+        </section>
 
         <section className="mt-14 border-t border-brand-border pt-10">
           <h2 className="text-[21px] text-text-dark-primary">

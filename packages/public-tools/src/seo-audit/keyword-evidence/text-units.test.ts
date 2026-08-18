@@ -1,10 +1,17 @@
+import {
+  isCjkUnit,
+  parsePage,
+  unitStream,
+} from "@sf/sources/crawl-public-preview";
 import { describe, expect, it } from "vitest";
 
 import {
   cjkShare,
+  cjkShareFromCounts,
   countTextUnits,
   hasCjk,
   TEXT_UNITS_VERSION,
+  textUnitsFromCounts,
 } from "./text-units.ts";
 
 describe("countTextUnits", () => {
@@ -113,5 +120,95 @@ describe("cjkShare", () => {
 describe("TEXT_UNITS_VERSION", () => {
   it("is the frozen contract value", () => {
     expect(TEXT_UNITS_VERSION).toBe("text_units.v1");
+  });
+});
+
+/**
+ * The parser counts the body once, while it still has the text, and publishes
+ * three numbers instead. Two implementations of one unit definition live in two
+ * packages because the lower one cannot import the higher one — so they are
+ * held together here, over real HTML rather than over a shared table. A guard
+ * built from one side's own output would agree with itself and prove nothing.
+ */
+describe("the crawler's counts and this counter agree", () => {
+  const CORPUS: readonly { readonly name: string; readonly html: string }[] = [
+    {
+      name: "Latin prose",
+      html: `<html><body><p>Free birth chart calculator with instant results.</p><p>Read the placements below.</p></body></html>`,
+    },
+    {
+      name: "Chinese prose",
+      html: `<html><body><p>免费星盘计算器，输入出生时间即可查看完整星盘。</p></body></html>`,
+    },
+    {
+      name: "English opening then a Chinese body",
+      html: `<html><body><p>An English opening sentence.</p><p>${"中文正文内容".repeat(60)}</p></body></html>`,
+    },
+    {
+      name: "no word gaps at all",
+      html: `<html><body><p>${"星盘".repeat(200)}</p></body></html>`,
+    },
+    {
+      name: "entities, emoji and astral characters",
+      html: `<html><body><p>Caf&eacute; &amp; co 🎉 𝕬strology &#x4e2d;&#25991;</p></body></html>`,
+    },
+    {
+      name: "empty body",
+      html: `<html><body></body></html>`,
+    },
+  ];
+
+  it.each(CORPUS)("$name", ({ name, html }) => {
+    const parsed = parsePage(html, "https://example.com/");
+    // Every fixture puts the whole body inside paragraph elements, so joining
+    // them reproduces exactly the text the parser measured. That is a property
+    // of the corpus, not of the parser, and it is what makes the two sides
+    // comparable at all.
+    const bodyText = parsed.paragraphs.join(" ");
+    const fromText = countTextUnits(bodyText);
+    const fromCounts = textUnitsFromCounts(parsed.onPage.textMetrics);
+
+    // Without this, the empty case would pass by agreeing that nothing is
+    // nothing, and so would a fixture whose text never reached either counter.
+    if (name !== "empty body") expect(fromText.units).toBeGreaterThan(0);
+
+    expect(fromCounts).toEqual(fromText);
+    expect(
+      Math.abs(
+        cjkShareFromCounts(parsed.onPage.textMetrics) - cjkShare(bodyText),
+      ),
+    ).toBeLessThan(1e-9);
+
+    // The term leaderboard reads phrases off an ordered version of the same
+    // stream, and its densities are divided by this total. If the two counters
+    // disagree the page shows one length and a set of percentages taken against
+    // another, with nothing on screen to say which is which.
+    expect(unitStream(bodyText)).toHaveLength(fromText.units);
+  });
+});
+
+/**
+ * The crawler's per-character test and the frozen counter must agree exactly.
+ *
+ * Two spellings of one rule, in two packages, and one of them was written by
+ * copying characters: the copy arrived with U+8C48 where U+F900 belonged, which
+ * renders identically and covers twenty-seven thousand more code points — Yi,
+ * private use, Latin Extended-D, all silently counted as CJK. A corpus test
+ * cannot find that, because a corpus contains the characters someone thought
+ * of. This walks the whole plane the ranges live in.
+ */
+describe("the CJK unit ranges", () => {
+  it("are the same set on both sides", () => {
+    const disagreements: string[] = [];
+    for (let code = 0; code <= 0xffff; code += 1) {
+      // Surrogate halves are not characters; `hasCjk` sees a lone one as a
+      // replacement and the numeric test never receives one from a real stream.
+      if (code >= 0xd800 && code <= 0xdbff) continue;
+      const char = String.fromCodePoint(code);
+      if (hasCjk(char) !== isCjkUnit(code)) {
+        disagreements.push(`U+${code.toString(16).toUpperCase()}`);
+      }
+    }
+    expect(disagreements).toEqual([]);
   });
 });

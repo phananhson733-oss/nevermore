@@ -50,6 +50,15 @@ export type ScoreCap =
   | "not_reachable"
   | "keyword_unmeasured";
 
+export const SCORE_CAP_REASONS: readonly ScoreCap[] = [
+  "topic_focus",
+  "body_words",
+  "body_bytes",
+  "not_indexable",
+  "not_reachable",
+  "keyword_unmeasured",
+];
+
 export interface OnPageScore {
   readonly version: typeof SCORING_VERSION;
   readonly score: number;
@@ -90,8 +99,14 @@ const FOCUS_CAPS: readonly { readonly below: number; readonly ceiling: number }[
     { below: 0.55, ceiling: 65 },
   ];
 
-/** Static body words below which the score is held down, and to what. */
-const WORD_CAPS: readonly { readonly below: number; readonly ceiling: number }[] =
+/**
+ * Body length below which the score is held down, and to what.
+ *
+ * Measured in `text_units.v1`, so the same band applies to a page written with
+ * word gaps and to one written without them. That unit is now published for
+ * every page, which is why the byte approximation below is only a fallback.
+ */
+const UNIT_CAPS: readonly { readonly below: number; readonly ceiling: number }[] =
   [
     { below: 100, ceiling: 35 },
     { below: 300, ceiling: 55 },
@@ -99,14 +114,13 @@ const WORD_CAPS: readonly { readonly below: number; readonly ceiling: number }[]
   ];
 
 /**
- * The same ceilings for a page whose words cannot be counted.
+ * The same ceilings for a crawl that carried no side-car to count with.
  *
- * A body written without word gaps has `staticBodyWords` withheld upstream,
- * because a whitespace count there is wrong by two orders of magnitude. That
- * withholding used to remove the thin-content ceiling entirely: a hundred-
- * character Chinese page scored 100. Visible-text bytes are the measure that
- * survives, at roughly three bytes per CJK character — so these thresholds are
- * the word ones restated in bytes rather than a second, looser standard.
+ * Visible-text bytes at roughly three per CJK character, so these are the unit
+ * thresholds restated in bytes rather than a second, looser standard. Reached
+ * only when `staticBodyUnits` is absent; without any measure at all the
+ * thin-content ceiling used to disappear entirely and a hundred-character page
+ * scored 100.
  */
 const BYTE_CAPS: readonly { readonly below: number; readonly ceiling: number }[] =
   [
@@ -186,9 +200,9 @@ export function buildOnPageScore(input: {
   const candidates: { readonly reason: ScoreCap; readonly ceiling: number | null }[] =
     [
       { reason: "topic_focus", ceiling: lowestCeiling(focus, FOCUS_CAPS) },
-      // Words when they could be counted, bytes when they could not. Never
-      // both: a page measured in bytes has no word count to also cap on.
-      input.extract.staticBodyWords === null
+      // Units when the crawl counted them, bytes when it did not. Never both:
+      // one measure of length, one ceiling derived from it.
+      input.extract.staticBodyUnits === null
         ? {
             reason: "body_bytes" as const,
             ceiling: lowestCeiling(
@@ -198,7 +212,10 @@ export function buildOnPageScore(input: {
           }
         : {
             reason: "body_words" as const,
-            ceiling: lowestCeiling(input.extract.staticBodyWords, WORD_CAPS),
+            ceiling: lowestCeiling(
+              input.extract.staticBodyUnits.units,
+              UNIT_CAPS,
+            ),
           },
       {
         reason: "not_reachable",

@@ -104,8 +104,12 @@ function serpEnvelope(
   };
 }
 
-function organicItem(rankGroup: number, domain: string): unknown {
-  return { type: "organic", rank_group: rankGroup, domain };
+function organicItem(
+  rankGroup: number,
+  domain: string,
+  extra: Readonly<Record<string, unknown>> = {},
+): unknown {
+  return { type: "organic", rank_group: rankGroup, domain, ...extra };
 }
 
 function bulkRanksEnvelope(
@@ -497,8 +501,8 @@ describe("serpOrganic", () => {
     expect(result).toEqual({
       keyword: "crm for agencies",
       rows: [
-        { rankGroup: 1, domain: "strong.com" },
-        { rankGroup: 2, domain: "weak-blog.io" },
+        { rankGroup: 1, domain: "strong.com", sitelinkCount: 0, url: null },
+        { rankGroup: 2, domain: "weak-blog.io", sitelinkCount: 0, url: null },
       ],
       itemTypes: ["organic", "ai_overview"],
       unresolvedItemCount: 0,
@@ -506,6 +510,34 @@ describe("serpOrganic", () => {
       providerStatusCode: 20_000,
       taskStatusCode: 20_000,
     });
+  });
+
+  it("carries the sitelinks a result shows, and zero for one described without them", async () => {
+    const { client } = clientFor([
+      serpEnvelope([
+        organicItem(1, "brand.com", {
+          url: "https://brand.com/",
+          links: [{ title: "Pricing" }, { title: "Docs" }, { title: "Blog" }],
+        }),
+        organicItem(2, "small.io"),
+      ]),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.rows[0]).toEqual({
+      rankGroup: 1,
+      domain: "brand.com",
+      sitelinkCount: 3,
+      url: "https://brand.com/",
+    });
+    // A result the provider described without a links array and one that truly
+    // shows no sitelinks are the same shape on the wire, so both read zero.
+    expect(result.rows[1]?.sitelinkCount).toBe(0);
   });
 
   it("truncates to the requested depth even when the provider over-delivers", async () => {
@@ -551,7 +583,9 @@ describe("serpOrganic", () => {
       languageCode: "en",
     });
 
-    expect(result.rows).toEqual([{ rankGroup: 1, domain: "good.com" }]);
+    expect(result.rows).toEqual([
+      { rankGroup: 1, domain: "good.com", sitelinkCount: 0, url: null },
+    ]);
     expect(result.unresolvedItemCount).toBe(3);
     expect(result.itemTypes).toBeNull();
   });

@@ -21,12 +21,14 @@ import {
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
+import { readSerpLandscape } from "../tools/serp-landscape.ts";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
   type AgentAuditSuccessData,
   type AgentKind,
+  type SerpLandscape,
 } from "./audit-contract.ts";
 
 export interface AgentAuditHandlerDependencies {
@@ -67,6 +69,25 @@ export interface AgentAuditHandlerDependencies {
    * thing that changes here.
    */
   readonly reportAs: QualifyingTool;
+  /**
+   * Reads page one for the primary query, when this boundary wants it.
+   *
+   * Absent on the SEO Agent's own route: the Agent's cost profile is its own
+   * decision, and a seam attached to the shared handler would have spent a
+   * provider call on every Agent run without anyone asking for one. The
+   * On-Page Checker attaches it, because "who is already on page one, and are
+   * you" is the context its report was missing.
+   *
+   * It must resolve rather than throw: the crawl has already finished by the
+   * time this runs, and losing it to a provider timeout would trade the thing
+   * the visitor asked for against the thing they did not.
+   */
+  readonly readSerpLandscape?: (input: {
+    readonly query: string | null;
+    readonly market: string | null;
+    readonly language: string | null;
+    readonly targetUrl: string;
+  }) => Promise<SerpLandscape>;
 }
 
 /**
@@ -95,6 +116,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
 export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   ...DEFAULT_DEPENDENCIES,
   reportAs: "on-page-seo-check",
+  readSerpLandscape: (input) => readSerpLandscape(input),
 };
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -287,6 +309,10 @@ function projectRecord(record: SeoAuditRecord): SeoAuditRecord {
     // downgrade every page-level check to unverified.
     population: record.population,
     tested: record.tested,
+    // Whether the submitted page was inside that population. Without it a
+    // conditional rule can only say "not covered", which is false for a page
+    // that did qualify and was clean.
+    targetTested: record.targetTested,
     affected: record.affected,
     observations: record.observations.map((observation) => ({
       url: observation.url,
@@ -343,6 +369,23 @@ function projectTargetPageExtract(
     subHeadings: extract.subHeadings === null ? null : [...extract.subHeadings],
     openingText: extract.openingText,
     staticBodyWords: extract.staticBodyWords,
+    staticBodyUnits:
+      extract.staticBodyUnits === null
+        ? null
+        : {
+            units: extract.staticBodyUnits.units,
+            basis: extract.staticBodyUnits.basis,
+          },
+    termFrequencies:
+      extract.termFrequencies === null
+        ? null
+        : extract.termFrequencies.map((table) => ({
+            size: table.size,
+            rows: table.rows.map((row) => ({
+              phrase: row.phrase,
+              count: row.count,
+            })),
+          })),
     truncatedLists: extract.truncatedLists,
     response: {
       status: extract.response.status,
@@ -380,6 +423,8 @@ function projectTargetPageExtract(
               withAlt: extract.declared.images.withAlt,
               withEmptyAlt: extract.declared.images.withEmptyAlt,
               withoutAlt: extract.declared.images.withoutAlt,
+              withDimensions: extract.declared.images.withDimensions,
+              lazyLoaded: extract.declared.images.lazyLoaded,
             },
             externalLinks: {
               total: extract.declared.externalLinks.total,
@@ -389,6 +434,17 @@ function projectTargetPageExtract(
             },
             htmlBytes: extract.declared.htmlBytes,
             visibleTextBytes: extract.declared.visibleTextBytes,
+            scriptBytes: extract.declared.scriptBytes,
+            interactive: {
+              forms: extract.declared.interactive.forms,
+              inputs: extract.declared.interactive.inputs,
+              buttons: extract.declared.interactive.buttons,
+              selects: extract.declared.interactive.selects,
+              textareas: extract.declared.interactive.textareas,
+              canvases: extract.declared.interactive.canvases,
+              media: extract.declared.interactive.media,
+              iframes: extract.declared.interactive.iframes,
+            },
           },
   };
 }
@@ -454,6 +510,47 @@ export async function handleAgentAuditRequest(
   if (cache === null) return errorResponse("audit_response_invalid", 502);
 
   const { run, result } = envelope.data;
+
+  const evidence =
+    input.value.targetQueries === null
+      ? null
+      : buildKeywordEvidence(
+          result.targetPageExtract,
+          input.value.targetQueries,
+          input.value.pageRole,
+          result.targetInspected,
+        );
+
+  // One paid call, for the query the evidence layer already chose as primary.
+  // Choosing again here would let the results page and the coverage table
+  // disagree about which word this page is being judged on.
+  const primaryQuery =
+    evidence !== null && evidence.availability === "available"
+      ? (evidence.queries.find((query) => query.isPrimary) ??
+          evidence.queries[0])?.displayQuery ?? null
+      : null;
+  // Wrapped even though the seam's own contract is that it resolves. The crawl
+  // has already succeeded and the credit is already spent by the time this
+  // runs, so the cost of a throw here is the whole check — and this is the
+  // frame that would return the 500. A seam that breaks its contract should
+  // cost its own section, not the report.
+  let landscape: SerpLandscape | null = null;
+  if (dependencies.readSerpLandscape !== undefined) {
+    try {
+      landscape = await dependencies.readSerpLandscape({
+        query: primaryQuery,
+        market: input.value.market,
+        language: input.value.language,
+        targetUrl: result.inspectedTargetUrl ?? result.targetUrl,
+      });
+    } catch {
+      landscape = {
+        availability: "unavailable",
+        reason: "provider_unavailable",
+      };
+    }
+  }
+
   const projected: AgentAuditSuccessData = {
     run: {
       agent,
@@ -484,16 +581,8 @@ export async function handleAgentAuditRequest(
       records: result.records.map(projectRecord),
       // Derived here, never cached: a cache row is shared by host, so a stored
       // region would answer the next visitor with this one's queries.
-      ...(input.value.targetQueries === null
-        ? {}
-        : {
-            keywordEvidence: buildKeywordEvidence(
-              result.targetPageExtract,
-              input.value.targetQueries,
-              input.value.pageRole,
-              result.targetInspected,
-            ),
-          }),
+      ...(evidence === null ? {} : { keywordEvidence: evidence }),
+      ...(landscape === null ? {} : { serpLandscape: landscape }),
     },
   };
 
