@@ -91,6 +91,27 @@ export const DEFAULT_CRAWL_CACHE_DEPENDENCIES: CrawlCacheDependencies = {
   write: writeViaSupabase,
 };
 
+/**
+ * Restate a store's timestamp in the one spelling this cache's readers accept.
+ *
+ * PostgreSQL renders `timestamptz` with microsecond precision and a numeric UTC
+ * offset — `2026-08-18T06:50:55.033741+00:00`. Every reader downstream checks a
+ * captured-at against `new Date(value).toISOString()`, which is millisecond
+ * precision and `Z`, and rejects anything else. Handing the store's own
+ * spelling onward therefore made a successfully written row unrecognisable on
+ * the way back: the table filled up, every lookup was refused, and each caller
+ * still paid for a full crawl of a site that had just been crawled. Nothing
+ * reported it, because both halves of this cache fail silently on purpose.
+ *
+ * Sub-millisecond precision is dropped, which is what the readers were already
+ * comparing against — this value exists to tell a visitor when the crawl behind
+ * their answer happened.
+ */
+function canonicalCapturedAt(value: string): string | null {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 export async function readCrawlCache(
   tool: string,
   targetHost: string,
@@ -98,7 +119,13 @@ export async function readCrawlCache(
   maxAgeSeconds: number = CRAWL_CACHE_MAX_AGE_SECONDS,
 ): Promise<CachedCrawl | null> {
   try {
-    return await dependencies.read(tool, targetHost, maxAgeSeconds);
+    const cached = await dependencies.read(tool, targetHost, maxAgeSeconds);
+    if (cached === null) return null;
+    const capturedAt = canonicalCapturedAt(cached.capturedAt);
+    // A row we cannot date is a row we cannot honestly label, and the answer it
+    // holds is served as "captured at" that timestamp. Crawl instead.
+    if (capturedAt === null) return null;
+    return { payload: cached.payload, capturedAt };
   } catch {
     // Fail soft: a missing cache means we crawl.
     return null;

@@ -600,6 +600,66 @@ describe("seo audit record invariants", () => {
     expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
   });
 
+  it("matches the target the entry redirect moved to the site's other host variant", () => {
+    // The visitor submits the www host; the site 301s to the apex, so the
+    // crawler resolved the origin to the apex and every collected page carries
+    // the apex subject URL. Comparing the submitted string against those pages
+    // finds nothing, and the run reports a fully crawled site whose one
+    // requested page was supposedly never collected.
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://www.acme.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
+  });
+
+  it("matches the target when the site redirects the apex to www", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/about",
+        origin: "https://www.acme.test",
+        host: "www.acme.test",
+        pages: [
+          page("https://www.acme.test/", {}, 0),
+          page("https://www.acme.test/about"),
+        ],
+      }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://www.acme.test/about");
+  });
+
+  it("matches the target when the entry redirect only upgraded the scheme", () => {
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "http://acme.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
+  });
+
+  it("never rebases a submitted host the entry redirect could not have reached", () => {
+    // Rebasing on the origin alone would report this crawl's /about page as the
+    // inspected target for a URL on a different site entirely.
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://other.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(false);
+    expect(report.inspectedTargetUrl).toBeNull();
+  });
+
+  it("does not let the host rebase invent a page the crawl never collected", () => {
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://www.acme.test/never-crawled" }),
+    );
+
+    expect(report.targetInspected).toBe(false);
+    expect(report.inspectedTargetUrl).toBeNull();
+  });
+
   it("does not claim a target that was never collected as inspected", () => {
     const report = buildSeoAuditReport(
       raw({ requestedUrl: "https://acme.test/never-crawled" }),
