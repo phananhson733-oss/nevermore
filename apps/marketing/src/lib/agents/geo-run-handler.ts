@@ -7,7 +7,7 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
-import { normalizeGeoText } from "./geo-canonical.ts";
+import { hasLoneSurrogate, normalizeGeoText } from "./geo-canonical.ts";
 import {
   consumeGeoDailyBudget,
   createGeoCostAccumulator,
@@ -271,7 +271,15 @@ function buildProvenance(
       ...new Set(
         [...modelsObserved]
           .map((model) => normalizeGeoText(model))
-          .filter((model) => model.length > 0 && model.length <= 100),
+          .filter(
+            (model) =>
+              model.length > 0 &&
+              model.length <= 100 &&
+              // NFC does not repair an unpaired surrogate and the fingerprint
+              // refuses to serialize one, so leaving it here voids the report
+              // at hashing time — after the calls have been billed.
+              !hasLoneSurrogate(model),
+          ),
       ),
     ].sort(),
     maxOutputTokensRequested: 4_096,

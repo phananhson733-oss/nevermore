@@ -370,6 +370,50 @@ describe("handleGeoRunRequest", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store, private");
   });
 
+  // Regression: the label is taken verbatim from the provider and the report
+  // contract accepts it only normalized, so one stray space would refuse a run
+  // that had already been billed. Found by cross-model review on 2026-08-18.
+  it("normalizes observed model labels before they reach provenance", async () => {
+    const observe = vi.fn(async () => observation({ model: "  gpt-5-mini \n" }));
+    const response = await handleGeoRunRequest(
+      post(await body()),
+      dependencies({ createProvider: () => ({ observe }) }),
+    );
+    const envelope = (await response.json()) as {
+      readonly data: {
+        readonly run: {
+          readonly provenance: { readonly modelObserved: readonly string[] };
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(envelope.data.run.provenance.modelObserved).toEqual(["gpt-5-mini"]);
+  });
+
+  // Same class as the citation strings: NFC leaves an unpaired surrogate in
+  // place and the fingerprint refuses to serialize it, so the run answered 502
+  // after the calls were billed. Found by cross-model review on 2026-08-18.
+  it("does not let an unbroken model label void the paid report", async () => {
+    const observe = vi.fn(async () =>
+      observation({ model: "gpt-5-mini\uD800" }),
+    );
+    const response = await handleGeoRunRequest(
+      post(await body()),
+      dependencies({ createProvider: () => ({ observe }) }),
+    );
+    const envelope = (await response.json()) as {
+      readonly data: {
+        readonly run: {
+          readonly provenance: { readonly modelObserved: readonly string[] };
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(envelope.data.run.provenance.modelObserved).toEqual([]);
+  });
+
   it("reports observed model labels deduped and deterministically sorted", async () => {
     let call = 0;
     const observe = vi.fn(async () => {

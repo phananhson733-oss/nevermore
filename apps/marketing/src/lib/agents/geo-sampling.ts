@@ -3,7 +3,7 @@
 // @pos    -- the only place a provider answer becomes a reportable observation
 
 import { findGeoAliasMatch, geoMentionSnippet } from "./geo-alias-match.ts";
-import { normalizeGeoText } from "./geo-canonical.ts";
+import { hasLoneSurrogate, normalizeGeoText } from "./geo-canonical.ts";
 import {
   deriveGeoMentionEligibility,
   type GeoAliasMatcherScope,
@@ -121,6 +121,12 @@ export function buildGeoExecutionPlan(
  * Null when nothing survives normalization, and null rather than a shortened
  * value when the result still will not fit: the report presents these strings
  * as complete, so a silently truncated one would make that sentence false.
+ *
+ * An unpaired surrogate is dropped for the same reason but by a different
+ * route: NFC does not repair one, and the run fingerprint refuses to serialize
+ * it, so leaving it here would void the whole report at hashing time — the
+ * identical "billed eighteen calls, rendered nothing" outcome this function
+ * exists to prevent, reached through a rarer door.
  */
 function normalizeReportText(
   value: string | null,
@@ -129,6 +135,7 @@ function normalizeReportText(
   if (value === null) return null;
   const normalized = normalizeGeoText(value);
   if (normalized.length === 0 || normalized.length > maxLength) return null;
+  if (hasLoneSurrogate(normalized)) return null;
   return normalized;
 }
 
