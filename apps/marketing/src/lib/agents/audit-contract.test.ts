@@ -10,34 +10,14 @@ import {
 import {
   isAgentAuditSuccessEnvelope,
   type AgentAuditSuccessEnvelope,
+  AGENT_AUDIT_RECORD_CATEGORIES,
 } from "./audit-contract.ts";
 
-const RECORD_SPECS = [
-  ["robots_resource", "crawl"],
-  ["sitemap_resource", "crawl"],
-  ["non_2xx_final_status", "crawl"],
-  ["redirect_chain", "crawl"],
-  ["http_url", "crawl"],
-  ["noindex_directive", "indexability"],
-  ["canonical_missing", "indexability"],
-  ["canonical_differs", "indexability"],
-  ["title_missing", "metadata"],
-  ["title_duplicate", "metadata"],
-  ["meta_description_missing", "metadata"],
-  ["meta_description_duplicate", "metadata"],
-  ["h1_missing", "structure"],
-  ["multiple_h1", "structure"],
-  ["sitemap_page_without_observed_inlink", "links"],
-  ["internal_target_http_error", "links"],
-  ["json_ld_parse_error", "structured_data"],
-  ["page_outbound_broken_link", "links"],
-  ["page_not_in_sitemap", "crawl"],
-  ["title_length_outside_range", "metadata"],
-  ["meta_description_length_outside_range", "metadata"],
-  ["page_without_outbound_internal_link", "links"],
-  ["click_depth_beyond_reviewed_limit", "links"],
-  ["json_ld_missing", "structured_data"],
-] as const;
+// Derived from the producer's ledger, not a third hand-written copy of it. The
+// copy that used to live here is why a detector could land in the crawl and the
+// guard in this very file could start refusing real payloads with these tests
+// green.
+const RECORD_SPECS = Object.entries(AGENT_AUDIT_RECORD_CATEGORIES);
 
 const success = {
   data: {
@@ -47,7 +27,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v6",
+        schemaVersion: "seo_audit.sitewide.v5",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -111,7 +91,9 @@ describe("isAgentAuditSuccessEnvelope", () => {
       };
 
       expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
-      expect(envelope.data.result.records).toHaveLength(24);
+      // Pinned as a literal so adding a detector shows up here as a number
+      // someone has to change on purpose.
+      expect(envelope.data.result.records).toHaveLength(29);
       expect("pages" in envelope.data.result).toBe(false);
     },
   );
@@ -465,10 +447,10 @@ describe("isAgentAuditSuccessEnvelope", () => {
     const malformed = structuredClone(success) as unknown as {
       data: { run: { source: { schemaVersion: string } } };
     };
-    // The previous schema, which is what a cache entry written before the bump
-    // actually holds. A version this reader was not built for must be refused,
-    // not read on the assumption that the fields it knows are still there.
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
+    // An older schema, which is what a cache entry written before a bump holds.
+    // A version this reader was not built for must be refused, not read on the
+    // assumption that the fields it knows are still there.
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v4";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

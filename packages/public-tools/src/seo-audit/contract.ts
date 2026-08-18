@@ -65,7 +65,10 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
       "structure",
       "links",
       "structured_data",
-      "search_performance",
+      // `search_performance` is deliberately absent. A crawl payload is cached
+      // by host and shared across visitors, while search performance belongs to
+      // one visitor's authorized property. Refusing the category here is what
+      // stops such a record from ever reaching a shared cache row.
     ].includes(value.category as string) ||
     !["observed", "not_observed", "unverified"].includes(
       value.state as string,
@@ -244,7 +247,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v6" &&
+    run.schemaVersion === "seo_audit.sitewide.v5" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

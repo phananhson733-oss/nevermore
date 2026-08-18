@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v6 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v5 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -27,45 +27,34 @@ import {
   isSeoAuditPayload,
   isSeoAuditRecord,
 } from "@sf/public-tools/seo-audit/contract";
+import {
+  SEO_AUDIT_RECORD_CATEGORIES,
+  SEO_AUDIT_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/record-ledger";
 
 export { isCanonicalIsoTimestamp };
 
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v6" as const;
+  "seo_audit.sitewide.v5" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v6. */
-export const AGENT_AUDIT_RECORD_CATEGORIES = {
-  robots_resource: "crawl",
-  sitemap_resource: "crawl",
-  non_2xx_final_status: "crawl",
-  redirect_chain: "crawl",
-  http_url: "crawl",
-  noindex_directive: "indexability",
-  canonical_missing: "indexability",
-  canonical_differs: "indexability",
-  title_missing: "metadata",
-  title_duplicate: "metadata",
-  meta_description_missing: "metadata",
-  meta_description_duplicate: "metadata",
-  h1_missing: "structure",
-  multiple_h1: "structure",
-  sitemap_page_without_observed_inlink: "links",
-  internal_target_http_error: "links",
-  json_ld_parse_error: "structured_data",
-  page_outbound_broken_link: "links",
-  page_not_in_sitemap: "crawl",
-  title_length_outside_range: "metadata",
-  meta_description_length_outside_range: "metadata",
-  page_without_outbound_internal_link: "links",
-  click_depth_beyond_reviewed_limit: "links",
-  json_ld_missing: "structured_data",
-} as const satisfies Readonly<Record<string, SeoAuditCategory>>;
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v5. */
+/**
+ * Re-exported, not re-declared.
+ *
+ * This used to be a second hand-written copy of the producer's ledger, and the
+ * guard below refuses any upstream payload whose records differ from it at all.
+ * The tests in this app build their fixtures from the copy, so a detector added
+ * to the crawl never met the guard here: five landed, a real run published
+ * twenty-nine records against a list of twenty-four, and the Agent audit
+ * answered 502 while every unit test stayed green.
+ */
+export { SEO_AUDIT_RECORD_CATEGORIES as AGENT_AUDIT_RECORD_CATEGORIES } from "@sf/public-tools/seo-audit/record-ledger";
 
-const AGENT_AUDIT_RECORD_IDS = Object.keys(AGENT_AUDIT_RECORD_CATEGORIES);
+const AGENT_AUDIT_RECORD_IDS = SEO_AUDIT_RECORD_IDS;
 
 export interface AgentAuditSourceProvenance {
   readonly tool: "seo_audit";
@@ -188,10 +177,10 @@ function hasCompleteNeutralRecordLedger(
   const observedIds = new Set<string>();
   for (const record of records) {
     if (
-      !Object.hasOwn(AGENT_AUDIT_RECORD_CATEGORIES, record.id) ||
+      !Object.hasOwn(SEO_AUDIT_RECORD_CATEGORIES, record.id) ||
       record.category !==
-        AGENT_AUDIT_RECORD_CATEGORIES[
-          record.id as keyof typeof AGENT_AUDIT_RECORD_CATEGORIES
+        SEO_AUDIT_RECORD_CATEGORIES[
+          record.id as keyof typeof SEO_AUDIT_RECORD_CATEGORIES
         ] ||
       observedIds.has(record.id)
     ) {

@@ -3,34 +3,24 @@
 // @pos    -- fail-closed seam before dynamic record/evidence translations render
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
+import { SEO_AUDIT_RECORD_IDS } from "@sf/public-tools/seo-audit/record-ledger";
+
 import type { AgentKind } from "./agent-types";
 
-const NEUTRAL_AGENT_RECORD_IDS = new Set([
-  "robots_resource",
-  "sitemap_resource",
-  "non_2xx_final_status",
-  "redirect_chain",
-  "http_url",
-  "noindex_directive",
-  "canonical_missing",
-  "canonical_differs",
-  "title_missing",
-  "title_duplicate",
-  "meta_description_missing",
-  "meta_description_duplicate",
-  "h1_missing",
-  "multiple_h1",
-  "json_ld_parse_error",
-  "sitemap_page_without_observed_inlink",
-  "internal_target_http_error",
-  "page_outbound_broken_link",
-  "page_not_in_sitemap",
-  "title_length_outside_range",
-  "meta_description_length_outside_range",
-  "page_without_outbound_internal_link",
-  "click_depth_beyond_reviewed_limit",
-  "json_ld_missing",
-]);
+/**
+ * Derived from the producer's ledger, not a fifth hand-written copy of it.
+ *
+ * This seam fails closed on a record it does not recognise, which is correct
+ * and is what caught five new detectors reaching the UI with no message
+ * vocabulary — the results panel simply stopped rendering. What it must not
+ * also do is re-state which records exist, because then adding a detector means
+ * finding every list that names them. The vocabulary itself is guarded by
+ * agent-display-contract.test.ts, which fails if any ledger record has no title
+ * and description in both locales.
+ */
+const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set(
+  SEO_AUDIT_RECORD_IDS,
+);
 
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
   seo: NEUTRAL_AGENT_RECORD_IDS,
@@ -67,6 +57,12 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   "observed_click_depth",
   "reviewed_limit",
   "json_ld_blocks",
+  "average_response_ms",
+  "slowest_response_ms",
+  "pages_timed",
+  "average_click_depth",
+  "deepest_click_depth",
+  "pages_measured",
 ]);
 
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([

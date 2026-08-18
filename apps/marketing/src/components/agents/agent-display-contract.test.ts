@@ -3,9 +3,18 @@
 // @pos    -- unit guard preventing dynamic next-intl missing-message failures
 
 import { describe, expect, it } from "vitest";
+import {
+  SEO_AUDIT_EVIDENCE_LABELS,
+  SEO_AUDIT_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/record-ledger";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
+import enMessages from "../../i18n/messages/en.json";
+import zhMessages from "../../i18n/messages/zh.json";
 
-import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
+import {
+  AGENT_EVIDENCE_LABELS,
+  supportsAgentDisplayVocabulary,
+} from "./agent-display-contract";
 
 function data(): AgentAuditSuccessData {
   return {
@@ -15,7 +24,7 @@ function data(): AgentAuditSuccessData {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v6",
+        schemaVersion: "seo_audit.sitewide.v5",
         completedAt: "2026-08-12T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -65,6 +74,41 @@ function data(): AgentAuditSuccessData {
     },
   };
 }
+
+describe("record vocabulary", () => {
+  /**
+   * The seam above fails closed on an unrecognised record, so a detector that
+   * lands without copy does not render a broken panel — it renders no panel at
+   * all. That is safe and completely silent, which is how five detectors
+   * reached the UI and took the results view down with every unit test green.
+   * Reading the catalogues directly is the point: next-intl renders a missing
+   * key as its own dotted path rather than throwing, so asserting that a
+   * translated string "appears" would pass on the path itself.
+   */
+  it("gives every ledger record a title and description in both locales", () => {
+    const missing: string[] = [];
+    for (const locale of ["en", "zh"] as const) {
+      const catalogue = locale === "en" ? enMessages : zhMessages;
+      const records = catalogue.tools.seoAudit.records as Readonly<
+        Record<string, { title?: string; description?: string }>
+      >;
+      for (const id of SEO_AUDIT_RECORD_IDS) {
+        const entry = records[id];
+        if (!entry?.title?.trim() || !entry.description?.trim()) {
+          missing.push(`${locale}:${id}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("names every evidence label the ledger's records publish", () => {
+    const unknown = SEO_AUDIT_EVIDENCE_LABELS.filter(
+      (label) => !AGENT_EVIDENCE_LABELS.has(label),
+    );
+    expect(unknown).toEqual([]);
+  });
+});
 
 describe("Agent display vocabulary", () => {
   it("accepts the current SEO ledger vocabulary", () => {

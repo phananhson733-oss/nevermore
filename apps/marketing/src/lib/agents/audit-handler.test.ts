@@ -4,37 +4,16 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
+import { AGENT_AUDIT_RECORD_CATEGORIES } from "./audit-contract.ts";
 import {
   handleAgentAuditRequest,
   type AgentAuditHandlerDependencies,
 } from "./audit-handler.ts";
 
-const RECORD_SPECS = [
-  ["robots_resource", "crawl"],
-  ["sitemap_resource", "crawl"],
-  ["non_2xx_final_status", "crawl"],
-  ["redirect_chain", "crawl"],
-  ["http_url", "crawl"],
-  ["noindex_directive", "indexability"],
-  ["canonical_missing", "indexability"],
-  ["canonical_differs", "indexability"],
-  ["title_missing", "metadata"],
-  ["title_duplicate", "metadata"],
-  ["meta_description_missing", "metadata"],
-  ["meta_description_duplicate", "metadata"],
-  ["h1_missing", "structure"],
-  ["multiple_h1", "structure"],
-  ["sitemap_page_without_observed_inlink", "links"],
-  ["internal_target_http_error", "links"],
-  ["json_ld_parse_error", "structured_data"],
-  ["page_outbound_broken_link", "links"],
-  ["page_not_in_sitemap", "crawl"],
-  ["title_length_outside_range", "metadata"],
-  ["meta_description_length_outside_range", "metadata"],
-  ["page_without_outbound_internal_link", "links"],
-  ["click_depth_beyond_reviewed_limit", "links"],
-  ["json_ld_missing", "structured_data"],
-] as const satisfies readonly (readonly [string, SeoAuditRecord["category"]])[];
+// Derived from the producer's ledger. A fourth hand-written copy of it lived
+// here, which is part of why a detector could land in the crawl and this
+// handler could start answering 502 with every one of these tests green.
+const RECORD_SPECS = Object.entries(AGENT_AUDIT_RECORD_CATEGORIES);
 
 function record(
   id: string,
@@ -71,7 +50,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v6",
+    schemaVersion: "seo_audit.sitewide.v5",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -275,7 +254,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v6",
+            schemaVersion: "seo_audit.sitewide.v5",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -365,7 +344,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(24);
+    expect(body.data.result.records).toHaveLength(29);
   });
 
   it.each([
@@ -650,10 +629,10 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            // The previous schema: exactly what a cache entry written before
-            // the bump holds. A reader must refuse a version it was not built
-            // for rather than assume the fields it knows are still there.
-            schemaVersion: "seo_audit.sitewide.v5",
+            // An older schema: what a cache entry written before a bump holds.
+            // A reader must refuse a version it was not built for rather than
+            // assume the fields it knows are still there.
+            schemaVersion: "seo_audit.sitewide.v4",
           },
         },
       }),

@@ -3,6 +3,10 @@ import type { CrawlPageRecord } from "@sf/sources";
 import { buildSeoAuditReport } from "../seo-audit/model.ts";
 import type { SeoAuditRaw } from "../seo-audit/scan.ts";
 import { PAGE_AUDIT_GROUPS, SITE_AUDIT_GROUPS } from "./catalog.ts";
+import {
+  SEO_AUDIT_EVIDENCE_LABELS,
+  SEO_AUDIT_RECORD_IDS,
+} from "../seo-audit/record-ledger.ts";
 
 function page(url: string, depth = 1): CrawlPageRecord {
   return {
@@ -36,7 +40,16 @@ function raw(): SeoAuditRaw {
   return {
     origin: "https://acme.test",
     host: "acme.test",
-    pages: [page("https://acme.test/", 0), page("https://acme.test/about")],
+    // Varied on purpose: a clean page alone leaves most records with no
+    // observation, and it is the observation values this file has to see.
+    pages: [
+      page("https://acme.test/", 0),
+      page("https://acme.test/about"),
+      { ...page("https://acme.test/gone"), projection: { ...page("https://acme.test/gone").projection, finalStatus: 404 } },
+      { ...page("https://acme.test/down"), projection: { ...page("https://acme.test/down").projection, finalStatus: 503 } },
+      { ...page("https://acme.test/old"), projection: { ...page("https://acme.test/old").projection, redirectChain: ["https://acme.test/gone"], finalStatus: 404 } },
+      { ...page("http://acme.test/insecure"), projection: { ...page("http://acme.test/insecure").projection, fetchUrl: "http://acme.test/insecure", robotsIndexable: false, title: null, metaDescription: null, h1: [], jsonLd: { types: [], errorCount: 1 }, sitemapMember: false, canonicalTarget: "https://acme.test/" } },
+    ],
     robots: {
       fetched: true,
       groups: [{ userAgent: "*", disallow: [], allow: ["/"] }],
@@ -62,26 +75,6 @@ function raw(): SeoAuditRaw {
     },
     limitation: "Fixture crawl.",
     requestedUrl: "https://acme.test/",
-    // Present on purpose. The search-performance records exist only when a
-    // grant covered the run, so a fixture without one would let a check read a
-    // record nothing emits and still pass this file.
-    searchPerformance: {
-      property: "sc-domain:acme.test",
-      startDate: "2026-07-19",
-      endDate: "2026-08-15",
-      pages: [
-        {
-          key: "https://acme.test/",
-          clicks: 5,
-          impressions: 120,
-          position: 4.2,
-        },
-      ],
-      queries: [
-        { key: "acme", clicks: 5, impressions: 120, position: 4.2 },
-      ],
-      truncated: false,
-    },
   };
 }
 
@@ -105,12 +98,51 @@ describe("catalog / detector contract", () => {
       (group) => group.checks,
     );
 
+    // E1-E3 read records the Agent layer derives per visitor, so a crawl report
+    // does not emit them and must not: their category is refused by the payload
+    // guard precisely so one visitor's property cannot land in a shared cache row.
+    const perVisitor = new Set([
+      "page_without_search_impressions",
+      "impression_share_top_positions",
+      "impression_share_low_click_positions",
+    ]);
     const missing = checks.flatMap((check) =>
       check.evidenceRecordIds
-        .filter((id) => !emitted.has(id))
+        .filter((id) => !emitted.has(id) && !perVisitor.has(id))
         .map((id) => `${check.id} reads ${id}`),
     );
     expect(missing).toEqual([]);
+  });
+
+  it("emits exactly the record ledger every consumer pins", () => {
+    // The Agent layer validates an upstream payload against a hand-written list
+    // of record ids and refuses a payload whose ledger differs at all. Its own
+    // tests build fixtures from that list, so nothing there ever runs the real
+    // producer past it: five detectors landed and the Agent audit answered 502
+    // with every unit test green. Printing the difference both ways is what
+    // makes this catch a record added on either side.
+    const emitted = buildSeoAuditReport(raw())
+      .records.map((record) => record.id)
+      .sort();
+    expect(new Set(emitted).size).toBe(emitted.length);
+    expect(emitted).toEqual(SEO_AUDIT_RECORD_IDS.slice().sort());
+  });
+
+  it("publishes no observation label the ledger does not declare", () => {
+    // The UI fails closed on a label it cannot name, which blanks the results
+    // panel rather than showing an odd row. Declaring the labels lets that
+    // check live in the UI package without either side importing the other's
+    // internals — this half proves the declaration matches what actually runs.
+    const declared = new Set(SEO_AUDIT_EVIDENCE_LABELS);
+    const published = new Set(
+      buildSeoAuditReport(raw()).records.flatMap((record) =>
+        record.observations.flatMap((observation) =>
+          observation.values.map((entry) => entry.label),
+        ),
+      ),
+    );
+    expect([...published].filter((label) => !declared.has(label))).toEqual([]);
+    expect(published.size).toBeGreaterThan(10);
   });
 
   it("keeps the catalog the only consumer contract for a ready check", () => {

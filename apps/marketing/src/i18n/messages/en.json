@@ -1043,6 +1043,26 @@
         "json_ld_missing": {
           "title": "No JSON-LD block",
           "description": "Collected HTML pages that carried no JSON-LD structured data at all."
+        },
+        "redirect_destination_error": {
+          "title": "Redirect destination errors",
+          "description": "Collected URLs that redirected and whose destination answered 4xx or 5xx."
+        },
+        "server_error_response": {
+          "title": "Server error responses",
+          "description": "Collected pages whose final response was 5xx, counted apart from missing pages."
+        },
+        "fetch_without_direct_page": {
+          "title": "Requests that did not land on a page",
+          "description": "Collected requests that ended outside 2xx, or reached it only through a redirect."
+        },
+        "average_response_time": {
+          "title": "Average response time",
+          "description": "Mean first response across timed pages, from one uncached request per URL from one location."
+        },
+        "average_click_depth": {
+          "title": "Average click depth",
+          "description": "Mean clicks from the crawl entry point across collected HTML pages."
         }
       },
       "evidence": {
@@ -1074,7 +1094,13 @@
         "observed_outbound_internal_links": "Observed outbound internal links",
         "observed_click_depth": "Observed click depth",
         "reviewed_limit": "Reviewed limit",
-        "json_ld_blocks": "JSON-LD blocks"
+        "json_ld_blocks": "JSON-LD blocks",
+        "average_response_ms": "Average response (ms)",
+        "slowest_response_ms": "Slowest response (ms)",
+        "pages_timed": "Pages timed",
+        "average_click_depth": "Average click depth",
+        "deepest_click_depth": "Deepest click depth",
+        "pages_measured": "Pages measured"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

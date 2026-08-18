@@ -1043,6 +1043,26 @@
         "json_ld_missing": {
           "title": "无 JSON-LD 块",
           "description": "完全不含 JSON-LD 结构化数据的已采集 HTML 页面。"
+        },
+        "redirect_destination_error": {
+          "title": "跳转终点报错",
+          "description": "发生跳转、且终点返回 4xx 或 5xx 的已采集 URL。"
+        },
+        "server_error_response": {
+          "title": "服务端错误响应",
+          "description": "最终响应为 5xx 的已采集页面；与「页面不存在」分开计。"
+        },
+        "fetch_without_direct_page": {
+          "title": "未直接落到页面的请求",
+          "description": "最终状态非 2xx，或经由跳转才到达的已采集请求。"
+        },
+        "average_response_time": {
+          "title": "平均响应时间",
+          "description": "已计时页面的平均首次响应耗时；每个 URL 从单一位置发起一次无缓存请求。"
+        },
+        "average_click_depth": {
+          "title": "平均点击深度",
+          "description": "已采集 HTML 页面距抓取入口的平均点击次数。"
         }
       },
       "evidence": {
@@ -1074,7 +1094,13 @@
         "observed_outbound_internal_links": "观察到的出站内链数",
         "observed_click_depth": "观察到的点击深度",
         "reviewed_limit": "审阅上限",
-        "json_ld_blocks": "JSON-LD 块数"
+        "json_ld_blocks": "JSON-LD 块数",
+        "average_response_ms": "平均响应耗时（毫秒）",
+        "slowest_response_ms": "最慢响应耗时（毫秒）",
+        "pages_timed": "已计时页面数",
+        "average_click_depth": "平均点击深度",
+        "deepest_click_depth": "最深点击深度",
+        "pages_measured": "已测量页面数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
