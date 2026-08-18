@@ -12,6 +12,7 @@ import {
   type AgentAuditTruthState as ContractTruthState,
 } from "@sf/public-tools/agent-audit";
 
+import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import type {
   AgentAuditScope as ProfileAuditScope,
@@ -255,10 +256,7 @@ export function buildAgentAuditViewModel({
     // because the crawl payload is cached by host and these belong to one
     // visitor's verified property. The evaluator wants one list, so they are
     // joined here, at read time, and never on the way to a cache.
-    records: [
-      ...data.result.records,
-      ...(data.result.searchPerformance?.records ?? []),
-    ],
+    records: allAgentAuditRecords(data),
     targetUrl: data.result.targetUrl,
     targetInspected: data.result.targetInspected,
     inspectedTargetUrl: data.result.inspectedTargetUrl,

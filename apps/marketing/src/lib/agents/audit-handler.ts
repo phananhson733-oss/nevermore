@@ -22,8 +22,10 @@ import {
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
+import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
+  AGENT_KEYWORD_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
@@ -457,6 +459,16 @@ export async function handleAgentAuditRequest(
     searchUnavailable = true;
   }
 
+  const keywordEvidence =
+    input.value.targetQueries === null
+      ? null
+      : buildKeywordEvidence(
+          result.targetPageExtract,
+          input.value.targetQueries,
+          input.value.pageRole,
+          result.targetInspected,
+        );
+
   const projected: AgentAuditSuccessData = {
     run: {
       agent,
@@ -487,15 +499,22 @@ export async function handleAgentAuditRequest(
       records: result.records.map(projectRecord),
       // Derived here, never cached: a cache row is shared by host, so a stored
       // region would answer the next visitor with this one's queries.
-      ...(input.value.targetQueries === null
+      ...(input.value.targetQueries === null || keywordEvidence === null
         ? {}
         : {
-            keywordEvidence: buildKeywordEvidence(
-              result.targetPageExtract,
-              input.value.targetQueries,
-              input.value.pageRole,
-              result.targetInspected,
-            ),
+            keywordEvidence,
+            // The same region restated as records, so the checks about the
+            // confirmed query read evidence rather than an empty form. Derived
+            // here for the same reason the region above is: a cache row is
+            // shared by host and would answer the next visitor with this one's
+            // question.
+            keywordChecks: {
+              version: AGENT_KEYWORD_CHECKS_VERSION,
+              records: buildKeywordEvidenceRecords(
+                result.inspectedTargetUrl ?? result.targetUrl,
+                keywordEvidence,
+              ),
+            },
           }),
       // Same reason, one step further: a cache row is shared by host and these
       // numbers belong to one visitor's verified property.

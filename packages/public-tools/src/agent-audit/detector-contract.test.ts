@@ -9,6 +9,7 @@ import {
   SEO_AUDIT_RECORD_IDS,
 } from "../seo-audit/record-ledger.ts";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "../seo-audit/search-performance.ts";
+import { KEYWORD_EVIDENCE_RECORD_IDS } from "../seo-audit/keyword-evidence/records.ts";
 
 function page(url: string, depth = 1): CrawlPageRecord {
   return {
@@ -138,7 +139,10 @@ describe("catalog / detector contract", () => {
     // row. Taken from their own producer rather than re-listed here — a
     // hand-written copy of this set is what would quietly exempt the next
     // per-visitor record from the check that exists to catch it.
-    const perVisitor = new Set(SEARCH_PERFORMANCE_RECORD_IDS);
+    const perVisitor = new Set([
+      ...SEARCH_PERFORMANCE_RECORD_IDS,
+      ...KEYWORD_EVIDENCE_RECORD_IDS,
+    ]);
     const missing = checks.flatMap((check) =>
       check.evidenceRecordIds
         .filter((id) => !emitted.has(id) && !perVisitor.has(id))

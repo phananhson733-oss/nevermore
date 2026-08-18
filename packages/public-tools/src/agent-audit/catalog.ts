@@ -64,12 +64,12 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response with empty-shell content; a soft 404 is Blocker", "不是 200 空壳内容；软 404 为阻断"],
   ["2.1", "Title length", "Title 长度", "Reviewed working range 15–70 characters; Google truncates by rendered width, not character count", "已审阅工作区间 15–70 个字符；Google 按渲染宽度截断，而非字符数"],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
-  ["2.3", "Title contains target query", "Title 含目标词", "Contains the confirmed target query; otherwise Warning; 2× check weight", "包含已确认目标词；否则为警告；检查权重 2 倍"],
+  ["2.3", "Title contains the target query", "Title 含目标词", "Contains the confirmed target query as a token sequence; otherwise Warning; 2× check weight. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为警告；检查权重 2 倍。不做同义词或词形还原。"],
   ["2.4", "Meta description length", "Meta description 长度", "Reviewed working range 50–165 characters; Google truncates by rendered width, not character count", "已审阅工作区间 50–165 个字符；Google 按渲染宽度截断，而非字符数"],
   ["2.5", "Meta description uniqueness", "Meta description 唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.6", "Open Graph title, description, and image", "Open Graph 标题、描述与图片", "All three properties present; otherwise Tip", "三项属性均存在；否则为提示"],
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
-  ["3.2", "H1 contains target query or synonym", "H1 含目标词或近义词", "Contains confirmed query or reviewed synonym; otherwise Tip", "包含已确认目标词或审阅过的近义词；否则为提示"],
+  ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
   ["3.4", "H2 count", "H2 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
   ["3.5", "H3 count", "H3 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
@@ -202,6 +202,8 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "5.3": ["image_in_legacy_format"],
   "2.6": ["open_graph_incomplete"],
   "3.3": ["heading_level_skipped"],
+  "2.3": ["title_without_target_query"],
+  "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -568,6 +570,14 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   E3: l(
     "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
     "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
+  ),
+  "2.3": l(
+    "The confirmed query does not appear in this page's title as a token sequence, so the one line a searcher reads before deciding whether to click does not name what they typed. Put the page's own subject first and the brand, if any, last: a title that opens with the site name spends its most valuable characters on a word the reader already chose. Write it for the reader, not for the match — a title that names the query and promises something the page does not deliver loses the click twice, once when they bounce and again when the result stops being shown.",
+    "已确认的目标词没有以词序列的形式出现在这个页面的 title 里，也就是说，搜索者在决定是否点击之前读到的那一行，没有点出他们刚刚输入的东西。把页面自己的主题放在最前面，品牌名（如果要放）放在最后：以站点名开头的标题，把最值钱的那几个字符花在了读者本来就已经选定的词上。要为读者写，而不是为匹配写——一个点了词、却承诺了页面给不了的东西的标题，会两次失去这次点击：一次是读者跳出，一次是这条结果不再被展示。",
+  ),
+  "3.2": l(
+    "The H1 does not contain the confirmed query as a token sequence. This is a Tip rather than a Warning because the H1 is read after the click, not before it, so it changes what a reader confirms rather than whether they arrive. Make it agree with the title without repeating it word for word: the title is the promise and the H1 is the first line of keeping it. Matching is a token sequence with no synonyms and no stemming, so a heading that means the same thing in different words is reported here and is not necessarily wrong.",
+    "H1 里没有以词序列的形式包含已确认的目标词。这一项是提示而不是警告，因为 H1 是点击之后才被读到的，不是点击之前，所以它影响的是读者进来之后确认了什么，而不是他们会不会进来。让它与 title 一致，但不要逐字重复：title 是承诺，H1 是兑现承诺的第一句。匹配按词序列进行，不做同义词也不做词形还原，所以一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。",
   ),
   D4: l(
     "Group the uncovered pages by path shape before writing anything. If they share one, the template behind them renders images without an alt attribute and one edit covers the group; if they do not, the alt was skipped page by page and this is a content pass, not a code one. Write what the image conveys in the sentence it sits in, not what it depicts — the same photograph is \"the finished dashboard after setup\" on one page and \"our team in 2024\" on another. An image that carries no meaning takes alt=\"\", which this check already counts as covered.",

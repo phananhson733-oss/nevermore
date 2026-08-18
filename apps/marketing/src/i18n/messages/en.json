@@ -964,7 +964,13 @@
         "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "Only <img> tags in the static HTML. Images inserted by CSS or by script are not seen here.",
         "format_read_from_the_url_extension_only_not_from_the_response": "Format is read from the URL extension, not from the response. An image served as WebP from an extensionless URL is not counted either way.",
         "static_html_meta_tags_only": "Read from the static HTML meta tags only. Tags added by script after load are not seen.",
-        "heading_levels_read_from_static_html_in_document_order": "Heading levels are read from the static HTML in document order, counting from the page's first heading."
+        "heading_levels_read_from_static_html_in_document_order": "Heading levels are read from the static HTML in document order, counting from the page's first heading.",
+        "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against": "No target query was confirmed for this run, so there is nothing to compare the page's text against.",
+        "the_submitted_page_was_not_captured_so_its_text_could_not_be_read": "The submitted page was not captured in this crawl, so its text could not be read.",
+        "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "The page text extract was missing, so no part of the page could be compared to the query.",
+        "this_page_has_no_title_so_there_was_no_text_to_compare": "This page has no title at all, which is reported by its own check. There was no text here to compare to the query.",
+        "this_page_has_no_h1_so_there_was_no_text_to_compare": "This page has no H1 at all, which is reported by its own check. There was no text here to compare to the query.",
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "Matched as a token sequence on the confirmed query. No synonyms, no stemming, and multi-word queries must appear adjacent and in order."
       },
       "records": {
         "robots_resource": {
@@ -1130,6 +1136,14 @@
         "image_alt_coverage": {
           "title": "Image alt coverage across the site",
           "description": "Share of the collected pages that carry images and have an alt attribute on every one of them. Pages with no images are outside this denominator, so a mostly-text site cannot dilute its way past the bar. An empty alt counts as covered."
+        },
+        "title_without_target_query": {
+          "title": "Title does not contain the target query",
+          "description": "The confirmed target query does not appear in this page's title as a token sequence. Token equality, so \"chart\" is not found inside \"charter\"; no synonym or stemming set is applied."
+        },
+        "h1_without_target_query": {
+          "title": "H1 does not contain the target query",
+          "description": "The confirmed target query does not appear in this page's H1 as a token sequence. A heading that means the same thing in different words is reported here and is not necessarily wrong."
         }
       },
       "evidence": {
@@ -1199,7 +1213,10 @@
         "heading_levels_observed": "Heading levels read",
         "alt_coverage_share": "Alt coverage",
         "pages_with_images": "Pages with images",
-        "pages_with_uncovered_images": "Pages with an uncovered image"
+        "pages_with_uncovered_images": "Pages with an uncovered image",
+        "target_query": "Target query",
+        "query_tokenization": "How the query was split",
+        "slot_occurrences": "Occurrences here"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

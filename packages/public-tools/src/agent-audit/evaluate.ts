@@ -42,6 +42,10 @@ function projectRecordToTarget(
   inspectedTargetUrl: string | null,
 ): SeoAuditRecord {
   if (record.state === "unverified") return record;
+  // Already about this page and nothing else, so there is nothing to narrow.
+  // Running it through the filter below would drop a clean record's absent
+  // observation and report a page that passed as one that was never checked.
+  if (record.population === "target_page") return record;
 
   // Match on the collected page's own URL as well as the submitted one: entry
   // redirects and URL normalisation routinely make them differ, and matching on

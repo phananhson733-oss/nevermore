@@ -2,6 +2,7 @@
 // @output -- exact current message-vocabulary compatibility decision
 // @pos    -- fail-closed seam before dynamic record/evidence translations render
 
+import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   SEARCH_PERFORMANCE_LIMITATION_CODES,
@@ -13,6 +14,11 @@ import {
   SEARCH_PERFORMANCE_EVIDENCE_LABELS,
   SEARCH_PERFORMANCE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
+import {
+  KEYWORD_EVIDENCE_EVIDENCE_LABELS,
+  KEYWORD_EVIDENCE_LIMITATION_CODES,
+  KEYWORD_EVIDENCE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
 
 import type { AgentKind } from "./agent-types";
 
@@ -31,6 +37,7 @@ const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_RECORD_IDS,
   // Derived per visitor rather than crawled, and rendered by the same seam.
   ...SEARCH_PERFORMANCE_RECORD_IDS,
+  ...KEYWORD_EVIDENCE_RECORD_IDS,
 ]);
 
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
@@ -50,6 +57,7 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_EVIDENCE_LABELS,
   ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
 ]);
 
 /**
@@ -63,6 +71,7 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_LIMITATION_CODES,
   ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+  ...KEYWORD_EVIDENCE_LIMITATION_CODES,
 ]);
 
 /**
@@ -81,10 +90,7 @@ export function supportsAgentDisplayVocabulary(
   // check. Walking only `records` left the search region entirely unvalidated —
   // a vocabulary gap there would have reached a visitor rather than failing
   // closed, which is the opposite failure and the harder one to notice.
-  return [
-    ...data.result.records,
-    ...(data.result.searchPerformance?.records ?? []),
-  ].every(
+  return allAgentAuditRecords(data).every(
     (record) =>
       supportedIds.has(record.id) &&
       (record.limitation === null ||

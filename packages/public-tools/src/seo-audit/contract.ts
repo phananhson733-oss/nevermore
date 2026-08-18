@@ -62,10 +62,11 @@ const CRAWL_CATEGORIES = [
   "structure",
   "links",
   "structured_data",
-  // `search_performance` is deliberately absent. A crawl payload is cached by
-  // host and shared across visitors, while search performance belongs to one
-  // visitor's authorized property. Refusing the category here is what stops
-  // such a record from ever reaching a shared cache row.
+  // `search_performance` and `keyword_evidence` are deliberately absent. A
+  // crawl payload is cached by host and shared across visitors, while both of
+  // those belong to one visitor — an authorized property, a typed-in query.
+  // Refusing the categories here is what stops such a record from ever
+  // reaching a shared cache row.
 ] as const;
 
 export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
@@ -83,6 +84,13 @@ export function isSearchPerformanceRecord(
   value: unknown,
 ): value is SeoAuditRecord {
   return isRecordOfCategory(value, ["search_performance"]);
+}
+
+/** The same, for the region derived from one visitor's confirmed queries. */
+export function isKeywordEvidenceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["keyword_evidence"]);
 }
 
 function isRecordOfCategory(

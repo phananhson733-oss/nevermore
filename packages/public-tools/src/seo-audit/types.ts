@@ -20,7 +20,17 @@ export type SeoAuditRecordUnit = "pages" | "link_targets" | "site_resource";
 export type SeoAuditRecordPopulation =
   | "every_collected_page"
   | "conditional_subset"
-  | "site_resource";
+  | "site_resource"
+  /**
+   * The record is about the submitted page and nothing else.
+   *
+   * Needed because the page projection exists to narrow a site-wide record to
+   * one page, and a record that is already about that page has nothing to
+   * narrow: with `conditional_subset` a clean page produced no observation to
+   * match and came back "not tested", so a page that passed was indistinguish-
+   * able from one that was never checked.
+   */
+  | "target_page";
 export type SeoAuditCategory =
   | "crawl"
   | "indexability"
@@ -28,7 +38,14 @@ export type SeoAuditCategory =
   | "structure"
   | "links"
   | "structured_data"
-  | "search_performance";
+  | "search_performance"
+  /**
+   * Derived from one visitor's confirmed target query, never from the crawl.
+   * Deliberately outside CRAWL_CATEGORIES for the same reason
+   * `search_performance` is: a crawl payload is cached by host and shared, and
+   * one visitor's queries must never answer the next visitor's audit.
+   */
+  | "keyword_evidence";
 
 export type SeoAuditEvidenceValue = string | number | boolean | null;
 

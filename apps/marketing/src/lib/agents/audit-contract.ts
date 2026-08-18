@@ -26,6 +26,7 @@ import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
   isSeoAuditRecord,
+  isKeywordEvidenceRecord,
   isSearchPerformanceRecord,
 } from "@sf/public-tools/seo-audit/contract";
 import {
@@ -33,6 +34,7 @@ import {
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
+import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 
 export { isCanonicalIsoTimestamp };
 
@@ -99,6 +101,15 @@ export type AgentAuditResult = Pick<
    */
   readonly keywordEvidence?: KeywordEvidence;
   /**
+   * The same region's findings, as records the checks read.
+   *
+   * Separate from `keywordEvidence` rather than folded into it: that region is
+   * a published shape with its own version and its own readers, and adding a
+   * field to it would mean every consumer of `keyword_evidence.v1` had to be
+   * re-versioned to gain two audit records.
+   */
+  readonly keywordChecks?: AgentKeywordChecks;
+  /**
    * Present only when the visitor holds a Search Console grant covering the
    * audited host.
    *
@@ -120,6 +131,39 @@ export type AgentAuditResult = Pick<
    */
   readonly searchPerformanceUnavailable?: true;
 };
+
+/**
+ * Version of the derived keyword-check region.
+ *
+ * Freezes its own decisions — which query is judged, what a `not_applicable`
+ * slot means, and that matching is a token sequence with no synonyms — none of
+ * which the crawl version or the keyword evidence version describes.
+ */
+export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v1" as const;
+
+/** Records derived from this visitor's confirmed queries, never cached. */
+export interface AgentKeywordChecks {
+  readonly version: typeof AGENT_KEYWORD_CHECKS_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_KEYWORD_CHECKS_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isKeywordEvidenceRecord)
+  ) {
+    return false;
+  }
+  // Complete or not a region: a subset would render as a check that decided
+  // when its record was simply missing.
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = KEYWORD_EVIDENCE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
 
 /**
  * Version of the derived search region, separate from the crawl payload's.
@@ -177,6 +221,29 @@ function isAgentSearchPerformance(
       (id, index) => id === SEARCH_PERFORMANCE_RECORD_IDS.slice().sort()[index],
     )
   );
+}
+
+/**
+ * Every record one run publishes, from every region.
+ *
+ * One function because there were three copies of this join — the evaluator,
+ * the results view and the display seam each spread the regions by hand — and
+ * a region added to two of them renders records the third refuses, or worse,
+ * passes a vocabulary check the panel never applies. Adding a region here
+ * reaches all of them.
+ *
+ * The regions stay separate on the wire: the crawl payload is cached by host
+ * and shared, while these belong to one visitor. They are joined at read time
+ * and never on the way to a cache.
+ */
+export function allAgentAuditRecords(
+  data: AgentAuditSuccessData,
+): SeoAuditReport["records"] {
+  return [
+    ...data.result.records,
+    ...(data.result.searchPerformance?.records ?? []),
+    ...(data.result.keywordChecks?.records ?? []),
+  ];
 }
 
 export interface AgentAuditSuccessData {
@@ -425,6 +492,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.keywordEvidence === undefined ||
       isKeywordEvidenceShape(value.keywordEvidence)
+    ) ||
+    !(
+      value.keywordChecks === undefined ||
+      isAgentKeywordChecks(value.keywordChecks)
     ) ||
     !(
       value.searchPerformance === undefined ||

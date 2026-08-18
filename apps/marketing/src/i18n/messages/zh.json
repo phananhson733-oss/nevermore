@@ -964,7 +964,13 @@
         "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "仅统计静态 HTML 中的 <img> 标签。由 CSS 或脚本插入的图片在这里看不到。",
         "format_read_from_the_url_extension_only_not_from_the_response": "格式依据 URL 扩展名读取，不依据响应内容。以 WebP 提供、但 URL 无扩展名的图片两个方向都不计。",
         "static_html_meta_tags_only": "仅依据静态 HTML 的 meta 标签。加载后由脚本追加的标签在这里看不到。",
-        "heading_levels_read_from_static_html_in_document_order": "标题层级依据静态 HTML 按文档顺序读取，从页面的第一个标题开始计。"
+        "heading_levels_read_from_static_html_in_document_order": "标题层级依据静态 HTML 按文档顺序读取，从页面的第一个标题开始计。",
+        "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against": "本次运行没有确认任何目标词，因此没有东西可以拿来与页面文本比对。",
+        "the_submitted_page_was_not_captured_so_its_text_could_not_be_read": "提交的页面未被本次抓取采集，因此读不到它的文本。",
+        "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "页面文本提取缺失，因此页面上没有任何部分能与目标词比对。",
+        "this_page_has_no_title_so_there_was_no_text_to_compare": "这个页面根本没有 title，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
+        "this_page_has_no_h1_so_there_was_no_text_to_compare": "这个页面根本没有 H1，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "按已确认目标词的词序列匹配。不做同义词、不做词形还原，多词查询必须相邻且保持顺序。"
       },
       "records": {
         "robots_resource": {
@@ -1130,6 +1136,14 @@
         "image_alt_coverage": {
           "title": "全站图片 alt 覆盖率",
           "description": "在含图片的已采集页面中，每张图片都带 alt 属性的页面所占比例。没有图片的页面不在这个分母里，因此以文字为主的站点无法靠稀释混过这条线。空 alt 计为已覆盖。"
+        },
+        "title_without_target_query": {
+          "title": "Title 未包含目标词",
+          "description": "已确认的目标词没有以词序列的形式出现在这个页面的 title 里。按词相等匹配，所以 chart 不会在 charter 里被找到；不做同义词也不做词形还原。"
+        },
+        "h1_without_target_query": {
+          "title": "H1 未包含目标词",
+          "description": "已确认的目标词没有以词序列的形式出现在这个页面的 H1 里。一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。"
         }
       },
       "evidence": {
@@ -1199,7 +1213,10 @@
         "heading_levels_observed": "已读取标题层级数",
         "alt_coverage_share": "alt 覆盖率",
         "pages_with_images": "含图片的页面数",
-        "pages_with_uncovered_images": "存在未覆盖图片的页面数"
+        "pages_with_uncovered_images": "存在未覆盖图片的页面数",
+        "target_query": "目标词",
+        "query_tokenization": "目标词的切分方式",
+        "slot_occurrences": "此处出现次数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
