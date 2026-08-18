@@ -58,6 +58,38 @@ async function confirmed(
 }
 
 describe("confirmGeoContext", () => {
+  // Regression: this is the integration point the bare-hostname fix actually
+  // changed. The helper's own unit tests would stay green if this call site were
+  // reverted to the citation rule, which is what shipped the bug. Found by
+  // cross-model review of /qa's fix on 2026-08-18.
+  it("confirms the bare hostname the site field's placeholder shows", async () => {
+    const snapshot = await confirmed({ targetUrl: "acme.test" });
+
+    expect(snapshot.targetUrl).toBe("https://acme.test/");
+    expect(snapshot.targetHost).toBe("acme.test");
+  });
+
+  // The same call site must not widen into targets the run endpoint refuses, or
+  // the visitor gets through confirmation and eight generated questions before
+  // being told no — the delay the fix existed to remove.
+  it.each([
+    ".com",
+    "foo..bar",
+    "-foo.com",
+    "acme.\ncom",
+    "\\\\evil.com/path",
+    "example.com",
+    "service.local",
+    "127.0.0.1",
+    "0x7f000001",
+  ])("refuses %s at confirmation rather than at run time", async (typed) => {
+    const result = await confirmGeoContext({ ...INPUT, targetUrl: typed }, CLOCK);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejections).toContain("target_url_invalid");
+  });
+
   it("produces a bounded, normalized snapshot", async () => {
     const snapshot = await confirmed();
 

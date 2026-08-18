@@ -119,6 +119,55 @@ export function isNormalizedGeoCitationUrl(value: unknown): value is string {
   return typeof value === "string" && normalizeGeoCitationUrl(value) === value;
 }
 
+/** The shape a single DNS label can actually have. */
+const GEO_HOST_LABEL = /^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/u;
+
+/**
+ * Hosts a visitor cannot be asking us to measure.
+ *
+ * The same set the server's admission check refuses. Kept here as a literal
+ * rather than imported from it: that module reaches `node:net`, which cannot
+ * enter the browser bundle, and confirmation runs in the browser.
+ */
+const GEO_RESERVED_TARGET_HOSTS: ReadonlySet<string> = new Set([
+  "metadata.google.internal",
+  "example.com",
+  "example.net",
+  "example.org",
+  "test.com",
+  "test.org",
+]);
+
+/**
+ * Whether a host could be a site someone actually publishes.
+ *
+ * Deliberately mirrors what the run endpoint will accept. A host that passes
+ * here and fails there puts the visitor back where this helper started: through
+ * confirmation, through eight generated questions, and only then refused.
+ */
+function isRoutableGeoTargetHost(host: string): boolean {
+  if (host.length === 0 || host.length > 253) return false;
+  // An IPv6 literal keeps its brackets; an IPv4 one is all digits and dots by
+  // the time the parser is done with it, including the `0x7f000001` spellings.
+  if (host.startsWith("[") || /^[\d.]+$/u.test(host)) return false;
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local")
+  ) {
+    return false;
+  }
+  if (GEO_RESERVED_TARGET_HOSTS.has(host)) return false;
+  const labels = host.split(".");
+  if (labels.length < 2) return false;
+  if (!labels.every((label) => GEO_HOST_LABEL.test(label))) return false;
+  const tld = labels[labels.length - 1] ?? "";
+  // An internationalized TLD reaches here in its ASCII form, which carries
+  // `xn--` and digits by construction, so an alphabetic-only rule would refuse
+  // every `.公司` and `.中国` site while the run endpoint accepts them.
+  return /^[a-z]{2,}$/u.test(tld) || /^xn--[a-z\d-]{2,}$/u.test(tld);
+}
+
 /**
  * Normalize the site the visitor typed, which is not a citation.
  *
@@ -129,17 +178,42 @@ export function isNormalizedGeoCitationUrl(value: unknown): value is string {
  * two steps after it was entered, with the reason rendered off-screen.
  *
  * Only a missing scheme is supplied. A value that already declares one keeps it,
- * so `javascript:` and `ftp://` still fail the http/https check below rather
- * than being rewritten into something that passes.
+ * so `javascript:` and `ftp://` still fail the http/https check rather than
+ * being rewritten into something that passes.
+ *
+ * Supplying a scheme is not enough on its own, because the URL parser is
+ * forgiving in ways that turn typing mistakes into billable runs: it accepts
+ * `.com` and `foo..bar` as hosts, strips a control character out of the middle
+ * of one, and rewrites backslashes into slashes. The raw text is screened
+ * before it is parsed and the resulting host has to look like a name someone
+ * could publish.
  */
 export function normalizeGeoTargetUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
+  // Checked before the parser sees it. `acme.\ncom` would otherwise be silently
+  // recorded as `acme.com` — a target the visitor never typed — and
+  // `\\evil.com/path` would become `https://evil.com/path`. Invisible format
+  // characters are screened for the same reason and are the likelier arrival:
+  // a domain pasted out of a document carries a zero-width joiner or a word
+  // joiner, and the parser drops it without saying so. Ordinary spaces are not
+  // screened here: the parser percent-encodes one in a path or query, which is
+  // a link a visitor can legitimately paste, and a space inside the host is
+  // caught by the label check instead.
+  // eslint-disable-next-line no-control-regex -- screening control characters out is the point: the parser drops them silently and would record a target the visitor never typed.
+  if (/[\u0000-\u001f\u007f\\\p{Cf}\u034f\u180e]/u.test(trimmed)) return null;
   const candidate = /^[a-z][a-z\d+.-]*:/iu.test(trimmed)
     ? trimmed
     : `https://${trimmed}`;
-  return normalizeGeoCitationUrl(candidate);
+  const normalized = normalizeGeoCitationUrl(candidate);
+  if (normalized === null) return null;
+  // A citation may carry a port; a target may not, because the run endpoint
+  // refuses one. Accepting it here would confirm a site that cannot be run.
+  if (new URL(normalized).port !== "") return null;
+  const host = normalizeGeoHost(normalized);
+  if (host === null || !isRoutableGeoTargetHost(host)) return null;
+  return normalized;
 }
 
 /**
