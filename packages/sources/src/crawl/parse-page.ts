@@ -16,6 +16,10 @@ import type {
   CrawlJsonLdProjection,
   CrawlLinkProjection,
 } from "../observations.ts";
+import {
+  buildTermFrequencyTables,
+  type TermFrequencyTable,
+} from "./term-frequency.ts";
 import { boundChars, CRAWL_PROJECTION_LIMITS } from "./types.ts";
 import {
   parseHtmlLanguageDeclaration,
@@ -187,6 +191,13 @@ export interface ParsedOnPageFacts {
   readonly scriptBytes: number;
   readonly interactive: ParsedInteractiveFacts;
   readonly textMetrics: ParsedTextMetrics;
+  /**
+   * What the page repeats, one table per phrase length from one unit to five.
+   *
+   * Counted over the same whole body `textMetrics` measures, so the leaderboard
+   * and the length figure printed beside it share a denominator.
+   */
+  readonly termFrequencies: readonly TermFrequencyTable[];
 }
 
 // ---------------------------------------------------------------------------
@@ -897,6 +908,7 @@ function collectOnPageFacts(
     scriptBytes: collectScriptBytes(rawHtml),
     interactive: collectInteractiveFacts(markup),
     textMetrics: textMetricsOf(bodyText),
+    termFrequencies: buildTermFrequencyTables(bodyText),
   };
 }
 

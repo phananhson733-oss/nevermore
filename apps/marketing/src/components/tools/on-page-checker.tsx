@@ -21,6 +21,7 @@ import {
 import { OnPageScoreCard } from "./on-page-score-card.tsx";
 import { OnPageCheckList } from "./on-page-check-list.tsx";
 import { OnPageSerpPreview } from "./on-page-serp-preview.tsx";
+import { OnPageTermTables } from "./on-page-term-tables.tsx";
 
 import {
   appendOnPageHistory,
@@ -217,6 +218,7 @@ type RunState =
 
 export function OnPageChecker({ locale }: { readonly locale: string }) {
   const t = useTranslations("tools.onPageChecker");
+  const tTerms = useTranslations("tools.onPageChecker.terms");
   /** One account of the crawl gate, shared with the tool that owns it. */
   const tCrawl = useTranslations("tools.seoAudit.errors");
   const [url, setUrl] = useState("");
@@ -454,6 +456,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             locale: language,
             pageType: pageRole,
             focus: evidence.focus,
+            // Null when the run could not be scored, so the trend column reads
+            // "—" rather than implying this page came back a zero.
+            score:
+              score === null
+                ? null
+                : { value: score.score, grade: score.grade },
             coverage: {
               availability: coverageAvailabilityOf(result?.coverage),
               pagesInspected: countAt(result?.coverage, "pagesInspected"),
@@ -861,6 +869,21 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               </section>
             )}
 
+            {/*
+              What the page is about, before what it was asked about. The
+              keyword table below answers "is my word here"; this one answers
+              "what is here", which is the question a page that ranks for the
+              wrong thing needs asked.
+            */}
+            {run.extract !== null && (
+              <section className="grid gap-3">
+                <h3 className="text-[15px] text-text-dark-primary">
+                  {tTerms("heading")}
+                </h3>
+                <OnPageTermTables extract={run.extract} evidence={available} />
+              </section>
+            )}
+
             <h3 className="text-[15px] text-text-dark-primary">
               {t("sections.keywordHeading")}
             </h3>
@@ -1101,12 +1124,69 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                     applicable: entry.focus.applicable,
                   })}
                 </span>
+                {/*
+                  The trend, and the arithmetic that makes it one. `previous` is
+                  the same URL's last check before this one, so re-checking a
+                  different page never reads as an improvement on this one.
+                */}
+                <ScoreTrend
+                  score={entry.score ?? null}
+                  previous={previousScoreFor(history, entry)}
+                />
               </li>
             ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The last score this same URL scored before the given check.
+ *
+ * Same URL, because a list mixing pages would otherwise report the difference
+ * between two unrelated pages as a change in one of them.
+ */
+function previousScoreFor(
+  history: readonly OnPageHistoryEntry[],
+  entry: OnPageHistoryEntry,
+): number | null {
+  const earlier = history
+    .filter(
+      (candidate) =>
+        candidate.url === entry.url && candidate.createdAt < entry.createdAt,
+    )
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .at(-1);
+  return earlier?.score?.value ?? null;
+}
+
+function ScoreTrend({
+  score,
+  previous,
+}: {
+  readonly score: { readonly value: number; readonly grade: string } | null;
+  readonly previous: number | null;
+}) {
+  if (score === null) {
+    return <span className="font-mono text-text-dark-faint">—</span>;
+  }
+  const delta = previous === null ? null : score.value - previous;
+  return (
+    <span className="font-mono tabular-nums text-text-dark-primary">
+      {score.value}
+      <span className="text-text-dark-faint"> {score.grade}</span>
+      {delta !== null && delta !== 0 && (
+        <span
+          className={
+            delta > 0 ? "text-brand-success" : "text-brand-warning"
+          }
+        >
+          {` ${delta > 0 ? "+" : ""}${delta}`}
+        </span>
+      )}
+    </span>
   );
 }
 

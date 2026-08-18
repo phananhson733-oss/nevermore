@@ -200,6 +200,17 @@ export interface SeoAuditTargetResponseFacts {
   readonly internalOutlinksWithoutAnchorText: number;
 }
 
+export interface SeoAuditTermRow {
+  readonly phrase: string;
+  readonly count: number;
+}
+
+export interface SeoAuditTermTable {
+  /** Phrase length in text units: 1 through 5. */
+  readonly size: number;
+  readonly rows: readonly SeoAuditTermRow[];
+}
+
 export interface SeoAuditTargetPageExtract {
   readonly url: string;
   readonly title: string | null;
@@ -237,6 +248,17 @@ export interface SeoAuditTargetPageExtract {
     readonly units: number;
     readonly basis: TextUnitsBasis;
   } | null;
+  /**
+   * What the page repeats, one table per phrase length from one unit to five.
+   *
+   * Counted over the same body `staticBodyUnits` measures, so a row's share is
+   * that count over that total and there is only one denominator on the page.
+   * Visitor-neutral, so it travels with the cached crawl; whether a row covers
+   * anyone's target keyword is decided per request, where the queries are.
+   *
+   * Null when the crawl carried no side-car to count with.
+   */
+  readonly termFrequencies: readonly SeoAuditTermTable[] | null;
   /** True when a list field was cut to its own budget before publication. */
   readonly truncatedLists: boolean;
   /** The crawl's HTTP journey to this page. */

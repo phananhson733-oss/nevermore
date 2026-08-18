@@ -180,6 +180,7 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "openingText",
   "staticBodyWords",
   "staticBodyUnits",
+  "termFrequencies",
   "truncatedLists",
   "response",
   "declared",
@@ -336,6 +337,41 @@ function isInteractiveFacts(value: unknown): boolean {
   );
 }
 
+/**
+ * The repeated-phrase tables, bounded exactly as the builder bounds them.
+ *
+ * Five tables at most, fifteen rows each, and a phrase no longer than the
+ * builder's own cap. Everything the target extract carries is bounded, because
+ * this guard is what stands between a cached payload and a browser.
+ */
+function isTermTables(value: unknown): boolean {
+  if (value === null) return true;
+  if (!Array.isArray(value) || value.length > 5) return false;
+  return value.every((table) => {
+    if (!isObject(table) || !hasExactly(table, ["size", "rows"])) return false;
+    if (
+      typeof table.size !== "number" ||
+      !Number.isSafeInteger(table.size) ||
+      table.size < 1 ||
+      table.size > 5
+    ) {
+      return false;
+    }
+    return (
+      Array.isArray(table.rows) &&
+      table.rows.length <= 15 &&
+      table.rows.every(
+        (row) =>
+          isObject(row) &&
+          hasExactly(row, ["phrase", "count"]) &&
+          typeof row.phrase === "string" &&
+          characterLength(row.phrase) <= 120 &&
+          isNonNegativeInteger(row.count),
+      )
+    );
+  });
+}
+
 /** `text_units.v1`, as published beside the whitespace word count. */
 function isNullableTextUnits(value: unknown): boolean {
   if (value === null) return true;
@@ -415,6 +451,7 @@ export function isSeoAuditTargetPageExtract(
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
     isNullableTextUnits(value.staticBodyUnits) &&
+    isTermTables(value.termFrequencies) &&
     typeof value.truncatedLists === "boolean" &&
     isResponseFacts(value.response) &&
     (value.declared === null || isDeclaredFacts(value.declared))

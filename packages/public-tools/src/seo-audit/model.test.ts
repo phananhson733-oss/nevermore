@@ -750,6 +750,7 @@ describe("target page extract", () => {
       openingText: "Pricing opening text",
       staticBodyWords: 300,
       staticBodyUnits: null,
+      termFrequencies: null,
       truncatedLists: false,
       // The crawl's own journey to this page, always known once collected.
       response: {

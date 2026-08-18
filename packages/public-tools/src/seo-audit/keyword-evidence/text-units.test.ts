@@ -1,4 +1,4 @@
-import { parsePage } from "@sf/sources/crawl-public-preview";
+import { parsePage, unitStream } from "@sf/sources/crawl-public-preview";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -174,5 +174,11 @@ describe("the crawler's counts and this counter agree", () => {
         cjkShareFromCounts(parsed.onPage.textMetrics) - cjkShare(bodyText),
       ),
     ).toBeLessThan(1e-9);
+
+    // The term leaderboard reads phrases off an ordered version of the same
+    // stream, and its densities are divided by this total. If the two counters
+    // disagree the page shows one length and a set of percentages taken against
+    // another, with nothing on screen to say which is which.
+    expect(unitStream(bodyText)).toHaveLength(fromText.units);
   });
 });

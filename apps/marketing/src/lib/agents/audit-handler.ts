@@ -354,6 +354,16 @@ function projectTargetPageExtract(
             units: extract.staticBodyUnits.units,
             basis: extract.staticBodyUnits.basis,
           },
+    termFrequencies:
+      extract.termFrequencies === null
+        ? null
+        : extract.termFrequencies.map((table) => ({
+            size: table.size,
+            rows: table.rows.map((row) => ({
+              phrase: row.phrase,
+              count: row.count,
+            })),
+          })),
     truncatedLists: extract.truncatedLists,
     response: {
       status: extract.response.status,

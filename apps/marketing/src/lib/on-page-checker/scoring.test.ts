@@ -23,6 +23,7 @@ function extract(
     openingText: "Acme pricing starts with a free tier.",
     staticBodyWords: 1_400,
     staticBodyUnits: { units: 1_400, basis: "words" },
+    termFrequencies: null,
     truncatedLists: false,
     response: {
       status: 200,
@@ -205,6 +206,7 @@ describe("buildOnPageScore", () => {
       extract: {
         staticBodyWords: 120,
         staticBodyUnits: { units: 120, basis: "words" },
+        termFrequencies: null,
       },
     });
 
@@ -217,6 +219,7 @@ describe("buildOnPageScore", () => {
       extract: {
         staticBodyWords: 90,
         staticBodyUnits: { units: 90, basis: "words" },
+        termFrequencies: null,
       },
       evidence: evidence({ covered: 0 }),
     });
@@ -240,6 +243,7 @@ describe("buildOnPageScore", () => {
         subHeadings: [],
         staticBodyWords: 500,
         staticBodyUnits: { units: 500, basis: "words" },
+        termFrequencies: null,
         declared: null,
         // Deliberately still indexable and still 200: those are their own
         // ceilings now, and this case is about a ceiling that does NOT bite.
@@ -433,6 +437,7 @@ describe("verdicts a weighted sum cannot express", () => {
       extract: {
         staticBodyWords: null,
         staticBodyUnits: null,
+        termFrequencies: null,
         declared: { ...extract().declared!, visibleTextBytes: 300 },
       },
     });
@@ -447,6 +452,7 @@ describe("verdicts a weighted sum cannot express", () => {
       extract: {
         staticBodyWords: 50,
         staticBodyUnits: { units: 50, basis: "words" },
+        termFrequencies: null,
       },
     });
 
@@ -563,6 +569,7 @@ describe("what the sheet can now say", () => {
       extract: {
         staticBodyWords: null,
         staticBodyUnits: { units: 90, basis: "cjk_chars" },
+        termFrequencies: null,
       },
     });
     expect(thin.caps.map((cap) => cap.reason)).toContain("body_words");
@@ -572,6 +579,7 @@ describe("what the sheet can now say", () => {
       extract: {
         staticBodyWords: null,
         staticBodyUnits: { units: 2_000, basis: "cjk_chars" },
+        termFrequencies: null,
       },
     });
     expect(full.caps).toEqual([]);

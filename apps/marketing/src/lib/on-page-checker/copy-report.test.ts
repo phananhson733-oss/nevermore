@@ -21,6 +21,7 @@ const extract: SeoAuditTargetPageExtract = {
   openingText: "Every plan includes the full pricing calculator.",
   staticBodyWords: 800,
   staticBodyUnits: { units: 800, basis: "words" },
+  termFrequencies: null,
   truncatedLists: false,
   response: {
     status: 200,

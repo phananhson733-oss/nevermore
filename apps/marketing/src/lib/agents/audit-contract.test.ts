@@ -314,6 +314,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       openingText: "A birth chart maps the sky at a moment in time.",
       staticBodyWords: 900,
       staticBodyUnits: null,
+      termFrequencies: null,
       truncatedLists: false,
           response: {
             status: 200,

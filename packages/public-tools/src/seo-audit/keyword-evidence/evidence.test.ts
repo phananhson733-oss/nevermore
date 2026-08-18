@@ -22,6 +22,7 @@ const extract: SeoAuditTargetPageExtract = {
     "A birth chart is a map of the sky at your moment of birth. This astrology guide explains how to read it.",
   staticBodyWords: 1631,
   staticBodyUnits: { units: 1631, basis: "words" as const },
+  termFrequencies: null,
   truncatedLists: false,
   response: {
     status: 200,
@@ -539,6 +540,7 @@ describe("buildKeywordEvidence — density is counted over the text it names", (
       // Withheld for CJK, and still not the denominator when it is present.
       staticBodyWords: null,
       staticBodyUnits: null,
+      termFrequencies: null,
       truncatedLists: false,
       response: {
         status: 200,

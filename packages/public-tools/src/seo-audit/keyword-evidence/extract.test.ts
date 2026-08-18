@@ -226,6 +226,9 @@ describe("buildTargetPageExtract on-page facts", () => {
       iframes: 0,
     },
     textMetrics: { cjkChars: 0, nonCjkWords: 1_800, denseChars: 9_000 },
+    termFrequencies: [
+      { size: 1, rows: [{ phrase: "astrology", count: 42 }] },
+    ],
   } as const;
 
   it("reports what the page declared", () => {
@@ -234,7 +237,7 @@ describe("buildTargetPageExtract on-page facts", () => {
     // `textMetrics` is deliberately not among them: it is how the body was
     // measured, not something the markup declared, and it leaves through
     // `staticBodyUnits` instead.
-    const { textMetrics: _measured, ...declared } = onPage;
+    const { textMetrics: _measured, termFrequencies: _terms, ...declared } = onPage;
     expect(extract.declared).toEqual(declared);
   });
 

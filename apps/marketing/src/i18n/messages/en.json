@@ -2480,6 +2480,18 @@
         "checksHeading": "Every check",
         "previewHeading": "How it looks elsewhere",
         "keywordHeading": "Where the keywords land"
+      },
+      "terms": {
+        "heading": "Whole-page term frequency",
+        "sizeLabel": "{size} words",
+        "phrase": "Phrase",
+        "count": "Occurrences",
+        "frequencyDensity": "Frequency density",
+        "occupancyDensity": "Occupancy density",
+        "basis": "Divided by the {total} text units in this page's body — one per CJK character, and whitespace-separated runs for everything else. Frequency density is occurrences over that total; occupancy density multiplies by the phrase length, so phrases of different lengths can be compared.",
+        "legend": "Green means the row contains one of your target queries in full; amber means it shares part of one.",
+        "stopWords": "The one-word table leaves out function words like “the” and “and”. Phrase tables keep them — “the astrology of” is how people actually write.",
+        "unavailable": "This crawl did not capture body text, so there is no term leaderboard."
       }
     }
   },

@@ -2480,6 +2480,18 @@
         "checksHeading": "逐项结论",
         "previewHeading": "它在别处长什么样",
         "keywordHeading": "关键词落点"
+      },
+      "terms": {
+        "heading": "全页词频与密度",
+        "sizeLabel": "{size} 词",
+        "phrase": "短语",
+        "count": "出现次数",
+        "frequencyDensity": "词频密度",
+        "occupancyDensity": "占位密度",
+        "basis": "分母是这一页正文的 {total} 个计数单位——中日韩字符一个字算一个，其余按空格切分。词频密度 = 次数 ÷ 总数；占位密度 = 次数 × 短语长度 ÷ 总数，用来比较长短不同的短语。",
+        "legend": "绿色表示这一行完整包含了你提交的某个目标词，黄色表示只共用了其中一部分。",
+        "stopWords": "单个词的榜单里去掉了「的、是、the、and」这类功能词，短语榜单不去——「the astrology of」这种写法本身就是真实的表达。",
+        "unavailable": "这次采集没有取到正文，因此没有词频榜。"
       }
     }
   },

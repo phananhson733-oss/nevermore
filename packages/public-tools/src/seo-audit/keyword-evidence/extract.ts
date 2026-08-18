@@ -211,6 +211,16 @@ export function buildTargetPageExtract(
     staticBodyWords: wordCountIsMeaningful ? projection.wordCount : null,
     staticBodyUnits:
       onPage === undefined ? null : textUnitsFromCounts(onPage.textMetrics),
+    termFrequencies:
+      onPage === undefined
+        ? null
+        : onPage.termFrequencies.map((table) => ({
+            size: table.size,
+            rows: table.rows.map((row) => ({
+              phrase: row.phrase,
+              count: row.count,
+            })),
+          })),
     truncatedLists: h1.truncated || (subHeadings?.truncated ?? false),
     response: responseFactsOf(projection),
     declared: onPage === undefined ? null : declaredFactsOf(onPage),

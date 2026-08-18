@@ -159,6 +159,7 @@ function successWithExtract(
             openingText: "A birth chart maps the sky at a moment in time.",
             staticBodyWords: 900,
             staticBodyUnits: null,
+            termFrequencies: null,
             truncatedLists: false,
             response: {
               status: 200,
@@ -938,6 +939,7 @@ describe("handleAgentAuditRequest", () => {
                   openingText: null,
                   staticBodyWords: null,
                   staticBodyUnits: null,
+                  termFrequencies: null,
                   truncatedLists: false,
                   rawHtml: "<html>everything the crawler held</html>",
                 },
@@ -977,6 +979,7 @@ describe("handleAgentAuditRequest", () => {
                   openingText: null,
                   staticBodyWords: null,
                   staticBodyUnits: null,
+                  termFrequencies: null,
                   truncatedLists: false,
                 },
               },
