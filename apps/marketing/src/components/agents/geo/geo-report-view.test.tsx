@@ -248,11 +248,40 @@ describe("GeoReportView", () => {
     }
   });
 
-  it("labels a non-target citation as ownership unknown", async () => {
+  it("labels only the citations that are the customer's own", async () => {
+    // Ownership can only be "target" or "unknown" and source type only
+    // "owned_page" or "unknown", so labelling the unknown case put the same two
+    // grey chips on every third-party row — the first thing the eye hit, and
+    // never a fact about the row. Found by reading the first real report,
+    // 2026-08-18.
+    render(await buildReport());
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("Your site");
+    expect(text).toContain("Your page");
+    expect(text).not.toContain("Ownership unknown");
+    expect(text).not.toContain("Source type unknown");
+    // The third-party citation is still shown in full, just unlabelled.
+    expect(text).toContain("https://rival.test/overview");
+    expect(text).toContain("Rival overview");
+  });
+
+  it("does not print an annotation that only restates its own link", async () => {
+    // The provider's annotation is normally the markdown link itself, so every
+    // row showed the same address twice.
     render(await buildReport());
 
-    expect(host.textContent).toContain("Ownership unknown");
-    expect(host.textContent).toContain("Your site");
+    expect(host.textContent).not.toContain("Answer annotation");
+  });
+
+  it("puts the probe verdict on the question, not on one sample", async () => {
+    // It is derived from every sample of the question at once. Rendered in the
+    // per-sample row it sat beside "Searched" and read as a contradiction.
+    const text =
+      (render(await buildReport({ searched: false })), host.textContent) ?? "";
+    const questionLine = text.slice(0, text.indexOf("Sample 1"));
+
+    expect(questionLine).toContain("Never searched");
   });
 
   it("keeps retrieval and natural-demand denominators apart", async () => {
@@ -316,8 +345,9 @@ describe("GeoReportView", () => {
 
     const probe = report.questions[0]!;
     expect(probe.counts.citationEvaluableSamples).toBe(0);
+    // Named, because this line sits directly above everyone else's citations.
     expect(host.textContent).toContain(
-      "Cited in 0 of 0 citation-evaluable samples",
+      "acme.test cited in 0 of 0 citation-evaluable samples",
     );
   });
 
