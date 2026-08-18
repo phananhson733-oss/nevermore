@@ -10,6 +10,7 @@ import { useTranslations } from "next-intl";
 import {
   buildGeoActionHandoff,
   serializeGeoActionHandoff,
+  serializeGeoActionHandoffMarkdown,
 } from "../../../lib/agents/geo-action-handoff";
 import {
   deriveGeoActionPlan,
@@ -38,7 +39,23 @@ export function GeoActionPanel({
     [context.targetUrl, report],
   );
   const [selected, setSelected] = useState<readonly string[]>([]);
-  const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+  /**
+   * Query id to the question a visitor actually confirmed.
+   *
+   * Bounded on purpose: a candidate merged from every question would otherwise
+   * print the whole cohort into one label and stop being readable.
+   */
+  const questionTextFor = useMemo(() => {
+    const byId = new Map(
+      report.questions.map((question) => [question.queryId, question.text]),
+    );
+    return (queryIds: readonly string[]): readonly string[] =>
+      queryIds
+        .map((id) => byId.get(id))
+        .filter((text): text is string => text !== undefined)
+        .slice(0, 3);
+  }, [report.questions]);
+  const [copied, setCopied] = useState<"idle" | "done" | "markdown" | "failed">("idle");
   /**
    * The packet text, kept only when the clipboard refused it.
    *
@@ -78,6 +95,24 @@ export function GeoActionPanel({
     () => (built.ok ? serializeGeoActionHandoff(built.packet) : null),
     [built],
   );
+  // The JSON is for an agent. A reader who is not going to paste it anywhere
+  // left this screen with nothing, which is the whole complaint this answers.
+  const markdownText = useMemo(
+    () => (built.ok ? serializeGeoActionHandoffMarkdown(built.packet) : null),
+    [built],
+  );
+
+  const copyMarkdown = useCallback(async () => {
+    if (markdownText === null) return;
+    try {
+      await navigator.clipboard.writeText(markdownText);
+      setCopied("markdown");
+      setFallback(null);
+    } catch {
+      setCopied("failed");
+      setFallback(markdownText);
+    }
+  }, [markdownText]);
 
   const copy = useCallback(async () => {
     if (packetText === null) return;
@@ -121,8 +156,31 @@ export function GeoActionPanel({
                 className="grid gap-0.5"
                 htmlFor={`geo-action-${candidate.actionId}`}
               >
-                <span className="text-[12.5px] leading-[1.5] text-text-dark-primary">
-                  {t(`assetTypes.${candidate.assetType}`)}
+                <span className="flex flex-wrap items-center gap-1.5 text-[12.5px] leading-[1.5] text-text-dark-primary">
+                  {/*
+                    The kind leads, because "do not" and "do" read identically
+                    once they are both a checkbox with a noun beside it, and a
+                    reader scanning five rows acts on the first one either way.
+                  */}
+                  <span
+                    className={`inline-flex items-center rounded-row border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.06em] uppercase ${
+                      candidate.kind === "avoid"
+                        ? "border-brand-accent-2/50 text-brand-accent-2"
+                        : candidate.kind === "external_data"
+                          ? "border-brand-border-dashed text-text-dark-tertiary"
+                          : "border-brand-accent/50 text-brand-accent-text"
+                    }`}
+                  >
+                    {t(`actionKinds.${candidate.kind}`)}
+                  </span>
+                  {/*
+                    An avoid is not a proposal to build an asset, so naming one
+                    made it read as the same row as the inventory check with a
+                    different chip. Its own sentence is the label.
+                  */}
+                  {candidate.kind === "avoid"
+                    ? t(`actionReasons.${candidate.reason}`)
+                    : t(`assetTypes.${candidate.assetType}`)}
                 </span>
                 <span className="text-[11.5px] leading-[1.5] text-text-dark-secondary">
                   {candidate.reasonCounts === null
@@ -132,6 +190,18 @@ export function GeoActionPanel({
                         evaluable: candidate.reasonCounts.evaluable,
                       })}
                 </span>
+                {/*
+                  Named questions, not ids. "Observed in 0 of 13" is only
+                  actionable once the reader knows which thirteen, and the
+                  report already has the text a few sections up.
+                */}
+                {questionTextFor(candidate.queryIds).length > 0 && (
+                  <span className="text-[11px] leading-[1.5] text-text-dark-tertiary">
+                    {t("actionBasis.questions", {
+                      questions: questionTextFor(candidate.queryIds).join(" · "),
+                    })}
+                  </span>
+                )}
                 <span className="font-mono text-[10.5px] text-text-dark-tertiary">
                   {t("actions.requiresReview")}
                 </span>
@@ -149,6 +219,9 @@ export function GeoActionPanel({
           <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
             {t("actions.previewHint")}
           </p>
+          <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+            {t("handoff.markdownNote")}
+          </p>
           <pre className="mt-2 max-h-72 overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[10.5px] leading-[1.5] text-text-dark-secondary">
             {packetText}
           </pre>
@@ -162,9 +235,23 @@ export function GeoActionPanel({
             >
               {t("actions.copy")}
             </button>
+            <button
+              type="button"
+              className={BUTTON_CLASS}
+              onClick={() => {
+                void copyMarkdown();
+              }}
+            >
+              {t("handoff.copyMarkdown")}
+            </button>
             {copied === "done" && (
               <span className="text-[11.5px] text-brand-accent-text">
                 {t("actions.copied")}
+              </span>
+            )}
+            {copied === "markdown" && (
+              <span className="text-[11.5px] text-brand-accent-text">
+                {t("handoff.copiedMarkdown")}
               </span>
             )}
             {copied === "failed" && (

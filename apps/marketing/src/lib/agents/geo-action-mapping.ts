@@ -8,6 +8,7 @@ import type {
   GeoQuestionObservationV3,
   GeoReportDataV3,
 } from "./geo-report-contract.ts";
+import { isGeoSampleCitationEvaluable } from "./geo-report-derive.ts";
 
 /**
  * Why the reason is an enum and not a sentence.
@@ -23,13 +24,39 @@ export type GeoActionReason =
   | "target_not_observed_in_samples"
   | "target_observed_in_minority_of_samples"
   | "citation_source_pattern_observed"
+  | "avoid_new_page_as_first_step"
   | "needs_page_inventory"
   | "needs_more_evidence"
   | "existing_page_fit_confirmed";
 
+/**
+ * What kind of work a candidate is, because "don't" is also an answer.
+ *
+ * An evidence tool that can only ever say "build this" spends the reader's week
+ * on whichever gap it happened to rank first. `avoid` earns its place beside
+ * `do`: the run can establish that a page is not the observed pattern without
+ * establishing what is, and saying so is the more useful half of that.
+ * `external_data` marks the things this run cannot see and the reader can —
+ * their own pages, their own analytics — so a lookup is not mistaken for a build.
+ */
+export type GeoActionKind = "do" | "external_data" | "avoid";
+
+/** One kind per reason, so the label can never disagree with the evidence. */
+const REASON_KIND: Readonly<Record<GeoActionReason, GeoActionKind>> = {
+  needs_page_inventory: "external_data",
+  needs_more_evidence: "external_data",
+  avoid_new_page_as_first_step: "avoid",
+  target_not_observed_in_samples: "do",
+  target_observed_in_minority_of_samples: "do",
+  citation_source_pattern_observed: "do",
+  existing_page_fit_confirmed: "do",
+};
+
 export interface GeoActionCandidateV1 {
   readonly actionId: string;
   readonly assetType: GeoAssetType;
+  /** Derived from the reason, never chosen separately. */
+  readonly kind: GeoActionKind;
   /** A stable key the UI renders through fixed copy; never a finished sentence. */
   readonly title: GeoActionReason;
   readonly reason: GeoActionReason;
@@ -47,9 +74,23 @@ export interface GeoActionCandidateV1 {
   readonly requiresHumanReview: true;
 }
 
-/** The mode travels only inside the mapper, so merges stay within one denominator. */
-interface GeoActionCandidateWithModeV1 extends GeoActionCandidateV1 {
+/**
+ * The mode travels only inside the mapper, so merges stay within one denominator.
+ *
+ * `kind` is deliberately absent: it is a pure function of the reason, and
+ * writing it at each of the four construction sites would be four chances for a
+ * label to drift away from the evidence it names. It is stamped once, at the end.
+ */
+interface GeoActionCandidateWithModeV1
+  extends Omit<GeoActionCandidateV1, "kind"> {
   readonly mode: GeoQuestionObservationV3["mode"];
+}
+
+/** Applied once, so the label can only ever be the reason's own. */
+function withKind(
+  candidate: Omit<GeoActionCandidateV1, "kind">,
+): GeoActionCandidateV1 {
+  return { ...candidate, kind: REASON_KIND[candidate.reason] };
 }
 
 export interface GeoActionPlanV1 {
@@ -89,11 +130,15 @@ const SLOT_ASSET: Readonly<Record<GeoQuerySlot, GeoAssetType>> = {
  */
 const REASON_RANK: Readonly<Record<GeoActionReason, number>> = {
   needs_page_inventory: 0,
-  target_not_observed_in_samples: 1,
-  citation_source_pattern_observed: 2,
-  target_observed_in_minority_of_samples: 3,
-  existing_page_fit_confirmed: 4,
-  needs_more_evidence: 5,
+  // Directly after the inventory check and before anything that proposes
+  // building: both are cheap, and both exist to stop a week being spent on the
+  // first gap that happened to rank highest.
+  avoid_new_page_as_first_step: 1,
+  target_not_observed_in_samples: 2,
+  citation_source_pattern_observed: 3,
+  target_observed_in_minority_of_samples: 4,
+  existing_page_fit_confirmed: 5,
+  needs_more_evidence: 6,
 };
 
 function sampleIdsOf(question: GeoQuestionObservationV3): readonly string[] {
@@ -208,7 +253,7 @@ function candidateFor(
  */
 function mergeByAsset(
   candidates: readonly GeoActionCandidateWithModeV1[],
-): readonly GeoActionCandidateV1[] {
+): readonly Omit<GeoActionCandidateV1, "kind">[] {
   const byAsset = new Map<string, GeoActionCandidateWithModeV1>();
   for (const candidate of candidates) {
     // Keyed by asset AND mode. Merging a three-sample retrieval probe with a
@@ -236,14 +281,78 @@ function mergeByAsset(
           ? (winner.reasonCounts ?? null)
           : {
               observed:
-                existing.reasonCounts.observed + candidate.reasonCounts.observed,
+                existing.reasonCounts.observed +
+                candidate.reasonCounts.observed,
               evaluable:
                 existing.reasonCounts.evaluable +
                 candidate.reasonCounts.evaluable,
             },
     });
   }
-  return [...byAsset.values()].map(({ mode: _mode, ...candidate }) => candidate);
+  return [...byAsset.values()].map(
+    ({ mode: _mode, ...candidate }) => candidate,
+  );
+}
+
+/**
+ * The one thing this run can say not to do.
+ *
+ * Measured by recurrence, not by variety. Counting distinct hosts made a single
+ * sparse answer that happened to link two pages outweigh eighteen answers that
+ * all reached for the same one — the strongest source pattern a run can show
+ * would have been withheld while the weakest fired. What matters is how many of
+ * the countable answers went to somebody else, so that is what is counted and
+ * what is printed beside it.
+ *
+ * Established only when all of these hold: the customer's host was cited in none
+ * of the countable answers, and at least two of them cited someone else. That
+ * says a new page is not the pattern these answers draw from. It does not say
+ * what is, and this candidate does not pretend to.
+ *
+ * Attributed only to the questions that actually produced those citations. An
+ * action that claimed every question in the report would put unrelated and
+ * unevaluable questions in its own basis line.
+ */
+function avoidNewPageFirst(
+  report: GeoReportDataV3,
+): Omit<GeoActionCandidateV1, "kind"> | null {
+  let evaluable = 0;
+  let othersCited = 0;
+  const fromQueries: string[] = [];
+
+  for (const question of report.questions) {
+    let contributed = false;
+    for (const sample of question.samples) {
+      if (!isGeoSampleCitationEvaluable(sample, question.mode)) continue;
+      evaluable += 1;
+      if (sample.citationStatus === "observed_target") return null;
+      if (sample.citationStatus === "observed_others_only") {
+        othersCited += 1;
+        contributed = true;
+      }
+    }
+    if (contributed) fromQueries.push(question.queryId);
+  }
+
+  if (evaluable === 0 || othersCited < 2) return null;
+
+  return {
+    actionId: "act-avoid-new-page-first",
+    assetType: "existing_page_enhancement",
+    title: "avoid_new_page_as_first_step",
+    reason: "avoid_new_page_as_first_step",
+    // The same sentence every other candidate prints: how many of the countable
+    // answers, out of how many. A host count rendered through that sentence
+    // would assert a sample-level fact nothing measured.
+    reasonCounts: { observed: othersCited, evaluable },
+    queryIds: fromQueries,
+    sampleIds: [],
+    evidenceIds: [],
+    targetUrl: null,
+    unknowns: ["source_pattern_not_explained"],
+    limitations: ["observed_sources_only"],
+    requiresHumanReview: true,
+  };
 }
 
 /**
@@ -293,7 +402,7 @@ export function deriveGeoActionPlan(
   // URL is the sole page identity known with certainty, so the first candidate
   // is always "look at what already exists" rather than a recommendation to
   // enhance a page nobody has inventoried.
-  const inventory: GeoActionCandidateV1 = {
+  const inventory: Omit<GeoActionCandidateV1, "kind"> = {
     actionId: "act-page-inventory",
     assetType: "existing_page_enhancement",
     title: "needs_page_inventory",
@@ -314,14 +423,15 @@ export function deriveGeoActionPlan(
   const merged = mergeByAsset(derived).filter(
     (candidate) => candidate.assetType !== "existing_page_enhancement",
   );
-  const ordered = [inventory, ...merged].sort(
+  const avoid = avoidNewPageFirst(report);
+  const ordered = [inventory, ...(avoid === null ? [] : [avoid]), ...merged].sort(
     (a, b) =>
       REASON_RANK[a.reason] - REASON_RANK[b.reason] ||
       a.actionId.localeCompare(b.actionId),
   );
 
   return {
-    candidates: ordered.slice(0, GEO_MAX_ACTION_CANDIDATES),
+    candidates: ordered.slice(0, GEO_MAX_ACTION_CANDIDATES).map(withKind),
     zeroActionReason: null,
   };
 }
