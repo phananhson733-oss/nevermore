@@ -531,6 +531,7 @@ describe("checkGeoPacketBounds", () => {
       selectedActions: Array.from({ length: 6 }, (_unused, index) => ({
         actionId: `act-${index}`,
         assetType: "blog_guide" as const,
+        kind: "external_data" as const,
         reason: "needs_more_evidence" as const,
         reasonCounts: null,
         queryIds: [],
