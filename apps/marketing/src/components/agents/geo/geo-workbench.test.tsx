@@ -255,4 +255,41 @@ describe("GeoWorkbench", () => {
     expect(calls).toContain("/api/auth/session");
     expect(calls).not.toContain("/api/agents/geo/run");
   });
+
+  it("moves the visitor to the reason when a run is refused", async () => {
+    // Regression: the banner renders at the top of the workbench, the run
+    // button sits at the bottom of the eight-question list, and a refusal sends
+    // the visitor back to that list. Before this the banner appeared hundreds of
+    // pixels above the viewport, so a refused run — including one that had
+    // already been billed — was indistinguishable from a button that did
+    // nothing. Found by /qa on 2026-08-18.
+    const scrollIntoView = vi.fn();
+    // jsdom implements no scrolling at all, so this is defined rather than spied.
+    (
+      Element.prototype as unknown as { scrollIntoView: unknown }
+    ).scrollIntoView = scrollIntoView;
+
+    await confirmContext();
+    const runFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+    runFetch.mockImplementation(async (input: unknown) =>
+      String(input) === "/api/auth/session"
+        ? new Response(JSON.stringify({ signedIn: true }), { status: 200 })
+        : new Response(
+            JSON.stringify({ error: { code: "geo_client_outdated" } }),
+            { status: 409 },
+          ),
+    );
+
+    await act(async () => {
+      button("Run 18 provider calls")!.click();
+    });
+    await flush();
+
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe(en.agents.geo.errors.geo_client_outdated);
+    expect(scrollIntoView).toHaveBeenCalled();
+    // Focus lands on the container that holds the banner, not on whatever the
+    // question list left focused.
+    expect(document.activeElement).toBe(alert?.parentElement);
+  });
 });
