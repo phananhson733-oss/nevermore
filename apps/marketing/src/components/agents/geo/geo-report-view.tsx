@@ -19,6 +19,10 @@ import type {
   GeoSearchCounts,
 } from "../../../lib/agents/geo-report-derive";
 import type { GeoContextSnapshotV1 } from "../../../lib/agents/geo-context";
+import {
+  deriveGeoSourceLandscape,
+  type GeoSourceLandscapeV1,
+} from "../../../lib/agents/geo-source-landscape";
 import { GeoActionPanel } from "./geo-action-panel";
 
 function formatDate(value: string, locale: string): string {
@@ -298,6 +302,112 @@ function SampleRow({ sample }: { readonly sample: GeoSampleV3 }) {
   );
 }
 
+/**
+ * The aggregate the per-question list cannot show.
+ *
+ * Everything here is a count of records already rendered above it, so the two
+ * views can be read side by side without a second denominator to reconcile.
+ * Deliberately no classification of what any host *is* — the sampler refuses to
+ * guess that from a URL, and a table that guessed it would put a made-up label
+ * on the most-read line of the report.
+ */
+function SourceLandscape({
+  landscape,
+  targetHost,
+}: {
+  readonly landscape: GeoSourceLandscapeV1;
+  readonly targetHost: string;
+}) {
+  const t = useTranslations("agents.geo");
+
+  return (
+    <div>
+      <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        {t("sources.title")}
+      </h3>
+      <p className="mt-1 text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("sources.note")}
+      </p>
+
+      {landscape.sources.length === 0 ? (
+        <p className="mt-2 text-[12.5px] text-text-dark-secondary">
+          {t("sources.empty")}
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 font-mono text-[11px] text-text-dark-secondary">
+            {t("sources.denominator", {
+              domains: landscape.distinctDomains,
+              samples: landscape.citationEvaluableSamples,
+              questions: landscape.citationEvaluableQuestions,
+            })}{" "}
+            {t(
+              landscape.targetObserved
+                ? "sources.targetPresent"
+                : "sources.targetAbsent",
+              { host: targetHost },
+            )}
+          </p>
+          <div className="mt-2 overflow-x-auto rounded-card border border-brand-border-card">
+            <table className="w-full border-collapse bg-brand-panel text-[12px]">
+              <thead>
+                <tr className="border-b border-brand-border-card">
+                  <th className="px-3 py-2 text-left font-medium text-text-dark-secondary">
+                    {t("sources.colDomain")}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-text-dark-secondary">
+                    {t("sources.colSamples")}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-text-dark-secondary">
+                    {t("sources.colQuestions")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {landscape.sources.map((source) => (
+                  <tr
+                    key={source.domain}
+                    className="border-t border-brand-border-card"
+                  >
+                    <td className="px-3 py-1.5 break-all">
+                      <span
+                        className={
+                          source.isTarget
+                            ? "text-brand-accent-text"
+                            : "text-text-dark-primary"
+                        }
+                      >
+                        {source.domain}
+                      </span>
+                      {source.isTarget && (
+                        <span className="ml-2">
+                          <Tag tone="accent">{t("sources.yours")}</Tag>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
+                      {t("sources.sampleShare", {
+                        cited: source.citedInSamples,
+                        total: landscape.citationEvaluableSamples,
+                      })}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
+                      {t("sources.questionShare", {
+                        cited: source.citedInQuestions,
+                        total: landscape.citationEvaluableQuestions,
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function QuestionCard({
   question,
   targetHost,
@@ -495,6 +605,11 @@ export function GeoReportView({
           })}
         </p>
       </div>
+
+      <SourceLandscape
+        landscape={deriveGeoSourceLandscape(report)}
+        targetHost={report.run.targetHost}
+      />
 
       <div>
         <h3 className="text-[14px] font-semibold text-text-dark-primary">

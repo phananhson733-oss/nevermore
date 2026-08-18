@@ -251,6 +251,40 @@ describe("GeoActionPanel", () => {
     expect(host.textContent).not.toContain("Copy the packet");
   });
 
+  // Four checkboxes reading "asset type + a ratio" gave a reader no way to tell
+  // a build proposal from a lookup, and nothing at all to not do. Added
+  // 2026-08-18 after the first real report.
+  it("says what kind of work each item is", async () => {
+    await render(await GAP());
+    // Read off the badge elements, not the concatenated text: "Do" and the
+    // asset name run together in textContent and a substring match would pass
+    // on the wrong thing.
+    const kinds = [...host.querySelectorAll("span")]
+      .map((node) => node.textContent?.trim())
+      .filter((text) => text === "Do" || text === "Look up" || text === "Do not");
+
+    // The free lookup is labelled as one rather than reading as a build.
+    expect(kinds).toContain("Look up");
+    expect(kinds).toContain("Do");
+  });
+
+  it("names the questions an item was derived from", async () => {
+    // "Observed in 0 of 3" is only actionable once the reader knows which three.
+    await render(await GAP());
+
+    expect(host.textContent).toContain("From:");
+    expect(host.textContent).toContain("seo tools");
+  });
+
+  it("offers the packet as readable text as well as JSON", async () => {
+    // The JSON is for an agent. A reader who is not going to paste it anywhere
+    // left this screen with nothing.
+    await render(await GAP());
+    await selectAll();
+
+    expect(host.textContent).toContain("Copy the readable version");
+  });
+
   it("renders every absence as a count rather than a phrase", async () => {
     await render(await GAP());
 

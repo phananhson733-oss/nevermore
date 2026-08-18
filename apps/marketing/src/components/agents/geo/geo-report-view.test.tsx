@@ -266,6 +266,33 @@ describe("GeoReportView", () => {
     expect(text).toContain("Rival overview");
   });
 
+  // The single most actionable fact in the run — which hosts the answers keep
+  // reaching for — was only derivable by scrolling five screens and counting by
+  // hand. Added 2026-08-18 after reading the first real report.
+  it("aggregates who the answers cited, against the same denominator", async () => {
+    render(await buildReport());
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("Who these answers actually cited");
+    // The customer's own host and the third party both appear, counted.
+    expect(text).toContain("acme.test");
+    expect(text).toContain("rival.test");
+    // Named as counts against the printed denominator, never as a bare number.
+    expect(text).toMatch(/hosts cited across \d+ citation-evaluable samples/);
+  });
+
+  it("does not label what any cited host is", async () => {
+    // A URL does not say whether a page is a review, a marketplace, a community
+    // thread or a vendor's own marketing. The sampler already refuses to guess
+    // that; the aggregate must not reintroduce it.
+    render(await buildReport());
+    const text = host.textContent ?? "";
+
+    for (const invented of ["Community", "Marketplace", "Editorial", "Vendor"]) {
+      expect(text).not.toContain(invented);
+    }
+  });
+
   it("does not print an annotation that only restates its own link", async () => {
     // The provider's annotation is normally the markdown link itself, so every
     // row showed the same address twice.
