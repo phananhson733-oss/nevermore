@@ -46,11 +46,18 @@ export const CREDIT_TOOL_PRICES: Readonly<Record<CreditToolSlug, number>> = {
   "traffic-drop": 3,
   "profile-search": 2,
   /**
-   * Priced against the competitor's one-credit page check, not against this
-   * anchor: an on-page check runs the same site-wide crawl as `agent-audit`
-   * and therefore costs the same to serve. Nothing is charged while the tools
-   * are free, so the gap is a decision to make before Phase 2 turns pricing
-   * on, not a number to discover then.
+   * A deliberate subsidy, ruled by the Owner on 2026-08-18, not a cost price.
+   *
+   * An on-page check runs the same site-wide crawl as `agent-audit`, which is
+   * priced at 10, so serving one costs the same and the gap is about nine
+   * credits a run. It is priced against the competitor's one-credit page check
+   * instead, to match what a visitor comparing the two would expect — the
+   * competitor is buying a hundred-millisecond single-page fetch and we are
+   * not, and that difference is ours to absorb while it buys reach.
+   *
+   * What would change the number is in README-credits-rollout.md item 3: this
+   * is also a qualifying tool, so a cheap entry point and a first-run reward
+   * sit on the same slug.
    */
   "on-page-seo-check": 1,
 };
