@@ -48,6 +48,24 @@ function ratioRecord(
 }
 
 describe("v2 Agent audit evaluator", () => {
+  it("reads site-wide Schema coverage as a share of the same JSON-LD record", () => {
+    const check = (tested: number, affected: number) =>
+      evaluateAgentAuditScope("site", {
+        availability: "available",
+        records: [ratioRecord("json_ld_missing", tested, affected)],
+      }).checks.find((entry) => entry.check.id === "D5");
+
+    // D5 publishes "at least 90% coverage", which is the same measurement as
+    // the page-level "is there any JSON-LD" check read as a share, so it reuses
+    // the record instead of the crawl paying for it twice.
+    expect(check(10, 3)?.result).toBe("warning");
+    expect(check(100, 5)?.result).toBe("pass");
+    expect(check(10, 0)?.result).toBe("pass");
+    // Coverage is a real measurement here, not a borrowed one.
+    expect(check(10, 3)?.engine).toBe("ready");
+    expect(check(10, 3)?.truth).toBe("observed");
+  });
+
   it("keeps unavailable checks excluded instead of zero or pass", () => {
     const result = evaluateAgentAuditScope("page", {
       availability: "unavailable",

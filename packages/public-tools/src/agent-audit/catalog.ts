@@ -166,6 +166,18 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "2.4": ["meta_description_length_outside_range"],
   "6.2": ["page_without_outbound_internal_link"],
   "6.4": ["click_depth_beyond_reviewed_limit"],
+  A6: ["redirect_destination_error"],
+  B1: ["fetch_without_direct_page"],
+  B2: ["server_error_response"],
+  // C5 stays unwired on purpose. A link-following crawl reaches a page either
+  // by an internal link or from the sitemap, so any collected page that is in
+  // neither was discovered from a page the budget dropped. The filter would
+  // report a budget artefact as a lost page, and a check that fires only when
+  // it is wrong is worse than one that says it is not integrated.
+  // Site-wide Schema coverage is the same measurement as the page-level
+  // "is there any JSON-LD" check, read as a share instead of a verdict, so it
+  // reuses the record rather than crawling for it twice.
+  D5: ["json_ld_missing"],
 };
 
 /**
@@ -202,6 +214,28 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   C4: [
     {
       recordId: "click_depth_beyond_reviewed_limit",
+      kind: "affected-ratio",
+      passBelow: 0.1,
+    },
+  ],
+  B1: [
+    {
+      recordId: "fetch_without_direct_page",
+      kind: "affected-ratio",
+      passBelow: 0.1,
+      failAbove: 0.2,
+    },
+  ],
+  B2: [
+    {
+      recordId: "server_error_response",
+      kind: "affected-ratio",
+      passBelow: 0.005,
+    },
+  ],
+  D5: [
+    {
+      recordId: "json_ld_missing",
       kind: "affected-ratio",
       passBelow: 0.1,
     },
@@ -275,7 +309,138 @@ function impact(scope: AgentAuditScope, groupId: string): AgentAuditLocalizedTex
   );
 }
 
-function fix(scope: AgentAuditScope, groupId: string): AgentAuditLocalizedText {
+/**
+ * What to actually do about one check, written per check.
+ *
+ * The group-shaped fallback below covers four groups for eighty-one checks, so
+ * every check in a group told the reader the same sentence: "open the measured
+ * sample, make the smallest reviewed correction, rerun". True of everything,
+ * useful for nothing. A check that this run can decide has earned instructions
+ * that name the file, the element, and the way to tell it worked, so entries
+ * land here as their detector lands.
+ */
+const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
+  A7: l(
+    "Do not bulk-remove these. Read the list and confirm each page is one you want out of the index: staging, thank-you pages, faceted duplicates, and internal search results usually belong there. For any page that should rank, delete the noindex from the template or CMS field that emits it, then request indexing for that URL — removal is not automatic.",
+    "不要成批删除。逐页确认它们确实是你不想被索引的：预发布页、感谢页、筛选重复页、站内搜索结果通常本来就该在这里。对于应该获得排名的页面，去发出该指令的模板或 CMS 字段里删掉 noindex，然后对那个 URL 手动请求编入索引——移除不会自动生效。",
+  ),
+  A8: l(
+    "Serve every one of these over HTTPS and redirect the HTTP form to it with a single 301. Then fix what still points at http:// — internal links, canonical tags, sitemap entries, and hardcoded asset URLs — because a redirect that works still spends a hop and still tells crawlers the site has two addresses.",
+    "把这些页面全部改为 HTTPS 提供，并用单条 301 把 HTTP 形态重定向过去。然后修掉仍然指向 http:// 的地方——内链、canonical 标签、sitemap 条目、写死的资源 URL——因为跳转即使有效也白费一跳，而且等于告诉抓取器这个站有两个地址。",
+  ),
+  C1: l(
+    "These pages are in your sitemap but nothing on the site links to them, so a crawler only reaches them by reading the sitemap. Decide per page: if it matters, add a link from the section page or hub that owns it, using anchor text that describes the destination; if it does not, remove it from the sitemap rather than leaving a page you do not vouch for.",
+    "这些页面在 sitemap 里，但站内没有任何链接指向它们，抓取器只能靠读 sitemap 找到。逐页决定：重要的，就从它所属的栏目页或聚合页加一条链接过去，锚文本要描述目标页内容；不重要的，就从 sitemap 里删掉，而不是留着一个你自己都不背书的页面。",
+  ),
+  C2: l(
+    "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",
+    "每个断链目标都是读者点了之后落空的链接。逐个目标三选一：内容搬走了就改指向，本该存在就恢复该 URL，不该存在就删掉链接。要在发出它的模板或内容源里改，不要只改某个渲染页——导航或页脚里的一条断链会在全站重复。",
+  ),
+  C4: l(
+    "Depth is counted from the crawl entry point, so these pages need a shorter path in, not a rewrite. Add a link from a page that is already shallow — the hub, the category page, or a related-content block on a popular page. Adding pagination links or a section index usually moves a whole set at once, which is cheaper than linking each page.",
+    "深度是从抓取入口开始算的，所以这些页面需要的是更短的到达路径，不是重写内容。从一个本来就很浅的页面加链接过去——聚合页、分类页，或热门页面上的相关内容模块。加分页链接或栏目索引通常能一次挪动一整批，比逐页加链接便宜得多。",
+  ),
+  C6: l(
+    "Nothing here is broken; these are internal links pointing at a URL that redirects. Repoint each link at the destination the redirect lands on, so readers and crawlers stop paying a hop. Keep the redirect itself — external links and bookmarks still use the old URL.",
+    "这里没有坏掉的东西；这些是指向了会跳转的 URL 的内链。把每条链接直接改指向跳转的终点，让读者和抓取器不再多花一跳。跳转本身要保留——外部链接和收藏夹还在用旧 URL。",
+  ),
+  D2: l(
+    "Pages sharing a description are usually pages sharing a template, so fix the template first: derive the description from fields that already differ per page rather than from a fixed string. Where a page needs its own, write one that says what decision this page helps the reader make — a description that would fit any sibling page is the same defect with new words.",
+    "描述相同的页面通常是共用模板的页面，所以先改模板：让描述从各页本来就不同的字段生成，而不是来自一个固定字符串。确实需要单独写的页面，就写清楚这个页面帮读者做什么决定——一段放在任何兄弟页面上都成立的描述，是换了措辞的同一个缺陷。",
+  ),
+  D3: l(
+    "A page with no title or no H1 gives search engines and readers nothing to identify it by. Add both at the source: the title in the page's metadata, the H1 as the first visible heading, and make them say the same thing without being byte-identical. If the count is large, the emitting template is missing the field rather than each page being wrong.",
+    "没有 Title 或没有 H1 的页面，等于没有给搜索引擎和读者任何辨识依据。两个都要在源头补上：Title 放页面元数据，H1 作为第一个可见标题，两者说同一件事但不必逐字相同。如果数量很大，那是发出这些字段的模板漏了，而不是每个页面各自写错。",
+  ),
+  D7: l(
+    "Not a defect on its own — a canonical pointing elsewhere is how you consolidate duplicates deliberately. Confirm per page that the target is the version you want indexed, that the target returns 200, and that the target does not itself canonicalise somewhere else. A canonical pointing at a redirect or a 404 silently drops the page.",
+    "这本身不是缺陷——canonical 指向他页正是有意收敛重复页的做法。逐页确认：目标是你希望被索引的那个版本、目标返回 200、目标自身没有再指向别处。canonical 指向一个跳转或 404，会让这个页面被静默丢弃。",
+  ),
+  "1.1": l(
+    "The page does not return 200, so nothing else on this report applies to it. Find out which: a 404 means the URL is wrong or the content is gone, a 5xx means the server failed and may still be failing, a 403 usually means a firewall or bot rule is blocking non-browser clients. Fix the response first, then rerun.",
+    "这个页面不返回 200，因此本报告其余部分对它都不适用。先弄清是哪一种：404 说明 URL 写错了或内容没了，5xx 说明服务端出错且可能还在出错，403 通常是防火墙或 bot 规则拦掉了非浏览器客户端。先修好响应，再重新运行。",
+  ),
+  "1.3": l(
+    "This page carries a noindex directive, so it will be removed from the index regardless of anything else you improve on it. If that is deliberate, stop here. If not, find where it comes from — a template default, a CMS visibility toggle, an X-Robots-Tag response header, or a staging config that shipped — remove it, and request indexing for the URL.",
+    "这个页面带 noindex 指令，无论你在它上面改进什么，它都会被移出索引。如果这是有意的，到此为止。如果不是，找出它从哪来——模板默认值、CMS 的可见性开关、X-Robots-Tag 响应头，或者跟着上线的预发布配置——删掉它，然后对该 URL 请求编入索引。",
+  ),
+  "1.4": l(
+    "A page with no canonical lets every URL variant that reaches it compete as a separate page. Add a self-referencing canonical carrying the absolute, final URL. If the canonical points elsewhere, confirm that is deliberate consolidation and that the target returns 200 — otherwise this page is asking not to be indexed.",
+    "没有 canonical 的页面，会让每一个能到达它的 URL 变体都作为独立页面互相竞争。加一条自指 canonical，写绝对的、最终形态的 URL。如果 canonical 指向别处，确认那是有意的收敛且目标返回 200——否则这个页面等于在请求不要被索引。",
+  ),
+  "1.5": l(
+    "The page is not in any sitemap this run collected. If it should be indexed, add it to the sitemap your CMS or build generates, and confirm robots.txt actually points at that sitemap file. A sitemap is a discovery aid, not an indexing guarantee — so also check the page has at least one internal link.",
+    "本次采集到的 sitemap 里都没有这个页面。如果它应该被索引，就加进 CMS 或构建生成的那份 sitemap，并确认 robots.txt 确实指向了那个 sitemap 文件。sitemap 只是发现路径的辅助，不保证被索引——所以也要确认这个页面至少有一条内链。",
+  ),
+  "1.6": l(
+    "Every extra hop costs crawl budget and a little of the signal the original link carried. Collapse the chain to a single redirect from the first URL straight to the final destination, then update the internal links that still point at the first URL so the common path costs no hop at all.",
+    "每多一跳都会消耗抓取预算，也会损耗原始链接携带的一部分信号。把整条链压成一条：从第一个 URL 直接跳到最终目标，然后更新仍然指向第一个 URL 的内链，让常规路径一跳都不用花。",
+  ),
+  "2.1": l(
+    "Rewrite the title so the page's own subject comes first and the brand, if present, comes last. The range is a working range, not a rule — search results truncate by rendered width, so a short title full of wide characters can still be cut. Check it against sibling pages afterwards: a title that fits but repeats theirs has not been fixed.",
+    "重写 Title，把这个页面自己的主题放最前面，品牌名（如果要放）放最后。那个区间是工作区间不是硬规则——搜索结果按渲染宽度截断，所以一个字数不多但字形很宽的标题照样会被切。改完和兄弟页面对一下：长度合适但和它们重复的标题，等于没改。",
+  ),
+  "2.2": l(
+    "Another evaluated page already uses this exact title, so search engines have to pick between them and may pick neither. Differentiate by what each page actually does for the reader, not by appending a number or a location. If the two pages genuinely serve the same intent, the fix is to merge them and redirect one, not to rename both.",
+    "另一个已评估页面用了完全相同的标题，搜索引擎只能在两者之间挑一个，也可能一个都不选。按每个页面真正为读者做什么来区分，而不是加个编号或地名。如果这两个页面确实服务同一意图，正确做法是合并并把其中一个跳转过去，而不是把两个都改名。",
+  ),
+  "2.4": l(
+    "Write a description that gives the reader a reason to choose this result — what they will be able to do after opening it. It is not a ranking factor, so accuracy beats keyword placement: a description that overpromises costs you the click twice, once when they bounce and once when the result stops being shown.",
+    "写一段能给读者选择这条结果的理由的描述——打开之后他们能做成什么。它不是排名因素，所以准确比塞词重要：一段过度承诺的描述会让你损失两次点击，一次是他们跳出，一次是这条结果不再被展示。",
+  ),
+  "2.5": l(
+    "This description already appears on another evaluated page. Fix it where it is generated: if a template emits one fixed string, derive it instead from fields that already differ per page. Search engines rewrite descriptions often, but a duplicate makes rewriting the default rather than the exception.",
+    "这段描述已经出现在另一个已评估页面上。在生成它的地方修：如果模板发出的是一个固定字符串，就改成从各页本来就不同的字段生成。搜索引擎经常会重写描述，但重复会让重写从例外变成默认。",
+  ),
+  "3.1": l(
+    "Exactly one H1 tells a reader and a parser what this page is. If there are none, promote the visible page title to an H1. If there are several, keep the one that names the page's subject and demote the rest to H2 — usually the extras come from a site name in the header, a sidebar module, or a card component that hardcodes its heading level.",
+    "恰好一个 H1，才能让读者和解析器知道这个页面是什么。一个都没有，就把可见的页面标题提升为 H1。有多个，就保留点明页面主题的那个，其余降为 H2——多出来的通常来自页头的站名、侧栏模块，或者写死了标题层级的卡片组件。",
+  ),
+  "6.1": l(
+    "No page in the crawled set links here, so this page depends entirely on the sitemap to be found and receives no internal signal from the rest of the site. Add links from pages that are actually about the same thing — a hub, the parent category, or a related block — and use anchor text that describes this page rather than \"read more\".",
+    "抓取范围内没有任何页面链接到这里，所以这个页面完全依赖 sitemap 被发现，也拿不到站内其余部分传来的任何信号。从真正相关的页面加链接——聚合页、上级分类，或相关内容模块——锚文本要描述这个页面本身，不要用「阅读更多」。",
+  ),
+  "6.2": l(
+    "This page links nowhere internal, so it takes signal in and passes none on, and a reader who finishes it has no next step. Add links to the pages that answer what someone naturally asks next, placed in the body where the topic comes up rather than collected in a block at the bottom.",
+    "这个页面没有任何出站内链，所以它只进不出，读完的人也没有下一步可去。链接到那些回答「读者接下来自然会问什么」的页面，放在正文里话题出现的位置，而不是堆在页尾的一个模块里。",
+  ),
+  "6.3": l(
+    "This page links to internal URLs that do not resolve. Fix them at the source that emits them; if the same broken target appears on many pages, it is one template or one content include, not many mistakes. After fixing, check one nearby working link too — an edit that repoints a link often touches its neighbours.",
+    "这个页面链接到了打不开的内部 URL。在发出它们的源头修；如果同一个坏目标出现在很多页面上，那是一个模板或一个内容片段的问题，不是很多处各自出错。修完顺便检查旁边一条正常的链接——改链接的编辑经常会碰到相邻的链接。",
+  ),
+  "6.4": l(
+    "Depth is measured from the crawl entry point, so this is about the path in, not the page itself. One link from a shallow, relevant page fixes it. If many pages sit at this depth, the site's navigation stops before it reaches them, and adding a section index moves the whole group at once.",
+    "深度是从抓取入口算的，所以这说的是到达路径，不是页面本身。从一个较浅且相关的页面加一条链接就能解决。如果很多页面都在这个深度，说明站点导航在它们之前就断了，加一个栏目索引能一次挪动整组。",
+  ),
+  A6: l(
+    "A redirect that lands on an error is worse than no redirect: the reader is sent somewhere and finds nothing, and the crawler spends the request anyway. Per URL, repoint the redirect at a live page that serves the same intent, or remove the redirect and let the original URL return 404 honestly. Do not blanket-redirect these to the homepage — a homepage that answers nothing the reader asked is read as a soft 404.",
+    "跳到错误页的跳转比不跳转更糟：读者被送到某处却什么也没有，而抓取器照样花掉了这次请求。逐个 URL 处理：把跳转改指向一个服务同样意图的可用页面，或者干脆撤掉跳转、让原 URL 老实返回 404。不要把它们一律跳到首页——一个回答不了读者问题的首页会被判为软 404。",
+  ),
+  B1: l(
+    "This is the share of requests that did not land straight on a page. Two causes dominate and they are fixed differently: internal links pointing at a URL that redirects (repoint the links at the destination), and links to URLs that no longer resolve (repoint or remove). Both are edits to the linking page, not to the target — the redirect itself should stay for external traffic.",
+    "这是没有直接落到页面上的请求占比。主要有两个成因，修法不同：内链指向了会跳转的 URL（把链接改指向终点），以及链接指向了已经解析不了的 URL（改指向或删除）。两者都是改发出链接的那个页面，不是改目标——跳转本身要为外部流量保留。",
+  ),
+  B2: l(
+    "A 5xx means the server failed, not that the page is wrong, and a crawler that meets enough of them slows down across the whole site. Read the server log for these exact URLs at the timestamp of this run: the usual causes are a dependency timing out, a memory limit, or one slow query on a page type. Confirm the fix by requesting the same URLs again rather than by the page loading in a browser.",
+    "5xx 说明服务端出错，不是页面写错，而抓取器碰到足够多之后会把整站的抓取速度降下来。按本次运行的时间戳去查这些确切 URL 的服务端日志：常见成因是某个依赖超时、内存超限，或某类页面上的一条慢查询。验证方式是重新请求同样这些 URL，而不是在浏览器里打开看它加载出来了。",
+  ),
+  D5: l(
+    "Coverage is low because a page template emits no JSON-LD, not because individual pages were forgotten. Find the template behind the largest uncovered group and add one block there whose @type matches what those pages are — Article, Product, FAQPage. Derive every property from data the template already renders, so the markup cannot drift from the visible page later.",
+    "覆盖率低是因为某个页面模板根本不输出 JSON-LD，不是因为个别页面漏了。找到未覆盖数量最大那组背后的模板，在那里加一个 @type 与这些页面身份匹配的块——Article、Product、FAQPage。每个字段都从模板已经渲染的数据里取，这样标记以后不会和可见页面脱节。",
+  ),
+  "7.1": l(
+    "No parseable JSON-LD block was found, so nothing on this page is machine-readable beyond the HTML itself. Add one block whose @type matches what the page actually is, and fill only properties the visible page supports. Validate the output, not the source — a template that emits invalid JSON produces the same result as no markup at all.",
+    "没有找到可解析的 JSON-LD 块，所以除了 HTML 本身，这个页面上没有任何机器可读的东西。加一个 @type 与页面实际身份匹配的块，只填可见内容支持得起的字段。要校验输出而不是源码——发出非法 JSON 的模板，效果和完全没有标记一样。",
+  ),
+};
+
+function fix(
+  id: string,
+  scope: AgentAuditScope,
+  groupId: string,
+): AgentAuditLocalizedText {
+  const specific = HOW_TO_FIX[id];
+  if (specific !== undefined) return specific;
   if (groupId === "1" || groupId === "A") {
     return l(
       "Confirm owner intent, inspect the affected URL evidence, then correct response, directive, redirect, or canonical behavior and rerun validation.",
@@ -342,7 +507,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     groupId,
     title: l(titleEn, titleZh),
     impact: impact(scope, groupId),
-    howToFix: fix(scope, groupId),
+    howToFix: fix(id, scope, groupId),
     threshold: l(thresholdEn, thresholdZh),
     thresholdAuthority: authority(id),
     dataSource: l(

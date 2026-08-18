@@ -310,6 +310,74 @@ function buildRecords(
         ),
     }),
     record({
+      id: "redirect_destination_error",
+      category: "crawl",
+      // Only redirecting pages qualify, so this record's silence says nothing
+      // about a URL that never redirected.
+      population: "conditional_subset",
+      // Tested over the redirecting pages only: a URL that never redirected
+      // cannot have a broken redirect destination, and counting it would make
+      // the share of broken destinations look smaller than it is.
+      tested: pages.filter((page) => page.redirectHops > 0).length,
+      observations: pages
+        .filter(
+          (page) =>
+            page.redirectHops > 0 &&
+            page.finalStatus !== null &&
+            page.finalStatus >= 400 &&
+            page.finalStatus < 600,
+        )
+        .map((page) =>
+          pageObservation(page, {
+            redirect_hops: page.redirectHops,
+            final_url: page.finalUrl,
+            final_status: page.finalStatus,
+          }),
+        ),
+    }),
+    record({
+      id: "server_error_response",
+      category: "crawl",
+      tested: pages.filter((page) => page.finalStatus !== null).length,
+      observations: pages
+        .filter(
+          (page) =>
+            page.finalStatus !== null &&
+            page.finalStatus >= 500 &&
+            page.finalStatus < 600,
+        )
+        .map((page) =>
+          pageObservation(page, {
+            initial_status: page.initialStatus,
+            final_status: page.finalStatus,
+          }),
+        ),
+    }),
+    record({
+      id: "fetch_without_direct_page",
+      category: "crawl",
+      tested: pages.length,
+      // A fetch that did not land straight on a 2xx document: either it ended
+      // somewhere other than 200-299, or it got there through a redirect. Both
+      // spend a request that a correct link would not have spent. Non-HTML 2xx
+      // responses are excluded — a PDF that answers the request is not waste.
+      observations: pages
+        .filter(
+          (page) =>
+            page.finalStatus === null ||
+            page.finalStatus < 200 ||
+            page.finalStatus >= 300 ||
+            page.redirectHops > 0,
+        )
+        .map((page) =>
+          pageObservation(page, {
+            initial_status: page.initialStatus,
+            final_status: page.finalStatus,
+            redirect_hops: page.redirectHops,
+          }),
+        ),
+    }),
+    record({
       id: "http_url",
       category: "crawl",
       tested: pages.length,

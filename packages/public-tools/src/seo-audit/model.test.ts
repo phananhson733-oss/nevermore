@@ -513,6 +513,87 @@ describe("site-wide SEO audit model", () => {
   });
 });
 
+describe("crawl-response records", () => {
+  const redirected = (url: string, to: string, finalStatus: number) =>
+    page(url, { redirectChain: [to], finalStatus });
+
+  it("reports a redirect whose destination errors, and only over redirects", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/old", "https://acme.test/gone", 404),
+          redirected("https://acme.test/moved", "https://acme.test/new", 200),
+        ],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    expect(record?.observations.map((entry) => entry.url)).toEqual([
+      "https://acme.test/old",
+    ]);
+    // Only the two redirecting pages are the population: counting the direct
+    // 200 would make the share of broken destinations read as one in three.
+    expect(record?.tested).toBe(2);
+  });
+
+  it("does not read a direct 404 as a broken redirect destination", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+        ],
+      }),
+    );
+
+    expect(byId(report, "redirect_destination_error")?.observations).toEqual([]);
+    expect(
+      byId(report, "non_2xx_final_status")?.observations.map((e) => e.url),
+    ).toEqual(["https://acme.test/missing"]);
+  });
+
+  it("separates a server failure from a missing page", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/down", { finalStatus: 503 }),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+        ],
+      }),
+    );
+    const record = byId(report, "server_error_response");
+
+    expect(record?.observations.map((entry) => entry.url)).toEqual([
+      "https://acme.test/down",
+    ]);
+    expect(record?.tested).toBe(3);
+  });
+
+  it("counts a redirect as a request that did not land on a page", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/moved", "https://acme.test/new", 200),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+          page("https://acme.test/fine"),
+        ],
+      }),
+    );
+    const record = byId(report, "fetch_without_direct_page");
+
+    // The redirect resolved to 200 and is still waste: a correct link would not
+    // have spent the hop.
+    expect(record?.observations.map((entry) => entry.url).sort()).toEqual([
+      "https://acme.test/missing",
+      "https://acme.test/moved",
+    ]);
+    expect(record?.tested).toBe(4);
+  });
+});
+
 describe("seo audit record invariants", () => {
   it("keeps every record's affected count inside the population it tested", () => {
     // A 404 page is still parsed, so its outbound links can name a broken
@@ -581,6 +662,20 @@ describe("seo audit record invariants", () => {
     // These ran over everything collected, so absence is real evidence.
     expect(populations.get("noindex_directive")).toBe("every_collected_page");
     expect(populations.get("json_ld_missing")).toBe("every_collected_page");
+
+    // Swept rather than listed: a record that tested fewer units than the
+    // crawl collected has a qualifying population, and saying otherwise turns
+    // its silence into evidence about pages it never looked at. A named list
+    // only covers the records someone remembered to add to it.
+    const collected = report.pages.length;
+    for (const record of report.records) {
+      if (record.unit !== "pages") continue;
+      if (record.tested >= collected) continue;
+      expect([record.id, record.population]).toEqual([
+        record.id,
+        "conditional_subset",
+      ]);
+    }
   });
 
   it("reports the collected page that is the submitted target", () => {

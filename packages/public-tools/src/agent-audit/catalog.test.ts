@@ -26,7 +26,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(24);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(28);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -94,6 +94,32 @@ describe("v2 Agent audit catalog", () => {
         evidenceRecordIds: [],
       });
       expect(check?.boundary.en).toContain("P6 hard gate");
+    }
+  });
+
+  it("gives every decidable check instructions written for that check", () => {
+    const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
+      (group) => group.checks,
+    );
+    const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
+    expect(decidable).toHaveLength(28);
+
+    // The group fallback emits one sentence for every check in a group, so a
+    // check still sharing its text with a sibling has no instructions of its
+    // own. Detecting a problem and then saying nothing specific about it is the
+    // failure this guards: a detector has to land with its fix.
+    for (const check of decidable) {
+      const siblings = all.filter(
+        (other) =>
+          other.scope === check.scope &&
+          other.groupId === check.groupId &&
+          other.id !== check.id,
+      );
+      expect(
+        siblings.some((other) => other.howToFix.en === check.howToFix.en),
+      ).toBe(false);
+      expect(check.howToFix.zh).not.toBe("");
+      expect(check.howToFix.en.length).toBeGreaterThan(120);
     }
   });
 
