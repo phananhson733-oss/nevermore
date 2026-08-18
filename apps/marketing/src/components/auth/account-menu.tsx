@@ -174,12 +174,16 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
 }
 
 /**
- * The same account facts inside the mobile sheet.
+ * The same account facts, and the same way out, inside the mobile sheet.
  *
  * A panel that opens on hover has no meaning on a touchscreen, and the header
  * badge that used to carry the balance on every screen is gone, so without this
- * a phone would have no way to see it at all. Sign-out stays with
- * SignInControlMobile, which already owns that row of the sheet.
+ * a phone would have no way to see it at all.
+ *
+ * Sign-out belongs here rather than with the sign-in control, for the same
+ * reason it belongs in the desktop panel: it acts on the account, so it reads
+ * after the account has been named. The other way round, the sheet offered to
+ * sign you out before it said whose session it was.
  */
 export function AccountSummaryMobile({
   account,
@@ -189,7 +193,9 @@ export function AccountSummaryMobile({
   readonly onNavigate: () => void;
 }) {
   const t = useTranslations("account.menu");
+  const tCommon = useTranslations("common");
   const locale = useLocale();
+  const [signingOut, setSigningOut] = useState(false);
 
   if (account.status !== "signed-in") return null;
   const { email, balance } = account;
@@ -213,6 +219,17 @@ export function AccountSummaryMobile({
           </span>
         </Link>
       )}
+      <button
+        type="button"
+        onClick={() => {
+          setSigningOut(true);
+          void signOut().catch(() => setSigningOut(false));
+        }}
+        disabled={signingOut}
+        className="mt-4 block text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:opacity-60"
+      >
+        {tCommon("signOut")}
+      </button>
     </div>
   );
 }
