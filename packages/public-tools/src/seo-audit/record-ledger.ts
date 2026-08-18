@@ -94,6 +94,7 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "sitemap_member",
   "observed_inbound_links",
   "observed_source_pages",
+  "source_pages",
   "malformed_blocks",
   "types_observed",
   "broken_link_targets",

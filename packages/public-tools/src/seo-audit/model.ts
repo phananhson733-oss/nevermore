@@ -236,6 +236,15 @@ function firstSkippedLevel(
   return null;
 }
 
+/**
+ * How many linking pages one broken target lists by URL.
+ *
+ * Enough to act on — a shared template shows up as a shape within two or three
+ * — without turning one observation into a page of text. The count is published
+ * beside it, so a truncated list is visible rather than implied.
+ */
+const MAX_LISTED_SOURCE_PAGES = 5;
+
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
@@ -676,6 +685,15 @@ function buildRecords(
         pageObservation(page, {
           final_status: page.finalStatus,
           observed_source_pages: sources.size,
+          // The URLs, not just how many. "3 pages link to this 404" is not a
+          // fix instruction — the reader cannot open the three pages, and on
+          // our own site it took reading the source to find them. Bounded and
+          // sorted so the sample is stable between runs; the count beside it
+          // says whether anything was left out.
+          source_pages: [...sources]
+            .sort()
+            .slice(0, MAX_LISTED_SOURCE_PAGES)
+            .join(" "),
         }),
       ),
       limitation: "uncollected_link_targets_not_classified",

@@ -1216,7 +1216,8 @@
         "pages_with_uncovered_images": "Pages with an uncovered image",
         "target_query": "Target query",
         "query_tokenization": "How the query was split",
-        "slot_occurrences": "Occurrences here"
+        "slot_occurrences": "Occurrences here",
+        "source_pages": "Linking pages"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

@@ -487,6 +487,9 @@ describe("site-wide SEO audit model", () => {
       values: [
         { label: "final_status", value: 404 },
         { label: "observed_source_pages", value: 1 },
+        // The URL, not just the count. "3 pages link to this 404" is not a fix
+        // instruction: the reader cannot open the three pages.
+        { label: "source_pages", value: "https://acme.test/" },
       ],
     });
   });

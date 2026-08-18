@@ -1216,7 +1216,8 @@
         "pages_with_uncovered_images": "存在未覆盖图片的页面数",
         "target_query": "目标词",
         "query_tokenization": "目标词的切分方式",
-        "slot_occurrences": "此处出现次数"
+        "slot_occurrences": "此处出现次数",
+        "source_pages": "链到这里的页面"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
