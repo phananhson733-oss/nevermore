@@ -3,6 +3,10 @@
 // @pos    -- locale guard for all three Agent routes and shared workbench
 
 import { describe, expect, it } from "vitest";
+import {
+  PAGE_AUDIT_GROUPS,
+  SITE_AUDIT_GROUPS,
+} from "@sf/public-tools/agent-audit";
 
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
@@ -305,47 +309,17 @@ const AGENT_RECOMMENDATION_PATHS = [
   "limits",
 ] as const;
 
-const SITE_CHECK_IDS = [
-  "A1",
-  "A2",
-  "A3",
-  "A4",
-  "A5",
-  "A6",
-  "B1",
-  "B2",
-  "B3",
-  "B4",
-  "B5",
-  "C1",
-  "C2",
-  "C3",
-  "C4",
-  "C5",
-  "D1",
-  "D2",
-  "D3",
-  "D4",
-  "D5",
-  "D6",
-  "E1",
-  "E2",
-  "E3",
-  "E4",
-  "E5",
-] as const;
-
-const PAGE_CHECK_IDS = [
-  ...Array.from({ length: 8 }, (_, index) => `1_${index + 1}`),
-  ...Array.from({ length: 6 }, (_, index) => `2_${index + 1}`),
-  ...Array.from({ length: 6 }, (_, index) => `3_${index + 1}`),
-  ...Array.from({ length: 5 }, (_, index) => `4_${index + 1}`),
-  ...Array.from({ length: 4 }, (_, index) => `5_${index + 1}`),
-  ...Array.from({ length: 5 }, (_, index) => `6_${index + 1}`),
-  ...Array.from({ length: 5 }, (_, index) => `7_${index + 1}`),
-  ...Array.from({ length: 6 }, (_, index) => `8_${index + 1}`),
-  ...Array.from({ length: 5 }, (_, index) => `9_${index + 1}`),
-] as const;
+// Derived from the catalogue, which is the authority for what exists. The two
+// hand-kept lists this replaces had already drifted — the site one named 27 of
+// 31 checks, silently exempting A7, A8, C6 and D7 from the copy check — and the
+// page one assumed contiguous numbering, so removing 9.2 broke it rather than
+// narrowing it.
+const SITE_CHECK_IDS = SITE_AUDIT_GROUPS.flatMap((group) =>
+  group.checks.map((check) => check.id),
+);
+const PAGE_CHECK_IDS = PAGE_AUDIT_GROUPS.flatMap((group) =>
+  group.checks.map((check) => check.id.replace(".", "_")),
+);
 
 describe("Agent message catalogs", () => {
   it("keeps every English and Chinese Agent leaf aligned", () => {
@@ -392,9 +366,9 @@ describe("Agent message catalogs", () => {
     }
   });
 
-  it("names all 5/27 site and 9/50 page catalog entries bilingually", () => {
-    expect(SITE_CHECK_IDS).toHaveLength(27);
-    expect(PAGE_CHECK_IDS).toHaveLength(50);
+  it("names all 5/31 site and 9/49 page catalog entries bilingually", () => {
+    expect(SITE_CHECK_IDS).toHaveLength(31);
+    expect(PAGE_CHECK_IDS).toHaveLength(49);
 
     for (const messages of [en, zh]) {
       for (const group of ["A", "B", "C", "D", "E"]) {

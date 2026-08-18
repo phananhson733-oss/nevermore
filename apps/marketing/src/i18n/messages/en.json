@@ -3239,7 +3239,7 @@
             "A3": "Discovered, currently not indexed rate",
             "A4": "Soft 404 page count",
             "A5": "Pages incorrectly blocked by robots.txt",
-            "A6": "Redirect destinations returning 404",
+            "A6": "Redirect destinations returning an error",
             "B1": "Crawl waste rate",
             "B2": "5XX response rate",
             "B3": "Average response time",
@@ -3260,7 +3260,11 @@
             "E2": "Impression share in positions 1–6",
             "E3": "Impression share in positions 7–10",
             "E4": "Non-brand click share",
-            "E5": "Time-sensitive content impression share"
+            "E5": "Time-sensitive content impression share",
+            "A7": "Pages carrying a noindex directive",
+            "A8": "Pages served over HTTP",
+            "C6": "Pages reached through a redirect",
+            "D7": "Pages whose canonical points at another page"
           }
         },
         "page": {
@@ -3322,7 +3326,6 @@
             "8_5": "Total page weight",
             "8_6": "Render-blocking resource count",
             "9_1": "Target query fully answered by AI Overview",
-            "9_2": "Recently registered domains in the top 10",
             "9_3": "Lower-traffic sites in the top 10",
             "9_4": "UGC result presence",
             "9_5": "Current ranking band"

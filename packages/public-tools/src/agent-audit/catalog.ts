@@ -96,11 +96,16 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["8.1", "Largest Contentful Paint (LCP)", "最大内容绘制（LCP）", "CrUX p75 over 28 days: 2.5 s or less good, over 2.5 s to 4.0 s needs improvement, over 4.0 s poor", "CrUX 28 天窗口 p75：不超过 2.5 秒为良好，超过 2.5 秒至 4.0 秒待改进，超过 4.0 秒为差"],
   ["8.2", "Interaction to Next Paint (INP)", "交互到下次绘制（INP）", "CrUX p75 over 28 days: 200 ms or less good, over 200 ms to 500 ms needs improvement, over 500 ms poor", "CrUX 28 天窗口 p75：不超过 200 毫秒为良好，超过 200 毫秒至 500 毫秒待改进，超过 500 毫秒为差"],
   ["8.3", "Cumulative Layout Shift (CLS)", "累积布局偏移（CLS）", "CrUX p75 over 28 days: 0.1 or less good, over 0.1 to 0.25 needs improvement, over 0.25 poor", "CrUX 28 天窗口 p75：不超过 0.1 为良好，超过 0.1 至 0.25 待改进，超过 0.25 为差"],
-  ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "Below 800 ms", "低于 800 毫秒"],
+  ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "800 ms or less good, over 800 ms to 1.8 s needs improvement, over 1.8 s poor", "不超过 800 毫秒为良好，超过 800 毫秒至 1.8 秒待改进，超过 1.8 秒为差"],
   ["8.5", "Total page weight", "页面总体积", "Below 2 MB", "低于 2MB"],
   ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 in a separate Lighthouse lab run", "独立 Lighthouse 实验室运行中为 0"],
   ["9.1", "Target query fully answered by AI Overview", "目标词是否被 AI Overview 完整覆盖", "No; Yes is Warning because ranking may not produce a click", "否；若是则为警告，因为获得排名也可能没有点击"],
-  ["9.2", "Recently registered domains in the top 10", "前十是否有近两年注册域名", "At least one; none reduces opportunity health", "至少 1 个；没有则降低机会健康度"],
+  // 9.2 "recently registered domains in the top 10" was removed on 2026-08-18.
+  // It needs a domain registration date, which no wired provider returns. The
+  // only substitute — a backlink's `first_seen` — is a different fact, and it
+  // is wrong on exactly the young domains the check exists to find. Listing a
+  // check that can never run is the same defect this whole effort removed from
+  // the readiness count, one level up.
   ["9.3", "Lower-traffic sites in the top 10", "前十是否有低流量站点", "At least one; none reduces opportunity health", "至少 1 个；没有则降低机会健康度"],
   ["9.4", "UGC result presence", "是否有 UGC 结果位", "At least one; none reduces opportunity health", "至少 1 个；没有则降低机会健康度"],
   ["9.5", "Current ranking band", "当前排名区间", "1–6 preferred; 7–10 low-click; 11+ ineffective", "优先 1–6；7–10 为低点击区；11 名以后效果弱"],
@@ -337,7 +342,7 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   if (["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5", "9.5"].includes(id)) {
     return "access-required";
   }
-  if (/^8\./.test(id) || /^9\.[1-4]$/.test(id)) return "not-integrated";
+  if (/^8\./.test(id) || /^9\.[134]$/.test(id)) return "not-integrated";
   return ready ? "ready" : "needs-integration";
 }
 

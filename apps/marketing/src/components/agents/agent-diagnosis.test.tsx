@@ -313,7 +313,7 @@ describe("AgentDiagnosis", () => {
   it("renders the complete selected-group ledger and focused explainability detail", () => {
     const html = render("page", "9");
 
-    expect(html).toContain("9 groups · 50 checks");
+    expect(html).toContain("9 groups · 49 checks");
     expect(html).toContain('data-testid="diagnosis-group-9"');
     expect(html).toContain('data-testid="diagnosis-check-9.1"');
     expect(html).toContain("Measured value");

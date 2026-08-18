@@ -210,7 +210,7 @@ describe("AgentResults", () => {
       "Stage 04 · Selected solution & validation",
     );
     expect(host.textContent).toContain("5 groups · 31 checks");
-    expect(host.textContent).toContain("Page · 9 groups / 50 checks");
+    expect(host.textContent).toContain("Page · 9 groups / 49 checks");
     expect(host.textContent).not.toContain("0/100");
   });
 
@@ -320,7 +320,7 @@ describe("AgentResults", () => {
 
     expect(disclosure()?.getAttribute("data-ranked-shown")).toBe("3");
     expect(disclosure()?.getAttribute("data-ranked-total")).toBe("6");
-    expect(disclosure()?.getAttribute("data-source-gaps")).toBe("42");
+    expect(disclosure()?.getAttribute("data-source-gaps")).toBe("41");
   });
 
   it("shows the empty recommendation state when no check could be evaluated", () => {

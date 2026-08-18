@@ -7,15 +7,15 @@ import {
 } from "./catalog.ts";
 
 describe("v2 Agent audit catalog", () => {
-  it("freezes 5/31 site and 9/50 page entries with unique IDs", () => {
+  it("freezes 5/31 site and 9/49 page entries with unique IDs", () => {
     const site = SITE_AUDIT_GROUPS.flatMap((group) => group.checks);
     const page = PAGE_AUDIT_GROUPS.flatMap((group) => group.checks);
     expect(SITE_AUDIT_GROUPS).toHaveLength(5);
     expect(site).toHaveLength(31);
     expect(new Set(site.map((check) => check.id)).size).toBe(31);
     expect(PAGE_AUDIT_GROUPS).toHaveLength(9);
-    expect(page).toHaveLength(50);
-    expect(new Set(page.map((check) => check.id)).size).toBe(50);
+    expect(page).toHaveLength(49);
+    expect(new Set(page.map((check) => check.id)).size).toBe(49);
     expect([...site, ...page].every((check) => check.threshold.en && check.impact.en && check.howToFix.en)).toBe(true);
   });
 
