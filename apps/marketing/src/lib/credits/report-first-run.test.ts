@@ -38,6 +38,7 @@ function deps(
       status: "authenticated" as const,
       userId: USER,
       email: "ada@example.test",
+      avatarUrl: null,
     })),
     reward: vi.fn(async () => ({
       kind: "ok" as const,

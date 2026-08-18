@@ -16,9 +16,57 @@ export type ServerAuthenticatedUser =
        * nothing.
        */
       readonly email: string | null;
+      /**
+       * The Google profile photo, or null.
+       *
+       * A snapshot, not a live value: GoTrue writes raw_user_meta_data during
+       * signInWithIdToken and nothing in this app re-reads the claims
+       * afterwards, so a visitor who changes their photo keeps seeing the old
+       * one here until they sign in again. Tolerable because it decorates a row
+       * the email already identifies — but it is why nothing important may be
+       * derived from it.
+       */
+      readonly avatarUrl: string | null;
     }
   | { readonly status: "unauthenticated" }
   | { readonly status: "unavailable" };
+
+/**
+ * Google's own photo host, and only that.
+ *
+ * The value arrives in an OAuth claim, but it is stored in a mutable metadata
+ * column and it ends up as a URL the visitor's browser fetches. Pinning the
+ * host means a poisoned row can point at an image nobody serves, rather than at
+ * an endpoint of the poisoner's choosing.
+ *
+ * A suffix check rather than equality: Google serves these from lh3 today and
+ * has used lh4/lh5/lh6. The leading dot is what keeps
+ * "evilgoogleusercontent.com" out.
+ */
+function isGooglePhotoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname.endsWith(".googleusercontent.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readAvatarUrl(metadata: unknown): string | null {
+  if (metadata === null || typeof metadata !== "object") return null;
+  const bag = metadata as Readonly<Record<string, unknown>>;
+  // Google fills both; other providers may fill only one.
+  for (const key of ["avatar_url", "picture"]) {
+    const candidate = bag[key];
+    if (typeof candidate === "string" && isGooglePhotoUrl(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 function isMissingSessionError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -58,6 +106,7 @@ export async function getServerAuthenticatedUser(): Promise<ServerAuthenticatedU
       userId: user.id,
       email:
         typeof user.email === "string" && user.email !== "" ? user.email : null,
+      avatarUrl: readAvatarUrl(user.user_metadata),
     };
   } catch {
     return { status: "unavailable" };
