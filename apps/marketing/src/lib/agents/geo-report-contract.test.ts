@@ -226,7 +226,6 @@ const RUN_LIMITATIONS: readonly GeoRunLimitationCode[] = [
   "recommendation_not_evaluated",
 ];
 
-
 async function report(
   build: (
     observations: readonly GeoQuestionObservationV3[],
@@ -280,6 +279,52 @@ describe("isGeoReportSuccessEnvelope", () => {
   it("accepts a complete v3 envelope", async () => {
     expect(isGeoReportSuccessEnvelope(await report())).toBe(true);
   });
+
+  // Regression: the first real run returned 502 geo_report_invalid after all
+  // eighteen calls had been billed. The provider layer kept annotation strings
+  // exactly as the answer carried them, the guard required normalized text, and
+  // one citation title with a line break in it voided the whole report. Asserted
+  // against the guard rather than against the normalizer, because asserting the
+  // producer's own function back at itself proves nothing.
+  // Found by /qa on 2026-08-18.
+  it.each([
+    ["a line break", "Best AI visibility tools\nRanked for 2026"],
+    ["a run of spaces", "Best AI visibility  tools in 2026"],
+    ["surrounding space", "  Best AI visibility tools  "],
+    ["a tab", "Best AI\tvisibility tools"],
+    // Escaped, not typed: an editor saves a typed "é" as NFC already, which
+    // would make this row assert nothing.
+    ["a decomposed accent", "Cafe\u0301 Analytics \u2014 the review"],
+    ["a CRLF pair", "Best AI visibility tools\r\nRanked"],
+  ])(
+    "accepts a report whose provider citation title carries %s",
+    async (_label, rawTitle) => {
+      const envelope = await report((observations) =>
+        observations.map((question, index) =>
+          index === 0
+            ? questionFor(probe(), () =>
+                observation({
+                  citations: [
+                    {
+                      url: "https://acme.test/pricing",
+                      title: rawTitle,
+                      annotationText: rawTitle,
+                      providerOutputItemIndex: 1,
+                      sectionIndex: 0,
+                      annotationOrdinal: 0,
+                      startIndex: 0,
+                      endIndex: 4,
+                      spanBasis: "provider_message_section_text",
+                    },
+                  ],
+                }),
+              )
+            : question,
+        ),
+      );
+      expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+    },
+  );
 
   it("refuses a legacy v2 payload outright", async () => {
     // A v2 client recomputes the old verdict rule and would disagree with this

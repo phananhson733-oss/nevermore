@@ -15,7 +15,11 @@ import {
   normalizeGeoText,
   type GeoCanonicalValue,
 } from "./geo-canonical.ts";
-import { normalizeGeoCitationUrl, normalizeGeoHost } from "./geo-url.ts";
+import {
+  normalizeGeoCitationUrl,
+  normalizeGeoHost,
+  normalizeGeoTargetUrl,
+} from "./geo-url.ts";
 
 export const GEO_CONTEXT_SCHEMA_VERSION = "geo_context.v1" as const;
 
@@ -438,7 +442,8 @@ export function rejectGeoAlias(
   if (normalizeGeoText(alias) !== alias || alias.length === 0) {
     return "alias_invalid";
   }
-  if (codePointLength(alias) > GEO_MAX_ALIAS_CODE_POINTS) return "alias_invalid";
+  if (codePointLength(alias) > GEO_MAX_ALIAS_CODE_POINTS)
+    return "alias_invalid";
   const normalized = normalizeAliasForMatch(alias);
   if (normalized.length < GEO_MIN_ALIAS_TOKEN_LENGTH) return "alias_generic";
   // Every token generic, not just a single generic word. "SEO Tool" is a
@@ -518,7 +523,7 @@ export async function confirmGeoContext(
 ): Promise<GeoContextConfirmation> {
   const rejections: GeoContextRejection[] = [];
 
-  const targetUrl = normalizeGeoCitationUrl(input.targetUrl);
+  const targetUrl = normalizeGeoTargetUrl(input.targetUrl);
   const targetHost = targetUrl === null ? null : normalizeGeoHost(targetUrl);
   if (targetUrl === null || targetHost === null) {
     rejections.push("target_url_invalid");
@@ -834,7 +839,9 @@ export function buildGeoContextSourceSummary(fields: {
     },
     {
       field: "brand_aliases",
-      source: usedHostLabel ? "visitor_confirmed_with_inference" : "visitor_confirmed",
+      source: usedHostLabel
+        ? "visitor_confirmed_with_inference"
+        : "visitor_confirmed",
       limitationCode: usedHostLabel ? "hostname_label_inferred" : null,
     },
     {

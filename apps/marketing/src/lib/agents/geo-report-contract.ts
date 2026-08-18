@@ -21,7 +21,11 @@ import {
   type GeoObservationCounts,
   type GeoRunCoverageV3,
 } from "./geo-report-derive.ts";
-import type { GeoBrandStance, GeoQueryMode, GeoQuerySlot } from "./geo-query-contract.ts";
+import type {
+  GeoBrandStance,
+  GeoQueryMode,
+  GeoQuerySlot,
+} from "./geo-query-contract.ts";
 import {
   isNormalizedGeoCitationUrl,
   isNormalizedGeoHost,
@@ -403,12 +407,15 @@ const MENTION_EVIDENCE_KEYS = [
 /** Longest verbatim provider strings the report will carry. */
 export const GEO_MAX_EVIDENCE_TITLE_LENGTH = 300;
 export const GEO_MAX_EVIDENCE_ANNOTATION_LENGTH = 400;
+/**
+ * Exported so the producer bounds the snippet against this number rather than
+ * its own copy of it. A second literal here is how the producer and this guard
+ * come to disagree about what fits, and disagreement voids a paid run.
+ */
+export const GEO_MAX_MENTION_SNIPPET_LENGTH = 600;
 export const GEO_MAX_EVIDENCE_PER_SAMPLE = 41;
 
-function isCitationEvidence(
-  value: UnknownObject,
-  targetHost: string,
-): boolean {
+function isCitationEvidence(value: UnknownObject, targetHost: string): boolean {
   if (
     !hasExactKeys(value, CITATION_EVIDENCE_KEYS) ||
     !isBoundedText(value.evidenceId, 96) ||
@@ -418,10 +425,7 @@ function isCitationEvidence(
     (value.title !== null &&
       !isBoundedText(value.title, GEO_MAX_EVIDENCE_TITLE_LENGTH)) ||
     (value.annotationText !== null &&
-      !isBoundedText(
-        value.annotationText,
-        GEO_MAX_EVIDENCE_ANNOTATION_LENGTH,
-      ))
+      !isBoundedText(value.annotationText, GEO_MAX_EVIDENCE_ANNOTATION_LENGTH))
   ) {
     return false;
   }
@@ -449,7 +453,7 @@ function isMentionEvidence(value: UnknownObject): boolean {
     isBoundedText(value.evidenceId, 96) &&
     isBoundedText(value.matchedAlias, 80) &&
     (value.mentionSnippet === null ||
-      isBoundedText(value.mentionSnippet, 600)) &&
+      isBoundedText(value.mentionSnippet, GEO_MAX_MENTION_SNIPPET_LENGTH)) &&
     value.snippetBasis === "provider_answer_text"
   );
 }
@@ -777,7 +781,9 @@ function isQuestion(
       value.templateVersion as string,
     );
     if (entry === null) return false;
-    if (!isGeoTemplateShippable(entry.templateId, entry.templateVersion, mode)) {
+    if (
+      !isGeoTemplateShippable(entry.templateId, entry.templateVersion, mode)
+    ) {
       return false;
     }
     if (entry.slot !== value.slot) return false;
@@ -850,7 +856,10 @@ function isProvenance(
   // The calibration was run with US market settings. A run for another country
   // may not claim its trigger behaviour was calibrated.
   const isUs = value.webSearchCountryIsoCodeRequested === "US";
-  if (value.triggerCalibrationScope !== (isUs ? "calibrated_market" : "outside_calibrated_market")) {
+  if (
+    value.triggerCalibrationScope !==
+    (isUs ? "calibrated_market" : "outside_calibrated_market")
+  ) {
     return false;
   }
 
@@ -1003,7 +1012,10 @@ export function isGeoReportSuccessEnvelope(
   // code, and a payload that hid it would render a broken run as a clean one.
   const degraded =
     coverage.triggerFailedProbes > 0 || coverage.degradedProbes > 0;
-  if (degraded !== (limitations as readonly string[]).includes("degraded_retrieval_trigger")) {
+  if (
+    degraded !==
+    (limitations as readonly string[]).includes("degraded_retrieval_trigger")
+  ) {
     return false;
   }
   const provenance = run.provenance as GeoSurfaceProvenanceV1;
