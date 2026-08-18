@@ -2140,6 +2140,305 @@
         "miss": "读自这次检查发起的采集，采集于 {time}。",
         "unknown": "采集于 {time}。这次采集是新发起的还是复用已有的，响应没有说明。",
         "queriesMerged": "你提交了 {submitted} 个关键词，下面量到 {measured} 个：同一个关键词的两种写法只算一次。"
+      },
+      "scoreCategories": {
+        "meta": "Meta 元信息",
+        "content": "内容质量",
+        "keyword": "关键词布局",
+        "links": "链接",
+        "media": "图片与媒体",
+        "social": "社交与结构化数据",
+        "technical": "技术与抓取",
+        "site": "整站上下文"
+      },
+      "checks": {
+        "declaredUnavailable": "这次采集没有取到这一页的标记细节，因此不作判定——不知道和「页面没有」不是一回事。",
+        "title": {
+          "_label": "Title 标题",
+          "missing": "没有 title。搜索结果里的标题会由谷歌自行拼凑。",
+          "ok": "「{title}」宽度 {width}（{min}~{max} 为合理区间，中日韩字符按 2 计）。",
+          "outsideRange": "宽度 {width}，在 {min}~{max} 之外，结果页尾部可能被截断或显得过短。"
+        },
+        "description": {
+          "_label": "Meta Description 描述",
+          "missing": "没有 meta description。谷歌会从正文里自己摘一段。",
+          "ok": "宽度 {width}，落在 {min}~{max} 区间内。",
+          "outsideRange": "宽度 {width}，在 {min}~{max} 之外，尾部可能被截断。"
+        },
+        "canonical": {
+          "_label": "Canonical 规范链接",
+          "missing": "没有声明 canonical。同一内容有多个 URL 时，由谷歌自己挑一个。",
+          "selfReferencing": "已自引用声明。",
+          "pointsElsewhere": "指向 {canonical}——这一页把权重让给了那一页。"
+        },
+        "robots": {
+          "_label": "Robots 收录指令",
+          "indexable": "允许收录（{directives}）。",
+          "noindex": "声明了 noindex（{directives}）。这一页不会进入索引，其余各项都不改变这个结果。"
+        },
+        "viewport": {
+          "_label": "Viewport 移动适配",
+          "missing": "没有声明 viewport，移动端会按桌面宽度缩放渲染。",
+          "declared": "已声明：{viewport}"
+        },
+        "charset": {
+          "_label": "字符编码声明",
+          "missing": "没有声明 charset，非 ASCII 文本可能被按错误编码解读。",
+          "declared": "已声明 {charset}。"
+        },
+        "lang": {
+          "_label": "HTML lang 语言声明",
+          "missing": "html 标签没有 lang，搜索引擎和读屏软件得自己猜这一页是什么语言。",
+          "declared": "lang={lang}"
+        },
+        "favicon": {
+          "_label": "Favicon 站点图标",
+          "missing": "没有声明站点图标。",
+          "declared": "已声明站点图标。"
+        },
+        "h1": {
+          "_label": "H1 主标题",
+          "missing": "没有 H1。",
+          "single": "唯一 H1「{h1}」，宽度 {width}。",
+          "multiple": "有 {count} 个 H1（首个为「{first}」）。多个 H1 会把「这一页是关于什么的」说成好几件事。"
+        },
+        "bodyWords": {
+          "_label": "正文词数",
+          "unavailable": "这一页的正文按空格数不出词数（多为无词间空格的语言），因此不给数字，也不据此判分。",
+          "thin": "只有 {words} 个词。内容这么少，其余各项做得再好也难以支撑排名。",
+          "low": "{words} 个词，偏少。",
+          "fair": "{words} 个词。",
+          "good": "{words} 个词，篇幅充分。"
+        },
+        "subHeadings": {
+          "_label": "小标题",
+          "unavailable": "H1 采集已达上限，无法可靠地把小标题从标题列表里分出来，因此不作判定。",
+          "none": "正文没有小标题，长内容会缺少可扫读的骨架。",
+          "present": "有 {count} 个小标题。"
+        },
+        "textRatio": {
+          "_label": "文本/代码比",
+          "unavailable": "没有取到 HTML 体积，无法计算。",
+          "healthy": "可见文本占 HTML 的 {percent}%。",
+          "low": "可见文本只占 HTML 的 {percent}%，这一页大部分是标记而不是内容。"
+        },
+        "keyword": {
+          "_label": "关键词布局",
+          "unavailable": "这次没有量到关键词证据。",
+          "title": {
+            "_label": "关键词出现在 Title",
+            "covered": "「{query}」完整出现在 title 中（{occurrences} 次）。",
+            "absent": "「{query}」没有完整出现在 title 中。",
+            "notApplicable": "这一页没有 title，无从检查。"
+          },
+          "description": {
+            "_label": "关键词出现在 Description",
+            "covered": "「{query}」完整出现在描述中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在描述中。",
+            "notApplicable": "这一页没有描述，无从检查。"
+          },
+          "h1": {
+            "_label": "关键词出现在 H1",
+            "covered": "「{query}」完整出现在 H1 中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在 H1 中。",
+            "notApplicable": "这一页没有 H1，无从检查。"
+          },
+          "subHeadings": {
+            "_label": "关键词出现在小标题",
+            "covered": "「{query}」出现在小标题中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在任何小标题中。",
+            "notApplicable": "没有可检查的小标题。"
+          },
+          "openingText": {
+            "_label": "关键词出现在正文开头",
+            "covered": "「{query}」出现在采集到的正文开头（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在正文开头。",
+            "notApplicable": "没有取到正文开头，无从检查。"
+          },
+          "url": {
+            "_label": "关键词出现在 URL",
+            "covered": "URL 里包含「{query}」。",
+            "absent": "URL 里没有「{query}」。",
+            "notApplicable": "无从检查。"
+          },
+          "density": {
+            "_label": "关键词密度",
+            "unavailable": "没有可用的密度分母，因此不给这个数字。",
+            "ok": "「{query}」密度 {percent}%（已采文本 {units} 单位中出现 {occurrences} 次）。",
+            "low": "「{query}」密度只有 {percent}%（{units} 单位中 {occurrences} 次），文案还没围绕这个词展开。",
+            "high": "「{query}」密度 {percent}%（{units} 单位中 {occurrences} 次），高到读起来像是写给爬虫的。"
+          },
+          "brand": {
+            "_label": "品牌词",
+            "matched": "「{query}」与站点域名一致，看起来是品牌词。品牌词的密度天然低于话题词，这里只作说明，不影响任何判分。"
+          }
+        },
+        "internalLinks": {
+          "_label": "站内链接",
+          "none": "这一页没有指向站内其他页面的链接。",
+          "few": "只有 {count} 条站内链接。",
+          "ok": "{count} 条站内链接。"
+        },
+        "anchorText": {
+          "_label": "锚文本",
+          "notApplicable": "没有站内链接，无从检查锚文本。",
+          "allDescribed": "{count} 条站内链接都有描述性锚文本。",
+          "someEmpty": "{count} 条站内链接里有 {empty} 条没有锚文本。"
+        },
+        "externalLinks": {
+          "_label": "站外链接",
+          "none": "这一页没有站外链接。适量导出到权威来源是正常信号，这里不判分。",
+          "present": "{count} 条站外链接（其中 {nofollow} 条 nofollow）。不判分。"
+        },
+        "linkSafety": {
+          "_label": "新窗口外链安全",
+          "ok": "新窗口外链都带了 noopener（或没有这类链接）。",
+          "unsafe": "有 {count} 条 target=_blank 的外链没带 noopener，被打开的页面能拿到本页的窗口句柄。"
+        },
+        "images": {
+          "_label": "图片 Alt",
+          "none": "这一页没有 img 图片。",
+          "allDescribed": "{total} 张图片都有 alt（其中 {decorative} 张声明为装饰性空 alt）。",
+          "someMissingAlt": "{total} 张图片里有 {missing} 张没有 alt 属性。"
+        },
+        "openGraph": {
+          "_label": "Open Graph",
+          "complete": "og:title / og:description / og:image 齐全，分享出去有完整卡片。",
+          "partial": "缺少 {missing}，分享卡片会不完整。",
+          "missing": "没有任何 Open Graph 标签，分享到社交平台时由对方自行拼凑。"
+        },
+        "twitterCard": {
+          "_label": "Twitter/X 卡片",
+          "missing": "没有声明 twitter:card。",
+          "declared": "twitter:card={card}"
+        },
+        "https": {
+          "_label": "HTTPS 加密",
+          "enabled": "已启用 HTTPS。",
+          "absent": "这一页不是 HTTPS。"
+        },
+        "status": {
+          "_label": "HTTP 状态与跳转",
+          "unavailable": "没有取到最终状态码。",
+          "direct": "直接返回 {status}，无跳转。",
+          "redirected": "经过 {hops} 次跳转后返回 {status}。",
+          "error": "最终状态码 {status}。"
+        },
+        "responseTime": {
+          "_label": "响应速度",
+          "unavailable": "没有取到响应耗时。",
+          "fast": "HTML 下载完成耗时 {ms}ms。",
+          "fair": "HTML 下载完成耗时 {ms}ms。",
+          "slow": "HTML 下载完成耗时 {ms}ms，明显偏慢。"
+        },
+        "jsonLd": {
+          "_label": "结构化数据 JSON-LD",
+          "none": "没有检测到 JSON-LD 结构化数据。",
+          "valid": "{count} 类 JSON-LD：{types}",
+          "malformed": "检测到 {types}，其中 {errors} 个块解析失败。"
+        },
+        "robotsTxt": {
+          "_label": "robots.txt",
+          "reachable": "robots.txt 可访问，观测到 {groups} 组规则。",
+          "unreachable": "没有取到 robots.txt。"
+        },
+        "sitemap": {
+          "_label": "Sitemap 站点地图",
+          "reachable": "robots.txt 中声明了 {references} 个 sitemap，且可访问。",
+          "unreachable": "没有取到 sitemap。"
+        },
+        "sitemapMember": {
+          "_label": "这一页是否在 sitemap 里",
+          "listed": "这一页出现在 sitemap 中。",
+          "absent": "站点有 sitemap，但这一页不在里面。",
+          "noSitemap": "没有取到 sitemap，无法确认这一页是否被列出。"
+        },
+        "htmlSize": {
+          "_label": "HTML 体积",
+          "ok": "HTML 体积 {kb} KB。",
+          "large": "HTML 体积 {kb} KB，偏大。",
+          "huge": "HTML 体积 {kb} KB，过大。"
+        },
+        "hreflang": {
+          "_label": "hreflang",
+          "none": "没有声明 hreflang。单语言站点本就不需要，这里不判分。",
+          "declared": "声明了 {count} 个 hreflang：{tags}。不判分。"
+        },
+        "site": {
+          "title_duplicate": {
+            "_label": "标题是否与其他页重复",
+            "flagged": "这一页的 title 与站内其他页面重复（全站 {affected}/{tested} 页涉及）。",
+            "clear": "在采集到的 {tested} 个页面里，这一页的 title 是唯一的。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "meta_description_duplicate": {
+            "_label": "描述是否与其他页重复",
+            "flagged": "这一页的描述与站内其他页面重复（全站 {affected}/{tested} 页涉及）。",
+            "clear": "在采集到的 {tested} 个页面里，这一页的描述是唯一的。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "sitemap_page_without_observed_inlink": {
+            "_label": "是否为孤岛页",
+            "flagged": "这一页在 sitemap 里，但整轮采集没有观察到任何站内链接指向它。",
+            "clear": "采集中观察到有站内链接指向这一页。",
+            "notTested": "这条规则只测 sitemap 中的页面，没有覆盖这一页。"
+          },
+          "page_outbound_broken_link": {
+            "_label": "本页是否有坏链",
+            "flagged": "这一页有指向错误状态页面的链接。",
+            "clear": "这一页导出的链接都没有返回错误状态。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "click_depth_beyond_reviewed_limit": {
+            "_label": "点击深度",
+            "flagged": "从首页出发要点 4 次以上才能到这一页。",
+            "clear": "从首页出发 4 次点击以内可以到这一页。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          }
+        }
+      },
+      "grades": {
+        "A": "A · 优秀",
+        "B": "B · 良好",
+        "C": "C · 及格",
+        "D": "D · 建议逐项整改"
+      },
+      "score": {
+        "counts": "{graded} 项判分中通过 {pass} 项，警告 {warn} 项，未通过 {fail} 项",
+        "topicFocus": "主题聚焦 {percent}%",
+        "notGraded": "不判分",
+        "disclaimer": "分数只覆盖这一页自己能改的部分。排名还取决于站点权重、页面体验、竞争强弱和用户行为，这些都不在本工具的量程里。每项的权重是我们定的，不是谷歌的口径。",
+        "caps": {
+          "topic_focus": "总分已被压到 {ceiling}：这一页围绕目标关键词的程度不够，结构分再高也换不来这个词的排名。",
+          "body_words": "总分已被压到 {ceiling}：正文太短，其余各项没有足够的内容可依附。"
+        }
+      },
+      "vitals": {
+        "status": "状态",
+        "responseMs": "耗时",
+        "htmlSize": "体积",
+        "words": "词数",
+        "internalLinks": "内链",
+        "externalLinks": "外链",
+        "images": "图片",
+        "lang": "语言"
+      },
+      "preview": {
+        "serpEyebrow": "GOOGLE 结果预览（近似）",
+        "socialEyebrow": "社交分享卡片（近似）",
+        "titleMissing": "（这一页没有 title）",
+        "descriptionMissing": "（这一页没有描述，谷歌会自行摘取正文）",
+        "serpNote": "按常见宽度截断示意。谷歌实际按渲染像素宽度截断，且随设备与查询变化。",
+        "socialUnavailable": "这次采集没有取到这一页的标记细节，无法预览分享卡片。",
+        "socialNoImage": "（没有 og:image）",
+        "socialNoCard": "未声明",
+        "socialNote": "twitter:card = {card}。图片只列出地址，不在这里加载——那会让本页替你去请求被检查的站点。"
+      },
+      "sections": {
+        "scoreHeading": "这一页的体检结果",
+        "checksHeading": "逐项结论",
+        "previewHeading": "它在别处长什么样",
+        "keywordHeading": "关键词落点"
       }
     }
   },
