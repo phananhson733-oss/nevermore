@@ -27,6 +27,11 @@ export type { CrawlRaw } from "./types.ts";
  */
 export { CRAWL_PROJECTION_LIMITS } from "./types.ts";
 export type { CrawlPageProjection } from "../observations.ts";
+/**
+ * On-page facts collected beside the frozen `crawl.page.v1` projection. The
+ * public tools read them; nothing persists them.
+ */
+export type { ParsedOnPageFacts } from "./parse-page.ts";
 
 export const PUBLIC_PREVIEW_CRAWL_USER_AGENT =
   "GenGrowth-Public-Tools-Crawler/1.0 (+https://gengrowth.ai/tools)";

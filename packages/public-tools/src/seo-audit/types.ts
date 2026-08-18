@@ -118,6 +118,60 @@ export interface SeoAuditSiteResources {
  * visibility: paired `nav`/`footer`/`aside`/`script` blocks are removed, but
  * CSS, `hidden` and client rendering are not evaluated.
  */
+/**
+ * What the target page's HTML declared, as declared.
+ *
+ * Mirrors the crawler's side-car facts one-for-one. Absent stays null or zero
+ * *as observed* — this whole object is null when the crawl did not carry the
+ * side-car at all, which is a different fact from a page that declared nothing.
+ */
+export interface SeoAuditTargetDeclaredFacts {
+  readonly lang: string | null;
+  readonly openGraph: {
+    readonly title: string | null;
+    readonly description: string | null;
+    readonly image: string | null;
+  };
+  readonly twitterCard: string | null;
+  readonly viewport: string | null;
+  readonly charset: string | null;
+  readonly faviconDeclared: boolean;
+  readonly hreflang: readonly string[];
+  readonly images: {
+    readonly total: number;
+    readonly withAlt: number;
+    /** `alt=""`, a correct decorative declaration — not a missing alt. */
+    readonly withEmptyAlt: number;
+    readonly withoutAlt: number;
+  };
+  readonly externalLinks: {
+    readonly total: number;
+    readonly nofollow: number;
+    readonly blankWithoutNoopener: number;
+  };
+  /** UTF-8 bytes, not characters: a CJK page would read a third of its size. */
+  readonly htmlBytes: number;
+  readonly visibleTextBytes: number;
+}
+
+/** The crawl's own HTTP journey to the target page. Known once it was collected. */
+export interface SeoAuditTargetResponseFacts {
+  readonly status: number | null;
+  readonly finalStatus: number | null;
+  /** Redirect hops taken, not the URLs — those are the site's, not this page's. */
+  readonly redirectHops: number;
+  readonly responseMs: number | null;
+  readonly contentType: string | null;
+  readonly canonicalTarget: string | null;
+  readonly robotsIndexable: boolean;
+  readonly robotsDirectives: readonly string[];
+  readonly sitemapMember: boolean;
+  readonly jsonLdTypes: readonly string[];
+  readonly jsonLdErrorCount: number;
+  readonly internalOutlinks: number;
+  readonly internalOutlinksWithoutAnchorText: number;
+}
+
 export interface SeoAuditTargetPageExtract {
   readonly url: string;
   readonly title: string | null;
@@ -144,6 +198,10 @@ export interface SeoAuditTargetPageExtract {
   readonly staticBodyWords: number | null;
   /** True when a list field was cut to its own budget before publication. */
   readonly truncatedLists: boolean;
+  /** The crawl's HTTP journey to this page. */
+  readonly response: SeoAuditTargetResponseFacts;
+  /** What the markup declared, or null when the crawl did not carry it. */
+  readonly declared: SeoAuditTargetDeclaredFacts | null;
 }
 
 export interface SeoAuditReport {

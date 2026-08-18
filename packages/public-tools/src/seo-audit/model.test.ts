@@ -153,7 +153,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v5",
+      schemaVersion: "seo_audit.sitewide.v6",
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
@@ -750,6 +750,25 @@ describe("target page extract", () => {
       openingText: "Pricing opening text",
       staticBodyWords: 300,
       truncatedLists: false,
+      // The crawl's own journey to this page, always known once collected.
+      response: {
+        status: 200,
+        finalStatus: 200,
+        redirectHops: 0,
+        responseMs: 42,
+        contentType: "text/html; charset=utf-8",
+        canonicalTarget: "https://acme.test/pricing",
+        robotsIndexable: true,
+        robotsDirectives: [],
+        sitemapMember: true,
+        jsonLdTypes: ["WebPage"],
+        jsonLdErrorCount: 0,
+        internalOutlinks: 0,
+        internalOutlinksWithoutAnchorText: 0,
+      },
+      // This fixture builds page records without the crawler's side-car, and
+      // unknown must not render as a page that declared nothing.
+      declared: null,
     });
     expect(report.targetPageExtract?.url).toBe(report.inspectedTargetUrl);
   });
@@ -849,7 +868,7 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v5");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v6");
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);
   });

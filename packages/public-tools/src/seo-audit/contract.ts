@@ -179,6 +179,8 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "openingText",
   "staticBodyWords",
   "truncatedLists",
+  "response",
+  "declared",
 ];
 
 function isBoundedStringList(
@@ -211,6 +213,115 @@ function isBoundedNullableString(
  * projection to the browser, and would let one enormous heading become the
  * whole response.
  */
+
+const RESPONSE_FACTS_KEYS: readonly string[] = [
+  "status",
+  "finalStatus",
+  "redirectHops",
+  "responseMs",
+  "contentType",
+  "canonicalTarget",
+  "robotsIndexable",
+  "robotsDirectives",
+  "sitemapMember",
+  "jsonLdTypes",
+  "jsonLdErrorCount",
+  "internalOutlinks",
+  "internalOutlinksWithoutAnchorText",
+];
+
+const DECLARED_FACTS_KEYS: readonly string[] = [
+  "lang",
+  "openGraph",
+  "twitterCard",
+  "viewport",
+  "charset",
+  "faviconDeclared",
+  "hreflang",
+  "images",
+  "externalLinks",
+  "htmlBytes",
+  "visibleTextBytes",
+];
+
+function hasExactly(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value);
+  return (
+    own.length === keys.length && own.every((key) => keys.includes(key))
+  );
+}
+
+function isNullableStatus(value: unknown): boolean {
+  return value === null || isNonNegativeInteger(value);
+}
+
+function isResponseFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, RESPONSE_FACTS_KEYS)) return false;
+  return (
+    isNullableStatus(value.status) &&
+    isNullableStatus(value.finalStatus) &&
+    isNonNegativeInteger(value.redirectHops) &&
+    isNullableStatus(value.responseMs) &&
+    isBoundedNullableString(value.contentType, 256) &&
+    isBoundedNullableString(value.canonicalTarget, 2_048) &&
+    typeof value.robotsIndexable === "boolean" &&
+    isBoundedStringList(value.robotsDirectives, 32, 128) &&
+    typeof value.sitemapMember === "boolean" &&
+    isBoundedStringList(value.jsonLdTypes, 100, 256) &&
+    isNonNegativeInteger(value.jsonLdErrorCount) &&
+    isNonNegativeInteger(value.internalOutlinks) &&
+    isNonNegativeInteger(value.internalOutlinksWithoutAnchorText)
+  );
+}
+
+function isImageFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["total", "withAlt", "withEmptyAlt", "withoutAlt"]) &&
+    isNonNegativeInteger(value.total) &&
+    isNonNegativeInteger(value.withAlt) &&
+    isNonNegativeInteger(value.withEmptyAlt) &&
+    isNonNegativeInteger(value.withoutAlt)
+  );
+}
+
+function isExternalLinkFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["total", "nofollow", "blankWithoutNoopener"]) &&
+    isNonNegativeInteger(value.total) &&
+    isNonNegativeInteger(value.nofollow) &&
+    isNonNegativeInteger(value.blankWithoutNoopener)
+  );
+}
+
+function isOpenGraphFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["title", "description", "image"]) &&
+    isBoundedNullableString(value.title, 2_048) &&
+    isBoundedNullableString(value.description, 2_048) &&
+    isBoundedNullableString(value.image, 2_048)
+  );
+}
+
+function isDeclaredFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, DECLARED_FACTS_KEYS)) return false;
+  return (
+    isBoundedNullableString(value.lang, 128) &&
+    isOpenGraphFacts(value.openGraph) &&
+    isBoundedNullableString(value.twitterCard, 2_048) &&
+    isBoundedNullableString(value.viewport, 2_048) &&
+    isBoundedNullableString(value.charset, 2_048) &&
+    typeof value.faviconDeclared === "boolean" &&
+    isBoundedStringList(value.hreflang, 32, 128) &&
+    isImageFacts(value.images) &&
+    isExternalLinkFacts(value.externalLinks) &&
+    isNonNegativeInteger(value.htmlBytes) &&
+    isNonNegativeInteger(value.visibleTextBytes)
+  );
+}
+
 function isTargetPageExtract(
   value: unknown,
 ): value is SeoAuditTargetPageExtract {
@@ -230,7 +341,9 @@ function isTargetPageExtract(
     isBoundedNullableString(value.openingText, 500) &&
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
-    typeof value.truncatedLists === "boolean"
+    typeof value.truncatedLists === "boolean" &&
+    isResponseFacts(value.response) &&
+    (value.declared === null || isDeclaredFacts(value.declared))
   );
 }
 
@@ -243,7 +356,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v5" &&
+    run.schemaVersion === "seo_audit.sitewide.v6" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

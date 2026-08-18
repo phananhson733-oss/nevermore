@@ -58,6 +58,69 @@ export interface ParsedPage {
   readonly jsonLd: CrawlJsonLdProjection;
   readonly paragraphs: readonly string[];
   readonly bodyExcerpt: string | null;
+  /**
+   * On-page facts beyond `crawl.page.v1`.
+   *
+   * Deliberately outside `CrawlPageProjection`: that projection *is* the frozen
+   * `crawl.page.v1` metric, persisted in the product's normalized_observations
+   * and pinned by both the generated OpenAPI types and the growth-map Zod
+   * schema. Widening it to carry facts only the public On-Page Checker reads
+   * would be a product-side contract change with a migration behind it. These
+   * ride beside the projection, the way `htmlLanguage` and
+   * `internalFetchTargets` already do.
+   */
+  readonly onPage: ParsedOnPageFacts;
+}
+
+/** Sharing-card meta, as declared. Absent stays null; it is not a default. */
+export interface ParsedOpenGraph {
+  readonly title: string | null;
+  readonly description: string | null;
+  readonly image: string | null;
+}
+
+/**
+ * Image alt coverage.
+ *
+ * `withEmptyAlt` is counted apart from `withoutAlt` on purpose: `alt=""` is how
+ * a decorative image is correctly declared, and folding the two together would
+ * report a page that did the right thing as having a defect.
+ */
+export interface ParsedImageFacts {
+  readonly total: number;
+  readonly withAlt: number;
+  readonly withEmptyAlt: number;
+  readonly withoutAlt: number;
+}
+
+/** Outbound links leaving this origin, and the ones that open unsafely. */
+export interface ParsedExternalLinkFacts {
+  readonly total: number;
+  readonly nofollow: number;
+  /** `target=_blank` without `rel=noopener`, which hands over a window handle. */
+  readonly blankWithoutNoopener: number;
+}
+
+export interface ParsedOnPageFacts {
+  /** The `<html lang>` attribute exactly as declared, unvalidated. */
+  readonly lang: string | null;
+  readonly openGraph: ParsedOpenGraph;
+  readonly twitterCard: string | null;
+  readonly viewport: string | null;
+  readonly charset: string | null;
+  readonly faviconDeclared: boolean;
+  readonly hreflang: readonly string[];
+  readonly images: ParsedImageFacts;
+  readonly externalLinks: ParsedExternalLinkFacts;
+  /**
+   * UTF-8 byte counts, not character counts.
+   *
+   * A page written in CJK carries roughly three bytes per character, so a
+   * character count would report a third of the transferred size — and every
+   * text-to-code ratio derived from it.
+   */
+  readonly htmlBytes: number;
+  readonly visibleTextBytes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +461,151 @@ function parseRobotsDirectives(content: string | null): readonly string[] {
 // Entry point.
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// On-page facts (added here, not vendored: the upstream crawler has no
+// equivalent). Everything below reads the same already-parsed tag soup and
+// never issues a request of its own.
+// ---------------------------------------------------------------------------
+
+const UTF8 = new TextEncoder();
+
+/** Meta value by `property=` (Open Graph) or `name=` (everything else). */
+function metaContent(
+  metaTags: readonly string[],
+  key: string,
+  attribute: "property" | "name",
+): string | null {
+  const tag = metaTags.find(
+    (candidate) => attr(candidate, attribute)?.toLowerCase() === key,
+  );
+  return normalisedAttributeText(
+    attr(tag, "content"),
+    CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
+  );
+}
+
+function collectImageFacts(html: string): ParsedImageFacts {
+  const tags = [...html.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0]);
+  let withAlt = 0;
+  let withEmptyAlt = 0;
+  let withoutAlt = 0;
+  for (const tag of tags) {
+    const alt = attr(tag, "alt");
+    if (alt === null) withoutAlt += 1;
+    else if (alt.trim() === "") withEmptyAlt += 1;
+    else withAlt += 1;
+  }
+  return { total: tags.length, withAlt, withEmptyAlt, withoutAlt };
+}
+
+function collectExternalLinkFacts(
+  html: string,
+  pageUrl: string,
+  pageOrigin: string,
+): ParsedExternalLinkFacts {
+  let total = 0;
+  let nofollow = 0;
+  let blankWithoutNoopener = 0;
+  for (const match of html.matchAll(/<a\b[^>]*>/gi)) {
+    const tag = match[0];
+    const href = attr(tag, "href");
+    if (href === null) continue;
+    const pair = canonicalizeUrl(decodeHtml(href), pageUrl);
+    if (pair === null) continue;
+    let origin: string;
+    try {
+      origin = new URL(pair.fetchUrl).origin;
+    } catch {
+      continue;
+    }
+    if (origin === pageOrigin) continue;
+    total += 1;
+    const rel = (attr(tag, "rel") ?? "").toLowerCase();
+    const relTokens = new Set(rel.split(/\s+/).filter(Boolean));
+    if (relTokens.has("nofollow")) nofollow += 1;
+    const opensNewWindow = (attr(tag, "target") ?? "").toLowerCase() === "_blank";
+    if (opensNewWindow && !relTokens.has("noopener")) blankWithoutNoopener += 1;
+  }
+  return { total, nofollow, blankWithoutNoopener };
+}
+
+function collectHreflang(html: string): readonly string[] {
+  const tags = [...html.matchAll(/<link\b[^>]*>/gi)].map((match) => match[0]);
+  const seen: string[] = [];
+  for (const tag of tags) {
+    if (attr(tag, "rel")?.toLowerCase() !== "alternate") continue;
+    const lang = attr(tag, "hreflang");
+    if (lang === null || lang.trim() === "") continue;
+    const bounded = boundChars(
+      lang.trim(),
+      CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars,
+    );
+    if (!seen.includes(bounded)) seen.push(bounded);
+    if (seen.length >= CRAWL_PROJECTION_LIMITS.maxRobotsDirectives) break;
+  }
+  return seen;
+}
+
+/** `<meta charset>` first, then the legacy `http-equiv` spelling. */
+function collectCharset(metaTags: readonly string[]): string | null {
+  for (const tag of metaTags) {
+    const direct = attr(tag, "charset");
+    if (direct !== null && direct.trim() !== "") return direct.trim().toLowerCase();
+  }
+  const equiv = metaTags.find(
+    (tag) => attr(tag, "http-equiv")?.toLowerCase() === "content-type",
+  );
+  const declared = attr(equiv, "content")?.match(/charset\s*=\s*([\w-]+)/i)?.[1];
+  return declared ? declared.toLowerCase() : null;
+}
+
+function collectFaviconDeclared(html: string): boolean {
+  for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
+    const rel = (attr(match[0], "rel") ?? "").toLowerCase();
+    const tokens = new Set(rel.split(/\s+/).filter(Boolean));
+    if (
+      tokens.has("icon") ||
+      tokens.has("shortcut") ||
+      tokens.has("apple-touch-icon") ||
+      tokens.has("mask-icon")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectOnPageFacts(
+  html: string,
+  metaTags: readonly string[],
+  pageUrl: string,
+  pageOrigin: string,
+  bodyText: string,
+  htmlTag: string | undefined,
+): ParsedOnPageFacts {
+  return {
+    lang: normalisedAttributeText(
+      attr(htmlTag, "lang"),
+      CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars,
+    ),
+    openGraph: {
+      title: metaContent(metaTags, "og:title", "property"),
+      description: metaContent(metaTags, "og:description", "property"),
+      image: metaContent(metaTags, "og:image", "property"),
+    },
+    twitterCard: metaContent(metaTags, "twitter:card", "name"),
+    viewport: metaContent(metaTags, "viewport", "name"),
+    charset: collectCharset(metaTags),
+    faviconDeclared: collectFaviconDeclared(html),
+    hreflang: collectHreflang(html),
+    images: collectImageFacts(html),
+    externalLinks: collectExternalLinkFacts(html, pageUrl, pageOrigin),
+    htmlBytes: UTF8.encode(html).length,
+    visibleTextBytes: UTF8.encode(bodyText).length,
+  };
+}
+
 /**
  * Parse one HTML document into its content-derived crawl facts. `pageUrl` is the
  * canonical URL of the page (used as the base for resolving links and as the
@@ -450,6 +658,14 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
   const outlinks = collectInternalOutlinks(html, pageUrl, pageOrigin);
   const htmlTag = firstTag(html, /<html\b[^>]*>/i);
+  const onPage = collectOnPageFacts(
+    html,
+    metaTags,
+    pageUrl,
+    pageOrigin,
+    bodyText,
+    htmlTag,
+  );
 
   return {
     htmlLanguage: parseHtmlLanguageDeclaration(attr(htmlTag, "lang")),
@@ -469,5 +685,6 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     bodyExcerpt: bodyText
       ? truncate(bodyText, CRAWL_PROJECTION_LIMITS.maxBodyExcerptChars)
       : null,
+    onPage,
   };
 }

@@ -64,6 +64,22 @@ const extract: SeoAuditTargetPageExtract = {
   openingText: "Every Acme plan includes the pricing calculator.",
   staticBodyWords: 900,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 42,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 0,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
 
 function evidenceFor(

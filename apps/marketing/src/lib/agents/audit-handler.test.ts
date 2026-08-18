@@ -71,7 +71,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v5",
+    schemaVersion: "seo_audit.sitewide.v6",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -158,6 +158,38 @@ function successWithExtract(
             openingText: "A birth chart maps the sky at a moment in time.",
             staticBodyWords: 900,
             truncatedLists: false,
+            response: {
+              status: 200,
+              finalStatus: 200,
+              redirectHops: 0,
+              responseMs: 42,
+              contentType: "text/html; charset=utf-8",
+              canonicalTarget: "https://acme.test/",
+              robotsIndexable: true,
+              robotsDirectives: [],
+              sitemapMember: true,
+              jsonLdTypes: ["WebPage"],
+              jsonLdErrorCount: 0,
+              internalOutlinks: 3,
+              internalOutlinksWithoutAnchorText: 0,
+            },
+            declared: {
+              lang: "en",
+              openGraph: {
+                title: "Acme birth chart calculator",
+                description: "Calculate a birth chart.",
+                image: "https://acme.test/card.png",
+              },
+              twitterCard: "summary_large_image",
+              viewport: "width=device-width, initial-scale=1",
+              charset: "utf-8",
+              faviconDeclared: true,
+              hreflang: ["en"],
+              images: { total: 2, withAlt: 2, withEmptyAlt: 0, withoutAlt: 0 },
+              externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
+              htmlBytes: 24_576,
+              visibleTextBytes: 8_192,
+            },
           },
         },
       },
@@ -275,7 +307,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v5",
+            schemaVersion: "seo_audit.sitewide.v6",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -650,7 +682,9 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            schemaVersion: "seo_audit.sitewide.v6",
+            // Any version that is not the one this boundary accepts. Pinning it
+            // to the current literal would make the case pass by agreeing.
+            schemaVersion: "seo_audit.sitewide.v5",
           },
         },
       }),

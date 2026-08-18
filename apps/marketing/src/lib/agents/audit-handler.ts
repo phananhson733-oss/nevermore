@@ -344,6 +344,52 @@ function projectTargetPageExtract(
     openingText: extract.openingText,
     staticBodyWords: extract.staticBodyWords,
     truncatedLists: extract.truncatedLists,
+    response: {
+      status: extract.response.status,
+      finalStatus: extract.response.finalStatus,
+      redirectHops: extract.response.redirectHops,
+      responseMs: extract.response.responseMs,
+      contentType: extract.response.contentType,
+      canonicalTarget: extract.response.canonicalTarget,
+      robotsIndexable: extract.response.robotsIndexable,
+      robotsDirectives: [...extract.response.robotsDirectives],
+      sitemapMember: extract.response.sitemapMember,
+      jsonLdTypes: [...extract.response.jsonLdTypes],
+      jsonLdErrorCount: extract.response.jsonLdErrorCount,
+      internalOutlinks: extract.response.internalOutlinks,
+      internalOutlinksWithoutAnchorText:
+        extract.response.internalOutlinksWithoutAnchorText,
+    },
+    declared:
+      extract.declared === null
+        ? null
+        : {
+            lang: extract.declared.lang,
+            openGraph: {
+              title: extract.declared.openGraph.title,
+              description: extract.declared.openGraph.description,
+              image: extract.declared.openGraph.image,
+            },
+            twitterCard: extract.declared.twitterCard,
+            viewport: extract.declared.viewport,
+            charset: extract.declared.charset,
+            faviconDeclared: extract.declared.faviconDeclared,
+            hreflang: [...extract.declared.hreflang],
+            images: {
+              total: extract.declared.images.total,
+              withAlt: extract.declared.images.withAlt,
+              withEmptyAlt: extract.declared.images.withEmptyAlt,
+              withoutAlt: extract.declared.images.withoutAlt,
+            },
+            externalLinks: {
+              total: extract.declared.externalLinks.total,
+              nofollow: extract.declared.externalLinks.nofollow,
+              blankWithoutNoopener:
+                extract.declared.externalLinks.blankWithoutNoopener,
+            },
+            htmlBytes: extract.declared.htmlBytes,
+            visibleTextBytes: extract.declared.visibleTextBytes,
+          },
   };
 }
 

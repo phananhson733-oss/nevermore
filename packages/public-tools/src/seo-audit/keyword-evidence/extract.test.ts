@@ -180,3 +180,77 @@ describe("buildTargetPageExtract", () => {
     expect(extract.openingText).toBeNull();
   });
 });
+
+/**
+ * The on-page facts the checker reports beyond keyword placement.
+ *
+ * Split in two on purpose. `response` comes from the crawl's own HTTP journey
+ * and is always known once a page was collected. `declared` comes from markup
+ * the crawler parses beside the frozen projection, and is optional on the page
+ * record — so a crawl that did not carry it reports null rather than a page
+ * that declared nothing.
+ */
+describe("buildTargetPageExtract on-page facts", () => {
+  const onPage = {
+    lang: "en",
+    openGraph: {
+      title: "Free Birth Chart Calculator",
+      description: "What the card says.",
+      image: "https://www.astrologywiki.com/card.png",
+    },
+    twitterCard: "summary_large_image",
+    viewport: "width=device-width, initial-scale=1",
+    charset: "utf-8",
+    faviconDeclared: true,
+    hreflang: ["en"],
+    images: { total: 4, withAlt: 3, withEmptyAlt: 1, withoutAlt: 0 },
+    externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
+    htmlBytes: 31_744,
+    visibleTextBytes: 10_729,
+  } as const;
+
+  it("reports what the page declared", () => {
+    const extract = buildTargetPageExtract(projection(), onPage);
+
+    expect(extract.declared).toEqual(onPage);
+  });
+
+  it("reports the crawl's own HTTP journey", () => {
+    const extract = buildTargetPageExtract(
+      projection({
+        redirectChain: ["https://astrologywiki.com/"],
+        jsonLd: { types: ["Organization", "WebSite"], errorCount: 1 },
+        internalOutlinks: [
+          { targetSubjectUrl: "https://x.test/a", rel: null, anchorText: "A" },
+          { targetSubjectUrl: "https://x.test/b", rel: null, anchorText: null },
+        ],
+      }),
+      onPage,
+    );
+
+    expect(extract.response).toEqual({
+      status: 200,
+      finalStatus: 200,
+      redirectHops: 1,
+      responseMs: 98,
+      contentType: "text/html; charset=utf-8",
+      canonicalTarget: "https://www.astrologywiki.com/",
+      robotsIndexable: true,
+      robotsDirectives: [],
+      sitemapMember: true,
+      jsonLdTypes: ["Organization", "WebSite"],
+      jsonLdErrorCount: 1,
+      internalOutlinks: 2,
+      internalOutlinksWithoutAnchorText: 1,
+    });
+  });
+
+  it("says null rather than inventing a page that declared nothing", () => {
+    // A crawl record without the side-car: unknown, which is not the same fact
+    // as a page carrying no Open Graph tags.
+    const extract = buildTargetPageExtract(projection());
+
+    expect(extract.declared).toBeNull();
+    expect(extract.response.status).toBe(200);
+  });
+})

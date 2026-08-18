@@ -649,7 +649,10 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
     targetPageExtract:
       inspectedProjection === null || inspectedProjection === undefined
         ? null
-        : buildTargetPageExtract(inspectedProjection),
+        : buildTargetPageExtract(
+            inspectedProjection,
+            raw.pages[inspectedIndex]?.onPage,
+          ),
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
@@ -681,7 +684,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v5",
+      schemaVersion: "seo_audit.sitewide.v6",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

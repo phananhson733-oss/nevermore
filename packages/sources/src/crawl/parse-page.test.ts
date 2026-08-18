@@ -535,3 +535,110 @@ describe("directivesIndexable", () => {
     expect(directivesIndexable(["none"])).toBe(false);
   });
 });
+
+/**
+ * On-page facts beyond `crawl.page.v1`.
+ *
+ * These travel beside the frozen projection rather than inside it — that metric
+ * is persisted in the product's normalized_observations and pinned by OpenAPI
+ * and Zod, so widening it would be a product-side contract change for facts
+ * only the public On-Page Checker reads.
+ */
+describe("parsePage on-page facts", () => {
+  const RICH_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rich page</title>
+  <meta property="og:title" content="Rich page for sharing">
+  <meta property="og:description" content="What the card says.">
+  <meta property="og:image" content="https://example.com/card.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="alternate" hreflang="en" href="https://example.com/">
+  <link rel="alternate" hreflang="zh-CN" href="https://example.com/zh/">
+</head>
+<body>
+  <h1>Rich page</h1>
+  <p>Body copy that is long enough to measure against the markup around it.</p>
+  <img src="/a.png" alt="Described">
+  <img src="/b.png" alt="">
+  <img src="/c.png">
+  <a href="https://other.com/one" rel="nofollow">External nofollow</a>
+  <a href="https://other.com/two" target="_blank">External blank unsafe</a>
+  <a href="https://other.com/three" target="_blank" rel="noopener">External blank safe</a>
+  <a href="/internal">Internal</a>
+</body>
+</html>`;
+
+  it("reads the social and mobile meta a sharing card depends on", () => {
+    const page = parsePage(RICH_HTML, BASE);
+
+    expect(page.onPage.openGraph).toEqual({
+      title: "Rich page for sharing",
+      description: "What the card says.",
+      image: "https://example.com/card.png",
+    });
+    expect(page.onPage.twitterCard).toBe("summary_large_image");
+    expect(page.onPage.viewport).toBe("width=device-width, initial-scale=1");
+    expect(page.onPage.charset).toBe("utf-8");
+    expect(page.onPage.faviconDeclared).toBe(true);
+    expect(page.onPage.hreflang).toEqual(["en", "zh-CN"]);
+    expect(page.onPage.lang).toBe("en");
+  });
+
+  it("counts images by whether alt says anything", () => {
+    const page = parsePage(RICH_HTML, BASE);
+
+    // An empty alt is a decorative declaration, not a missing one. Folding the
+    // two together would report a correctly-marked decorative image as a defect.
+    expect(page.onPage.images).toEqual({
+      total: 3,
+      withAlt: 1,
+      withEmptyAlt: 1,
+      withoutAlt: 1,
+    });
+  });
+
+  it("counts external links and the ones that open unsafely", () => {
+    const page = parsePage(RICH_HTML, BASE);
+
+    expect(page.onPage.externalLinks.total).toBe(3);
+    expect(page.onPage.externalLinks.nofollow).toBe(1);
+    // target=_blank without noopener hands the opened page a window handle.
+    expect(page.onPage.externalLinks.blankWithoutNoopener).toBe(1);
+  });
+
+  it("measures bytes rather than characters", () => {
+    // A page whose visible text is entirely non-ASCII: a character count would
+    // report a third of the transferred size and every ratio built on it.
+    const cjk = `<!doctype html><html lang="zh"><head><title>标题</title></head><body><p>${"中".repeat(100)}</p></body></html>`;
+    const page = parsePage(cjk, BASE);
+
+    expect(page.onPage.htmlBytes).toBe(new TextEncoder().encode(cjk).length);
+    expect(page.onPage.visibleTextBytes).toBeGreaterThan(100);
+    expect(page.onPage.visibleTextBytes).toBeLessThanOrEqual(
+      page.onPage.htmlBytes,
+    );
+  });
+
+  it("reports absence as absence rather than as a default", () => {
+    const bare = `<!doctype html><html><head><title>Bare</title></head><body><p>Nothing declared.</p></body></html>`;
+    const page = parsePage(bare, BASE);
+
+    expect(page.onPage.openGraph).toEqual({
+      title: null,
+      description: null,
+      image: null,
+    });
+    expect(page.onPage.twitterCard).toBeNull();
+    expect(page.onPage.viewport).toBeNull();
+    expect(page.onPage.charset).toBeNull();
+    expect(page.onPage.faviconDeclared).toBe(false);
+    expect(page.onPage.hreflang).toEqual([]);
+    expect(page.onPage.lang).toBeNull();
+    expect(page.onPage.images.total).toBe(0);
+    expect(page.onPage.externalLinks.total).toBe(0);
+  });
+});
