@@ -98,3 +98,24 @@ describe("buildTermFrequencyTables", () => {
     expect(buildTermFrequencyTables("")).toEqual([]);
   });
 });
+
+describe("phrases that span a mixed-script chunk", () => {
+  it("does not invent a phrase the page never shows", () => {
+    // `SEO工具checker` counts as three units, but the non-CJK half is
+    // `seochecker` — two pieces of the source that are not next to each other.
+    // A two-unit phrase built across it reads `seochecker工`, which appears
+    // nowhere on the page.
+    const tables = buildTermFrequencyTables("SEO工具checker SEO工具checker");
+    const pairs = tables.find((table) => table.size === 2);
+
+    expect(tables[0]?.rows.map((row) => row.phrase)).toContain("seochecker");
+    for (const row of pairs?.rows ?? []) {
+      expect(row.phrase).not.toContain("seochecker");
+    }
+  });
+
+  it("still builds phrases across ordinary CJK text", () => {
+    const tables = buildTermFrequencyTables("免费星盘计算器 免费星盘计算器");
+    expect(tables.find((table) => table.size === 2)?.rows[0]?.phrase).toBe("免费");
+  });
+});

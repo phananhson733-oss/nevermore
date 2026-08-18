@@ -36,6 +36,15 @@ interface Unit {
   /** Normalised text used for counting and display. Empty when unusable. */
   readonly text: string;
   readonly cjk: boolean;
+  /**
+   * True when this unit is the merged remainder of a chunk that also held CJK.
+   *
+   * `SEO工具checker` counts as three units, and the non-CJK half is one of them
+   * — but that half is `SEOchecker`, two pieces of the source that are not next
+   * to each other. Any phrase built across it is a phrase the page never shows,
+   * so these are counted as vocabulary and kept out of every longer table.
+   */
+  readonly merged: boolean;
 }
 
 /**
@@ -113,20 +122,26 @@ export function unitStream(text: string): readonly Unit[] {
     if (chunk === "") continue;
     let remainder = "";
     let remainderAt = -1;
+    let sawCjk = false;
     const pending: Unit[] = [];
     for (const char of chunk) {
       if (isCjkUnit(char.codePointAt(0) ?? 0)) {
-        pending.push({ text: char, cjk: true });
+        sawCjk = true;
+        pending.push({ text: char, cjk: true, merged: false });
         continue;
       }
       if (remainderAt === -1) {
         remainderAt = pending.length;
-        pending.push({ text: "", cjk: false });
+        pending.push({ text: "", cjk: false, merged: false });
       }
       remainder += char;
     }
     if (remainderAt !== -1) {
-      pending[remainderAt] = { text: normaliseWord(remainder), cjk: false };
+      pending[remainderAt] = {
+        text: normaliseWord(remainder),
+        cjk: false,
+        merged: sawCjk,
+      };
     }
     units.push(...pending);
   }
@@ -161,12 +176,19 @@ export function buildTermFrequencyTables(
     if (!usable[start]) continue;
     let phrase = "";
     let allStop = true;
+    let hasMerged = false;
     for (let size = 1; size <= TERM_TABLE_LIMITS.maxPhraseUnits; size += 1) {
       const at = start + size - 1;
       const unit = units[at];
       // An unusable unit ends every longer phrase from this start too: there is
       // no phrase that reads across a run of punctuation.
       if (unit === undefined || !usable[at]) break;
+      // A merged remainder is two pieces of the source that are not adjacent,
+      // so a phrase reading across one is a phrase the page never shows. It
+      // counts as vocabulary at size one and ends every longer phrase that
+      // would touch it — whether it starts the window or lands inside it.
+      hasMerged = hasMerged || unit.merged;
+      if (hasMerged && size > 1) break;
       const previous = units[at - 1];
       phrase +=
         size === 1 || unit.cjk || (previous !== undefined && previous.cjk)
