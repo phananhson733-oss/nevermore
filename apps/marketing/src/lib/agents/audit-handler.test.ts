@@ -71,7 +71,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v5",
+    schemaVersion: "seo_audit.sitewide.v6",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -275,7 +275,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v5",
+            schemaVersion: "seo_audit.sitewide.v6",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -650,7 +650,10 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            schemaVersion: "seo_audit.sitewide.v6",
+            // The previous schema: exactly what a cache entry written before
+            // the bump holds. A reader must refuse a version it was not built
+            // for rather than assume the fields it knows are still there.
+            schemaVersion: "seo_audit.sitewide.v5",
           },
         },
       }),

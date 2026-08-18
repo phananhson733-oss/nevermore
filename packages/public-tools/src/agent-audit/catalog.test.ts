@@ -26,7 +26,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(30);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(33);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -102,7 +102,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(30);
+    expect(decidable).toHaveLength(33);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its
@@ -132,8 +132,38 @@ describe("v2 Agent audit catalog", () => {
         "official",
       );
     }
-    for (const id of ["B5", "6.5"]) {
-      expect(all.find((check) => check.id === id)?.scored).toBe(false);
-    }
+    // Pinned by name, not re-derived from the threshold text the catalog reads:
+    // asserting the rule against itself would pass no matter which checks it
+    // covered. Changing this set has to be a decision someone writes down.
+    expect(
+      all
+        .filter((check) => !check.scored)
+        .map((check) => check.id)
+        .sort(),
+    ).toEqual(
+      [
+        // Deliberate conditions listed for review.
+        "A7",
+        "C6",
+        "D7",
+        // Published with no defensible pass mark.
+        "B4",
+        "B5",
+        "E4",
+        "4.2",
+        "4.3",
+        "4.4",
+        "6.5",
+        // Indexability gates a page rather than scoring it.
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "1.8",
+      ].sort(),
+    );
   });
 });

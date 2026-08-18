@@ -30,7 +30,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["A8", "Pages served over HTTP", "以 HTTP 提供的页数", "0 pages; any page whose final URL is not HTTPS is a Warning", "0 页；最终 URL 非 HTTPS 的页面均为警告"],
   ["B1", "Crawl waste rate", "抓取浪费率", "Below 10% passes; 10-20% is a Tip; above 20% is a Warning", "低于 10% 通过；10–20% 为提示；高于 20% 为警告"],
   ["B2", "5XX response rate", "5XX 占比", "Below 0.5%; otherwise Warning", "低于 0.5%；否则为警告"],
-  ["B3", "Average response time", "平均响应时间", "Below 500 ms; above 1 s is Warning", "低于 500 毫秒；高于 1 秒为警告"],
+  ["B3", "Average response time", "平均响应时间", "500 ms or less; above 1 s is Warning", "不超过 500 毫秒；高于 1 秒为警告"],
   ["B4", "Crawl sufficiency", "抓取充裕度", "Internal heuristic only. Crawl budget has no published per-URL rate; compare a site against its own history.", "仅为内部启发式。抓取预算没有官方的单 URL 速率；只与站点自身历史比较。"],
   ["B5", "Discovery versus refresh crawl ratio", "发现与刷新抓取比", "Display only; no pass/fail threshold", "仅展示，不设通过阈值"],
   ["C1", "Orphan page rate", "孤岛页占比", "Below 5% passes; 5–20% is a Tip; above 20% is a Warning", "低于 5% 通过；5–20% 为提示；高于 20% 为警告"],
@@ -48,7 +48,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["D7", "Pages whose canonical points at another page", "Canonical 指向他页的页数", "Listed for review, not judged: cross-page canonicals are often deliberate consolidation. Confirm each target is the intended one.", "仅列出待复核，不作判定：跨页 Canonical 常是有意收敛。请确认每个目标都是预期页面。"],
   ["E1", "Pages with impressions", "有曝光页数占比", "At least 60%; below 30% is Warning", "至少 60%；低于 30% 为警告"],
   ["E2", "Impression share in positions 1–6", "排名 1–6 的曝光占比", "At least 20%; below 10% is Warning", "至少 20%；低于 10% 为警告"],
-  ["E3", "Impression share in positions 7–10", "排名 7–10 的曝光占比", "Below 40%; above 60% is Warning", "低于 40%；高于 60% 为警告"],
+  ["E3", "Impression share in positions 7–10", "排名 7–10 的曝光占比", "40% or less; above 60% is Warning", "不超过 40%；高于 60% 为警告"],
   ["E4", "Non-brand click share", "非品牌点击占比", "Internal heuristic only. A healthy split depends on brand maturity; review the trend, not the level.", "仅为内部启发式。健康的占比取决于品牌成熟度；看趋势而非绝对值。"],
   ["E5", "Time-sensitive content impression share", "时效内容曝光占比", "Below 40%; above 60% is Warning", "低于 40%；高于 60% 为警告"],
 ];
@@ -168,6 +168,9 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "6.4": ["click_depth_beyond_reviewed_limit"],
   A6: ["redirect_destination_error"],
   B3: ["average_response_time"],
+  E1: ["page_without_search_impressions"],
+  E2: ["impression_share_top_positions"],
+  E3: ["impression_share_low_click_positions"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -235,6 +238,34 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       passBelow: 0.005,
     },
   ],
+  E1: [
+    {
+      // Published as "at least 60% of pages have impressions"; the record
+      // counts the pages that do not, so the bound is the complement.
+      recordId: "page_without_search_impressions",
+      kind: "affected-ratio-at-most",
+      passAtOrBelow: 0.4,
+      failAbove: 0.7,
+    },
+  ],
+  E2: [
+    {
+      recordId: "impression_share_top_positions",
+      kind: "aggregate-min",
+      label: "top_position_impression_share",
+      passAtOrAbove: 0.2,
+      failBelow: 0.1,
+    },
+  ],
+  E3: [
+    {
+      recordId: "impression_share_low_click_positions",
+      kind: "aggregate-max",
+      label: "low_click_position_impression_share",
+      passAtOrBelow: 0.4,
+      failAbove: 0.6,
+    },
+  ],
   B3: [
     {
       recordId: "average_response_time",
@@ -263,6 +294,15 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
     },
   ],
 };
+
+/**
+ * The controlled vocabulary a threshold uses to say it is not a verdict.
+ *
+ * Adding a phrase here silently unscores every check whose threshold contains
+ * it, so catalog.test.ts pins the resulting set by name.
+ */
+const DECLARES_NO_JUDGEMENT =
+  /Internal heuristic only|Display only|Listed for review, not judged/;
 
 function authority(id: string): AgentAuditThresholdAuthority {
   if (["8.1", "8.2", "8.3"].includes(id)) return "official";
@@ -454,6 +494,18 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "Average depth is a shape measurement: it says how far the typical page sits from the entry point, not that any one page is wrong. If it is high, the navigation stops before it reaches most of the site — hub pages, a section index, or pagination that links more than the next page each move a whole group at once. Adding links page by page moves the average almost not at all.",
     "平均深度衡量的是站点形状：它说的是典型页面离入口有多远，不是说某个页面有问题。数值偏高，意味着导航在覆盖到站点大部分之前就断了——聚合页、栏目索引，或者不只链接下一页的分页，每一样都能一次挪动一整组。逐页加链接对平均值几乎没有影响。",
   ),
+  E1: l(
+    "These pages have been crawled and were never shown for anything in the window. Check them in this order, because the cheap answer is usually first: are they indexable at all (a noindex or a canonical pointing elsewhere makes impressions impossible), were they published recently enough that Search Console has not seen them, and do they answer a question anyone is searching for. Only the last one is a content decision; the first two are defects this same run already reports.",
+    "这些页面已经被抓取到，但在统计窗口内从未因任何查询被展示过。按这个顺序排查，因为便宜的答案通常在前面：它们到底能不能被索引（带 noindex 或 canonical 指向他页，就不可能有曝光）、它们发布得是不是太新以致 Search Console 还没见过、以及它们回答的问题是否真的有人在搜。只有最后一条是内容决策，前两条是本次运行已经报出来的缺陷。",
+  ),
+  E2: l(
+    "A low share here means the site is visible but rarely near the top. Do not spread the effort: pull the queries whose impressions are large and whose position sits just outside the band, because moving one of those moves more impressions than fixing ten pages nobody sees. For each, confirm one page owns the query — two pages competing for it is the most common reason neither gets close.",
+    "这个占比低，说明站点能被看见但很少靠前。不要把力气摊开：挑出曝光量大、且排名刚好落在这一档之外的查询，推动其中一个带来的曝光变化，比修十个没人看的页面都大。逐个确认有且只有一个页面在争这个词——两个页面互相竞争，是两个都靠不上去最常见的原因。",
+  ),
+  E3: l(
+    "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
+    "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
+  ),
   D5: l(
     "This run knows which pages parsed no JSON-LD; it does not know why. Sort the uncovered URLs by path shape first: if they share one, the template behind them emits no markup and one edit covers the group, which is the cheap case. If they do not, they were missed individually. Either way add a block whose @type matches what the page actually is and derive every property from data the template already renders.",
     "本次运行知道哪些页面解析不出 JSON-LD，但不知道原因。先按路径形状给未覆盖的 URL 分组：如果它们共用一种路径，说明背后的模板不输出标记，改一处就覆盖一整组，这是便宜的情况。如果不共用，那就是逐个漏掉的。两种情况都一样：加一个 @type 与页面实际身份匹配的块，每个字段都从模板已经渲染的数据里取。",
@@ -518,13 +570,17 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
             : []
       : [];
   const blocking = BLOCKER_CAPABLE.has(id);
-  // A7 / C6 / D7 report conditions that are routinely deliberate (an intentional
-  // noindex, a redirected internal URL, a consolidating canonical). They are
-  // listed for review, and their thresholds say so, so they must not also
-  // deduct from a score.
+  // A check that publishes "this does not judge the page" must not move the
+  // score, so the exclusion is read off the threshold rather than kept in a
+  // second list beside it. Three checks report conditions that are routinely
+  // deliberate (an intentional noindex, a redirected internal link, a
+  // consolidating canonical); five more publish a number with no defensible
+  // pass mark - keyword density says in its own threshold that it "is not used
+  // to judge a page" while deducting from Health, which is the contradiction
+  // this removes.
   const scored =
     !(scope === "page" && groupId === "1") &&
-    !["B5", "6.5", "A7", "C6", "D7"].includes(id);
+    !DECLARES_NO_JUDGEMENT.test(thresholdEn);
   const primaryAgent =
     scope === "page" && ["2", "3", "4", "5", "9"].includes(groupId)
       ? "seo"

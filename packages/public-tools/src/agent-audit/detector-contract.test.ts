@@ -62,6 +62,26 @@ function raw(): SeoAuditRaw {
     },
     limitation: "Fixture crawl.",
     requestedUrl: "https://acme.test/",
+    // Present on purpose. The search-performance records exist only when a
+    // grant covered the run, so a fixture without one would let a check read a
+    // record nothing emits and still pass this file.
+    searchPerformance: {
+      property: "sc-domain:acme.test",
+      startDate: "2026-07-19",
+      endDate: "2026-08-15",
+      pages: [
+        {
+          key: "https://acme.test/",
+          clicks: 5,
+          impressions: 120,
+          position: 4.2,
+        },
+      ],
+      queries: [
+        { key: "acme", clicks: 5, impressions: 120, position: 4.2 },
+      ],
+      truncated: false,
+    },
   };
 }
 

@@ -18,6 +18,7 @@ import type {
 } from "./types.ts";
 import type { SeoAuditRaw } from "./scan.ts";
 import { buildTargetPageExtract } from "./keyword-evidence/extract.ts";
+import { buildSearchPerformanceRecords } from "./search-performance.ts";
 
 const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
 
@@ -234,6 +235,10 @@ function buildRecords(
   }
 
   const records: SeoAuditRecord[] = [
+    // Empty unless an authorized Search Console grant covered this run. The
+    // checks that read these records are gated on the source, so an absent
+    // grant leaves them excluded for that reason instead of passing on nothing.
+    ...buildSearchPerformanceRecords(raw.searchPerformance, htmlPages),
     record({
       id: "robots_resource",
       population: "site_resource",
@@ -782,7 +787,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v5",
+      schemaVersion: "seo_audit.sitewide.v6",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

@@ -47,7 +47,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v5",
+        schemaVersion: "seo_audit.sitewide.v6",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -465,7 +465,10 @@ describe("isAgentAuditSuccessEnvelope", () => {
     const malformed = structuredClone(success) as unknown as {
       data: { run: { source: { schemaVersion: string } } };
     };
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v6";
+    // The previous schema, which is what a cache entry written before the bump
+    // actually holds. A version this reader was not built for must be refused,
+    // not read on the assumption that the fields it knows are still there.
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

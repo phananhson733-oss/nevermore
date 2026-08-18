@@ -289,9 +289,15 @@ function evaluateCheck(
       check,
       result: "excluded",
       engine:
-        records.length > 0 || check.inventoryReady
-          ? "needs-supplement"
-          : check.engine,
+        // A missing source outranks a present detector. Once these checks got
+        // detectors, `inventoryReady` started reporting an unauthorized run as
+        // "needs supplement", which reads as our gap when it is an
+        // authorization the visitor can grant in a minute.
+        check.engine === "access-required" || check.engine === "not-integrated"
+          ? check.engine
+          : records.length > 0 || check.inventoryReady
+            ? "needs-supplement"
+            : check.engine,
       truth:
         check.engine === "access-required" || check.engine === "not-integrated"
           ? "source-gated"

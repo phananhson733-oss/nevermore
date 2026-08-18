@@ -65,6 +65,7 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
       "structure",
       "links",
       "structured_data",
+      "search_performance",
     ].includes(value.category as string) ||
     !["observed", "not_observed", "unverified"].includes(
       value.state as string,
@@ -243,7 +244,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v5" &&
+    run.schemaVersion === "seo_audit.sitewide.v6" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

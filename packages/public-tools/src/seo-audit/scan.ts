@@ -2,6 +2,7 @@ import {
   crawlPublicSitePreview,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
+import type { SearchPerformanceRaw } from "./search-performance.ts";
 
 export type SeoAuditScanErrorCode =
   | "blocked"
@@ -49,6 +50,12 @@ export type SeoAuditCrawler = (
 export type SeoAuditRaw = CrawlRaw & {
   /** Normalized visitor submission retained separately from the crawl origin. */
   readonly requestedUrl: string;
+  /**
+   * Authorized Search Console rows for this host, when the visitor has a grant
+   * that covers it. Absent means no grant, not zero performance: the checks
+   * that read it stay excluded with that reason rather than passing on nothing.
+   */
+  readonly searchPerformance?: SearchPerformanceRaw | null;
 };
 
 export interface SeoAuditScanOptions {

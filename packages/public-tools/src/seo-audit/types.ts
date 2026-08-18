@@ -25,7 +25,8 @@ export type SeoAuditCategory =
   | "metadata"
   | "structure"
   | "links"
-  | "structured_data";
+  | "structured_data"
+  | "search_performance";
 
 export type SeoAuditEvidenceValue = string | number | boolean | null;
 
