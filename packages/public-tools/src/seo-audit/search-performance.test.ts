@@ -47,7 +47,8 @@ function raw(overrides: Partial<SearchPerformanceRaw> = {}): SearchPerformanceRa
     endDate: "2026-08-15",
     pages: [],
     queries: [],
-    truncated: false,
+    pagesTruncated: false,
+    queriesTruncated: false,
     ...overrides,
   };
 }
@@ -123,6 +124,48 @@ describe("search performance records", () => {
     // 6.4 was shown at position 6 more often than at 7.
     expect(topShare(6.4)).toBe(1);
     expect(topShare(6.6)).toBe(0);
+  });
+
+  it("publishes no share from a capped query list", () => {
+    const rows = [
+      row("top", 900, 2),
+      row("low", 50, 8),
+      row("rest", 50, 30),
+    ];
+    const share = (queriesTruncated: boolean) =>
+      byId(
+        buildSearchPerformanceRecords(
+          raw({ queries: rows, queriesTruncated }),
+          [],
+        ),
+        "impression_share_top_positions",
+      );
+
+    expect(share(false)?.observations).toHaveLength(1);
+    // The cap drops the long tail — many impressions, few clicks, ranked past
+    // the tenth result — so the total is short and every band share comes out
+    // flattering. Reporting nothing beats reporting a site as better than it is.
+    expect(share(true)?.observations).toEqual([]);
+    expect(share(true)?.state).toBe("unverified");
+    expect(share(true)?.limitation).toContain("row cap".replace(" ", "_"));
+  });
+
+  it("does not call a page uncovered when the page list was capped", () => {
+    const pages = [page("https://acme.test/a"), page("https://acme.test/b")];
+    const capped = buildSearchPerformanceRecords(
+      raw({
+        pages: [row("https://acme.test/a", 40, 5)],
+        pagesTruncated: true,
+      }),
+      pages,
+    );
+    const record = byId(capped, "page_without_search_impressions");
+
+    // Page b may well have impressions on a row the cap dropped. Listing it as
+    // never shown would invent a defect out of our own budget.
+    expect(record?.observations).toEqual([]);
+    expect(record?.tested).toBe(0);
+    expect(record?.state).toBe("unverified");
   });
 
   it("reports no impressions as nothing to divide by, never as a zero share", () => {

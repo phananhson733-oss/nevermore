@@ -7,6 +7,10 @@ import {
   SEO_AUDIT_EVIDENCE_LABELS,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
+import {
+  SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  SEARCH_PERFORMANCE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/search-performance";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import enMessages from "../../i18n/messages/en.json";
 import zhMessages from "../../i18n/messages/zh.json";
@@ -92,7 +96,10 @@ describe("record vocabulary", () => {
       const records = catalogue.tools.seoAudit.records as Readonly<
         Record<string, { title?: string; description?: string }>
       >;
-      for (const id of SEO_AUDIT_RECORD_IDS) {
+      for (const id of [
+        ...SEO_AUDIT_RECORD_IDS,
+        ...SEARCH_PERFORMANCE_RECORD_IDS,
+      ]) {
         const entry = records[id];
         if (!entry?.title?.trim() || !entry.description?.trim()) {
           missing.push(`${locale}:${id}`);
@@ -103,7 +110,10 @@ describe("record vocabulary", () => {
   });
 
   it("names every evidence label the ledger's records publish", () => {
-    const unknown = SEO_AUDIT_EVIDENCE_LABELS.filter(
+    const unknown = [
+      ...SEO_AUDIT_EVIDENCE_LABELS,
+      ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+    ].filter(
       (label) => !AGENT_EVIDENCE_LABELS.has(label),
     );
     expect(unknown).toEqual([]);

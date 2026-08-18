@@ -96,7 +96,64 @@ export type AgentAuditResult = Pick<
    * wrong by accident rather than by discipline.
    */
   readonly keywordEvidence?: KeywordEvidence;
+  /**
+   * Present only when the visitor holds a Search Console grant covering the
+   * audited host.
+   *
+   * Absent from `SeoAuditReport` for the same reason as the keyword region, and
+   * a stronger one: the crawl payload is cached by host and shared, while these
+   * numbers belong to one visitor's verified property. Storing them beside a
+   * crawl would answer the next visitor with this one's search data. The
+   * payload guard refuses their evidence category outright, so the mistake
+   * cannot be made quietly.
+   */
+  readonly searchPerformance?: AgentSearchPerformance;
 };
+
+/** The visitor's own search numbers for this host, read fresh on every run. */
+export interface AgentSearchPerformance {
+  /** Property identifier the rows came from, for display beside the result. */
+  readonly property: string;
+  /** Inclusive window, in the property's own reporting days. */
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly records: SeoAuditReport["records"];
+}
+
+/**
+ * Record ids the search-performance region may carry.
+ *
+ * Fixed rather than open: these records reach the same display seam as the
+ * crawl ledger, which fails closed on a record it cannot name, and it fails
+ * closed silently by blanking the panel. An unexpected id is refused here,
+ * where the reason is legible.
+ */
+export const AGENT_SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
+  "page_without_search_impressions",
+  "impression_share_top_positions",
+  "impression_share_low_click_positions",
+];
+
+function isAgentSearchPerformance(
+  value: unknown,
+): value is AgentSearchPerformance {
+  if (!isObject(value)) return false;
+  if (
+    typeof value.property !== "string" ||
+    value.property.trim() === "" ||
+    typeof value.startDate !== "string" ||
+    typeof value.endDate !== "string" ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isSeoAuditRecord)
+  ) {
+    return false;
+  }
+  const allowed = new Set(AGENT_SEARCH_PERFORMANCE_RECORD_IDS);
+  const ids = value.records.map((record) => record.id);
+  return (
+    new Set(ids).size === ids.length && ids.every((id) => allowed.has(id))
+  );
+}
 
 export interface AgentAuditSuccessData {
   readonly run: AgentAuditRun;
@@ -347,6 +404,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.keywordEvidence === undefined ||
       isKeywordEvidenceShape(value.keywordEvidence)
+    ) ||
+    !(
+      value.searchPerformance === undefined ||
+      isAgentSearchPerformance(value.searchPerformance)
     )
   ) {
     return false;

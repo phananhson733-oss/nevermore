@@ -5,6 +5,7 @@
 import type {
   SeoAuditCoverage,
   SeoAuditRecord,
+  SeoAuditReport,
   SeoAuditSiteResources,
 } from "@sf/public-tools";
 import {
@@ -20,12 +21,14 @@ import {
   type SeoAuditRequestInput,
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
+import { readAgentSearchPerformance } from "./search-performance.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
   type AgentAuditSuccessData,
+  type AgentSearchPerformance,
   type AgentKind,
 } from "./audit-contract.ts";
 
@@ -55,6 +58,22 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly reportFirstRun?: (tool: QualifyingTool) => void;
   /**
+   * The visitor's own Search Console numbers for the audited host, or null.
+   *
+   * Optional and best-effort by contract. An audit that cannot reach Search
+   * Console — no grant, no property covering this host, an expired token, a
+   * slow response — is a complete audit with the search checks reporting the
+   * authorization they need. It is never a failed audit, so a throw here is
+   * caught and read as "no grant" rather than surfaced to the visitor.
+   *
+   * Takes the collected pages because coverage is a statement about the pages
+   * this crawl saw, and the projected result deliberately drops them.
+   */
+  readonly readSearchPerformance?: (input: {
+    readonly targetUrl: string;
+    readonly pages: SeoAuditReport["pages"];
+  }) => Promise<AgentSearchPerformance | null>;
+  /**
    * Which tool the visitor actually ran.
    *
    * Owner ruling: the On-Page Checker reuses this endpoint's engine rather than
@@ -83,6 +102,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
     }),
   reportFirstRun: reportFirstToolRun,
   reportAs: "agent-audit",
+  readSearchPerformance: (input) => readAgentSearchPerformance(input),
 };
 
 /**
@@ -408,6 +428,18 @@ export async function handleAgentAuditRequest(
   if (cache === null) return errorResponse("audit_response_invalid", 502);
 
   const { run, result } = envelope.data;
+  // Never lets Search Console decide whether the audit succeeded.
+  let searchPerformance: AgentSearchPerformance | null = null;
+  try {
+    searchPerformance =
+      (await dependencies.readSearchPerformance?.({
+        targetUrl: result.targetUrl,
+        pages: result.pages,
+      })) ?? null;
+  } catch {
+    searchPerformance = null;
+  }
+
   const projected: AgentAuditSuccessData = {
     run: {
       agent,
@@ -448,6 +480,9 @@ export async function handleAgentAuditRequest(
               result.targetInspected,
             ),
           }),
+      // Same reason, one step further: a cache row is shared by host and these
+      // numbers belong to one visitor's verified property.
+      ...(searchPerformance === null ? {} : { searchPerformance }),
     },
   };
 

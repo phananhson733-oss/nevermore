@@ -14,7 +14,8 @@
     "./keyword-opportunity/types": "./src/keyword-opportunity/types.ts",
     "./keyword-opportunity/csv": "./src/keyword-opportunity/csv.ts",
     "./keyword-opportunity/next-checks": "./src/keyword-opportunity/next-checks.ts",
-    "./seo-audit/record-ledger": "./src/seo-audit/record-ledger.ts"
+    "./seo-audit/record-ledger": "./src/seo-audit/record-ledger.ts",
+    "./seo-audit/search-performance": "./src/seo-audit/search-performance.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

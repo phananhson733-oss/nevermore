@@ -166,6 +166,82 @@ function dependencies(
 }
 
 describe("handleAgentAuditRequest", () => {
+  const searchRegion = {
+    property: "sc-domain:acme.test",
+    startDate: "2026-07-19",
+    endDate: "2026-08-15",
+    records: [
+      {
+        id: "impression_share_top_positions",
+        category: "search_performance" as const,
+        state: "observed" as const,
+        unit: "pages" as const,
+        population: "conditional_subset" as const,
+        tested: 1,
+        affected: 1,
+        observations: [
+          {
+            url: null,
+            values: [{ label: "top_position_impression_share", value: 0.42 }],
+          },
+        ],
+        limitation: null,
+      },
+    ],
+  };
+
+  it("attaches the visitor's search region beside the crawl ledger", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => searchRegion }),
+    );
+    const body = (await response.json()) as {
+      data: { result: { searchPerformance?: typeof searchRegion; records: unknown[] } };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.data.result.searchPerformance).toEqual(searchRegion);
+    // Beside, not inside: the crawl ledger is what gets cached by host, and
+    // these numbers belong to one visitor's verified property.
+    expect(body.data.result.records).toHaveLength(29);
+  });
+
+  it("omits the region entirely when nothing covers the host", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => null }),
+    );
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+
+    expect(response.status).toBe(200);
+    expect("searchPerformance" in body.data.result).toBe(false);
+  });
+
+  it("finishes the audit when the Search Console read throws", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => {
+          throw new Error("429 from Search Console");
+        },
+      }),
+    );
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+
+    // A rate limit, an expired token or a slow property is not a failed audit.
+    // The crawl evidence is complete and the search checks report the
+    // authorization they need, which is a state the visitor can act on.
+    expect(response.status).toBe(200);
+    expect("searchPerformance" in body.data.result).toBe(false);
+  });
+
   it("returns auth_required before reading the body or invoking the audit", async () => {
     const incoming = request();
     const delegate = vi.fn(async () => success());

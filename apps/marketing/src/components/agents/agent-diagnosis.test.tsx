@@ -97,6 +97,13 @@ const messages = {
           unavailable: "Unavailable",
           illustrative: "Illustrative",
         },
+        searchSource: {
+          absent:
+            "This run did not read Search Console. The search-performance checks stay excluded until it is authorized — signing in with Google is not the same as granting this tool access.",
+          connect: "Connect Search Console",
+          present:
+            "Search performance read from {property}, {start} to {end}.",
+        },
         excludedBoundary:
           "Unavailable and source-gated checks are excluded, never zero or pass.",
         headingPreset: {
@@ -439,6 +446,73 @@ describe("AgentDiagnosis", () => {
       expect(html).toContain('aria-describedby="seo-diagnosis-axis-result"');
       expect(html).toContain('aria-describedby="seo-diagnosis-axis-engine"');
       expect(html).toContain('aria-describedby="seo-diagnosis-axis-truth"');
+    });
+  });
+
+  describe("the search source", () => {
+    it("keeps the shipped catalogues in step with this fixture", async () => {
+      // The fixture above is hand-written, so the component can render a
+      // missing key and nothing here would notice: next-intl prints the dotted
+      // path instead of throwing, and a `toContain` on the prose passes on the
+      // path itself. Reading the real catalogues is the only check that a key
+      // this component asks for actually ships.
+      const [en, zh] = await Promise.all([
+        import("../../i18n/messages/en.json"),
+        import("../../i18n/messages/zh.json"),
+      ]);
+      for (const catalogue of [en.default, zh.default]) {
+        const source = (
+          catalogue as unknown as {
+            agents: {
+              workbench: {
+                diagnosis: { searchSource?: Record<string, string> };
+              };
+            };
+          }
+        ).agents.workbench.diagnosis.searchSource;
+        expect(Object.keys(source ?? {}).sort()).toEqual([
+          "absent",
+          "connect",
+          "present",
+        ]);
+      }
+    });
+
+    it("says the run did not read Search Console, and offers the grant", () => {
+      const html = render("site", "E");
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      // Six checks report "authorized source required" and, before this, a
+      // visitor who had already signed in with Google had no way to learn that
+      // signing in is not the same as granting this tool access.
+      expect(notice).toContain("did not read Search Console");
+      expect(notice).toContain("signing in with Google is not the same");
+      expect(notice).toContain(
+        "/api/auth/google/start?scope=gsc&amp;next=%2Fagents%2Fseo",
+      );
+    });
+
+    it("names the property and window once a grant answered", () => {
+      const html = render("site", "E", {
+        ...data,
+        result: {
+          ...data.result,
+          searchPerformance: {
+            property: "sc-domain:astrologywiki.com",
+            startDate: "2026-07-19",
+            endDate: "2026-08-15",
+            records: [],
+          },
+        },
+      });
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      expect(notice).toContain("sc-domain:astrologywiki.com");
+      expect(notice).toContain("2026-07-19");
+      expect(notice).toContain("2026-08-15");
+      // No connect link once connected: an offer to do what is already done
+      // reads as the connection not having worked.
+      expect(notice).not.toContain("/api/auth/google/start");
     });
   });
 

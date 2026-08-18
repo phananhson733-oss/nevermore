@@ -1063,6 +1063,18 @@
         "average_click_depth": {
           "title": "平均点击深度",
           "description": "已采集 HTML 页面距抓取入口的平均点击次数。"
+        },
+        "page_without_search_impressions": {
+          "title": "无搜索曝光的页面",
+          "description": "本次抓取采集到、但在统计窗口内 Search Console 从未展示过的页面。"
+        },
+        "impression_share_top_positions": {
+          "title": "排名 1–6 的曝光占比",
+          "description": "按曝光加权：落在前六位的曝光量占全部曝光的比例。"
+        },
+        "impression_share_low_click_positions": {
+          "title": "排名 7–10 的曝光占比",
+          "description": "按曝光加权：落在第七至第十位的曝光量占全部曝光的比例。"
         }
       },
       "evidence": {
@@ -1100,7 +1112,13 @@
         "pages_timed": "已计时页面数",
         "average_click_depth": "平均点击深度",
         "deepest_click_depth": "最深点击深度",
-        "pages_measured": "已测量页面数"
+        "pages_measured": "已测量页面数",
+        "impressions": "曝光量",
+        "top_position_impression_share": "前六位曝光占比",
+        "low_click_position_impression_share": "7–10 位曝光占比",
+        "impressions_in_band": "该档曝光量",
+        "impressions_total": "总曝光量",
+        "queries_measured": "已测量查询数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -3197,6 +3215,11 @@
           "result": "本次运行对该检查的判定：阻断、警告、提示、通过或已排除。",
           "engine": "该检查背后的检测器是否已接入，以及本次运行是否拿到可读的数据源。",
           "truth": "这个结论是怎么来的：在有边界样本中观测到、已实测但未观测到，或根本没有实测。"
+        },
+        "searchSource": {
+          "absent": "本次运行未读取 Search Console。搜索表现相关的检查需要授权后才有结论——用 Google 登录站点并不代表已授权本工具读取。",
+          "connect": "连接 Search Console",
+          "present": "搜索表现读自 {property}，窗口 {start} 至 {end}。"
         }
       },
       "auditCatalog": {

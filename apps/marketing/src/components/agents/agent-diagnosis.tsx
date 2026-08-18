@@ -14,7 +14,9 @@ import {
   Gauge,
 } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { gscAuthorizeHref } from "../tools/gsc-connect-panel";
 
 import type {
   AgentAuditCheckView,
@@ -688,6 +690,39 @@ export function AgentDiagnosis({
             </p>
           </article>
         </div>
+
+        {/*
+          The one thing a signed-in visitor could not tell from this panel: six
+          checks say "authorized source required" and nothing said whether this
+          tool had ever asked. Signing in with Google does not grant Search
+          Console to the audit, so the state has to be visible and the way to
+          change it has to be one click from here.
+        */}
+        <p
+          data-testid="diagnosis-search-source"
+          className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-text-dark-primary"
+        >
+          <Database aria-hidden="true" className="size-3.5 shrink-0 text-text-dark-faint" />
+          {model.searchSource === null ? (
+            <>
+              <span>{t("searchSource.absent")}</span>
+              <Link
+                href={gscAuthorizeHref(model.locale, "/agents/seo")}
+                className="font-semibold text-brand-accent-text underline decoration-brand-border underline-offset-4 transition-colors hover:text-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent"
+              >
+                {t("searchSource.connect")}
+              </Link>
+            </>
+          ) : (
+            <span>
+              {t("searchSource.present", {
+                property: model.searchSource.property,
+                start: model.searchSource.startDate,
+                end: model.searchSource.endDate,
+              })}
+            </span>
+          )}
+        </p>
 
         <p
           data-testid="diagnosis-boundary"

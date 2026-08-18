@@ -1063,6 +1063,18 @@
         "average_click_depth": {
           "title": "Average click depth",
           "description": "Mean clicks from the crawl entry point across collected HTML pages."
+        },
+        "page_without_search_impressions": {
+          "title": "Pages with no search impressions",
+          "description": "Pages this crawl collected that Search Console never showed in a result during the window."
+        },
+        "impression_share_top_positions": {
+          "title": "Impression share in positions 1-6",
+          "description": "Weighted by impressions: the share of all impressions that came from the first six results."
+        },
+        "impression_share_low_click_positions": {
+          "title": "Impression share in positions 7-10",
+          "description": "Weighted by impressions: the share of all impressions that came from results seven through ten."
         }
       },
       "evidence": {
@@ -1100,7 +1112,13 @@
         "pages_timed": "Pages timed",
         "average_click_depth": "Average click depth",
         "deepest_click_depth": "Deepest click depth",
-        "pages_measured": "Pages measured"
+        "pages_measured": "Pages measured",
+        "impressions": "Impressions",
+        "top_position_impression_share": "Top-position impression share",
+        "low_click_position_impression_share": "Low-click position impression share",
+        "impressions_in_band": "Impressions in band",
+        "impressions_total": "Total impressions",
+        "queries_measured": "Queries measured"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -3197,6 +3215,11 @@
           "result": "What this run decided for the check: blocker, warning, tip, pass, or excluded.",
           "engine": "Whether the detector behind the check is integrated and had a source to read this run.",
           "truth": "How the value was learned: observed in the bounded sample, tested with nothing observed, or not measured at all."
+        },
+        "searchSource": {
+          "absent": "This run did not read Search Console. The search-performance checks stay excluded until it is authorized — signing in with Google is not the same as granting this tool access.",
+          "connect": "Connect Search Console",
+          "present": "Search performance read from {property}, {start} to {end}."
         }
       },
       "auditCatalog": {

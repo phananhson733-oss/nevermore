@@ -35,8 +35,18 @@ export interface SearchPerformanceRaw {
   readonly endDate: string;
   readonly pages: readonly SearchPerformanceRow[];
   readonly queries: readonly SearchPerformanceRow[];
-  /** True when a row cap cut either list short. */
-  readonly truncated: boolean;
+  /**
+   * Whether a row cap cut each list short, tracked separately.
+   *
+   * A truncated list is not a smaller sample of the same thing. Rows come back
+   * ordered by clicks, so what a cap drops is the long tail: many impressions,
+   * few clicks, mostly ranked past the tenth result. Dividing by that shortened
+   * total inflates every band share, which reports a site as performing better
+   * than it does — so a truncated list publishes no share at all rather than a
+   * flattering one.
+   */
+  readonly pagesTruncated: boolean;
+  readonly queriesTruncated: boolean;
 }
 
 /** Highest average position still counted in the top band. */
@@ -91,7 +101,9 @@ function bandRecord(
   highest: number,
   shareLabel: string,
 ): SeoAuditRecord {
-  const measured = impressionShareInBand(raw.queries, lowest, highest);
+  const measured = raw.queriesTruncated
+    ? null
+    : impressionShareInBand(raw.queries, lowest, highest);
   const observations: readonly SeoAuditObservation[] =
     measured === null
       ? []
@@ -116,8 +128,8 @@ function bandRecord(
     tested: measured === null ? 0 : 1,
     affected: observations.length,
     observations,
-    limitation: raw.truncated
-      ? "search_console_rows_truncated_by_row_cap"
+    limitation: raw.queriesTruncated
+      ? "query_rows_hit_the_row_cap_so_the_impression_total_is_short"
       : "position_is_one_impression_weighted_average_per_query",
   };
 }
@@ -143,25 +155,28 @@ function coverageRecord(
   const uncovered = pages.filter(
     (page) => !withImpressions.has(page.subjectUrl),
   );
+  // A capped page list is missing rows for pages that do have impressions, and
+  // every one of those would be reported here as a page nobody ever saw.
+  const measurable = pages.length > 0 && !raw.pagesTruncated;
 
   return {
     id: "page_without_search_impressions",
     category: "search_performance",
-    state: pages.length === 0 ? "unverified" : "observed",
+    state: measurable ? "observed" : "unverified",
     unit: "pages",
     population: "every_collected_page",
-    tested: pages.length,
-    affected: uncovered.length,
-    observations: uncovered.map((page) => ({
+    tested: measurable ? pages.length : 0,
+    affected: measurable ? uncovered.length : 0,
+    observations: (measurable ? uncovered : []).map((page) => ({
       url: page.url,
       values: values({
         impressions: 0,
-        in_sitemap: page.sitemapMember,
+        sitemap_member: page.sitemapMember,
         observed_inbound_links: page.inboundLinks,
       }),
     })),
-    limitation: raw.truncated
-      ? "search_console_rows_truncated_by_row_cap"
+    limitation: raw.pagesTruncated
+      ? "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing"
       : "search_console_window_may_predate_a_recently_published_page",
   };
 }
@@ -195,3 +210,28 @@ export function buildSearchPerformanceRecords(
     ),
   ];
 }
+
+/**
+ * Observation labels these records publish.
+ *
+ * Declared for the same reason as the crawl ledger's: the UI fails closed on a
+ * label it cannot name, and it does so by blanking the panel rather than
+ * showing an odd row.
+ */
+export const SEARCH_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
+  "impressions",
+  "sitemap_member",
+  "observed_inbound_links",
+  "top_position_impression_share",
+  "low_click_position_impression_share",
+  "impressions_in_band",
+  "impressions_total",
+  "queries_measured",
+];
+
+/** Record ids this module emits, in the order it emits them. */
+export const SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
+  "page_without_search_impressions",
+  "impression_share_top_positions",
+  "impression_share_low_click_positions",
+];

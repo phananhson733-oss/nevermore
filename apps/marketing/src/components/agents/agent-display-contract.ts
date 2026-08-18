@@ -4,6 +4,10 @@
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import { SEO_AUDIT_RECORD_IDS } from "@sf/public-tools/seo-audit/record-ledger";
+import {
+  SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  SEARCH_PERFORMANCE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/search-performance";
 
 import type { AgentKind } from "./agent-types";
 
@@ -18,9 +22,11 @@ import type { AgentKind } from "./agent-types";
  * agent-display-contract.test.ts, which fails if any ledger record has no title
  * and description in both locales.
  */
-const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set(
-  SEO_AUDIT_RECORD_IDS,
-);
+const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set([
+  ...SEO_AUDIT_RECORD_IDS,
+  // Derived per visitor rather than crawled, and rendered by the same seam.
+  ...SEARCH_PERFORMANCE_RECORD_IDS,
+]);
 
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
   seo: NEUTRAL_AGENT_RECORD_IDS,
@@ -63,6 +69,7 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   "average_click_depth",
   "deepest_click_depth",
   "pages_measured",
+  ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
 ]);
 
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
