@@ -26,7 +26,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(46);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(47);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -35,10 +35,12 @@ describe("v2 Agent audit catalog", () => {
     for (const check of all) {
       if (check.engine !== "needs-integration") continue;
       expect(check.evidenceRecordIds).toEqual([]);
-      // D1 and 4.5 have a detector; it is held behind the P6 gate, and their
-      // data source names that instead — a more specific reason, not a looser one.
-      expect(check.dataSource.en).toContain(
-        check.id === "D1" || check.id === "4.5" ? "P6" : "no detector",
+      // Two different sentences, and the difference matters to a reader
+      // planning work: "no detector reads it yet" promises a later release,
+      // while "outside what this run can observe" is a boundary they can plan
+      // around. Every unwired check must say exactly one of them.
+      expect(check.dataSource.en).toMatch(
+        /no detector reads it yet|Outside what a bounded anonymous crawl can observe/,
       );
     }
     // Impression shares only exist in Search Console, whatever supplies the URLs.
@@ -87,14 +89,23 @@ describe("v2 Agent audit catalog", () => {
       "1.7",
       "1.8",
     ]);
-    for (const id of ["D1", "4.5"]) {
-      const check = all.find((candidate) => candidate.id === id);
-      expect(check).toMatchObject({
-        inventoryReady: false,
-        evidenceRecordIds: [],
-      });
-      expect(check?.boundary.en).toContain("P6 hard gate");
-    }
+    // 4.5 stays behind the gate: page bodies are collected, but the published
+    // rule needs a false-positive gate first and a paginated archive is exactly
+    // what it would get wrong. D1 cleared it — the record it reads has always
+    // excluded canonical-converged variants, and the fixtures the gate names
+    // are executed in duplicate-title-gate.test.ts.
+    const similarity = all.find((candidate) => candidate.id === "4.5");
+    expect(similarity).toMatchObject({
+      inventoryReady: false,
+      evidenceRecordIds: [],
+    });
+    expect(similarity?.boundary.en).toContain("false-positive gate");
+
+    const duplicateTitles = all.find((candidate) => candidate.id === "D1");
+    expect(duplicateTitles).toMatchObject({
+      inventoryReady: true,
+      evidenceRecordIds: ["title_duplicate"],
+    });
   });
 
   it("can actually reach Blocker wherever its threshold promises one", () => {
@@ -120,7 +131,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(46);
+    expect(decidable).toHaveLength(47);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its

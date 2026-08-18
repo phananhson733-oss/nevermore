@@ -82,7 +82,7 @@ describe("buildAgentAuditViewModel", () => {
       });
       expect(model.scopes.site.groups).toHaveLength(5);
       expect(model.scopes.site.total).toBe(31);
-      expect(model.scopes.site.inventoryReady).toBe(21);
+      expect(model.scopes.site.inventoryReady).toBe(22);
       expect(model.scopes.page.groups).toHaveLength(9);
       expect(model.scopes.page.total).toBe(49);
       expect(model.scopes.page.inventoryReady).toBe(25);

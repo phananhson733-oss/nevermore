@@ -205,7 +205,12 @@ describe("v2 Agent audit evaluator", () => {
     expect(uniqueness?.evidenceRecordIds).toEqual(["title_duplicate"]);
   });
 
-  it("keeps the D1 false-positive detector excluded until the P6 gate is fixed", () => {
+  it("decides D1 now that both halves of its P6 gate are met", () => {
+    // The gate asked for two things: exclude canonical-converged variants, and
+    // pass known true-positive and false-positive fixtures. The first has
+    // always been true of this record — the duplicate detectors run only over
+    // self-canonical pages — and the second is executed in
+    // duplicate-title-gate.test.ts rather than asserted in prose.
     const result = evaluateAgentAuditScope("site", {
       availability: "available",
       records: [record("title_duplicate", "observed", 2)],
@@ -214,8 +219,8 @@ describe("v2 Agent audit evaluator", () => {
       (check) => check.check.id === "D1",
     );
 
-    expect(duplicateTitles?.result).toBe("excluded");
-    expect(duplicateTitles?.evidenceRecordIds).toEqual([]);
+    expect(duplicateTitles?.result).not.toBe("excluded");
+    expect(duplicateTitles?.evidenceRecordIds).toEqual(["title_duplicate"]);
   });
 
   it("passes a tested condition with no affected unit while keeping its bounded truth", () => {

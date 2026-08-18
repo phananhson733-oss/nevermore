@@ -155,6 +155,62 @@ const BLOCKER_CAPABLE = new Set([
  * so a site that failed them was told Warning. The published text and the
  * executed severity are tied together by a test rather than by discipline.
  */
+/**
+ * Checks this run cannot observe at all, and why.
+ *
+ * Distinct from "no detector reads it yet", which is what an unwired check
+ * says by default and which promises a later release. For these there is
+ * nothing to read: the material is not in a bounded anonymous crawl and would
+ * not be in the next one either. Saying so is the difference between a gap and
+ * a boundary, and the visitor can only plan around the second.
+ */
+const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
+  B4: l(
+    "Crawl budget has no published per-URL rate, and a comparison against the site's own history needs crawl logs this run does not receive.",
+    "抓取预算没有官方的单 URL 速率，而与站点自身历史比较需要本次运行拿不到的抓取日志。",
+  ),
+  B5: l(
+    "Separating discovery crawls from refresh crawls needs server logs or Search Console crawl stats; neither is available to this run.",
+    "区分发现型抓取与刷新型抓取需要服务器日志或 Search Console 抓取统计，本次运行两者都拿不到。",
+  ),
+  C5: l(
+    "A link-following crawl reaches a page by an internal link or from the sitemap, so a page in neither was discovered from a page this run's budget dropped. The filter would report our own budget as the site's defect.",
+    "跟随链接的抓取只能通过内链或 sitemap 到达页面，因此两者都不在的页面，其实是从本次预算丢掉的那个页面被发现的。这个过滤器只会把我们自己的预算当成站点的缺陷来报。",
+  ),
+  E5: l(
+    "No publish or modified date is collected, and whether content is time-sensitive is a judgement about the subject rather than a fact on the page.",
+    "本工具不采集发布或修改日期，而内容是否具有时效性是关于主题的判断，不是页面上的事实。",
+  ),
+  "4.1": l(
+    "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
+    "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
+  ),
+  "5.2": l(
+    "Per-image byte size needs one request per image, which is roughly two and a half times this run's entire request ceiling.",
+    "逐张图片的字节大小需要每张图一个请求，约为本次运行整个请求上限的两倍半。",
+  ),
+  "5.4": l(
+    "A static crawl has no viewport, so it has no fold to measure against.",
+    "静态抓取没有视口，因此也就没有可供衡量的首屏折线。",
+  ),
+  "6.5": l(
+    "External outbound links are dropped during parsing, and this check declares itself unscored in any case.",
+    "外部出站链接在解析阶段就被丢弃了，而且这项检查本身也声明不参与评分。",
+  ),
+  "7.3": l(
+    "The parser keeps JSON-LD types and error counts, not property keys, and no registry of required properties per type exists here.",
+    "解析器只保留 JSON-LD 的类型和错误计数，不保留属性键，而且这里也没有「每种类型必需哪些属性」的登记表。",
+  ),
+  "7.4": l(
+    "Same as 7.3, plus it would need a similarity judgement between markup and visible text that the launch gate forbids.",
+    "与 7.3 相同，此外它还需要在标记与可见文本之间做相似度判断，而上线门槛禁止这样做。",
+  ),
+  "4.5": l(
+    "Page bodies are collected, but the published rule requires a false-positive gate before it can run, and a paginated archive is the case it would get wrong.",
+    "页面正文是采集到了，但公布的规则要求先通过假阳性门槛才能运行，而分页归档正是它最容易判错的那种情况。",
+  ),
+};
+
 const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
@@ -206,6 +262,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "3.3": ["heading_level_skipped"],
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
+  D1: ["title_duplicate"],
   "2.3": ["title_without_target_query"],
   "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
@@ -243,6 +300,16 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "meta_description_duplicate",
       kind: "affected-ratio",
       passBelow: 0.05,
+    },
+  ],
+  D1: [
+    {
+      // Published as "below 2%", and the record already excludes variants that
+      // converge on a canonical — the first half of D1's launch gate, met by
+      // the detector the duplicate checks have always shared.
+      recordId: "title_duplicate",
+      kind: "affected-ratio",
+      passBelow: 0.02,
     },
   ],
   "1.6": [
@@ -591,6 +658,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "This page answers 200 while telling the reader it has nothing. Both signals had to be present for it to be reported — the not-found wording and a body below the published floor — so a short page that says nothing of the kind is not here, and neither is an article about error pages. Serve 404 or 410 if the URL is gone; if it should exist, treat this as a rendering failure and fix what the page is not producing. Do not add noindex as the fix: the URL still resolves, still consumes crawl budget, and still collects internal links.",
     "这个页面返回 200，却在告诉读者它什么都没有。要被报出来必须两个信号同时成立——「找不到」类措辞，以及正文量低于公布的下限——所以内容少但没说这类话的页面不在这里，讲错误页的文章也不在这里。如果这个 URL 已经没有了，就返回 404 或 410；如果它本该存在，就把这当作渲染失败来查，修的是页面没能产出的东西。不要用 noindex 当修法：URL 依然解析得通，依然消耗抓取预算，依然在收内链。",
   ),
+  D1: l(
+    "Two pages with the same title are two pages asking to be shown for the same thing, and a search system picks one. Group the duplicates before editing: an exact repeat across a paginated archive or a filtered listing is a template that never varies its title, and the fix is to give the template a variable — the page number, the filter, the section — not to hand-write forty titles. If the pages really are the same page, the duplicate title is the symptom and the canonical is the fix. Variants that already converge on a canonical are excluded from this count, so what is left is genuinely competing.",
+    "两个页面用同一个 title，就是两个页面在为同一件事争取展示，而搜索系统只会选一个。改之前先给重复项分组：分页归档或筛选列表上的完全重复，说明模板的标题从不随内容变化，修法是给模板加一个变量——页码、筛选条件、栏目——而不是手写四十个标题。如果这些页面本来就是同一个页面，那重复标题只是症状，Canonical 才是修法。已经收敛到 Canonical 的变体不计入这里，所以剩下的都是真的在互相竞争。",
+  ),
   D4: l(
     "Group the uncovered pages by path shape before writing anything. If they share one, the template behind them renders images without an alt attribute and one edit covers the group; if they do not, the alt was skipped page by page and this is a content pass, not a code one. Write what the image conveys in the sentence it sits in, not what it depicts — the same photograph is \"the finished dashboard after setup\" on one page and \"our team in 2024\" on another. An image that carries no meaning takes alt=\"\", which this check already counts as covered.",
     "动手写之前，先按路径形状给未覆盖的页面分组。如果它们共用一种路径，说明背后的模板渲染图片时就没带 alt 属性，改一处即可覆盖一整组；如果不共用，那是逐页漏掉的，这就是一轮内容工作而不是代码工作。写的是这张图在它所处的句子里传达了什么，而不是它画了什么——同一张照片，在一个页面上是「配置完成后的仪表盘」，在另一个页面上是「2024 年的团队」。不承载信息的图片写 alt=\"\" 即可，本检查已经把它计为已覆盖。",
@@ -709,8 +780,8 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     threshold: l(thresholdEn, thresholdZh),
     thresholdAuthority: authority(id),
     dataSource: l(
-      id === "D1" || id === "4.5"
-        ? "Detector blocked by the P6 false-positive launch gate"
+      UNMEASURABLE_HERE[id] !== undefined
+        ? "Outside what a bounded anonymous crawl can observe"
         : engine(id, ready) === "access-required"
         ? "Authorized search source required"
         : engine(id, ready) === "not-integrated"
@@ -718,8 +789,8 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
           : ready
             ? "Bounded crawl"
             : "Crawl collects the material; no detector reads it yet",
-      id === "D1" || id === "4.5"
-        ? "检测器受 P6 假阳性上线门槛阻断"
+      UNMEASURABLE_HERE[id] !== undefined
+        ? "超出有边界匿名抓取可观测的范围"
         : engine(id, ready) === "access-required"
         ? "需要授权搜索来源"
         : engine(id, ready) === "not-integrated"
@@ -741,16 +812,14 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     evidenceRecordIds: EVIDENCE[id] ?? [],
     issueRules: ISSUE_RULES[id] ?? [],
     boundary: l(
-      id === "D1" || id === "4.5"
-        ? "P6 hard gate: exclude canonical-converged variants and pass known true-positive and false-positive fixtures before this check can run."
-        : ready
+      UNMEASURABLE_HERE[id]?.en ??
+        (ready
           ? "Decided only where this bounded run exposed a matching measurement."
-          : "Excluded from scoring until a detector or the named source exists.",
-      id === "D1" || id === "4.5"
-        ? "P6 硬门槛：必须排除已 Canonical 收敛变体，并通过已知真阳性和假阳性 fixture 后，此检查才能运行。"
-        : ready
+          : "Excluded from scoring until a detector or the named source exists."),
+      UNMEASURABLE_HERE[id]?.zh ??
+        (ready
           ? "仅在本次有边界运行暴露匹配实测值处判定。"
-          : "在检测器或指定来源具备之前排除评分。",
+          : "在检测器或指定来源具备之前排除评分。"),
     ),
   };
 }
