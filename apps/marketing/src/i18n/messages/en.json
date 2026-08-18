@@ -42,7 +42,7 @@
         "description": "See whether AI answers cite your site, sampled three times per question."
       },
       "tech": {
-        "label": "Tech Agent",
+        "label": "Technical focus",
         "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
       }
     },
@@ -260,7 +260,7 @@
     },
     "owners": {
       "seo": "SEO Agent",
-      "tech": "Tech Agent"
+      "tech": "Technical focus"
     },
     "detail": {
       "backToLibrary": "All skills",
@@ -327,11 +327,11 @@
     "hero": {
       "eyebrow": "SEO and technical website Agents",
       "title": "Enter a URL. <hl>Review the evidence and the next move.</hl>",
-      "subtitle": "Choose an independent SEO or Tech Agent for a bounded review of public static HTML, then inspect observed conditions, evidence, and adaptable solutions.",
+      "subtitle": "Run the SEO Agent for a bounded review of public static HTML, then inspect observed conditions, their evidence, and an adjustable solution.",
       "urlLabel": "Website host or URL",
       "urlPlaceholder": "example.com or https://example.com",
       "primaryCta": "Run SEO Agent",
-      "secondaryCta": "Run Tech Agent",
+      "secondaryCta": "Open the technical view",
       "socialProof": "Verified account required · identity access only · no Gmail, Search Console, or project persistence"
     },
     "freeAudit": {
@@ -370,12 +370,12 @@
       "step4Desc": "A 30/60/90 plan carrying owners, status and dependencies."
     },
     "capabilities": {
-      "eyebrow": "Two independent Agents",
+      "eyebrow": "One Agent, two focuses",
       "title": "Choose the review that matches the question",
-      "subtitle": "Each Agent has its own URL input, run, result, opportunity selection, and solution view. Shared crawl infrastructure never merges their state.",
+      "subtitle": "One URL input, one run, one result. Content checks and technical checks are two focuses of the same review over the same crawl, not two products with separate state.",
       "seoTitle": "SEO Agent",
       "seoDesc": "Inspect metadata, heading structure, and structured-data conditions observed in collected public HTML.",
-      "techTitle": "Tech Agent",
+      "techTitle": "Technical focus",
       "techDesc": "Inspect crawl responses, static indexability directives, and internal-link conditions in a bounded crawl.",
       "accountRequired": "Verified account",
       "liveCrawl": "Bounded crawl evidence",
@@ -384,7 +384,7 @@
       "linksTitle": "Internal Link Audit",
       "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
       "cardCta": "Open Agent",
-      "viewAll": "View both Agents"
+      "viewAll": "Open the SEO Agent"
     },
     "socialProof": {
       "title": "SEO advice should show its work",
@@ -412,7 +412,7 @@
     },
     "bottomCta": {
       "title": "Start with the website question in front of you",
-      "subtitle": "Run the SEO Agent for on-page signals or the Tech Agent for crawl, indexability, and link evidence. Each run stays explicit about what it did not verify.",
+      "subtitle": "Run the SEO Agent for on-page signals, or open its technical focus for crawl, indexability and link evidence. Every run states what it did not verify.",
       "cta": "Open SEO Agent"
     }
   },
@@ -790,10 +790,10 @@
   "tools": {
     "eyebrow": "Start with the question in front of you",
     "title": "Supporting tools for the next SEO decision",
-    "subtitle": "Use a focused Search Console or planning tool here. URL audits now run through the independent, account-gated SEO and Tech Agents.",
+    "subtitle": "Use a focused Search Console or planning tool here. URL audits run through the account-gated SEO Agent, and one page against its target queries runs through the On-Page SEO Checker.",
     "diagnoseEyebrow": "I have a website to improve",
     "diagnoseTitle": "Read the search-performance evidence",
-    "diagnoseBody": "Connect Search Console when the question depends on your site's private query and traffic history. For a public-HTML URL audit, choose SEO Agent or Tech Agent instead.",
+    "diagnoseBody": "Connect Search Console when the question depends on your site's private query and traffic history. To audit a public HTML URL, use the SEO Agent; to check one page against the words you want it found for, use the On-Page SEO Checker.",
     "planEyebrow": "I need to plan and measure",
     "planTitle": "Make the next experiment easier to size",
     "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
@@ -882,7 +882,7 @@
       "scopeShort": "No account and no sign-up. One run collects up to about 950 public same-origin static pages — the crawler paces itself to at least 250 ms between requests and stops at four minutes — and fewer if your robots.txt asks for a slower rate. Larger sites return partial coverage, labelled as such.",
       "errors": {
         "invalid_url": "Enter a valid public HTTP or HTTPS URL. Private and local network destinations are blocked.",
-        "invalid_request": "The request must contain exactly one URL.",
+        "invalid_request": "Check the website URL, and if you added target keywords, keep it to five of up to 80 characters each.",
         "payload_too_large": "The submitted request is too large.",
         "unsupported_media_type": "Send the request as JSON.",
         "scan_failed": "The public site could not be audited from this environment.",
@@ -1891,7 +1891,7 @@
       "whereNextTitle": "Where to go next",
       "whereNextBody": "Check site fundamentals without connecting Search Console. Account verification is required before an Agent crawl.",
       "whereNextAudit": "SEO Agent",
-      "whereNextLinks": "Tech Agent",
+      "whereNextLinks": "Technical focus",
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
@@ -1999,6 +1999,147 @@
         "quota_unavailable": "Our rate limiter could not be reached just now, and we do not run without one. Try again in a minute.",
         "gsc_revoked": "This browser no longer holds a usable Search Console authorization. Reconnect to run the map.",
         "gsc_temporarily_unavailable": "Google could not renew your authorization just now. Nothing about your access changed — try again shortly."
+      }
+    },
+    "onPageChecker": {
+      "eyebrow": "TOOL · ONE PAGE · ONE SET OF QUERIES",
+      "title": "Does this page actually cover the words you want it found for?",
+      "intro": "Submit one page and up to five target queries. You get where each query does and does not appear on that page, how often, and what is not measurable from public HTML.",
+      "stages": {
+        "target": {
+          "eyebrow": "STAGE 01",
+          "title": "The page and the queries"
+        },
+        "evidence": {
+          "eyebrow": "STAGE 02",
+          "title": "What the page shows",
+          "empty": "Nothing yet. Add a page and at least one query."
+        }
+      },
+      "fields": {
+        "url": "Page URL",
+        "queries": "Target queries (up to {max})",
+        "market": "Market",
+        "language": "Language",
+        "pageRole": "Page role",
+        "marketScope": "Market and language are not part of this check: the request carries the page URL, the queries and the page role. They are carried over when you open the SEO Agent from here."
+      },
+      "pageRoles": {
+        "homepage": "Homepage",
+        "product": "Product page",
+        "tool": "Tool page",
+        "guide": "Guide or article"
+      },
+      "actions": {
+        "addQuery": "Add",
+        "removeQuery": "Remove this query",
+        "run": "Check this page",
+        "running": "Checking…",
+        "copyReport": "Copy report for an assistant",
+        "copyDone": "Copied.",
+        "copyFailed": "Could not reach the clipboard. Select the report and copy it.",
+        "openAgent": "Open the SEO Agent for the whole site"
+      },
+      "boundaries": {
+        "accountFree": "Account required, free while the tools are being tested.",
+        "projection": "This reads the page out of the same site-wide crawl the SEO Agent runs, so a first check on a site takes as long as that crawl does. Nothing is saved to an app project."
+      },
+      "waiting": {
+        "headline": "Collecting the site, then reading your page out of it.",
+        "elapsed": "{seconds}s elapsed",
+        "body": "The crawl paces itself to at least 250 ms between requests and stops at four minutes, which is about 950 pages at most; the whole request takes longer than the crawl alone.",
+        "noEstimate": "No progress estimate: the browser is not told how many pages remain, so it does not guess."
+      },
+      "focus": {
+        "summary": "Covered {covered} of {applicable} checkable places.",
+        "notAScore": "A count of places, not a score, and it is the total over every query rather than a figure for the page. A place the page has no field for is left out of the total rather than counted against it.",
+        "short": "{covered}/{applicable}"
+      },
+      "table": {
+        "query": "Query",
+        "title": "Title",
+        "description": "Description",
+        "h1": "H1",
+        "subHeadings": "Sub-headings",
+        "openingText": "Opening text",
+        "url": "URL",
+        "primary": "primary",
+        "brand": "brand"
+      },
+      "slotStates": {
+        "covered": "yes",
+        "not_covered": "no",
+        "not_applicable": "n/a"
+      },
+      "density": {
+        "value": "{query}: {percent}% of {units} collected {unitsBasis}, {occurrences} occurrences.",
+        "unavailable": "{query}: density unavailable, no collected text to measure against.",
+        "units": {
+          "words": "words",
+          "cjk_chars": "CJK characters",
+          "mixed": "mixed word and CJK-character units"
+        }
+      },
+      "limitations": {
+        "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
+        "sub_headings_underivable_h1_cap_reached": "Sub-headings could not be separated on this page, because its H1 list hit the collector's own limit. Reported as unavailable rather than guessed.",
+        "opening_text_first_500_chars_static_extraction": "Opening text is the first 500 characters of the statically extracted body, after nav, footer and aside blocks are removed. It is not what a browser paints.",
+        "density_basis_captured_text_only": "Density is measured inside the collected text — title, description, headings and that opening text — not across the whole page body, which is not collected.",
+        "static_body_words_unavailable_for_cjk": "The page word count is withheld: this page is written mostly without word gaps, where splitting on spaces is off by an order of magnitude.",
+        "extract_lists_truncated": "A heading list was cut to its own limit before publication, so a keyword further down the page may not be counted."
+      },
+      "unavailable": {
+        "target_page_not_captured": "The crawl did not collect this page as a readable HTML response, so nothing about its keywords was measured.",
+        "extract_missing": "The page was collected but its text did not come through, so nothing about its keywords was measured.",
+        "notZero": "This is not a score of zero, and not a finding about the page."
+      },
+      "history": {
+        "title": "Recent checks",
+        "empty": "No checks yet.",
+        "clear": "Clear",
+        "localOnly": "Kept in this browser only. Not an account archive: clearing site data, switching browsers or signing out removes it."
+      },
+      "errors": {
+        "urlRequired": "Add the page URL you want checked.",
+        "queryRequired": "Add at least one target query.",
+        "queryEmpty": "Type a query before adding it.",
+        "queryDuplicate": "That query is already in the list.",
+        "queryLimit": "Up to {max} queries. Remove one to add another.",
+        "queryTooLong": "Up to {max} characters per query.",
+        "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
+        "retryAfter": "Retry in {seconds} seconds."
+      },
+      "faq": {
+        "title": "What this does and does not tell you",
+        "items": [
+          {
+            "q": "Is this a score?",
+            "a": "No. You get a count of which positions carry each query and how often, plus what could not be measured. There is no single number, because one number cannot say which part of a page is wrong."
+          },
+          {
+            "q": "Why does the first check take minutes?",
+            "a": "Your page is read out of a site-wide collection rather than fetched on its own. A second check on the same site within the hour reuses that collection and returns in seconds; after that the collection has expired and the crawl runs again."
+          },
+          {
+            "q": "Will a high count rank the page?",
+            "a": "No. Where a keyword sits on a page is one input among site authority, page experience, competition and behaviour. This measures the input it can actually see."
+          }
+        ]
+      },
+      "fixes": {
+        "title": "What to change on this page",
+        "homepage": "A homepage is judged on whether the primary term is unmistakable: put it in the title, the H1 and the first sentence of the body, and let the sub-headings carry the secondary terms rather than repeating the primary one.",
+        "product": "A product page competes on specificity. Keep the product's own name in the title and H1, and let the target term appear where it describes what the product does, not as a phrase bolted onto the front of the name.",
+        "tool": "A tool page is found by what it does. The title and H1 should read as the job the visitor came to do, and the opening text should say the tool runs here rather than describing it from the outside.",
+        "guide": "A guide is found by the question it answers. Put the question's own words in the title and H1, and use the sub-headings for the sub-questions so a reader scanning them can see the answer is here.",
+        "basis": "Guidance for the page role you declared. It does not change any count above, and none of it is a claim about ranking."
+      },
+      "provenance": {
+        "page": "Page read: {url}",
+        "hit": "Read out of a crawl of this site collected at {time}, which was already held — this check started no new crawl.",
+        "miss": "Read out of a crawl this check started, collected at {time}.",
+        "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
+        "queriesMerged": "Measured {measured} of the {submitted} queries you submitted: two spellings of the same query are counted once."
       }
     }
   },
@@ -2305,14 +2446,14 @@
     "hero": {
       "eyebrow": "Account-gated, payment-free audits",
       "title": "Run the first audit without choosing a paid plan.",
-      "subtitle": "SEO Agent and Tech Agent require a verified GenGrowth account before any URL is crawled. They need no payment, Search Console connection, or site-ownership verification, and current audit runs are not saved."
+      "subtitle": "The SEO Agent requires a verified GenGrowth account before any URL is crawled. It needs no payment, no Search Console connection and no site-ownership verification, and the current audit saves no run history."
     },
     "freeTools": {
       "eyebrow": "Available now",
-      "title": "SEO and Tech URL audit Agents",
-      "body": "Choose one independent Agent, enter a public URL, then sign in or register before the crawl starts. Registration controls access; it does not create saved project history.",
+      "title": "URL audit, on the SEO Agent",
+      "body": "Enter a public URL, then sign in or register before the crawl starts. Registration is for access control; it does not create a saved project history.",
       "item1": "SEO Agent reviews metadata, heading structure, and structured-data evidence from the bounded crawl.",
-      "item2": "Tech Agent reviews crawl responses, indexability directives, and internal-link evidence.",
+      "item2": "Its technical focus reviews crawl responses, indexability directives, and internal-link evidence.",
       "item3": "No payment, Search Console connection, or site-ownership verification is required; each run uses no persistence.",
       "cta": "Explore Agents"
     },
@@ -2398,7 +2539,7 @@
       "title": "Frequently Asked Questions",
       "q1": {
         "question": "Do the URL audit Agents require payment?",
-        "answer": "No. SEO Agent and Tech Agent can run without a payment step. A verified GenGrowth account is required before the server reads the submitted URL or starts a crawl."
+        "answer": "No. The SEO Agent can run without a payment step. A verified GenGrowth account is required before the server reads the submitted URL or starts a crawl."
       },
       "q2": {
         "question": "When will full-product pricing be available?",
@@ -2414,24 +2555,24 @@
       },
       "q5": {
         "question": "Where should I start?",
-        "answer": "Choose SEO Agent for metadata, heading, and structured-data questions, or Tech Agent for crawl, indexability, and internal-link questions. Each Agent accepts its own URL after account verification."
+        "answer": "One Agent covers both. Open it for metadata, heading and structured-data questions, and switch to its technical focus for crawl, indexability and internal links. To check one page against specific target queries, use the On-Page SEO Checker instead."
       }
     },
     "cta": {
       "title": "Start with a real signal, not a pricing commitment",
-      "subtitle": "Choose the Agent that matches your question, verify your account, and run the bounded audit without connecting Search Console or choosing a paid plan.",
+      "subtitle": "Verify your account and run the bounded audit without connecting Search Console or proving site ownership.",
       "button": "Explore Agents"
     }
   },
   "agents": {
     "hub": {
-      "metaTitle": "SEO and Technical Website Agents",
-      "metaDescription": "Choose a focused GenGrowth Agent to inspect public static HTML for SEO content signals or technical crawl and indexability conditions.",
+      "metaTitle": "SEO Agent: Evidence-Bounded Review of Public HTML",
+      "metaDescription": "One GenGrowth Agent over public static HTML: on-page content signals, crawl responses, indexability directives and internal links in one review, each condition naming its source and what was not measured.",
       "breadcrumb": "Agents",
       "eyebrow": "Focused website review",
-      "title": "Choose the Agent that matches the question",
-      "subtitle": "Run an evidence-bounded review of public static HTML. SEO Agent examines on-page content signals; Tech Agent examines crawl, indexability, and internal-link conditions.",
-      "boundary": "Each Agent runs independently. Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority.",
+      "title": "One SEO Agent, for the whole site and for one page",
+      "subtitle": "An evidence-bounded review of public static HTML: on-page content signals, crawl responses, indexability directives and internal links, in one place. Every condition says which source produced it and what was not measured.",
+      "boundary": "Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority. A verified account is required before any URL is read.",
       "seo": {
         "title": "SEO Agent",
         "description": "Review metadata, heading structure, and structured-data conditions observed in the collected public HTML.",
@@ -2445,10 +2586,10 @@
         "cta": "Open GEO Agent"
       },
       "tech": {
-        "title": "Tech Agent",
-        "description": "Review crawl responses, static indexability directives, and internal-link conditions observed in the bounded crawl.",
+        "title": "Technical focus",
+        "description": "The same review, opened on crawl responses, indexability directives and internal links first. Same engine, same evidence, kept at its own URL so existing links and campaigns still land somewhere real.",
         "scope": "Crawl · Indexability · Links",
-        "cta": "Open Tech Agent"
+        "cta": "Open the technical view"
       }
     },
     "geo": {
@@ -2596,13 +2737,13 @@
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
     },
     "tech": {
-      "name": "Tech Agent",
+      "name": "SEO Agent · Technical focus",
       "metaTitle": "Technical SEO Agent for Crawl Review",
       "metaDescription": "Inspect a site's public static HTML crawl for response, indexability, and internal-link conditions with evidence and explicit limitations.",
-      "eyebrow": "Tech Agent · Bounded crawl",
+      "eyebrow": "Technical focus · Bounded crawl",
       "title": "Review technical site conditions against evidence you can open",
       "subtitle": "Submit a site to inspect observed crawl responses, static indexability directives, and internal-link conditions in discoverable same-origin HTML.",
-      "heroCta": "Run Tech Agent",
+      "heroCta": "Run the technical review",
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "Public crawl facts only",
@@ -2630,7 +2771,7 @@
         },
         "tech": {
           "title": "Confirm technical context before diagnosis",
-          "body": "Review the product, audience, page role, device, and audit scope. Tech Agent uses this confirmed context to frame crawl and implementation evidence without assuming a framework, repository, or owner."
+          "body": "Review the product, audience, page role, device, and audit scope. The technical focus uses this confirmed context to frame crawl and implementation evidence, and assumes no framework, repository, or owner."
         },
         "states": {
           "needs_confirmation": "Review required",
@@ -3251,7 +3392,7 @@
             "technicalIssueBrief": {
               "recommendation": "This is a technical condition surfaced during a search review, so write it up instead of fixing it here. Record the observed condition and the search decision it constrains, then hand it to whoever owns the template, CMS, or platform.",
               "validation1": "Confirm the condition still reproduces on the public URL before handing it over.",
-              "validation2": "Review the same check in the Tech Agent, where the owning system and its evidence are in scope.",
+              "validation2": "Review the same check in the technical focus, where the owning system and its evidence are in scope.",
               "validation3": "After the owner releases a change, refetch the URL and compare it with the evidence recorded here.",
               "impactSurface": "The search decision this condition constrains; the code or configuration behind it sits outside this Agent.",
               "risks": "Working around a delivery problem in content hides it instead of fixing it, and the workaround usually outlives the person who added it.",
@@ -3260,7 +3401,7 @@
           }
         },
         "tech": {
-          "recommendation": "Tech Agent fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a reviewable response, redirect, directive, link, or performance change.",
+          "recommendation": "Technical fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a change that can be verified against the same evidence.",
           "applicableContext": "Confirm the framework, routing layer, hosting behavior, repository owner, release path, and affected templates before translating evidence into code or configuration.",
           "validation1": "Reproduce the observed request, response, redirect, directive, or link condition in the owning environment.",
           "validation2": "Review the minimal code or configuration diff with the responsible owner and test the affected paths plus a nearby control path.",

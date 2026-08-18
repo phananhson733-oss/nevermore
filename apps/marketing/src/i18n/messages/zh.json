@@ -42,7 +42,7 @@
         "description": "看 AI 的回答会不会引用你的站点，每个问题采样三次。"
       },
       "tech": {
-        "label": "Tech Agent",
+        "label": "技术焦点",
         "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
       }
     },
@@ -260,7 +260,7 @@
     },
     "owners": {
       "seo": "SEO Agent",
-      "tech": "Tech Agent"
+      "tech": "技术焦点"
     },
     "detail": {
       "backToLibrary": "全部 Skills",
@@ -327,11 +327,11 @@
     "hero": {
       "eyebrow": "SEO 与技术网站 Agents",
       "title": "输入 URL，<hl>查看证据与下一步。</hl>",
-      "subtitle": "选择独立的 SEO 或 Tech Agent，对公开静态 HTML 进行有边界的审查，并查看已观察状态、证据和可调整的解决方案。",
+      "subtitle": "用 SEO Agent 对公开静态 HTML 做有边界的审查，并查看已观察状态、证据和可调整的解决方案。",
       "urlLabel": "网站域名或 URL",
       "urlPlaceholder": "example.com 或 https://example.com",
       "primaryCta": "运行 SEO Agent",
-      "secondaryCta": "运行 Tech Agent",
+      "secondaryCta": "打开技术视图",
       "socialProof": "需要已验证账号 · 仅身份权限 · 不读取 Gmail、Search Console，也不保存为项目运行"
     },
     "freeAudit": {
@@ -370,12 +370,12 @@
       "step4Desc": "带负责人、状态与依赖关系的 30/60/90 计划。"
     },
     "capabilities": {
-      "eyebrow": "两个独立的 Agents",
+      "eyebrow": "一个 Agent，两个焦点",
       "title": "选择与你的问题匹配的审查",
-      "subtitle": "每个 Agent 都有独立的 URL 输入、运行、结果、机会选择与解决方案视图；共享抓取基础设施不会合并两者状态。",
+      "subtitle": "一个 URL 输入、一次运行、一份结果。内容检查与技术检查是同一次审查在同一批抓取上的两个焦点，不是两个各自维护状态的产品。",
       "seoTitle": "SEO Agent",
       "seoDesc": "审查已采集公开 HTML 中的元数据、标题结构与结构化数据状态。",
-      "techTitle": "Tech Agent",
+      "techTitle": "技术焦点",
       "techDesc": "在有边界的抓取中审查响应、静态可索引指令与内链状态。",
       "accountRequired": "需要已验证账号",
       "liveCrawl": "有边界的抓取证据",
@@ -384,7 +384,7 @@
       "linksTitle": "内链审计",
       "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
       "cardCta": "打开 Agent",
-      "viewAll": "查看两个 Agents"
+      "viewAll": "打开 SEO Agent"
     },
     "socialProof": {
       "title": "SEO 建议应当展示它的推导过程",
@@ -412,7 +412,7 @@
     },
     "bottomCta": {
       "title": "从眼前的网站问题开始",
-      "subtitle": "用 SEO Agent 查看页面信号，或用 Tech Agent 查看抓取、可索引性与链接证据；每次运行都会明确说明哪些内容尚未验证。",
+      "subtitle": "用 SEO Agent 查看页面信号，或切到它的技术焦点查看抓取、可索引性与链接证据；每次运行都会明确说明哪些内容尚未验证。",
       "cta": "打开 SEO Agent"
     }
   },
@@ -790,10 +790,10 @@
   "tools": {
     "eyebrow": "从眼前的问题开始",
     "title": "为下一步 SEO 决策准备的辅助工具",
-    "subtitle": "在这里使用聚焦的 Search Console 或规划工具。URL 审计现已由各自独立、需要账号验证的 SEO 与 Tech Agents 运行。",
+    "subtitle": "在这里使用聚焦的 Search Console 或规划工具。URL 审计由需要账号验证的 SEO Agent 运行；针对目标关键词检查单个页面，用 On-Page SEO 检查器。",
     "diagnoseEyebrow": "我有一个需要优化的网站",
     "diagnoseTitle": "读取搜索表现证据",
-    "diagnoseBody": "当问题依赖网站的私有查询与流量历史时，请连接 Search Console；如果要审计公开 HTML URL，请改用 SEO Agent 或 Tech Agent。",
+    "diagnoseBody": "当问题依赖网站的私有查询与流量历史时，请连接 Search Console；要审计公开 HTML URL 请用 SEO Agent；要检查某一页有没有覆盖你想被搜到的词，请用 On-Page SEO 检查器。",
     "planEyebrow": "我需要规划和衡量",
     "planTitle": "让下一次实验更容易判断",
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
@@ -882,7 +882,7 @@
       "scopeShort": "无需账户，无需注册。单次运行最多采集约 950 个同源公开静态页面——爬虫在两次请求之间至少间隔 250 毫秒，并在四分钟处停止；若你的 robots.txt 要求更慢的速率，实际页数会更少。超出这个规模的站点会返回部分覆盖，并明确标注。",
       "errors": {
         "invalid_url": "请输入有效的公开 HTTP 或 HTTPS URL。私有网络和本机地址会被拦截。",
-        "invalid_request": "请求中只能包含一个 URL。",
+        "invalid_request": "请检查网站 URL；如果填了目标关键词，最多 5 个、每个不超过 80 个字符。",
         "payload_too_large": "提交的请求体过大。",
         "unsupported_media_type": "请使用 JSON 格式提交请求。",
         "scan_failed": "当前环境无法完成对该公开网站的审计。",
@@ -1891,7 +1891,7 @@
       "whereNextTitle": "接下来去哪里",
       "whereNextBody": "无需连接 Search Console 即可检查网站基础；Agent 抓取开始前必须验证账号。",
       "whereNextAudit": "SEO Agent",
-      "whereNextLinks": "Tech Agent",
+      "whereNextLinks": "技术焦点",
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
@@ -1999,6 +1999,147 @@
         "quota_unavailable": "我们的限流服务暂时连不上；宁可不跑，也不无上限地跑。一分钟后再试。",
         "gsc_revoked": "这个浏览器已不再持有可用的 Search Console 授权。重新连接后即可运行。",
         "gsc_temporarily_unavailable": "Google 刚才没能续期你的授权。你的访问权限没有任何变化——稍后重试即可。"
+      }
+    },
+    "onPageChecker": {
+      "eyebrow": "工具 · 单个页面 · 一组关键词",
+      "title": "这个页面真的覆盖了你想被搜到的词吗？",
+      "intro": "提交一个页面和最多五个目标关键词，得到每个词在这一页的哪些位置出现、出现多少次，以及哪些事实是公开 HTML 里量不出来的。",
+      "stages": {
+        "target": {
+          "eyebrow": "阶段 01",
+          "title": "页面与关键词"
+        },
+        "evidence": {
+          "eyebrow": "阶段 02",
+          "title": "这一页给出的证据",
+          "empty": "还没有结果。填一个页面和至少一个关键词。"
+        }
+      },
+      "fields": {
+        "url": "页面 URL",
+        "queries": "目标关键词（最多 {max} 个）",
+        "market": "市场",
+        "language": "语言",
+        "pageRole": "页面角色",
+        "marketScope": "市场与语言不参与这次检查：请求只带页面 URL、关键词和页面角色。它们会在你从这里打开 SEO Agent 时一并带过去。"
+      },
+      "pageRoles": {
+        "homepage": "首页",
+        "product": "产品页",
+        "tool": "工具页",
+        "guide": "指南或文章"
+      },
+      "actions": {
+        "addQuery": "添加",
+        "removeQuery": "移除这个关键词",
+        "run": "检查这个页面",
+        "running": "检查中…",
+        "copyReport": "复制报告给 AI",
+        "copyDone": "已复制。",
+        "copyFailed": "读不到剪贴板。请手动选中报告复制。",
+        "openAgent": "打开 SEO Agent 看整站"
+      },
+      "boundaries": {
+        "accountFree": "需要登录；工具测试期间免费。",
+        "projection": "本工具是从 SEO Agent 那一次全站采集里把这一页读出来，所以对一个站点的首次检查会和那次采集一样久。结果不写入任何 app 项目。"
+      },
+      "waiting": {
+        "headline": "正在采集站点，然后从里面读出你这一页。",
+        "elapsed": "已用 {seconds} 秒",
+        "body": "采集在两次请求之间至少间隔 250 毫秒，并在四分钟处停止，因此最多约 950 个页面；整个请求会比采集本身更久。",
+        "noEstimate": "不显示进度估计：浏览器拿不到还剩多少页，所以不猜。"
+      },
+      "focus": {
+        "summary": "在 {applicable} 个可检查位置中覆盖了 {covered} 个。",
+        "notAScore": "这是位置计数，不是评分，而且是所有关键词累加的总数，不是这一页自己的数字。页面本身没有的字段不计入分母，也不算作扣分。",
+        "short": "{covered}/{applicable}"
+      },
+      "table": {
+        "query": "关键词",
+        "title": "Title",
+        "description": "Description",
+        "h1": "H1",
+        "subHeadings": "副标题",
+        "openingText": "正文开头",
+        "url": "URL",
+        "primary": "主词",
+        "brand": "品牌词"
+      },
+      "slotStates": {
+        "covered": "有",
+        "not_covered": "无",
+        "not_applicable": "不适用"
+      },
+      "density": {
+        "value": "{query}：{percent}%，分母为已采文本 {units} 个{unitsBasis}，出现 {occurrences} 次。",
+        "unavailable": "{query}：密度不可用，没有可作分母的已采文本。",
+        "units": {
+          "words": "词",
+          "cjk_chars": "中日韩字符",
+          "mixed": "词与中日韩字符的混合单位"
+        }
+      },
+      "limitations": {
+        "sub_headings_h2_h6_merged_no_levels": "副标题是 H2 到 H6 合并成一份清单：采集不保留标题层级，因此无法区分 H2 和 H4。",
+        "sub_headings_underivable_h1_cap_reached": "这一页的副标题无法分离，因为它的 H1 数量触到了采集器自身上限。这里报为不可用，而不是猜一个。",
+        "opening_text_first_500_chars_static_extraction": "正文开头取静态提取正文的前 500 个字符，已剔除 nav、footer、aside 等区块。它不等于浏览器实际渲染出来的内容。",
+        "density_basis_captured_text_only": "密度是在已采文本内测的——标题、描述、标题组和那段正文开头——不是整页正文，整页正文并未被采集。",
+        "static_body_words_unavailable_for_cjk": "本页词数不予给出：这一页主要以不写词间空格的文字写成，按空格切分会差一个量级。",
+        "extract_lists_truncated": "某个标题清单在发布前被截到了自身上限，因此页面更下方的关键词可能没有被计入。"
+      },
+      "unavailable": {
+        "target_page_not_captured": "采集没有把这一页取成可读的 HTML 响应，因此没有量到关于它关键词的任何事实。",
+        "extract_missing": "这一页被采到了，但它的文本没有传过来，因此没有量到关于它关键词的任何事实。",
+        "notZero": "这不是 0 分，也不是关于这一页的判定。"
+      },
+      "history": {
+        "title": "最近的检查",
+        "empty": "还没有检查记录。",
+        "clear": "清除",
+        "localOnly": "只存在这个浏览器里。不是账号存档：清缓存、换浏览器或登出都会丢失。"
+      },
+      "errors": {
+        "urlRequired": "填上你要检查的页面 URL。",
+        "queryRequired": "至少填一个目标关键词。",
+        "queryEmpty": "先输入一个关键词再添加。",
+        "queryDuplicate": "这个关键词已经在列表里了。",
+        "queryLimit": "最多 {max} 个关键词。要加新的先移除一个。",
+        "queryTooLong": "每个关键词最多 {max} 个字符。",
+        "auth_required": "登录后才能检查。你填的内容会保留，并且不会自动开跑。",
+        "retryAfter": "{seconds} 秒后可重试。"
+      },
+      "faq": {
+        "title": "它能告诉你什么、不能告诉你什么",
+        "items": [
+          {
+            "q": "这是一个评分吗？",
+            "a": "不是。你拿到的是每个关键词落在哪些位置、出现多少次，以及哪些量不出来。这里没有单一总分，因为一个数字说不出页面哪一部分不对。"
+          },
+          {
+            "q": "为什么第一次检查要几分钟？",
+            "a": "你这一页是从一次全站采集里读出来的，不是单独抓一次。同一个站点在一小时内再检查一次会复用那份采集，几秒内返回；超过一小时采集就过期了，会重新抓一遍。"
+          },
+          {
+            "q": "覆盖数高就能排上去吗？",
+            "a": "不能。关键词在页面上的位置只是众多输入之一，还有站点权重、页面体验、竞争强弱和用户行为。本工具只量它真正看得见的那一项。"
+          }
+        ]
+      },
+      "fixes": {
+        "title": "这一页该改什么",
+        "homepage": "首页被判断的是主词是否明确无误：把它放进 title、H1 和正文第一句，让副标题承载次要词，而不是重复主词。",
+        "product": "产品页拼的是具体性。title 和 H1 里保留产品自己的名字，让目标词出现在描述这个产品做什么的地方，而不是硬拼在名字前面。",
+        "tool": "工具页靠「它能做什么」被找到。title 和 H1 应该读起来就是访客要做的那件事，正文开头应该说明工具就在本页可用，而不是从外部描述它。",
+        "guide": "指南靠它回答的问题被找到。把问题本身的措辞放进 title 和 H1，用副标题承载子问题，让扫读的人看得出答案就在这里。",
+        "basis": "针对你所声明的页面角色给出的建议。它不改变上面任何一个计数，也不构成任何关于排名的判断。"
+      },
+      "provenance": {
+        "page": "读取的页面：{url}",
+        "hit": "读自本站已有的一次采集（采集于 {time}）——这次检查没有发起新的抓取。",
+        "miss": "读自这次检查发起的采集，采集于 {time}。",
+        "unknown": "采集于 {time}。这次采集是新发起的还是复用已有的，响应没有说明。",
+        "queriesMerged": "你提交了 {submitted} 个关键词，下面量到 {measured} 个：同一个关键词的两种写法只算一次。"
       }
     }
   },
@@ -2305,14 +2446,14 @@
     "hero": {
       "eyebrow": "先验证账号，无需付费即可审计",
       "title": "无需先选择付费方案，即可运行第一次审计。",
-      "subtitle": "SEO Agent 与 Tech Agent 会在抓取任何 URL 前要求验证 GenGrowth 账号；无需付费、连接 Search Console 或验证站点所有权，当前审计也不会保存运行记录。"
+      "subtitle": "SEO Agent 会在抓取任何 URL 前要求验证 GenGrowth 账号；无需付费、连接 Search Console 或验证站点所有权，当前审计也不会保存运行记录。"
     },
     "freeTools": {
       "eyebrow": "现已可用",
-      "title": "SEO 与 Tech URL 审计 Agents",
-      "body": "选择一个独立 Agent 并输入公开 URL，然后在抓取开始前登录或注册。注册用于访问控制，不会创建可保存的项目历史。",
+      "title": "URL 审计，在 SEO Agent 上",
+      "body": "输入公开 URL，然后在抓取开始前登录或注册。注册用于访问控制，不会创建可保存的项目历史。",
       "item1": "SEO Agent 基于有边界的抓取，检查 Metadata、标题结构与结构化数据证据。",
-      "item2": "Tech Agent 检查抓取响应、索引指令与内链证据。",
+      "item2": "它的技术焦点检查抓取响应、索引指令与内链证据。",
       "item3": "无需付费、连接 Search Console 或验证站点所有权；每次运行均不持久化。",
       "cta": "探索 Agents"
     },
@@ -2398,7 +2539,7 @@
       "title": "常见问题",
       "q1": {
         "question": "URL 审计 Agents 需要付费吗？",
-        "answer": "不需要。SEO Agent 与 Tech Agent 无需付费即可运行，但服务端在读取提交的 URL 或开始抓取之前，必须先验证 GenGrowth 账号。"
+        "answer": "不需要。SEO Agent 无需付费即可运行，但服务端在读取提交的 URL 或开始抓取之前，必须先验证 GenGrowth 账号。"
       },
       "q2": {
         "question": "完整产品的定价何时可用？",
@@ -2414,24 +2555,24 @@
       },
       "q5": {
         "question": "我应该从哪里开始？",
-        "answer": "如果关注 Metadata、标题结构与结构化数据，请选择 SEO Agent；如果关注抓取、索引性与内链，请选择 Tech Agent。两个 Agent 都会在账号验证后独立接收 URL。"
+        "answer": "一个 Agent 都覆盖。关注 Metadata、标题结构与结构化数据就直接打开它；关注抓取、索引性与内链就切到它的技术焦点。若要针对特定目标关键词检查某一个页面，请改用 On-Page SEO 检查器。"
       }
     },
     "cta": {
       "title": "先得到一个真实信号，而不是先作出付费承诺",
-      "subtitle": "选择与你的问题匹配的 Agent，验证账号后即可运行有边界的审计，无需连接 Search Console 或选择付费方案。",
+      "subtitle": "验证账号后即可运行有边界的审计，无需连接 Search Console 或证明站点所有权。",
       "button": "探索 Agents"
     }
   },
   "agents": {
     "hub": {
-      "metaTitle": "SEO 与技术网站 Agents 智能体",
-      "metaDescription": "选择一个聚焦的 GenGrowth Agent，基于公开静态 HTML 检查 SEO 内容信号或技术抓取与索引情况。",
+      "metaTitle": "SEO Agent：对公开 HTML 的有证据边界检查",
+      "metaDescription": "一个 GenGrowth Agent，基于公开静态 HTML：页面内容信号、抓取响应、索引指令与内链在同一次检查里完成，每一条状态都说明来源以及哪些没有被测量。",
       "breadcrumb": "Agents 智能体",
       "eyebrow": "聚焦式网站检查",
-      "title": "选择与你的问题相匹配的 Agent",
-      "subtitle": "对公开静态 HTML 进行有证据边界的检查。SEO Agent 检查页面内容信号；Tech Agent 检查抓取、索引指令和内链情况。",
-      "boundary": "两个 Agent 各自独立运行。结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。",
+      "title": "一个 SEO Agent，既看整站也看单页",
+      "subtitle": "对公开静态 HTML 的有证据边界检查：页面内容信号、抓取响应、索引指令与内链，都在同一处。每一条状态都会说明它由哪个来源得出、以及哪些没有被测量。",
+      "boundary": "结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。读取任何 URL 之前都需要已验证账号。",
       "seo": {
         "title": "SEO Agent",
         "description": "检查本次采集公开 HTML 中观测到的 Metadata、标题结构和结构化数据情况。",
@@ -2445,10 +2586,10 @@
         "cta": "打开 GEO Agent"
       },
       "tech": {
-        "title": "Tech Agent",
-        "description": "检查有边界抓取中观测到的响应、静态索引指令和内链情况。",
+        "title": "技术焦点",
+        "description": "同一套检查，只是先展开抓取响应、索引指令与内链。同一个引擎、同一批证据，保留自己的 URL，好让既有链接和投放仍然落在一个真实页面上。",
         "scope": "抓取 · 索引性 · 内链",
-        "cta": "打开 Tech Agent"
+        "cta": "打开技术视图"
       }
     },
     "geo": {
@@ -2596,13 +2737,13 @@
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
     },
     "tech": {
-      "name": "Tech Agent",
+      "name": "SEO Agent · 技术焦点",
       "metaTitle": "抓取检查技术 SEO Agent",
       "metaDescription": "检查网站公开静态 HTML 抓取中的响应、索引性和内链情况，并查看证据与明确限制。",
-      "eyebrow": "Tech Agent · 有边界抓取",
+      "eyebrow": "技术焦点 · 有边界抓取",
       "title": "对照可逐条打开的证据检查网站技术情况",
       "subtitle": "提交一个站点，在可发现的同源 HTML 中检查已观测抓取响应、静态索引指令和内链情况。",
-      "heroCta": "运行 Tech Agent",
+      "heroCta": "运行技术复看",
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "仅使用公开抓取事实",
@@ -2630,7 +2771,7 @@
         },
         "tech": {
           "title": "先确认技术上下文，再开始诊断",
-          "body": "检查产品、受众、页面角色、设备与审计范围。Tech Agent 使用已确认上下文组织抓取和实施证据，不预设框架、代码仓库或负责人。"
+          "body": "检查产品、受众、页面角色、设备与审计范围。技术焦点使用已确认上下文组织抓取和实施证据，不预设框架、代码仓库或负责人。"
         },
         "states": {
           "needs_confirmation": "需要检查",
@@ -3251,7 +3392,7 @@
             "technicalIssueBrief": {
               "recommendation": "这是在搜索侧审阅中暴露出来的技术问题，所以在这里应该把它写清楚，而不是就地修。记录已观测到的状况、它限制住了哪个搜索决策，然后交给模板、CMS 或平台的负责人。",
               "validation1": "移交前先确认这个状况在公开 URL 上仍能复现。",
-              "validation2": "到 Tech Agent 里复看同一项检查——那里才把归属系统及其证据纳入了范围。",
+              "validation2": "到技术焦点里复看同一项检查——那里才把归属系统及其证据纳入了范围。",
               "validation3": "负责人发布变更后，重新抓取该 URL，与这里记录的证据做比较。",
               "impactSurface": "这个状况限制住的那个搜索决策；造成它的代码或配置不在本 Agent 的范围内。",
               "risks": "用内容手段绕开交付层的问题，只是把它藏起来而不是修好；而这种绕法往往比加它的人待得更久。",

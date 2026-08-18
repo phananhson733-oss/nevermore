@@ -35,7 +35,7 @@ function agentEnvelope(agent: AgentKind) {
         persistence: "none",
         source: {
           tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v4",
+          schemaVersion: "seo_audit.sitewide.v5",
           completedAt: "2026-08-12T10:00:00.000Z",
           cache: { status: "miss", capturedAt: null },
         },
@@ -457,7 +457,7 @@ test("signed-out SEO submission opens registration without an audit POST", async
   expect(auditPosts).toBe(0);
   expect(
     await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v2"),
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
     ),
   ).toContain('"purpose":"run_confirmed_profile"');
 });
@@ -529,7 +529,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await page.goto("/");
   await page.evaluate(() => {
     sessionStorage.setItem(
-      "gengrowth:agent-intent:seo:v2",
+      "gengrowth:agent-intent:seo:v3",
       JSON.stringify({
         agent: "seo",
         purpose: "prepare_profile",
@@ -562,7 +562,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   );
   expect(
     await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v2"),
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
     ),
   ).toContain("seo-only.example");
 });

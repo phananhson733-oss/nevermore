@@ -20,9 +20,9 @@ us at the address in the *Contact* section below.
 
 ## What we collect
 
-### 1. When you run the SEO or Tech Agent
+### 1. When you run the SEO Agent
 
-The SEO Agent and Tech Agent require a verified GenGrowth account. Signing in
+The SEO Agent requires a verified GenGrowth account. Signing in
 with Google creates that account using the identity information described in
 section 3. It does not grant us Gmail mailbox, Search Console, or site-ownership
 access. Some calculators that do not run a website crawl remain available

@@ -1,5 +1,5 @@
 // @input  -- locale and agents.hub messages
-// @output -- canonical two-card SEO/Tech Agent directory
+// @output -- the SEO and GEO Agents, with SEO's technical focus as a subordinate path
 // @pos    -- /agents marketing acquisition hub
 
 import Link from "next/link";
@@ -36,10 +36,18 @@ export default async function AgentsHubPage({
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "agents.hub" });
   const home = locale === "zh" ? "首页" : "Home";
+  /**
+   * Two Agents, and the technical route is not one of them.
+   *
+   * GEO asks a live assistant real buyer questions and reads back who it cited
+   * — a different capability, on different evidence, so it is a peer. The
+   * technical route renders the same workbench over the same engine as SEO and
+   * differs only in which checks open first, so it appears below as a focus
+   * rather than as a third product to choose between.
+   */
   const cards = [
     { id: "seo", icon: ScanSearch, path: "/agents/seo" },
     { id: "geo", icon: Radar, path: "/agents/geo" },
-    { id: "tech", icon: CodeXml, path: "/agents/tech" },
   ] as const;
 
   return (
@@ -115,6 +123,28 @@ export default async function AgentsHubPage({
                 </Link>
               </article>
             ))}
+          </div>
+
+          <div className="mt-5 rounded-card border border-brand-border bg-brand-panel-sunken p-5 md:p-6">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[9px] border border-brand-border text-text-dark-faint">
+                <CodeXml aria-hidden="true" className="size-4" />
+              </span>
+              <div>
+                <h3 className="text-[15px] font-semibold text-text-dark-primary">
+                  {t("tech.title")}
+                </h3>
+                <p className="mt-2 max-w-[620px] text-[13px] leading-[1.65] text-text-dark-secondary">
+                  {t("tech.description")}
+                </p>
+                <Link
+                  href={localePath(locale, "/agents/tech")}
+                  className="mt-4 inline-flex items-center gap-2 text-[13px] text-text-dark-secondary underline decoration-brand-border underline-offset-4 transition-colors hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent"
+                >
+                  {t("tech.cta")}
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>

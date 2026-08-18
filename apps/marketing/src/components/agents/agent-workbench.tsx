@@ -47,6 +47,10 @@ import {
   type PendingAgentIntent,
 } from "./agent-intent";
 import { AGENT_ENDPOINT, type AgentKind } from "./agent-types";
+import {
+  clearOnPageDraft,
+  readOnPageDraft,
+} from "../../lib/on-page-checker/storage";
 
 const EXISTING_AUDIT_ERROR_CODES = new Set([
   "invalid_url",
@@ -142,6 +146,17 @@ export function AgentWorkbench(props: AgentWorkbenchProps) {
 function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const t = useTranslations("agents.workbench");
   const auditT = useTranslations("tools.seoAudit");
+  /**
+   * Target queries handed over by the page checker, if this visit came from it.
+   *
+   * Kept beside the profile rather than in it: the profile holds one
+   * `targetQuery` for labelling, and the checker's question is up to five words
+   * measured against one page. Only a handoff sets this, so an ordinary Agent
+   * run keeps sending exactly what it sends today.
+   */
+  const [handoffQueries, setHandoffQueries] = useState<readonly string[] | null>(
+    null,
+  );
   const [profile, setProfile] = useState<AgentProfileDraft>(() =>
     createAgentProfileDraft(agent, "", locale),
   );
@@ -189,6 +204,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const profileRefreshIntent = useRef<PendingAgentIntent | null>(null);
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  /**
+   * The same value, reachable from `runAudit`.
+   *
+   * `runAudit` is memoized on `[agent]`, so it closes over the first render's
+   * state and would read `null` here forever — the handoff restored the fields
+   * and then sent a request without them, which is the entire feature missing
+   * while every field-level assertion passed.
+   */
+  const handoffQueriesRef = useRef(handoffQueries);
+  handoffQueriesRef.current = handoffQueries;
 
   const runAudit = useCallback(
     async (
@@ -204,7 +229,17 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             "content-type": "application/json",
             accept: "application/json",
           },
-          body: JSON.stringify({ url: confirmedProfile.targetUrl }),
+          body: JSON.stringify({
+          url: confirmedProfile.targetUrl,
+          // Only when this visit came from the page checker. Without a handoff
+          // the request is byte-for-byte what it was before the keyword layer.
+          ...(handoffQueriesRef.current === null
+            ? {}
+            : {
+                targetQueries: handoffQueriesRef.current,
+                pageRole: confirmedProfile.pageType,
+              }),
+        }),
           signal,
         });
         const body = (await response.json().catch(() => null)) as unknown;
@@ -802,9 +837,38 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       resumeIntent.current;
     if (!pending) return;
 
-    if (pending.purpose === "prepare_profile") {
-      setProfile(createAgentProfileDraft(agent, pending.url, locale));
-      if (storage) clearPendingAgentIntent(storage, agent);
+    if (
+      pending.purpose === "prepare_profile" ||
+      pending.purpose === "page_focused_launch"
+    ) {
+      const base = createAgentProfileDraft(agent, pending.url, locale);
+      // A visitor who came in asking about one page comes back asking about the
+      // same page, with the same words. The checker leaves its own draft beside
+      // the intent; reading only the URL out of the intent is what dropped the
+      // queries, the market, the language and the page role on the way over.
+      const checkerDraft =
+        pending.purpose === "page_focused_launch" && storage
+          ? readOnPageDraft(storage)
+          : null;
+      setProfile({
+        ...base,
+        ...(pending.scope === "page" ? { auditScope: "page-only" as const } : {}),
+        ...(checkerDraft
+          ? {
+              country: checkerDraft.country,
+              locale: checkerDraft.locale,
+              pageType: checkerDraft.pageType,
+              targetQuery: checkerDraft.targetQueries[0] ?? base.targetQuery,
+            }
+          : {}),
+      });
+      setHandoffQueries(checkerDraft ? checkerDraft.targetQueries : null);
+      // Both slots are consumed: a draft that outlives its use is a stale URL
+      // waiting to prefill someone else's form.
+      if (storage) {
+        clearPendingAgentIntent(storage, agent);
+        clearOnPageDraft(storage);
+      }
       return;
     }
 
@@ -918,7 +982,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     const auditIdentityChanged =
       next.agent !== profile.agent ||
       next.targetUrl !== profile.targetUrl ||
-      next.host !== profile.host;
+      next.host !== profile.host ||
+      // The page role now travels with a handoff and is measured, so changing it
+      // changes what was asked — a captured report no longer answers it.
+      (handoffQueries !== null && next.pageType !== profile.pageType);
+    // The handed-over queries are deliberately not compared here. They are set
+    // once, by the effect that consumes the intent and deletes it, so within one
+    // mount they cannot change from one question to another; a second handoff is
+    // a fresh navigation. And the captured report publishes the queries it
+    // measured inside its own evidence region, so it cannot be read as an answer
+    // to different ones.
     if (auditIdentityChanged) {
       activeOperationController.current?.abort();
       activeOperationController.current = null;

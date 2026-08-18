@@ -4,6 +4,7 @@ import type {
   SeoAuditPayload,
   SeoAuditRecord,
   SeoAuditSiteResources,
+  SeoAuditTargetPageExtract,
 } from "./types.ts";
 
 type UnknownObject = Readonly<Record<string, unknown>>;
@@ -20,8 +21,7 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-const CANONICAL_ISO_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const CANONICAL_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 /** Accept only the UTC millisecond form emitted by `Date#toISOString`. */
 export function isCanonicalIsoTimestamp(value: unknown): value is string {
@@ -102,9 +102,7 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
   return (
     value.affected === value.observations.length &&
     value.affected <= value.tested &&
-    (value.state === "observed"
-      ? value.affected > 0
-      : value.affected === 0)
+    (value.state === "observed" ? value.affected > 0 : value.affected === 0)
   );
 }
 
@@ -142,7 +140,8 @@ function isSeoAuditPage(value: unknown): value is SeoAuditPage {
     typeof value.subjectUrl === "string" &&
     typeof value.finalUrl === "string" &&
     isNonNegativeInteger(value.depth) &&
-    (value.initialStatus === null || isNonNegativeInteger(value.initialStatus)) &&
+    (value.initialStatus === null ||
+      isNonNegativeInteger(value.initialStatus)) &&
     (value.finalStatus === null || isNonNegativeInteger(value.finalStatus)) &&
     isNonNegativeInteger(value.redirectHops) &&
     isNullableString(value.contentType) &&
@@ -164,6 +163,77 @@ function isSeoAuditPage(value: unknown): value is SeoAuditPage {
   );
 }
 
+/**
+ * Runtime authority for the target page extract.
+ *
+ * Checks every field for real. A guard that accepted the shape without reading
+ * it would let a payload through whose text fields are missing, and the
+ * keyword layer would then report "not covered" for a page it never read.
+ */
+const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
+  "url",
+  "title",
+  "metaDescription",
+  "h1",
+  "subHeadings",
+  "openingText",
+  "staticBodyWords",
+  "truncatedLists",
+];
+
+function isBoundedStringList(
+  value: unknown,
+  maxEntries: number,
+  maxChars: number,
+): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= maxEntries &&
+    value.every((entry) => typeof entry === "string" && entry.length <= maxChars)
+  );
+}
+
+function isBoundedNullableString(
+  value: unknown,
+  maxChars: number,
+): value is string | null {
+  return (
+    value === null || (typeof value === "string" && value.length <= maxChars)
+  );
+}
+
+/**
+ * Runtime authority for the target page extract.
+ *
+ * The key set is exact and every value is bounded. A shape check alone would
+ * let an upstream or cached payload carry an extra field — page HTML, a debug
+ * dump, anything the crawler happened to hold — straight through the Agent
+ * projection to the browser, and would let one enormous heading become the
+ * whole response.
+ */
+function isTargetPageExtract(
+  value: unknown,
+): value is SeoAuditTargetPageExtract {
+  if (!isObject(value)) return false;
+  const keys = Object.keys(value);
+  if (keys.length !== TARGET_PAGE_EXTRACT_KEYS.length) return false;
+  if (keys.some((key) => !TARGET_PAGE_EXTRACT_KEYS.includes(key))) return false;
+
+  return (
+    typeof value.url === "string" &&
+    value.url.length <= 2_048 &&
+    isBoundedNullableString(value.title, 512) &&
+    isBoundedNullableString(value.metaDescription, 2_048) &&
+    isBoundedStringList(value.h1, 10, 200) &&
+    (value.subHeadings === null ||
+      isBoundedStringList(value.subHeadings, 60, 200)) &&
+    isBoundedNullableString(value.openingText, 500) &&
+    (value.staticBodyWords === null ||
+      isNonNegativeInteger(value.staticBodyWords)) &&
+    typeof value.truncatedLists === "boolean"
+  );
+}
+
 /** Runtime authority for the current buffered site-wide SEO audit payload. */
 export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   if (!isObject(value) || !isObject(value.run) || !isObject(value.result)) {
@@ -173,7 +243,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v4" &&
+    run.schemaVersion === "seo_audit.sitewide.v5" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&
@@ -183,6 +253,15 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
     typeof result.targetInspected === "boolean" &&
     (result.inspectedTargetUrl === null ||
       typeof result.inspectedTargetUrl === "string") &&
+    (result.targetPageExtract === null ||
+      isTargetPageExtract(result.targetPageExtract)) &&
+    // The keyword region is derived per request from one visitor's queries.
+    // This shape is the one that gets cached under a key shared by every
+    // visitor to the same host, so a payload carrying that region is not a
+    // valid instance of it: refusing it here makes a poisoned row read as a
+    // miss and re-crawl, instead of handing the next visitor someone else's
+    // question. Structural typing cannot state this, so the runtime does.
+    !Object.hasOwn(result, "keywordEvidence") &&
     isCanonicalIsoTimestamp(result.scannedAt) &&
     isCoverage(result.coverage) &&
     isSiteResources(result.siteResources) &&

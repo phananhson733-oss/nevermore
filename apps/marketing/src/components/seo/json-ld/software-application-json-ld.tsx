@@ -12,12 +12,13 @@ export function SoftwareApplicationJsonLd() {
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
     description:
-      "Evidence-led SEO growth system with independent SEO and Tech URL audit Agents. A verified GenGrowth account is required before an audit; current runs use public static HTML and are not persisted.",
+      "Evidence-led SEO growth system with one account-gated SEO Agent for URL audits, opened on content or technical checks. A verified GenGrowth account is required before an audit; current runs use public static HTML and are not persisted.",
     url: "https://gengrowth.ai",
     featureList: [
       "Account-gated SEO Agent for metadata, headings, and structured data",
-      "Account-gated Tech Agent for crawl, indexability, and internal links",
-      "No payment, Search Console connection, or site-ownership verification required for current Agent audits",
+      "The same Agent, opened on crawl, indexability, and internal links",
+      "On-Page SEO Checker for one page against its target queries",
+      "Free while the tools are being tested; no Search Console connection or site-ownership verification for current Agent audits",
       "No persistence for current Agent audit runs",
     ],
     creator: {

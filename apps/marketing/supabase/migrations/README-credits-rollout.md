@@ -75,11 +75,12 @@ update public.credit_settings set referral_daily_cap = 0, updated_at = now() whe
 
 福利期刻意**不在工具页展示任何积分文案**：开关关掉时页面要和上线前完全一致，而客户端组件读不到非 `NEXT_PUBLIC_` 的环境变量，做不到跟着开关走。文案连同定价一起等正式计费时统一改。
 
-到时候要做的四件事：
+到时候要做的七件事：
 
 1. **恢复工具页与 Agent 页的价格标注。** 完整实现（含 EN/ZH 文案、`ConnectedToolContent.creditPrice` 字段、slug 映射表、三条渲染测试）在 commit `dd9669b8` 里，可直接 cherry-pick 后按当时的定价调整。恢复时给它加上开关，别再让它脱离 `MARKETING_CREDITS_ENABLED`。
 2. **把三个 Search Console 工具接回合格运行清单**（`credits-config.ts` 的 `QUALIFYING_TOOLS`）。它们现在被排除，是因为准入用的是 `gg_id` 这个 Google 封印 cookie，而账本记的是 Supabase user id，两个身份之间没有绑定——一个 Google 账号能给任意多个 Supabase 账号刷出合格运行。Phase 2 本来就要把这三个工具改成 Supabase 登录专享，改完这层错配自然消失，那时再把它们加回去。
-3. **重新评估合格门槛的经济性。** 现在只剩 agent-audit 和 profile-refresh 合格，而这两个只需要一个公开 URL，不构成真实摩擦。开闸前先跑刷量审计（见设计文档 §1 Phase 2 前置门），可疑账户先 `status = 'frozen'`。
+3. **裁决 On-Page Checker 的价格。** `on-page-seo-check` 现在按对标竞品的单页检查定价 1 积分，但它跑的是与 `agent-audit` 完全相同的全站抓取，服务成本一样——竞品那 1 积分买的是一次 100 毫秒的单页取回。福利期不扣费，所以这个缺口现在没有代价；开始计费前必须裁决：要么按真实成本改成 10，要么先做出一条真正更便宜的单页路径再谈 1。恢复价格标注时（第 1 条）会顺带把这个数字暴露给用户，别在那之前忘了这一条。
+4. **重新评估合格门槛的经济性。** 现在合格的是 agent-audit、on-page-seo-check 和 profile-refresh，而这三个都只需要一个公开 URL，不构成真实摩擦。开闸前先跑刷量审计（见设计文档 §1 Phase 2 前置门），可疑账户先 `status = 'frozen'`。
 
    2026-08-17 的 /qa 验收（含 codex 对抗审计）已经把套利面找出来了，**开闸前逐条处理，不要重新推导一遍**：
 
@@ -88,10 +89,10 @@ update public.credit_settings set referral_daily_cap = 0, updated_at = now() whe
    - **邀请人封顶不作废邀请码**（实测：25 个被邀请人，邀请人只拿到 20 笔，被邀请人 25 笔全额发放，全局计数被消耗 25 次）。这可能就是想要的行为——被邀请人是真实新用户——但要**明确裁决**，别默认。
    - **`first_tool_run_at` 记的是"账号存在之后的首次上报"**，不是真正的首次运行。绕过浏览器直接 POST 工具 API（此时还没有 credit_accounts 行）会拿到 `no_account` 且不盖戳，之后再挑一个邀请码绑定，第二次运行就算首跑。门槛高、收益 50 分，但 Phase 2 收费后要重新算这笔账。
 
-4. **补齐 referral 发奖的重试。** `reportFirstToolRun` 是一次性投递：RPC 死锁或超时只写一行 `console.error`，奖励就永久漏发，除非用户碰巧再跑一次工具。福利期漏发一笔 50 分无所谓，收费后不行。要么落一张 pending 表由 worker 重投，要么在下次 balance 调用时补偿。
-5. **补齐 LLM 单价**，据此复核工具定价与毛利（设计文档 §6 明确这是开闸前置条件）。
+5. **补齐 referral 发奖的重试。** `reportFirstToolRun` 是一次性投递：RPC 死锁或超时只写一行 `console.error`，奖励就永久漏发，除非用户碰巧再跑一次工具。福利期漏发一笔 50 分无所谓，收费后不行。要么落一张 pending 表由 worker 重投，要么在下次 balance 调用时补偿。
+6. **补齐 LLM 单价**，据此复核工具定价与毛利（设计文档 §6 明确这是开闸前置条件）。
 
-6. **两条已知的窄竞态**，福利期发生概率极低、后果可自愈，收费前值得收掉：
+7. **两条已知的窄竞态**，福利期发生概率极低、后果可自愈，收费前值得收掉：
 
    - `credits_touch_daily` 在 UTC 跨日的毫秒窗口里可能把 `daily_granted_on` **倒写**：请求 A 在 D 日进入函数后固定 `v_today=D` 却卡在行锁前，请求 B 在 D+1 拿到锁、发放并盖戳 D+1，A 随后拿锁又发 D 并把戳改回 D。此后 D+1 的请求会重试已经用过的幂等键 `daily:<uid>:D+1`，撞 UNIQUE 整笔回滚，该用户当天余额接口持续 503，通常到 D+2 才自愈。修法是让戳只能单调前进（`where daily_granted_on is null or daily_granted_on < v_today`）。
    - 一个已有账号（`referred_by` 与 `first_tool_run_at` 都为空）如果在**归因请求和首跑上报并发**时先被 reward RPC 锁到，会走 `no_referrer` 并永久盖戳，即使浏览器里那张有效 `gg_ref` 早就写好了。邀请从此对该账号永久失效，且不可恢复。

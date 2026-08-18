@@ -1,4 +1,4 @@
-// @input  -- authenticated Tech Agent POST request with one public website URL
+// @input  -- authenticated POST request on the Agent's technical focus, with one public website URL
 // @output -- buffered crawl, indexability, and link evidence
 // @pos    -- thin Next.js boundary over the shared authenticated Agent handler
 

@@ -71,13 +71,13 @@ function getTopToolRecommendation(
       eyebrow: locale === "zh" ? "匹配的 Agent" : "Matched Agent",
       title:
         locale === "zh"
-          ? "用 Tech Agent 检查站点结构"
-          : "Check site structure with the Tech Agent",
+          ? "用技术焦点检查站点结构"
+          : "Check site structure on the Agent's technical focus",
       body:
         locale === "zh"
           ? "需要已验证账号；只检查公开 HTML，无需 Search Console 或站点所有权验证，也不会把本次营销站运行保存到 App 项目。"
           : "A verified account is required. The Agent reads public HTML without Search Console or site-ownership access, and the marketing run is not saved to an app project.",
-      cta: locale === "zh" ? "打开 Tech Agent" : "Open Tech Agent",
+      cta: locale === "zh" ? "打开技术焦点" : "Open the technical focus",
     };
   }
 
@@ -222,8 +222,8 @@ export function BlogArticleContent({
         </h2>
         <p className="mt-3 max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {locale === "zh"
-            ? "SEO 与 Tech Agent 需要已验证账号，只检查公开 HTML，无需 Search Console 或站点所有权验证；本次营销站运行不会保存到 App 项目。"
-            : "The SEO and Tech Agents require a verified account and inspect public HTML without Search Console or site-ownership access. The marketing run is not saved to an app project."}
+            ? "SEO Agent 需要已验证账号，只检查公开 HTML，无需 Search Console 或站点所有权验证；本次营销站运行不会保存到 App 项目。"
+            : "The SEO Agent requires a verified account and inspects public HTML without Search Console or site-ownership access. The marketing run is not saved to an app project."}
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
@@ -237,7 +237,7 @@ export function BlogArticleContent({
             href={localePath(locale, "/agents/tech")}
             className="inline-flex h-11.5 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50"
           >
-            {locale === "zh" ? "打开 Tech Agent" : "Open Tech Agent"}
+            {locale === "zh" ? "打开技术焦点" : "Open the technical focus"}
           </Link>
         </div>
       </section>

@@ -4,6 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  KEYWORD_EVIDENCE_VERSION,
+  TEXT_UNITS_VERSION,
+} from "@sf/public-tools/seo-audit/keyword-evidence/types";
+import {
   isAgentAuditSuccessEnvelope,
   type AgentAuditSuccessEnvelope,
 } from "./audit-contract.ts";
@@ -43,7 +47,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v4",
+        schemaVersion: "seo_audit.sitewide.v5",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -54,6 +58,7 @@ const success = {
       scannedAt: "2026-08-12T09:00:00.000Z",
       targetInspected: true,
       inspectedTargetUrl: "https://acme.test/",
+      targetPageExtract: null,
       coverage: {
         availability: "available",
         pagesInspected: 1,
@@ -251,11 +256,216 @@ describe("isAgentAuditSuccessEnvelope", () => {
     expect(isAgentAuditSuccessEnvelope(withCacheHit)).toBe(true);
   });
 
+  /**
+   * The keyword region and the extract, present.
+   *
+   * The base fixture leaves both out, which is a valid response — and which
+   * meant the ~135 lines of deep validation behind them were reachable by no
+   * test at all: the whole branch could be deleted and this suite would stay
+   * green.
+   */
+  describe("the derived keyword region", () => {
+    const slot = (
+      state: "covered" | "not_covered" | "not_applicable",
+      occurrences: number | null,
+    ) => ({ state, occurrences });
+
+    const evidence = {
+      availability: "available" as const,
+      version: KEYWORD_EVIDENCE_VERSION,
+      textUnitsVersion: TEXT_UNITS_VERSION,
+      pageRole: "tool" as const,
+      queries: [
+        {
+          displayQuery: "birth chart calculator",
+          isPrimary: true,
+          primaryReason: "most_fields_covered" as const,
+          brandCandidate: "not_matched" as const,
+          tokenization: "whitespace" as const,
+          slots: {
+            title: slot("covered", 1),
+            description: slot("not_applicable", null),
+            h1: slot("covered", 2),
+            subHeadings: slot("not_covered", 0),
+            openingText: slot("covered", 1),
+            url: { state: "covered" as const },
+          },
+          capturedOccurrences: 4,
+          density: {
+            value: 0.0044,
+            basis: "captured_text" as const,
+            unitsBasis: "words" as const,
+            numeratorUnits: 4,
+            denominatorUnits: 900,
+          },
+        },
+      ],
+      focus: { covered: 4, applicable: 5 },
+      limitations: ["captured_text_only"],
+    };
+
+    const extract = {
+      url: "https://acme.test/",
+      title: "Acme birth chart calculator",
+      metaDescription: null,
+      h1: ["Birth chart calculator"],
+      subHeadings: ["How the chart is drawn"],
+      openingText: "A birth chart maps the sky at a moment in time.",
+      staticBodyWords: 900,
+      truncatedLists: false,
+    };
+
+    function withEvidence(overrides: Record<string, unknown> = {}): unknown {
+      return {
+        data: {
+          ...success.data,
+          result: {
+            ...success.data.result,
+            targetPageExtract: extract,
+            keywordEvidence: { ...evidence, ...overrides },
+          },
+        },
+      };
+    }
+
+    it("accepts a complete region beside a complete extract", () => {
+      expect(isAgentAuditSuccessEnvelope(withEvidence())).toBe(true);
+    });
+
+    it("accepts an unavailable region with a frozen reason", () => {
+      expect(
+        isAgentAuditSuccessEnvelope({
+          data: {
+            ...success.data,
+            result: {
+              ...success.data.result,
+              keywordEvidence: {
+                availability: "unavailable",
+                reason: "target_page_not_captured",
+                version: KEYWORD_EVIDENCE_VERSION,
+              },
+            },
+          },
+        }),
+      ).toBe(true);
+    });
+
+    it("rejects an unavailable region with an invented reason", () => {
+      expect(
+        isAgentAuditSuccessEnvelope({
+          data: {
+            ...success.data,
+            result: {
+              ...success.data.result,
+              keywordEvidence: {
+                availability: "unavailable",
+                reason: "crawl_was_slow",
+                version: KEYWORD_EVIDENCE_VERSION,
+              },
+            },
+          },
+        }),
+      ).toBe(false);
+    });
+
+    /**
+     * The counting algorithm is what the density means. A region computed under
+     * another version is not readable under these rules, so accepting any
+     * string here would publish a number the reader cannot interpret.
+     */
+    it("rejects a region counted under a different text-units version", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withEvidence({ textUnitsVersion: "text_units.v2" }),
+        ),
+      ).toBe(false);
+    });
+
+    it.each([
+      ["a non-array queries field", { queries: "none" }],
+      ["no queries at all", { queries: [] }],
+      ["more queries than the request may carry", {
+        queries: [
+          evidence.queries[0],
+          evidence.queries[0],
+          evidence.queries[0],
+          evidence.queries[0],
+          evidence.queries[0],
+          evidence.queries[0],
+        ],
+      }],
+      ["a null focus", { focus: null }],
+      ["a focus counting more covered slots than applicable ones", {
+        focus: { covered: 6, applicable: 5 },
+      }],
+      ["a fractional focus count", { focus: { covered: 1.5, applicable: 5 } }],
+      ["a page role outside the frozen vocabulary", { pageRole: "landing" }],
+      ["limitations that are not strings", { limitations: [{ code: "x" }] }],
+      ["a stale region version", { version: "keyword_evidence.v0" }],
+    ])("rejects %s", (_name, overrides) => {
+      expect(isAgentAuditSuccessEnvelope(withEvidence(overrides))).toBe(false);
+    });
+
+    /**
+     * The slot rule the house cares about most: `not_applicable` means there was
+     * nothing to read, and it must not arrive carrying a count.
+     */
+    it("rejects a not_applicable slot that carries an occurrence count", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withEvidence({
+            queries: [
+              {
+                ...evidence.queries[0],
+                slots: {
+                  ...evidence.queries[0]?.slots,
+                  description: { state: "not_applicable", occurrences: 0 },
+                },
+              },
+            ],
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects a density that claims a basis we never measure", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withEvidence({
+            queries: [
+              {
+                ...evidence.queries[0],
+                density: {
+                  ...evidence.queries[0]?.density,
+                  basis: "full_page_body",
+                },
+              },
+            ],
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects an extract carrying a field the Agent does not publish", () => {
+      expect(
+        isAgentAuditSuccessEnvelope({
+          data: {
+            ...success.data,
+            result: {
+              ...success.data.result,
+              targetPageExtract: { ...extract, rawHtml: "<html></html>" },
+            },
+          },
+        }),
+      ).toBe(false);
+    });
+  });
+
   it("rejects a response from a different crawl schema", () => {
     const malformed = structuredClone(success) as unknown as {
       data: { run: { source: { schemaVersion: string } } };
     };
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v6";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

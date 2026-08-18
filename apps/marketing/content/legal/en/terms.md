@@ -23,7 +23,7 @@ You may create an account by signing in with Google. You are responsible for
 keeping access to that Google account secure. Tell us promptly if you believe
 your account has been used without your authorisation.
 
-The SEO Agent and Tech Agent require a verified account before a website URL is
+The SEO Agent requires a verified account before a website URL is
 accepted for audit. This account gate does not grant us Gmail mailbox, Search
 Console, or site-ownership access.
 
@@ -31,7 +31,7 @@ We may suspend or close an account that is used in breach of these terms.
 
 ## 3. Free tools and fair use
 
-The SEO Agent and Tech Agent are offered without charge but require a verified
+The SEO Agent is offered without charge but requires a verified
 account. Calculators that do not run a website crawl may remain available
 without an account. Website Agent runs use public static HTML only and do not
 require Search Console access or site-ownership verification. They run against

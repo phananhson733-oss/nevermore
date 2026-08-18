@@ -107,15 +107,42 @@ describe("sitemap tool list", () => {
 });
 
 describe("sitemap Agent routes", () => {
-  it("includes the directory and every focused Agent in the locale loop", () => {
+  it("includes the directory and both Agents in the locale loop", () => {
     const source = readFileSync(SITEMAP_MODULE, "utf8");
     expect(source).toContain('const locales = ["en", "zh"]');
     expect(source).toContain('"/agents"');
     expect(source).toContain('"/agents/seo"');
+    // GEO is its own Agent on its own evidence, so it is listed. The technical
+    // route is a focus of the SEO Agent and is deliberately not — see below.
     expect(source).toContain('"/agents/geo"');
-    expect(source).toContain('"/agents/tech"');
     expect(source).toMatch(/for \(const locale of locales\)/);
     expect(source).toMatch(/for \(const page of staticPages\)/);
+  });
+
+  /**
+   * `/agents/tech` is neither listed nor redirected.
+   *
+   * It renders the same workbench as `/agents/seo` over the same engine and
+   * differs only in which checks open first, so it hands its search authority
+   * to that page while keeping its own URL alive for existing links. Both
+   * halves are asserted here: dropping it from the sitemap without the
+   * cross-canonical, or the reverse, leaves a near-duplicate competing with
+   * the page it was supposed to defer to.
+   */
+  it("consolidates the Tech Agent instead of listing or redirecting it", () => {
+    const sitemapSource = readFileSync(SITEMAP_MODULE, "utf8");
+    expect(sitemapSource).not.toContain('"/agents/tech"');
+
+    const techPage = readFileSync(
+      fileURLToPath(
+        new URL("../app/[locale]/agents/tech/page.tsx", import.meta.url),
+      ),
+      "utf8",
+    );
+    expect(techPage).toContain('const CANONICAL_PATH = "/agents/seo"');
+    expect(techPage).toContain("canonicalPath: CANONICAL_PATH");
+    // Still a page, not a shim: the URL has to keep answering.
+    expect(techPage).not.toContain("permanentRedirect");
   });
 });
 

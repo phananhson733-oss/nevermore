@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AGENT_AUDIT_RECORD_CATEGORIES } from "../../lib/agents/audit-contract";
+import { storeOnPageDraft } from "../../lib/on-page-checker/storage";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
   type AgentProfileRefreshData,
@@ -18,6 +19,7 @@ import {
   readPendingAgentIntent,
   storeAgentProfileRefreshIntent,
   storeConfirmedAgentRunIntent,
+  storePageFocusedAgentIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
 import {
@@ -88,7 +90,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         persistence: "none",
         source: {
           tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v4",
+          schemaVersion: "seo_audit.sitewide.v5",
           completedAt: "2026-08-13T00:00:00.000Z",
           cache: { status: "miss", capturedAt: null },
         },
@@ -99,6 +101,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         scannedAt: "2026-08-13T00:00:00.000Z",
         targetInspected: true,
         inspectedTargetUrl: "https://acme.test/",
+        targetPageExtract: null,
         coverage: {
           availability: "available",
           pagesInspected: 1,
@@ -358,6 +361,15 @@ function setRunContext(
       targetQuery,
     );
   }
+}
+
+/** The value rendered under one Profile fact, addressed by its own label. */
+function factValue(label: string): string {
+  for (const term of document.querySelectorAll("dt")) {
+    if ((term.textContent ?? "").trim() !== label) continue;
+    return (term.nextElementSibling?.textContent ?? "").trim();
+  }
+  throw new Error(`no fact labelled ${label}`);
 }
 
 function confirmProfile(): void {
@@ -1737,6 +1749,205 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(document.body.textContent).toContain("AstrologyWiki");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("resumes a page-focused launch with every field the checker handed over", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    // Reading only the URL out of the intent is what dropped the queries, the
+    // market, the language and the page role on the way over.
+    expect(
+      (document.querySelector("#seo-profile-target-url") as HTMLInputElement)
+        .value,
+    ).toBe("astrologywiki.com/chart");
+    // The market and language came across too, read off the fields themselves.
+    // Asserting they appear "somewhere in the page text" passed with the whole
+    // draft ignored, which is the assertion doing nothing.
+    expect(
+      (
+        document.querySelector("#seo-profile-market") as HTMLInputElement
+      ).value,
+    ).toBe("GB");
+    expect(
+      (
+        document.querySelector("#seo-profile-language") as HTMLInputElement
+      ).value,
+    ).toBe("en-GB");
+    // Restored, never started: the visitor asked about a page, not for a crawl.
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Both slots consumed, so neither can prefill someone else's form later.
+    expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+  });
+
+  /**
+   * The handoff exists so the Agent asks the checker's question. Restoring the
+   * fields and then not sending them is the whole feature missing, and the only
+   * assertions that existed stopped at the restored fields.
+   */
+  it("carries the handed-over queries and page role into the request", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json(
+          successEnvelope("seo", "astrologywiki.com/chart"),
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    await flushAsyncWork();
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(String(bodies[0]))).toEqual({
+      url: "astrologywiki.com/chart",
+      // Order is the visitor's, and the wire treats it as significant.
+      targetQueries: ["natal chart", "birth chart"],
+      pageRole: "guide",
+    });
+  });
+
+  /**
+   * The rest of what the checker handed over, each of which could be reverted
+   * without any existing assertion noticing: the page-only scope, the first query
+   * as the Profile's own label, and the page role.
+   */
+  it("maps the handoff into the Profile it will run under", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart", "birth chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    vi.stubGlobal("fetch", vi.fn());
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    const facts = document.body.textContent ?? "";
+    // The visitor asked about one page, so the run is scoped to that page.
+    expect(facts).toContain("options.auditScope.page-only");
+    expect(facts).toContain("options.pageType.guide");
+    /**
+     * The first query labels the Profile. Read off that fact's own value: the
+     * queries appear elsewhere on the page, so "somewhere in the body" passed
+     * even with the mapping removed.
+     */
+    expect(factValue("fields.targetQuery")).toBe("natal chart");
+  });
+
+  /**
+   * The page role is measured once it travels, so changing it changes what was
+   * asked and a captured report no longer answers it.
+   */
+  it("discards a captured page-focused report when the page role changes", async () => {
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: ["natal chart"],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        return Response.json(successEnvelope("seo", "astrologywiki.com/chart"));
+      }),
+    );
+
+    renderStrict("seo");
+    await flushAsyncWork();
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+    expect(
+      document.querySelector('[data-testid="agent-results"]'),
+    ).not.toBeNull();
+
+    // The page-role selector lives behind the Review disclosure.
+    const review = [...document.querySelectorAll("button")].find((candidate) =>
+      (candidate.textContent ?? "").includes("actions.review"),
+    );
+    expect(review).not.toBeUndefined();
+    act(() => {
+      review?.click();
+    });
+    const pageType = document.querySelector(
+      '[aria-label="fields.pageType"]',
+    ) as HTMLSelectElement | null;
+    expect(pageType).not.toBeNull();
+    const setter = Object.getOwnPropertyDescriptor(
+      pageType?.constructor.prototype ?? window.HTMLSelectElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(pageType, "product");
+      pageType?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+  });
+
+  it("keeps a page-focused launch out of an ordinary Agent request", async () => {
+    // No handoff: the request body must be byte-for-byte what it was before the
+    // keyword layer existed.
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(JSON.parse(body)).toEqual({ url: "astrologywiki.com" });
+    }
   });
 
   it("runs once only after a signed-in visitor confirms the exact Profile", async () => {

@@ -1,4 +1,4 @@
-// @input  -- authenticated Tech Agent profile-search POST
+// @input  -- authenticated technical-focus profile-search POST
 // @output -- bounded organic-search overlap evidence or typed availability
 // @pos    -- thin Next.js boundary over the shared profile-search handler
 

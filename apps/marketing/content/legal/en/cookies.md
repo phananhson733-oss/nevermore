@@ -10,7 +10,7 @@ lasts. It is the companion to our [Privacy Policy](/privacy).
 
 ## Strictly necessary
 
-These make the site work. Without them sign-in, the SEO and Tech Agents, and
+These make the site work. Without them sign-in, the SEO Agent, and
 the Search Console connection cannot function.
 
 | Cookie | Purpose | Lifetime |
@@ -42,7 +42,7 @@ signing in on `accounts.google.com`.
 ## Managing cookies
 
 You can clear or block cookies in your browser settings. Blocking the strictly
-necessary cookies will prevent sign-in, SEO and Tech Agent runs, and the Search
+necessary cookies will prevent sign-in, SEO Agent runs, and the Search
 Console tools from working. Stateless calculator pages that do not depend on
 these cookies may continue to function.
 

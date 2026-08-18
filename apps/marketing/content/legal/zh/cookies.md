@@ -10,7 +10,7 @@ status: published
 
 ## 严格必要
 
-这些 cookie 使站点得以运转。没有它们，登录、SEO 与 Tech Agent 以及 Search Console
+这些 cookie 使站点得以运转。没有它们，登录、SEO Agent 以及 Search Console
 连接都无法工作。
 
 | Cookie | 用途 | 有效期 |
@@ -40,8 +40,8 @@ status: published
 
 ## 管理 cookie
 
-你可以在浏览器设置中清除或阻止 cookie。阻止“严格必要”类会导致登录、SEO 与 Tech
-Agent 运行以及 Search Console 相关工具无法使用；不依赖这些 cookie 的无状态计算器
+你可以在浏览器设置中清除或阻止 cookie。阻止“严格必要”类会导致登录、SEO Agent
+运行以及 Search Console 相关工具无法使用；不依赖这些 cookie 的无状态计算器
 页面仍可能正常运行。
 
 如需单独退出 Google Analytics，可安装 Google 的

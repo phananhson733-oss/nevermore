@@ -348,7 +348,7 @@ const SEO_SHAPES = {
         `  first observed URL: ${observedUrl(facts, 0)}`,
         `  affected search decision: ${facts.fillIn}`,
         `  owner or system to involve: ${facts.fillIn}`,
-        "  next step: review independently in Tech Agent",
+        "  next step: review independently on the technical focus",
       ].join("\n"),
   },
 } as const satisfies Readonly<Record<string, SolutionShape>>;

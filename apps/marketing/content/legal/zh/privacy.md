@@ -18,9 +18,9 @@ GenGrowth（下称"我们"）运营本站及相关产品。任何隐私相关问
 
 ## 我们收集什么
 
-### 1. 运行 SEO 或 Tech Agent 时
+### 1. 运行 SEO Agent 时
 
-SEO Agent 与 Tech Agent 需要已验证的 GenGrowth 账号。使用 Google 登录会以第 3 节
+SEO Agent 需要已验证的 GenGrowth 账号。使用 Google 登录会以第 3 节
 所述身份信息创建该账号，但不会授予我们 Gmail 邮箱、Search Console 或站点所有权
 访问权限。不运行网站抓取的部分计算器仍可在没有账号的情况下使用。
 

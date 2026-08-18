@@ -54,7 +54,7 @@ export default function PricingPageClient() {
 
       <section className="py-16 md:py-22">
         <div className="max-w-content mx-auto grid gap-4 px-6 md:px-8 lg:grid-cols-2">
-          {/* 强调卡：账号验证后的 SEO / Tech Agents 是当前 URL 审计入口 */}
+          {/* 强调卡：账号验证后的 SEO Agent（含技术焦点）是当前 URL 审计入口 */}
           <article className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-rail-accent md:p-8">
             <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {tFree("eyebrow")}

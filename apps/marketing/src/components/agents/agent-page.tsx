@@ -1,6 +1,6 @@
 // @input  -- locale, exact Agent identity, Agent/tools/auth messages
 // @output -- breadcrumb, concise Agent hero, boundaries, workbench, and method
-// @pos    -- shared server-rendered frame for the independent SEO and Tech routes
+// @pos    -- shared frame for the SEO Agent and its technical-focus route
 
 import { Check, Database, LockKeyhole, ScanSearch } from "lucide-react";
 import { NextIntlClientProvider } from "next-intl";

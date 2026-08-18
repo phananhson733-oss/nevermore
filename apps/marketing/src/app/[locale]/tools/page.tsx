@@ -27,10 +27,10 @@ const DIAGNOSIS_TOOLS = [
     slug: "internal-link-audit",
     title: { en: "Internal Link Audit", zh: "内链审计" },
     description: {
-      en: "Review crawl, indexability, and internal-link evidence in the Tech Agent. A verified account is required to run it.",
-      zh: "在 Tech Agent 中检查抓取、可索引性与内链证据；运行时需要已验证账号。",
+      en: "Review crawl, indexability, and internal-link evidence in the SEO Agent, opened on its technical focus. A verified account is required to run it.",
+      zh: "在 SEO Agent 的技术焦点下检查抓取、可索引性与内链证据；运行时需要已验证账号。",
     },
-    cta: { en: "Open Tech Agent", zh: "打开 Tech Agent" },
+    cta: { en: "Open the technical focus", zh: "打开技术焦点" },
     category: "diagnosis",
   },
   {
@@ -41,6 +41,16 @@ const DIAGNOSIS_TOOLS = [
       zh: "先比较 Search Console 时间段，再判断自然流量为何变化。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
+    category: "diagnosis",
+  },
+  {
+    slug: "on-page-seo-check",
+    title: { en: "On-Page SEO Checker", zh: "On-Page SEO 检查器" },
+    description: {
+      en: "Check one page against up to five target queries: where each appears, how often, and what public HTML cannot measure.",
+      zh: "用最多五个目标关键词检查一个页面：每个词出现在哪些位置、出现多少次，以及哪些事实公开 HTML 量不出来。",
+    },
+    cta: { en: "Check a page", zh: "检查一个页面" },
     category: "diagnosis",
   },
   {

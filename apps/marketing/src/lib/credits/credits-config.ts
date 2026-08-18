@@ -28,7 +28,8 @@ export type CreditToolSlug =
   | "quick-wins"
   | "profile-refresh"
   | "traffic-drop"
-  | "profile-search";
+  | "profile-search"
+  | "on-page-seo-check";
 
 /**
  * Phase 2 prices, shown today only as the "free while testing" notice.
@@ -44,6 +45,14 @@ export const CREDIT_TOOL_PRICES: Readonly<Record<CreditToolSlug, number>> = {
   "profile-refresh": 5,
   "traffic-drop": 3,
   "profile-search": 2,
+  /**
+   * Priced against the competitor's one-credit page check, not against this
+   * anchor: an on-page check runs the same site-wide crawl as `agent-audit`
+   * and therefore costs the same to serve. Nothing is charged while the tools
+   * are free, so the gap is a decision to make before Phase 2 turns pricing
+   * on, not a number to discover then.
+   */
+  "on-page-seo-check": 1,
 };
 
 /**
@@ -58,9 +67,15 @@ export const CREDIT_TOOL_PRICES: Readonly<Record<CreditToolSlug, number>> = {
  * login (design §1 Phase 2), at which point the binding is free.
  *
  * profile-search stays out on its own merits: one DataForSEO call is not work.
+ *
+ * on-page-seo-check qualifies because it admits on the same Supabase session and
+ * runs the same crawl as agent-audit. The reward is claimed once per account
+ * regardless of which tool got there first, so listing it adds a way to earn the
+ * existing reward, not a second reward.
  */
 export const QUALIFYING_TOOLS = [
   "agent-audit",
+  "on-page-seo-check",
   "profile-refresh",
 ] as const satisfies ReadonlyArray<CreditToolSlug>;
 

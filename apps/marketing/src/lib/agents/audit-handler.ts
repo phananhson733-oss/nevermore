@@ -1,6 +1,6 @@
 // @input  -- authenticated Agent POST request and existing bounded SEO audit handler
 // @output -- buffered, category-projected evidence or stable auth/upstream errors
-// @pos    -- shared server-only execution boundary for SEO and Tech Agent APIs
+// @pos    -- shared server-only execution boundary for both of the Agent's focuses
 
 import type {
   SeoAuditCoverage,
@@ -15,8 +15,16 @@ import type { QualifyingTool } from "../credits/credits-config.ts";
 import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
 import {
+  readSeoAuditInput,
+  SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  type SeoAuditRequestInput,
+} from "../tools/seo-audit-input.ts";
+import { readPublicToolJson } from "../tools/public-tool-request.ts";
+import { buildKeywordEvidence } from "@sf/public-tools";
+import {
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
+  type AgentAuditResult,
   type AgentAuditSuccessData,
   type AgentKind,
 } from "./audit-contract.ts";
@@ -25,7 +33,15 @@ export interface AgentAuditHandlerDependencies {
   /** Proves a real Supabase user before any part of the audit request is read. */
   readonly authenticate: () => Promise<ServerAuthenticationStatus>;
   /** Runs the existing bounded crawler, gate, and completed-result cache. */
-  readonly delegate: (request: Request) => Promise<Response>;
+  /**
+   * Runs the crawl. Receives the request object itself, plus the body this
+   * boundary already read and validated, so the body is never parsed twice and
+   * the request is never rebuilt.
+   */
+  readonly delegate: (
+    request: Request,
+    input: SeoAuditRequestInput,
+  ) => Promise<Response>;
   /**
    * Records that an audit completed, so a referred visitor's first qualifying
    * run can pay its reward.
@@ -38,6 +54,19 @@ export interface AgentAuditHandlerDependencies {
    * an attacker either way.
    */
   readonly reportFirstRun?: (tool: QualifyingTool) => void;
+  /**
+   * Which tool the visitor actually ran.
+   *
+   * Owner ruling: the On-Page Checker reuses this endpoint's engine rather than
+   * getting one of its own, but it still records its own credit identity from
+   * day one. Those two facts only fit together if the identity comes from the
+   * boundary the request arrived at — the body cannot carry it, because the
+   * frozen request whitelist is `{url, targetQueries?, pageRole?}` and because a
+   * client-supplied slug is a client-chosen ledger label. The checker therefore
+   * has its own thin route over this same handler, and that route is the only
+   * thing that changes here.
+   */
+  readonly reportAs: QualifyingTool;
 }
 
 /**
@@ -47,9 +76,25 @@ export interface AgentAuditHandlerDependencies {
  */
 export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
-  delegate: (request) =>
-    handleSeoAuditRequest(request, undefined, { forceBufferedJson: true }),
+  delegate: (request, input) =>
+    handleSeoAuditRequest(request, undefined, {
+      forceBufferedJson: true,
+      input,
+    }),
   reportFirstRun: reportFirstToolRun,
+  reportAs: "agent-audit",
+};
+
+/**
+ * The same handler, reached from the On-Page Checker's own route.
+ *
+ * Only the ledger label differs. Sharing the engine is what makes a second
+ * check on an already-crawled host fast, and sharing the in-flight gate is what
+ * keeps a checker run and an Agent run on one host from crawling it twice.
+ */
+export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
+  ...DEFAULT_DEPENDENCIES,
+  reportAs: "on-page-seo-check",
 };
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -132,7 +177,8 @@ function isJsonContentType(headers: Headers): boolean {
 }
 
 async function readBoundedJson(response: Response): Promise<unknown | null> {
-  if (!isJsonContentType(response.headers) || response.body === null) return null;
+  if (!isJsonContentType(response.headers) || response.body === null)
+    return null;
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -280,6 +326,27 @@ async function projectUpstreamError(upstream: Response): Promise<Response> {
   );
 }
 
+/**
+ * Copy exactly the extract fields the Agent contract names.
+ *
+ * The upstream guard bounds the values; this decides what leaves the boundary.
+ */
+function projectTargetPageExtract(
+  extract: AgentAuditResult["targetPageExtract"],
+): AgentAuditResult["targetPageExtract"] {
+  if (extract === null) return null;
+  return {
+    url: extract.url,
+    title: extract.title,
+    metaDescription: extract.metaDescription,
+    h1: [...extract.h1],
+    subHeadings: extract.subHeadings === null ? null : [...extract.subHeadings],
+    openingText: extract.openingText,
+    staticBodyWords: extract.staticBodyWords,
+    truncatedLists: extract.truncatedLists,
+  };
+}
+
 export async function handleAgentAuditRequest(
   request: Request,
   agent: AgentKind,
@@ -299,7 +366,24 @@ export async function handleAgentAuditRequest(
     return errorResponse("auth_required", 401);
   }
 
-  const upstream = await dependencies.delegate(request);
+  // Both layers need the body: this one to build the keyword region, the
+  // delegate to run the crawl. A body can only be read once, so this reads a
+  // clone and hands the delegate the request it was given — rebuilding it
+  // would drop everything a NextRequest carries beyond method, headers and
+  // bytes. Both sides go through the same bounded reader and the same
+  // validator, so they cannot disagree about what the visitor asked for, and
+  // neither can be made to hold an unbounded body.
+  const body = await readPublicToolJson(
+    request,
+    SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  );
+  if (!body.ok) {
+    return errorResponse(body.code, UPSTREAM_ERROR_STATUS[body.code]);
+  }
+  const input = readSeoAuditInput(body.value);
+  if (!input.ok) return errorResponse("invalid_request", 400);
+
+  const upstream = await dependencies.delegate(request, input.value);
   if (!upstream.ok) return projectUpstreamError(upstream);
 
   if (
@@ -345,13 +429,29 @@ export async function handleAgentAuditRequest(
       scannedAt: result.scannedAt,
       targetInspected: result.targetInspected,
       inspectedTargetUrl: result.inspectedTargetUrl,
+      // Rebuilt field by field, like every other projected value. Forwarding
+      // the object would publish whatever an upstream or cached payload
+      // happened to carry beside these fields.
+      targetPageExtract: projectTargetPageExtract(result.targetPageExtract),
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
       records: result.records.map(projectRecord),
+      // Derived here, never cached: a cache row is shared by host, so a stored
+      // region would answer the next visitor with this one's queries.
+      ...(input.value.targetQueries === null
+        ? {}
+        : {
+            keywordEvidence: buildKeywordEvidence(
+              result.targetPageExtract,
+              input.value.targetQueries,
+              input.value.pageRole,
+              result.targetInspected,
+            ),
+          }),
     },
   };
 
-  dependencies.reportFirstRun?.("agent-audit");
+  dependencies.reportFirstRun?.(dependencies.reportAs);
   return Response.json(
     { data: projected },
     { status: upstream.status, headers: successHeaders(cache) },

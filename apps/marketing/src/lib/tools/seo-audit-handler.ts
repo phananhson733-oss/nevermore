@@ -16,6 +16,11 @@ import {
 import { extractClientIp } from "../rate-limit.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import {
+  readSeoAuditInput,
+  SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES,
+  type SeoAuditRequestInput,
+} from "./seo-audit-input.ts";
+import {
   openCrawlGate,
   type CrawlGateResult,
   DEFAULT_CRAWL_GATE_DEPENDENCIES,
@@ -28,8 +33,6 @@ import {
 } from "./crawl-cache.ts";
 
 const TOOL_NAME = "seo_audit";
-
-const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
 /** The line-delimited progress transport, requested by the browser client only. */
 const NDJSON_MEDIA_TYPE = "application/x-ndjson";
@@ -91,6 +94,17 @@ export interface SeoAuditHandlerDependencies {
 export interface SeoAuditHandlerOptions {
   /** Keeps internal callers on the buffered JSON contract regardless of Accept. */
   readonly forceBufferedJson?: boolean;
+  /**
+   * An already-read, already-validated body.
+   *
+   * A request body can be read once. The Agent boundary has to read it to build
+   * the keyword region from this visitor's queries, and it must hand the
+   * request itself down rather than a copy, because a reconstructed Request
+   * lost Next's own state and crashed in production. So it passes what it
+   * parsed instead, which also means one parse and one validation rather than
+   * two that could disagree.
+   */
+  readonly input?: SeoAuditRequestInput;
 }
 
 const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
@@ -162,24 +176,6 @@ const SCAN_ERROR_STATUS: Readonly<Record<string, number>> = {
   scan_failed: 502,
 };
 
-function inputUrl(
-  body: unknown,
-): { readonly ok: true; readonly value: unknown } | { readonly ok: false } {
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    Array.isArray(body) ||
-    Object.keys(body).length !== 1 ||
-    !Object.hasOwn(body, "url")
-  ) {
-    return { ok: false };
-  }
-  return {
-    ok: true,
-    value: (body as { readonly url?: unknown }).url,
-  };
-}
-
 /** A cache row is reusable only when both its payload and provenance are current. */
 function cachedSeoAuditMatches(
   cached: { readonly payload: unknown; readonly capturedAt: string },
@@ -197,7 +193,11 @@ export async function handleSeoAuditRequest(
   dependencies: SeoAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
   options: SeoAuditHandlerOptions = {},
 ): Promise<Response> {
-  const body = await readPublicToolJson(request, REQUEST_BODY_LIMIT_BYTES);
+  const preParsed = options.input;
+  const body =
+    preParsed === undefined
+      ? await readPublicToolJson(request, SEO_AUDIT_REQUEST_BODY_LIMIT_BYTES)
+      : ({ ok: true, value: undefined } as const);
   if (!body.ok) {
     const status =
       body.code === "unsupported_media_type"
@@ -208,11 +208,14 @@ export async function handleSeoAuditRequest(
     return json(createPublicToolError(body.code), status);
   }
 
-  const input = inputUrl(body.value);
+  const input =
+    preParsed === undefined
+      ? readSeoAuditInput(body.value)
+      : ({ ok: true, value: preParsed } as const);
   if (!input.ok) {
     return json(createPublicToolError("invalid_request"), 400);
   }
-  const normalized = dependencies.normalizeUrl(input.value);
+  const normalized = dependencies.normalizeUrl(input.value.url);
   if (!normalized.ok) {
     return json(createPublicToolError(normalized.code), 400);
   }
@@ -220,10 +223,7 @@ export async function handleSeoAuditRequest(
   const ip = dependencies.extractClientIp(request.headers);
   const gate = await dependencies.openGate(ip, normalized.url);
   if (!gate.ok) return gate.response;
-  if (
-    gate.kind === "cached" &&
-    cachedSeoAuditMatches(gate, normalized.url)
-  ) {
+  if (gate.kind === "cached" && cachedSeoAuditMatches(gate, normalized.url)) {
     gate.release();
     // The payload carries the timestamp of the crawl that produced it, which
     // both tools render, so a cached answer never reads as a fresh one.

@@ -17,6 +17,7 @@ import type {
   SeoAuditReport,
 } from "./types.ts";
 import type { SeoAuditRaw } from "./scan.ts";
+import { buildTargetPageExtract } from "./keyword-evidence/extract.ts";
 
 const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
 
@@ -224,7 +225,8 @@ function buildRecords(
       // record reports more affected pages than it tested.
       if (htmlSubjects.has(source.subjectUrl)) {
         const owned =
-          brokenLinkSources.get(source.projection.fetchUrl) ?? new Set<string>();
+          brokenLinkSources.get(source.projection.fetchUrl) ??
+          new Set<string>();
         owned.add(target.subjectUrl);
         brokenLinkSources.set(source.projection.fetchUrl, owned);
       }
@@ -460,11 +462,12 @@ function buildRecords(
       id: "page_outbound_broken_link",
       category: "links",
       tested: htmlPages.length,
-      observations: [...brokenLinkSources.entries()]
-        .map(([sourceUrl, brokenTargets]) => ({
+      observations: [...brokenLinkSources.entries()].map(
+        ([sourceUrl, brokenTargets]) => ({
           url: sourceUrl,
           values: values({ broken_link_targets: brokenTargets.size }),
-        })),
+        }),
+      ),
       limitation: "uncollected_link_targets_not_classified",
     }),
     record({
@@ -580,19 +583,29 @@ function buildRecords(
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   const requestedSubject = subjectUrlOf(raw.requestedUrl);
-  const inspectedTarget =
-    pages.find(
-      (page) =>
-        page.subjectUrl === requestedSubject &&
-        page.finalStatus !== null &&
-        page.finalStatus >= 200 &&
-        page.finalStatus < 300 &&
-        isHtml(page.contentType),
-    ) ?? null;
+  // `pages` is a positional map of `raw.pages`, so one index identifies the
+  // target in both. Selecting the raw record by a second predicate could pick
+  // a different journey for the same subject URL and report one page's text
+  // beside another page's observations.
+  const inspectedIndex = pages.findIndex(
+    (page) =>
+      page.subjectUrl === requestedSubject &&
+      page.finalStatus !== null &&
+      page.finalStatus >= 200 &&
+      page.finalStatus < 300 &&
+      isHtml(page.contentType),
+  );
+  const inspectedTarget = inspectedIndex === -1 ? null : pages[inspectedIndex];
+  const inspectedProjection =
+    inspectedIndex === -1 ? null : raw.pages[inspectedIndex]?.projection;
   return {
     targetUrl: raw.requestedUrl,
-    targetInspected: inspectedTarget !== null,
+    targetInspected: inspectedTarget !== undefined && inspectedTarget !== null,
     inspectedTargetUrl: inspectedTarget?.url ?? null,
+    targetPageExtract:
+      inspectedProjection === null || inspectedProjection === undefined
+        ? null
+        : buildTargetPageExtract(inspectedProjection),
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
@@ -624,7 +637,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v4",
+      schemaVersion: "seo_audit.sitewide.v5",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

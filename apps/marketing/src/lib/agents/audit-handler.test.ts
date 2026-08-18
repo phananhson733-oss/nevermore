@@ -71,7 +71,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v4",
+    schemaVersion: "seo_audit.sitewide.v5",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -83,6 +83,7 @@ const upstreamPayload = {
     scannedAt: "2026-08-12T09:00:00.000Z",
     targetInspected: true,
     inspectedTargetUrl: "https://acme.test/",
+    targetPageExtract: null,
     coverage: {
       availability: "partial",
       pagesInspected: 2,
@@ -119,6 +120,52 @@ function request(accept = "application/json"): Request {
   });
 }
 
+function keywordRequest(
+  targetQueries: readonly string[],
+  pageRole?: string,
+): Request {
+  return new Request("https://gengrowth.ai/api/agents/seo/audit", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-real-ip": "203.0.113.9",
+    },
+    body: JSON.stringify({
+      url: "acme.test",
+      targetQueries,
+      ...(pageRole === undefined ? {} : { pageRole }),
+    }),
+  });
+}
+
+/** An upstream payload whose target page actually carries readable text. */
+function successWithExtract(
+  headers: Readonly<Record<string, string>> = {},
+): Response {
+  return Response.json(
+    {
+      data: {
+        ...upstreamPayload,
+        result: {
+          ...upstreamPayload.result,
+          targetPageExtract: {
+            url: "https://acme.test/",
+            title: "Acme birth chart calculator",
+            metaDescription: "Calculate a birth chart.",
+            h1: ["Birth chart calculator"],
+            subHeadings: ["How the chart is drawn"],
+            openingText: "A birth chart maps the sky at a moment in time.",
+            staticBodyWords: 900,
+            truncatedLists: false,
+          },
+        },
+      },
+    },
+    { status: 200, headers },
+  );
+}
+
 function success(
   headers: Readonly<Record<string, string>> = {},
 ): Response {
@@ -134,6 +181,7 @@ function dependencies(
   return {
     authenticate: vi.fn(async () => "authenticated" as const),
     delegate: vi.fn(async () => success()),
+    reportAs: "agent-audit",
     ...overrides,
   };
 }
@@ -145,6 +193,7 @@ describe("handleAgentAuditRequest", () => {
     const response = await handleAgentAuditRequest(incoming, "seo", {
       authenticate: vi.fn(async () => "unauthenticated" as const),
       delegate,
+      reportAs: "agent-audit",
     });
 
     expect(response.status).toBe(401);
@@ -163,6 +212,7 @@ describe("handleAgentAuditRequest", () => {
         throw new Error("Supabase unavailable");
       },
       delegate,
+      reportAs: "agent-audit",
     });
 
     expect(response.status).toBe(503);
@@ -184,15 +234,24 @@ describe("handleAgentAuditRequest", () => {
           order.push("auth");
           return "authenticated";
         },
-        delegate: async (forwarded) => {
+        delegate: async (forwarded, input) => {
           order.push("delegate");
+          // Identity, not a copy: a reconstructed Request lost Next's own
+          // state and crashed in production.
           expect(forwarded).toBe(incoming);
           expect(forwarded.headers.get("accept")).toBe(
             "application/x-ndjson",
           );
-          expect(await forwarded.json()).toEqual({ url: "acme.test" });
+          // The body was read once, up there, and handed over rather than
+          // left for this layer to read a second time.
+          expect(input).toEqual({
+            url: "acme.test",
+            targetQueries: null,
+            pageRole: null,
+          });
           return success();
         },
+        reportAs: "agent-audit",
       },
     );
 
@@ -216,7 +275,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v4",
+            schemaVersion: "seo_audit.sitewide.v5",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -227,6 +286,7 @@ describe("handleAgentAuditRequest", () => {
           scannedAt: upstreamPayload.result.scannedAt,
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+          targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
@@ -287,6 +347,7 @@ describe("handleAgentAuditRequest", () => {
       scannedAt: upstreamPayload.result.scannedAt,
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+      targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
@@ -589,7 +650,7 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            schemaVersion: "seo_audit.sitewide.v5",
+            schemaVersion: "seo_audit.sitewide.v6",
           },
         },
       }),
@@ -621,5 +682,254 @@ describe("handleAgentAuditRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "audit_response_invalid" },
     });
+  });
+  /**
+   * The gate the contract calls unskippable: six wiring steps sit between the
+   * upstream payload and the client, and a break in any one of them leaves the
+   * unit tests green while the browser never sees a keyword region.
+   */
+  it("delivers the keyword region to the client end to end", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"], "tool"),
+      "seo",
+      dependencies({ delegate: vi.fn(async () => successWithExtract()) }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          targetPageExtract: { title: string } | null;
+          keywordEvidence?: {
+            availability: string;
+            pageRole: string | null;
+            queries: readonly {
+              displayQuery: string;
+              slots: { title: { state: string } };
+            }[];
+          };
+        };
+      };
+    };
+
+    expect(body.data.result.targetPageExtract?.title).toBe(
+      "Acme birth chart calculator",
+    );
+    const evidence = body.data.result.keywordEvidence;
+    expect(evidence?.availability).toBe("available");
+    expect(evidence?.pageRole).toBe("tool");
+    expect(evidence?.queries[0]?.displayQuery).toBe("birth chart");
+    expect(evidence?.queries[0]?.slots.title.state).toBe("covered");
+  });
+
+  it("answers two callers asking about the same page with their own queries", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+
+    const first = (await (
+      await handleAgentAuditRequest(
+        keywordRequest(["birth chart"]),
+        "seo",
+        dependencies({ delegate }),
+      )
+    ).json()) as { data: { result: { keywordEvidence?: { queries: readonly { displayQuery: string }[] } } } };
+    const second = (await (
+      await handleAgentAuditRequest(
+        keywordRequest(["horoscope"]),
+        "seo",
+        dependencies({ delegate }),
+      )
+    ).json()) as { data: { result: { keywordEvidence?: { queries: readonly { displayQuery: string }[] } } } };
+
+    expect(first.data.result.keywordEvidence?.queries[0]?.displayQuery).toBe(
+      "birth chart",
+    );
+    expect(second.data.result.keywordEvidence?.queries[0]?.displayQuery).toBe(
+      "horoscope",
+    );
+  });
+
+  it("omits the region entirely when no queries were submitted", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ delegate: vi.fn(async () => successWithExtract()) }),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+    expect("keywordEvidence" in body.data.result).toBe(false);
+  });
+
+  it.each([
+    // Two different facts, two different answers. Telling someone their page
+    // was unreachable when it was collected and read fine is a wrong answer,
+    // not a vague one.
+    [true, "extract_missing"],
+    [false, "target_page_not_captured"],
+  ])(
+    "names why the region is unavailable when targetInspected is %s",
+    async (targetInspected, reason) => {
+      const response = await handleAgentAuditRequest(
+        keywordRequest(["birth chart"]),
+        "seo",
+        dependencies({
+          delegate: vi.fn(async () =>
+            Response.json({
+              data: {
+                ...upstreamPayload,
+                result: {
+                  ...upstreamPayload.result,
+                  targetInspected,
+                  inspectedTargetUrl: targetInspected
+                    ? upstreamPayload.result.inspectedTargetUrl
+                    : null,
+                  targetPageExtract: null,
+                },
+              },
+            }),
+          ),
+        }),
+      );
+
+      const body = (await response.json()) as {
+        data: {
+          result: { keywordEvidence?: { availability: string; reason?: string } };
+        };
+      };
+      expect(body.data.result.keywordEvidence?.availability).toBe("unavailable");
+      expect(body.data.result.keywordEvidence?.reason).toBe(reason);
+    },
+  );
+
+  it("rejects a sixth query before delegating anything", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["a", "b", "c", "d", "e", "f"]),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(delegate).not.toHaveBeenCalled();
+  });
+  /**
+   * The keyword layer made this boundary read the body itself. The bounded
+   * reader it has to use streams with a byte cap and cancels past it; a plain
+   * `json()` buffers whatever arrives, which turns a 4 KB limit into none.
+   */
+  it("rejects an oversized body without buffering it or delegating", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      new Request("https://gengrowth.ai/api/agents/seo/audit", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-real-ip": "203.0.113.9",
+        },
+        body: JSON.stringify({ url: "acme.test", targetQueries: ["x".repeat(9_000)] }),
+      }),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "payload_too_large" },
+    });
+    expect(delegate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the wrong-media-type answer a 415 rather than a generic 400", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const response = await handleAgentAuditRequest(
+      new Request("https://gengrowth.ai/api/agents/seo/audit", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "text/plain",
+          "x-real-ip": "203.0.113.9",
+        },
+        body: JSON.stringify({ url: "acme.test" }),
+      }),
+      "seo",
+      dependencies({ delegate }),
+    );
+
+    expect(response.status).toBe(415);
+    expect(delegate).not.toHaveBeenCalled();
+  });
+
+  it("does not forward a field an upstream extract was not supposed to carry", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"]),
+      "seo",
+      dependencies({
+        delegate: vi.fn(async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetPageExtract: {
+                  url: "https://acme.test/",
+                  title: "Acme",
+                  metaDescription: null,
+                  h1: [],
+                  subHeadings: null,
+                  openingText: null,
+                  staticBodyWords: null,
+                  truncatedLists: false,
+                  rawHtml: "<html>everything the crawler held</html>",
+                },
+              },
+            },
+          }),
+        ),
+      }),
+    );
+
+    // The upstream guard rejects the unknown key outright, which is the answer
+    // that cannot leak: a projection that merely copied the named fields would
+    // still have accepted the payload.
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
+    });
+  });
+
+  it("bounds the extract instead of publishing whatever length arrived", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["birth chart"]),
+      "seo",
+      dependencies({
+        delegate: vi.fn(async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetPageExtract: {
+                  url: "https://acme.test/",
+                  title: "x".repeat(5_000),
+                  metaDescription: null,
+                  h1: [],
+                  subHeadings: null,
+                  openingText: null,
+                  staticBodyWords: null,
+                  truncatedLists: false,
+                },
+              },
+            },
+          }),
+        ),
+      }),
+    );
+
+    expect(response.status).toBe(502);
   });
 });

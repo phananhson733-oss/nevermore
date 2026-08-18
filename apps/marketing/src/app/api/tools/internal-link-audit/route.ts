@@ -1,5 +1,5 @@
 // @input  -- authenticated POST JSON body with one website URL
-// @output -- projected Tech Agent audit evidence or shared auth/upstream errors
+// @output -- projected technical-focus audit evidence or shared auth/upstream errors
 // @pos    -- compatibility boundary over the shared authenticated Agent handler
 
 import { handleAgentAuditRequest } from "../../../../lib/agents/audit-handler.ts";

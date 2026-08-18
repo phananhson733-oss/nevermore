@@ -12,7 +12,11 @@ export function menuItemPath(
 }
 
 /**
- * The two focused acquisition Agents surfaced in the primary header submenu.
+ * The SEO Agent and its technical focus, surfaced in the primary header submenu.
+ *
+ * Two entries, one product: the technical route renders the same workbench over
+ * the same engine and keeps its own URL, so it stays listed and reachable while
+ * reading as a focus rather than a second Agent.
  *
  * Agent route directories are the catalogue authority. `navigation.test.ts`
  * fails if the menu and those directories drift in either direction.

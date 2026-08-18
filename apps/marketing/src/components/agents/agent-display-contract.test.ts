@@ -15,7 +15,7 @@ function data(): AgentAuditSuccessData {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v4",
+        schemaVersion: "seo_audit.sitewide.v5",
         completedAt: "2026-08-12T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -26,6 +26,7 @@ function data(): AgentAuditSuccessData {
       scannedAt: "2026-08-12T00:00:00.000Z",
       targetInspected: true,
       inspectedTargetUrl: "https://acme.test/",
+      targetPageExtract: null,
       coverage: {
         availability: "available",
         pagesInspected: 1,
