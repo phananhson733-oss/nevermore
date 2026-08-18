@@ -2047,7 +2047,7 @@
       "waiting": {
         "headline": "Collecting the site, then reading your page out of it.",
         "elapsed": "{seconds}s elapsed",
-        "body": "The crawl paces itself to at least 250 ms between requests and stops at four minutes, which is about 950 pages at most; the whole request takes longer than the crawl alone.",
+        "body": "The crawl paces itself to at least 250 ms between requests, so collecting a site of a few hundred pages alone takes tens of seconds; it stops at four minutes, which is about 950 pages at most. The whole request takes longer than the crawl alone.",
         "noEstimate": "No progress estimate: the browser is not told how many pages remain, so it does not guess."
       },
       "focus": {

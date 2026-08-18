@@ -29,6 +29,7 @@ describe("getServerAuthenticatedUser", () => {
       status: "authenticated",
       userId: "11111111-1111-4111-8111-111111111111",
       email: null,
+      avatarUrl: null,
     });
   });
 
@@ -47,7 +48,95 @@ describe("getServerAuthenticatedUser", () => {
       status: "authenticated",
       userId: "11111111-1111-4111-8111-111111111111",
       email: "ada@example.test",
+      avatarUrl: null,
     });
+  });
+
+  /**
+   * The URL arrives in an OAuth claim but is stored in a mutable metadata
+   * column and ends up as something the visitor's browser fetches. Pinning the
+   * host means a poisoned row points at an image nobody serves, rather than at
+   * an endpoint of the poisoner's choosing.
+   */
+  it("returns the Google photo when the host is Google's", async () => {
+    for (const host of [
+      "lh3.googleusercontent.com",
+      "lh6.googleusercontent.com",
+    ]) {
+      const url = `https://${host}/a/ACg8ocABC=s96-c`;
+      mocks.getUser.mockResolvedValue({
+        data: {
+          user: {
+            id: "11111111-1111-4111-8111-111111111111",
+            user_metadata: { avatar_url: url },
+          },
+        },
+        error: null,
+      });
+
+      await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+        avatarUrl: url,
+      });
+    }
+  });
+
+  it("falls back to the picture claim when avatar_url is absent", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          user_metadata: {
+            picture: "https://lh3.googleusercontent.com/a/PIC=s96-c",
+          },
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      avatarUrl: "https://lh3.googleusercontent.com/a/PIC=s96-c",
+    });
+  });
+
+  it.each([
+    ["plain http", "http://lh3.googleusercontent.com/a/X"],
+    ["another host", "https://evil.example/a/X"],
+    ["a lookalike host", "https://evilgoogleusercontent.com/a/X"],
+    ["a host with Google as a prefix", "https://googleusercontent.com.evil/a/X"],
+    ["javascript", "javascript:alert(1)"],
+    ["a data URI", "data:image/png;base64,AAAA"],
+    ["not a URL at all", "/relative/path.png"],
+    ["a non-string", 42],
+  ])("refuses %s", async (_label, avatar_url) => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          user_metadata: { avatar_url },
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+      avatarUrl: null,
+    });
+  });
+
+  /** The production account that signed in without Google has neither field. */
+  it("reports no photo when the metadata carries none", async () => {
+    for (const user_metadata of [{}, undefined, null]) {
+      mocks.getUser.mockResolvedValue({
+        data: {
+          user: { id: "11111111-1111-4111-8111-111111111111", user_metadata },
+        },
+        error: null,
+      });
+
+      await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+        avatarUrl: null,
+      });
+    }
   });
 
   /**

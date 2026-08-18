@@ -38,7 +38,51 @@ describe("readCrawlCache", () => {
       "acme.com",
       cacheDeps({ read: async () => entry }),
     );
-    expect(result).toEqual(entry);
+    expect(result).toEqual({
+      payload: { hello: "world" },
+      // Canonicalised on the way out — see the PostgreSQL case below for why
+      // this boundary cannot pass a store's own spelling through.
+      capturedAt: "2026-08-03T10:00:00.000Z",
+    });
+  });
+
+  /**
+   * PostgreSQL renders `timestamptz` with microsecond precision and a numeric
+   * UTC offset — `2026-08-18T06:50:55.033741+00:00` — while every reader here
+   * checks the value against `new Date(x).toISOString()`, which is
+   * millisecond precision and `Z`. Passing the store's spelling through means
+   * a row that was written successfully can never be recognised on the way
+   * back, so the cache fills up and every caller still pays for a full crawl.
+   * Both stores fail silently, so nothing says so.
+   */
+  it("canonicalises a PostgreSQL timestamptz into the form its readers check", async () => {
+    const result = await readCrawlCache(
+      "seo_audit",
+      "acme.com",
+      cacheDeps({
+        read: async () => ({
+          payload: { hello: "world" },
+          capturedAt: "2026-08-18T06:50:55.033741+00:00",
+        }),
+      }),
+    );
+
+    expect(result?.capturedAt).toBe("2026-08-18T06:50:55.033Z");
+    expect(
+      new Date(Date.parse(result?.capturedAt ?? "")).toISOString(),
+    ).toBe(result?.capturedAt);
+  });
+
+  it("treats a row whose timestamp cannot be read as no cache at all", async () => {
+    const result = await readCrawlCache(
+      "seo_audit",
+      "acme.com",
+      cacheDeps({
+        read: async () => ({ payload: { hello: "world" }, capturedAt: "later" }),
+      }),
+    );
+
+    expect(result).toBeNull();
   });
 
   /**
