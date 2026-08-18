@@ -1,591 +1,734 @@
-// @input  -- candidate GEO report envelopes and the three frozen run fixtures
-// @output -- proof that the guard accepts only self-consistent sampled evidence
-// @pos    -- focused contract tests shared by the GEO API and client rendering
+// @input  -- a complete v3 envelope and hand-broken variants of it
+// @output -- proof the guard refuses every combination the samples cannot support
+// @pos    -- focused tests for the public GEO report contract
 
 import { describe, expect, it } from "vitest";
+
+import { geoDomainHash } from "./geo-canonical.ts";
+import type { GeoConfirmedAliasV1 } from "./geo-context.ts";
+import type { GeoProviderObservation } from "./geo-provider.ts";
+import type { GeoQueryUnitV1 } from "./geo-query-contract.ts";
 import {
-  AGENT_GEO_REPORT_SCHEMA_VERSION,
-  GEO_QUESTIONS_PER_RUN,
-  GEO_SAMPLES_PER_QUESTION,
-  geoCoverageAvailability,
-  geoQuestionVerdict,
   isGeoReportSuccessEnvelope,
-  type GeoQuestionObservation,
-  type GeoReportSuccessEnvelope,
-  type GeoSample,
-  type GeoSampleState,
+  AGENT_GEO_REPORT_SCHEMA_VERSION,
+  type GeoQuestionObservationV3,
+  type GeoReportDataV3,
+  type GeoRunLimitationCode,
+  type GeoSampleV3,
+  type GeoSurfaceProvenanceV1,
 } from "./geo-report-contract.ts";
+import {
+  deriveGeoRunCoverage,
+  geoReportContentHash,
+} from "./geo-report-derive.ts";
+import {
+  assembleQuestion,
+  observeToSample,
+  unavailableSample,
+  type GeoSamplingContext,
+} from "./geo-sampling.ts";
 
-const TARGET_HOST = "acme.test";
-const SAMPLED_AT = "2026-08-17T09:00:00.000Z";
+const ALIASES: readonly GeoConfirmedAliasV1[] = [
+  { alias: "Acme Analytics", source: "profile_product_name" },
+];
 
-const ADMISSIBLE = new Set<GeoSampleState>([
-  "cited",
-  "mentioned",
-  "cited_others_only",
-  "answer_had_no_citations",
-]);
+const CONTEXT: GeoSamplingContext = {
+  targetHost: "acme.test",
+  brandAliases: ALIASES,
+  aliasScope: "supported",
+};
+
+const DIGEST = (seed: string): string =>
+  `sha256:${seed.repeat(64).slice(0, 64)}`;
+
+function probe(overrides: Partial<GeoQueryUnitV1> = {}): GeoQueryUnitV1 {
+  return {
+    queryId: "core-category_discovery",
+    slot: "category_discovery",
+    text: "What are the top seo tools right now?",
+    cohort: "core",
+    mode: "retrieval_probe",
+    brandStance: "unbranded",
+    buyerStage: "awareness",
+    marketCode: "US",
+    queryLanguageTag: "en",
+    timeSensitive: true,
+    asOf: "2026-08-18T09:00:00.000Z",
+    expectedAssetTypes: ["blog_guide"],
+    source: "profile",
+    userConfirmed: true,
+    templateId: "geo.retrieval.category_top",
+    templateVersion: "1",
+    retrievalTriggerClause: null,
+    samplesPlanned: 3,
+    ...overrides,
+  };
+}
+
+function observation(
+  overrides: Partial<GeoProviderObservation> = {},
+): GeoProviderObservation {
+  return {
+    observedAt: "2026-08-17T09:21:39.000Z",
+    webSearchPerformed: true,
+    answerText: "Acme Analytics and others cover this.",
+    citations: [
+      {
+        url: "https://acme.test/pricing",
+        title: "Acme pricing",
+        annotationText: "([acme.test](https://acme.test/pricing))",
+        providerOutputItemIndex: 1,
+        sectionIndex: 0,
+        annotationOrdinal: 0,
+        startIndex: 0,
+        endIndex: 4,
+        spanBasis: "provider_message_section_text",
+      },
+    ],
+    citationsComplete: true,
+    costUsd: 0.0457,
+    model: "gpt-5-2025-08-07",
+    ...overrides,
+  };
+}
 
 /**
- * Build one sample whose fields agree with its state.
+ * The whole shipped cohort, because the guard now insists on it.
  *
- * The hosts are derived from the state rather than passed in, because every
- * inconsistent combination is something the guard is supposed to reject — a
- * fixture helper that could produce one would make the happy-path tests
- * accidentally assert the opposite of what they claim.
+ * Five retrieval probes and three natural-demand questions, one per slot. A
+ * fixture with two questions was convenient and dishonest: it proved the guard
+ * accepted a report that could never be produced, and the composition rules are
+ * exactly what stops a client asking for a 24-call run.
  */
-function sample(sampleIndex: number, state: GeoSampleState): GeoSample {
-  const citedHosts =
-    state === "cited"
-      ? [TARGET_HOST, "rival.test"]
-      : state === "cited_others_only"
-        ? ["rival.test", "other.test"]
-        : state === "mentioned"
-          ? ["rival.test"]
-          : [];
-  return {
-    sampleIndex,
-    state,
-    observedAt: state === "unavailable" ? null : SAMPLED_AT,
-    webSearchPerformed:
-      state !== "unavailable" && state !== "search_not_performed",
-    citedHosts,
-    competitorHosts: citedHosts.filter((host) => host === "rival.test"),
-    limitation: state === "unavailable" ? "provider_no_answer" : null,
-  };
+/**
+ * The exact rendered strings, because the guard now checks that each question's
+ * text really is a rendering of the template it claims. A fixture that reused
+ * one sentence across five templates was testing a report no run can produce.
+ */
+const RETRIEVAL_SLOTS = [
+  [
+    "category_discovery",
+    "geo.retrieval.category_top",
+    "What are the top seo tools right now?",
+  ],
+  [
+    "constraint_fit",
+    "geo.retrieval.free_plan",
+    "Which seo tool has the best free plan right now?",
+  ],
+  [
+    "alternative_status_quo",
+    "geo.retrieval.alternatives",
+    "Best alternatives to semrush for seo",
+  ],
+  [
+    "due_diligence",
+    "geo.retrieval.best_reviews",
+    "Which seo tools are getting the best reviews right now?",
+  ],
+  [
+    "negative_fit_objection",
+    "geo.retrieval.worth_paying",
+    "Which seo tools are worth paying for right now?",
+  ],
+] as const;
+
+const NATURAL_SLOTS = [
+  [
+    "jtbd_outcome",
+    "geo.natural.jtbd_best_for_buyer",
+    "What are the best seo tools for ceo?",
+  ],
+  [
+    "pain_how_to",
+    "geo.natural.pain_current_workflow",
+    "How do ceo currently handle seo, and which tools do they use?",
+  ],
+  [
+    "brand_comparison",
+    "geo.natural.brand_comparison",
+    "How does Acme Analytics compare to other seo tools?",
+  ],
+] as const;
+
+function questionFor(
+  unit: GeoQueryUnitV1,
+  build: (index: number) => GeoProviderObservation,
+): GeoQuestionObservationV3 {
+  const samples = Array.from(
+    { length: unit.samplesPlanned },
+    (_unused, offset) =>
+      observeToSample(
+        {
+          queryIndex: 0,
+          sampleIndex: offset + 1,
+          sampleId: `${unit.queryId}-s${offset + 1}`,
+        },
+        unit,
+        build(offset),
+        CONTEXT,
+      ),
+  );
+  return assembleQuestion(unit, samples);
 }
 
-/** Build a question whose aggregate is recomputed from its sample states. */
-function question(
-  questionId: string,
-  states: readonly GeoSampleState[],
-): GeoQuestionObservation {
-  const samples = states.map((state, index) => sample(index + 1, state));
-  const admissibleSamples = samples.filter((s) =>
-    ADMISSIBLE.has(s.state),
-  ).length;
-  const targetCitedIn = samples.filter((s) => s.state === "cited").length;
-  return {
-    questionId,
-    question: `Which tools show whether my brand appears in AI answers? (${questionId})`,
-    samples,
-    aggregate: {
-      admissibleSamples,
-      targetCitedIn,
-      targetMentionedIn: samples.filter((s) => s.state === "mentioned").length,
-      verdict: geoQuestionVerdict({
-        totalSamples: samples.length,
-        admissibleSamples,
-        targetCitedIn,
-        searchNotPerformed: samples.filter(
-          (s) => s.state === "search_not_performed",
-        ).length,
-      }),
-    },
-  };
+function questions(): readonly GeoQuestionObservationV3[] {
+  return [
+    ...RETRIEVAL_SLOTS.map(([slot, templateId, text]) =>
+      questionFor(
+        probe({ queryId: `core-${slot}`, slot, templateId, text }),
+        () => observation(),
+      ),
+    ),
+    ...NATURAL_SLOTS.map(([slot, templateId, text]) =>
+      questionFor(
+        probe({
+          queryId: `core-${slot}`,
+          slot,
+          templateId,
+          text,
+          mode: "natural_demand",
+          samplesPlanned: 1,
+          timeSensitive: false,
+          asOf: null,
+          brandStance: slot === "brand_comparison" ? "brand" : "unbranded",
+        }),
+        () => observation({ webSearchPerformed: false, citations: [] }),
+      ),
+    ),
+  ];
 }
 
-/** Build a full envelope whose coverage is recomputed from its questions. */
-function report(
-  questions: readonly GeoQuestionObservation[],
-): GeoReportSuccessEnvelope {
-  const samples = questions.flatMap((q) => q.samples);
-  const samplesObserved = samples.filter((s) => ADMISSIBLE.has(s.state)).length;
+const PROVENANCE: GeoSurfaceProvenanceV1 = {
+  collector: "dataforseo",
+  upstream: "openai",
+  surface: "dataforseo_chat_gpt_llm_responses_api",
+  searchModeRequested: "web_search_permitted",
+  modelRequested: "gpt-5-2025-08-07",
+  modelObserved: ["gpt-5-2025-08-07"],
+  maxOutputTokensRequested: 4_096,
+  webSearchCountryIsoCodeRequested: "US",
+  calibrationMarket: "US",
+  triggerCalibrationScope: "calibrated_market",
+  queryLanguageTag: "en",
+  retrievalSamplesPerProbe: 3,
+  naturalDemandSamplesPerQuery: 1,
+  knownCostUsdMicros: 822_600,
+  costComplete: true,
+  unknownCostSamples: 0,
+};
+
+const RUN_LIMITATIONS: readonly GeoRunLimitationCode[] = [
+  "report_contents_not_persisted",
+  "no_paired_recheck",
+  "single_surface_chat_gpt_via_dataforseo",
+  "sentinel_cohort_not_full_coverage",
+  "recommendation_not_evaluated",
+];
+
+
+async function report(
+  build: (
+    observations: readonly GeoQuestionObservationV3[],
+  ) => readonly GeoQuestionObservationV3[] = (observations) => observations,
+  provenance: GeoSurfaceProvenanceV1 = PROVENANCE,
+  limitations: readonly GeoRunLimitationCode[] = RUN_LIMITATIONS,
+): Promise<{ readonly data: GeoReportDataV3 }> {
+  const observations = build(questions());
+  const run = {
+    schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
+    runId: "run-01",
+    sampledAt: "2026-08-18T09:05:00.000Z",
+    targetHost: "acme.test",
+    contextHash: DIGEST("a"),
+    querySetContentHash: DIGEST("b"),
+    provenance,
+  };
+  const reportContentHash = await geoReportContentHash(
+    run,
+    observations,
+    limitations,
+  );
   return {
     data: {
       run: {
         agent: "geo",
         mode: "authenticated_agent",
-        persistence: "none",
-        schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
-        sampledAt: SAMPLED_AT,
-        targetHost: TARGET_HOST,
-        provider: {
-          tool: "dataforseo_chat_gpt_llm_responses",
-          model: "gpt-5-2025-08-07",
-          marketCode: "US",
-          languageCode: "en",
-          samplesPerQuestion: GEO_SAMPLES_PER_QUESTION,
-          costUsd: 0.7712,
-        },
+        persistence: "report_contents_not_persisted",
+        ...run,
+        reportContentHash,
       },
-      coverage: {
-        questionsRequested: questions.length,
-        samplesAttempted: samples.length,
-        samplesObserved,
-        samplesSearchNotPerformed: samples.filter(
-          (s) => s.state === "search_not_performed",
-        ).length,
-        samplesUnavailable: samples.filter((s) => s.state === "unavailable")
-          .length,
-        availability: geoCoverageAvailability(samples.length, samplesObserved),
-      },
-      questions,
+      coverage: deriveGeoRunCoverage(observations),
+      questions: observations,
+      limitations,
     },
   };
 }
 
-/**
- * Fixture 1 — a complete run.
- *
- * Every sample is admissible, and the eight questions between them exercise
- * each verdict a complete run can produce, including the intermittent case
- * that calibration says is the most common real result.
- */
-const COMPLETE_STATES: readonly (readonly GeoSampleState[])[] = [
-  ["cited", "cited", "cited"],
-  ["cited", "cited_others_only", "answer_had_no_citations"],
-  ["cited", "mentioned", "cited_others_only"],
-  ["cited_others_only", "cited_others_only", "cited_others_only"],
-  ["answer_had_no_citations", "answer_had_no_citations", "mentioned"],
-  ["mentioned", "mentioned", "mentioned"],
-  ["answer_had_no_citations", "cited_others_only", "answer_had_no_citations"],
-  ["cited", "cited", "mentioned"],
-];
-
-const completeReport = report(
-  COMPLETE_STATES.map((states, index) => question(`q-${index + 1}`, states)),
-);
-
-/**
- * Fixture 2 — a partial run.
- *
- * Carries both non-counting states, and one question whose three samples are
- * all inadmissible so the inconclusive verdict has a case to prove.
- */
-const partialReport = report([
-  question("q-1", ["cited", "search_not_performed", "cited"]),
-  question("q-2", ["cited_others_only", "unavailable", "mentioned"]),
-  question("q-3", [
-    "search_not_performed",
-    "unavailable",
-    "search_not_performed",
-  ]),
-  question("q-4", [
-    "answer_had_no_citations",
-    "answer_had_no_citations",
-    "cited",
-  ]),
-]);
-
-/** Fixture 3 — every sample failed. */
-const unavailableReport = report([
-  question("q-1", ["unavailable", "unavailable", "unavailable"]),
-  question("q-2", ["unavailable", "unavailable", "unavailable"]),
-]);
-
-/**
- * Fixture 4 — a wholly search-free question beside an ordinary one.
- *
- * The first real run had seven of eight questions come back with no web search
- * on any sample. The report has to carry that as a finding rather than as an
- * absence, so this pairs one such question with a normal one to prove the guard
- * accepts the two side by side.
- */
-const answeredFromMemoryReport = report([
-  question("q-1", [
-    "search_not_performed",
-    "search_not_performed",
-    "search_not_performed",
-  ]),
-  question("q-2", ["cited", "cited_others_only", "cited"]),
-]);
-
-type Mutable = {
-  data: {
-    run: Record<string, unknown> & { provider: Record<string, unknown> };
-    coverage: Record<string, unknown>;
-    questions: Array<{
-      questionId: string;
-      question: string;
-      samples: Array<Record<string, unknown>>;
-      aggregate: Record<string, unknown>;
-    }>;
-  };
-};
-
-function mutate(base: GeoReportSuccessEnvelope): Mutable {
-  return structuredClone(base) as unknown as Mutable;
+function patchSample(
+  observations: readonly GeoQuestionObservationV3[],
+  patch: Partial<GeoSampleV3>,
+): readonly GeoQuestionObservationV3[] {
+  const [first, ...rest] = observations;
+  const samples = first!.samples.map((sample, index) =>
+    index === 0 ? { ...sample, ...patch } : sample,
+  );
+  return [{ ...first!, samples }, ...rest];
 }
 
 describe("isGeoReportSuccessEnvelope", () => {
-  it("accepts a question every sample answered without searching", () => {
-    expect(isGeoReportSuccessEnvelope(answeredFromMemoryReport)).toBe(true);
-    expect(
-      (answeredFromMemoryReport.data.questions[0] as { aggregate: unknown })
-        .aggregate,
-    ).toMatchObject({ admissibleSamples: 0, verdict: "answered_from_memory" });
+  it("accepts a complete v3 envelope", async () => {
+    expect(isGeoReportSuccessEnvelope(await report())).toBe(true);
   });
 
-  it("rejects a search-free question relabelled as inconclusive", () => {
-    const malformed = mutate(answeredFromMemoryReport);
-    malformed.data.questions[0]!["aggregate"] = {
-      admissibleSamples: 0,
-      targetCitedIn: 0,
-      targetMentionedIn: 0,
-      verdict: "inconclusive",
+  it("refuses a legacy v2 payload outright", async () => {
+    // A v2 client recomputes the old verdict rule and would disagree with this
+    // payload; the version literal is what makes the refusal deliberate.
+    const legacy = {
+      data: {
+        run: {
+          agent: "geo",
+          mode: "authenticated_agent",
+          persistence: "none",
+          schemaVersion: "agent_geo_report.v2",
+          sampledAt: "2026-08-18T09:05:00.000Z",
+          targetHost: "acme.test",
+          provider: {
+            tool: "dataforseo_chat_gpt_llm_responses",
+            model: "gpt-5-2025-08-07",
+            marketCode: "US",
+            languageCode: "en",
+            samplesPerQuestion: 3,
+            costUsd: 1.1,
+          },
+        },
+        coverage: {
+          questionsRequested: 1,
+          samplesAttempted: 3,
+          samplesObserved: 3,
+          samplesSearchNotPerformed: 0,
+          samplesUnavailable: 0,
+          availability: "available",
+        },
+        questions: [],
+      },
     };
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("accepts the complete run fixture", () => {
-    expect(isGeoReportSuccessEnvelope(completeReport)).toBe(true);
-    expect(completeReport.data.questions).toHaveLength(GEO_QUESTIONS_PER_RUN);
-    expect(completeReport.data.coverage.samplesAttempted).toBe(24);
-    expect(completeReport.data.coverage.samplesObserved).toBe(24);
-    expect(completeReport.data.coverage.availability).toBe("available");
-  });
-
-  it("accepts the partial run fixture and keeps the excluded states out of the denominator", () => {
-    expect(isGeoReportSuccessEnvelope(partialReport)).toBe(true);
-
-    const { coverage } = partialReport.data;
-    expect(coverage.samplesAttempted).toBe(12);
-    expect(coverage.samplesSearchNotPerformed).toBe(3);
-    expect(coverage.samplesUnavailable).toBe(2);
-    expect(coverage.samplesObserved).toBe(7);
-    expect(
-      coverage.samplesObserved +
-        coverage.samplesSearchNotPerformed +
-        coverage.samplesUnavailable,
-    ).toBe(coverage.samplesAttempted);
-    expect(coverage.availability).toBe("partial");
-  });
-
-  it("accepts the unavailable run fixture", () => {
-    expect(isGeoReportSuccessEnvelope(unavailableReport)).toBe(true);
-    expect(unavailableReport.data.coverage.samplesObserved).toBe(0);
-    expect(unavailableReport.data.coverage.availability).toBe("unavailable");
-  });
-
-  it("reports a question with no admissible sample as inconclusive, never as not observed", () => {
-    const allInadmissible = partialReport.data.questions[2]!;
-
-    expect(allInadmissible.aggregate.admissibleSamples).toBe(0);
-    expect(allInadmissible.aggregate.verdict).toBe("inconclusive");
-    expect(allInadmissible.aggregate.verdict).not.toBe("not_observed");
+    expect(isGeoReportSuccessEnvelope(legacy)).toBe(false);
   });
 
   it.each([
-    ["stable_cited", 0],
-    ["intermittent", 1],
-    ["not_observed", 3],
-  ] as const)("derives the %s verdict from the samples", (verdict, index) => {
-    expect(completeReport.data.questions[index]!.aggregate.verdict).toBe(
-      verdict,
+    [
+      "an unknown top-level key",
+      (r: { data: GeoReportDataV3 }) => ({ ...r, extra: 1 }),
+    ],
+    [
+      "an unknown run key",
+      (r: { data: GeoReportDataV3 }) => ({
+        data: { ...r.data, run: { ...r.data.run, extra: 1 } },
+      }),
+    ],
+    [
+      "a persistence claim of none",
+      (r: { data: GeoReportDataV3 }) => ({
+        data: { ...r.data, run: { ...r.data.run, persistence: "none" } },
+      }),
+    ],
+    [
+      "a non-digest report hash",
+      (r: { data: GeoReportDataV3 }) => ({
+        data: { ...r.data, run: { ...r.data.run, reportContentHash: "x" } },
+      }),
+    ],
+    [
+      "a target host that is not canonical",
+      (r: { data: GeoReportDataV3 }) => ({
+        data: {
+          ...r.data,
+          run: { ...r.data.run, targetHost: "www.acme.test" },
+        },
+      }),
+    ],
+  ] as const)("refuses %s", async (_label, mutate) => {
+    expect(isGeoReportSuccessEnvelope(mutate(await report()))).toBe(false);
+  });
+
+  it("refuses counts the samples do not produce", async () => {
+    const envelope = await report();
+    const [first, ...rest] = envelope.data.questions;
+    const tampered = {
+      data: {
+        ...envelope.data,
+        questions: [
+          { ...first!, counts: { ...first!.counts, targetCitedIn: 99 } },
+          ...rest,
+        ],
+      },
+    };
+
+    expect(isGeoReportSuccessEnvelope(tampered)).toBe(false);
+  });
+
+  it("refuses a coverage block that disagrees with the questions", async () => {
+    const envelope = await report();
+    const tampered = {
+      data: {
+        ...envelope.data,
+        coverage: {
+          ...envelope.data.coverage,
+          citation: {
+            ...envelope.data.coverage.citation,
+            retrieval_probe: {
+              ...envelope.data.coverage.citation.retrieval_probe,
+              targetCitedIn: 99,
+            },
+          },
+        },
+      },
+    };
+
+    expect(isGeoReportSuccessEnvelope(tampered)).toBe(false);
+  });
+
+  it.each([
+    [
+      "observed_target with no target citation",
+      { citationStatus: "observed_target" as const, evidence: [] },
+    ],
+    [
+      "observed_none while carrying citations",
+      { citationStatus: "observed_none" as const },
+    ],
+    [
+      "unavailable while carrying citations",
+      { citationStatus: "unavailable" as const },
+    ],
+    [
+      "a mention status of observed with no mention record",
+      { mentionStatus: "observed" as const, evidence: [] },
+    ],
+    ["a probe status of null on a retrieval sample", { probeStatus: null }],
+    ["an answered sample with no observation time", { observedAt: null }],
+    [
+      "a recommendation this build cannot evaluate",
+      { recommendationStatus: "recommended" as never },
+    ],
+  ] as const)("refuses a sample claiming %s", async (_label, patch) => {
+    const envelope = await report((observations) =>
+      patchSample(observations, patch),
     );
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("treats an answer that cited nobody as observed, not as unavailable", () => {
-    const noCitations = completeReport.data.questions[6]!;
-
-    expect(noCitations.aggregate.admissibleSamples).toBe(
-      GEO_SAMPLES_PER_QUESTION,
+  it("refuses an unavailable citation status with no extraction limitation", async () => {
+    const envelope = await report((observations) =>
+      patchSample(observations, {
+        citationStatus: "unavailable",
+        evidence: [],
+        limitations: [],
+      }),
     );
-    expect(noCitations.aggregate.targetCitedIn).toBe(0);
-    expect(noCitations.aggregate.verdict).toBe("not_observed");
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it.each([
-    ["admissibleSamples", "admissibleSamples"],
-    ["targetCitedIn", "targetCitedIn"],
-    ["targetMentionedIn", "targetMentionedIn"],
-  ] as const)("rejects an inflated %s", (_label, key) => {
-    const malformed = mutate(completeReport);
-    const aggregate = malformed.data.questions[0]!.aggregate;
-    aggregate[key] = (aggregate[key] as number) + 1;
+  it("refuses an unavailable mention status with no matcher limitation", async () => {
+    const envelope = await report((observations) =>
+      patchSample(observations, {
+        mentionStatus: "unavailable",
+        evidence: [],
+        limitations: [],
+      }),
+    );
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("rejects a verdict the counts do not support", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[1]!.aggregate.verdict = "stable_cited";
+  it("refuses a failed call that still carries evidence", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const broken: GeoSampleV3 = {
+        ...unavailableSample(
+          {
+            queryIndex: 0,
+            sampleIndex: 1,
+            sampleId: "core-category_discovery-s1",
+          },
+          probe(),
+          CONTEXT,
+          "provider_error",
+        ),
+        evidence: first!.samples[0]!.evidence,
+      };
+      return [
+        { ...first!, samples: [broken, ...first!.samples.slice(1)] },
+        ...rest,
+      ];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("rejects coverage that counts an inadmissible sample as observed", () => {
-    const malformed = mutate(partialReport);
-    const { coverage } = malformed.data;
-    coverage.samplesObserved = (coverage.samplesObserved as number) + 1;
-    coverage.samplesUnavailable = (coverage.samplesUnavailable as number) - 1;
+  it("refuses a probe whose samples disagree about the probe verdict", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const samples = first!.samples.map((sample, index) =>
+        index === 0
+          ? { ...sample, probeStatus: "trigger_failed" as const }
+          : sample,
+      );
+      return [{ ...first!, samples }, ...rest];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("rejects coverage claiming availability the samples contradict", () => {
-    const malformed = mutate(partialReport);
-    malformed.data.coverage.availability = "available";
+  it("refuses a natural-demand sample carrying a probe verdict", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const naturalIndex = rest.findIndex(
+        (question) => question.mode === "natural_demand",
+      );
+      const natural = rest[naturalIndex]!;
+      const samples = natural.samples.map((sample) => ({
+        ...sample,
+        probeStatus: "valid" as const,
+      }));
+      return [
+        first!,
+        ...rest.map((question, index) =>
+          index === naturalIndex ? { ...natural, samples } : question,
+        ),
+      ];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it.each([
-    ["fewer", -1],
-    ["more", 1],
-  ] as const)("rejects a question with %s than three samples", (_label, d) => {
-    const malformed = mutate(completeReport);
-    const { samples } = malformed.data.questions[0]!;
-    if (d < 0) samples.pop();
-    else samples.push(structuredClone(samples[0]!));
+  it("refuses a domain that disagrees with its own URL", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const [sample, ...others] = first!.samples;
+      const evidence = sample!.evidence.map((entry) =>
+        entry.kind === "cited" ? { ...entry, domain: "evil.test" } : entry,
+      );
+      return [
+        { ...first!, samples: [{ ...sample!, evidence }, ...others] },
+        ...rest,
+      ];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("rejects duplicate sample indexes", () => {
-    const malformed = mutate(completeReport);
-    const { samples } = malformed.data.questions[0]!;
-    samples[1]!["sampleIndex"] = samples[0]!["sampleIndex"];
+  it("refuses ownership target on a host that is not the target", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const [sample, ...others] = first!.samples;
+      const evidence = sample!.evidence.map((entry) =>
+        entry.kind === "cited"
+          ? {
+              ...entry,
+              exactUrl: "https://rival.test/x",
+              domain: "rival.test",
+              ownership: "target" as const,
+            }
+          : entry,
+      );
+      return [
+        { ...first!, samples: [{ ...sample!, evidence }, ...others] },
+        ...rest,
+      ];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 
-  it("rejects duplicate question ids", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[1]!.questionId =
-      malformed.data.questions[0]!.questionId;
+  it("refuses an evidence kind this build has no evaluator for", async () => {
+    // Injected after the report was assembled, because the producer cannot
+    // build this shape: the fingerprint projection refuses to serialize an
+    // unknown evidence kind, which is its own fail-closed layer.
+    const envelope = await report();
+    const [first, ...rest] = envelope.data.questions;
+    const [sample, ...others] = first!.samples;
+    const tampered = {
+      data: {
+        ...envelope.data,
+        questions: [
+          {
+            ...first!,
+            samples: [
+              {
+                ...sample!,
+                evidence: [
+                  { kind: "evaluation", evidenceId: "x" } as never,
+                  ...sample!.evidence,
+                ],
+              },
+              ...others,
+            ],
+          },
+          ...rest,
+        ],
+      },
+    };
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
+    expect(isGeoReportSuccessEnvelope(tampered)).toBe(false);
   });
 
-  it("rejects a cited sample whose citations do not include the target", () => {
-    const malformed = mutate(completeReport);
-    const target = malformed.data.questions[0]!.samples[0]!;
-    target["citedHosts"] = ["rival.test"];
-    target["competitorHosts"] = ["rival.test"];
+  it("refuses duplicate evidence ids across the whole report", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const [a, b, ...others] = first!.samples;
+      return [
+        {
+          ...first!,
+          samples: [a!, { ...b!, evidence: a!.evidence }, ...others],
+        },
+        ...rest,
+      ];
+    });
 
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a cited_others_only sample that did cite the target", () => {
-    const malformed = mutate(completeReport);
-    const target = malformed.data.questions[3]!.samples[0]!;
-    target["citedHosts"] = [TARGET_HOST, "rival.test"];
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a mentioned sample that carries no citations at all", () => {
-    // The classifier can never produce this: with no citations it returns
-    // answer_had_no_citations. A guard that accepted it would let a
-    // hand-assembled payload report a mention count the sampler cannot.
-    const malformed = mutate(completeReport);
-    const target = malformed.data.questions[2]!.samples[1]!;
-    target["citedHosts"] = [];
-    target["competitorHosts"] = [];
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects an answer_had_no_citations sample that carries citations", () => {
-    const malformed = mutate(completeReport);
-    const target = malformed.data.questions[4]!.samples[0]!;
-    target["citedHosts"] = ["rival.test"];
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a searched state that reports no search", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[0]!.samples[0]!["webSearchPerformed"] = false;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a search_not_performed sample that claims a search ran", () => {
-    const malformed = mutate(partialReport);
-    malformed.data.questions[0]!.samples[1]!["webSearchPerformed"] = true;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects an unavailable sample that carries an observation time", () => {
-    const malformed = mutate(unavailableReport);
-    malformed.data.questions[0]!.samples[0]!["observedAt"] = SAMPLED_AT;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects an unavailable sample with no limitation", () => {
-    const malformed = mutate(unavailableReport);
-    malformed.data.questions[0]!.samples[0]!["limitation"] = null;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a limitation written as prose instead of a renderable code", () => {
-    // A sentence here reaches the report verbatim and lands untranslated in
-    // the Chinese page, in exactly the column that explains the denominator.
-    const malformed = mutate(unavailableReport);
-    malformed.data.questions[0]!.samples[0]!["limitation"] =
-      "The provider returned no answer.";
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a competitor host that was never cited", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[0]!.samples[0]!["competitorHosts"] = [
-      "ghost.test",
-    ];
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it.each([
-    ["uppercase", "Acme.test"],
-    ["a www prefix", "www.acme.test"],
-    ["a scheme", "https://acme.test"],
-    ["a path", "acme.test/pricing"],
-    ["a port", "acme.test:443"],
-  ] as const)("rejects a cited host carrying %s", (_label, host) => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[0]!.samples[0]!["citedHosts"] = [
-      TARGET_HOST,
-      host,
-    ];
-    malformed.data.questions[0]!.samples[0]!["competitorHosts"] = [];
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a run that claims to be stored when nothing stores it", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.run["persistence"] = "expiring";
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects an unknown schema version", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.run["schemaVersion"] = "agent_geo_report.v3";
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a provider sample count that contradicts the samples", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.run.provider["samplesPerQuestion"] = 1;
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it.each([
-    ["run", "data.run"],
-    ["sample", "sample"],
-    ["aggregate", "aggregate"],
-    ["coverage", "data.coverage"],
-  ] as const)("rejects an unexpected key on the %s", (_label, where) => {
-    const malformed = mutate(completeReport);
-    const target =
-      where === "data.run"
-        ? malformed.data.run
-        : where === "data.coverage"
-          ? malformed.data.coverage
-          : where === "aggregate"
-            ? malformed.data.questions[0]!.aggregate
-            : malformed.data.questions[0]!.samples[0]!;
-    target["futureField"] = "surprise";
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it("rejects a question longer than the provider accepts", () => {
-    const malformed = mutate(completeReport);
-    malformed.data.questions[0]!.question = "a".repeat(501);
-
-    expect(isGeoReportSuccessEnvelope(malformed)).toBe(false);
-  });
-
-  it.each([null, undefined, 42, "report", [], { data: {} }])(
-    "rejects the non-envelope %s",
-    (value) => {
-      expect(isGeoReportSuccessEnvelope(value)).toBe(false);
-    },
-  );
-});
-
-describe("geoQuestionVerdict", () => {
-  it.each([
-    [3, 0, 0, 0, "inconclusive"],
-    // One usable sample can support neither "cited every time" nor "not
-    // cited" — that inference is exactly what the measured empty intersection
-    // across four samples says is unavailable.
-    [3, 1, 0, 0, "inconclusive"],
-    [3, 1, 1, 0, "inconclusive"],
-    [3, 2, 0, 0, "not_observed"],
-    [3, 2, 1, 0, "intermittent"],
-    [3, 2, 2, 0, "stable_cited"],
-    [3, 3, 0, 0, "not_observed"],
-    [3, 3, 1, 0, "intermittent"],
-    [3, 3, 2, 0, "intermittent"],
-    [3, 3, 3, 0, "stable_cited"],
-    // Every sample, and only every sample, showed the model answering without
-    // searching: nobody was cited, so nobody lost a citation.
-    [3, 0, 0, 3, "answered_from_memory"],
-    // A short sample set is not a pattern, whatever its records said: a missing
-    // call is exactly as unknown as a failed one, and the question was
-    // contracted to run three times.
-    [2, 0, 0, 2, "inconclusive"],
-    [1, 0, 0, 1, "inconclusive"],
-    // A failed call among them could have searched, so the pattern is not
-    // provable and the verdict stays "we do not know".
-    [3, 0, 0, 2, "inconclusive"],
-    // Contradictory counts reaching the search-free branch — an all-unsearched
-    // set that also claims a citation — are refused rather than relabelled.
-    [3, 0, 1, 3, "inconclusive"],
-    [3, 1, 1, 3, "inconclusive"],
-    // Search-free samples alongside a usable one are still not a pattern.
-    [3, 1, 1, 2, "inconclusive"],
-    // A citation result always wins over the search-free reading.
-    [3, 2, 2, 1, "stable_cited"],
-    [0, 0, 0, 0, "inconclusive"],
-  ] as const)(
-    "maps %i samples / %i admissible / %i cited / %i unsearched to %s",
-    (
-      totalSamples,
-      admissibleSamples,
-      targetCitedIn,
-      searchNotPerformed,
-      expected,
-    ) => {
-      expect(
-        geoQuestionVerdict({
-          totalSamples,
-          admissibleSamples,
-          targetCitedIn,
-          searchNotPerformed,
-        }),
-      ).toBe(expected);
-    },
-  );
-
-  it("never claims a stable verdict from a single usable sample", () => {
-    for (const cited of [0, 1]) {
-      expect(
-        geoQuestionVerdict({
-          totalSamples: 3,
-          admissibleSamples: 1,
-          targetCitedIn: cited,
-          searchNotPerformed: 1,
-        }),
-      ).toBe("inconclusive");
-    }
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
   });
 });
 
-describe("geoCoverageAvailability", () => {
-  it.each([
-    [24, 24, "available"],
-    [24, 21, "partial"],
-    [24, 0, "unavailable"],
-    [0, 0, "unavailable"],
-  ] as const)(
-    "maps %i attempted and %i observed to %s",
-    (attempted, observed, expected) => {
-      expect(geoCoverageAvailability(attempted, observed)).toBe(expected);
-    },
-  );
+describe("provenance and cost", () => {
+  it("refuses a cost claimed complete while samples went unpriced", async () => {
+    const envelope = await report(undefined, {
+      ...PROVENANCE,
+      costComplete: true,
+      unknownCostSamples: 2,
+    });
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+
+  it("accepts an incomplete cost that says so", async () => {
+    const envelope = await report(
+      undefined,
+      { ...PROVENANCE, costComplete: false, unknownCostSamples: 2 },
+      [...RUN_LIMITATIONS, "cost_incomplete"],
+    );
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+  });
+
+  it("refuses a non-US market that claims calibrated trigger behaviour", async () => {
+    // The wording was calibrated with US market settings. Another country has
+    // not been calibrated, and saying otherwise sells an unmeasured run.
+    const envelope = await report(undefined, {
+      ...PROVENANCE,
+      webSearchCountryIsoCodeRequested: "DE",
+      triggerCalibrationScope: "calibrated_market",
+    });
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+
+  it("accepts a non-US market that admits it is outside the calibration", async () => {
+    const envelope = await report(
+      undefined,
+      {
+        ...PROVENANCE,
+        webSearchCountryIsoCodeRequested: "DE",
+        triggerCalibrationScope: "outside_calibrated_market",
+      },
+      [...RUN_LIMITATIONS, "outside_calibrated_market"],
+    );
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+  });
+
+  it("refuses a non-US run that omits the calibration limitation", async () => {
+    // The scope field and the limitations list are two ways of saying the same
+    // thing to a reader, and a payload may not say it in one place only.
+    const envelope = await report(undefined, {
+      ...PROVENANCE,
+      webSearchCountryIsoCodeRequested: "DE",
+      triggerCalibrationScope: "outside_calibrated_market",
+    });
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+
+  it("refuses observed model labels in arrival order rather than sorted", async () => {
+    const envelope = await report(undefined, {
+      ...PROVENANCE,
+      modelObserved: ["gpt-5-mini", "gpt-5-2025-08-07"],
+    });
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+
+  it("refuses a lower output ceiling than the run identity claims", async () => {
+    const envelope = await report(undefined, {
+      ...PROVENANCE,
+      maxOutputTokensRequested: 1_024 as never,
+    });
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+});
+
+describe("run limitations", () => {
+  it("requires a degraded run to say so", async () => {
+    const envelope = await report((observations) => {
+      const [first, ...rest] = observations;
+      const samples = first!.samples.map((sample) => ({
+        ...sample,
+        webSearchPerformed: false,
+        probeStatus: "trigger_failed" as const,
+        citationStatus: "observed_none" as const,
+        evidence: sample.evidence.filter((entry) => entry.kind === "mention"),
+        limitations: ["retrieval_trigger_failed" as const],
+      }));
+      return [{ ...first!, samples, counts: first!.counts }, ...rest];
+    });
+
+    // The counts no longer match either, so this must fail; the point of the
+    // test is that a degraded run cannot slip through as a clean one.
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+
+  it("refuses an unknown run limitation code", async () => {
+    const envelope = await report(undefined, PROVENANCE, [
+      ...RUN_LIMITATIONS,
+      "everything_is_fine" as GeoRunLimitationCode,
+    ]);
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(false);
+  });
+});
+
+describe("the report fingerprint", () => {
+  it("is reproducible from the report's own contents", async () => {
+    const envelope = await report();
+    const { run } = envelope.data;
+
+    await expect(
+      geoReportContentHash(
+        {
+          schemaVersion: run.schemaVersion,
+          runId: run.runId,
+          sampledAt: run.sampledAt,
+          targetHost: run.targetHost,
+          contextHash: run.contextHash,
+          querySetContentHash: run.querySetContentHash,
+          provenance: run.provenance,
+        },
+        envelope.data.questions,
+        envelope.data.limitations,
+      ),
+    ).resolves.toBe(run.reportContentHash);
+  });
+
+  it("uses its own hash domain", async () => {
+    const envelope = await report();
+
+    await expect(
+      geoDomainHash("geo_context.v1", { anything: true }),
+    ).resolves.not.toBe(envelope.data.run.reportContentHash);
+  });
 });

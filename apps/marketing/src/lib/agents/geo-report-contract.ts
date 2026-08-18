@@ -1,238 +1,323 @@
 // @input  -- GEO run values crossing from the server to Agent clients
-// @output -- exact v1 sampled-observation types and a strict browser-safe guard
-// @pos    -- public wire contract for the repeated-sampling GEO visibility report
+// @output -- the v3 orthogonal observation contract and its strict browser-safe guard
+// @pos    -- public wire contract for the sampled GEO observation report
+
+import {
+  hasArrayHole,
+  isGeoDigest,
+  normalizeGeoText,
+} from "./geo-canonical.ts";
+import { isGeoCountryCode } from "./geo-context.ts";
+import {
+  findGeoTemplate,
+  isGeoTemplateRendering,
+  isGeoTemplateShippable,
+} from "./geo-template-registry.ts";
+import {
+  deriveGeoRunCoverage,
+  deriveProbeStatus,
+  isSameGeoCounts,
+  isSameGeoCoverage,
+  type GeoObservationCounts,
+  type GeoRunCoverageV3,
+} from "./geo-report-derive.ts";
+import type { GeoBrandStance, GeoQueryMode, GeoQuerySlot } from "./geo-query-contract.ts";
+import {
+  isNormalizedGeoCitationUrl,
+  isNormalizedGeoHost,
+  geoCitationDomain,
+} from "./geo-url.ts";
 
 /**
- * v2 adds the `answered_from_memory` verdict.
+ * v3 replaces the mutually exclusive sample state with orthogonal fields.
  *
- * The literal is bumped because the verdict is derived, not carried: a client
- * on v1 recomputes the old rule, disagrees, and refuses the payload. That
- * refusal is correct — it must not render a report whose headline word its own
- * rule does not produce — and the version makes it deliberate rather than
- * incidental.
+ * The literal is bumped rather than extended because a v2 client recomputes the
+ * old rule, disagrees with the new payload and refuses it — correctly, since it
+ * cannot render a report whose headline word its own rule does not produce. The
+ * server checks this literal on the REQUEST, before any provider call, so a tab
+ * left open across a deploy is told to reload instead of being billed for
+ * eighteen answers it would then discard.
+ *
+ * What changed, and why one field could not carry it: the old `GeoSampleState`
+ * merged "the model answered without searching" with "the model searched and
+ * cited nobody" into one ladder, so an answer that named the brand while
+ * answering from memory had nowhere to be recorded. Search execution, citation
+ * evaluability, mention, prompt conditioning and recommendation are five
+ * independent facts, and the contract now says so.
  */
-export const AGENT_GEO_REPORT_SCHEMA_VERSION = "agent_geo_report.v2" as const;
+export const AGENT_GEO_REPORT_SCHEMA_VERSION = "agent_geo_report.v3" as const;
+
+/** Hash domain for the report content fingerprint. */
+export const GEO_REPORT_CONTENT_HASH_DOMAIN = "geo_report_content.v1";
 
 /**
- * How many independent samples every buyer question is asked for.
+ * Whether the provider produced an answer this run could read.
  *
- * Three, because one is not a measurement. Calibration on 2026-08-17 asked one
- * question four times against the same model, with web search confirmed on and
- * a full answer returned every time, and got four citation sets of 4, 8, 14 and
- * 2 hosts whose union was 25 hosts and whose intersection was EMPTY — not one
- * host appeared in all four. A single sample therefore cannot separate "this
- * site is not cited" from "this run happened not to cite it", which is the only
- * question the report exists to answer. Three is the smallest count that lets
- * the report say "N of 3" instead of a boolean.
+ * Deliberately not `callStatus`. A `no_usable_answer` sample may have been
+ * dispatched, completed and billed — three of eight calibration calls at a 1024
+ * output ceiling looked exactly like that — so a name suggesting the call did
+ * not happen would be wrong in the one direction that costs money.
  */
-export const GEO_SAMPLES_PER_QUESTION = 3;
+export type GeoAnswerStatus = "answered" | "no_usable_answer";
 
 /**
- * How many buyer questions one run covers.
+ * What a retrieval probe's own samples say about its instrumentation.
  *
- * Eight rather than the twenty a single-sample design would allow: at a
- * measured $0.032 per call the budget buys either 20 unrepeatable answers or 8
- * answers sampled three times, and only the second supports a defensible
- * verdict. It is also the largest set a visitor will actually read and confirm
- * before starting a paid run.
+ * A retrieval probe exists because somebody paid to measure that its exact
+ * wording reaches the live web. When a live run's samples show it did not, that
+ * is an instrumentation failure, not an observation about the customer — so a
+ * `trigger_failed` probe never enters a citation denominator and the run renders
+ * as degraded. Derived after the whole immutable plan has run; P0 does not stop
+ * a failing probe mid-run.
  */
-export const GEO_QUESTIONS_PER_RUN = 8;
+export type GeoProbeStatus =
+  | "valid"
+  | "trigger_failed"
+  | "degraded_mixed_trigger"
+  | "provider_failed";
 
 /**
- * Provider ceiling on one prompt, in characters.
+ * What this sample's annotations showed.
  *
- * DataForSEO rejects a longer `user_prompt` outright, so a question that
- * overruns is a paid round trip that returns nothing. Enforced here as well as
- * at generation time because the contract is the last place a malformed
- * question can be stopped before it reaches the wire.
+ * There is deliberately no `not_applicable`. Even an answer written without a
+ * web search can be inspected for annotations, and finding none is a fact about
+ * that answer. The report layer stratifies these counts by whether a search
+ * actually ran, so an unsearched `observed_none` never reads as "searched you
+ * and ignored you".
  */
-export const GEO_MAX_QUESTION_LENGTH = 500;
-
-/**
- * What one sample of one question observed.
- *
- * The six states exist because the four a first design reaches for
- * (cited/mentioned/unseen/unavailable) merge two pairs that mean different
- * things. `answer_had_no_citations` is not `cited_others_only`: the first says
- * the model answered from its own weights and cited nobody, the second says it
- * cited sources and none of them was this site — only the second is evidence of
- * a competitive gap, so merging them would overstate how often competitors win.
- * `search_not_performed` is not `unavailable` either: the call succeeded and
- * was billed, the provider simply chose not to search, and an answer written
- * without searching is no evidence about who gets cited when it does.
- *
- * Both non-citing states were common in a first calibration that ran at an
- * output ceiling of 1024 tokens (62% and 25% respectively) and absent from a
- * second at 4096 (0% and 0%): below the higher ceiling the model's own
- * reasoning consumed the whole budget and no answer was emitted at all. That
- * was a configuration defect, not a property of the provider, so these states
- * are kept for the cases that remain possible rather than because they are
- * expected. The collector pins the higher ceiling; see geo-provider.ts.
- */
-export type GeoSampleState =
-  | "cited"
-  | "mentioned"
-  | "cited_others_only"
-  | "answer_had_no_citations"
-  | "search_not_performed"
+export type GeoCitationStatus =
+  | "observed_target"
+  | "observed_others_only"
+  | "observed_none"
   | "unavailable";
 
+export type GeoMentionStatus = "observed" | "not_observed" | "unavailable";
+
 /**
- * The states that may be counted.
+ * Whether a mention could have been evidence of anything.
  *
- * Admissibility is about whether the sample carries information about
- * citations at all, not about whether the news was good: an answer that cited
- * nobody is a real observation and belongs in the denominator, while an answer
- * produced without a web search, or a call that never produced an answer, is
- * not an observation of anything.
+ * A prompted answer repeating a brand the question already named is tautology,
+ * not discovery. Only `unprompted` observations may feed a discovery or
+ * consideration reading; prompted ones measure comparative framing and which
+ * sources the model reaches for to describe the brand.
  */
-export const GEO_ADMISSIBLE_SAMPLE_STATES = [
-  "cited",
-  "mentioned",
-  "cited_others_only",
-  "answer_had_no_citations",
-] as const satisfies readonly GeoSampleState[];
+export type GeoMentionEligibility = "unprompted" | "prompted";
 
-const ADMISSIBLE_STATES = new Set<GeoSampleState>(GEO_ADMISSIBLE_SAMPLE_STATES);
-
-const SAMPLE_STATES = new Set<GeoSampleState>([
-  "cited",
-  "mentioned",
-  "cited_others_only",
-  "answer_had_no_citations",
-  "search_not_performed",
-  "unavailable",
-]);
+/** Wider taxonomy arrives only through the §7.3 evaluator gate. */
+export type GeoRecommendationStatus = "not_evaluated";
 
 /**
- * What the three samples of one question, taken together, support.
- *
- * `intermittent` is a first-class finding rather than a degraded
- * `stable_cited`: on calibration data it is the most common truthful answer,
- * and a report that renders it as "insufficient data" would be hiding its
- * single most representative result.
- *
- * `answered_from_memory` is a finding too, and the reason it was added. When
- * every sample of a question came back without a web search, the run learned
- * something definite — the assistant answers that question out of its own
- * weights and cites nobody, this site and every competitor alike — and the
- * first version reported it as `inconclusive`, which reads as a broken tool.
- * It is deliberately separate from `not_observed`: nobody was cited here, so
- * there is no citation to lose, whereas `not_observed` means somebody could
- * have been cited and this site was not.
- */
-export type GeoQuestionVerdict =
-  | "stable_cited"
-  | "intermittent"
-  | "not_observed"
-  | "answered_from_memory"
-  | "inconclusive";
-
-/**
- * Why a sample carries no observation, as a code rather than a sentence.
+ * Why a sample carries less than a full observation, as a code rather than a
+ * sentence.
  *
  * A sentence written here reaches the report verbatim, so an English one lands
  * untranslated in the middle of an otherwise Chinese page — and these are the
- * lines that explain why a sample was excluded from the denominator, which is
- * the honesty claim the whole report rests on. The client renders the code.
+ * lines that explain why a sample was excluded from a denominator, which is the
+ * honesty claim the whole report rests on.
+ *
+ * The four provider/transport codes are kept apart on purpose.
+ * `provider_no_answer` means the call succeeded and produced nothing usable;
+ * `provider_error` means the provider said no; `transport_error` means the
+ * request demonstrably failed; `transport_outcome_unknown` means a timeout or
+ * abort left it genuinely unknown whether the provider received, answered and
+ * billed the call. Only the last one makes a retry a possible nineteenth
+ * charge, which is why it is never merged into the others.
  */
-export type GeoSampleLimitation =
-  | "time_budget"
-  | "cost_ceiling"
-  | "provider_not_configured"
-  | "provider_timeout"
-  | "provider_rate_limited"
-  | "provider_auth_failed"
-  | "provider_no_answer"
-  | "provider_failed";
-
-const SAMPLE_LIMITATIONS = new Set<GeoSampleLimitation>([
+export const GEO_SAMPLE_LIMITATION_CODES = [
   "time_budget",
   "cost_ceiling",
   "provider_not_configured",
-  "provider_timeout",
-  "provider_rate_limited",
-  "provider_auth_failed",
   "provider_no_answer",
-  "provider_failed",
-]);
+  "provider_error",
+  "transport_error",
+  "transport_outcome_unknown",
+  "citation_extraction_incomplete",
+  "alias_matcher_out_of_scope",
+  "retrieval_trigger_failed",
+] as const;
 
-export interface GeoSample {
-  /** 1-based position in the question's sample sequence. */
+export type GeoSampleLimitationCode =
+  (typeof GEO_SAMPLE_LIMITATION_CODES)[number];
+
+const SAMPLE_LIMITATIONS: ReadonlySet<string> = new Set(
+  GEO_SAMPLE_LIMITATION_CODES,
+);
+
+/** Limitations that describe the run rather than one sample. */
+export const GEO_RUN_LIMITATION_CODES = [
+  "report_contents_not_persisted",
+  "no_paired_recheck",
+  "single_surface_chat_gpt_via_dataforseo",
+  "sentinel_cohort_not_full_coverage",
+  "degraded_retrieval_trigger",
+  "partial_run",
+  "cost_incomplete",
+  "cost_ceiling_reached",
+  "outside_calibrated_market",
+  "recommendation_not_evaluated",
+] as const;
+
+export type GeoRunLimitationCode = (typeof GEO_RUN_LIMITATION_CODES)[number];
+
+const RUN_LIMITATIONS: ReadonlySet<string> = new Set(GEO_RUN_LIMITATION_CODES);
+
+/**
+ * A citation the answer actually carried.
+ *
+ * `annotationText` is the anchor the answer itself contains — usually a markdown
+ * link. It is not an excerpt of the page it points at, and the report is never
+ * allowed to render it as one.
+ */
+export interface GeoCitationEvidenceRefV1 {
+  readonly kind: "cited";
+  readonly evidenceId: string;
+  readonly exactUrl: string;
+  /** Always recomputed from exactUrl; never trusted separately. */
+  readonly domain: string;
+  readonly title: string | null;
+  readonly annotationText: string | null;
+  readonly providerOutputItemIndex: number;
+  readonly sectionIndex: number;
+  readonly startIndex: number | null;
+  readonly endIndex: number | null;
+  /**
+   * `target` or `unknown`, and nothing else.
+   *
+   * `target` is exact canonical-host equality under the rule shown to the
+   * visitor before payment. There is no honest way to decide from a URL alone
+   * whether some other host is a competitor, a marketplace or a blog, so
+   * `observed_others_only` means "valid citations exist and none used the
+   * target host" — it asserts nothing about who owns those URLs.
+   */
+  readonly ownership: "target" | "unknown";
+  readonly sourceType: "owned_page" | "unknown";
+}
+
+/**
+ * The brand appearing in the answer's own prose.
+ *
+ * Its own subtype with its own field, because a mention is not a citation and
+ * the report must never let one be rendered as the other. It carries no URL, no
+ * `annotationText` and no provider citation coordinates — the shape makes the
+ * confusion impossible rather than relying on the renderer to avoid it.
+ */
+export interface GeoMentionEvidenceRefV1 {
+  readonly kind: "mention";
+  readonly evidenceId: string;
+  readonly matchedAlias: string;
+  /** Bounded excerpt of the model's answer; not a citation, not source text. */
+  readonly mentionSnippet: string | null;
+  readonly snippetBasis: "provider_answer_text";
+}
+
+export type GeoEvidenceRefV1 =
+  | GeoCitationEvidenceRefV1
+  | GeoMentionEvidenceRefV1;
+
+export interface GeoSampleV3 {
+  readonly sampleId: string;
+  /** 1-based position in this question's own sample sequence. */
   readonly sampleIndex: number;
-  readonly state: GeoSampleState;
-  /** Null exactly when the provider returned no observation. */
+  readonly answerStatus: GeoAnswerStatus;
   readonly observedAt: string | null;
-  readonly webSearchPerformed: boolean;
-  /** Every host the answer cited, normalized and deduped. */
-  readonly citedHosts: readonly string[];
-  /** The subset of citedHosts that matched a known competitor. */
-  readonly competitorHosts: readonly string[];
-  readonly limitation: GeoSampleLimitation | null;
+  readonly webSearchPerformed: boolean | null;
+  /** Non-null exactly for retrieval-probe samples. */
+  readonly probeStatus: GeoProbeStatus | null;
+  readonly citationStatus: GeoCitationStatus;
+  readonly mentionStatus: GeoMentionStatus;
+  readonly mentionEligibility: GeoMentionEligibility;
+  readonly recommendationStatus: GeoRecommendationStatus;
+  readonly evidence: readonly GeoEvidenceRefV1[];
+  readonly limitations: readonly GeoSampleLimitationCode[];
 }
 
-export interface GeoQuestionAggregate {
-  /** Samples that carried citation information; the denominator. */
-  readonly admissibleSamples: number;
-  readonly targetCitedIn: number;
-  readonly targetMentionedIn: number;
-  readonly verdict: GeoQuestionVerdict;
+export interface GeoQuestionObservationV3 {
+  readonly queryId: string;
+  readonly slot: GeoQuerySlot;
+  readonly text: string;
+  readonly mode: GeoQueryMode;
+  readonly brandStance: GeoBrandStance;
+  readonly samplesPlanned: number;
+  readonly templateId: string | null;
+  readonly templateVersion: string | null;
+  readonly samples: readonly GeoSampleV3[];
+  readonly counts: GeoObservationCounts;
 }
 
-export interface GeoQuestionObservation {
-  readonly questionId: string;
-  readonly question: string;
-  readonly samples: readonly GeoSample[];
-  readonly aggregate: GeoQuestionAggregate;
+/**
+ * What surface produced these observations, stated in parts.
+ *
+ * One "provider" label would let a DataForSEO API answer be rendered as if a
+ * visitor had asked ChatGPT Pro themselves. Collector, upstream, surface, model
+ * requested, model observed, search permission, market, calibration scope and
+ * output ceiling are separate facts and at least one of them is always the one
+ * a reader needs.
+ */
+export interface GeoSurfaceProvenanceV1 {
+  readonly collector: "dataforseo";
+  readonly upstream: "openai";
+  readonly surface: "dataforseo_chat_gpt_llm_responses_api";
+  /** Permission, not proof of execution. */
+  readonly searchModeRequested: "web_search_permitted";
+  readonly modelRequested: string;
+  /** Labels returned by the collector; not independently verified identity. */
+  readonly modelObserved: readonly string[];
+  /** Run-identity fact: 1024 measurably starves about a third of answers. */
+  readonly maxOutputTokensRequested: 4_096;
+  readonly webSearchCountryIsoCodeRequested: string;
+  readonly calibrationMarket: "US";
+  readonly triggerCalibrationScope:
+    | "calibrated_market"
+    | "outside_calibrated_market";
+  /** Language of the query text (§2.8); the provider has no language parameter. */
+  readonly queryLanguageTag: "en";
+  readonly retrievalSamplesPerProbe: 3;
+  readonly naturalDemandSamplesPerQuery: 1;
+  /**
+   * Cost in integer micro-USD, plus whether the total is whole.
+   *
+   * Integers because a required `costUsd: number` total would pressure a null
+   * per-call price into a zero, and "unavailable is not zero" is the house's
+   * oldest red line. A total is rendered as an actual cost only when
+   * `costComplete` is true.
+   */
+  readonly knownCostUsdMicros: number;
+  readonly costComplete: boolean;
+  readonly unknownCostSamples: number;
 }
 
-export type GeoCoverageAvailability = "available" | "partial" | "unavailable";
-
-export interface GeoCoverage {
-  readonly questionsRequested: number;
-  readonly samplesAttempted: number;
-  readonly samplesObserved: number;
-  readonly samplesSearchNotPerformed: number;
-  readonly samplesUnavailable: number;
-  readonly availability: GeoCoverageAvailability;
-}
-
-export interface GeoProviderProvenance {
-  readonly tool: "dataforseo_chat_gpt_llm_responses";
-  readonly model: string;
-  readonly marketCode: string;
-  readonly languageCode: string;
-  readonly samplesPerQuestion: number;
-  readonly costUsd: number;
-}
-
-export interface GeoReportRun {
+export interface GeoReportRunV3 {
   readonly agent: "geo";
   readonly mode: "authenticated_agent";
   /**
-   * Nothing is stored, exactly like every other marketing Agent.
+   * The exact persistence claim, as a literal.
    *
-   * A GEO run bills 24 provider calls, so losing it to a closed tab is a real
-   * cost and durable storage is genuinely wanted — but until a store exists,
-   * this field says `none`, because a payload that announces an expiry it
-   * cannot honour is a promise to the visitor that the code does not keep.
-   * Adding the store is what changes this literal, not the other way round.
+   * Not `none`. Report contents, provider answers and evidence are genuinely
+   * not stored server-side, but the existing credits system does retain minimal
+   * billing and quota metadata, and a payload announcing "none" would be making
+   * a promise the deployment does not keep.
    */
-  readonly persistence: "none";
+  readonly persistence: "report_contents_not_persisted";
   readonly schemaVersion: typeof AGENT_GEO_REPORT_SCHEMA_VERSION;
+  /** Ephemeral identity binding a report to the actions and packet built on it. */
+  readonly runId: string;
   readonly sampledAt: string;
   readonly targetHost: string;
-  readonly provider: GeoProviderProvenance;
+  readonly contextHash: string;
+  readonly querySetContentHash: string;
+  readonly provenance: GeoSurfaceProvenanceV1;
+  readonly reportContentHash: string;
 }
 
-export interface GeoReportData {
-  readonly run: GeoReportRun;
-  readonly coverage: GeoCoverage;
-  readonly questions: readonly GeoQuestionObservation[];
+export interface GeoReportDataV3 {
+  readonly run: GeoReportRunV3;
+  readonly coverage: GeoRunCoverageV3;
+  readonly questions: readonly GeoQuestionObservationV3[];
+  readonly limitations: readonly GeoRunLimitationCode[];
 }
 
 export interface GeoReportSuccessEnvelope {
-  readonly data: GeoReportData;
+  readonly data: GeoReportDataV3;
 }
 
 export interface GeoReportErrorEnvelope<TCode extends string = string> {
@@ -270,413 +355,566 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-function isNonEmptyString(value: unknown, maxLength: number): value is string {
+function isBoundedText(value: unknown, maxLength: number): value is string {
   return (
     typeof value === "string" &&
-    value.trim() === value &&
     value.length > 0 &&
-    value.length <= maxLength
+    value.length <= maxLength &&
+    normalizeGeoText(value) === value
   );
 }
 
-/**
- * Reduce a URL or bare host to the form the report compares on.
- *
- * Lives here, beside the guard that validates the result, because a producer
- * with its own copy of this logic is how a paid run ends in a 502: the sampler
- * emitted a host its own guard then refused, and 24 billed answers were
- * discarded over a spelling. Every caller must use this one function.
- *
- * `www.` is stripped repeatedly and the DNS root dot removed, because a
- * target-host comparison that fails on `www.www.acme.test` or `acme.test.` is
- * indistinguishable from a site that was genuinely not cited — the exact
- * confusion this report exists to remove.
- */
-export function normalizeReportHost(value: string): string | null {
-  let hostname: string;
-  if (/^[a-z][a-z\d+.-]*:/iu.test(value)) {
-    let parsed: URL;
-    try {
-      parsed = new URL(value);
-    } catch {
-      return null;
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    hostname = parsed.hostname;
-  } else {
-    hostname = value;
-  }
-
-  let host = hostname.toLowerCase().replace(/\.+$/u, "");
-  while (host.startsWith("www.")) host = host.slice(4);
-  if (
-    host.length === 0 ||
-    host.length > 253 ||
-    !host.includes(".") ||
-    host.includes("/") ||
-    host.includes(":") ||
-    host.includes(" ")
-  ) {
-    return null;
-  }
-  return host;
-}
-
-/** Exactly the shape {@link normalizeReportHost} produces, and nothing else. */
-function isNormalizedHost(value: unknown): value is string {
-  return isNonEmptyString(value, 253) && normalizeReportHost(value) === value;
-}
-
-function isUniqueNormalizedHosts(
+function isUniqueCodeList(
   value: unknown,
+  allowed: ReadonlySet<string>,
   maxItems: number,
 ): value is readonly string[] {
   return (
     Array.isArray(value) &&
     value.length <= maxItems &&
-    value.every((item) => isNormalizedHost(item)) &&
+    value.every((entry) => typeof entry === "string" && allowed.has(entry)) &&
     new Set(value).size === value.length
   );
 }
 
-/**
- * Most distinct hosts one sample may report.
- *
- * Exported so the producer truncates to the same number the guard enforces.
- * When only the guard knew it, an unusually wide answer — calibration already
- * saw one cite 14 hosts — made the guard refuse the whole envelope and turned
- * 24 billed answers into a 502.
- */
-export const GEO_MAX_CITED_HOSTS_PER_SAMPLE = 40;
+const CITATION_EVIDENCE_KEYS = [
+  "kind",
+  "evidenceId",
+  "exactUrl",
+  "domain",
+  "title",
+  "annotationText",
+  "providerOutputItemIndex",
+  "sectionIndex",
+  "startIndex",
+  "endIndex",
+  "ownership",
+  "sourceType",
+] as const;
 
-function isSample(value: unknown, targetHost: string): value is GeoSample {
+const MENTION_EVIDENCE_KEYS = [
+  "kind",
+  "evidenceId",
+  "matchedAlias",
+  "mentionSnippet",
+  "snippetBasis",
+] as const;
+
+/** Longest verbatim provider strings the report will carry. */
+export const GEO_MAX_EVIDENCE_TITLE_LENGTH = 300;
+export const GEO_MAX_EVIDENCE_ANNOTATION_LENGTH = 400;
+export const GEO_MAX_EVIDENCE_PER_SAMPLE = 41;
+
+function isCitationEvidence(
+  value: UnknownObject,
+  targetHost: string,
+): boolean {
   if (
-    !isObject(value) ||
-    !hasExactKeys(value, [
-      "sampleIndex",
-      "state",
-      "observedAt",
-      "webSearchPerformed",
-      "citedHosts",
-      "competitorHosts",
-      "limitation",
-    ]) ||
-    !isNonNegativeInteger(value.sampleIndex) ||
-    value.sampleIndex < 1 ||
-    value.sampleIndex > GEO_SAMPLES_PER_QUESTION ||
-    typeof value.state !== "string" ||
-    !SAMPLE_STATES.has(value.state as GeoSampleState) ||
-    typeof value.webSearchPerformed !== "boolean" ||
-    !isUniqueNormalizedHosts(
-      value.citedHosts,
-      GEO_MAX_CITED_HOSTS_PER_SAMPLE,
-    ) ||
-    !isUniqueNormalizedHosts(
-      value.competitorHosts,
-      GEO_MAX_CITED_HOSTS_PER_SAMPLE,
-    ) ||
-    (value.limitation !== null &&
-      !SAMPLE_LIMITATIONS.has(value.limitation as GeoSampleLimitation))
+    !hasExactKeys(value, CITATION_EVIDENCE_KEYS) ||
+    !isBoundedText(value.evidenceId, 96) ||
+    !isNormalizedGeoCitationUrl(value.exactUrl) ||
+    !isNonNegativeInteger(value.providerOutputItemIndex) ||
+    !isNonNegativeInteger(value.sectionIndex) ||
+    (value.title !== null &&
+      !isBoundedText(value.title, GEO_MAX_EVIDENCE_TITLE_LENGTH)) ||
+    (value.annotationText !== null &&
+      !isBoundedText(
+        value.annotationText,
+        GEO_MAX_EVIDENCE_ANNOTATION_LENGTH,
+      ))
   ) {
     return false;
   }
 
-  const state = value.state as GeoSampleState;
-  const citedHosts = value.citedHosts;
-  const competitorHosts = value.competitorHosts;
+  // Recomputed here, never compared as a string the producer supplied. A
+  // `domain` that could disagree with the link beside it would be a
+  // disagreement in the one place the report claims to be exact.
+  if (geoCitationDomain(value.exactUrl) !== value.domain) return false;
 
-  // Competitors are a subset of what was cited, never a parallel list. A
-  // competitor host that is not in citedHosts would mean the report knows a
-  // rival was mentioned without being able to say where.
-  if (!competitorHosts.every((host) => citedHosts.includes(host))) {
-    return false;
-  }
+  const bothNull = value.startIndex === null && value.endIndex === null;
+  const bothSet =
+    isNonNegativeInteger(value.startIndex) &&
+    isNonNegativeInteger(value.endIndex) &&
+    (value.startIndex as number) <= (value.endIndex as number);
+  if (!bothNull && !bothSet) return false;
 
-  // A sample with no observation time is not an observation. Both non-counting
-  // states may still carry hosts from a partial response, so the timestamp is
-  // what separates them rather than the host list.
-  if (state === "unavailable") {
-    return (
-      value.observedAt === null &&
-      // A call that produced no answer produced no evidence that a search ran
-      // either, so the honest value is false rather than whatever the failed
-      // request happened to ask for.
-      value.webSearchPerformed === false &&
-      citedHosts.length === 0 &&
-      isNonEmptyString(value.limitation, 500)
-    );
-  }
-  if (!isCanonicalIsoTimestamp(value.observedAt)) return false;
-
-  if (state === "search_not_performed") {
-    return value.webSearchPerformed === false;
-  }
-
-  // Every remaining state asserts something about a searched answer, so a
-  // sample claiming one of them while reporting no search is self-contradictory.
-  if (value.webSearchPerformed !== true) return false;
-
-  const targetCited = citedHosts.includes(targetHost);
-  if (state === "answer_had_no_citations") return citedHosts.length === 0;
-  if (state === "cited") return targetCited;
-  // `mentioned` means the brand appeared in prose while the site was not cited;
-  // `cited_others_only` means somebody else was. Both require the target absent
-  // AND at least one citation: an answer that cited nobody is
-  // `answer_had_no_citations`, which is the state the classifier produces for
-  // it. Accepting a citation-free `mentioned` here would let a hand-assembled
-  // payload report a mention count the sampler can never produce, and the guard
-  // exists precisely to make those two agree.
-  if (targetCited || citedHosts.length === 0) return false;
-  return true;
+  const isTarget = value.domain === targetHost;
+  if (value.ownership !== (isTarget ? "target" : "unknown")) return false;
+  return value.sourceType === (isTarget ? "owned_page" : "unknown");
 }
 
-/**
- * Recompute the aggregate from the samples and reject any disagreement.
- *
- * The counts are the report's headline claim, so they are verified rather than
- * trusted: a client that received a hand-edited or partially-migrated payload
- * would otherwise render a denominator the samples do not support.
- */
-function isAggregateOf(
-  value: unknown,
-  samples: readonly GeoSample[],
-): value is GeoQuestionAggregate {
-  if (
-    !isObject(value) ||
-    !hasExactKeys(value, [
-      "admissibleSamples",
-      "targetCitedIn",
-      "targetMentionedIn",
-      "verdict",
-    ]) ||
-    !isNonNegativeInteger(value.admissibleSamples) ||
-    !isNonNegativeInteger(value.targetCitedIn) ||
-    !isNonNegativeInteger(value.targetMentionedIn)
-  ) {
-    return false;
-  }
-
-  const admissible = samples.filter((sample) =>
-    ADMISSIBLE_STATES.has(sample.state),
-  ).length;
-  const cited = samples.filter((sample) => sample.state === "cited").length;
-  const mentioned = samples.filter(
-    (sample) => sample.state === "mentioned",
-  ).length;
-  const notSearched = samples.filter(
-    (sample) => sample.state === "search_not_performed",
-  ).length;
-
-  if (
-    value.admissibleSamples !== admissible ||
-    value.targetCitedIn !== cited ||
-    value.targetMentionedIn !== mentioned
-  ) {
-    return false;
-  }
-
+function isMentionEvidence(value: UnknownObject): boolean {
   return (
-    value.verdict ===
-    geoQuestionVerdict({
-      totalSamples: samples.length,
-      admissibleSamples: admissible,
-      targetCitedIn: cited,
-      searchNotPerformed: notSearched,
-    })
+    hasExactKeys(value, MENTION_EVIDENCE_KEYS) &&
+    isBoundedText(value.evidenceId, 96) &&
+    isBoundedText(value.matchedAlias, 80) &&
+    (value.mentionSnippet === null ||
+      isBoundedText(value.mentionSnippet, 600)) &&
+    value.snippetBasis === "provider_answer_text"
   );
 }
 
-/** Everything the verdict rule reads, recomputed from the samples by both sides. */
-export interface GeoVerdictCounts {
-  readonly totalSamples: number;
-  readonly admissibleSamples: number;
-  readonly targetCitedIn: number;
-  readonly searchNotPerformed: number;
+function isEvidence(value: unknown, targetHost: string): boolean {
+  if (!isObject(value)) return false;
+  if (value.kind === "cited") return isCitationEvidence(value, targetHost);
+  if (value.kind === "mention") return isMentionEvidence(value);
+  // There is no `kind: "evaluation"` in P0, and a payload inventing one is a
+  // payload claiming an evaluator this build does not have.
+  return false;
 }
+
+const SAMPLE_KEYS = [
+  "sampleId",
+  "sampleIndex",
+  "answerStatus",
+  "observedAt",
+  "webSearchPerformed",
+  "probeStatus",
+  "citationStatus",
+  "mentionStatus",
+  "mentionEligibility",
+  "recommendationStatus",
+  "evidence",
+  "limitations",
+] as const;
+
+const PROBE_STATUSES: ReadonlySet<string> = new Set<GeoProbeStatus>([
+  "valid",
+  "trigger_failed",
+  "degraded_mixed_trigger",
+  "provider_failed",
+]);
 
 /**
- * The only place a verdict is decided.
+ * The codes that say a planned call produced nothing usable.
  *
- * Exported so the server derives it with the same rule the guard checks
- * against; a second implementation is how the two drift.
+ * Exactly one of them appears on a failed sample, and none appears on an
+ * answered one. `provider_error` means the provider definitively said no;
+ * `transport_outcome_unknown` means it is genuinely unknown whether the call
+ * arrived, answered and billed. A sample carrying both is a sample that cannot
+ * be reconciled against an invoice.
  */
-export function geoQuestionVerdict(
-  counts: GeoVerdictCounts,
-): GeoQuestionVerdict {
-  const { totalSamples, admissibleSamples, targetCitedIn, searchNotPerformed } =
-    counts;
+const FAILURE_CAUSE_CODES: readonly GeoSampleLimitationCode[] = [
+  "time_budget",
+  "cost_ceiling",
+  "provider_not_configured",
+  "provider_no_answer",
+  "provider_error",
+  "transport_error",
+  "transport_outcome_unknown",
+];
 
-  // Two, not one. A single usable sample cannot support "cited every time" or
-  // "not cited" — that is the whole premise of sampling three times, and
-  // emitting either verdict off n=1 would state exactly the inference the
-  // measured empty intersection says is unavailable. A partial run reports
-  // `inconclusive` and still shows its raw "N of M" underneath.
-  if (admissibleSamples >= 2) {
-    if (targetCitedIn === 0) return "not_observed";
-    return targetCitedIn === admissibleSamples
-      ? "stable_cited"
-      : "intermittent";
-  }
+const CITATION_STATUSES: ReadonlySet<string> = new Set<GeoCitationStatus>([
+  "observed_target",
+  "observed_others_only",
+  "observed_none",
+  "unavailable",
+]);
 
-  // Every sample the question was contracted to take, and only then, showed the
-  // assistant answering without searching. Each term is load-bearing:
-  //
-  // - the full count, not just "all the records present". One failed call among
-  //   them makes this unprovable — the call that never returned might have
-  //   searched — and a sample that is simply MISSING is exactly as unknown as
-  //   one that failed. Requiring the run's own sample count refuses both.
-  // - no admissible sample and no citation, so the four counts cannot
-  //   contradict each other. A payload asserting a citation alongside an
-  //   all-unsearched set is refused rather than relabelled.
+/**
+ * Validate one sample, including the combinations that must be impossible.
+ *
+ * The per-sample invariants are where a hand-edited or half-migrated payload is
+ * caught: an `observed_target` with no target citation, a failed call carrying
+ * evidence, a mention record on a sample whose mention status says the matcher
+ * could not read the alias set.
+ */
+function isSample(
+  value: unknown,
+  targetHost: string,
+  mode: GeoQueryMode,
+  samplesPlanned: number,
+): value is GeoSampleV3 {
   if (
-    totalSamples === GEO_SAMPLES_PER_QUESTION &&
-    searchNotPerformed === GEO_SAMPLES_PER_QUESTION &&
-    admissibleSamples === 0 &&
-    targetCitedIn === 0
+    !isObject(value) ||
+    !hasExactKeys(value, SAMPLE_KEYS) ||
+    !isBoundedText(value.sampleId, 96) ||
+    !isNonNegativeInteger(value.sampleIndex) ||
+    (value.sampleIndex as number) < 1 ||
+    (value.sampleIndex as number) > samplesPlanned ||
+    (value.answerStatus !== "answered" &&
+      value.answerStatus !== "no_usable_answer") ||
+    typeof value.citationStatus !== "string" ||
+    !CITATION_STATUSES.has(value.citationStatus) ||
+    (value.mentionStatus !== "observed" &&
+      value.mentionStatus !== "not_observed" &&
+      value.mentionStatus !== "unavailable") ||
+    (value.mentionEligibility !== "prompted" &&
+      value.mentionEligibility !== "unprompted") ||
+    value.recommendationStatus !== "not_evaluated" ||
+    !isUniqueCodeList(
+      value.limitations,
+      SAMPLE_LIMITATIONS,
+      GEO_SAMPLE_LIMITATION_CODES.length,
+    ) ||
+    !Array.isArray(value.evidence) ||
+    value.evidence.length > GEO_MAX_EVIDENCE_PER_SAMPLE ||
+    !value.evidence.every((entry) => isEvidence(entry, targetHost))
   ) {
-    return "answered_from_memory";
+    return false;
   }
-  return "inconclusive";
+
+  // Non-null exactly for retrieval probes. A natural-demand sample carrying a
+  // probe status would be claiming an instrumentation verdict about a question
+  // that was never instrumented for retrieval.
+  if (mode === "retrieval_probe") {
+    if (
+      typeof value.probeStatus !== "string" ||
+      !PROBE_STATUSES.has(value.probeStatus)
+    ) {
+      return false;
+    }
+  } else if (value.probeStatus !== null) {
+    return false;
+  }
+
+  const evidence = value.evidence as readonly GeoEvidenceRefV1[];
+  const citations = evidence.filter(
+    (entry): entry is GeoCitationEvidenceRefV1 => entry.kind === "cited",
+  );
+  const mentions = evidence.filter(
+    (entry): entry is GeoMentionEvidenceRefV1 => entry.kind === "mention",
+  );
+  if (mentions.length > 1) return false;
+
+  const limitations = value.limitations as readonly GeoSampleLimitationCode[];
+  const causes = limitations.filter((code) =>
+    FAILURE_CAUSE_CODES.includes(code),
+  );
+
+  if (value.answerStatus === "no_usable_answer") {
+    return (
+      value.observedAt === null &&
+      value.webSearchPerformed === null &&
+      value.citationStatus === "unavailable" &&
+      value.mentionStatus === "unavailable" &&
+      evidence.length === 0 &&
+      // Exactly one kind of nothing, and nothing else. Two causes cannot both
+      // be true — a definitive provider refusal and an unknown transport
+      // outcome are different facts about whether the call was billed — and a
+      // failed call cannot also carry an unreadable-annotation or
+      // matcher-scope limitation, because it had no answer to inspect.
+      causes.length === 1 &&
+      limitations.length === 1
+    );
+  }
+
+  // An answered sample cannot also carry a reason it produced no answer.
+  if (causes.length > 0) return false;
+
+  if (
+    !isCanonicalIsoTimestamp(value.observedAt) ||
+    typeof value.webSearchPerformed !== "boolean"
+  ) {
+    return false;
+  }
+
+  const targetCitations = citations.filter(
+    (entry) => entry.ownership === "target",
+  );
+  switch (value.citationStatus) {
+    case "observed_target":
+      if (targetCitations.length === 0) return false;
+      break;
+    case "observed_others_only":
+      if (citations.length === 0 || targetCitations.length > 0) return false;
+      break;
+    case "observed_none":
+      if (citations.length > 0) return false;
+      break;
+    case "unavailable":
+      // All-or-nothing: a partly-read annotation list must not let
+      // `observed_none` or `observed_others_only` overclaim.
+      if (citations.length > 0) return false;
+      break;
+    default:
+      return false;
+  }
+
+  // An "if and only if", not a one-way implication. Admitting that the
+  // annotation list could not be read while still publishing "cited nobody" is
+  // exactly the unavailable-as-zero failure the report exists to avoid.
+  if (
+    limitations.includes("citation_extraction_incomplete") !==
+    (value.citationStatus === "unavailable")
+  ) {
+    return false;
+  }
+
+  if (value.mentionStatus === "observed" && mentions.length !== 1) return false;
+  if (value.mentionStatus !== "observed" && mentions.length !== 0) return false;
+  // "The matcher cannot answer" and "the answer did not name you" are different
+  // facts, and only one of them is about the customer. Enforced both ways: an
+  // `unavailable` mention must say which limit produced it, and a sample
+  // admitting the matcher was out of scope may not also report `not_observed`.
+  if (
+    limitations.includes("alias_matcher_out_of_scope") !==
+    (value.mentionStatus === "unavailable")
+  ) {
+    return false;
+  }
+
+  // Sample-level, because evaluability is judged per sample: a retrieval sample
+  // that answered without searching leaves the citation denominator, and it may
+  // not leave without saying so. A mixed-trigger probe therefore marks only the
+  // calls that actually failed to trigger.
+  if (
+    limitations.includes("retrieval_trigger_failed") !==
+    (value.probeStatus !== null && value.webSearchPerformed === false)
+  ) {
+    return false;
+  }
+
+  return true;
 }
+
+const QUESTION_KEYS = [
+  "queryId",
+  "slot",
+  "text",
+  "mode",
+  "brandStance",
+  "samplesPlanned",
+  "templateId",
+  "templateVersion",
+  "samples",
+  "counts",
+] as const;
+
+const MODES: ReadonlySet<string> = new Set<GeoQueryMode>([
+  "natural_demand",
+  "retrieval_probe",
+]);
+const STANCES: ReadonlySet<string> = new Set<GeoBrandStance>([
+  "unbranded",
+  "brand",
+  "mixed",
+]);
+const SLOTS: ReadonlySet<string> = new Set<GeoQuerySlot>([
+  "category_discovery",
+  "jtbd_outcome",
+  "pain_how_to",
+  "constraint_fit",
+  "alternative_status_quo",
+  "brand_comparison",
+  "due_diligence",
+  "negative_fit_objection",
+]);
 
 function isQuestion(
   value: unknown,
   targetHost: string,
-): value is GeoQuestionObservation {
+): value is GeoQuestionObservationV3 {
   if (
     !isObject(value) ||
-    !hasExactKeys(value, ["questionId", "question", "samples", "aggregate"]) ||
-    !isNonEmptyString(value.questionId, 64) ||
-    !isNonEmptyString(value.question, GEO_MAX_QUESTION_LENGTH) ||
-    !Array.isArray(value.samples) ||
-    value.samples.length !== GEO_SAMPLES_PER_QUESTION ||
-    !value.samples.every((sample) => isSample(sample, targetHost))
+    !hasExactKeys(value, QUESTION_KEYS) ||
+    !isBoundedText(value.queryId, 64) ||
+    typeof value.slot !== "string" ||
+    !SLOTS.has(value.slot) ||
+    !isBoundedText(value.text, 500) ||
+    typeof value.mode !== "string" ||
+    !MODES.has(value.mode) ||
+    typeof value.brandStance !== "string" ||
+    !STANCES.has(value.brandStance) ||
+    (value.samplesPlanned !== 1 && value.samplesPlanned !== 3) ||
+    !Array.isArray(value.samples)
   ) {
     return false;
   }
 
-  const indexes = value.samples.map((sample) => sample.sampleIndex);
-  if (new Set(indexes).size !== GEO_SAMPLES_PER_QUESTION) return false;
+  const mode = value.mode as GeoQueryMode;
+  const planned = value.samplesPlanned as number;
+  const expected = mode === "retrieval_probe" ? 3 : 1;
+  if (planned !== expected) return false;
+  // Every planned slot produces exactly one record, successful or not. A run
+  // that simply omitted a failed call would shrink its own denominator.
+  if (value.samples.length !== planned) return false;
+  if (
+    !value.samples.every((sample) =>
+      isSample(sample, targetHost, mode, planned),
+    )
+  ) {
+    return false;
+  }
 
-  return isAggregateOf(value.aggregate, value.samples);
+  const samples = value.samples as readonly GeoSampleV3[];
+  const indexes = samples.map((sample) => sample.sampleIndex);
+  if (new Set(indexes).size !== planned) return false;
+
+  if (mode === "retrieval_probe") {
+    // Recomputed, not read. A payload claiming `valid` for a probe whose three
+    // answers never searched would suppress the degraded banner and put three
+    // instrumentation failures into the citation denominator as if they were
+    // observations about the customer.
+    const expected = deriveProbeStatus(samples);
+    if (samples.some((sample) => sample.probeStatus !== expected)) return false;
+  }
+
+  // Eligibility is derived from the question's own text, so every sample of one
+  // question must agree. A set that mixed them could feed the same prompted
+  // question into both the prompted and the unprompted denominator.
+  const eligibilities = new Set(
+    samples.map((sample) => sample.mentionEligibility),
+  );
+  if (eligibilities.size !== 1) return false;
+
+  const linked = value.templateId !== null || value.templateVersion !== null;
+  if (linked) {
+    if (
+      !isBoundedText(value.templateId, 64) ||
+      !isBoundedText(value.templateVersion, 32)
+    ) {
+      return false;
+    }
+  }
+  if (linked) {
+    // Registry metadata is not identity. A valid calibrated id stapled to
+    // arbitrary edited wording would launder unmeasured text as measured, so
+    // the entry must own this slot, this mode, and the text must be a rendering
+    // of its literal.
+    const entry = findGeoTemplate(
+      value.templateId as string,
+      value.templateVersion as string,
+    );
+    if (entry === null) return false;
+    if (!isGeoTemplateShippable(entry.templateId, entry.templateVersion, mode)) {
+      return false;
+    }
+    if (entry.slot !== value.slot) return false;
+    if (!isGeoTemplateRendering(entry, value.text as string)) return false;
+  }
+  // The one claim this report makes that rests on paid measurement.
+  if (mode === "retrieval_probe" && !linked) return false;
+
+  // A question that names the customer cannot report its answers as unprompted
+  // discovery. The converse is deliberately allowed: an alias set outside the
+  // matcher's tested semantics falls back to `prompted`, which is the direction
+  // that keeps a doubtful observation out of the discovery denominator.
+  if (
+    value.brandStance === "brand" &&
+    samples.some((sample) => sample.mentionEligibility !== "prompted")
+  ) {
+    return false;
+  }
+
+  return isSameGeoCounts(value.counts, samples);
 }
+
+const PROVENANCE_KEYS = [
+  "collector",
+  "upstream",
+  "surface",
+  "searchModeRequested",
+  "modelRequested",
+  "modelObserved",
+  "maxOutputTokensRequested",
+  "webSearchCountryIsoCodeRequested",
+  "calibrationMarket",
+  "triggerCalibrationScope",
+  "queryLanguageTag",
+  "retrievalSamplesPerProbe",
+  "naturalDemandSamplesPerQuery",
+  "knownCostUsdMicros",
+  "costComplete",
+  "unknownCostSamples",
+] as const;
+
+function isProvenance(
+  value: unknown,
+  scheduledSamples: number,
+  answeredSamples: number,
+): value is GeoSurfaceProvenanceV1 {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, PROVENANCE_KEYS) ||
+    value.collector !== "dataforseo" ||
+    value.upstream !== "openai" ||
+    value.surface !== "dataforseo_chat_gpt_llm_responses_api" ||
+    value.searchModeRequested !== "web_search_permitted" ||
+    !isBoundedText(value.modelRequested, 100) ||
+    value.maxOutputTokensRequested !== 4_096 ||
+    typeof value.webSearchCountryIsoCodeRequested !== "string" ||
+    // The full ISO set, not a two-letter shape. "EU" and "ZZ" both match the
+    // regular expression and neither is a country the provider can search in.
+    !isGeoCountryCode(value.webSearchCountryIsoCodeRequested) ||
+    value.calibrationMarket !== "US" ||
+    (value.triggerCalibrationScope !== "calibrated_market" &&
+      value.triggerCalibrationScope !== "outside_calibrated_market") ||
+    value.queryLanguageTag !== "en" ||
+    value.retrievalSamplesPerProbe !== 3 ||
+    value.naturalDemandSamplesPerQuery !== 1
+  ) {
+    return false;
+  }
+
+  // The calibration was run with US market settings. A run for another country
+  // may not claim its trigger behaviour was calibrated.
+  const isUs = value.webSearchCountryIsoCodeRequested === "US";
+  if (value.triggerCalibrationScope !== (isUs ? "calibrated_market" : "outside_calibrated_market")) {
+    return false;
+  }
+
+  if (
+    !Array.isArray(value.modelObserved) ||
+    value.modelObserved.length > 8 ||
+    !value.modelObserved.every((entry) => isBoundedText(entry, 100)) ||
+    new Set(value.modelObserved).size !== value.modelObserved.length
+  ) {
+    return false;
+  }
+  // Deterministically sorted, never in response arrival order: two identical
+  // runs must produce identical payloads.
+  const sorted = [...(value.modelObserved as readonly string[])].sort();
+  if (
+    (value.modelObserved as readonly string[]).some(
+      (entry, index) => entry !== sorted[index],
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    isNonNegativeInteger(value.knownCostUsdMicros) &&
+    typeof value.costComplete === "boolean" &&
+    isNonNegativeInteger(value.unknownCostSamples) &&
+    (value.unknownCostSamples as number) <= scheduledSamples &&
+    value.costComplete === ((value.unknownCostSamples as number) === 0) &&
+    // A billed answer priced at exactly zero micros is not a measurement, it is
+    // a missing price wearing one. The "unavailable is not zero" rule applies
+    // at the cost boundary too.
+    !(
+      answeredSamples > 0 &&
+      (value.knownCostUsdMicros as number) === 0 &&
+      value.costComplete === true
+    )
+  );
+}
+
+const RUN_KEYS = [
+  "agent",
+  "mode",
+  "persistence",
+  "schemaVersion",
+  "runId",
+  "sampledAt",
+  "targetHost",
+  "contextHash",
+  "querySetContentHash",
+  "provenance",
+  "reportContentHash",
+] as const;
 
 /**
- * Recompute coverage from the questions, including its availability word.
+ * Validate a whole report envelope.
  *
- * `samplesObserved` counts admissible samples only. The two excluded states are
- * reported as their own totals so the report can show the true denominator
- * ("24 attempted / 21 observed / 2 not searched / 1 unavailable") rather than
- * silently shrinking the base it divides by.
+ * The honest boundary of this guard, which the UI must never overstate: it
+ * recomputes counts, reference integrity, URL and domain relationships,
+ * ownership against the target host, and the consistency of every status
+ * combination. It cannot recompute whether the answer really mentioned the
+ * brand or whether an annotation existed in the provider payload — those inputs
+ * are server-only. "The browser independently verifies the observation" would
+ * be false.
  */
-function isCoverageOf(
-  value: unknown,
-  questions: readonly GeoQuestionObservation[],
-): value is GeoCoverage {
-  if (
-    !isObject(value) ||
-    !hasExactKeys(value, [
-      "questionsRequested",
-      "samplesAttempted",
-      "samplesObserved",
-      "samplesSearchNotPerformed",
-      "samplesUnavailable",
-      "availability",
-    ]) ||
-    !isNonNegativeInteger(value.questionsRequested) ||
-    !isNonNegativeInteger(value.samplesAttempted) ||
-    !isNonNegativeInteger(value.samplesObserved) ||
-    !isNonNegativeInteger(value.samplesSearchNotPerformed) ||
-    !isNonNegativeInteger(value.samplesUnavailable)
-  ) {
-    return false;
-  }
-
-  const samples = questions.flatMap((question) => question.samples);
-  const observed = samples.filter((sample) =>
-    ADMISSIBLE_STATES.has(sample.state),
-  ).length;
-  const notSearched = samples.filter(
-    (sample) => sample.state === "search_not_performed",
-  ).length;
-  const unavailable = samples.filter(
-    (sample) => sample.state === "unavailable",
-  ).length;
-
-  if (
-    value.questionsRequested !== questions.length ||
-    value.samplesAttempted !== samples.length ||
-    value.samplesObserved !== observed ||
-    value.samplesSearchNotPerformed !== notSearched ||
-    value.samplesUnavailable !== unavailable
-  ) {
-    return false;
-  }
-
-  return (
-    value.availability === geoCoverageAvailability(samples.length, observed)
-  );
-}
-
-/** Exported for the same reason as {@link geoQuestionVerdict}. */
-export function geoCoverageAvailability(
-  samplesAttempted: number,
-  samplesObserved: number,
-): GeoCoverageAvailability {
-  if (samplesObserved === 0) return "unavailable";
-  return samplesObserved === samplesAttempted ? "available" : "partial";
-}
-
-function isProvider(value: unknown): value is GeoProviderProvenance {
-  return (
-    isObject(value) &&
-    hasExactKeys(value, [
-      "tool",
-      "model",
-      "marketCode",
-      "languageCode",
-      "samplesPerQuestion",
-      "costUsd",
-    ]) &&
-    value.tool === "dataforseo_chat_gpt_llm_responses" &&
-    isNonEmptyString(value.model, 100) &&
-    typeof value.marketCode === "string" &&
-    /^[A-Z]{2}$/.test(value.marketCode) &&
-    isNonEmptyString(value.languageCode, 35) &&
-    value.samplesPerQuestion === GEO_SAMPLES_PER_QUESTION &&
-    typeof value.costUsd === "number" &&
-    Number.isFinite(value.costUsd) &&
-    value.costUsd >= 0
-  );
-}
-
-function isRun(value: unknown): value is GeoReportRun {
-  if (
-    !isObject(value) ||
-    !hasExactKeys(value, [
-      "agent",
-      "mode",
-      "persistence",
-      "schemaVersion",
-      "sampledAt",
-      "targetHost",
-      "provider",
-    ]) ||
-    value.agent !== "geo" ||
-    value.mode !== "authenticated_agent" ||
-    value.persistence !== "none" ||
-    value.schemaVersion !== AGENT_GEO_REPORT_SCHEMA_VERSION ||
-    !isCanonicalIsoTimestamp(value.sampledAt) ||
-    !isNormalizedHost(value.targetHost) ||
-    !isProvider(value.provider)
-  ) {
-    return false;
-  }
-  return true;
-}
-
 export function isGeoReportSuccessEnvelope(
   value: unknown,
 ): value is GeoReportSuccessEnvelope {
@@ -684,25 +922,121 @@ export function isGeoReportSuccessEnvelope(
     !isObject(value) ||
     !hasExactKeys(value, ["data"]) ||
     !isObject(value.data) ||
-    !hasExactKeys(value.data, ["run", "coverage", "questions"]) ||
-    !isRun(value.data.run)
+    !hasExactKeys(value.data, ["run", "coverage", "questions", "limitations"])
   ) {
     return false;
   }
 
-  const { targetHost } = value.data.run;
+  const run = value.data.run;
+  if (
+    !isObject(run) ||
+    !hasExactKeys(run, RUN_KEYS) ||
+    run.agent !== "geo" ||
+    run.mode !== "authenticated_agent" ||
+    run.persistence !== "report_contents_not_persisted" ||
+    run.schemaVersion !== AGENT_GEO_REPORT_SCHEMA_VERSION ||
+    !isBoundedText(run.runId, 64) ||
+    !isCanonicalIsoTimestamp(run.sampledAt) ||
+    !isNormalizedGeoHost(run.targetHost) ||
+    !isGeoDigest(run.contextHash) ||
+    !isGeoDigest(run.querySetContentHash) ||
+    !isGeoDigest(run.reportContentHash)
+  ) {
+    return false;
+  }
+
+  const targetHost = run.targetHost;
   const questions = value.data.questions;
   if (
     !Array.isArray(questions) ||
-    questions.length === 0 ||
-    questions.length > GEO_QUESTIONS_PER_RUN ||
+    questions.length !== 8 ||
+    hasArrayHole(questions) ||
     !questions.every((question) => isQuestion(question, targetHost))
   ) {
     return false;
   }
 
-  const ids = questions.map((question) => question.questionId);
+  const observations = questions as readonly GeoQuestionObservationV3[];
+  const ids = observations.map((question) => question.queryId);
   if (new Set(ids).size !== ids.length) return false;
+  // One observation per buyer decision. Duplicate slots would let one question
+  // be asked twice while another was silently dropped, and the cohort would no
+  // longer be the reproducible eight the report claims it is.
+  const slots = observations.map((question) => question.slot);
+  if (new Set(slots).size !== slots.length) return false;
+  // Never more retrieval probes than the confirm step could have shown. Fewer
+  // is legitimate: editing a probe demotes it to a one-sample natural question.
+  const retrievalProbes = observations.filter(
+    (question) => question.mode === "retrieval_probe",
+  );
+  if (retrievalProbes.length > 5) return false;
 
-  return isCoverageOf(value.data.coverage, questions);
+  const evidenceIds = observations.flatMap((question) =>
+    question.samples.flatMap((sample) =>
+      sample.evidence.map((entry) => entry.evidenceId),
+    ),
+  );
+  if (new Set(evidenceIds).size !== evidenceIds.length) return false;
+
+  const sampleIds = observations.flatMap((question) =>
+    question.samples.map((sample) => sample.sampleId),
+  );
+  if (new Set(sampleIds).size !== sampleIds.length) return false;
+
+  const scheduled = observations.reduce(
+    (total, question) => total + question.samplesPlanned,
+    0,
+  );
+  const answered = observations
+    .flatMap((question) => question.samples)
+    .filter((sample) => sample.answerStatus === "answered").length;
+  if (!isProvenance(run.provenance, scheduled, answered)) return false;
+
+  if (!isSameGeoCoverage(value.data.coverage, observations)) return false;
+  const coverage = deriveGeoRunCoverage(observations);
+
+  const limitations = value.data.limitations;
+  if (!isUniqueCodeList(limitations, RUN_LIMITATIONS, RUN_LIMITATIONS.size)) {
+    return false;
+  }
+  // A degraded run must say so. The banner in the report is driven by this
+  // code, and a payload that hid it would render a broken run as a clean one.
+  const degraded =
+    coverage.triggerFailedProbes > 0 || coverage.degradedProbes > 0;
+  if (degraded !== (limitations as readonly string[]).includes("degraded_retrieval_trigger")) {
+    return false;
+  }
+  const provenance = run.provenance as GeoSurfaceProvenanceV1;
+  if (
+    !provenance.costComplete !==
+    (limitations as readonly string[]).includes("cost_incomplete")
+  ) {
+    return false;
+  }
+
+  // A call whose transport outcome is unknown may have been received, answered
+  // and billed, so it cannot be missing from the unpriced count while the total
+  // still calls itself complete.
+  const unknownOutcomeSamples = observations
+    .flatMap((question) => question.samples)
+    .filter((sample) =>
+      sample.limitations.includes("transport_outcome_unknown"),
+    ).length;
+  if (provenance.unknownCostSamples < unknownOutcomeSamples) return false;
+
+  const outsideCalibration =
+    provenance.triggerCalibrationScope === "outside_calibrated_market";
+  if (
+    outsideCalibration !==
+    (limitations as readonly string[]).includes("outside_calibrated_market")
+  ) {
+    return false;
+  }
+
+  const partial = coverage.totals.unavailableSamples > 0;
+  if (partial !== (limitations as readonly string[]).includes("partial_run")) {
+    return false;
+  }
+
+  return true;
 }

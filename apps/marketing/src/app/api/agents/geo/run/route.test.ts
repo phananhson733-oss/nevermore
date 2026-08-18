@@ -26,7 +26,7 @@ describe("POST /api/agents/geo/run", () => {
     expect(mocks.handle).toHaveBeenCalledWith(request);
     expect(route.runtime).toBe("nodejs");
     // Asserted here because `next build` does not fail on a missing export,
-    // and 24 paid provider calls cannot finish inside the default limit.
+    // and 18 paid provider calls cannot finish inside the default limit.
     expect(route.maxDuration).toBe(300);
   });
 });
