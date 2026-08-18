@@ -125,6 +125,18 @@ function totalsRowsOf(totals: GeoRunTotals): readonly MetricRow[] {
 }
 
 /**
+ * Whether an annotation is nothing but the link the row already shows.
+ *
+ * The provider's annotation for a citation is normally `([host](url))` and
+ * carries no wording of its own, so printing it under a label put the same
+ * address on screen twice for every row. Anything that is not exactly that
+ * shape is text the answer wrote, and worth reading.
+ */
+function isBareMarkdownLink(text: string): boolean {
+  return /^\(?\[[^\]]*\]\([^()\s]*\)\)?$/u.test(text.trim());
+}
+
+/**
  * One citation, exactly as the answer carried it.
  *
  * The link is the observed URL, not a cleaned-up version of it, and the
@@ -142,12 +154,21 @@ function CitationRow({
 
   return (
     <li className="grid gap-1 border-t border-brand-border-card py-2 first:border-t-0">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Tag tone={evidence.ownership === "target" ? "accent" : "neutral"}>
-          {t(`ownership.${evidence.ownership}`)}
-        </Tag>
-        <Tag tone="faint">{t(`sourceType.${evidence.sourceType}`)}</Tag>
-      </div>
+      {/*
+        Only when there is something to say. Ownership can only be "target" or
+        "unknown" and source type can only be "owned_page" or "unknown", so on a
+        run that never cited the customer every row carried the same two grey
+        labels — the first thing the eye hits, and never once a fact about the
+        row it sits on.
+      */}
+      {evidence.ownership === "target" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Tag tone="accent">{t(`ownership.${evidence.ownership}`)}</Tag>
+          {evidence.sourceType !== "unknown" && (
+            <Tag tone="faint">{t(`sourceType.${evidence.sourceType}`)}</Tag>
+          )}
+        </div>
+      )}
       <a
         href={evidence.exactUrl}
         target="_blank"
@@ -161,14 +182,25 @@ function CitationRow({
           {evidence.title}
         </p>
       )}
-      {evidence.annotationText !== null && (
-        <p className="text-[11px] leading-[1.5] text-text-dark-tertiary">
-          <span className="font-mono text-[10px] uppercase">
-            {t("evidence.annotationLabel")}
-          </span>{" "}
-          {evidence.annotationText}
-        </p>
-      )}
+      {/*
+        Suppressed when it only restates the link above it. The provider's
+        annotation is usually the markdown link itself, so printing it under a
+        label showed every reader the same URL twice and buried the one case
+        worth reading: an annotation that carries wording of its own.
+
+        Matched on shape rather than on the URL: the annotation links the
+        canonical address while `exactUrl` keeps the tracking query the answer
+        actually carried, so comparing the two strings never fires.
+      */}
+      {evidence.annotationText !== null &&
+        !isBareMarkdownLink(evidence.annotationText) && (
+          <p className="text-[11px] leading-[1.5] text-text-dark-tertiary">
+            <span className="font-mono text-[10px] uppercase">
+              {t("evidence.annotationLabel")}
+            </span>{" "}
+            {evidence.annotationText}
+          </p>
+        )}
       <p className="font-mono text-[10.5px] text-text-dark-tertiary">
         {t("evidence.location", {
           item: evidence.providerOutputItemIndex,
@@ -208,19 +240,13 @@ function SampleRow({ sample }: { readonly sample: GeoSampleV3 }) {
             )}
           </Tag>
         )}
-        {sample.probeStatus !== null && (
-          <Tag
-            tone={
-              sample.probeStatus === "valid"
-                ? "accent"
-                : sample.probeStatus === "provider_failed"
-                  ? "faint"
-                  : "warn"
-            }
-          >
-            {t(`probeStatus.${sample.probeStatus}`)}
-          </Tag>
-        )}
+        {/*
+          Probe status is deliberately absent here. It is derived from every
+          sample of the question at once, so stamping it on one sample put a
+          verdict about the question next to facts about the answer — "searched"
+          and "searched only sometimes" side by side, reading as a
+          contradiction. It renders on the question instead.
+        */}
         <Tag>{t(`citationStatus.${sample.citationStatus}`)}</Tag>
         <Tag>{t(`mentionStatus.${sample.mentionStatus}`)}</Tag>
         <Tag tone={sample.mentionEligibility === "prompted" ? "warn" : "faint"}>
@@ -274,11 +300,17 @@ function SampleRow({ sample }: { readonly sample: GeoSampleV3 }) {
 
 function QuestionCard({
   question,
+  targetHost,
 }: {
   readonly question: GeoQuestionObservationV3;
+  readonly targetHost: string;
 }) {
   const t = useTranslations("agents.geo");
   const { counts } = question;
+  // One value per question, not per sample: every sample of a retrieval probe
+  // carries the same verdict, and the report guard refuses a payload where they
+  // disagree. Reading the first is reading the question's.
+  const probeStatus = question.samples[0]?.probeStatus ?? null;
 
   return (
     <li className={CARD_CLASS}>
@@ -287,21 +319,43 @@ function QuestionCard({
           {question.text}
         </p>
         <div className="flex shrink-0 flex-wrap gap-1.5">
-          <Tag tone={question.mode === "retrieval_probe" ? "accent" : "neutral"}>
+          <Tag
+            tone={question.mode === "retrieval_probe" ? "accent" : "neutral"}
+          >
             {t(`modes.${question.mode}`)}
           </Tag>
           <Tag>{t(`stances.${question.brandStance}`)}</Tag>
+          {probeStatus !== null && (
+            <Tag
+              tone={
+                probeStatus === "valid"
+                  ? "accent"
+                  : probeStatus === "provider_failed"
+                    ? "faint"
+                    : "warn"
+              }
+            >
+              {t(`probeStatus.${probeStatus}`)}
+            </Tag>
+          )}
         </div>
       </div>
 
+      {/*
+        Named, because these two lines sit directly above a list of everyone
+        else's citations. Without the host in the sentence, "cited 0 times" next
+        to twenty links reads as a broken report rather than as the finding.
+      */}
       <p className="mt-2 font-mono text-[11px] text-brand-accent-text">
         {t("results.citedInCount", {
+          host: targetHost,
           cited: counts.targetCitedIn,
           total: counts.citationEvaluableSamples,
         })}
       </p>
       <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
         {t("results.mentionedInCount", {
+          host: targetHost,
           mentioned: counts.targetMentionedIn,
           total: counts.mentionEvaluableSamples,
         })}
@@ -453,7 +507,11 @@ export function GeoReportView({
         ) : (
           <ul className="mt-3 grid gap-3">
             {questions.map((question) => (
-              <QuestionCard key={question.queryId} question={question} />
+              <QuestionCard
+                key={question.queryId}
+                question={question}
+                targetHost={report.run.targetHost}
+              />
             ))}
           </ul>
         )}
