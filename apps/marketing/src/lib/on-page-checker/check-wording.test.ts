@@ -10,6 +10,10 @@ import { describe, expect, it } from "vitest";
 import { SLOT_ORDER } from "./checks-keyword.ts";
 import { SITE_RULES } from "./checks-site.ts";
 import { SCORE_CAP_REASONS } from "./scoring.ts";
+import {
+  COVERAGE_EXCLUSIONS,
+  COVERAGE_GROUPS,
+} from "./coverage-chapter.ts";
 
 /**
  * Why this reads source instead of a list someone maintains.
@@ -167,6 +171,29 @@ describe.each(["en", "zh"])("%s wording covers every check", (locale) => {
         "object",
       );
       expect(literalKeys()).toContain(id);
+    }
+  });
+
+  it("has a sentence for every section and every stated limit", async () => {
+    // The chapter that says what the tool does is rendered from two lists, and
+    // a section without wording would publish its own key path in the one place
+    // a visitor goes to find out what is not covered.
+    const messages = await catalogue(locale);
+    for (const group of COVERAGE_GROUPS) {
+      expect(
+        resolve(messages, ["tools", "onPageChecker", "coverage", "labels", group]),
+        `missing label for "${group}"`,
+      ).toBeTypeOf("string");
+      expect(
+        resolve(messages, ["tools", "onPageChecker", "coverage", "checks", group]),
+        `missing description for "${group}"`,
+      ).toBeTypeOf("string");
+    }
+    for (const entry of COVERAGE_EXCLUSIONS) {
+      expect(
+        resolve(messages, ["tools", "onPageChecker", "coverage", "not", entry]),
+        `missing exclusion copy for "${entry}"`,
+      ).toBeTypeOf("string");
     }
   });
 

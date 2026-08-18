@@ -2084,7 +2084,7 @@
         "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
         "sub_headings_underivable_h1_cap_reached": "Sub-headings could not be separated on this page, because its H1 list hit the collector's own limit. Reported as unavailable rather than guessed.",
         "opening_text_first_500_chars_static_extraction": "Opening text is the first 500 characters of the statically extracted body, after nav, footer and aside blocks are removed. It is not what a browser paints.",
-        "density_basis_captured_text_only": "Density is measured inside the collected text — title, description, headings and that opening text — not across the whole page body, which is not collected.",
+        "density_basis_captured_text_only": "Density is measured over the captured text — title, description, headings and the opening — not the whole body. The whole-page leaderboard below is counted against the body's own unit total, so the two percentages are not comparable.",
         "static_body_words_unavailable_for_cjk": "The page word count is withheld: this page is written mostly without word gaps, where splitting on spaces is off by an order of magnitude.",
         "extract_lists_truncated": "A heading list was cut to its own limit before publication, so a keyword further down the page may not be counted."
       },
@@ -2510,6 +2510,41 @@
           "no_target_query": "No target query was submitted, so no results page was looked up.",
           "market_not_supported": "This market or language is outside what we look up, so no call was made and nothing was spent.",
           "provider_unavailable": "The results page could not be read this time. Every other check is unaffected."
+        }
+      },
+      "coverage": {
+        "title": "What this checks, and what it does not",
+        "intro": "What follows is everything it can actually read. Anything not listed gets no verdict — stating the edge here beats leaving you to infer it from a report that never mentions it.",
+        "checks": {
+          "meta": "Title, description, canonical, robots directives, viewport, encoding, language, favicon. Lengths are measured by display width, with CJK characters counting double.",
+          "content": "Body length (characters for CJK), H1 count and length, H2–H6 sub-heading count, text-to-markup ratio, and whether the page carries anything a visitor can act through.",
+          "keyword": "Where your submitted queries land in the title, description, H1, sub-headings, opening text and URL, plus a whole-page leaderboard of one- to five-word phrases.",
+          "links": "Internal outlinks, empty anchor text, external destinations and their rel safety.",
+          "media": "Image alt coverage, declared width and height, and lazy loading.",
+          "social": "Open Graph title/description/image, Twitter card, and JSON-LD types and parse errors.",
+          "technical": "HTTPS, status and redirects, response time, URL shape, HTML weight, hreflang, robots.txt and sitemap reachability, sitemap membership, and whether the body is in the static HTML.",
+          "site": "The ones only a full-site crawl can answer: duplicate titles and descriptions, sitemap pages nothing links to, broken outbound links, and click depth.",
+          "serp": "Page one for your primary query in the market you chose: who holds the top ten, whether you are among them, and how many results show sitelinks."
+        },
+        "notTitle": "What it does not do",
+        "not": {
+          "rendering": "It does not run JavaScript. Content, components and links mounted by client script are invisible to it — it will tell you whether the body is in the static HTML, but not what the page looks like after the script runs.",
+          "css": "It does not read stylesheets. Text hidden with CSS and boxes reserved with aspect-ratio are both outside what it can judge.",
+          "ranking": "It does not predict rankings or score difficulty. The results-page section is one sample taken now, not a trend.",
+          "backlinks": "It does not look at backlinks, domain authority or traffic. What this page cannot change about itself is outside its scope.",
+          "headings": "It does not give a heading outline. The crawl does not retain H2–H6 levels, so sub-headings can only be one merged list.",
+          "density": "It does not grade keyword density. The denominator is the captured text, where a correctly optimised page already reads around 20% — a band borrowed from whole-body density would call that page stuffed."
+        },
+        "labels": {
+          "meta": "Meta",
+          "content": "Content",
+          "keyword": "Keywords",
+          "links": "Links",
+          "media": "Images",
+          "social": "Sharing and structured data",
+          "technical": "Technical",
+          "site": "Site context",
+          "serp": "The results page"
         }
       }
     }

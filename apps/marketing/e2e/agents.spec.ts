@@ -2,104 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { AGENT_PROFILE_REFRESH_FIELD_PATHS } from "../src/lib/agents/profile-refresh-contract";
 
-type AgentKind = "seo" | "tech";
-
-const RECORD_CATEGORIES = {
-  robots_resource: "crawl",
-  sitemap_resource: "crawl",
-  non_2xx_final_status: "crawl",
-  redirect_chain: "crawl",
-  http_url: "crawl",
-  noindex_directive: "indexability",
-  canonical_missing: "indexability",
-  canonical_differs: "indexability",
-  title_missing: "metadata",
-  title_duplicate: "metadata",
-  meta_description_missing: "metadata",
-  meta_description_duplicate: "metadata",
-  h1_missing: "structure",
-  multiple_h1: "structure",
-  sitemap_page_without_observed_inlink: "links",
-  internal_target_http_error: "links",
-  json_ld_parse_error: "structured_data",
-} as const;
-
-function agentEnvelope(agent: AgentKind) {
-  const observedId =
-    agent === "seo" ? "title_missing" : "non_2xx_final_status";
-  return {
-    data: {
-      run: {
-        agent,
-        mode: "authenticated_agent",
-        persistence: "none",
-        source: {
-          tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v5",
-          completedAt: "2026-08-12T10:00:00.000Z",
-          cache: { status: "miss", capturedAt: null },
-        },
-      },
-      result: {
-        targetUrl: "https://astrologywiki.com/",
-        siteOrigin: "https://astrologywiki.com",
-        scannedAt: "2026-08-12T10:00:00.000Z",
-        coverage: {
-          availability: "partial",
-          pagesInspected: 3,
-          linksObserved: 7,
-          sitemapUrlsObserved: 5,
-          urlsSkipped: 1,
-          urlsBlocked: 0,
-          urlsDisallowed: 0,
-          urlsErrored: 1,
-          stopReason: "max_urls",
-        },
-        siteResources: {
-          robotsFetched: true,
-          robotsGroupsObserved: 1,
-          sitemapReferencesObserved: 1,
-          sitemapFetched: true,
-        },
-        records: Object.entries(RECORD_CATEGORIES).map(([id, category]) => {
-          const observed = id === observedId;
-          const siteResource =
-            id === "robots_resource" || id === "sitemap_resource";
-          return {
-            id,
-            category,
-            state: observed ? "observed" : "not_observed",
-            unit: siteResource
-              ? "site_resource"
-              : id === "internal_target_http_error"
-                ? "link_targets"
-                : "pages",
-            tested: siteResource ? 1 : 3,
-            affected: observed ? 1 : 0,
-            observations: observed
-              ? [
-                  {
-                    url:
-                      agent === "seo"
-                        ? "https://astrologywiki.com/about"
-                        : "https://astrologywiki.com/old",
-                    values:
-                      agent === "seo"
-                        ? [{ label: "title", value: null }]
-                        : [
-                            { label: "initial_status", value: 404 },
-                            { label: "final_status", value: 404 },
-                          ],
-                  },
-                ]
-              : [],
-            limitation: null,
-          };
-        }),
-      },
-    },
-  } as const;
-}
+import {
+  agentEnvelope,
+  type AgentKind,
+} from "./fixtures/agent-envelope";
 
 function profileRefreshEnvelope(agent: AgentKind) {
   const sourceUrls = Array.from(

@@ -46,10 +46,30 @@ export interface CrawlCacheDependencies {
 }
 
 /**
- * A large site's payload can run to megabytes. Past this, the round trip costs
- * more than the crawl saves, so the result is returned uncached.
+ * The ceiling above which a payload is returned uncached.
+ *
+ * It was 1.5 million and measured with `String#length`, which counts UTF-16
+ * code units and is not bytes. Measured: a 600-page site serialised to 708 KB,
+ * 1,000 pages to 1.18 MB and 1,400 pages to 1.65 MB — so every site past
+ * roughly 1,250 pages fell over the line and was never cached at all. Those are
+ * exactly the sites whose crawl takes the full four minutes, so the cache
+ * stopped working for the visitors it was built for and did so silently.
+ *
+ * Eight megabytes covers what this crawler can produce at its own 2,000-page
+ * budget with room over. A cache hit that transfers a few megabytes from the
+ * database costs a second or two against a crawl that costs four minutes; the
+ * trade only looks close if the number is read as a database limit rather than
+ * as a round trip against a four-minute alternative. The bound stays because a
+ * payload that somehow exceeds it is not something to write to a shared row.
  */
-const MAX_CACHED_PAYLOAD_BYTES = 1_500_000;
+const MAX_CACHED_PAYLOAD_BYTES = 8_000_000;
+
+const PAYLOAD_ENCODER = new TextEncoder();
+
+/** Actual UTF-8 bytes. A CJK payload is about three per character. */
+export function cachedPayloadBytes(payload: unknown): number {
+  return PAYLOAD_ENCODER.encode(JSON.stringify(payload)).length;
+}
 
 async function readViaSupabase(
   tool: string,
@@ -140,7 +160,7 @@ export async function writeCrawlCache(
 ): Promise<void> {
   try {
     // Only bound payloads are stored; an oversized one is simply not cached.
-    if (JSON.stringify(payload).length > MAX_CACHED_PAYLOAD_BYTES) return;
+    if (cachedPayloadBytes(payload) > MAX_CACHED_PAYLOAD_BYTES) return;
     await dependencies.write(tool, targetHost, payload);
   } catch {
     // A write failure must never turn a successful crawl into an error.
