@@ -1,0 +1,138 @@
+// @input  -- one contract-valid v3 report, and nothing else
+// @output -- who the answers actually cited, counted against the same denominators
+// @pos    -- the aggregate view of evidence the per-question list cannot show
+
+import type {
+  GeoQuestionObservationV3,
+  GeoReportDataV3,
+} from "./geo-report-contract.ts";
+import { isGeoSampleCitationEvaluable } from "./geo-report-derive.ts";
+
+/**
+ * One cited host, counted twice over.
+ *
+ * Both numbers matter and they answer different questions. `citedInSamples`
+ * says how reliably a host shows up when the assistant answers; `citedInQuestions`
+ * says how much of the buyer's decision it covers. A host cited three times in
+ * one question is not the same finding as a host cited once in three questions,
+ * and a single count would hide which one happened.
+ */
+export interface GeoCitedSourceV1 {
+  readonly domain: string;
+  readonly citedInSamples: number;
+  readonly citedInQuestions: number;
+  /** True only for the customer's own host, recomputed from the evidence. */
+  readonly isTarget: boolean;
+  /** Distinct URLs on this host, in first-observed order, for the reader to open. */
+  readonly urls: readonly string[];
+}
+
+/**
+ * What the run observed about sources, as counts and nothing else.
+ *
+ * Deliberately carries no classification of what any host *is*. A URL does not
+ * say whether a page is a review, a marketplace, a community thread or a vendor's
+ * own marketing, and the sampler already refuses to guess that for exactly this
+ * reason — putting a made-up label on the most-read line of the report is worse
+ * than leaving the reader to open the link.
+ */
+export interface GeoSourceLandscapeV1 {
+  readonly sources: readonly GeoCitedSourceV1[];
+  /** The denominator both per-source counts are read against. */
+  readonly citationEvaluableSamples: number;
+  /** Questions that had at least one citation-evaluable sample. */
+  readonly citationEvaluableQuestions: number;
+  /** Distinct hosts cited anywhere in the run, including the customer's own. */
+  readonly distinctDomains: number;
+  /** True when the customer's host appears among the cited sources. */
+  readonly targetObserved: boolean;
+}
+
+interface Accumulator {
+  domain: string;
+  samples: Set<string>;
+  questions: Set<string>;
+  isTarget: boolean;
+  urls: string[];
+}
+
+function accumulate(
+  question: GeoQuestionObservationV3,
+  into: Map<string, Accumulator>,
+): boolean {
+  let evaluable = false;
+  for (const sample of question.samples) {
+    // The same rule the coverage block counts by, imported rather than
+    // re-expressed: a landscape built on a wider denominator than the numbers
+    // above it would quietly disagree with them.
+    if (!isGeoSampleCitationEvaluable(sample, question.mode)) continue;
+    evaluable = true;
+    for (const entry of sample.evidence) {
+      if (entry.kind !== "cited") continue;
+      const existing = into.get(entry.domain);
+      const acc: Accumulator = existing ?? {
+        domain: entry.domain,
+        samples: new Set<string>(),
+        questions: new Set<string>(),
+        isTarget: false,
+        urls: [],
+      };
+      acc.samples.add(sample.sampleId);
+      acc.questions.add(question.queryId);
+      if (entry.ownership === "target") acc.isTarget = true;
+      if (!acc.urls.includes(entry.exactUrl)) acc.urls.push(entry.exactUrl);
+      if (existing === undefined) into.set(entry.domain, acc);
+    }
+  }
+  return evaluable;
+}
+
+/**
+ * Aggregate the evidence the per-question list already shows.
+ *
+ * Every number here is a count of records already rendered further up the page,
+ * so this view can be read beside them without a second denominator to reconcile.
+ * Sorted by sample reach, then question reach, then host, so two runs of the same
+ * report produce the same order.
+ */
+export function deriveGeoSourceLandscape(
+  report: GeoReportDataV3,
+): GeoSourceLandscapeV1 {
+  const into = new Map<string, Accumulator>();
+  let citationEvaluableSamples = 0;
+  let citationEvaluableQuestions = 0;
+
+  for (const question of report.questions) {
+    for (const sample of question.samples) {
+      if (isGeoSampleCitationEvaluable(sample, question.mode)) {
+        citationEvaluableSamples += 1;
+      }
+    }
+    if (accumulate(question, into)) citationEvaluableQuestions += 1;
+  }
+
+  const sources = [...into.values()]
+    .map(
+      (acc): GeoCitedSourceV1 => ({
+        domain: acc.domain,
+        citedInSamples: acc.samples.size,
+        citedInQuestions: acc.questions.size,
+        isTarget: acc.isTarget,
+        urls: [...acc.urls],
+      }),
+    )
+    .sort(
+      (a, b) =>
+        b.citedInSamples - a.citedInSamples ||
+        b.citedInQuestions - a.citedInQuestions ||
+        a.domain.localeCompare(b.domain),
+    );
+
+  return {
+    sources,
+    citationEvaluableSamples,
+    citationEvaluableQuestions,
+    distinctDomains: sources.length,
+    targetObserved: sources.some((source) => source.isTarget),
+  };
+}
