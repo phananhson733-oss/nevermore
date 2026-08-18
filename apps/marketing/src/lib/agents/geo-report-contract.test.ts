@@ -323,8 +323,55 @@ describe("isGeoReportSuccessEnvelope", () => {
         ),
       );
       expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+
+      // Envelope validity alone is not the fix: `title` and `annotationText`
+      // are nullable, so an implementation that dropped every provider string
+      // would pass every row above. Pin that the evidence survived, normalized.
+      const evidence = envelope.data.questions[0]?.samples[0]?.evidence[0];
+      expect(evidence?.kind).toBe("cited");
+      if (evidence?.kind !== "cited") return;
+      const expected = rawTitle.normalize("NFC").replace(/\s+/gu, " ").trim();
+      expect(evidence.title).toBe(expected);
+      expect(evidence.annotationText).toBe(expected);
     },
   );
+
+  // Same outcome, different door: NFC does not repair an unpaired surrogate and
+  // the run fingerprint refuses to serialize one, so leaving it in place voided
+  // the report at hashing time instead of at the guard. Dropped rather than
+  // carried, which is what the nullable field is for.
+  it("drops a provider string carrying an unpaired surrogate", async () => {
+    const envelope = await report((observations) =>
+      observations.map((question, index) =>
+        index === 0
+          ? questionFor(probe(), () =>
+              observation({
+                citations: [
+                  {
+                    url: "https://acme.test/pricing",
+                    title: "Best AI visibility tools \uD800 ranked",
+                    annotationText: "Best AI visibility tools \uD800 ranked",
+                    providerOutputItemIndex: 1,
+                    sectionIndex: 0,
+                    annotationOrdinal: 0,
+                    startIndex: 0,
+                    endIndex: 4,
+                    spanBasis: "provider_message_section_text",
+                  },
+                ],
+              }),
+            )
+          : question,
+      ),
+    );
+
+    expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+    const evidence = envelope.data.questions[0]?.samples[0]?.evidence[0];
+    expect(evidence?.kind).toBe("cited");
+    if (evidence?.kind !== "cited") return;
+    expect(evidence.title).toBeNull();
+    expect(evidence.annotationText).toBeNull();
+  });
 
   it("refuses a legacy v2 payload outright", async () => {
     // A v2 client recomputes the old verdict rule and would disagree with this

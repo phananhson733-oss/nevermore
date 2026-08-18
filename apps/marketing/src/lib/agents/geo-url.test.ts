@@ -170,4 +170,70 @@ describe("normalizeGeoTargetUrl", () => {
   ])("still refuses %s", (hostile) => {
     expect(normalizeGeoTargetUrl(hostile)).toBeNull();
   });
+
+  // Supplying a scheme is not enough on its own: the URL parser accepts hosts
+  // no one can publish, drops a control character out of the middle of one, and
+  // rewrites backslashes into slashes. Each of these reached the eighteen-call
+  // run before the shape check existed. Found by cross-model review on
+  // 2026-08-18.
+  it.each([
+    [".com", "no first label"],
+    ["foo..bar", "empty label"],
+    ["-foo.com", "label starts with a hyphen"],
+    ["foo-.com", "label ends with a hyphen"],
+    ["acme.\ncom", "control character the parser would silently drop"],
+    ["\\\\evil.com/path", "backslashes the parser would rewrite"],
+    ["acme .com", "internal space"],
+    ["acme\u2060.com", "word joiner the parser would silently drop"],
+    ["acme\u200b.com", "zero-width space, as pasted out of a document"],
+    ["acme\ufeff.com", "byte-order mark"],
+    ["acme\u200e.com", "left-to-right mark"],
+    ["acme\u034f.com", "combining grapheme joiner"],
+    ["acme\u180e.com", "Mongolian vowel separator"],
+    ["acme", "no dot"],
+    ["acme.1", "numeric TLD"],
+  ])("refuses %s (%s)", (typed) => {
+    expect(normalizeGeoTargetUrl(typed)).toBeNull();
+  });
+
+  // Refused here rather than by the run endpoint, so the visitor is not sent
+  // through confirmation and eight generated questions before being told no.
+  // An internationalized TLD arrives here already punycoded, so an
+  // alphabetic-only rule would refuse every `.公司` and `.中国` customer while
+  // the run endpoint accepted them. Found by cross-model review on 2026-08-18.
+  it.each([
+    ["例子.公司", "https://xn--fsqu00a.xn--55qx5d/"],
+    ["品牌.公司", "https://xn--jvr800e.xn--55qx5d/"],
+    ["xn--fsqu00a.xn--55qx5d", "https://xn--fsqu00a.xn--55qx5d/"],
+    ["münich.com", "https://xn--mnich-kva.com/"],
+  ])("accepts the internationalized domain %s", (typed, expected) => {
+    expect(normalizeGeoTargetUrl(typed)).toBe(expected);
+  });
+
+  // A space in a path or query is a link a visitor can paste; the parser
+  // percent-encodes it. Only a space inside the host is a problem, and the
+  // label check catches that one.
+  it("accepts a pasted link whose path or query carries a space", () => {
+    expect(normalizeGeoTargetUrl("https://acme.com/about us")).toBe(
+      "https://acme.com/about%20us",
+    );
+    expect(normalizeGeoTargetUrl("https://acme.com/?q=a b")).toBe(
+      "https://acme.com/?q=a%20b",
+    );
+    expect(normalizeGeoTargetUrl("acme .com")).toBeNull();
+  });
+
+  it.each([
+    "example.com",
+    "example.net",
+    "test.org",
+    "metadata.google.internal",
+    "localhost",
+    "service.local",
+    "127.0.0.1",
+    "0x7f000001",
+    "https://acme.com:8080",
+  ])("refuses %s for the same reason the run endpoint would", (typed) => {
+    expect(normalizeGeoTargetUrl(typed)).toBeNull();
+  });
 });

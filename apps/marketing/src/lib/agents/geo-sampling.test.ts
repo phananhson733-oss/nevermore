@@ -291,6 +291,28 @@ describe("observeToSample", () => {
     expect(sample.limitations).toContain("citation_extraction_incomplete");
   });
 
+  // Regression: the snippet is cut from the NFC answer, which still carries the
+  // paragraph breaks the assistant wrote. Un-normalized it failed the report
+  // guard after all eighteen calls had been billed. Found by cross-model review
+  // of /qa's fix on 2026-08-18.
+  it("normalizes the mention snippet it cuts from the answer", () => {
+    const answer = `${"padding ".repeat(40)}\nAcme Analytics\tis  named here.\n${"tail ".repeat(40)}`;
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: answer }),
+      CONTEXT,
+    );
+    const mention = sample.evidence.find((entry) => entry.kind === "mention");
+
+    expect(mention).toBeDefined();
+    if (mention?.kind !== "mention") return;
+    expect(mention.mentionSnippet).not.toBeNull();
+    // No newline, tab, or doubled space survives into the report.
+    expect(mention.mentionSnippet).not.toMatch(/[\n\t]|\s{2}/u);
+    expect(mention.mentionSnippet).toContain("Acme Analytics is named here.");
+  });
+
   it("keeps mention evidence free of anything that looks like a citation", () => {
     const sample = observeToSample(
       slot(),
