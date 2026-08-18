@@ -37,6 +37,7 @@ function deps(
     readUser: vi.fn(async () => ({
       status: "authenticated" as const,
       userId: USER,
+      email: "ada@example.test",
     })),
     reward: vi.fn(async () => ({
       kind: "ok" as const,
@@ -54,7 +55,9 @@ afterEach(() => {
 describe("reportFirstToolRun", () => {
   it("returns synchronously, so the caller never awaits it", () => {
     const { schedule } = collectTask();
-    expect(reportFirstToolRun("agent-audit", deps({ schedule }))).toBeUndefined();
+    expect(
+      reportFirstToolRun("agent-audit", deps({ schedule })),
+    ).toBeUndefined();
   });
 
   it("claims the referral for the signed-in visitor", async () => {

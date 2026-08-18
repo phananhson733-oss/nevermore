@@ -60,11 +60,14 @@ export default async function LocaleLayout({
     // The sign-in dialog lives in the Header, so it is part of the shell on
     // every page rather than a route-level surface. Five short strings.
     auth: messages.auth,
-    // The credits badge sits in the Header too, and the free-during-testing
-    // notice appears on every tool page. Omitting this namespace would not
-    // throw: next-intl renders the missing key's path, so the header would
-    // read "credits.badge.label" on every page instead.
+    // The free-during-testing notice appears on every tool page. Omitting this
+    // namespace would not throw: next-intl renders the missing key's path, so
+    // the page would read "credits.account.welfareNotice" instead.
     credits: messages.credits,
+    // The account menu hangs off the header avatar on every page, and was
+    // caught rendering "account.menu.balance" in exactly the way the note
+    // above describes.
+    account: messages.account,
   };
   return (
     <html lang={locale} suppressHydrationWarning>

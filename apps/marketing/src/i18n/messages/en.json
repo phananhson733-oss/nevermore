@@ -3690,5 +3690,13 @@
       "signedOut": "Sign in to see your credits.",
       "unavailable": "Credits are temporarily unavailable."
     }
+  },
+  "account": {
+    "menu": {
+      "label": "Account",
+      "balance": "Credits",
+      "welfareRemaining": "{remaining} left to earn while testing",
+      "ledger": "Credit history"
+    }
   }
 }

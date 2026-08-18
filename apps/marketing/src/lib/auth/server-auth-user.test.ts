@@ -7,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ getUser: vi.fn() }));
 
 vi.mock("../supabase/server.ts", () => ({
-  createServerSupabaseClient: async () => ({ auth: { getUser: mocks.getUser } }),
+  createServerSupabaseClient: async () => ({
+    auth: { getUser: mocks.getUser },
+  }),
 }));
 
 const { getServerAuthenticatedUser } = await import("./server-auth-user.ts");
@@ -26,7 +28,44 @@ describe("getServerAuthenticatedUser", () => {
     await expect(getServerAuthenticatedUser()).resolves.toEqual({
       status: "authenticated",
       userId: "11111111-1111-4111-8111-111111111111",
+      email: null,
     });
+  });
+
+  it("returns the verified address alongside the id", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "11111111-1111-4111-8111-111111111111",
+          email: "ada@example.test",
+        },
+      },
+      error: null,
+    });
+
+    await expect(getServerAuthenticatedUser()).resolves.toEqual({
+      status: "authenticated",
+      userId: "11111111-1111-4111-8111-111111111111",
+      email: "ada@example.test",
+    });
+  });
+
+  /**
+   * The account menu draws a name from this. An empty string would render an
+   * empty row where the account name belongs, so it has to arrive as the same
+   * "we do not know" the absent case gives.
+   */
+  it("normalises a blank address to null", async () => {
+    for (const email of ["", undefined, null]) {
+      mocks.getUser.mockResolvedValue({
+        data: { user: { id: "11111111-1111-4111-8111-111111111111", email } },
+        error: null,
+      });
+
+      await expect(getServerAuthenticatedUser()).resolves.toMatchObject({
+        email: null,
+      });
+    }
   });
 
   it("reports unauthenticated for a verified absence of a session", async () => {

@@ -1,11 +1,22 @@
 // @input  -- the server Supabase client's verified getUser result
-// @output -- the verified user id, or a tri-state that keeps an outage apart from a sign-out
+// @output -- the verified user id and email, or a tri-state that keeps an outage apart from a sign-out
 // @pos    -- the identity boundary server-side per-user records are keyed on
 
 import { createServerSupabaseClient } from "../supabase/server.ts";
 
 export type ServerAuthenticatedUser =
-  | { readonly status: "authenticated"; readonly userId: string }
+  | {
+      readonly status: "authenticated";
+      readonly userId: string;
+      /**
+       * Null when the identity provider gave us none. Supabase types email as
+       * optional and a session can legitimately carry no address, so callers
+       * that display it must have somewhere to put "we do not know" — printing
+       * an empty string where an account name belongs is worse than printing
+       * nothing.
+       */
+      readonly email: string | null;
+    }
   | { readonly status: "unauthenticated" }
   | { readonly status: "unavailable" };
 
@@ -41,9 +52,13 @@ export async function getServerAuthenticatedUser(): Promise<ServerAuthenticatedU
         ? { status: "unauthenticated" }
         : { status: "unavailable" };
     }
-    return user === null
-      ? { status: "unauthenticated" }
-      : { status: "authenticated", userId: user.id };
+    if (user === null) return { status: "unauthenticated" };
+    return {
+      status: "authenticated",
+      userId: user.id,
+      email:
+        typeof user.email === "string" && user.email !== "" ? user.email : null,
+    };
   } catch {
     return { status: "unavailable" };
   }
