@@ -2018,11 +2018,12 @@
       },
       "fields": {
         "url": "Page URL",
-        "queries": "Target queries (up to {max})",
+        "queries": "Target queries (up to {max}, comma-separated)",
         "market": "Market",
         "language": "Language",
         "pageRole": "Page role",
-        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent."
+        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent.",
+        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart"
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2031,8 +2032,6 @@
         "guide": "Guide or article"
       },
       "actions": {
-        "addQuery": "Add",
-        "removeQuery": "Remove this query",
         "run": "Check this page",
         "running": "Checking…",
         "copyReport": "Copy report for an assistant",
@@ -2102,10 +2101,9 @@
       "errors": {
         "urlRequired": "Add the page URL you want checked.",
         "queryRequired": "Add at least one target query.",
-        "queryEmpty": "Type a query before adding it.",
-        "queryDuplicate": "That query is already in the list.",
-        "queryLimit": "Up to {max} queries. Remove one to add another.",
-        "queryTooLong": "Up to {max} characters per query.",
+        "queryDuplicate": "Folded {folded} repeat(s) so the same question is asked once.",
+        "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
+        "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
         "retryAfter": "Retry in {seconds} seconds."
       },

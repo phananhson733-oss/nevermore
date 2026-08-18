@@ -2018,11 +2018,12 @@
       },
       "fields": {
         "url": "页面 URL",
-        "queries": "目标关键词（最多 {max} 个）",
+        "queries": "目标关键词（最多 {max} 个，用逗号分隔）",
         "market": "市场",
         "language": "语言",
         "pageRole": "页面角色",
-        "marketScope": "市场和语言只用于查询搜索结果页（下方「搜索结果页」一节），抓取与其余检查项在任何市场下都一样。它们也会随「打开 SEO Agent」一起带过去。"
+        "marketScope": "市场和语言只用于查询搜索结果页（下方「搜索结果页」一节），抓取与其余检查项在任何市场下都一样。它们也会随「打开 SEO Agent」一起带过去。",
+        "queriesPlaceholder": "例如：占星, 星盘, 本命盘"
       },
       "pageRoles": {
         "homepage": "首页",
@@ -2031,8 +2032,6 @@
         "guide": "指南或文章"
       },
       "actions": {
-        "addQuery": "添加",
-        "removeQuery": "移除这个关键词",
         "run": "检查这个页面",
         "running": "检查中…",
         "copyReport": "复制报告给 AI",
@@ -2102,10 +2101,9 @@
       "errors": {
         "urlRequired": "填上你要检查的页面 URL。",
         "queryRequired": "至少填一个目标关键词。",
-        "queryEmpty": "先输入一个关键词再添加。",
-        "queryDuplicate": "这个关键词已经在列表里了。",
-        "queryLimit": "最多 {max} 个关键词。要加新的先移除一个。",
-        "queryTooLong": "每个关键词最多 {max} 个字符。",
+        "queryDuplicate": "重复的词已合并 {folded} 个，只问一次。",
+        "queryLimit": "最多 {max} 个关键词；多出的 {dropped} 个没有提交。",
+        "queryTooLong": "每个关键词最多 {max} 个字符；有 {dropped} 个太长，没有提交。",
         "auth_required": "登录后才能检查。你填的内容会保留，并且不会自动开跑。",
         "retryAfter": "{seconds} 秒后可重试。"
       },
