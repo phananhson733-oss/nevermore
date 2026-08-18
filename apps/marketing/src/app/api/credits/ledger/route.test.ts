@@ -19,7 +19,10 @@ vi.mock("../../../../lib/credits/credits-store.ts", async () => {
   const actual = await vi.importActual<
     typeof import("../../../../lib/credits/credits-store.ts")
   >("../../../../lib/credits/credits-store.ts");
-  return { decodeLedgerCursor: actual.decodeLedgerCursor, readLedger: mocks.readLedger };
+  return {
+    decodeLedgerCursor: actual.decodeLedgerCursor,
+    readLedger: mocks.readLedger,
+  };
 });
 
 const { GET } = await import("./route.ts");
@@ -163,6 +166,53 @@ describe("GET /api/credits/ledger", () => {
       });
     }
     expect(mocks.readLedger).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression: ISSUE-001 — a cursor whose timestamp half Date.parse accepts but
+   * PostgreSQL does not reached the database and came back 503.
+   * Found by /qa on 2026-08-17 against production: `?cursor=1|1`, `2|9` and
+   * `2001|1` each answered `credits_unavailable`, reporting a caller's typo as
+   * our outage and spending a failed transaction to do it.
+   * Report: .gstack/qa-reports/qa-report-gengrowth-ai-2026-08-17.md
+   */
+  it("answers 400, not 503, for a timestamp only Date.parse would accept", async () => {
+    // Date.parse reads "1" as 2001-01-01 and "2026" as that whole year;
+    // PostgreSQL reads neither as a timestamptz.
+    for (const cursor of ["1|1", "2|9", "2001|1", "2026-08|3", "12:30|4"]) {
+      const response = await GET(
+        request(`?cursor=${encodeURIComponent(cursor)}`),
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "invalid_cursor" },
+      });
+    }
+    expect(mocks.readLedger).not.toHaveBeenCalled();
+  });
+
+  /** The shapes PostgreSQL actually prints have to keep working. */
+  it("still accepts the cursor shapes the ledger itself hands out", async () => {
+    for (const cursor of [
+      "2026-08-17T12:52:41.179013+00:00|2",
+      "2026-08-17T00:12:03.114Z|12",
+      "2026-08-17T00:12:03Z|12",
+    ]) {
+      mocks.readLedger.mockClear();
+      const response = await GET(
+        request(`?cursor=${encodeURIComponent(cursor)}`),
+      );
+
+      expect(response.status).toBe(200);
+      expect(mocks.readLedger).toHaveBeenCalledWith("user-1", {
+        limit: 25,
+        cursor: {
+          createdAt: cursor.slice(0, cursor.lastIndexOf("|")),
+          id: cursor.slice(cursor.lastIndexOf("|") + 1),
+        },
+      });
+    }
   });
 
   it("answers 503 when the credits tables are not there yet", async () => {

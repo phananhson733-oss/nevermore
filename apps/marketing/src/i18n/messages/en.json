@@ -3665,6 +3665,7 @@
       "dailyGranted": "+{amount} added today",
       "dailyPending": "Sign in tomorrow for +{amount} more",
       "welfareRemaining": "{remaining} of {cap} testing credits left to earn",
+      "welfareCapped": "You have earned all {cap} testing credits.",
       "referralTitle": "Invite a colleague",
       "referralBody": "You both get {amount} credits once they finish their first audit.",
       "referralCopy": "Copy invite link",

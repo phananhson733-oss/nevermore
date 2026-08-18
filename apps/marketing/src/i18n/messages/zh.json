@@ -3665,6 +3665,7 @@
       "dailyGranted": "今天已到账 +{amount}",
       "dailyPending": "明天再来登录，可再领 +{amount}",
       "welfareRemaining": "测试期还能攒 {remaining} 积分，上限 {cap}",
+      "welfareCapped": "测试期积分已攒满（共 {cap}）。",
       "referralTitle": "邀请同事",
       "referralBody": "对方跑完第一次审计，你们各得 {amount} 积分。",
       "referralCopy": "复制邀请链接",

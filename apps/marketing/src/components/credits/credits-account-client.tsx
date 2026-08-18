@@ -13,10 +13,12 @@ import { CREDITS_SETTINGS_SEED } from "../../lib/credits/credits-config.ts";
 
 interface AccountSnapshot {
   readonly total: number;
+  readonly mode: string;
   readonly grantedToday: boolean;
   /** Null when the answer did not carry it; the line is dropped rather than guessed. */
   readonly dailyAmount: number | null;
   readonly welfareRemaining: number | null;
+  readonly welfareCap: number;
   readonly referralCode: string;
   readonly rewardedCount: number;
   readonly referralCap: number;
@@ -63,9 +65,16 @@ function readSnapshot(body: unknown): AccountSnapshot | null {
   if (total === null || code === "") return null;
   return {
     total,
+    mode: typeof data?.mode === "string" ? data.mode : "",
     grantedToday: dailyGrant?.grantedToday === true,
     dailyAmount: finiteNumber(dailyGrant?.amount),
     welfareRemaining: finiteNumber(dailyGrant?.welfareRemaining),
+    // Both caps prefer the live answer and keep the seed only as a fallback:
+    // credit_settings is edited in production without a deploy, and a compiled
+    // -in number printed next to a live one is how "980 of 600" happens.
+    welfareCap:
+      finiteNumber(dailyGrant?.welfareCap) ??
+      CREDITS_SETTINGS_SEED.welfareAccrualCap,
     referralCode: code,
     rewardedCount: finiteNumber(referral?.rewardedCount) ?? 0,
     referralCap:
@@ -227,6 +236,9 @@ export function CreditsAccountClient() {
   }
 
   const inviteUrl = `${siteConfig.url}/r/${snapshot.referralCode}`;
+  // Only the welfare pool accrues against this cap; in live mode the daily
+  // grant is a reset, so a remaining of zero there would mean something else.
+  const capped = snapshot.mode === "welfare" && snapshot.welfareRemaining === 0;
 
   return (
     <div className="space-y-4">
@@ -247,20 +259,35 @@ export function CreditsAccountClient() {
           <h2 className="text-[15.5px] font-semibold text-text-dark-primary">
             {t("dailyTitle")}
           </h2>
-          {snapshot.dailyAmount === null ? null : (
+          {/*
+            A capped account is stamped as granted today and given nothing, so
+            reading grantedToday alone tells it "+20 added today" every day for
+            the rest of the welfare period while its balance does not move.
+            Whether the day paid out is a different question from whether the
+            day was settled, and only the first is worth a sentence.
+          */}
+          {capped ? (
             <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
-              {snapshot.grantedToday
-                ? t("dailyGranted", { amount: snapshot.dailyAmount })
-                : t("dailyPending", { amount: snapshot.dailyAmount })}
+              {t("welfareCapped", { cap: snapshot.welfareCap })}
             </p>
-          )}
-          {snapshot.welfareRemaining === null ? null : (
-            <p className="mt-2 font-mono text-[11.5px] text-text-dark-faint">
-              {t("welfareRemaining", {
-                remaining: snapshot.welfareRemaining,
-                cap: CREDITS_SETTINGS_SEED.welfareAccrualCap,
-              })}
-            </p>
+          ) : (
+            <>
+              {snapshot.dailyAmount === null ? null : (
+                <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                  {snapshot.grantedToday
+                    ? t("dailyGranted", { amount: snapshot.dailyAmount })
+                    : t("dailyPending", { amount: snapshot.dailyAmount })}
+                </p>
+              )}
+              {snapshot.welfareRemaining === null ? null : (
+                <p className="mt-2 font-mono text-[11.5px] text-text-dark-faint">
+                  {t("welfareRemaining", {
+                    remaining: snapshot.welfareRemaining,
+                    cap: snapshot.welfareCap,
+                  })}
+                </p>
+              )}
+            </>
           )}
         </section>
 
