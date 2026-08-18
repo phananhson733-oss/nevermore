@@ -15,8 +15,11 @@ import { AccountMenu, AccountSummaryMobile } from "./account-menu.tsx";
 const SIGNED_IN: AccountState = {
   status: "signed-in",
   email: "ada@example.test",
+  avatarUrl: null,
   balance: { total: 140, welfareRemaining: 560 },
 };
+
+const PHOTO = "https://lh3.googleusercontent.com/a/ACg8ocABC123=s96-c";
 
 describe("AccountMenu", () => {
   let host: HTMLDivElement;
@@ -81,6 +84,73 @@ describe("AccountMenu", () => {
     // Closed until asked for: the panel is not in the document.
     expect(host.textContent).not.toContain("ada@example.test");
     expect(avatar().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  /**
+   * Google ships these URLs already ending in `=s96-c`. Appending rather than
+   * replacing yields `=s96-c=s72-c-rw`, which Google answers 400 — a broken
+   * image for every signed-in visitor instead of a merely oversized one.
+   */
+  it("replaces Google's size options instead of appending to them", async () => {
+    await mount({ ...SIGNED_IN, avatarUrl: PHOTO });
+
+    const img = host.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "https://lh3.googleusercontent.com/a/ACg8ocABC123=s72-c-rw",
+    );
+    // Not two option groups.
+    expect(img?.getAttribute("src")?.match(/=/g)).toHaveLength(1);
+  });
+
+  it("adds the size options to a URL that carries none", async () => {
+    await mount({
+      ...SIGNED_IN,
+      avatarUrl: "https://lh3.googleusercontent.com/a/plain",
+    });
+
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(
+      "https://lh3.googleusercontent.com/a/plain=s72-c-rw",
+    );
+  });
+
+  /** Hotlinked from a third-party origin; Google does not need our referer. */
+  it("sends no referer with the photo", async () => {
+    await mount({ ...SIGNED_IN, avatarUrl: PHOTO });
+
+    expect(host.querySelector("img")?.getAttribute("referrerpolicy")).toBe(
+      "no-referrer",
+    );
+  });
+
+  /**
+   * One production account signed in without Google and has no photo at all,
+   * so the monogram is the ordinary path rather than only the error path.
+   */
+  it("draws the monogram when the account has no photo", async () => {
+    await mount(SIGNED_IN);
+
+    expect(host.querySelector("img")).toBeNull();
+    expect(avatar().textContent).toBe("A");
+  });
+
+  it("falls back to the monogram when the photo fails to load", async () => {
+    await mount({ ...SIGNED_IN, avatarUrl: PHOTO });
+    expect(host.querySelector("img")).not.toBeNull();
+
+    await act(async () => {
+      host.querySelector("img")?.dispatchEvent(new Event("error"));
+    });
+
+    expect(host.querySelector("img")).toBeNull();
+    expect(avatar().textContent).toBe("A");
+  });
+
+  /** The button already carries the account as its accessible name. */
+  it("leaves the photo out of the accessibility tree", async () => {
+    await mount({ ...SIGNED_IN, avatarUrl: PHOTO });
+
+    expect(host.querySelector("img")?.getAttribute("alt")).toBe("");
+    expect(avatar().getAttribute("aria-label")).toBe("ada@example.test");
   });
 
   it("names the account and its balance once opened", async () => {
