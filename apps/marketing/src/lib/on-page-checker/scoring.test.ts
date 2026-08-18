@@ -4,7 +4,11 @@ import type {
   SeoAuditRecord,
   SeoAuditTargetPageExtract,
 } from "@sf/public-tools/seo-audit/types";
-import { buildOnPageScore, type ScoreCap } from "./scoring.ts";
+import {
+  buildOnPageScore,
+  SCORE_CAP_REASONS,
+  type ScoreCap,
+} from "./scoring.ts";
 
 function extract(
   overrides: Partial<SeoAuditTargetPageExtract> = {},
@@ -18,6 +22,7 @@ function extract(
     subHeadings: ["What each plan includes", "Which plan fits"],
     openingText: "Acme pricing starts with a free tier.",
     staticBodyWords: 1_400,
+    staticBodyUnits: { units: 1_400, basis: "words" },
     truncatedLists: false,
     response: {
       status: 200,
@@ -46,10 +51,28 @@ function extract(
       charset: "utf-8",
       faviconDeclared: true,
       hreflang: [],
-      images: { total: 3, withAlt: 3, withEmptyAlt: 0, withoutAlt: 0 },
+      images: {
+      total: 3,
+      withAlt: 3,
+      withEmptyAlt: 0,
+      withoutAlt: 0,
+      withDimensions: 0,
+      lazyLoaded: 0,
+    },
       externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
       htmlBytes: 40_000,
       visibleTextBytes: 12_000,
+      scriptBytes: 0,
+      interactive: {
+        forms: 0,
+        inputs: 0,
+        buttons: 0,
+        selects: 0,
+        textareas: 0,
+        canvases: 0,
+        media: 0,
+        iframes: 0,
+      },
     },
     ...overrides,
   };
@@ -120,6 +143,7 @@ function record(
     state: "observed",
     unit: "page",
     population: "every_collected_page",
+    targetTested: null,
     tested: 120,
     affected: 0,
     observations: [],
@@ -177,7 +201,12 @@ describe("buildOnPageScore", () => {
   });
 
   it("holds a thin page down however good the rest of the sheet is", () => {
-    const result = score({ extract: { staticBodyWords: 120 } });
+    const result = score({
+      extract: {
+        staticBodyWords: 120,
+        staticBodyUnits: { units: 120, basis: "words" },
+      },
+    });
 
     expect(result.caps.map((cap) => cap.reason)).toContain("body_words");
     expect(result.score).toBeLessThanOrEqual(55);
@@ -185,7 +214,10 @@ describe("buildOnPageScore", () => {
 
   it("applies the lowest ceiling when both caps bite", () => {
     const result = score({
-      extract: { staticBodyWords: 90 },
+      extract: {
+        staticBodyWords: 90,
+        staticBodyUnits: { units: 90, basis: "words" },
+      },
       evidence: evidence({ covered: 0 }),
     });
 
@@ -207,6 +239,7 @@ describe("buildOnPageScore", () => {
         h1: [],
         subHeadings: [],
         staticBodyWords: 500,
+        staticBodyUnits: { units: 500, basis: "words" },
         declared: null,
         // Deliberately still indexable and still 200: those are their own
         // ceilings now, and this case is about a ceiling that does NOT bite.
@@ -323,14 +356,9 @@ describe("buildOnPageScore", () => {
  * added later fails here rather than in front of someone.
  */
 describe("score cap wording", () => {
-  const ALL_CAPS: readonly ScoreCap[] = [
-    "topic_focus",
-    "body_words",
-    "body_bytes",
-    "not_indexable",
-    "not_reachable",
-    "keyword_unmeasured",
-  ];
+  // Read from the module rather than restated here: a second list agrees with
+  // itself and falls behind the union it was copied from.
+  const ALL_CAPS: readonly ScoreCap[] = SCORE_CAP_REASONS;
 
   it.each(["en", "zh"])("%s carries a sentence for every cap reason", async (locale) => {
     const catalogue = (await import(`../../i18n/messages/${locale}.json`, {
@@ -404,6 +432,7 @@ describe("verdicts a weighted sum cannot express", () => {
     const r = score({
       extract: {
         staticBodyWords: null,
+        staticBodyUnits: null,
         declared: { ...extract().declared!, visibleTextBytes: 300 },
       },
     });
@@ -414,7 +443,12 @@ describe("verdicts a weighted sum cannot express", () => {
 
   it("does not cap on words and bytes at once", () => {
     // One body, one measure. Capping twice would be two verdicts on one fact.
-    const r = score({ extract: { staticBodyWords: 50 } });
+    const r = score({
+      extract: {
+        staticBodyWords: 50,
+        staticBodyUnits: { units: 50, basis: "words" },
+      },
+    });
 
     const reasons = r.caps.map((cap) => cap.reason);
     expect(reasons).toContain("body_words");
@@ -450,5 +484,199 @@ describe("verdicts a weighted sum cannot express", () => {
     expect(density?.state).toBe("info");
     // And the occurrence count must be the one the evidence table shows.
     expect(density?.detail.values?.["occurrences"]).toBe(8);
+  });
+});
+
+/**
+ * Checks that used to say something untrue, or nothing at all.
+ *
+ * Each of these was measured before the fix, either telling a visitor a fact
+ * about their page that was false or withholding a verdict it was entitled to.
+ */
+describe("what the sheet can now say", () => {
+  function find(result: ReturnType<typeof score>, id: string) {
+    return result.checks.find((entry) => entry.id === id);
+  }
+
+  it("passes a conditional site rule the page was actually inside", () => {
+    // Three of the five site rules test a qualifying subset, so absence used to
+    // read as "that rule did not cover this page" — false for a page that
+    // qualified and was clean, which is the ordinary case.
+    const result = score({
+      siteRecords: [
+        record("title_duplicate", {
+          category: "metadata",
+          population: "conditional_subset",
+          targetTested: true,
+          state: "not_observed",
+        }),
+      ],
+    });
+
+    const entry = find(result, "title_duplicate");
+    expect(entry?.state).toBe("pass");
+    expect(entry?.detail.key).toBe("site.title_duplicate.clear");
+  });
+
+  it("still withholds a verdict when the page was outside the subset", () => {
+    const result = score({
+      siteRecords: [
+        record("title_duplicate", {
+          category: "metadata",
+          population: "conditional_subset",
+          targetTested: false,
+          state: "not_observed",
+        }),
+      ],
+    });
+
+    expect(find(result, "title_duplicate")?.detail.key).toBe(
+      "site.title_duplicate.notTested",
+    );
+  });
+
+  it("accepts an encoding declared only in the response header", () => {
+    // The header outranks the meta tag, and we were collecting it and reading
+    // only the tag — marking pages down for a declaration they had made in the
+    // stronger place.
+    const result = score({
+      extract: {
+        declared: { ...extract().declared!, charset: null },
+        response: {
+          ...extract().response,
+          contentType: "text/html; charset=UTF-8",
+        },
+      },
+    });
+
+    const entry = find(result, "charset");
+    expect(entry?.state).toBe("pass");
+    expect(entry?.detail.key).toBe("charset.fromHeader");
+    expect(entry?.detail.values?.charset).toBe("utf-8");
+  });
+
+  it("grades a Chinese page's length instead of exempting it", () => {
+    // `staticBodyWords` is withheld for a body written without word gaps, which
+    // used to remove the thin-content ceiling entirely: a hundred-character
+    // Chinese page scored 100.
+    const thin = score({
+      extract: {
+        staticBodyWords: null,
+        staticBodyUnits: { units: 90, basis: "cjk_chars" },
+      },
+    });
+    expect(thin.caps.map((cap) => cap.reason)).toContain("body_words");
+    expect(find(thin, "bodyWords")?.detail.key).toBe("bodyWords.thinUnits");
+
+    const full = score({
+      extract: {
+        staticBodyWords: null,
+        staticBodyUnits: { units: 2_000, basis: "cjk_chars" },
+      },
+    });
+    expect(full.caps).toEqual([]);
+    expect(find(full, "bodyWords")?.state).toBe("pass");
+  });
+
+  it("judges the H1 by its length as well as its count", () => {
+    expect(find(score({ extract: { h1: ["Pricing"] } }), "h1")?.detail.key).toBe(
+      "h1.tooShort",
+    );
+    expect(
+      find(score({ extract: { h1: ["A".repeat(90)] } }), "h1")?.detail.key,
+    ).toBe("h1.tooLong");
+    // Cut to 200 characters upstream, so the width shown is the cut one and the
+    // copy has to say so. The verdict is unaffected: 200 is past the bound
+    // whichever way the real heading ran.
+    expect(
+      find(
+        score({ extract: { h1: ["A".repeat(200)], truncatedLists: true } }),
+        "h1",
+      )?.detail.key,
+    ).toBe("h1.tooLongClipped");
+  });
+
+  it("names the first URL problem and counts the rest", () => {
+    const clean = score({ extract: { url: "https://acme.test/pricing" } });
+    expect(find(clean, "urlShape")?.detail.key).toBe("urlShape.clean");
+
+    const messy = score({
+      extract: {
+        url: "https://acme.test/A/b/c/d/e/f/Some_Long_Name?a=1&b=2&c=3",
+      },
+    });
+    const entry = find(messy, "urlShape");
+    // Query parameters come first because they cost a reader the most.
+    expect(entry?.detail.key).toBe("urlShape.parameters");
+    expect(entry?.detail.values?.others).toBe(3);
+  });
+
+  it("separates a document that ships its content from one that ships a program", () => {
+    const server = score();
+    expect(find(server, "rendering")?.detail.key).toBe("rendering.serverSide");
+
+    const client = score({
+      extract: {
+        declared: {
+          ...extract().declared!,
+          visibleTextBytes: 120,
+          scriptBytes: 800_000,
+        },
+      },
+    });
+    expect(find(client, "rendering")?.detail.key).toBe("rendering.clientSide");
+  });
+
+  it("reports interactive elements without claiming a page has none", () => {
+    const none = score();
+    const quiet = find(none, "demandCapture");
+    expect(quiet?.detail.key).toBe("demandCapture.none");
+    // An observation, never a verdict: a calculator mounted by client
+    // JavaScript is not in the HTML and would be judged absent.
+    expect(quiet?.max).toBe(0);
+
+    const active = score({
+      extract: {
+        declared: {
+          ...extract().declared!,
+          interactive: {
+            forms: 1,
+            inputs: 3,
+            buttons: 1,
+            selects: 0,
+            textareas: 0,
+            canvases: 1,
+            media: 0,
+            iframes: 0,
+          },
+        },
+      },
+    });
+    expect(find(active, "demandCapture")?.detail.values?.controls).toBe(6);
+  });
+
+  it("says whether the markup reserves space for its images", () => {
+    const missing = score();
+    expect(find(missing, "imageDimensions")?.detail.key).toBe(
+      "imageDimensions.some",
+    );
+
+    const declared = score({
+      extract: {
+        declared: {
+          ...extract().declared!,
+          images: {
+            total: 3,
+            withAlt: 3,
+            withEmptyAlt: 0,
+            withoutAlt: 0,
+            withDimensions: 3,
+            lazyLoaded: 2,
+          },
+        },
+      },
+    });
+    expect(find(declared, "imageDimensions")?.state).toBe("pass");
+    expect(find(declared, "imageLoading")?.detail.values?.lazy).toBe(2);
   });
 });

@@ -59,6 +59,34 @@ export function countTextUnits(text: string): TextUnits {
   return { units, basis: "words" };
 }
 
+/**
+ * The same units, assembled from counts someone else already took.
+ *
+ * The crawler measures the full body once, while it still has it, and publishes
+ * three numbers instead of the text. This is where those numbers become the
+ * same `text_units.v1` value `countTextUnits` would have returned from the text
+ * itself — one definition of the unit, two ways in. `parse-page`'s counter and
+ * this one are held to that by a test that drives both over a real corpus.
+ */
+export function textUnitsFromCounts(counts: {
+  readonly cjkChars: number;
+  readonly nonCjkWords: number;
+}): TextUnits {
+  const units = counts.cjkChars + counts.nonCjkWords;
+  if (counts.cjkChars > 0 && counts.nonCjkWords > 0)
+    return { units, basis: "mixed" };
+  if (counts.cjkChars > 0) return { units, basis: "cjk_chars" };
+  return { units, basis: "words" };
+}
+
+/** `cjkShare` for text that was counted elsewhere. Zero denominator reads 0. */
+export function cjkShareFromCounts(counts: {
+  readonly cjkChars: number;
+  readonly denseChars: number;
+}): number {
+  return counts.denseChars === 0 ? 0 : counts.cjkChars / counts.denseChars;
+}
+
 /** Whether the string contains any code point counted as a CJK unit. */
 export function hasCjk(text: string): boolean {
   return new RegExp(CJK_PATTERN.source, "u").test(text);

@@ -49,6 +49,7 @@ function evidence(
     state: "observed",
     unit: "pages",
     population: "every_collected_page",
+    targetTested: null,
     tested: 12,
     affected: 1,
     observations: [

@@ -14,7 +14,7 @@ import { check, observation, type CheckInput, type OnPageCheck } from "./check-t
  * an orphan because nothing else links to it, and click depth is a property of
  * the path from the homepage. They cost the minute this tool spends crawling.
  */
-const SITE_RULES: readonly {
+export const SITE_RULES: readonly {
   readonly id: string;
   readonly max: number;
   readonly failState: "fail" | "warn";
@@ -40,12 +40,20 @@ function flagged(record: SeoAuditRecord, targetUrl: string): boolean {
 /**
  * Whether absence from a rule can be read as passing it.
  *
- * Only for a rule that ran over every collected page. A rule that tested a
- * qualifying subset says nothing about a page that never qualified, so absence
- * there is not evidence and must not be rendered as a green tick.
+ * A rule that ran over every collected page covered this one by definition. A
+ * rule that tested a qualifying subset now says outright whether this page was
+ * in it, which is the question that matters and the one `population` alone
+ * could not answer: three of the five rules here are conditional, so every
+ * clean page was told "that rule did not cover this page" — false whenever the
+ * page qualified, which is the common case — and eight of the thirteen points
+ * were unreachable.
+ *
+ * Unknown stays unknown. `targetTested` is null when the rule counts something
+ * other than pages, and absence there is still not evidence.
  */
 function absenceIsEvidence(record: SeoAuditRecord): boolean {
-  return record.population === "every_collected_page";
+  if (record.population === "every_collected_page") return true;
+  return record.targetTested === true;
 }
 
 export function siteChecks(input: CheckInput): readonly OnPageCheck[] {

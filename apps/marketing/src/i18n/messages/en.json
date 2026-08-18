@@ -2184,7 +2184,8 @@
         "charset": {
           "_label": "Character encoding",
           "missing": "No charset declared, so non-ASCII text can be read under the wrong encoding.",
-          "declared": "Declared {charset}."
+          "declared": "Declared {charset}.",
+          "fromHeader": "The markup declares no charset, but the HTTP response header declares {charset} — the header outranks the tag, so the encoding is stated."
         },
         "lang": {
           "_label": "HTML lang",
@@ -2199,8 +2200,11 @@
         "h1": {
           "_label": "H1",
           "missing": "No H1.",
-          "single": "One H1: “{h1}”, width {width}.",
-          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things."
+          "single": "One H1, “{h1}”, width {width}, inside the common {min}–{max} range.",
+          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things.",
+          "tooShort": "The H1 “{h1}” is only {width} wide, under the common {min} — a heading is this page's promise to a searcher, and this one does not say much.",
+          "tooLong": "The H1 “{h1}” is {width} wide, over the common {max} — long headings get cut in results and in listings alike.",
+          "tooLongClipped": "The H1 is at least {width} wide (shown here cut to 200 characters), far past the common {max}."
         },
         "bodyWords": {
           "_label": "Body words",
@@ -2208,7 +2212,11 @@
           "thin": "Only {words} words. At this length the rest of the sheet has little to stand on.",
           "low": "{words} words, on the thin side.",
           "fair": "{words} words.",
-          "good": "{words} words."
+          "good": "{words} words.",
+          "thinUnits": "The body runs about {words} characters — under 300 rarely carries a topic.",
+          "lowUnits": "The body runs about {words} characters, on the short side.",
+          "fairUnits": "The body runs about {words} characters, enough to cover one thing properly.",
+          "goodUnits": "The body runs about {words} characters, a full-length piece."
         },
         "subHeadings": {
           "_label": "Sub-headings",
@@ -2394,6 +2402,36 @@
             "clear": "This page is within four clicks of the homepage.",
             "notTested": "That rule tested a qualifying subset and did not cover this page."
           }
+        },
+        "imageDimensions": {
+          "_label": "Declared image dimensions",
+          "all": "All {total} images declare width and height, so the browser can reserve the space before they load.",
+          "some": "{missing} of {total} images do not declare both width and height. This reads markup only — a CSS aspect-ratio reserves the same box and no stylesheet is visible here."
+        },
+        "imageLoading": {
+          "_label": "Image lazy loading",
+          "none": "None of the {total} images declare loading=\"lazy\".",
+          "some": "{lazy} of {total} images declare loading=\"lazy\". Not graded: deferring the image at the top of the page delays the very thing a visitor is waiting for, and we cannot tell which image is where."
+        },
+        "urlShape": {
+          "_label": "URL shape",
+          "unavailable": "This page's URL could not be parsed, so it is not judged.",
+          "clean": "The path is {characters} characters over {segments} levels — readable and repeatable.",
+          "parameters": "The URL carries {parameters} query parameters, which is hard to remember or share{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "uppercase": "The path contains upper-case letters, which is how one page ends up with two URLs{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "deep": "The path is {segments} levels deep, past the common depth{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "long": "The path runs {characters} characters, on the long side{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "underscores": "The path separates words with underscores; search engines read hyphens more reliably{others, plural, =0 {} other {, and # other thing could read better}}."
+        },
+        "rendering": {
+          "_label": "Content in the static HTML",
+          "serverSide": "The static HTML already carries {textBytes} bytes of body text (scripts {scriptKb} KB), so nothing waits on JavaScript.",
+          "clientSide": "The static HTML carries almost no body text ({textBytes} bytes) against {scriptKb} KB of script — the copy is probably rendered by JavaScript. Search engines do run it, so this is a dependency rather than a fault, but it costs a render queue a server-rendered page never pays."
+        },
+        "demandCapture": {
+          "_label": "Whether this page can act",
+          "none": "The static HTML contains no form, input, button or canvas. A component mounted by client JavaScript is not in the transferred HTML and cannot be seen here, so this describes the static document and is not a claim that the page does nothing.",
+          "present": "The static HTML carries {controls} interactive elements (forms {forms}, inputs {inputs}, buttons {buttons}) — a visitor can act right here."
         }
       },
       "grades": {

@@ -74,6 +74,7 @@ export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
     ) ||
     !isRecordPopulation(value.population) ||
     !isNonNegativeInteger(value.tested) ||
+    !(value.targetTested === null || typeof value.targetTested === "boolean") ||
     !isNonNegativeInteger(value.affected) ||
     !Array.isArray(value.observations) ||
     !isNullableString(value.limitation)
@@ -178,6 +179,7 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "subHeadings",
   "openingText",
   "staticBodyWords",
+  "staticBodyUnits",
   "truncatedLists",
   "response",
   "declared",
@@ -264,6 +266,8 @@ const DECLARED_FACTS_KEYS: readonly string[] = [
   "externalLinks",
   "htmlBytes",
   "visibleTextBytes",
+  "scriptBytes",
+  "interactive",
 ];
 
 function hasExactly(value: object, keys: readonly string[]): boolean {
@@ -296,14 +300,50 @@ function isResponseFacts(value: unknown): boolean {
   );
 }
 
+const IMAGE_FACTS_KEYS: readonly string[] = [
+  "total",
+  "withAlt",
+  "withEmptyAlt",
+  "withoutAlt",
+  "withDimensions",
+  "lazyLoaded",
+];
+
 function isImageFacts(value: unknown): boolean {
   return (
     isObject(value) &&
-    hasExactly(value, ["total", "withAlt", "withEmptyAlt", "withoutAlt"]) &&
-    isNonNegativeInteger(value.total) &&
-    isNonNegativeInteger(value.withAlt) &&
-    isNonNegativeInteger(value.withEmptyAlt) &&
-    isNonNegativeInteger(value.withoutAlt)
+    hasExactly(value, IMAGE_FACTS_KEYS) &&
+    IMAGE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+  );
+}
+
+const INTERACTIVE_FACTS_KEYS: readonly string[] = [
+  "forms",
+  "inputs",
+  "buttons",
+  "selects",
+  "textareas",
+  "canvases",
+  "media",
+  "iframes",
+];
+
+function isInteractiveFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, INTERACTIVE_FACTS_KEYS) &&
+    INTERACTIVE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+  );
+}
+
+/** `text_units.v1`, as published beside the whitespace word count. */
+function isNullableTextUnits(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isObject(value) &&
+    hasExactly(value, ["units", "basis"]) &&
+    isNonNegativeInteger(value.units) &&
+    ["words", "cjk_chars", "mixed"].includes(value.basis as string)
   );
 }
 
@@ -340,11 +380,22 @@ function isDeclaredFacts(value: unknown): boolean {
     isImageFacts(value.images) &&
     isExternalLinkFacts(value.externalLinks) &&
     isNonNegativeInteger(value.htmlBytes) &&
-    isNonNegativeInteger(value.visibleTextBytes)
+    isNonNegativeInteger(value.visibleTextBytes) &&
+    isNonNegativeInteger(value.scriptBytes) &&
+    isInteractiveFacts(value.interactive)
   );
 }
 
-function isTargetPageExtract(
+/**
+ * Exported so the Agent projection can reuse it rather than restate it.
+ *
+ * The projection used to carry its own copy of the key list and check nothing
+ * else — not types, not bounds, and never inside `response` or `declared`.
+ * Measured: `url: 12345` and `response: "not an object"` both passed. Two lists
+ * of the same keys also drift, and v7's new fields landed in exactly the region
+ * the shallow copy could not see.
+ */
+export function isSeoAuditTargetPageExtract(
   value: unknown,
 ): value is SeoAuditTargetPageExtract {
   if (!isObject(value)) return false;
@@ -363,11 +414,13 @@ function isTargetPageExtract(
     isBoundedNullableString(value.openingText, 500) &&
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
+    isNullableTextUnits(value.staticBodyUnits) &&
     typeof value.truncatedLists === "boolean" &&
     isResponseFacts(value.response) &&
     (value.declared === null || isDeclaredFacts(value.declared))
   );
 }
+
 
 /** Runtime authority for the current buffered site-wide SEO audit payload. */
 export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
@@ -378,7 +431,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v6" &&
+    run.schemaVersion === "seo_audit.sitewide.v7" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&
@@ -389,7 +442,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
     (result.inspectedTargetUrl === null ||
       typeof result.inspectedTargetUrl === "string") &&
     (result.targetPageExtract === null ||
-      isTargetPageExtract(result.targetPageExtract)) &&
+      isSeoAuditTargetPageExtract(result.targetPageExtract)) &&
     // The keyword region is derived per request from one visitor's queries.
     // This shape is the one that gets cached under a key shared by every
     // visitor to the same host, so a payload carrying that region is not a

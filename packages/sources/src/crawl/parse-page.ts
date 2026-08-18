@@ -91,14 +91,71 @@ export interface ParsedImageFacts {
   readonly withAlt: number;
   readonly withEmptyAlt: number;
   readonly withoutAlt: number;
+  /** Both `width` and `height` declared, which is what reserves the box. */
+  readonly withDimensions: number;
+  readonly lazyLoaded: number;
 }
 
-/** Outbound links leaving this origin, and the ones that open unsafely. */
+/**
+ * Outbound links leaving this site, counted by destination.
+ *
+ * Deduplicated by canonical target the way `internalOutlinks` already is. They
+ * used to be counted per `<a>`, so one partner linked from the nav, the body
+ * and the footer was published as "3 external links" on the same screen as an
+ * internal figure that would have called it 1. Two conventions for one idea.
+ *
+ * The two qualifiers resolve a repeated target in the direction that keeps the
+ * statement true: a destination reachable through even one followed link is not
+ * nofollowed, and a destination opened unsafely even once is a real handle
+ * handed over.
+ */
 export interface ParsedExternalLinkFacts {
+  /** Distinct destinations, not anchor elements. */
   readonly total: number;
+  /** Destinations whose every occurrence carried `rel=nofollow`. */
   readonly nofollow: number;
-  /** `target=_blank` without `rel=noopener`, which hands over a window handle. */
+  /** Destinations opened by at least one `target=_blank` without noopener. */
   readonly blankWithoutNoopener: number;
+}
+
+/**
+ * Whether the page can act on a visitor's intent, or only send them onward.
+ *
+ * Structural counts only. A component mounted by client JavaScript is not in
+ * the transferred HTML and cannot be counted here, which is a limitation the
+ * report has to state rather than a fact it can assert — so these feed an
+ * observation about what the static document offers, never a verdict that the
+ * page offers nothing.
+ */
+export interface ParsedInteractiveFacts {
+  readonly forms: number;
+  readonly inputs: number;
+  readonly buttons: number;
+  readonly selects: number;
+  readonly textareas: number;
+  readonly canvases: number;
+  readonly media: number;
+  readonly iframes: number;
+}
+
+/**
+ * Body text measured in the units every downstream density and length uses.
+ *
+ * Measured over the whole static body, not a sample. The share of CJK used to
+ * be decided from the 500-character excerpt and then applied to the full-body
+ * word count: a page opening in English and continuing in Chinese passed the
+ * threshold and published a word count wrong by two orders of magnitude, which
+ * the score then read as a thin page. Counting the whole body removes the
+ * sample, and publishing the counts rather than the text keeps the payload the
+ * size it was.
+ */
+export interface ParsedTextMetrics {
+  /** Code points counted one unit each because they carry no word gaps. */
+  readonly cjkChars: number;
+  /** Whitespace-separated runs remaining once those code points are removed. */
+  readonly nonCjkWords: number;
+  /** Non-whitespace code points, the denominator of the CJK share. */
+  readonly denseChars: number;
 }
 
 export interface ParsedOnPageFacts {
@@ -121,11 +178,40 @@ export interface ParsedOnPageFacts {
    */
   readonly htmlBytes: number;
   readonly visibleTextBytes: number;
+  /**
+   * UTF-8 bytes inside `<script>` elements, inline bundles and data included.
+   *
+   * Paired with `visibleTextBytes` this separates a document that ships its
+   * content from one that ships a program that will fetch it.
+   */
+  readonly scriptBytes: number;
+  readonly interactive: ParsedInteractiveFacts;
+  readonly textMetrics: ParsedTextMetrics;
 }
 
 // ---------------------------------------------------------------------------
 // Low-level regex helpers (vendor-copied from page.ts / extract.ts).
 // ---------------------------------------------------------------------------
+
+/**
+ * Match one element's opening tag without stopping at a `>` inside a value.
+ *
+ * `[^>]*` ends the tag at the first `>` in the source, and `>` is ordinary
+ * text inside an attribute value: `<img src="a.png" title="a > b" alt="Real">`
+ * was cut before `alt` and published as an image carrying no alt text. Quoted
+ * runs are consumed whole here, so only a `>` outside quotes closes the tag.
+ */
+function openingTagPattern(name: string, flags: string): RegExp {
+  return new RegExp(`<${name}\\b(?:[^>"']|"[^"]*"|'[^']*')*>`, flags);
+}
+
+/** The same tolerance for an element read together with its content. */
+function elementPattern(name: string, flags: string): RegExp {
+  return new RegExp(
+    `<${name}\\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\\s\\S]*?)<\\/${name}\\s*>`,
+    flags,
+  );
+}
 
 /**
  * Read one attribute off a tag.
@@ -173,6 +259,22 @@ function firstTag(html: string, pattern: RegExp): string | undefined {
 }
 
 /**
+ * Elements whose contents are markup-shaped but are not markup on the page.
+ *
+ * An inline template, a `document.write` string, or a JSON bundle carrying HTML
+ * is a `<img>` to a regex and nothing at all to a reader. Counting those was
+ * measured reporting images and links a browser never renders. Removed once,
+ * before any structural collector runs; JSON-LD and byte sizes read the
+ * document before this step because they are about exactly what was shipped.
+ */
+const NON_RENDERED_ELEMENT =
+  /<\s*(script|style|template)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi;
+
+function withoutNonRenderedElements(html: string): string {
+  return html.replace(NON_RENDERED_ELEMENT, " ");
+}
+
+/**
  * The named references this parser resolves, plus numeric ones.
  *
  * `&apos;` is here because HTML5 defines it and every browser resolves it: a
@@ -200,7 +302,8 @@ const HTML_NAMED: Readonly<Record<string, string>> = {
  *
  * A single scan cannot revisit what it has already written.
  */
-const HTML_ENTITY = /&(?:#(-?(?:x[0-9a-f]+|\d+))|(nbsp|amp|lt|gt|quot|apos));/gi;
+const HTML_ENTITY =
+  /&(?:#(-?(?:x[0-9a-f]+|\d+))|(nbsp|amp|lt|gt|quot|apos));/gi;
 
 function decodeHtml(value: string): string {
   return value.replace(
@@ -222,7 +325,6 @@ function decodeHtml(value: string): string {
     },
   );
 }
-
 
 /**
  * Extract stable visible body text: remove chrome/executable content, strip
@@ -494,7 +596,6 @@ function parseRobotsDirectives(content: string | null): readonly string[] {
 // Entry point.
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // On-page facts (added here, not vendored: the upstream crawler has no
 // equivalent). Everything below reads the same already-parsed tag soup and
@@ -503,15 +604,26 @@ function parseRobotsDirectives(content: string | null): readonly string[] {
 
 const UTF8 = new TextEncoder();
 
-/** Meta value by `property=` (Open Graph) or `name=` (everything else). */
+/**
+ * Meta value by the preferred key attribute, falling back to the other one.
+ *
+ * Open Graph specifies `property` and everything else specifies `name`, but
+ * consumers are not that strict and neither are authors. Twitter's own parser
+ * accepts `<meta property="twitter:card">`, so a page declaring it that way has
+ * a working card; reading only `name` reported the card as missing and marked
+ * the page down for a tag it had.
+ */
 function metaContent(
   metaTags: readonly string[],
   key: string,
   attribute: "property" | "name",
 ): string | null {
-  const tag = metaTags.find(
-    (candidate) => attr(candidate, attribute)?.toLowerCase() === key,
-  );
+  const other = attribute === "property" ? "name" : "property";
+  const tag =
+    metaTags.find(
+      (candidate) => attr(candidate, attribute)?.toLowerCase() === key,
+    ) ??
+    metaTags.find((candidate) => attr(candidate, other)?.toLowerCase() === key);
   return normalisedAttributeText(
     attr(tag, "content"),
     CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
@@ -519,17 +631,119 @@ function metaContent(
 }
 
 function collectImageFacts(html: string): ParsedImageFacts {
-  const tags = [...html.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0]);
+  const tags = [...html.matchAll(openingTagPattern("img", "gi"))].map(
+    (match) => match[0],
+  );
   let withAlt = 0;
   let withEmptyAlt = 0;
   let withoutAlt = 0;
+  let withDimensions = 0;
+  let lazyLoaded = 0;
   for (const tag of tags) {
     const alt = attr(tag, "alt");
+    // Decoded before the emptiness test, like every other published text.
+    // `alt="&nbsp;"` is a decorative declaration written the long way, and
+    // reading it raw counted that image as carrying a description.
     if (alt === null) withoutAlt += 1;
-    else if (alt.trim() === "") withEmptyAlt += 1;
+    else if (decodeHtml(alt).replace(/\u00a0/g, " ").trim() === "")
+      withEmptyAlt += 1;
     else withAlt += 1;
+
+    const width = attr(tag, "width");
+    const height = attr(tag, "height");
+    if (
+      width !== null &&
+      width.trim() !== "" &&
+      height !== null &&
+      height.trim() !== ""
+    )
+      withDimensions += 1;
+    if ((attr(tag, "loading") ?? "").trim().toLowerCase() === "lazy")
+      lazyLoaded += 1;
   }
-  return { total: tags.length, withAlt, withEmptyAlt, withoutAlt };
+  return {
+    total: tags.length,
+    withAlt,
+    withEmptyAlt,
+    withoutAlt,
+    withDimensions,
+    lazyLoaded,
+  };
+}
+
+/** Counts of the elements through which a page can act on a visitor's intent. */
+function collectInteractiveFacts(html: string): ParsedInteractiveFacts {
+  const count = (name: string): number =>
+    [...html.matchAll(openingTagPattern(name, "gi"))].length;
+  return {
+    forms: count("form"),
+    inputs: count("input"),
+    buttons:
+      count("button") +
+      [...html.matchAll(openingTagPattern("input", "gi"))].filter((match) =>
+        ["submit", "button"].includes(
+          (attr(match[0], "type") ?? "").trim().toLowerCase(),
+        ),
+      ).length,
+    selects: count("select"),
+    textareas: count("textarea"),
+    canvases: count("canvas"),
+    media: count("video") + count("audio"),
+    iframes: count("iframe"),
+  };
+}
+
+/**
+ * Code points that carry no word gaps, counted one unit each.
+ *
+ * The same ranges the audit's `text_units.v1` counter uses. Kept here as well
+ * as there because this package is the lower layer and cannot import the
+ * higher one; a cross-package test drives the real parser and the real counter
+ * over the same corpus so the two cannot drift apart unnoticed.
+ */
+const CJK_UNIT_PATTERN = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/gu;
+
+function textMetricsOf(bodyText: string): ParsedTextMetrics {
+  const cjkMatches = bodyText.match(CJK_UNIT_PATTERN);
+  const dense = bodyText.replace(/\s+/gu, "");
+  return {
+    cjkChars: cjkMatches === null ? 0 : cjkMatches.length,
+    nonCjkWords: bodyText
+      .replace(CJK_UNIT_PATTERN, "")
+      .split(/\s+/u)
+      .filter(Boolean).length,
+    denseChars: [...dense].length,
+  };
+}
+
+function collectScriptBytes(html: string): number {
+  let bytes = 0;
+  for (const match of html.matchAll(elementPattern("script", "gi"))) {
+    bytes += UTF8.encode(match[2] ?? "").length;
+  }
+  return bytes;
+}
+
+/**
+ * Whether two origins belong to the same site for outbound-link purposes.
+ *
+ * `https://example.com` and `https://www.example.com` are one site to every
+ * reader and two origins to `URL`. Treating them as separate published pages
+ * that link only to themselves as having no internal links at all, on any site
+ * serving both hosts without redirecting. A deeper subdomain stays external:
+ * that is a judgement about ownership this parser has no evidence for.
+ */
+function isSameSite(left: string, right: string): boolean {
+  if (left === right) return true;
+  const bare = (origin: string): string | null => {
+    try {
+      return new URL(origin).host.replace(/^www\./i, "");
+    } catch {
+      return null;
+    }
+  };
+  const leftHost = bare(left);
+  return leftHost !== null && leftHost === bare(right);
 }
 
 function collectExternalLinkFacts(
@@ -537,10 +751,11 @@ function collectExternalLinkFacts(
   pageUrl: string,
   pageOrigin: string,
 ): ParsedExternalLinkFacts {
-  let total = 0;
-  let nofollow = 0;
-  let blankWithoutNoopener = 0;
-  for (const match of html.matchAll(/<a\b[^>]*>/gi)) {
+  const byTarget = new Map<
+    string,
+    { followedSomewhere: boolean; unsafeSomewhere: boolean }
+  >();
+  for (const match of html.matchAll(openingTagPattern("a", "gi"))) {
     const tag = match[0];
     const href = attr(tag, "href");
     if (href === null) continue;
@@ -552,23 +767,40 @@ function collectExternalLinkFacts(
     } catch {
       continue;
     }
-    if (origin === pageOrigin) continue;
-    total += 1;
-    const rel = (attr(tag, "rel") ?? "").toLowerCase();
-    const relTokens = new Set(rel.split(/\s+/).filter(Boolean));
-    if (relTokens.has("nofollow")) nofollow += 1;
-    const opensNewWindow = (attr(tag, "target") ?? "").toLowerCase() === "_blank";
+    if (isSameSite(origin, pageOrigin)) continue;
+
+    const relTokens = new Set(
+      (attr(tag, "rel") ?? "").toLowerCase().split(/\s+/).filter(Boolean),
+    );
+    const opensNewWindow =
+      (attr(tag, "target") ?? "").toLowerCase() === "_blank";
     // `noreferrer` implies `noopener` per HTML, so a link carrying it is not
     // handing anything over and must not be counted as if it were.
     const opensSafely =
       relTokens.has("noopener") || relTokens.has("noreferrer");
-    if (opensNewWindow && !opensSafely) blankWithoutNoopener += 1;
+
+    const seen = byTarget.get(pair.subjectUrl) ?? {
+      followedSomewhere: false,
+      unsafeSomewhere: false,
+    };
+    byTarget.set(pair.subjectUrl, {
+      followedSomewhere: seen.followedSomewhere || !relTokens.has("nofollow"),
+      unsafeSomewhere: seen.unsafeSomewhere || (opensNewWindow && !opensSafely),
+    });
   }
-  return { total, nofollow, blankWithoutNoopener };
+  const targets = [...byTarget.values()];
+  return {
+    total: targets.length,
+    nofollow: targets.filter((entry) => !entry.followedSomewhere).length,
+    blankWithoutNoopener: targets.filter((entry) => entry.unsafeSomewhere)
+      .length,
+  };
 }
 
 function collectHreflang(html: string): readonly string[] {
-  const tags = [...html.matchAll(/<link\b[^>]*>/gi)].map((match) => match[0]);
+  const tags = [...html.matchAll(openingTagPattern("link", "gi"))].map(
+    (match) => match[0],
+  );
   const seen: string[] = [];
   for (const tag of tags) {
     if (attr(tag, "rel")?.toLowerCase() !== "alternate") continue;
@@ -601,7 +833,9 @@ function collectCharset(metaTags: readonly string[]): string | null {
   const equiv = metaTags.find(
     (tag) => attr(tag, "http-equiv")?.toLowerCase() === "content-type",
   );
-  const declared = attr(equiv, "content")?.match(/charset\s*=\s*([\w-]+)/i)?.[1];
+  const declared = attr(equiv, "content")?.match(
+    /charset\s*=\s*([\w-]+)/i,
+  )?.[1];
   return declared
     ? boundChars(
         declared.toLowerCase(),
@@ -611,7 +845,7 @@ function collectCharset(metaTags: readonly string[]): string | null {
 }
 
 function collectFaviconDeclared(html: string): boolean {
-  for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
+  for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
     const rel = (attr(match[0], "rel") ?? "").toLowerCase();
     const tokens = new Set(rel.split(/\s+/).filter(Boolean));
     const isIconRel =
@@ -631,9 +865,10 @@ function collectFaviconDeclared(html: string): boolean {
 }
 
 function collectOnPageFacts(
-  html: string,
+  /** Comment-free markup with script/style/template contents removed. */
+  markup: string,
   metaTags: readonly string[],
-  pageUrl: string,
+  baseUrl: string,
   pageOrigin: string,
   bodyText: string,
   htmlTag: string | undefined,
@@ -653,12 +888,15 @@ function collectOnPageFacts(
     twitterCard: metaContent(metaTags, "twitter:card", "name"),
     viewport: metaContent(metaTags, "viewport", "name"),
     charset: collectCharset(metaTags),
-    faviconDeclared: collectFaviconDeclared(html),
-    hreflang: collectHreflang(html),
-    images: collectImageFacts(html),
-    externalLinks: collectExternalLinkFacts(html, pageUrl, pageOrigin),
+    faviconDeclared: collectFaviconDeclared(markup),
+    hreflang: collectHreflang(markup),
+    images: collectImageFacts(markup),
+    externalLinks: collectExternalLinkFacts(markup, baseUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,
+    scriptBytes: collectScriptBytes(rawHtml),
+    interactive: collectInteractiveFacts(markup),
+    textMetrics: textMetricsOf(bodyText),
   };
 }
 
@@ -681,6 +919,13 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
    * is what was transferred.
    */
   const html = rawHtml.replace(/<!--[\s\S]*?-->/g, "");
+  /**
+   * The same document with the elements a reader never sees taken out.
+   *
+   * JSON-LD and byte sizes deliberately read `html` and `rawHtml` instead: one
+   * is about what a script block contains, the other about what was shipped.
+   */
+  const markup = withoutNonRenderedElements(html);
   let pageOrigin: string;
   try {
     pageOrigin = new URL(pageUrl).origin;
@@ -688,13 +933,40 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
     pageOrigin = "";
   }
 
-  const canonicalTag = firstTag(
-    html,
-    /<link\b[^>]*\brel\s*=\s*["']canonical["'][^>]*>/i,
+  /**
+   * `<base href>` moves the origin of every relative URL on the page.
+   *
+   * Browsers honour it and this parser did not, so a document declaring
+   * `<base href="/shop/">` had every relative link resolved one directory too
+   * high — wrong link graph, wrong canonical target, and internal links
+   * classified against the wrong paths. Only an absolute, http(s) base is
+   * accepted; anything else leaves the page URL as the base, which is what a
+   * browser falls back to as well.
+   */
+  const baseHref = attr(
+    firstTag(markup, openingTagPattern("base", "i")),
+    "href",
   );
+  const resolvedBase = ((): string => {
+    if (baseHref === null || baseHref.trim() === "") return pageUrl;
+    try {
+      const candidate = new URL(decodeHtml(baseHref).trim(), pageUrl);
+      return candidate.protocol === "http:" || candidate.protocol === "https:"
+        ? candidate.href
+        : pageUrl;
+    } catch {
+      return pageUrl;
+    }
+  })();
+
+  const canonicalTag = [
+    ...markup.matchAll(openingTagPattern("link", "gi")),
+  ].find(
+    (match) => attr(match[0], "rel")?.trim().toLowerCase() === "canonical",
+  )?.[0];
   const canonicalHref = attr(canonicalTag, "href");
   const canonicalPair = canonicalHref
-    ? canonicalizeUrl(decodeHtml(canonicalHref), pageUrl)
+    ? canonicalizeUrl(decodeHtml(canonicalHref), resolvedBase)
     : null;
   const canonicalTarget =
     canonicalPair !== null &&
@@ -710,7 +982,9 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
         }
       : null;
 
-  const metaTags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((tag) => tag[0]);
+  const metaTags = [...markup.matchAll(openingTagPattern("meta", "gi"))].map(
+    (tag) => tag[0],
+  );
   const descriptionTag = metaTags.find(
     (tag) => attr(tag, "name")?.toLowerCase() === "description",
   );
@@ -723,14 +997,14 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
     attr(descriptionTag, "content"),
     CRAWL_PROJECTION_LIMITS.maxMetaDescriptionChars,
   );
-  const bodyText = extractNormalisedBody(html);
+  const bodyText = extractNormalisedBody(markup);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
-  const outlinks = collectInternalOutlinks(html, pageUrl, pageOrigin);
-  const htmlTag = firstTag(html, /<html\b[^>]*>/i);
+  const outlinks = collectInternalOutlinks(markup, resolvedBase, pageOrigin);
+  const htmlTag = firstTag(markup, openingTagPattern("html", "i"));
   const onPage = collectOnPageFacts(
-    html,
+    markup,
     metaTags,
-    pageUrl,
+    resolvedBase,
     pageOrigin,
     bodyText,
     htmlTag,
@@ -739,19 +1013,19 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
 
   return {
     htmlLanguage: parseHtmlLanguageDeclaration(attr(htmlTag, "lang")),
-    title: tagText(html, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
+    title: tagText(markup, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: description,
     canonicalTarget,
     robotsDirectives,
     robotsIndexable: directivesIndexable(robotsDirectives),
-    h1: collectH1(html),
-    headings: collectHeadings(html),
+    h1: collectH1(markup),
+    headings: collectHeadings(markup),
     wordCount,
     internalOutlinks: outlinks.projections,
     internalFetchTargets: outlinks.fetchTargets,
     canonicalFetchTarget,
     jsonLd: collectJsonLd(html),
-    paragraphs: collectParagraphs(html),
+    paragraphs: collectParagraphs(markup),
     bodyExcerpt: bodyText
       ? truncate(bodyText, CRAWL_PROJECTION_LIMITS.maxBodyExcerptChars)
       : null,

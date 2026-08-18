@@ -1,4 +1,5 @@
 import type { PublicToolResultEnvelope } from "../contract.ts";
+import type { TextUnitsBasis } from "./keyword-evidence/text-units.ts";
 
 export type SeoAuditAvailability = "available" | "partial" | "unavailable";
 export type SeoAuditRecordState = "observed" | "not_observed" | "unverified";
@@ -55,6 +56,17 @@ export interface SeoAuditRecord {
   readonly unit: SeoAuditRecordUnit;
   readonly population: SeoAuditRecordPopulation;
   readonly tested: number;
+  /**
+   * Whether one named page was inside this rule's tested population.
+   *
+   * Null when the question does not arise: no page was named, or the rule
+   * counts something other than pages. Published because `population` alone
+   * cannot answer it — a rule that tested a qualifying subset says nothing
+   * about a page that never qualified, and says a great deal about one that
+   * did. Without this, every conditional rule had to report "not covered" for
+   * both, which is false for the common case and reads as a hole in the audit.
+   */
+  readonly targetTested: boolean | null;
   readonly affected: number;
   readonly observations: readonly SeoAuditObservation[];
   readonly limitation: string | null;
@@ -143,6 +155,9 @@ export interface SeoAuditTargetDeclaredFacts {
     /** `alt=""`, a correct decorative declaration — not a missing alt. */
     readonly withEmptyAlt: number;
     readonly withoutAlt: number;
+    /** Both `width` and `height` declared, which is what reserves the box. */
+    readonly withDimensions: number;
+    readonly lazyLoaded: number;
   };
   readonly externalLinks: {
     readonly total: number;
@@ -152,6 +167,19 @@ export interface SeoAuditTargetDeclaredFacts {
   /** UTF-8 bytes, not characters: a CJK page would read a third of its size. */
   readonly htmlBytes: number;
   readonly visibleTextBytes: number;
+  /** UTF-8 bytes inside `<script>`, which is what a document ships instead. */
+  readonly scriptBytes: number;
+  /** Elements a visitor can act through, as far as static HTML can see them. */
+  readonly interactive: {
+    readonly forms: number;
+    readonly inputs: number;
+    readonly buttons: number;
+    readonly selects: number;
+    readonly textareas: number;
+    readonly canvases: number;
+    readonly media: number;
+    readonly iframes: number;
+  };
 }
 
 /** The crawl's own HTTP journey to the target page. Known once it was collected. */
@@ -193,9 +221,22 @@ export interface SeoAuditTargetPageExtract {
    *
    * Null for pages written mostly in a script with no word gaps, where the
    * count would be off by an order of magnitude. A known-wrong number does not
-   * get published just because a number is expected.
+   * get published just because a number is expected. Prefer `staticBodyUnits`
+   * for anything that has to hold across scripts; this stays because "words"
+   * is what a reader of an English page expects to see.
    */
   readonly staticBodyWords: number | null;
+  /**
+   * The same body in `text_units.v1`, which every script can be counted in.
+   *
+   * CJK code points count one unit each and the rest counts in whitespace
+   * runs, so a Chinese page finally has a length rather than an absence. Null
+   * only when the crawl did not carry the side-car that measured it.
+   */
+  readonly staticBodyUnits: {
+    readonly units: number;
+    readonly basis: TextUnitsBasis;
+  } | null;
   /** True when a list field was cut to its own budget before publication. */
   readonly truncatedLists: boolean;
   /** The crawl's HTTP journey to this page. */

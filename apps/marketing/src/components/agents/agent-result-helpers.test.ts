@@ -29,6 +29,7 @@ function record(
     state,
     unit,
     population: "every_collected_page",
+    targetTested: null,
     tested: 12,
     affected,
     observations: Array.from({ length: affected }, (_, index) => ({

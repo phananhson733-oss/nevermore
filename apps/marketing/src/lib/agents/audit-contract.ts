@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v6 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v7 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -26,6 +26,7 @@ import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
   isSeoAuditRecord,
+  isSeoAuditTargetPageExtract,
 } from "@sf/public-tools/seo-audit/contract";
 
 export { isCanonicalIsoTimestamp };
@@ -33,11 +34,11 @@ export { isCanonicalIsoTimestamp };
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v6" as const;
+  "seo_audit.sitewide.v7" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v6. */
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v7. */
 export const AGENT_AUDIT_RECORD_CATEGORIES = {
   robots_resource: "crawl",
   sitemap_resource: "crawl",
@@ -250,33 +251,18 @@ function isKeywordEvidenceShape(value: unknown): value is KeywordEvidence {
 }
 
 /**
- * The extract as the Agent publishes it: exactly these keys, nothing else.
+ * The extract as the Agent publishes it, checked all the way down.
  *
- * The upstream guard already bounds the values; this one exists because the
- * projection is what decides what reaches a browser, and "whatever the payload
- * had" is not a decision.
+ * The projection is what decides what reaches a browser, and "whatever the
+ * payload had" is not a decision. It used to restate the key list here and
+ * check only that — no types, no bounds, and never inside `response` or
+ * `declared`, which is where every field added since then went. The upstream
+ * guard is the one definition of this shape, so the projection defers to it
+ * instead of keeping a second list that can fall behind.
  */
 function isAgentTargetPageExtract(value: unknown): boolean {
-  if (!isObject(value)) return false;
-  const keys = Object.keys(value);
-  return (
-    keys.length === AGENT_EXTRACT_KEYS.length &&
-    keys.every((key) => AGENT_EXTRACT_KEYS.includes(key))
-  );
+  return isSeoAuditTargetPageExtract(value);
 }
-
-const AGENT_EXTRACT_KEYS: readonly string[] = [
-  "url",
-  "title",
-  "metaDescription",
-  "h1",
-  "subHeadings",
-  "openingText",
-  "staticBodyWords",
-  "truncatedLists",
-  "response",
-  "declared",
-];
 
 const SLOT_STATES: readonly string[] = [
   "covered",

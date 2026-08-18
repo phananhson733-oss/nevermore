@@ -287,6 +287,10 @@ function projectRecord(record: SeoAuditRecord): SeoAuditRecord {
     // downgrade every page-level check to unverified.
     population: record.population,
     tested: record.tested,
+    // Whether the submitted page was inside that population. Without it a
+    // conditional rule can only say "not covered", which is false for a page
+    // that did qualify and was clean.
+    targetTested: record.targetTested,
     affected: record.affected,
     observations: record.observations.map((observation) => ({
       url: observation.url,
@@ -343,6 +347,13 @@ function projectTargetPageExtract(
     subHeadings: extract.subHeadings === null ? null : [...extract.subHeadings],
     openingText: extract.openingText,
     staticBodyWords: extract.staticBodyWords,
+    staticBodyUnits:
+      extract.staticBodyUnits === null
+        ? null
+        : {
+            units: extract.staticBodyUnits.units,
+            basis: extract.staticBodyUnits.basis,
+          },
     truncatedLists: extract.truncatedLists,
     response: {
       status: extract.response.status,
@@ -380,6 +391,8 @@ function projectTargetPageExtract(
               withAlt: extract.declared.images.withAlt,
               withEmptyAlt: extract.declared.images.withEmptyAlt,
               withoutAlt: extract.declared.images.withoutAlt,
+              withDimensions: extract.declared.images.withDimensions,
+              lazyLoaded: extract.declared.images.lazyLoaded,
             },
             externalLinks: {
               total: extract.declared.externalLinks.total,
@@ -389,6 +402,17 @@ function projectTargetPageExtract(
             },
             htmlBytes: extract.declared.htmlBytes,
             visibleTextBytes: extract.declared.visibleTextBytes,
+            scriptBytes: extract.declared.scriptBytes,
+            interactive: {
+              forms: extract.declared.interactive.forms,
+              inputs: extract.declared.interactive.inputs,
+              buttons: extract.declared.interactive.buttons,
+              selects: extract.declared.interactive.selects,
+              textareas: extract.declared.interactive.textareas,
+              canvases: extract.declared.interactive.canvases,
+              media: extract.declared.interactive.media,
+              iframes: extract.declared.interactive.iframes,
+            },
           },
   };
 }
