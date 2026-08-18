@@ -61,7 +61,7 @@ function lookup(messages: Record<string, unknown>, key: string): unknown {
 describe("Agents submenu", () => {
   it("matches the routed Agent pages exactly", () => {
     expect(menuSlugs().sort()).toEqual(routedAgentSlugs());
-    expect(menuSlugs().sort()).toEqual(["seo", "tech"]);
+    expect(menuSlugs().sort()).toEqual(["geo", "seo", "tech"]);
   });
 
   it("does not repeat an Agent across groups", () => {

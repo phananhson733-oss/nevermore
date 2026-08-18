@@ -37,6 +37,10 @@
         "label": "SEO Agent",
         "description": "基于保留的证据，审查元数据、标题结构与结构化数据状态。"
       },
+      "geo": {
+        "label": "GEO Agent",
+        "description": "看 AI 的回答会不会引用你的站点，每个问题采样三次。"
+      },
       "tech": {
         "label": "Tech Agent",
         "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
@@ -2434,11 +2438,136 @@
         "scope": "Metadata · 页面结构 · 结构化数据",
         "cta": "打开 SEO Agent"
       },
+      "geo": {
+        "title": "GEO Agent",
+        "description": "把买家真正会问的问题各问三遍，看 AI 的回答引用了谁。",
+        "scope": "买家问题 · 重复采样 · 引用",
+        "cta": "打开 GEO Agent"
+      },
       "tech": {
         "title": "Tech Agent",
         "description": "检查有边界抓取中观测到的响应、静态索引指令和内链情况。",
         "scope": "抓取 · 索引性 · 内链",
         "cta": "打开 Tech Agent"
+      }
+    },
+    "geo": {
+      "name": "GEO Agent",
+      "metaTitle": "GEO Agent：AI 回答引用观测",
+      "metaDescription": "把买家真正会问的问题各问三遍，看 AI 回答引用了谁。给出完整分母，不给可见度总分。",
+      "eyebrow": "GEO Agent · AI 回答",
+      "title": "看 AI 的回答会不会引用你的站点",
+      "subtitle": "八个买家问题，每个问三遍，对真实的 ChatGPT 回答。问题由你确认之后才会开始运行；报告会把「联网检索后作答」和「凭记忆作答」分开列出。",
+      "heroCta": "运行 GEO Agent",
+      "accountBoundaryTitle": "账号访问门",
+      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每次运行会产生 24 次计费的服务商调用，因此不提供匿名使用。",
+      "dataBoundaryTitle": "不做任何存储",
+      "dataBoundaryBody": "报告只返回到当前页面，不写入任何地方：没有账号历史，也不在服务端保存助手的回答正文。离开页面即结束，需要的内容请先自行复制。",
+      "howEyebrow": "工作方式",
+      "howTitle": "从买家问题到可核对的引用",
+      "howBody": "报告里的每个数字都由它下面的采样重新算出；两种「什么都没观察到」的状态单独列出，不会被当成 0 计入。",
+      "step1Title": "描述你的买家",
+      "step1Body": "告诉 Agent 这个站点卖什么、谁来买。系统据此生成八个问题，覆盖从认知到决策的各个阶段。",
+      "step2Title": "确认问题集",
+      "step2Body": "凡是不像你买家说话的地方都可以改。确认之前不产生任何费用，确认的是哪一组，跑的就是哪一组。",
+      "step3Title": "每个问题采样三次",
+      "step3Body": "一次采样分不清「站点没被引用」和「这一次碰巧没引用」。三次可以，而且报告会告诉你是三次里的第几次。",
+      "step4Title": "带着分母去读",
+      "step4Body": "每个结论都写明它依据三次采样中的几次。三次采样全都没有联网检索的问题，会如实标成「凭记忆作答」而不是记成缺口——必须三次全是，因为只要有一次调用失败，就无从判断那一次会不会去检索。离开前先复制你需要的内容——这份报告不会被保存。",
+      "finalBoundary": "这份报告观测的是某一个助手在某一个时刻的回答。它不是排名，不是预测，也不是流量的度量。",
+      "workbench": {
+        "contextTitle": "描述这个站点卖什么",
+        "contextHint": "这些措辞会直接进入问题，所以请用你买家的说法，而不是内部命名。",
+        "urlLabel": "站点网址",
+        "urlPlaceholder": "acme.com",
+        "categoryLabel": "站点卖什么",
+        "categoryPlaceholder": "AI 可见度追踪",
+        "buyerLabel": "谁会购买",
+        "buyerPlaceholder": "SaaS 市场团队",
+        "rivalsLabel": "买家会提到的竞品",
+        "rivalsHint": "选填，用逗号分隔。用于措辞两个对比类问题，以及标注还有谁被引用。",
+        "rivalDomainsLabel": "竞品域名",
+        "rivalDomainsHint": "选填，用逗号分隔。仅用于给回答中已经存在的引用打标签。",
+        "generate": "生成买家问题",
+        "questionsTitle": "确认问题集",
+        "questionsHint": "每个确认的问题会被问三遍。可以改写，但措辞会显著影响模型会不会真的去联网检索：这些问法经过实测，要么问“当下”，要么点名竞品。实测中凡是以“for〈你的买家〉”结尾的改写，模型都是凭记忆作答，而没有检索的回答不会引用任何人。",
+        "questionCount": "{count} 个问题 · {samples} 次采样 · 运行前不产生任何费用",
+        "stageDiscovery": "认知",
+        "stageComparison": "对比",
+        "stageEvaluation": "评估",
+        "stageDecision": "决策",
+        "back": "修改描述",
+        "run": "运行 {samples} 次采样",
+        "running": "正在向助手提问……",
+        "runningHint": "大约需要两分钟。每个问题问三遍，多次采样并发进行。",
+        "signInRequired": "登录后运行"
+      },
+      "results": {
+        "title": "这次快照观察到了什么",
+        "coverageTitle": "覆盖情况",
+        "coverageAttempted": "尝试采样",
+        "coverageObserved": "有效观测",
+        "coverageNotSearched": "未联网搜索",
+        "coverageUnavailable": "不可用",
+        "coverageNote": "未执行联网搜索的采样和失败的采样，都被排除在下面所有计数之外，不会被读作 0。",
+        "sampledAt": "采样于 {date}",
+        "notStored": "本报告不会被保存，离开页面即结束。",
+        "model": "模型",
+        "market": "市场",
+        "citedHosts": "被引用",
+        "noCitedHosts": "这次回答没有引用任何来源",
+        "competitorTag": "竞品",
+        "sampleLabel": "第 {index} 次",
+        "questionsTitle": "逐个问题",
+        "citedInCount": "在 {total} 次有效采样中被引用 {cited} 次",
+        "empty": "本次运行没有任何问题产出有效采样。"
+      },
+      "verdicts": {
+        "stable_cited": "每次都被引用",
+        "intermittent": "有时被引用",
+        "not_observed": "未被引用",
+        "answered_from_memory": "凭记忆作答",
+        "inconclusive": "没有有效采样",
+        "stable_citedHint": "这个问题的每一次有效采样都引用了你的站点。",
+        "intermittentHint": "有的采样引用了你的站点，有的没有。这是最常见的真实结果。",
+        "not_observedHint": "这个问题的有效采样都没有引用你的站点。",
+        "answered_from_memoryHint": "ChatGPT 回答这个问题时没有联网检索，因此没有引用任何人——你没有，竞品也没有。除非换成会触发检索的问法，这里没有可争取的引用位。",
+        "inconclusiveHint": "这个问题什么都没观察到——这和「没有被引用」不是一回事。"
+      },
+      "states": {
+        "cited": "引用了你的站点",
+        "mentioned": "提到但未引用",
+        "cited_others_only": "引用了别人",
+        "answer_had_no_citations": "完全没有引用",
+        "search_not_performed": "未联网搜索",
+        "unavailable": "不可用"
+      },
+      "sampleLimitations": {
+        "time_budget": "本次运行在采集这次采样前已用完时间预算。",
+        "cost_ceiling": "本次运行在采集这次采样前已达到成本上限。",
+        "provider_not_configured": "本站点尚未配置回答服务商。",
+        "provider_timeout": "服务商未在时间预算内作答。",
+        "provider_rate_limited": "服务商的速率限制导致这次采样不可用。",
+        "provider_auth_failed": "回答服务商拒绝了本站点的凭据。",
+        "provider_no_answer": "服务商没有为这次采样返回可用的答案。",
+        "provider_failed": "服务商无法回答这次采样。"
+      },
+      "limitations": {
+        "title": "这份报告不能告诉你什么",
+        "sampling": "这是某一个时刻的三次采样。再问一遍可能得到不同的来源：实测中同一个问题的四次采样合计引用了 25 个域名，而没有任何一个域名在四次里都出现。",
+        "platform": "只覆盖 ChatGPT。它不能说明 Google AI Overviews、Perplexity、Claude 或 Gemini 的情况。",
+        "citation": "被引用不等于被推荐，也不是排名或流量的度量。",
+        "denominator": "不可用不等于 0。失败的采样、以及助手没有联网就作答的采样，都会被排除，而不是算作对你不利。"
+      },
+      "errors": {
+        "auth_required": "请登录后运行 GEO Agent。",
+        "auth_unavailable": "登录服务暂时不可用，请稍后再试。",
+        "invalid_request": "请检查站点网址和问题，然后重试。",
+        "geo_client_outdated": "当前页面与 Agent 的版本不一致。请刷新页面后重新运行——本次没有产生任何计费。",
+        "geo_budget_exhausted": "GEO Agent 今天的运行额度已用完，请明天再来。",
+        "geo_budget_unavailable": "当前无法核对运行额度，请稍后再试。",
+        "geo_report_invalid": "报告没有通过自身的一致性校验，因此没有展示。",
+        "unknown": "本次运行没能完成，没有保存任何内容。"
       }
     },
     "seo": {

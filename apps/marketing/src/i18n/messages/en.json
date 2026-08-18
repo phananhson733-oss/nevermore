@@ -37,6 +37,10 @@
         "label": "SEO Agent",
         "description": "Review metadata, headings, and structured-data conditions with preserved evidence."
       },
+      "geo": {
+        "label": "GEO Agent",
+        "description": "See whether AI answers cite your site, sampled three times per question."
+      },
       "tech": {
         "label": "Tech Agent",
         "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
@@ -2434,11 +2438,136 @@
         "scope": "Metadata · Structure · Structured data",
         "cta": "Open SEO Agent"
       },
+      "geo": {
+        "title": "GEO Agent",
+        "description": "Ask a real AI assistant your buyers' questions three times each and see which sources it cited.",
+        "scope": "Buyer questions · Repeated sampling · Citations",
+        "cta": "Open GEO Agent"
+      },
       "tech": {
         "title": "Tech Agent",
         "description": "Review crawl responses, static indexability directives, and internal-link conditions observed in the bounded crawl.",
         "scope": "Crawl · Indexability · Links",
         "cta": "Open Tech Agent"
+      }
+    },
+    "geo": {
+      "name": "GEO Agent",
+      "metaTitle": "GEO Agent for AI Answer Visibility",
+      "metaDescription": "Ask a real AI assistant your buyers' questions three times each and see which sources it cited, with the full denominator and no visibility score.",
+      "eyebrow": "GEO Agent · AI answers",
+      "title": "See whether AI answers cite your site",
+      "subtitle": "Eight buyer questions, each asked three times against a real ChatGPT answer. You confirm every question before anything runs, and the report separates the answers that searched the web from the ones the assistant wrote from memory.",
+      "heroCta": "Run GEO Agent",
+      "accountBoundaryTitle": "Account access gate",
+      "accountBoundaryBody": "A verified Supabase session is required to run. Each run makes 24 billed provider calls, so it is not available anonymously.",
+      "dataBoundaryTitle": "Nothing is stored",
+      "dataBoundaryBody": "The report is returned to this page and never written down: no account history, no server copy of the assistant's answer. Leaving the page ends it, so copy anything you need before you go.",
+      "howEyebrow": "How it works",
+      "howTitle": "From buyer questions to observed citations",
+      "howBody": "Every number in the report is recomputed from the samples underneath it, and the two states that observe nothing are reported separately instead of counting as a zero.",
+      "step1Title": "Describe the buyer",
+      "step1Body": "Tell the Agent what the site sells and who buys it. Eight questions are generated from that, spanning discovery through decision.",
+      "step2Title": "Confirm the questions",
+      "step2Body": "Edit anything that does not sound like your buyer. Nothing is billed until you confirm, and the set you confirm is exactly the set that runs.",
+      "step3Title": "Sample each question three times",
+      "step3Body": "One sample cannot tell a site that is not cited apart from a run that happened not to cite it. Three can, and the report says which of the three it was.",
+      "step4Title": "Read it with its denominator",
+      "step4Body": "Every verdict says how many of the three samples it rests on. A question all three samples answered without searching is reported as exactly that, not as a gap — all three, because one failed call leaves it unknown whether that call would have searched. Copy what you need before you leave — the report is not saved.",
+      "finalBoundary": "This report observes what one assistant answered at one moment. It is not a ranking, not a forecast, and not a measure of traffic.",
+      "workbench": {
+        "contextTitle": "Describe what the site sells",
+        "contextHint": "These words go into the questions, so use your buyer's vocabulary rather than your internal naming.",
+        "urlLabel": "Site URL",
+        "urlPlaceholder": "acme.com",
+        "categoryLabel": "What the site sells",
+        "categoryPlaceholder": "AI visibility tracking",
+        "buyerLabel": "Who buys it",
+        "buyerPlaceholder": "SaaS marketing teams",
+        "rivalsLabel": "Competitors your buyer would name",
+        "rivalsHint": "Optional, comma separated. Used to word the two comparison questions and to label who else got cited.",
+        "rivalDomainsLabel": "Competitor domains",
+        "rivalDomainsHint": "Optional, comma separated. Only used to label citations that are already in the answer.",
+        "generate": "Generate buyer questions",
+        "questionsTitle": "Confirm the questions",
+        "questionsHint": "Each confirmed question is asked three times. Editing is expected, but the wording strongly affects whether the assistant searches the web at all: these were measured to ask for something current, or to name a competitor. Every rewrite measured ending in “for <your buyer>” got answered from memory instead, and an answer with no search cites nobody.",
+        "questionCount": "{count} questions · {samples} samples · nothing is billed until you run",
+        "stageDiscovery": "Discovery",
+        "stageComparison": "Comparison",
+        "stageEvaluation": "Evaluation",
+        "stageDecision": "Decision",
+        "back": "Change the description",
+        "run": "Run {samples} samples",
+        "running": "Asking the assistant…",
+        "runningHint": "This takes about two minutes. Each question is asked three times, and the samples run concurrently.",
+        "signInRequired": "Sign in to run"
+      },
+      "results": {
+        "title": "What this snapshot observed",
+        "coverageTitle": "Coverage",
+        "coverageAttempted": "Samples attempted",
+        "coverageObserved": "Observed",
+        "coverageNotSearched": "No web search",
+        "coverageUnavailable": "Unavailable",
+        "coverageNote": "Samples without a web search, and samples that failed, are excluded from every count below rather than read as a zero.",
+        "sampledAt": "Sampled {date}",
+        "notStored": "This report is not saved. Leaving the page ends it.",
+        "model": "Model",
+        "market": "Market",
+        "citedHosts": "Cited",
+        "noCitedHosts": "No sources cited in this answer",
+        "competitorTag": "competitor",
+        "sampleLabel": "Sample {index}",
+        "questionsTitle": "Question by question",
+        "citedInCount": "Cited in {cited} of {total} usable samples",
+        "empty": "No question produced a usable sample in this run."
+      },
+      "verdicts": {
+        "stable_cited": "Cited every time",
+        "intermittent": "Cited sometimes",
+        "not_observed": "Not cited",
+        "answered_from_memory": "Answered from memory",
+        "inconclusive": "No usable sample",
+        "stable_citedHint": "Your site was cited in every usable sample of this question.",
+        "intermittentHint": "Your site was cited in some samples and not others. This is the most common real result.",
+        "not_observedHint": "No usable sample of this question cited your site.",
+        "answered_from_memoryHint": "ChatGPT answered this without searching the web, so it cited nobody — not you, and not your competitors. There is no citation to win here unless the question becomes one it looks up.",
+        "inconclusiveHint": "Nothing was observed for this question, which is not the same as not being cited."
+      },
+      "states": {
+        "cited": "Your site cited",
+        "mentioned": "Named, not cited",
+        "cited_others_only": "Others cited",
+        "answer_had_no_citations": "No citations at all",
+        "search_not_performed": "No web search",
+        "unavailable": "Unavailable"
+      },
+      "sampleLimitations": {
+        "time_budget": "The run reached its time budget before this sample was taken.",
+        "cost_ceiling": "The run reached its cost ceiling before this sample was taken.",
+        "provider_not_configured": "The answer provider is not configured for this site.",
+        "provider_timeout": "The provider did not answer within the time budget.",
+        "provider_rate_limited": "The provider rate limit made this sample unavailable.",
+        "provider_auth_failed": "The answer provider rejected this site's credentials.",
+        "provider_no_answer": "The provider returned no usable answer for this sample.",
+        "provider_failed": "The provider could not answer this sample."
+      },
+      "limitations": {
+        "title": "What this cannot tell you",
+        "sampling": "Three samples of one moment. Asking again can return different sources: in calibration, four samples of one question cited 25 hosts between them and not one host appeared in all four.",
+        "platform": "ChatGPT only. It says nothing about Google AI Overviews, Perplexity, Claude or Gemini.",
+        "citation": "A citation is not a recommendation, and being cited is not a ranking or a traffic estimate.",
+        "denominator": "Unavailable is not zero. A sample that failed, or that the assistant answered without searching, is excluded rather than counted against you."
+      },
+      "errors": {
+        "auth_required": "Sign in to run the GEO Agent.",
+        "auth_unavailable": "Sign-in is temporarily unavailable. Try again shortly.",
+        "invalid_request": "Check the site URL and the questions, then try again.",
+        "geo_client_outdated": "This page and the Agent are running different versions. Reload the page and run again — nothing was billed.",
+        "geo_budget_exhausted": "The GEO Agent has reached today's run budget. Try again tomorrow.",
+        "geo_budget_unavailable": "The run budget cannot be checked right now. Try again shortly.",
+        "geo_report_invalid": "The report did not pass its own consistency check, so it was not shown.",
+        "unknown": "The run could not be completed. Nothing was saved."
       }
     },
     "seo": {

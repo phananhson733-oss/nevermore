@@ -107,11 +107,12 @@ describe("sitemap tool list", () => {
 });
 
 describe("sitemap Agent routes", () => {
-  it("includes the directory and both focused Agents in the locale loop", () => {
+  it("includes the directory and every focused Agent in the locale loop", () => {
     const source = readFileSync(SITEMAP_MODULE, "utf8");
     expect(source).toContain('const locales = ["en", "zh"]');
     expect(source).toContain('"/agents"');
     expect(source).toContain('"/agents/seo"');
+    expect(source).toContain('"/agents/geo"');
     expect(source).toContain('"/agents/tech"');
     expect(source).toMatch(/for \(const locale of locales\)/);
     expect(source).toMatch(/for \(const page of staticPages\)/);
@@ -143,9 +144,10 @@ describe("connected tool paths", () => {
     expect(slugs.length).toBeGreaterThan(0);
     const routed = new Set(routedToolSlugs());
     for (const slug of slugs) {
-      expect(routed, `the hub links /tools/${slug}, which has no route`).toContain(
-        slug,
-      );
+      expect(
+        routed,
+        `the hub links /tools/${slug}, which has no route`,
+      ).toContain(slug);
     }
     // And in the other direction. Checking only that present cards resolve
     // would pass with the card deleted outright — the tool would simply be
