@@ -54,22 +54,45 @@ function isRecordPopulation(value: unknown): boolean {
   );
 }
 
+/** Categories a crawl payload may carry. */
+const CRAWL_CATEGORIES = [
+  "crawl",
+  "indexability",
+  "metadata",
+  "structure",
+  "links",
+  "structured_data",
+  // `search_performance` is deliberately absent. A crawl payload is cached by
+  // host and shared across visitors, while search performance belongs to one
+  // visitor's authorized property. Refusing the category here is what stops
+  // such a record from ever reaching a shared cache row.
+] as const;
+
 export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
+  return isRecordOfCategory(value, CRAWL_CATEGORIES);
+}
+
+/**
+ * The same shape, for the one category a crawl payload must never carry.
+ *
+ * Split rather than widened: reusing `isSeoAuditRecord` for the per-visitor
+ * search region meant every real region was refused by the guard meant to
+ * protect it, and widening it would delete the cache boundary instead.
+ */
+export function isSearchPerformanceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["search_performance"]);
+}
+
+function isRecordOfCategory(
+  value: unknown,
+  categories: readonly string[],
+): value is SeoAuditRecord {
   if (!isObject(value)) return false;
   if (
     typeof value.id !== "string" ||
-    ![
-      "crawl",
-      "indexability",
-      "metadata",
-      "structure",
-      "links",
-      "structured_data",
-      // `search_performance` is deliberately absent. A crawl payload is cached
-      // by host and shared across visitors, while search performance belongs to
-      // one visitor's authorized property. Refusing the category here is what
-      // stops such a record from ever reaching a shared cache row.
-    ].includes(value.category as string) ||
+    !categories.includes(value.category as string) ||
     !["observed", "not_observed", "unverified"].includes(
       value.state as string,
     ) ||

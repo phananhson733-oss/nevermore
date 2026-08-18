@@ -26,11 +26,13 @@ import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
   isSeoAuditRecord,
+  isSearchPerformanceRecord,
 } from "@sf/public-tools/seo-audit/contract";
 import {
   SEO_AUDIT_RECORD_CATEGORIES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
+import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 
 export { isCanonicalIsoTimestamp };
 
@@ -108,10 +110,31 @@ export type AgentAuditResult = Pick<
    * cannot be made quietly.
    */
   readonly searchPerformance?: AgentSearchPerformance;
+  /**
+   * Set when Search Console was reachable in principle and did not answer.
+   *
+   * Absent means one of two settled facts: the region is present, or nothing
+   * covers this host. Without this third state a timeout, a rate limit or an
+   * expired token all rendered as "authorize this tool" — sending a visitor
+   * who is already connected back through OAuth to fix something OAuth cannot.
+   */
+  readonly searchPerformanceUnavailable?: true;
 };
+
+/**
+ * Version of the derived search region, separate from the crawl payload's.
+ *
+ * `seo_audit.sitewide.v5` versions the shared crawl. This region is derived per
+ * request and freezes its own decisions — the window, the finalisation lag, the
+ * row cap, how a query's average position becomes a band — none of which the
+ * crawl version describes. Changing any of them has to change this literal.
+ */
+export const AGENT_SEARCH_PERFORMANCE_VERSION =
+  "search_performance.agent.v1" as const;
 
 /** The visitor's own search numbers for this host, read fresh on every run. */
 export interface AgentSearchPerformance {
+  readonly version: typeof AGENT_SEARCH_PERFORMANCE_VERSION;
   /** Property identifier the rows came from, for display beside the result. */
   readonly property: string;
   /** Inclusive window, in the property's own reporting days. */
@@ -120,38 +143,33 @@ export interface AgentSearchPerformance {
   readonly records: SeoAuditReport["records"];
 }
 
-/**
- * Record ids the search-performance region may carry.
- *
- * Fixed rather than open: these records reach the same display seam as the
- * crawl ledger, which fails closed on a record it cannot name, and it fails
- * closed silently by blanking the panel. An unexpected id is refused here,
- * where the reason is legible.
- */
-export const AGENT_SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
-  "page_without_search_impressions",
-  "impression_share_top_positions",
-  "impression_share_low_click_positions",
-];
-
 function isAgentSearchPerformance(
   value: unknown,
 ): value is AgentSearchPerformance {
   if (!isObject(value)) return false;
   if (
+    value.version !== AGENT_SEARCH_PERFORMANCE_VERSION ||
     typeof value.property !== "string" ||
     value.property.trim() === "" ||
     typeof value.startDate !== "string" ||
     typeof value.endDate !== "string" ||
     !Array.isArray(value.records) ||
-    !value.records.every(isSeoAuditRecord)
+    // The crawl guard refuses this category by design, so reusing it here
+    // rejected every real region and let an empty one through. Its own guard
+    // accepts exactly the category a crawl may not carry.
+    !value.records.every(isSearchPerformanceRecord)
   ) {
     return false;
   }
-  const allowed = new Set(AGENT_SEARCH_PERFORMANCE_RECORD_IDS);
-  const ids = value.records.map((record) => record.id);
+  // The ledger is complete or the region is not one: a subset would render as
+  // a check that decided when its record was simply missing. Ids come from the
+  // producer rather than a second list beside it.
+  const ids = value.records.map((record) => record.id).sort();
   return (
-    new Set(ids).size === ids.length && ids.every((id) => allowed.has(id))
+    ids.length === SEARCH_PERFORMANCE_RECORD_IDS.length &&
+    ids.every(
+      (id, index) => id === SEARCH_PERFORMANCE_RECORD_IDS.slice().sort()[index],
+    )
   );
 }
 
@@ -408,6 +426,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.searchPerformance === undefined ||
       isAgentSearchPerformance(value.searchPerformance)
+    ) ||
+    !(
+      value.searchPerformanceUnavailable === undefined ||
+      value.searchPerformanceUnavailable === true
     )
   ) {
     return false;

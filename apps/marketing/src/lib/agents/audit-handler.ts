@@ -70,7 +70,7 @@ export interface AgentAuditHandlerDependencies {
    * this crawl saw, and the projected result deliberately drops them.
    */
   readonly readSearchPerformance?: (input: {
-    readonly targetUrl: string;
+    readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
   }) => Promise<AgentSearchPerformance | null>;
   /**
@@ -428,16 +428,20 @@ export async function handleAgentAuditRequest(
   if (cache === null) return errorResponse("audit_response_invalid", 502);
 
   const { run, result } = envelope.data;
-  // Never lets Search Console decide whether the audit succeeded.
+  // Never lets Search Console decide whether the audit succeeded — but the two
+  // ways it can produce nothing are different facts, and only one of them is
+  // fixed by authorizing.
   let searchPerformance: AgentSearchPerformance | null = null;
+  let searchUnavailable = false;
   try {
     searchPerformance =
       (await dependencies.readSearchPerformance?.({
-        targetUrl: result.targetUrl,
+        siteOrigin: result.siteOrigin,
         pages: result.pages,
       })) ?? null;
   } catch {
     searchPerformance = null;
+    searchUnavailable = true;
   }
 
   const projected: AgentAuditSuccessData = {
@@ -483,6 +487,7 @@ export async function handleAgentAuditRequest(
       // Same reason, one step further: a cache row is shared by host and these
       // numbers belong to one visitor's verified property.
       ...(searchPerformance === null ? {} : { searchPerformance }),
+      ...(searchUnavailable ? { searchPerformanceUnavailable: true } : {}),
     },
   };
 

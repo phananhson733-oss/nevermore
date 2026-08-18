@@ -26,14 +26,29 @@ const ROW_LIMIT = 5_000;
 /** An audit must not wait on Search Console; it degrades to the gated state. */
 const READ_TIMEOUT_MS = 12_000;
 
-function isoDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
+/**
+ * Today's Search Console reporting day.
+ *
+ * Search Console closes its days in Pacific time, not UTC. Taking the UTC
+ * calendar date meant that between UTC midnight and Pacific midnight the window
+ * ran a day ahead of what the API considers finalised — the exact data this lag
+ * exists to avoid — and daylight saving moved the error twice a year.
+ */
+function reportingDay(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
 }
 
-function shiftDays(date: Date, days: number): Date {
-  const shifted = new Date(date);
+/** Calendar arithmetic on a reporting day, which has no time zone of its own. */
+function shiftDay(day: string, days: number): string {
+  const [year, month, date] = day.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1));
   shifted.setUTCDate(shifted.getUTCDate() + days);
-  return shifted;
+  return shifted.toISOString().slice(0, 10);
 }
 
 export interface SearchPerformanceReadInput {
@@ -62,11 +77,10 @@ export function createSearchPerformanceReader(options: {
         : { fetchImpl: options.fetchImpl }),
     });
 
-    const endDate = shiftDays(now(), -FINALISATION_LAG_DAYS);
-    const startDate = shiftDays(endDate, -(WINDOW_DAYS - 1));
+    const endDate = shiftDay(reportingDay(now()), -FINALISATION_LAG_DAYS);
     const window = {
-      startDate: isoDay(startDate),
-      endDate: isoDay(endDate),
+      startDate: shiftDay(endDate, -(WINDOW_DAYS - 1)),
+      endDate,
       rowLimit: ROW_LIMIT,
       startRow: 0,
     } as const;

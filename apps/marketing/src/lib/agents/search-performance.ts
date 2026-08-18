@@ -12,7 +12,10 @@ import type { SeoAuditReport } from "@sf/public-tools";
 
 import type { GrantResolution } from "../auth/grant-cookie.ts";
 import { resolveTrafficDropGrant } from "../tools/traffic-drop-session.ts";
-import type { AgentSearchPerformance } from "./audit-contract.ts";
+import {
+  AGENT_SEARCH_PERFORMANCE_VERSION,
+  type AgentSearchPerformance,
+} from "./audit-contract.ts";
 import {
   createSearchPerformanceReader,
   type SearchPerformanceReadInput,
@@ -45,7 +48,8 @@ export const DEFAULT_SEARCH_PERFORMANCE_DEPENDENCIES: SearchPerformanceDependenc
  */
 export async function readAgentSearchPerformance(
   input: {
-    readonly targetUrl: string;
+    /** The crawl's own origin, which is the population every check counts. */
+    readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
   },
   dependencies: SearchPerformanceDependencies = DEFAULT_SEARCH_PERFORMANCE_DEPENDENCIES,
@@ -53,11 +57,12 @@ export async function readAgentSearchPerformance(
   const grant = await dependencies.resolveGrant();
   if (grant.kind !== "grant") return null;
 
-  // Search Console is addressed by property identifier, never by the URL the
-  // visitor typed, and the narrowest covering property wins: reading a domain
-  // property to answer a question about one subdomain attributes the whole
-  // site's numbers to it.
-  const property = keywordCoverageProperty(input.targetUrl, grant.properties);
+  // Selected against the crawl origin, not the submitted URL. Coverage counts
+  // every page this crawl collected across that origin, so a property covering
+  // only a section of it — `https://acme.test/blog/` for a crawl that also saw
+  // `/pricing` — cannot answer for those pages, and listing them as never shown
+  // would report "outside the property" as "measured zero".
+  const property = keywordCoverageProperty(input.siteOrigin, grant.properties);
   if (property === null) return null;
 
   const raw = await dependencies.read({
@@ -68,6 +73,7 @@ export async function readAgentSearchPerformance(
   if (records.length === 0) return null;
 
   return {
+    version: AGENT_SEARCH_PERFORMANCE_VERSION,
     property,
     startDate: raw.startDate,
     endDate: raw.endDate,

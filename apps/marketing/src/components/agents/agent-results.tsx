@@ -258,7 +258,13 @@ export function AgentResults({
         locale={locale}
         targetUrl={data.result.targetUrl}
         evaluatedChecks={scopedChecks}
-        records={data.result.records}
+        // The same joined list the evaluator decided from. Handing the crawl
+        // ledger alone would show a search check that decided beside no
+        // evidence at all, because its record lives in the other list.
+        records={[
+          ...data.result.records,
+          ...(data.result.searchPerformance?.records ?? []),
+        ]}
         targetPageExtract={data.result.targetPageExtract}
         profile={profile}
         selectedRecommendationId={selectedRecommendationIds[scope]}

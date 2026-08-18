@@ -703,7 +703,20 @@ export function AgentDiagnosis({
           className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-text-dark-primary"
         >
           <Database aria-hidden="true" className="size-3.5 shrink-0 text-text-dark-faint" />
-          {model.searchSource === null ? (
+          {model.searchSource.state === "connected" ? (
+            <span>
+              {t("searchSource.present", {
+                property: model.searchSource.property,
+                start: model.searchSource.startDate,
+                end: model.searchSource.endDate,
+              })}
+            </span>
+          ) : model.searchSource.state === "unavailable" ? (
+            // Reachable and did not answer. Offering the grant here would send
+            // a visitor who is already connected back through OAuth to fix
+            // something OAuth cannot.
+            <span>{t("searchSource.unavailable")}</span>
+          ) : (
             <>
               <span>{t("searchSource.absent")}</span>
               <Link
@@ -713,14 +726,6 @@ export function AgentDiagnosis({
                 {t("searchSource.connect")}
               </Link>
             </>
-          ) : (
-            <span>
-              {t("searchSource.present", {
-                property: model.searchSource.property,
-                start: model.searchSource.startDate,
-                end: model.searchSource.endDate,
-              })}
-            </span>
           )}
         </p>
 

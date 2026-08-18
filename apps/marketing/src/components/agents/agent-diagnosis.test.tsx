@@ -103,6 +103,8 @@ const messages = {
           connect: "Connect Search Console",
           present:
             "Search performance read from {property}, {start} to {end}.",
+          unavailable:
+            "Search Console did not answer this run — a timeout or a rate limit. The authorization is fine; run it again shortly.",
         },
         excludedBoundary:
           "Unavailable and source-gated checks are excluded, never zero or pass.",
@@ -474,6 +476,7 @@ describe("AgentDiagnosis", () => {
           "absent",
           "connect",
           "present",
+          "unavailable",
         ]);
       }
     });
@@ -492,12 +495,26 @@ describe("AgentDiagnosis", () => {
       );
     });
 
+    it("does not offer the grant when the source was simply not answering", () => {
+      const html = render("site", "E", {
+        ...data,
+        result: { ...data.result, searchPerformanceUnavailable: true },
+      });
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      expect(notice).toContain("did not answer this run");
+      // Sending a visitor who is already connected back through OAuth would ask
+      // them to fix something OAuth cannot.
+      expect(notice).not.toContain("/api/auth/google/start");
+    });
+
     it("names the property and window once a grant answered", () => {
       const html = render("site", "E", {
         ...data,
         result: {
           ...data.result,
           searchPerformance: {
+            version: "search_performance.agent.v1" as const,
             property: "sc-domain:astrologywiki.com",
             startDate: "2026-07-19",
             endDate: "2026-08-15",

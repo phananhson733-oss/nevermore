@@ -13,6 +13,7 @@ import {
   AgentSolutionDraft,
   draftKindFor,
 } from "./agent-solution-draft";
+import { DRAFT_ERROR_CODES } from "../../lib/agents/draft-handler";
 import enMessages from "../../i18n/messages/en.json";
 
 const MESSAGES = {
@@ -154,15 +155,9 @@ describe("AgentSolutionDraft", () => {
       import("../../i18n/messages/en.json"),
       import("../../i18n/messages/zh.json"),
     ]);
-    const codes = [
-      "auth_required",
-      "auth_unavailable",
-      "invalid_request",
-      "rate_limited",
-      "quota_unavailable",
-      "drafts_unavailable",
-      "draft_unusable",
-    ];
+    // Derived from the endpoint's own union, not a second list beside it: a
+    // hand-kept copy stays green when an eighth code ships without copy.
+    const codes = [...DRAFT_ERROR_CODES];
     for (const catalogue of [en.default, zh.default]) {
       const errors = (
         catalogue as unknown as {

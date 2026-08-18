@@ -1070,11 +1070,11 @@
         },
         "impression_share_top_positions": {
           "title": "排名 1–6 的曝光占比",
-          "description": "按曝光加权：落在前六位的曝光量占全部曝光的比例。"
+          "description": "在 Search Console 报告出来的查询中，平均排名四舍五入落在前六位的曝光量占比。低频与匿名查询不在其中。"
         },
         "impression_share_low_click_positions": {
           "title": "排名 7–10 的曝光占比",
-          "description": "按曝光加权：落在第七至第十位的曝光量占全部曝光的比例。"
+          "description": "在 Search Console 报告出来的查询中，平均排名四舍五入落在第七至第十位的曝光量占比。低频与匿名查询不在其中。"
         }
       },
       "evidence": {
@@ -1118,7 +1118,8 @@
         "low_click_position_impression_share": "7–10 位曝光占比",
         "impressions_in_band": "该档曝光量",
         "impressions_total": "总曝光量",
-        "queries_measured": "已测量查询数"
+        "queries_measured": "已测量查询数",
+        "property": "Search Console 属性"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -3219,7 +3220,8 @@
         "searchSource": {
           "absent": "本次运行未读取 Search Console。搜索表现相关的检查需要授权后才有结论——用 Google 登录站点并不代表已授权本工具读取。",
           "connect": "连接 Search Console",
-          "present": "搜索表现读自 {property}，窗口 {start} 至 {end}。"
+          "present": "搜索表现读自 {property}，窗口 {start} 至 {end}。",
+          "unavailable": "本次没能读到 Search Console——请求超时或被限流。授权本身没问题，稍后重跑即可。"
         }
       },
       "auditCatalog": {
@@ -3564,7 +3566,7 @@
           "running": "正在生成…",
           "offer": "按本页已采集到的文字生成一份草稿。仅供审阅，不会应用到站点。",
           "readyLabel": "草稿 · 仅供审阅",
-          "boundary": "草稿只依据本页已采集到的文字写成，不会替页面许下它兑现不了的承诺。发布前请自行核对。",
+          "boundary": "草稿只把本页已采集到的文字作为依据写成，并被要求不许编造。模型仍可能出错——发布前请逐句核对。",
           "fields": {
             "title": "Title",
             "metaDescription": "Meta description",
@@ -3579,7 +3581,8 @@
             "rate_limited": "本小时的草稿次数已用完，稍后再试。",
             "quota_unavailable": "配额暂时读不到，请稍后再试。",
             "drafts_unavailable": "本部署未配置生成模型，暂不提供草稿。",
-            "draft_unusable": "这次返回的内容格式不可用，没有展示。可以再试一次。"
+            "draft_unusable": "这次返回的内容格式不可用，没有展示。可以再试一次。",
+            "draft_provider_unavailable": "模型这次没有作答（可能是超时或限流）。这是可以重试的。"
           }
         }
       },

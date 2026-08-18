@@ -166,6 +166,16 @@ describe("search performance records", () => {
     expect(record?.observations).toEqual([]);
     expect(record?.tested).toBe(0);
     expect(record?.state).toBe("unverified");
+
+    // And the check has to land on excluded, not on a ratio computed against a
+    // zero population: `affected-ratio-at-most` divides by `tested`, so a
+    // capped list that still reached the rule would decide from 0/0.
+    const decided = evaluateAgentAuditScope("site", {
+      availability: "available",
+      records: capped,
+    }).checks.find((entry) => entry.check.id === "E1");
+    expect(decided?.result).toBe("excluded");
+    expect(decided?.truth).toBe("source-gated");
   });
 
   it("reports no impressions as nothing to divide by, never as a zero share", () => {

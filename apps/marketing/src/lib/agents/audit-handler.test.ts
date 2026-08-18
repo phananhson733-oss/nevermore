@@ -4,7 +4,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
-import { AGENT_AUDIT_RECORD_CATEGORIES } from "./audit-contract.ts";
+import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
+import {
+  AGENT_AUDIT_RECORD_CATEGORIES,
+  AGENT_SEARCH_PERFORMANCE_VERSION,
+  isAgentAuditSuccessEnvelope,
+} from "./audit-contract.ts";
 import {
   handleAgentAuditRequest,
   type AgentAuditHandlerDependencies,
@@ -167,6 +172,7 @@ function dependencies(
 
 describe("handleAgentAuditRequest", () => {
   const searchRegion = {
+    version: "search_performance.agent.v1" as const,
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
     endDate: "2026-08-15",
@@ -189,6 +195,50 @@ describe("handleAgentAuditRequest", () => {
       },
     ],
   };
+
+  it("returns a region the client guard actually accepts", async () => {
+    // Built by the real producer and read by the real guard. Both previous
+    // rounds shipped a consumer that refused its own producer's output while
+    // every unit test passed, because the fixtures were written to match the
+    // guard rather than taken from the thing that feeds it.
+    const region = {
+      version: AGENT_SEARCH_PERFORMANCE_VERSION,
+      property: "sc-domain:acme.test",
+      startDate: "2026-07-19",
+      endDate: "2026-08-15",
+      records: buildSearchPerformanceRecords(
+        {
+          property: "sc-domain:acme.test",
+          startDate: "2026-07-19",
+          endDate: "2026-08-15",
+          pages: [
+            {
+              key: "https://acme.test/",
+              clicks: 3,
+              impressions: 90,
+              position: 4,
+            },
+          ],
+          queries: [
+            { key: "acme", clicks: 3, impressions: 90, position: 4 },
+          ],
+          pagesTruncated: false,
+          queriesTruncated: false,
+        },
+        [],
+      ),
+    };
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => region }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(region.records.length).toBeGreaterThan(0);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+  });
 
   it("attaches the visitor's search region beside the crawl ledger", async () => {
     const response = await handleAgentAuditRequest(

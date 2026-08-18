@@ -1070,11 +1070,11 @@
         },
         "impression_share_top_positions": {
           "title": "Impression share in positions 1-6",
-          "description": "Weighted by impressions: the share of all impressions that came from the first six results."
+          "description": "Share of impressions from the queries Search Console reports whose average position rounds into the first six. Low-volume and anonymised queries are not included."
         },
         "impression_share_low_click_positions": {
           "title": "Impression share in positions 7-10",
-          "description": "Weighted by impressions: the share of all impressions that came from results seven through ten."
+          "description": "Share of impressions from the queries Search Console reports whose average position rounds into seven through ten. Low-volume and anonymised queries are not included."
         }
       },
       "evidence": {
@@ -1118,7 +1118,8 @@
         "low_click_position_impression_share": "Low-click position impression share",
         "impressions_in_band": "Impressions in band",
         "impressions_total": "Total impressions",
-        "queries_measured": "Queries measured"
+        "queries_measured": "Queries measured",
+        "property": "Search Console property"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -3219,7 +3220,8 @@
         "searchSource": {
           "absent": "This run did not read Search Console. The search-performance checks stay excluded until it is authorized — signing in with Google is not the same as granting this tool access.",
           "connect": "Connect Search Console",
-          "present": "Search performance read from {property}, {start} to {end}."
+          "present": "Search performance read from {property}, {start} to {end}.",
+          "unavailable": "Search Console did not answer this run — a timeout or a rate limit. The authorization is fine; run it again shortly."
         }
       },
       "auditCatalog": {
@@ -3564,7 +3566,7 @@
           "running": "Drafting…",
           "offer": "Writes a draft from the text this run collected on the page. Preview only — nothing is applied to the site.",
           "readyLabel": "Draft · review only",
-          "boundary": "The draft is written only from text this run collected on the page, so it will not promise something the page cannot deliver. Check it before you publish.",
+          "boundary": "The draft is written from text this run collected on the page, and the model is told not to invent anything. It can still get things wrong — check each line before you publish.",
           "fields": {
             "title": "Title",
             "metaDescription": "Meta description",
@@ -3579,7 +3581,8 @@
             "rate_limited": "You have used this hour's drafts. Try again shortly.",
             "quota_unavailable": "The quota could not be read just now. Try again shortly.",
             "drafts_unavailable": "This deployment has no drafting model configured.",
-            "draft_unusable": "The reply came back in a format we cannot use, so nothing is shown. You can try again."
+            "draft_unusable": "The reply came back in a format we cannot use, so nothing is shown. You can try again.",
+            "draft_provider_unavailable": "The model did not answer this time — a timeout or a rate limit. This one is worth retrying."
           }
         }
       },

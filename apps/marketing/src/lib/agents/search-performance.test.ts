@@ -61,7 +61,7 @@ describe("readAgentSearchPerformance", () => {
   it("reads the visitor's own property and returns its window", async () => {
     const read = vi.fn(async () => rawRows());
     const result = await readAgentSearchPerformance(
-      { targetUrl: "https://acme.test/", pages },
+      { siteOrigin: "https://acme.test/", pages },
       { resolveGrant: async () => GRANT, read },
     );
 
@@ -84,7 +84,7 @@ describe("readAgentSearchPerformance", () => {
   ])("returns nothing and reads nothing for %s", async (_label, grant) => {
     const read = vi.fn(async () => rawRows());
     const result = await readAgentSearchPerformance(
-      { targetUrl: "https://acme.test/", pages },
+      { siteOrigin: "https://acme.test/", pages },
       { resolveGrant: async () => grant as GrantResolution, read },
     );
 
@@ -96,7 +96,7 @@ describe("readAgentSearchPerformance", () => {
   it("does not read a property that does not cover the audited host", async () => {
     const read = vi.fn(async () => rawRows());
     const result = await readAgentSearchPerformance(
-      { targetUrl: "https://other.test/", pages },
+      { siteOrigin: "https://other.test/", pages },
       {
         resolveGrant: async () => GRANT,
         read,
@@ -112,7 +112,7 @@ describe("readAgentSearchPerformance", () => {
   it("picks the narrowest property covering the host", async () => {
     const read = vi.fn(async () => rawRows());
     await readAgentSearchPerformance(
-      { targetUrl: "https://acme.test/blog/post", pages },
+      { siteOrigin: "https://acme.test/blog/", pages },
       {
         resolveGrant: async () => ({
           ...GRANT,
@@ -133,7 +133,7 @@ describe("readAgentSearchPerformance", () => {
   it("lets a failing read reject, so the caller degrades rather than guesses", async () => {
     await expect(
       readAgentSearchPerformance(
-        { targetUrl: "https://acme.test/", pages },
+        { siteOrigin: "https://acme.test/", pages },
         {
           resolveGrant: async () => GRANT,
           read: async () => {

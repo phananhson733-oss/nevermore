@@ -367,6 +367,10 @@ function SelectedSolution({
           */}
           {gated || draftKind === null ? null : (
             <AgentSolutionDraft
+              // Keyed so a draft cannot outlive the solution it was asked for:
+              // without it React reuses the instance across a switch and the
+              // previous kind's draft stays on screen under the new one.
+              key={`${profile.targetUrl}:${check.id}:${draftKind}`}
               kind={draftKind}
               targetUrl={profile.targetUrl}
               extract={targetPageExtract}

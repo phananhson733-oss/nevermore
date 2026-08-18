@@ -116,6 +116,10 @@ function bandRecord(
               impressions_total: measured.total,
               queries_measured: raw.queries.filter((row) => row.impressions > 0)
                 .length,
+            // Named so the reader can see whose numbers these are. A domain
+            // property covers every subdomain, so its rows are the property's
+            // performance, not only the audited origin's.
+            property: raw.property,
             }),
           },
         ];
@@ -128,9 +132,15 @@ function bandRecord(
     tested: measured === null ? 0 : 1,
     affected: observations.length,
     observations,
+    // Two limits, always both true. Search Console withholds low-volume and
+    // anonymised queries, so the rows it returns are not every impression the
+    // site received and this share is of the reported ones. And a row's
+    // position is one impression-weighted average, so a query shown at 3 for
+    // half its impressions and 20 for the rest reports about 11 and counts in
+    // neither band.
     limitation: raw.queriesTruncated
-      ? "query_rows_hit_the_row_cap_so_the_impression_total_is_short"
-      : "position_is_one_impression_weighted_average_per_query",
+      ? "query_rows_hit_the_row_cap_so_the_reported_total_is_short"
+      : "share_of_reported_queries_only_banded_by_one_average_position_each",
   };
 }
 
@@ -227,6 +237,7 @@ export const SEARCH_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   "impressions_in_band",
   "impressions_total",
   "queries_measured",
+  "property",
 ];
 
 /** Record ids this module emits, in the order it emits them. */
