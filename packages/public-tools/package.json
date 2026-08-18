@@ -17,6 +17,7 @@
     "./seo-audit/page-performance": "./src/seo-audit/page-performance.ts",
     "./seo-audit/record-ledger": "./src/seo-audit/record-ledger.ts",
     "./seo-audit/search-performance": "./src/seo-audit/search-performance.ts",
+    "./seo-audit/serp-shape": "./src/seo-audit/serp-shape.ts",
     "./seo-audit/solution-draft": "./src/seo-audit/solution-draft.ts",
     "./seo-audit/types": "./src/seo-audit/types.ts"
   },

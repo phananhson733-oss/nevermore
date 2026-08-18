@@ -51,7 +51,12 @@ export type SeoAuditCategory =
    * other two derived regions: it is fetched per run against one URL and does
    * not belong in a payload cached by host.
    */
-  | "page_performance";
+  | "page_performance"
+  /**
+   * One live sample of one results page, for the confirmed query. Per run and
+   * per visitor, and a paid call — never in a payload cached by host.
+   */
+  | "serp_shape";
 
 export type SeoAuditEvidenceValue = string | number | boolean | null;
 

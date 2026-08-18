@@ -24,6 +24,11 @@ import {
   PAGE_PERFORMANCE_LIMITATION_CODES,
   PAGE_PERFORMANCE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/page-performance";
+import {
+  SERP_SHAPE_EVIDENCE_LABELS,
+  SERP_SHAPE_LIMITATION_CODES,
+  SERP_SHAPE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/serp-shape";
 
 import type { AgentKind } from "./agent-types";
 
@@ -44,6 +49,7 @@ const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set([
   ...SEARCH_PERFORMANCE_RECORD_IDS,
   ...KEYWORD_EVIDENCE_RECORD_IDS,
   ...PAGE_PERFORMANCE_RECORD_IDS,
+  ...SERP_SHAPE_RECORD_IDS,
 ]);
 
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
@@ -65,6 +71,7 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
   ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
+  ...SERP_SHAPE_EVIDENCE_LABELS,
 ]);
 
 /**
@@ -80,6 +87,7 @@ export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   ...SEARCH_PERFORMANCE_LIMITATION_CODES,
   ...KEYWORD_EVIDENCE_LIMITATION_CODES,
   ...PAGE_PERFORMANCE_LIMITATION_CODES,
+  ...SERP_SHAPE_LIMITATION_CODES,
 ]);
 
 /**

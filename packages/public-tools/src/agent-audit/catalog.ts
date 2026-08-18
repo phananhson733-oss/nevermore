@@ -99,7 +99,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "800 ms or less good, over 800 ms to 1.8 s needs improvement, over 1.8 s poor", "不超过 800 毫秒为良好，超过 800 毫秒至 1.8 秒待改进，超过 1.8 秒为差"],
   ["8.5", "Total page weight", "页面总体积", "Below 2 MB", "低于 2MB"],
   ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 in a separate Lighthouse lab run", "独立 Lighthouse 实验室运行中为 0"],
-  ["9.1", "Target query fully answered by AI Overview", "目标词是否被 AI Overview 完整覆盖", "No; Yes is Warning because ranking may not produce a click", "否；若是则为警告，因为获得排名也可能没有点击"],
+  ["9.1", "AI answer block on the results page", "结果页是否出现 AI 答案块", "Absent; present is Warning because ranking may not produce a click. Presence only — whether the block fully answers the query is a content judgement this run does not make.", "不存在；存在则为警告，因为获得排名也可能没有点击。仅判定是否存在——该答案块是否完整回答了查询属于内容判断，本次运行不作此判断。"],
   // 9.2 "recently registered domains in the top 10" was removed on 2026-08-18.
   // It needs a domain registration date, which no wired provider returns. The
   // only substitute — a backlink's `first_seen` — is a different fact, and it
@@ -107,7 +107,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   // check that can never run is the same defect this whole effort removed from
   // the readiness count, one level up.
   ["9.3", "Lower-traffic sites in the top 10", "前十是否有低流量站点", "At least one; none reduces opportunity health", "至少 1 个；没有则降低机会健康度"],
-  ["9.4", "UGC result presence", "是否有 UGC 结果位", "At least one; none reduces opportunity health", "至少 1 个；没有则降低机会健康度"],
+  ["9.4", "Community result on the results page", "结果页是否有社区型结果", "At least one forum, Q&A or video result; none is a Tip. Read from the provider's item-type list for one live sample.", "至少有一个论坛、问答或视频类结果；没有则为提示。依据供应商对单次实时采样返回的条目类型清单判定。"],
   ["9.5", "Current ranking band", "当前排名区间", "1–6 preferred; 7–10 low-click; 11+ ineffective", "优先 1–6；7–10 为低点击区；11 名以后效果弱"],
 ];
 
@@ -267,6 +267,8 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "8.2": ["core_web_vital_inp"],
   "8.3": ["core_web_vital_cls"],
   "8.4": ["core_web_vital_ttfb"],
+  "9.1": ["ai_answer_block_present"],
+  "9.4": ["no_community_result_present"],
   "2.3": ["title_without_target_query"],
   "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
@@ -519,7 +521,10 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   // render-blocking resources) that the field read does not return, and 8.6's
   // detail array is absent rather than empty when the audit did not run, which
   // reads as a pass on something unmeasured.
-  if (/^8\.[56]$/.test(id) || /^9\.[134]$/.test(id)) return "not-integrated";
+  // 9.3 stays: it needs a traffic estimate per page-one domain, which is a
+  // second paid call against a different endpoint, and the sample this one
+  // takes carries domains without any measure of what they receive.
+  if (/^8\.[56]$/.test(id) || id === "9.3") return "not-integrated";
   return ready ? "ready" : "needs-integration";
 }
 
@@ -720,6 +725,14 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "TTFB is time spent before the first byte arrives, which means it is server and network, not page. Split it before optimising: DNS and connection setup, then how long the server took to produce the document, then how far the response travelled. A slow server response usually means an uncached database query or a render on every request; distance usually means the document is served from one region to a worldwide audience, and a CDN in front of the HTML — not just the assets — is the fix. Note that this number is above 800 ms for many perfectly healthy sites serving a distant audience, so read it next to where your visitors actually are.",
     "TTFB 是第一个字节到达之前花掉的时间，也就是说它属于服务端和网络，不属于页面。优化前先拆开看：DNS 与连接建立、服务端产出文档所用的时间、以及响应走过的距离。服务端慢通常意味着某个没有缓存的数据库查询或者每次请求都在重新渲染；距离远通常意味着文档只从一个区域提供给全球访客，此时该做的是在 HTML 前面——不只是静态资源前面——加一层 CDN。要注意：对许多完全健康、但受众离服务器很远的站点，这个数字也会超过 800 毫秒，所以要结合你的访客究竟在哪里来读它。",
   ),
+  "9.1": l(
+    "An AI answer block sits above the results and answers the question in place, so a first-place ranking here earns fewer clicks than the same ranking on a page without one. Do not treat it as a defect to fix — it is a fact about the query, and the decision it forces is whether this query is still worth the effort. Two things follow. Compare the query against ones with no such block before spending more on it. And if you keep it, aim the page at what the block cannot do: the specific case, the current number, the thing that needs your data rather than a summary.",
+    "AI 答案块位于结果之上，直接就地回答了问题，因此在有它的结果页上拿到第一名，点击会少于在没有它的结果页上拿到第一名。不要把它当成需要修的缺陷——它是关于这个查询的事实，它逼你做的决定是「这个词还值不值得投入」。由此有两件事：在继续投入之前，把这个词和没有该答案块的词做比较；如果决定继续做，就把页面对准答案块做不到的地方——具体场景、当期数字、必须依赖你自己数据而非概要的那部分。",
+  ),
+  "9.4": l(
+    "No forum, Q&A or video result appeared in this sample, which says the audience for this query is being served by publishers rather than by each other. That makes it harder, not impossible: there is no discussion thread to outrank, so the competition is other pages doing the same job as yours. Read it beside the AI answer check — a query with a block and no community results is one where the answer is settled and a page has little room to add, and that is the clearest signal to spend the effort somewhere else.",
+    "本次采样中没有出现论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。这让它更难，但不是不可能：没有讨论帖可以超越，竞争对手就是其他在做同样事情的页面。要和 AI 答案那一项结合起来读——一个既有答案块、又没有社区型结果的查询，意味着答案已经定型、页面能补充的空间很小，这是把力气花到别处去的最清晰信号。",
+  ),
   D1: l(
     "Two pages with the same title are two pages asking to be shown for the same thing, and a search system picks one. Group the duplicates before editing: an exact repeat across a paginated archive or a filtered listing is a template that never varies its title, and the fix is to give the template a variable — the page number, the filter, the section — not to hand-write forty titles. If the pages really are the same page, the duplicate title is the symptom and the canonical is the fix. Variants that already converge on a canonical are excluded from this count, so what is left is genuinely competing.",
     "两个页面用同一个 title，就是两个页面在为同一件事争取展示，而搜索系统只会选一个。改之前先给重复项分组：分页归档或筛选列表上的完全重复，说明模板的标题从不随内容变化，修法是给模板加一个变量——页码、筛选条件、栏目——而不是手写四十个标题。如果这些页面本来就是同一个页面，那重复标题只是症状，Canonical 才是修法。已经收敛到 Canonical 的变体不计入这里，所以剩下的都是真的在互相竞争。",
@@ -865,7 +878,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     scored,
     blocking,
     blockerEvidenceRecordIds,
-    failureResult: ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5"].includes(id)
+    failureResult: ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

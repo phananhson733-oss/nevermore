@@ -28,8 +28,14 @@ import {
   type PagePerformanceRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
 import { defaultPagePerformanceReader } from "./page-performance-reader.ts";
+import {
+  buildSerpShapeRecords,
+  type SerpShapeRaw,
+} from "@sf/public-tools/seo-audit/serp-shape";
+import { defaultSerpShapeReader } from "./serp-shape-reader.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
+  AGENT_SERP_SHAPE_VERSION,
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
@@ -87,6 +93,16 @@ export interface AgentAuditHandlerDependencies {
   readonly readPagePerformance?: (input: {
     readonly url: string;
   }) => Promise<PagePerformanceRaw | null>;
+  /**
+   * One live results-page sample for the confirmed query, or null.
+   *
+   * The only paid call in a run. Optional and best-effort like the others: no
+   * credentials, no confirmed query, an unmapped market or a provider that did
+   * not answer are all the same settled outcome, and none is a failed audit.
+   */
+  readonly readSerpShape?: (input: {
+    readonly keyword: string;
+  }) => Promise<SerpShapeRaw | null>;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
@@ -125,6 +141,8 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   readSearchPerformance: (input) => readAgentSearchPerformance(input),
   readPagePerformance: (input) =>
     defaultPagePerformanceReader()?.(input) ?? Promise.resolve(null),
+  readSerpShape: (input) =>
+    defaultSerpShapeReader()?.(input) ?? Promise.resolve(null),
 };
 
 /**
@@ -492,6 +510,19 @@ export async function handleAgentAuditRequest(
     }
   }
 
+  const primaryQueryText =
+    input.value.targetQueries?.[0]?.displayQuery ?? null;
+  let serpShape: SerpShapeRaw | null = null;
+  if (primaryQueryText !== null) {
+    try {
+      serpShape =
+        (await dependencies.readSerpShape?.({ keyword: primaryQueryText })) ??
+        null;
+    } catch {
+      serpShape = null;
+    }
+  }
+
   const keywordEvidence =
     input.value.targetQueries === null
       ? null
@@ -554,6 +585,14 @@ export async function handleAgentAuditRequest(
       ...(searchPerformance === null ? {} : { searchPerformance }),
       // Same boundary again: fetched per run against one URL, so it never
       // enters the payload cached by host.
+      ...(primaryQueryText === null
+        ? {}
+        : {
+            serpShape: {
+              version: AGENT_SERP_SHAPE_VERSION,
+              records: buildSerpShapeRecords(serpShape),
+            },
+          }),
       ...(result.targetInspected
         ? {
             pagePerformance: {

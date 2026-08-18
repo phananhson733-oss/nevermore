@@ -975,7 +975,11 @@
         "no_field_data_source_was_configured_for_this_run": "No field-data source was configured for this run, so CrUX was never asked. This is not a statement that CrUX has nothing for the page.",
         "crux_reported_no_field_data_for_this_metric_on_this_url": "CrUX reported no field data for this metric on this URL, which usually means too few real visits to publish a p75.",
         "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values": "CrUX had no URL-level data, so these are the whole origin's p75 values. A fast page can inherit a slow site's numbers here.",
-        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "CrUX p75 over a 28-day window of real visits. It lags anything shipped today by weeks."
+        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "CrUX p75 over a 28-day window of real visits. It lags anything shipped today by weeks.",
+        "no_target_query_was_confirmed_so_no_results_page_was_sampled": "No target query was confirmed, so no results page was sampled and no paid call was made.",
+        "the_provider_reported_no_item_type_list_for_this_results_page": "The provider returned no item-type list for this results page. That is a gap in the response, not a page with no blocks on it.",
+        "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one": "Some organic items in the sample were unusable, so this is a thinner sample than a full page one.",
+        "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks."
       },
       "records": {
         "robots_resource": {
@@ -1169,6 +1173,14 @@
         "core_web_vital_ttfb": {
           "title": "Time to First Byte (CrUX p75)",
           "description": "The 75th-percentile TTFB CrUX reports for this URL over a 28-day window of real visits, on mobile. Server and network time, not page time."
+        },
+        "ai_answer_block_present": {
+          "title": "An AI answer block appeared on the results page",
+          "description": "The provider's item-type list for one live sample of the results page included an AI answer block. Presence only — whether it fully answers the query is a content judgement this run does not make."
+        },
+        "no_community_result_present": {
+          "title": "No community result appeared on the results page",
+          "description": "One live sample of the results page carried no forum, Q&A or video result, which says the audience for this query is being served by publishers rather than by each other."
         }
       },
       "evidence": {
@@ -1252,7 +1264,15 @@
         "cls_score": "CLS",
         "ttfb_ms": "TTFB",
         "crux_source_level": "CrUX data level",
-        "crux_form_factor": "Form factor"
+        "crux_form_factor": "Form factor",
+        "sampled_query": "Query sampled",
+        "ai_answer_item_types": "AI answer blocks found",
+        "community_item_types": "Community results found",
+        "serp_item_types": "All blocks on the page",
+        "organic_results_sampled": "Organic results sampled",
+        "unresolved_serp_items": "Items dropped as unusable",
+        "sampled_market": "Market",
+        "sampled_language": "Language"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

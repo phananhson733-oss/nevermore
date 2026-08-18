@@ -78,8 +78,8 @@ const CRAWL_CATEGORIES = [
   "structure",
   "links",
   "structured_data",
-  // `search_performance`, `keyword_evidence` and `page_performance` are
-  // deliberately absent. A
+  // `search_performance`, `keyword_evidence`, `page_performance` and
+  // `serp_shape` are deliberately absent. A
   // crawl payload is cached by host and shared across visitors, while both of
   // those belong to one visitor — an authorized property, a typed-in query.
   // Refusing the categories here is what stops such a record from ever
@@ -115,6 +115,11 @@ export function isPagePerformanceRecord(
   value: unknown,
 ): value is SeoAuditRecord {
   return isRecordOfCategory(value, ["page_performance"]);
+}
+
+/** The same, for the one live results-page sample a run may take. */
+export function isSerpShapeRecord(value: unknown): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["serp_shape"]);
 }
 
 function isRecordOfCategory(

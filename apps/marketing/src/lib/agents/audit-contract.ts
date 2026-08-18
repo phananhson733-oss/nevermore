@@ -29,6 +29,7 @@ import {
   isKeywordEvidenceRecord,
   isPagePerformanceRecord,
   isSearchPerformanceRecord,
+  isSerpShapeRecord,
 } from "@sf/public-tools/seo-audit/contract";
 import {
   SEO_AUDIT_RECORD_CATEGORIES,
@@ -37,6 +38,7 @@ import {
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
+import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
 export { isCanonicalIsoTimestamp };
 
@@ -120,6 +122,14 @@ export type AgentAuditResult = Pick<
    */
   readonly pagePerformance?: AgentPagePerformance;
   /**
+   * One live sample of the results page for the confirmed query.
+   *
+   * The only paid provider call in a run, and only when there is a confirmed
+   * query and credentials to make it with. Absent is a settled state the
+   * records explain.
+   */
+  readonly serpShape?: AgentSerpShape;
+  /**
    * Present only when the visitor holds a Search Console grant covering the
    * audited host.
    *
@@ -141,6 +151,35 @@ export type AgentAuditResult = Pick<
    */
   readonly searchPerformanceUnavailable?: true;
 };
+
+/**
+ * Version of the results-page sample region.
+ *
+ * Freezes the depth, that one query is sampled rather than all of them, and
+ * which provider item types count as an AI answer or as a community result.
+ */
+export const AGENT_SERP_SHAPE_VERSION = "serp_shape.agent.v1" as const;
+
+export interface AgentSerpShape {
+  readonly version: typeof AGENT_SERP_SHAPE_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentSerpShape(value: unknown): value is AgentSerpShape {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_SERP_SHAPE_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isSerpShapeRecord)
+  ) {
+    return false;
+  }
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = SERP_SHAPE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
 
 /**
  * Version of the CrUX field region.
@@ -286,6 +325,7 @@ export function allAgentAuditRecords(
     ...(data.result.searchPerformance?.records ?? []),
     ...(data.result.keywordChecks?.records ?? []),
     ...(data.result.pagePerformance?.records ?? []),
+    ...(data.result.serpShape?.records ?? []),
   ];
 }
 
@@ -543,6 +583,9 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.pagePerformance === undefined ||
       isAgentPagePerformance(value.pagePerformance)
+    ) ||
+    !(
+      value.serpShape === undefined || isAgentSerpShape(value.serpShape)
     ) ||
     !(
       value.searchPerformance === undefined ||
