@@ -1,5 +1,6 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import {
+  isAllowedPublicToolEntryRedirect,
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
@@ -580,6 +581,43 @@ function buildRecords(
   return records;
 }
 
+/**
+ * The subject URLs that could be the submitted target, in the order to try.
+ *
+ * The crawler resolves the entry redirect before it crawls anything: a
+ * submitted `www.` host that 301s to the apex yields an origin — and therefore
+ * a whole set of collected pages — on the apex, while `requestedUrl` keeps the
+ * string the visitor typed. Comparing only that string against those pages
+ * finds nothing, so a site crawled end to end reports its one requested page as
+ * never collected.
+ *
+ * The second candidate re-bases the submitted path onto the crawled origin, and
+ * only when the entry resolver would have been allowed to move between those
+ * two hosts in the first place. Re-basing on the origin unconditionally would
+ * answer a URL on an unrelated site with whatever this crawl collected at the
+ * same path.
+ */
+function targetSubjectCandidates(
+  raw: SeoAuditRaw,
+  requestedSubject: string | null,
+): readonly string[] {
+  if (requestedSubject === null) return [];
+  let rebased: string | null = null;
+  try {
+    const submitted = new URL(raw.requestedUrl);
+    const origin = new URL(raw.origin);
+    const onOrigin = `${origin.protocol}//${origin.host}${submitted.pathname}${submitted.search}`;
+    rebased = isAllowedPublicToolEntryRedirect(raw.requestedUrl, onOrigin)
+      ? subjectUrlOf(onOrigin)
+      : null;
+  } catch {
+    rebased = null;
+  }
+  return rebased === null || rebased === requestedSubject
+    ? [requestedSubject]
+    : [requestedSubject, rebased];
+}
+
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   const requestedSubject = subjectUrlOf(raw.requestedUrl);
@@ -587,14 +625,20 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   // target in both. Selecting the raw record by a second predicate could pick
   // a different journey for the same subject URL and report one page's text
   // beside another page's observations.
-  const inspectedIndex = pages.findIndex(
-    (page) =>
-      page.subjectUrl === requestedSubject &&
-      page.finalStatus !== null &&
-      page.finalStatus >= 200 &&
-      page.finalStatus < 300 &&
-      isHtml(page.contentType),
-  );
+  const inspectedIndex = (() => {
+    for (const subject of targetSubjectCandidates(raw, requestedSubject)) {
+      const at = pages.findIndex(
+        (page) =>
+          page.subjectUrl === subject &&
+          page.finalStatus !== null &&
+          page.finalStatus >= 200 &&
+          page.finalStatus < 300 &&
+          isHtml(page.contentType),
+      );
+      if (at !== -1) return at;
+    }
+    return -1;
+  })();
   const inspectedTarget = inspectedIndex === -1 ? null : pages[inspectedIndex];
   const inspectedProjection =
     inspectedIndex === -1 ? null : raw.pages[inspectedIndex]?.projection;

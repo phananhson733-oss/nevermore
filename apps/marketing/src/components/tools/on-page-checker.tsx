@@ -724,10 +724,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             <p className="text-[14px] text-text-dark-primary">
               {t("waiting.headline")}
             </p>
-            {/* Visible progress, deliberately not announced once a second. */}
+            {/*
+              The one thing on screen that moves. A minute of silence under a
+              headline that says no estimate will be given reads as a hung
+              request, so the count is given the weight of a running clock
+              rather than a footnote. Deliberately not announced once a second.
+            */}
             <p
               aria-hidden="true"
-              className="font-mono text-[13px] text-text-dark-secondary"
+              className="font-mono text-[15px] text-brand-accent-text"
             >
               {t("waiting.elapsed", { seconds: elapsed })}
             </p>
