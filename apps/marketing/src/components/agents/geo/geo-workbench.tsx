@@ -139,6 +139,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
    * a sibling Agent workbench needed for the same reason.
    */
   const querySetRef = useRef<GeoQuerySetV1 | null>(null);
+  /**
+   * The banner that says why a run stopped.
+   *
+   * It renders at the top of the workbench while the button that starts a run
+   * sits at the bottom of a long question list, and a failure also sends the
+   * visitor back to that list. Without moving to it, a refused run looks exactly
+   * like a button that did nothing — which is how a real visitor read a run that
+   * had already been billed for eighteen provider calls.
+   */
+  const alertRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -147,6 +157,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       abort.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (errorCode === null && rejections.length === 0) return;
+    const node = alertRef.current;
+    if (node === null) return;
+    node.scrollIntoView?.({ block: "center", behavior: "auto" });
+    // Focus follows the scroll so keyboard and screen-reader users land on the
+    // reason too, rather than on whatever the previous stage left focused.
+    node.focus();
+  }, [errorCode, rejections]);
 
   useEffect(() => {
     querySetRef.current = querySet;
@@ -239,7 +259,10 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       return;
     }
 
-    const built = await buildGeoCoreQuerySet(confirmed.snapshot, () => new Date());
+    const built = await buildGeoCoreQuerySet(
+      confirmed.snapshot,
+      () => new Date(),
+    );
     if (!mounted.current) return;
     if (!built.ok) {
       setRejections(built.rejections.map((entry) => entry.code));
@@ -386,26 +409,32 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
 
   return (
     <div id="geo-agent-workbench" className="scroll-mt-24">
-      {message !== null && (
-        <p
-          role="alert"
-          className="mb-4 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-4 py-3 text-[12.5px] text-text-dark-primary"
-        >
-          {message}
-        </p>
-      )}
-      {rejections.length > 0 && (
-        <ul
-          role="alert"
-          className="mb-4 grid gap-1 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-4 py-3"
-        >
-          {rejections.map((code) => (
-            <li key={code} className="text-[12.5px] text-text-dark-primary">
-              {t(`rejections.${code}`)}
-            </li>
-          ))}
-        </ul>
-      )}
+      <div
+        ref={alertRef}
+        tabIndex={-1}
+        className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+      >
+        {message !== null && (
+          <p
+            role="alert"
+            className="mb-4 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-4 py-3 text-[12.5px] text-text-dark-primary"
+          >
+            {message}
+          </p>
+        )}
+        {rejections.length > 0 && (
+          <ul
+            role="alert"
+            className="mb-4 grid gap-1 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-4 py-3"
+          >
+            {rejections.map((code) => (
+              <li key={code} className="text-[12.5px] text-text-dark-primary">
+                {t(`rejections.${code}`)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {stage === "context" && (
         <section className="rounded-card border border-brand-border-card bg-brand-panel-sunken p-5 md:p-6">
