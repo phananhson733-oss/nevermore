@@ -529,15 +529,27 @@ export async function handleAgentAuditRequest(
       ? (evidence.queries.find((query) => query.isPrimary) ??
           evidence.queries[0])?.displayQuery ?? null
       : null;
-  const landscape =
-    dependencies.readSerpLandscape === undefined
-      ? null
-      : await dependencies.readSerpLandscape({
-          query: primaryQuery,
-          market: input.value.market,
-          language: input.value.language,
-          targetUrl: result.inspectedTargetUrl ?? result.targetUrl,
-        });
+  // Wrapped even though the seam's own contract is that it resolves. The crawl
+  // has already succeeded and the credit is already spent by the time this
+  // runs, so the cost of a throw here is the whole check — and this is the
+  // frame that would return the 500. A seam that breaks its contract should
+  // cost its own section, not the report.
+  let landscape: SerpLandscape | null = null;
+  if (dependencies.readSerpLandscape !== undefined) {
+    try {
+      landscape = await dependencies.readSerpLandscape({
+        query: primaryQuery,
+        market: input.value.market,
+        language: input.value.language,
+        targetUrl: result.inspectedTargetUrl ?? result.targetUrl,
+      });
+    } catch {
+      landscape = {
+        availability: "unavailable",
+        reason: "provider_unavailable",
+      };
+    }
+  }
 
   const projected: AgentAuditSuccessData = {
     run: {

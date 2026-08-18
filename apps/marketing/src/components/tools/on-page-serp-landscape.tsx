@@ -25,6 +25,12 @@ export function OnPageSerpLandscape({
 
   return (
     <div className="grid gap-3">
+      {/*
+        Three different sentences, because "your domain is at position 2" and
+        "this page is at position 2" are different facts and the second one was
+        being told when only the first was known. A rival page of your own
+        holding the query is the ordinary case, not an edge one.
+      */}
       <p className="text-[14px] text-text-dark-primary">
         {landscape.targetPosition === null
           ? t("summary.absent", {
@@ -32,11 +38,17 @@ export function OnPageSerpLandscape({
               market: landscape.market,
               results: landscape.resultsObserved,
             })
-          : t("summary.present", {
-              query: landscape.query,
-              market: landscape.market,
-              position: landscape.targetPosition,
-            })}
+          : landscape.targetPageOnPage
+            ? t("summary.present", {
+                query: landscape.query,
+                market: landscape.market,
+                position: landscape.targetPosition,
+              })
+            : t("summary.otherPage", {
+                query: landscape.query,
+                market: landscape.market,
+                position: landscape.targetPosition,
+              })}
       </p>
 
       {/*
@@ -86,7 +98,14 @@ export function OnPageSerpLandscape({
                 >
                   {row.domain}
                   {row.isTarget && (
-                    <span className="text-text-dark-faint"> {t("you")}</span>
+                    <span className="text-text-dark-faint">
+                      {" "}
+                      {row.isTargetPage === true
+                        ? t("youThisPage")
+                        : row.isTargetPage === false
+                          ? t("youOtherPage")
+                          : t("you")}
+                    </span>
                   )}
                 </td>
                 <td className="py-2 pr-3 text-text-dark-secondary">

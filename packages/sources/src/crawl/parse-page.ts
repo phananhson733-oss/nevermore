@@ -735,28 +735,6 @@ function collectScriptBytes(html: string): number {
   return bytes;
 }
 
-/**
- * Whether two origins belong to the same site for outbound-link purposes.
- *
- * `https://example.com` and `https://www.example.com` are one site to every
- * reader and two origins to `URL`. Treating them as separate published pages
- * that link only to themselves as having no internal links at all, on any site
- * serving both hosts without redirecting. A deeper subdomain stays external:
- * that is a judgement about ownership this parser has no evidence for.
- */
-function isSameSite(left: string, right: string): boolean {
-  if (left === right) return true;
-  const bare = (origin: string): string | null => {
-    try {
-      return new URL(origin).host.replace(/^www\./i, "");
-    } catch {
-      return null;
-    }
-  };
-  const leftHost = bare(left);
-  return leftHost !== null && leftHost === bare(right);
-}
-
 function collectExternalLinkFacts(
   html: string,
   pageUrl: string,
@@ -778,7 +756,13 @@ function collectExternalLinkFacts(
     } catch {
       continue;
     }
-    if (isSameSite(origin, pageOrigin)) continue;
+    // Exact origin, matching `collectInternalOutlinks`. Folding www into the
+    // apex here and not there made a link to the site's other host vanish from
+    // BOTH populations: external skipped it as internal, internal skipped it as
+    // cross-origin. Widening the internal side instead would change
+    // `crawl.page.v1`, which the product persists — so the two stay identical
+    // and dual-host sites keep the known over-count they already had.
+    if (origin === pageOrigin) continue;
 
     const relTokens = new Set(
       (attr(tag, "rel") ?? "").toLowerCase().split(/\s+/).filter(Boolean),
@@ -879,7 +863,7 @@ function collectOnPageFacts(
   /** Comment-free markup with script/style/template contents removed. */
   markup: string,
   metaTags: readonly string[],
-  baseUrl: string,
+  pageUrl: string,
   pageOrigin: string,
   bodyText: string,
   htmlTag: string | undefined,
@@ -902,7 +886,7 @@ function collectOnPageFacts(
     faviconDeclared: collectFaviconDeclared(markup),
     hreflang: collectHreflang(markup),
     images: collectImageFacts(markup),
-    externalLinks: collectExternalLinkFacts(markup, baseUrl, pageOrigin),
+    externalLinks: collectExternalLinkFacts(markup, pageUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,
     scriptBytes: collectScriptBytes(rawHtml),
@@ -946,30 +930,17 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
   }
 
   /**
-   * `<base href>` moves the origin of every relative URL on the page.
+   * `<base href>` is deliberately NOT honoured here.
    *
-   * Browsers honour it and this parser did not, so a document declaring
-   * `<base href="/shop/">` had every relative link resolved one directory too
-   * high — wrong link graph, wrong canonical target, and internal links
-   * classified against the wrong paths. Only an absolute, http(s) base is
-   * accepted; anything else leaves the page URL as the base, which is what a
-   * browser falls back to as well.
+   * Browsers do honour it, so a document declaring `<base href="/shop/">` has
+   * its relative links resolved one directory higher than this parser resolves
+   * them. Fixing that changes `canonicalTarget` and `internalOutlinks`, and
+   * those two fields ARE the frozen `crawl.page.v1` metric the product
+   * persists: the same HTML would then produce different link-graph facts
+   * under an unchanged metric key, and no stored observation would say which
+   * meaning produced it. That is a versioned migration, not a parser fix, so
+   * it is left out of the public tool's changes and recorded here instead.
    */
-  const baseHref = attr(
-    firstTag(markup, openingTagPattern("base", "i")),
-    "href",
-  );
-  const resolvedBase = ((): string => {
-    if (baseHref === null || baseHref.trim() === "") return pageUrl;
-    try {
-      const candidate = new URL(decodeHtml(baseHref).trim(), pageUrl);
-      return candidate.protocol === "http:" || candidate.protocol === "https:"
-        ? candidate.href
-        : pageUrl;
-    } catch {
-      return pageUrl;
-    }
-  })();
 
   const canonicalTag = [
     ...markup.matchAll(openingTagPattern("link", "gi")),
@@ -978,7 +949,7 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
   )?.[0];
   const canonicalHref = attr(canonicalTag, "href");
   const canonicalPair = canonicalHref
-    ? canonicalizeUrl(decodeHtml(canonicalHref), resolvedBase)
+    ? canonicalizeUrl(decodeHtml(canonicalHref), pageUrl)
     : null;
   const canonicalTarget =
     canonicalPair !== null &&
@@ -1011,12 +982,12 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
   );
   const bodyText = extractNormalisedBody(markup);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
-  const outlinks = collectInternalOutlinks(markup, resolvedBase, pageOrigin);
+  const outlinks = collectInternalOutlinks(markup, pageUrl, pageOrigin);
   const htmlTag = firstTag(markup, openingTagPattern("html", "i"));
   const onPage = collectOnPageFacts(
     markup,
     metaTags,
-    resolvedBase,
+    pageUrl,
     pageOrigin,
     bodyText,
     htmlTag,

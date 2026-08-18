@@ -541,6 +541,26 @@ describe("what the sheet can now say", () => {
     );
   });
 
+  it("lets the response header outrank the meta tag, and says when they differ", () => {
+    // The browser decodes by the header. Reading the meta tag first published
+    // the value that does not govern the decoding.
+    const conflicting = score({
+      extract: {
+        declared: { ...extract().declared!, charset: "iso-8859-1" },
+        response: {
+          ...extract().response,
+          contentType: "text/html; charset=utf-8",
+        },
+      },
+    });
+    const entry = find(conflicting, "charset");
+    expect(entry?.detail.key).toBe("charset.conflict");
+    expect(entry?.detail.values).toMatchObject({
+      header: "utf-8",
+      meta: "iso-8859-1",
+    });
+  });
+
   it("accepts an encoding declared only in the response header", () => {
     // The header outranks the meta tag, and we were collecting it and reading
     // only the tag — marking pages down for a declaration they had made in the

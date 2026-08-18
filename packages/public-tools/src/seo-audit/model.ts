@@ -457,7 +457,15 @@ function buildRecords(
       // Tested population: sitemap members other than the root.
       population: "conditional_subset",
       category: "links",
-      tested: pages.filter((page) => page.sitemapMember),
+      // The root carries the same exclusion as the observations below. It was
+      // only excluded there, so a homepage listed in the sitemap with no
+      // inbound links counted as tested and — never being emitted as affected
+      // — rendered a clean pass for a rule that deliberately never looks at it.
+      tested: pages.filter(
+        (page) =>
+          page.sitemapMember &&
+          page.subjectUrl !== subjectUrlOf(`${raw.origin}/`),
+      ),
       observations: pages
         .filter(
           (page) =>

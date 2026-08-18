@@ -27,7 +27,10 @@ import {
 import { OnPageHistoryPanel } from "./on-page-history-panel.tsx";
 import { OnPageReportSections } from "./on-page-report-sections.tsx";
 import { OnPageKeywordEvidence } from "./on-page-keyword-evidence.tsx";
-import type { SerpLandscape } from "../../lib/agents/audit-contract.ts";
+import {
+  isSerpLandscape,
+  type SerpLandscape,
+} from "../../lib/agents/audit-contract.ts";
 
 import {
   appendOnPageHistory,
@@ -348,7 +351,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       cacheStatus: cache,
       extract,
       score,
-      landscape: result?.serpLandscape ?? null,
+      // Validated, not cast. The checker reads this response with a TypeScript
+      // interface, which is erased at runtime — so the guard written for this
+      // shape was never reached on the one route that produces it, and a
+      // malformed landscape would have crashed the report on `rows.map`.
+      landscape: isSerpLandscape(result?.serpLandscape)
+        ? result.serpLandscape
+        : null,
     });
 
     // Only a whole success is remembered, so the list never suggests a run

@@ -14,6 +14,7 @@ import {
   COVERAGE_EXCLUSIONS,
   COVERAGE_GROUPS,
 } from "./coverage-chapter.ts";
+import { SERP_UNAVAILABLE_REASONS } from "../agents/audit-contract.ts";
 
 /**
  * Why this reads source instead of a list someone maintains.
@@ -193,6 +194,22 @@ describe.each(["en", "zh"])("%s wording covers every check", (locale) => {
       expect(
         resolve(messages, ["tools", "onPageChecker", "coverage", "not", entry]),
         `missing exclusion copy for "${entry}"`,
+      ).toBeTypeOf("string");
+    }
+  });
+
+  it("has a sentence for every reason the results-page lookup can return", async () => {
+    const messages = await catalogue(locale);
+    for (const reason of SERP_UNAVAILABLE_REASONS) {
+      expect(
+        resolve(messages, [
+          "tools",
+          "onPageChecker",
+          "landscape",
+          "unavailable",
+          reason,
+        ]),
+        `missing wording for "${reason}"`,
       ).toBeTypeOf("string");
     }
   });

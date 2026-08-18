@@ -37,7 +37,15 @@ export interface SerpLandscapeRow {
   /** Sitelinks shown under this result; zero also covers "not described". */
   readonly sitelinkCount: number;
   readonly domain: string;
+  /** The checked site holds this result. Says nothing about which page. */
   readonly isTarget: boolean;
+  /**
+   * Whether this result is the submitted page itself.
+   *
+   * Null when the site does not hold the result, or when the provider gave no
+   * URL to compare — which is a different fact from "a different page".
+   */
+  readonly isTargetPage: boolean | null;
 }
 
 /**
@@ -61,6 +69,8 @@ export type SerpLandscape =
       readonly features: readonly string[] | null;
       /** Where this page's own host sits, or null when it is not on page one. */
       readonly targetPosition: number | null;
+      /** True only when one of those results is the submitted page itself. */
+      readonly targetPageOnPage: boolean;
       readonly rows: readonly SerpLandscapeRow[];
     }
   | {
@@ -68,6 +78,7 @@ export type SerpLandscape =
       readonly reason:
         | "no_target_query"
         | "market_not_supported"
+        | "provider_not_configured"
         | "provider_unavailable";
     };
 
@@ -375,9 +386,16 @@ function isDensity(value: unknown): boolean {
   );
 }
 
-const SERP_UNAVAILABLE_REASONS: readonly string[] = [
+/**
+ * Exported so the wording guard walks the same list the validator does.
+ *
+ * A reason with no sentence renders as its own key path in the one section
+ * that exists to explain why a lookup produced nothing.
+ */
+export const SERP_UNAVAILABLE_REASONS: readonly string[] = [
   "no_target_query",
   "market_not_supported",
+  "provider_not_configured",
   "provider_unavailable",
 ];
 
@@ -388,6 +406,10 @@ const SERP_UNAVAILABLE_REASONS: readonly string[] = [
  * way every other printed string is. Ten results at most, because one page is
  * what was asked for.
  */
+export function isSerpLandscape(value: unknown): value is SerpLandscape {
+  return isSerpLandscapeShape(value);
+}
+
 function isSerpLandscapeShape(value: unknown): boolean {
   if (!isObject(value)) return false;
   if (value.availability === "unavailable") {
@@ -405,6 +427,7 @@ function isSerpLandscapeShape(value: unknown): boolean {
     !/^[A-Z]{2}$/.test(value.market) ||
     typeof value.language !== "string" ||
     !/^[a-z]{2,3}$/.test(value.language) ||
+    typeof value.targetPageOnPage !== "boolean" ||
     !isNonNegativeInteger(value.resultsObserved) ||
     !isNonNegativeInteger(value.withSitelinks) ||
     value.withSitelinks > value.resultsObserved ||
@@ -429,14 +452,15 @@ function isSerpLandscapeShape(value: unknown): boolean {
   return value.rows.every(
     (row) =>
       isObject(row) &&
-      Object.keys(row).length === 4 &&
+      Object.keys(row).length === 5 &&
       isNonNegativeInteger(row.position) &&
       row.position > 0 &&
       typeof row.domain === "string" &&
       row.domain.length > 0 &&
       row.domain.length <= 253 &&
       isNonNegativeInteger(row.sitelinkCount) &&
-      typeof row.isTarget === "boolean",
+      typeof row.isTarget === "boolean" &&
+      (row.isTargetPage === null || typeof row.isTargetPage === "boolean"),
   );
 }
 

@@ -344,32 +344,51 @@ function isInteractiveFacts(value: unknown): boolean {
  * builder's own cap. Everything the target extract carries is bounded, because
  * this guard is what stands between a cached payload and a browser.
  */
-function isTermTables(value: unknown): boolean {
+function isTermTables(value: unknown, totalUnits: number | null): boolean {
   if (value === null) return true;
   if (!Array.isArray(value) || value.length > 5) return false;
-  return value.every((table) => {
+  const sizes: number[] = [];
+  for (const table of value) {
     if (!isObject(table) || !hasExactly(table, ["size", "rows"])) return false;
     if (
       typeof table.size !== "number" ||
       !Number.isSafeInteger(table.size) ||
       table.size < 1 ||
-      table.size > 5
+      table.size > 5 ||
+      // One table per length, in order. Two tables claiming the same size are
+      // not a shape this builder can produce, and they render as duplicate
+      // React keys on the way out.
+      sizes.includes(table.size) ||
+      (sizes.length > 0 && table.size <= (sizes.at(-1) ?? 0))
     ) {
       return false;
     }
-    return (
-      Array.isArray(table.rows) &&
-      table.rows.length <= 15 &&
-      table.rows.every(
+    sizes.push(table.size);
+    // A phrase of `size` units cannot occur more times than there are windows
+    // of that length in the body. Without this a cached row could carry a count
+    // of a million against a ten-unit body and the browser would print
+    // 10,000,000%.
+    const ceiling =
+      totalUnits === null ? null : Math.max(0, totalUnits - table.size + 1);
+    if (
+      !Array.isArray(table.rows) ||
+      table.rows.length > 15 ||
+      !table.rows.every(
         (row) =>
           isObject(row) &&
           hasExactly(row, ["phrase", "count"]) &&
           typeof row.phrase === "string" &&
+          row.phrase.length > 0 &&
           characterLength(row.phrase) <= 120 &&
-          isNonNegativeInteger(row.count),
+          isNonNegativeInteger(row.count) &&
+          row.count > 0 &&
+          (ceiling === null || row.count <= ceiling),
       )
-    );
-  });
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** `text_units.v1`, as published beside the whitespace word count. */
@@ -451,7 +470,13 @@ export function isSeoAuditTargetPageExtract(
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
     isNullableTextUnits(value.staticBodyUnits) &&
-    isTermTables(value.termFrequencies) &&
+    isTermTables(
+      value.termFrequencies,
+      isObject(value.staticBodyUnits) &&
+        typeof value.staticBodyUnits.units === "number"
+        ? value.staticBodyUnits.units
+        : null,
+    ) &&
     typeof value.truncatedLists === "boolean" &&
     isResponseFacts(value.response) &&
     (value.declared === null || isDeclaredFacts(value.declared))

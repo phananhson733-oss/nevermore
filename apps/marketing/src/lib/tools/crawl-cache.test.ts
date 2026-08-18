@@ -126,8 +126,22 @@ describe("writeCrawlCache", () => {
         (_, i) => `${"x".repeat(120)}-${i}`,
       ),
     };
-    expect(cachedPayloadBytes(huge)).toBeGreaterThan(8_000_000);
+    expect(cachedPayloadBytes(huge)).toBeGreaterThan(4_000_000);
     await writeCrawlCache("seo_audit", "acme.com", huge, cacheDeps({ write }));
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("refuses a payload the function response could not carry", async () => {
+    // The platform caps a function response body at 4.5 MB. A cached payload
+    // above that reads back fine and then cannot be returned, which is worse
+    // than never caching it.
+    const write = vi.fn(async () => {});
+    const overWall = {
+      pages: Array.from({ length: 40_000 }, (_, i) => `${"x".repeat(120)}-${i}`),
+    };
+    expect(cachedPayloadBytes(overWall)).toBeGreaterThan(4_000_000);
+    expect(cachedPayloadBytes(overWall)).toBeLessThan(8_000_000);
+    await writeCrawlCache("seo_audit", "acme.com", overWall, cacheDeps({ write }));
     expect(write).not.toHaveBeenCalled();
   });
 

@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
         "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured.",
         "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
-        "character_count_only_rendered_pixel_width_not_measured": "Character count only. Rendered pixel width, which is what Google truncates on, was not measured.",
+        "display_width_approximation_rendered_pixel_width_not_measured": "Approximated by display width, counting CJK characters as two. The rendered pixel width Google actually truncates by is not measured.",
         "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
         "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point."
       },
@@ -1068,8 +1068,8 @@
         "malformed_blocks": "Malformed JSON-LD blocks",
         "types_observed": "JSON-LD types observed",
         "broken_link_targets": "Broken link targets",
-        "title_characters": "Title characters",
-        "description_characters": "Description characters",
+        "title_display_width": "Title display width",
+        "description_display_width": "Description display width",
         "reviewed_range": "Reviewed range",
         "observed_outbound_internal_links": "Observed outbound internal links",
         "observed_click_depth": "Observed click depth",
@@ -2185,7 +2185,8 @@
           "_label": "Character encoding",
           "missing": "No charset declared, so non-ASCII text can be read under the wrong encoding.",
           "declared": "Declared {charset}.",
-          "fromHeader": "The markup declares no charset, but the HTTP response header declares {charset} — the header outranks the tag, so the encoding is stated."
+          "fromHeader": "The HTTP response header declares {charset}, which is the value the browser actually decodes with.",
+          "conflict": "The response header says {header} and the meta tag says {meta}. The browser decodes by the header, so one of the two declarations is wrong."
         },
         "lang": {
           "_label": "HTML lang",
@@ -2498,10 +2499,11 @@
         "position": "Position",
         "domain": "Domain",
         "sitelinkColumn": "Sitelinks",
-        "you": "(this page's domain)",
+        "you": "(your domain)",
         "summary": {
           "present": "On page one for “{query}” ({market}), this page's domain sits at position {position}.",
-          "absent": "This page's domain is not among the top {results} results for “{query}” ({market}). That means it is not on the page we read, not that it does not rank."
+          "absent": "This page's domain is not among the top {results} results for “{query}” ({market}). That means it is not on the page we read, not that it does not rank.",
+          "otherPage": "On page one for “{query}” ({market}) your domain sits at position {position}, but the result holding it is another page on your site, not the one you checked."
         },
         "sitelinks": "{withSitelinks} of the top {results} results show sitelinks. Sitelinks follow brand and navigational demand, so the number says who Google already treats as a destination — a different sentence from “this query is hard”.",
         "features": "Also on that page: {features}.",
@@ -2509,8 +2511,11 @@
         "unavailable": {
           "no_target_query": "No target query was submitted, so no results page was looked up.",
           "market_not_supported": "This market or language is outside what we look up, so no call was made and nothing was spent.",
+          "provider_not_configured": "This deployment has no credential for the results-page lookup, so this section has no data. Every other check is unaffected.",
           "provider_unavailable": "The results page could not be read this time. Every other check is unaffected."
-        }
+        },
+        "youThisPage": "(this page)",
+        "youOtherPage": "(your domain, a different page)"
       },
       "coverage": {
         "title": "What this checks, and what it does not",

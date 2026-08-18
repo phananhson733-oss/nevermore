@@ -55,10 +55,17 @@ function referencesIn(source: string): readonly Reference[] {
   // `import type { A } from "x"` and `import { type A } from "x"` differ: only
   // the first erases the whole statement. The second still emits the import.
   for (const match of source.matchAll(
-    /import\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/g,
+    /\b(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/g,
   )) {
     if (match[2] !== undefined) {
       found.push({ specifier: match[2], typeOnly: match[1] !== undefined });
+    }
+  }
+  // A side-effect import has no `from` and is never erased: `import "x"` runs
+  // the whole module. The `from`-only pattern above walked straight past it.
+  for (const match of source.matchAll(/\bimport\s+['"`]([^'"`]+)['"`]/g)) {
+    if (match[1] !== undefined) {
+      found.push({ specifier: match[1], typeOnly: false });
     }
   }
   for (const match of source.matchAll(
@@ -71,10 +78,28 @@ function referencesIn(source: string): readonly Reference[] {
   return found;
 }
 
+/**
+ * Resolve a specifier the way the bundler does, as far as this walk needs to.
+ *
+ * Relative paths, the `@/` alias this app uses, an `index.ts` inside a
+ * directory, and the extension-less spellings TypeScript allows. A walk that
+ * only understood `./x.ts` stopped at the first `@/lib/...` import and called
+ * the remaining graph unreachable.
+ */
 function resolveRelative(from: string, specifier: string): string | null {
-  if (!specifier.startsWith(".")) return null;
-  const base = resolve(dirname(from), specifier);
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`]) {
+  const base = specifier.startsWith(".")
+    ? resolve(dirname(from), specifier)
+    : specifier.startsWith("@/")
+      ? resolve(SOURCE_ROOT, specifier.slice(2))
+      : null;
+  if (base === null) return null;
+  for (const candidate of [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    join(base, "index.ts"),
+    join(base, "index.tsx"),
+  ]) {
     try {
       if (statSync(candidate).isFile()) return candidate;
     } catch {
@@ -134,6 +159,24 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
       offenders,
       `use a subpath export instead:\n${offenders.join("\n")}`,
     ).toEqual([]);
+  });
+
+  it("follows the aliased imports this app actually writes", () => {
+    // `@/lib/...` is the spelling half this codebase uses. A walk that resolved
+    // only `./x.ts` stopped at the first one and called the rest unreachable.
+    const aliased = [...closure.values()]
+      .flat()
+      .filter((reference) => reference.specifier.startsWith("@/"));
+    expect(aliased.length).toBeGreaterThan(0);
+    for (const reference of aliased) {
+      const resolvedSomewhere = [...closure.keys()].some((file) =>
+        file.includes(reference.specifier.slice(2).split("/").join("/")),
+      );
+      expect(
+        resolvedSomewhere,
+        `alias ${reference.specifier} resolved to nothing in the closure`,
+      ).toBe(true);
+    }
   });
 
   it("sees the type-only barrel imports it is allowing", () => {

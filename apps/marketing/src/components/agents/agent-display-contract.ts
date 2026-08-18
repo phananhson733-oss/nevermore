@@ -37,6 +37,21 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
   tech: NEUTRAL_AGENT_RECORD_IDS,
 };
 
+/**
+ * Every evidence label the audit can emit, and nothing else.
+ *
+ * `supportsAgentDisplayVocabulary` fails closed on an unknown label, so this set
+ * falling behind `model.ts` is not a cosmetic gap — the Agent answers
+ * `audit_response_invalid` for any site that produces the missing label. It has
+ * happened: renaming `title_characters` to `title_display_width` upstream broke
+ * every site whose title sits outside the reviewed range, which is most of them.
+ * A test drives the real model over real HTML and checks its output against this
+ * set, so the two cannot drift again.
+ *
+ * Old spellings are removed rather than kept alongside: the schema version bump
+ * that ships with a rename already makes older cached payloads unreadable, so a
+ * retained entry would only be a name nothing can produce.
+ */
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   "fetched",
   "groups_observed",
@@ -60,8 +75,8 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   "malformed_blocks",
   "types_observed",
   "broken_link_targets",
-  "title_characters",
-  "description_characters",
+  "title_display_width",
+  "description_display_width",
   "reviewed_range",
   "observed_outbound_internal_links",
   "observed_click_depth",
@@ -77,7 +92,7 @@ export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   "uncollected_link_targets_not_classified",
   "static_html_json_ld_only",
   "no_sitemap_collected_membership_not_testable",
-  "character_count_only_rendered_pixel_width_not_measured",
+  "display_width_approximation_rendered_pixel_width_not_measured",
   "bounded_static_html_crawl_outlinks_only",
   "depth_from_bounded_crawl_entry_point_only",
 ]);

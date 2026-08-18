@@ -55,14 +55,14 @@ export interface CrawlCacheDependencies {
  * exactly the sites whose crawl takes the full four minutes, so the cache
  * stopped working for the visitors it was built for and did so silently.
  *
- * Eight megabytes covers what this crawler can produce at its own 2,000-page
- * budget with room over. A cache hit that transfers a few megabytes from the
- * database costs a second or two against a crawl that costs four minutes; the
- * trade only looks close if the number is read as a database limit rather than
- * as a round trip against a four-minute alternative. The bound stays because a
- * payload that somehow exceeds it is not something to write to a shared row.
+ * Four megabytes, because the binding limit is not the database — it is the
+ * platform's function response body, capped at 4.5 MB. A payload above that
+ * caches fine, reads back fine, and then cannot be delivered: the route that
+ * would return it fails instead. Caching something the response cannot carry
+ * is worse than not caching it, so the ceiling sits under the wall rather than
+ * over it, with room for the projection wrapped around the payload.
  */
-const MAX_CACHED_PAYLOAD_BYTES = 8_000_000;
+const MAX_CACHED_PAYLOAD_BYTES = 4_000_000;
 
 const PAYLOAD_ENCODER = new TextEncoder();
 

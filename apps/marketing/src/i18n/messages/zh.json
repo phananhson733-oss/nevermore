@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
         "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。",
         "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
-        "character_count_only_rendered_pixel_width_not_measured": "仅统计字符数。未测量 Google 实际据以截断的渲染像素宽度。",
+        "display_width_approximation_rendered_pixel_width_not_measured": "按显示宽度近似（中日韩字符计两格）。未测量 Google 实际据以截断的渲染像素宽度。",
         "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
         "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。"
       },
@@ -1068,8 +1068,8 @@
         "malformed_blocks": "格式错误的 JSON-LD 块",
         "types_observed": "已观测 JSON-LD 类型",
         "broken_link_targets": "断链目标数",
-        "title_characters": "Title 字符数",
-        "description_characters": "Description 字符数",
+        "title_display_width": "Title 显示宽度",
+        "description_display_width": "Description 显示宽度",
         "reviewed_range": "审阅区间",
         "observed_outbound_internal_links": "观察到的出站内链数",
         "observed_click_depth": "观察到的点击深度",
@@ -2185,7 +2185,8 @@
           "_label": "字符编码声明",
           "missing": "没有声明 charset，非 ASCII 文本可能被按错误编码解读。",
           "declared": "已声明 {charset}。",
-          "fromHeader": "标记里没写 charset，但 HTTP 响应头声明了 {charset}——响应头优先级更高，编码是明确的。"
+          "fromHeader": "HTTP 响应头声明了 {charset}，这就是浏览器实际用来解码的那个值。",
+          "conflict": "响应头说 {header}，标记里的 meta 说 {meta}。浏览器按响应头解码，两个声明不一致，其中一个是错的。"
         },
         "lang": {
           "_label": "HTML lang 语言声明",
@@ -2498,10 +2499,11 @@
         "position": "位次",
         "domain": "域名",
         "sitelinkColumn": "站内链接",
-        "you": "（这一页的域名）",
+        "you": "（你的域名）",
         "summary": {
           "present": "在「{query}」（{market}）的第一页上，这一页的域名排在第 {position} 位。",
-          "absent": "在「{query}」（{market}）的前 {results} 条结果里没有这一页的域名。这只说明它不在我们读到的这一页上，不代表没有排名。"
+          "absent": "在「{query}」（{market}）的前 {results} 条结果里没有这一页的域名。这只说明它不在我们读到的这一页上，不代表没有排名。",
+          "otherPage": "在「{query}」（{market}）的第一页上，你的域名排在第 {position} 位，但占住这个位置的是站内另一页，不是你检查的这一页。"
         },
         "sitelinks": "前 {results} 条里有 {withSitelinks} 条带站内链接。站内链接跟着品牌和导航型需求走，所以这个数字说的是 Google 已经把谁当成目的地，而不是「这个词有多难」。",
         "features": "这一页还出现了：{features}。",
@@ -2509,8 +2511,11 @@
         "unavailable": {
           "no_target_query": "没有提交目标关键词，因此没有查询搜索结果页。",
           "market_not_supported": "这个市场或语言不在我们能查询的范围内，因此没有发起查询（也没有产生费用）。",
+          "provider_not_configured": "这个环境里没有配置搜索结果查询所需的凭据，因此这一节没有数据。其余检查项不受影响。",
           "provider_unavailable": "搜索结果页这次没查到。其余检查项不受影响。"
-        }
+        },
+        "youThisPage": "（就是这一页）",
+        "youOtherPage": "（你的域名，但是另一页）"
       },
       "coverage": {
         "title": "这个工具检测什么、不检测什么",

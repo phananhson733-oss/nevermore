@@ -20,7 +20,12 @@ function clientReturning(rows: readonly unknown[], itemTypes: unknown = null) {
 
 const ROWS = [
   { rankGroup: 1, domain: "big.com", sitelinkCount: 4, url: "https://big.com/" },
-  { rankGroup: 2, domain: "acme.test", sitelinkCount: 0, url: null },
+  {
+    rankGroup: 2,
+    domain: "acme.test",
+    sitelinkCount: 0,
+    url: "https://www.acme.test/pricing",
+  },
   { rankGroup: 3, domain: "small.io", sitelinkCount: 0, url: null },
 ];
 
@@ -52,6 +57,7 @@ describe("readSerpLandscape", () => {
       resultsObserved: 3,
       withSitelinks: 1,
       targetPosition: 2,
+      targetPageOnPage: true,
       features: ["organic", "ai_overview"],
     });
   });
@@ -135,7 +141,141 @@ describe("readSerpLandscape", () => {
     });
   });
 
-  it("covers the markets a Chinese-first product actually sells into", async () => {
+  it("does not turn a missing credential into a five hundred", async () => {
+    // The provider client throws AUTH_REQUIRED on an empty login. This runs
+    // after a 240-second crawl has succeeded and the credit is already spent,
+    // so a deployment without the variable set would have failed every finished
+    // check — measured by constructing the real client with no credentials.
+    const previousLogin = process.env["DATAFORSEO_LOGIN"];
+    const previousPassword = process.env["DATAFORSEO_PASSWORD"];
+    delete process.env["DATAFORSEO_LOGIN"];
+    delete process.env["DATAFORSEO_PASSWORD"];
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(
+        readSerpLandscape({
+          query: "birth chart",
+          market: "US",
+          language: "en",
+          targetUrl: "https://a.test/",
+        }),
+      ).resolves.toEqual({
+        availability: "unavailable",
+        // Named apart from a provider outage: this one is ours to fix.
+        reason: "provider_not_configured",
+      });
+    } finally {
+      error.mockRestore();
+      if (previousLogin !== undefined)
+        process.env["DATAFORSEO_LOGIN"] = previousLogin;
+      if (previousPassword !== undefined)
+        process.env["DATAFORSEO_PASSWORD"] = previousPassword;
+    }
+  });
+
+  it("bounds the provider's feature list where it is produced", async () => {
+    const { client } = clientReturning(
+      ROWS,
+      Array.from({ length: 60 }, (_, index) => `feature_${index}`.repeat(20)),
+    );
+
+    const result = await readSerpLandscape(
+      { query: "q", market: "US", language: "en", targetUrl: "https://a.test/" },
+      { client },
+    );
+
+    // The guard that validates this shape allows 40 names of 64 characters. A
+    // producer that emits more makes the guard reject the whole response.
+    expect(result).toMatchObject({ availability: "available" });
+    if (result.availability !== "available") return;
+    expect(result.features?.length).toBeLessThanOrEqual(40);
+    for (const feature of result.features ?? []) {
+      expect(feature.length).toBeLessThanOrEqual(64);
+    }
+  });
+
+  it("finds the target host even when the URL carries no scheme", async () => {
+    const { client } = clientReturning(ROWS);
+
+    const result = await readSerpLandscape(
+      { query: "q", market: "US", language: "en", targetUrl: "acme.test/pricing" },
+      { client },
+    );
+
+    // Failing to parse our own target would have published "not among the top
+    // ten" — a claim about the site, made because of a claim about the parser.
+    expect(result).toMatchObject({ targetPosition: 2 });
+  });
+
+  it("will not claim the page when the provider gave no URL to compare", async () => {
+    const { client } = clientReturning([
+      { rankGroup: 1, domain: "acme.test", sitelinkCount: 0, url: null },
+    ]);
+
+    const result = await readSerpLandscape(
+      {
+        query: "q",
+        market: "US",
+        language: "en",
+        targetUrl: "https://acme.test/pricing",
+      },
+      { client },
+    );
+
+    expect(result).toMatchObject({ targetPosition: 1, targetPageOnPage: false });
+    if (result.availability !== "available") return;
+    // Null, not false: "we could not compare" is not "a different page".
+    expect(result.rows[0]?.isTargetPage).toBeNull();
+  });
+
+  it("does not call a rival page of your own site your page", async () => {
+    // Domain match is not page match, and the provider gives the URL. Reporting
+    // only the host said "your page is at position 2" when position 2 was a
+    // different page of theirs competing for the same query.
+    const { client } = clientReturning([
+      { rankGroup: 1, domain: "big.com", sitelinkCount: 0, url: "https://big.com/" },
+      {
+        rankGroup: 2,
+        domain: "acme.test",
+        sitelinkCount: 0,
+        url: "https://acme.test/blog/pricing-guide",
+      },
+    ]);
+
+    const result = await readSerpLandscape(
+      {
+        query: "pricing",
+        market: "US",
+        language: "en",
+        targetUrl: "https://acme.test/pricing",
+      },
+      { client },
+    );
+
+    expect(result).toMatchObject({
+      availability: "available",
+      targetPosition: 2,
+      targetPageOnPage: false,
+    });
+    if (result.availability !== "available") return;
+    expect(result.rows[1]?.isTargetPage).toBe(false);
+  });
+
+  it("spends nothing on a language the provider was never going to accept", async () => {
+    const { client, serpOrganic } = clientReturning(ROWS);
+
+    const result = await readSerpLandscape(
+      { query: "q", market: "US", language: "zz", targetUrl: "https://a.test/" },
+      { client },
+    );
+
+    // The market was allow-listed for exactly this reason and the language was
+    // not, so `zz` passed both layers and bought a provider error.
+    expect(serpOrganic).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ reason: "market_not_supported" });
+  });
+
+  it("covers the markets a Chinese-first product actually sells into", () => {
     for (const market of ["CN", "TW", "HK", "SG", "JP", "US"]) {
       expect(SERP_LOCATIONS[market], market).toBeTypeOf("number");
     }

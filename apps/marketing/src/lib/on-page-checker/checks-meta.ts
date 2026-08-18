@@ -45,19 +45,36 @@ export function charsetFromContentType(
   return declared === undefined ? null : declared.toLowerCase();
 }
 
+/**
+ * Which encoding the page is actually decoded with, and whether it agrees.
+ *
+ * The header wins. This read the meta tag first while its own comment claimed
+ * the opposite, so a page served `charset=utf-8` with `<meta charset=
+ * "iso-8859-1">` was reported as declaring iso-8859-1 — the value that does not
+ * govern the decoding. A conflict is worth a warn on its own: one of the two is
+ * wrong and the author cannot tell which from the page.
+ */
 function charsetCheck(
   declared: string | null,
   contentType: string | null,
 ): OnPageCheck {
-  if (declared !== null) {
-    return check("charset", "meta", "pass", 2, 2, "charset.declared", {
-      charset: declared,
+  const fromHeader = charsetFromContentType(contentType);
+  const inMeta = declared?.trim().toLowerCase() ?? null;
+
+  if (fromHeader !== null && inMeta !== null && fromHeader !== inMeta) {
+    return check("charset", "meta", "warn", 1, 2, "charset.conflict", {
+      header: fromHeader,
+      meta: inMeta,
     });
   }
-  const fromHeader = charsetFromContentType(contentType);
   if (fromHeader !== null) {
     return check("charset", "meta", "pass", 2, 2, "charset.fromHeader", {
       charset: fromHeader,
+    });
+  }
+  if (inMeta !== null) {
+    return check("charset", "meta", "pass", 2, 2, "charset.declared", {
+      charset: inMeta,
     });
   }
   return check("charset", "meta", "warn", 0, 2, "charset.missing");
@@ -164,10 +181,6 @@ export function metaChecks(input: CheckInput): readonly OnPageCheck[] {
       : check("viewport", "meta", "pass", 3, 3, "viewport.declared", {
           viewport: declared.viewport,
         }),
-    // The response header is authoritative and outranks the meta tag, so a page
-    // that only declares its encoding there has declared it. We were already
-    // collecting the header and reading only the tag, and marking those pages
-    // down for a declaration they had made in the stronger place.
     charsetCheck(declared.charset, extract.response.contentType),
     declared.lang === null
       ? check("lang", "meta", "warn", 0, 2, "lang.missing")

@@ -653,16 +653,20 @@ describe("parsePage on-page facts", () => {
     expect(page.onPage.externalLinks.nofollow).toBe(1);
   });
 
-  it("treats www and the apex as one site", () => {
-    // A site served on both hosts without a redirect linked to itself and was
-    // reported as having no internal links and three external ones.
+  it("classifies www and the apex the same way both collectors do", () => {
+    // Deliberately NOT folded together. Treating them as one site here while
+    // `collectInternalOutlinks` still requires an exact origin made the link
+    // vanish from both populations at once — external skipped it as internal,
+    // internal skipped it as cross-origin. Widening the internal side instead
+    // would change the frozen projection the product persists.
     const html = `<!doctype html><html><body>
       <a href="https://www.example.com/pricing">Pricing</a>
       <a href="https://elsewhere.com/">Elsewhere</a>
     </body></html>`;
     const page = parsePage(html, "https://example.com/");
 
-    expect(page.onPage.externalLinks.total).toBe(1);
+    expect(page.onPage.externalLinks.total).toBe(2);
+    expect(page.internalOutlinks).toHaveLength(0);
   });
 
   it("measures bytes rather than characters", () => {
@@ -720,16 +724,21 @@ describe("parsePage on-page facts", () => {
     expect(page.onPage.twitterCard).toBe("summary");
   });
 
-  it("resolves relative URLs against a declared base", () => {
+  it("does not honour a declared base, and says so", () => {
+    // A browser resolves these against the base. This parser does not, because
+    // `canonicalTarget` and `internalOutlinks` are the frozen `crawl.page.v1`
+    // metric the product persists — changing what they mean under an unchanged
+    // metric key would leave stored observations with no way to say which
+    // meaning produced them. Pinned so the gap is a decision, not a surprise.
     const html = `<!doctype html><html><head>
       <base href="https://example.com/shop/">
       <link rel="canonical" href="hats">
     </head><body><a href="caps">Caps</a></body></html>`;
     const page = parsePage(html, "https://example.com/deep/page");
 
-    expect(page.canonicalTarget).toBe("https://example.com/shop/hats");
+    expect(page.canonicalTarget).toBe("https://example.com/deep/hats");
     expect(page.internalOutlinks.map((link) => link.targetSubjectUrl)).toEqual([
-      "https://example.com/shop/caps",
+      "https://example.com/deep/caps",
     ]);
   });
 
