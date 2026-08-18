@@ -1344,6 +1344,7 @@ export async function crawlSite(
         subjectUrl: requestSubjectUrl,
         depth: entry.depth,
         projection,
+        onPage: parsed.onPage,
       },
       journeySubjectUrl: requestSubjectUrl,
       journeyFetchUrl: requestFetchUrl,

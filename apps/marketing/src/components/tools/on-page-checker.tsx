@@ -9,6 +9,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
+import type {
+  SeoAuditRecord,
+  SeoAuditSiteResources,
+  SeoAuditTargetPageExtract,
+} from "@sf/public-tools/seo-audit/types";
+import {
+  buildOnPageScore,
+  type OnPageScore,
+} from "../../lib/on-page-checker/scoring.ts";
+import { OnPageScoreCard } from "./on-page-score-card.tsx";
+import { OnPageCheckList } from "./on-page-check-list.tsx";
+import { OnPageSerpPreview } from "./on-page-serp-preview.tsx";
 
 import {
   appendOnPageHistory,
@@ -89,7 +101,9 @@ interface AuditResponse {
       readonly targetInspected?: unknown;
       readonly inspectedTargetUrl?: unknown;
       readonly coverage?: Readonly<Record<string, unknown>>;
-      readonly targetPageExtract?: unknown;
+      readonly targetPageExtract?: SeoAuditTargetPageExtract | null;
+      readonly siteResources?: SeoAuditSiteResources;
+      readonly records?: readonly SeoAuditRecord[];
       readonly keywordEvidence?: KeywordEvidence;
     };
   };
@@ -184,6 +198,16 @@ type RunState =
       readonly targetUrl: string;
       readonly scannedAt: string;
       readonly cacheStatus: "hit" | "miss" | "unknown";
+      /** The page's own extract, or null when the run could not read it. */
+      readonly extract: SeoAuditTargetPageExtract | null;
+      /**
+       * Scored in the browser from the same response the tables are drawn from.
+       *
+       * The audit stays a neutral ledger, so the number cannot arrive from the
+       * API; deriving it here keeps the score and the evidence on screen from
+       * ever disagreeing about the same run.
+       */
+      readonly score: OnPageScore | null;
     }
   | {
       readonly kind: "failed";
@@ -390,12 +414,28 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     const scannedAt =
       typeof result?.scannedAt === "string" ? result.scannedAt : "";
 
+    const extract = result?.targetPageExtract ?? null;
+    const siteResources = result?.siteResources ?? null;
+    // Scored only when the page was actually read. A run that could not reach
+    // the page has nothing to score, and a zero would read as a verdict.
+    const score =
+      extract === null || siteResources === null
+        ? null
+        : buildOnPageScore({
+            extract,
+            evidence,
+            siteResources,
+            siteRecords: result?.records ?? [],
+          });
+
     setRun({
       kind: "done",
       evidence,
       targetUrl,
       scannedAt,
       cacheStatus: cache,
+      extract,
+      score,
     });
 
     // Only a whole success is remembered, so the list never suggests a run
@@ -792,6 +832,38 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 })}
               </p>
             </div>
+            {/*
+              The score first, then what it is made of. A visitor who wants one
+              number gets it without scrolling; a visitor who wants to check it
+              has every check that produced it on the same screen.
+            */}
+            {run.score !== null && run.extract !== null && (
+              <div className="grid gap-5">
+                <OnPageScoreCard extract={run.extract} score={run.score} />
+              </div>
+            )}
+
+            {run.extract !== null && (
+              <section className="grid gap-3">
+                <h3 className="text-[15px] text-text-dark-primary">
+                  {t("sections.previewHeading")}
+                </h3>
+                <OnPageSerpPreview extract={run.extract} />
+              </section>
+            )}
+
+            {run.score !== null && (
+              <section className="grid gap-3">
+                <h3 className="text-[15px] text-text-dark-primary">
+                  {t("sections.checksHeading")}
+                </h3>
+                <OnPageCheckList categories={run.score.categories} />
+              </section>
+            )}
+
+            <h3 className="text-[15px] text-text-dark-primary">
+              {t("sections.keywordHeading")}
+            </h3>
             <p className="text-[14px] text-text-dark-primary">
               {t("focus.summary", {
                 covered: available.focus.covered,

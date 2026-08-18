@@ -21,6 +21,22 @@ const extract: SeoAuditTargetPageExtract = {
   openingText: "Every plan includes the full pricing calculator.",
   staticBodyWords: 800,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 42,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 0,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
 
 const limitationText = {

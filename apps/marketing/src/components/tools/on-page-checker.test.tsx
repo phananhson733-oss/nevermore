@@ -64,7 +64,30 @@ const extract: SeoAuditTargetPageExtract = {
   openingText: "Every Acme plan includes the pricing calculator.",
   staticBodyWords: 900,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 42,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 0,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
+
+/** Narrowed once: the result union does not carry `queries` until it is ok. */
+function normalizedQueries(raw: readonly string[]) {
+  const normalized = normalizeTargetQueries(raw);
+  if (!normalized.ok) throw new Error(normalized.reason);
+  return normalized.queries;
+}
 
 function evidenceFor(
   raw: readonly string[],
@@ -751,5 +774,169 @@ describe("On-Page checker local state", () => {
       "This site has been crawled several times in the last hour",
     );
     expect(host.textContent).not.toContain("Retry in");
+  });
+});
+
+/**
+ * What the visitor actually gets on screen.
+ *
+ * The tool shipped reporting keyword placement and nothing else. These hold the
+ * rest of the sheet in place, and — because the mock resolves the real English
+ * catalogue — a message key that does not exist renders as its dotted path and
+ * fails here rather than shipping as literal `tools.onPageChecker.something`.
+ */
+describe("On-Page checker report depth", () => {
+  function richResponse(): Response {
+    const rich: SeoAuditTargetPageExtract = {
+      ...extract,
+      response: {
+        ...extract.response,
+        canonicalTarget: extract.url,
+        jsonLdTypes: ["WebPage", "FAQPage"],
+        internalOutlinks: 14,
+        internalOutlinksWithoutAnchorText: 1,
+      },
+      declared: {
+        lang: "en",
+        openGraph: {
+          title: "Acme pricing",
+          description: "Compare Acme pricing.",
+          image: "https://acme.test/card.png",
+        },
+        twitterCard: "summary_large_image",
+        viewport: "width=device-width, initial-scale=1",
+        charset: "utf-8",
+        faviconDeclared: true,
+        hreflang: ["en", "zh-CN"],
+        images: { total: 5, withAlt: 4, withEmptyAlt: 0, withoutAlt: 1 },
+        externalLinks: { total: 3, nofollow: 1, blankWithoutNoopener: 1 },
+        htmlBytes: 51_200,
+        visibleTextBytes: 15_000,
+      },
+    };
+    return Response.json(
+      {
+        data: {
+          run: { source: { cache: { status: "miss" } } },
+          result: {
+            targetUrl: rich.url,
+            scannedAt: "2026-08-17T12:00:00.000Z",
+            targetInspected: true,
+            inspectedTargetUrl: rich.url,
+            coverage: { availability: "available", pagesInspected: 120 },
+            siteResources: {
+              robotsFetched: true,
+              robotsGroupsObserved: 4,
+              sitemapReferencesObserved: 1,
+              sitemapFetched: true,
+            },
+            records: [
+              {
+                id: "title_duplicate",
+                category: "indexability",
+                state: "observed",
+                unit: "page",
+                population: "every_collected_page",
+                tested: 120,
+                affected: 0,
+                observations: [],
+                limitation: null,
+              },
+            ],
+            targetPageExtract: rich,
+            keywordEvidence: buildKeywordEvidence(
+              rich,
+              normalizedQueries(["pricing"]),
+              "product",
+              true,
+            ),
+          },
+        },
+      },
+      { status: 200 },
+    );
+  }
+
+  it("renders a score, its categories, and the checks behind it", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    // The headline the tool did not have.
+    expect(text).toMatch(/Topic focus \d+%/);
+    expect(text).toMatch(/passed of \d+ graded/);
+    // Every category that carries points is named.
+    for (const category of [
+      "Meta",
+      "Content",
+      "Keyword placement",
+      "Links",
+      "Images",
+      "Social & structured data",
+      "Technical & crawl",
+      "Site context",
+    ]) {
+      expect(text).toContain(category);
+    }
+  });
+
+  it("states each check's own conclusion rather than a bare tick", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("lang=en");
+    expect(text).toContain("twitter:card=summary_large_image");
+    expect(text).toContain("Self-referencing");
+    // Counted, not merely ticked: one image without alt out of five.
+    expect(text).toContain("1 of 5 images carry no alt attribute");
+    // The unsafe-window finding a single-page tool would also catch. Worded
+    // without the 2021-era claim that the opened page gets a window handle:
+    // browsers have isolated `target=_blank` by default since then.
+    expect(text).toMatch(/1 target=_blank links? carry neither noopener nor noreferrer/);
+    // The site-wide finding a single-page tool cannot reach at all.
+    expect(text).toContain("this title is unique");
+  });
+
+  it("previews the page where its fields get read", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("GOOGLE RESULT PREVIEW");
+    expect(text).toContain("acme.test › pricing");
+    expect(text).toContain("SHARE CARD");
+    // Listed, never fetched: rendering it would make this page request the
+    // audited site on the visitor's behalf.
+    expect(text).toContain("https://acme.test/card.png");
+    expect(host.querySelector('img[src*="acme.test"]')).toBeNull();
+  });
+
+  it("leaves no message key unresolved anywhere in the report", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+
+    // next-intl renders a missing key as its dotted path and throws nothing, so
+    // a whole section can ship as literal `tools.onPageChecker.checks.x.y`.
+    const unresolved = (host.textContent ?? "").match(
+      /tools\.onPageChecker[\w.]*/g,
+    );
+    expect(unresolved).toBeNull();
   });
 });

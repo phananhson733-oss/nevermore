@@ -1,3 +1,4 @@
+import type { ParsedOnPageFacts } from "./parse-page.ts";
 /**
  * Crawl adapter types (spec §7.3). The crawl ENGINE (`engine.ts`) performs the
  * SSRF-safe BFS fetch and produces a `CrawlRaw` site graph; the crawl ADAPTER
@@ -139,6 +140,14 @@ export interface CrawlPageRecord {
   readonly subjectUrl: string;
   readonly depth: number;
   readonly projection: CrawlPageProjection;
+  /**
+   * On-page facts the public checker reads, beside the frozen projection.
+   *
+   * Optional because `crawl.page.v1` is what the product persists and what its
+   * OpenAPI and Zod contracts pin: every existing producer and consumer of a
+   * page record stays correct without knowing this field exists.
+   */
+  readonly onPage?: ParsedOnPageFacts;
 }
 
 /**

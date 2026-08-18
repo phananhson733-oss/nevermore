@@ -2113,8 +2113,8 @@
         "title": "What this does and does not tell you",
         "items": [
           {
-            "q": "Is this a score?",
-            "a": "No. You get a count of which positions carry each query and how often, plus what could not be measured. There is no single number, because one number cannot say which part of a page is wrong."
+            "q": "Where does the score come from?",
+            "a": "Each check on this page is worth a set number of points; the score is their sum, restated out of 100. The weights are ours, not Google's — the number measures how well this page does the part it controls, not whether it will rank. A few conditions hold the score down on their own: a page that declares noindex, returns an error status, carries almost no copy, or is not about the keyword you gave. In those cases no amount of other work reaches a search result."
           },
           {
             "q": "Why does the first check take minutes?",
@@ -2140,6 +2140,308 @@
         "miss": "Read out of a crawl this check started, collected at {time}.",
         "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
         "queriesMerged": "Measured {measured} of the {submitted} queries you submitted: two spellings of the same query are counted once."
+      },
+      "scoreCategories": {
+        "meta": "Meta",
+        "content": "Content",
+        "keyword": "Keyword placement",
+        "links": "Links",
+        "media": "Images",
+        "social": "Social & structured data",
+        "technical": "Technical & crawl",
+        "site": "Site context"
+      },
+      "checks": {
+        "declaredUnavailable": "This crawl did not carry the page's markup details, so nothing is judged here — not knowing is not the same as the page having none.",
+        "title": {
+          "_label": "Title",
+          "missing": "No title. Google will compose one for the result page itself.",
+          "ok": "“{title}” — width {width} (a workable range is {min}–{max}; CJK counts as two).",
+          "outsideRange": "Width {width}, outside {min}–{max}, so it may be truncated or read as thin."
+        },
+        "description": {
+          "_label": "Meta description",
+          "missing": "No meta description. Google will lift a passage from the body instead.",
+          "ok": "Width {width}, inside {min}–{max}.",
+          "outsideRange": "Width {width}, outside {min}–{max}, so the tail may be cut."
+        },
+        "canonical": {
+          "_label": "Canonical",
+          "missing": "No canonical declared. Where one page has several URLs, Google picks.",
+          "selfReferencing": "Self-referencing.",
+          "pointsElsewhere": "Points at {canonical} — this page defers to that one. Fine if deliberate on a duplicate; if not, you are excluding the page you are trying to rank."
+        },
+        "robots": {
+          "_label": "Robots directives",
+          "indexable": "Indexable ({directives}).",
+          "noindex": "Declares noindex ({directives}). This page will not be indexed, and no other check changes that."
+        },
+        "viewport": {
+          "_label": "Viewport",
+          "missing": "No viewport declared, so phones render it at desktop width.",
+          "declared": "Declared: {viewport}"
+        },
+        "charset": {
+          "_label": "Character encoding",
+          "missing": "No charset declared, so non-ASCII text can be read under the wrong encoding.",
+          "declared": "Declared {charset}."
+        },
+        "lang": {
+          "_label": "HTML lang",
+          "missing": "The html tag carries no lang, leaving search engines and screen readers to guess.",
+          "declared": "lang={lang}"
+        },
+        "favicon": {
+          "_label": "Favicon",
+          "missing": "No site icon declared.",
+          "declared": "Site icon declared."
+        },
+        "h1": {
+          "_label": "H1",
+          "missing": "No H1.",
+          "single": "One H1: “{h1}”, width {width}.",
+          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things."
+        },
+        "bodyWords": {
+          "_label": "Body words",
+          "unavailable": "This page's body cannot be counted by whitespace, so no number is published and none is scored.",
+          "thin": "Only {words} words. At this length the rest of the sheet has little to stand on.",
+          "low": "{words} words, on the thin side.",
+          "fair": "{words} words.",
+          "good": "{words} words."
+        },
+        "subHeadings": {
+          "_label": "Sub-headings",
+          "unavailable": "The H1 collector hit its cap, so sub-headings cannot be separated out reliably and are not judged.",
+          "none": "No sub-headings, so long copy has no scannable structure.",
+          "present": "{count} sub-headings."
+        },
+        "textRatio": {
+          "_label": "Text-to-code",
+          "unavailable": "No HTML size was collected, so this cannot be computed.",
+          "healthy": "Visible text is {percent}% of the HTML.",
+          "low": "Visible text is only {percent}% of the HTML — this page is mostly markup."
+        },
+        "keyword": {
+          "_label": "Keyword placement",
+          "unavailable": "No keyword evidence was measured on this run.",
+          "title": {
+            "_label": "Keyword in title",
+            "covered": "“{query}” appears in full in the title ({occurrences}×).",
+            "absent": "“{query}” does not appear in full in the title.",
+            "notApplicable": "This page has no title to check."
+          },
+          "description": {
+            "_label": "Keyword in description",
+            "covered": "“{query}” appears in full in the description ({occurrences}×).",
+            "absent": "“{query}” does not appear in the description.",
+            "notApplicable": "This page has no description to check."
+          },
+          "h1": {
+            "_label": "Keyword in H1",
+            "covered": "“{query}” appears in full in the H1 ({occurrences}×).",
+            "absent": "“{query}” does not appear in the H1.",
+            "notApplicable": "This page has no H1 to check."
+          },
+          "subHeadings": {
+            "_label": "Keyword in sub-headings",
+            "covered": "“{query}” appears in the sub-headings ({occurrences}×).",
+            "absent": "“{query}” appears in none of the sub-headings.",
+            "notApplicable": "There were no sub-headings to check."
+          },
+          "openingText": {
+            "_label": "Keyword in opening text",
+            "covered": "“{query}” appears in the captured opening text ({occurrences}×).",
+            "absent": "“{query}” does not appear in the opening text.",
+            "notApplicable": "No opening text was captured to check."
+          },
+          "url": {
+            "_label": "Keyword in URL",
+            "covered": "The URL contains “{query}”.",
+            "absent": "The URL does not contain “{query}”.",
+            "notApplicable": "Nothing to check."
+          },
+          "density": {
+            "_label": "Keyword density",
+            "unavailable": "No usable denominator, so no density figure is published.",
+            "observed": "“{query}” appears {occurrences} times in the captured text, a density of {percent}% (over {units} units: title, description, headings and the opening of the body — not the whole page). Not graded: that denominator is exactly where a keyword is meant to be concentrated, and we have not measured what a good range over it looks like. A threshold we cannot defend is worse than none."
+          },
+          "brand": {
+            "_label": "Brand term",
+            "matched": "“{query}” matches the site's own domain, so it looks like a brand term. Brand terms sit at lower densities than topic terms by nature; this is noted, not scored."
+          }
+        },
+        "internalLinks": {
+          "_label": "Internal links",
+          "none": "This page links to no other page on the site.",
+          "few": "Only {count} internal links.",
+          "ok": "{count} internal links."
+        },
+        "anchorText": {
+          "_label": "Anchor text",
+          "notApplicable": "No internal links to check anchor text on.",
+          "allDescribed": "All {count} internal links carry anchor text. This checks only that text exists; it does not judge generic anchors like “click here” or “read more”.",
+          "someEmpty": "{empty} of {count} internal links carry no anchor text."
+        },
+        "externalLinks": {
+          "_label": "Outbound links",
+          "none": "No outbound links. Linking out to authoritative sources is a normal signal; not scored either way.",
+          "present": "{count} outbound links ({nofollow} nofollow). Not scored."
+        },
+        "linkSafety": {
+          "_label": "New-window link safety",
+          "ok": "New-window outbound links carry noopener (or there are none).",
+          "unsafe": "{count} target=_blank links carry neither noopener nor noreferrer. Modern browsers isolate by default, but declaring it is still the safe habit."
+        },
+        "images": {
+          "_label": "Image alt",
+          "none": "This page carries no img elements.",
+          "allDescribed": "All {total} images carry alt ({decorative} declared decorative with an empty alt).",
+          "someMissingAlt": "{missing} of {total} images carry no alt attribute."
+        },
+        "openGraph": {
+          "_label": "Open Graph",
+          "complete": "og:title / og:description / og:image are all present, so shares get a complete card.",
+          "partial": "Missing {missing}, so the share card is incomplete.",
+          "missing": "No Open Graph tags, so social platforms compose the card themselves."
+        },
+        "twitterCard": {
+          "_label": "Twitter/X card",
+          "missing": "No twitter:card declared.",
+          "declared": "twitter:card={card}"
+        },
+        "https": {
+          "_label": "HTTPS",
+          "enabled": "HTTPS is in use.",
+          "absent": "This page is not served over HTTPS."
+        },
+        "status": {
+          "_label": "HTTP status",
+          "unavailable": "No final status was captured.",
+          "direct": "Returned {status} directly, no redirect.",
+          "redirected": "Returned {status} after {hops} redirect(s).",
+          "error": "Final status {status}."
+        },
+        "responseTime": {
+          "_label": "Response time",
+          "unavailable": "No response time was captured.",
+          "fast": "HTML download completed in {ms}ms.",
+          "fair": "HTML download completed in {ms}ms.",
+          "slow": "HTML download completed in {ms}ms, which is slow."
+        },
+        "jsonLd": {
+          "_label": "JSON-LD",
+          "none": "No JSON-LD structured data found.",
+          "valid": "{count} JSON-LD type(s): {types}",
+          "malformed": "Found {types}, with {errors} block(s) that failed to parse.",
+          "allMalformed": "{errors} JSON-LD block(s), all of which failed to parse — not absent structured data, but broken structured data."
+        },
+        "robotsTxt": {
+          "_label": "robots.txt",
+          "reachable": "robots.txt is reachable, with {groups} rule group(s) observed.",
+          "unreachable": "No robots.txt was fetched. The site may not have one — which is legal and reads as allow-all — or the fetch may have failed. This cannot tell those apart."
+        },
+        "sitemap": {
+          "_label": "Sitemap",
+          "reachable": "A sitemap was fetched ({references} declared in robots.txt; zero means it was found at the conventional /sitemap.xml).",
+          "unreachable": "No sitemap was fetched."
+        },
+        "sitemapMember": {
+          "_label": "Listed in the sitemap",
+          "listed": "This page appears in the sitemap.",
+          "absent": "The site has a sitemap and this page is not in it.",
+          "noSitemap": "No sitemap was fetched, so this cannot be confirmed."
+        },
+        "htmlSize": {
+          "_label": "HTML size",
+          "ok": "HTML is {kb} KB.",
+          "large": "HTML is {kb} KB, on the large side.",
+          "huge": "HTML is {kb} KB, which is very large."
+        },
+        "hreflang": {
+          "_label": "hreflang",
+          "none": "No hreflang declared. A single-language site does not need it; not scored.",
+          "declared": "{count} hreflang tag(s): {tags}. Not scored."
+        },
+        "site": {
+          "title_duplicate": {
+            "_label": "Title unique across the site",
+            "flagged": "This page's title is duplicated elsewhere on the site ({affected} of {tested} pages affected).",
+            "clear": "Across the {tested} pages collected, this title is unique.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "meta_description_duplicate": {
+            "_label": "Description unique across the site",
+            "flagged": "This page's description is duplicated elsewhere on the site ({affected} of {tested} pages affected).",
+            "clear": "Across the {tested} pages collected, this description is unique.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "sitemap_page_without_observed_inlink": {
+            "_label": "Orphan page",
+            "flagged": "This page is in the sitemap, but the crawl observed no internal link pointing at it.",
+            "clear": "The crawl observed internal links pointing at this page.",
+            "notTested": "That rule only tests pages in the sitemap and did not cover this page."
+          },
+          "page_outbound_broken_link": {
+            "_label": "Broken links on this page",
+            "flagged": "This page links to a page that returned an error status.",
+            "clear": "None of this page's outbound links returned an error status.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "click_depth_beyond_reviewed_limit": {
+            "_label": "Click depth",
+            "flagged": "Reaching this page from the homepage takes more than four clicks.",
+            "clear": "This page is within four clicks of the homepage.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          }
+        }
+      },
+      "grades": {
+        "A": "A · Excellent",
+        "B": "B · Good",
+        "C": "C · Passable",
+        "D": "D · Work through the list"
+      },
+      "score": {
+        "counts": "{pass} passed of {graded} graded, {warn} warnings, {fail} failed",
+        "topicFocus": "Topic focus {percent}%",
+        "notGraded": "not scored",
+        "disclaimer": "This score covers only what this page itself controls. Ranking also depends on site authority, page experience, how strong the competition is, and what visitors do — none of which this tool measures. The weights behind the number are ours, not Google's.",
+        "caps": {
+          "topic_focus": "Held at {ceiling}: this page is not sufficiently about the target keyword, and structure alone will not earn that term.",
+          "body_words": "Held at {ceiling}: the body is too short for the rest of the sheet to stand on.",
+          "not_indexable": "Held at {ceiling}: this page declares noindex and will not be indexed. However well it is built, it does not reach a search result.",
+          "not_reachable": "Held at {ceiling}: this page returned an error status. Right now it does not exist.",
+          "body_bytes": "Held at {ceiling}: too little visible text by byte count (this page's language cannot be counted in words, so bytes stand in).",
+          "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
+        }
+      },
+      "vitals": {
+        "status": "status",
+        "responseMs": "time",
+        "htmlSize": "size",
+        "words": "words",
+        "internalLinks": "internal",
+        "externalLinks": "outbound",
+        "images": "images",
+        "lang": "lang"
+      },
+      "preview": {
+        "serpEyebrow": "GOOGLE RESULT PREVIEW (APPROXIMATE)",
+        "socialEyebrow": "SHARE CARD (APPROXIMATE)",
+        "titleMissing": "(this page has no title)",
+        "descriptionMissing": "(no description; Google will lift one from the body)",
+        "serpNote": "Cut at common widths for illustration. Google truncates by rendered pixel width, which moves with the device and the query.",
+        "socialUnavailable": "This crawl did not carry the page's markup details, so the share card cannot be previewed.",
+        "socialNoImage": "(no og:image)",
+        "socialNoCard": "not declared",
+        "socialNote": "twitter:card = {card}. The image is listed, not loaded — loading it would make this page fetch from the audited site on your behalf."
+      },
+      "sections": {
+        "scoreHeading": "How this page checks out",
+        "checksHeading": "Every check",
+        "previewHeading": "How it looks elsewhere",
+        "keywordHeading": "Where the keywords land"
       }
     }
   },

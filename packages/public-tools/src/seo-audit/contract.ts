@@ -179,7 +179,28 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "openingText",
   "staticBodyWords",
   "truncatedLists",
+  "response",
+  "declared",
 ];
+
+/**
+ * Characters, counted the way the producer counts them.
+ *
+ * The crawl projection bounds its strings with `boundChars`, which slices by
+ * Unicode code point so a cut never orphans a surrogate half. These guards used
+ * `.length`, which counts UTF-16 code units. One astral character — any emoji —
+ * is 1 to the producer and 2 to the checker, and `boundChars` returns a string
+ * untouched once its code points fit, so an emoji-dense value ships at up to
+ * twice the bound and is then refused here.
+ *
+ * That is not a dead cache. `isSeoAuditPayload` also gates the Agent response,
+ * so a rocket emoji in a hero headline turned the whole tool into a 502 for
+ * that page. Same seam, same shape as the timestamp disagreement before it:
+ * both sides individually right, no test between them.
+ */
+function characterLength(value: string): number {
+  return [...value].length;
+}
 
 function isBoundedStringList(
   value: unknown,
@@ -189,7 +210,9 @@ function isBoundedStringList(
   return (
     Array.isArray(value) &&
     value.length <= maxEntries &&
-    value.every((entry) => typeof entry === "string" && entry.length <= maxChars)
+    value.every(
+      (entry) => typeof entry === "string" && characterLength(entry) <= maxChars,
+    )
   );
 }
 
@@ -198,7 +221,8 @@ function isBoundedNullableString(
   maxChars: number,
 ): value is string | null {
   return (
-    value === null || (typeof value === "string" && value.length <= maxChars)
+    value === null ||
+    (typeof value === "string" && characterLength(value) <= maxChars)
   );
 }
 
@@ -211,6 +235,115 @@ function isBoundedNullableString(
  * projection to the browser, and would let one enormous heading become the
  * whole response.
  */
+
+const RESPONSE_FACTS_KEYS: readonly string[] = [
+  "status",
+  "finalStatus",
+  "redirectHops",
+  "responseMs",
+  "contentType",
+  "canonicalTarget",
+  "robotsIndexable",
+  "robotsDirectives",
+  "sitemapMember",
+  "jsonLdTypes",
+  "jsonLdErrorCount",
+  "internalOutlinks",
+  "internalOutlinksWithoutAnchorText",
+];
+
+const DECLARED_FACTS_KEYS: readonly string[] = [
+  "lang",
+  "openGraph",
+  "twitterCard",
+  "viewport",
+  "charset",
+  "faviconDeclared",
+  "hreflang",
+  "images",
+  "externalLinks",
+  "htmlBytes",
+  "visibleTextBytes",
+];
+
+function hasExactly(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value);
+  return (
+    own.length === keys.length && own.every((key) => keys.includes(key))
+  );
+}
+
+function isNullableStatus(value: unknown): boolean {
+  return value === null || isNonNegativeInteger(value);
+}
+
+function isResponseFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, RESPONSE_FACTS_KEYS)) return false;
+  return (
+    isNullableStatus(value.status) &&
+    isNullableStatus(value.finalStatus) &&
+    isNonNegativeInteger(value.redirectHops) &&
+    isNullableStatus(value.responseMs) &&
+    isBoundedNullableString(value.contentType, 256) &&
+    isBoundedNullableString(value.canonicalTarget, 2_048) &&
+    typeof value.robotsIndexable === "boolean" &&
+    isBoundedStringList(value.robotsDirectives, 32, 128) &&
+    typeof value.sitemapMember === "boolean" &&
+    isBoundedStringList(value.jsonLdTypes, 100, 256) &&
+    isNonNegativeInteger(value.jsonLdErrorCount) &&
+    isNonNegativeInteger(value.internalOutlinks) &&
+    isNonNegativeInteger(value.internalOutlinksWithoutAnchorText)
+  );
+}
+
+function isImageFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["total", "withAlt", "withEmptyAlt", "withoutAlt"]) &&
+    isNonNegativeInteger(value.total) &&
+    isNonNegativeInteger(value.withAlt) &&
+    isNonNegativeInteger(value.withEmptyAlt) &&
+    isNonNegativeInteger(value.withoutAlt)
+  );
+}
+
+function isExternalLinkFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["total", "nofollow", "blankWithoutNoopener"]) &&
+    isNonNegativeInteger(value.total) &&
+    isNonNegativeInteger(value.nofollow) &&
+    isNonNegativeInteger(value.blankWithoutNoopener)
+  );
+}
+
+function isOpenGraphFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["title", "description", "image"]) &&
+    isBoundedNullableString(value.title, 2_048) &&
+    isBoundedNullableString(value.description, 2_048) &&
+    isBoundedNullableString(value.image, 2_048)
+  );
+}
+
+function isDeclaredFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, DECLARED_FACTS_KEYS)) return false;
+  return (
+    isBoundedNullableString(value.lang, 128) &&
+    isOpenGraphFacts(value.openGraph) &&
+    isBoundedNullableString(value.twitterCard, 2_048) &&
+    isBoundedNullableString(value.viewport, 2_048) &&
+    isBoundedNullableString(value.charset, 2_048) &&
+    typeof value.faviconDeclared === "boolean" &&
+    isBoundedStringList(value.hreflang, 32, 128) &&
+    isImageFacts(value.images) &&
+    isExternalLinkFacts(value.externalLinks) &&
+    isNonNegativeInteger(value.htmlBytes) &&
+    isNonNegativeInteger(value.visibleTextBytes)
+  );
+}
+
 function isTargetPageExtract(
   value: unknown,
 ): value is SeoAuditTargetPageExtract {
@@ -221,7 +354,7 @@ function isTargetPageExtract(
 
   return (
     typeof value.url === "string" &&
-    value.url.length <= 2_048 &&
+    characterLength(value.url) <= 2_048 &&
     isBoundedNullableString(value.title, 512) &&
     isBoundedNullableString(value.metaDescription, 2_048) &&
     isBoundedStringList(value.h1, 10, 200) &&
@@ -230,7 +363,9 @@ function isTargetPageExtract(
     isBoundedNullableString(value.openingText, 500) &&
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
-    typeof value.truncatedLists === "boolean"
+    typeof value.truncatedLists === "boolean" &&
+    isResponseFacts(value.response) &&
+    (value.declared === null || isDeclaredFacts(value.declared))
   );
 }
 
@@ -243,7 +378,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v5" &&
+    run.schemaVersion === "seo_audit.sitewide.v6" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

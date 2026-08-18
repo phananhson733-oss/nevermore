@@ -22,6 +22,22 @@ const extract: SeoAuditTargetPageExtract = {
     "A birth chart is a map of the sky at your moment of birth. This astrology guide explains how to read it.",
   staticBodyWords: 1631,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 42,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 0,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
 
 function queries(raw: readonly string[]) {
@@ -522,6 +538,22 @@ describe("buildKeywordEvidence — density is counted over the text it names", (
       // Withheld for CJK, and still not the denominator when it is present.
       staticBodyWords: null,
       truncatedLists: false,
+      response: {
+        status: 200,
+        finalStatus: 200,
+        redirectHops: 0,
+        responseMs: 42,
+        contentType: "text/html; charset=utf-8",
+        canonicalTarget: null,
+        robotsIndexable: true,
+        robotsDirectives: [],
+        sitemapMember: true,
+        jsonLdTypes: [],
+        jsonLdErrorCount: 0,
+        internalOutlinks: 0,
+        internalOutlinksWithoutAnchorText: 0,
+      },
+      declared: null,
     };
     const expected = countTextUnits(normalizeForMatch(capturedTextOf(cjk)));
     const density = queryNamed(

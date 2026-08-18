@@ -3,9 +3,17 @@
 // @pos    -- the only place page text enters the cacheable audit payload
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { CRAWL_PROJECTION_LIMITS, type CrawlPageProjection } from "@sf/sources/crawl-public-preview";
+import {
+  CRAWL_PROJECTION_LIMITS,
+  type CrawlPageProjection,
+  type ParsedOnPageFacts,
+} from "@sf/sources/crawl-public-preview";
 
-import type { SeoAuditTargetPageExtract } from "../types.ts";
+import type {
+  SeoAuditTargetDeclaredFacts,
+  SeoAuditTargetPageExtract,
+  SeoAuditTargetResponseFacts,
+} from "../types.ts";
 import { cjkShare } from "./text-units.ts";
 
 /** Heading entries kept per list, and characters kept per entry. */
@@ -90,8 +98,68 @@ function deriveSubHeadings(
  * to keep in the crawl cache; keyword evidence is derived from it per request
  * and never cached.
  */
+/**
+ * Restate the crawler's side-car facts as the audit's own shape.
+ *
+ * Copied field by field rather than forwarded: the crawl type is free to grow,
+ * and forwarding the object would publish whatever it grows into.
+ */
+function declaredFactsOf(
+  onPage: ParsedOnPageFacts,
+): SeoAuditTargetDeclaredFacts {
+  return {
+    lang: onPage.lang,
+    openGraph: {
+      title: onPage.openGraph.title,
+      description: onPage.openGraph.description,
+      image: onPage.openGraph.image,
+    },
+    twitterCard: onPage.twitterCard,
+    viewport: onPage.viewport,
+    charset: onPage.charset,
+    faviconDeclared: onPage.faviconDeclared,
+    hreflang: [...onPage.hreflang],
+    images: {
+      total: onPage.images.total,
+      withAlt: onPage.images.withAlt,
+      withEmptyAlt: onPage.images.withEmptyAlt,
+      withoutAlt: onPage.images.withoutAlt,
+    },
+    externalLinks: {
+      total: onPage.externalLinks.total,
+      nofollow: onPage.externalLinks.nofollow,
+      blankWithoutNoopener: onPage.externalLinks.blankWithoutNoopener,
+    },
+    htmlBytes: onPage.htmlBytes,
+    visibleTextBytes: onPage.visibleTextBytes,
+  };
+}
+
+function responseFactsOf(
+  projection: CrawlPageProjection,
+): SeoAuditTargetResponseFacts {
+  return {
+    status: projection.status,
+    finalStatus: projection.finalStatus,
+    redirectHops: projection.redirectChain.length,
+    responseMs: projection.responseMs,
+    contentType: projection.contentType,
+    canonicalTarget: projection.canonicalTarget,
+    robotsIndexable: projection.robotsIndexable,
+    robotsDirectives: [...projection.robotsDirectives],
+    sitemapMember: projection.sitemapMember,
+    jsonLdTypes: [...projection.jsonLd.types],
+    jsonLdErrorCount: projection.jsonLd.errorCount,
+    internalOutlinks: projection.internalOutlinks.length,
+    internalOutlinksWithoutAnchorText: projection.internalOutlinks.filter(
+      (link) => link.anchorText === null || link.anchorText.trim() === "",
+    ).length,
+  };
+}
+
 export function buildTargetPageExtract(
   projection: CrawlPageProjection,
+  onPage?: ParsedOnPageFacts,
 ): SeoAuditTargetPageExtract {
   const h1 = capList(projection.h1, MAX_EXTRACT_H1);
   const derived = deriveSubHeadings(projection);
@@ -111,5 +179,7 @@ export function buildTargetPageExtract(
     openingText,
     staticBodyWords: wordCountIsMeaningful ? projection.wordCount : null,
     truncatedLists: h1.truncated || (subHeadings?.truncated ?? false),
+    response: responseFactsOf(projection),
+    declared: onPage === undefined ? null : declaredFactsOf(onPage),
   };
 }
