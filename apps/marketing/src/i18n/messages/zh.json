@@ -3406,12 +3406,47 @@
       "actionReasons": {
         "needs_page_inventory": "本轮唯一确定知道的页面身份就是你输入的那个 URL。动手做新东西之前，先看已有内容是否已经回答了它。",
         "needs_more_evidence": "可评估样本不足，暂时说不了什么。",
-        "existing_page_fit_confirmed": "已有页面已经匹配所问的内容。"
+        "existing_page_fit_confirmed": "已有页面已经匹配所问的内容。",
+        "avoid_new_page_as_first_step": "别把新建页面当第一步。"
       },
       "actionReasonsCounted": {
         "target_not_observed_in_samples": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次。",
         "target_observed_in_minority_of_samples": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次——有时出现，并非每次。",
-        "citation_source_pattern_observed": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次，同时其他站点被引用了。这首先是站外问题，其次才是页面问题。"
+        "citation_source_pattern_observed": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次，同时其他站点被引用了。这首先是站外问题，其次才是页面问题。",
+        "avoid_new_page_as_first_step": "{evaluable} 个可评估引用样本里有 {observed} 个引用了别人、一次都没引用你。先把这些域名看一遍，再决定写什么。"
+      },
+      "sources": {
+        "title": "这些回答实际在引谁",
+        "note": "按上面同一批证据、同一个分母统计。只到域名——本轮无法判断这些页面各自是什么，只知道回答链接到了它。",
+        "empty": "没有任何可评估引用样本引用了内容，因此没有来源模式可读。",
+        "colDomain": "域名",
+        "colSamples": "样本",
+        "colQuestions": "题",
+        "denominator": "在 {samples} 个可评估引用样本、{questions} 道题里，一共出现了 {domains} 个域名。",
+        "yours": "你的",
+        "sampleShare": "{total} 中 {cited}",
+        "questionShare": "{total} 中 {cited}",
+        "targetAbsent": "{host} 不在其中。",
+        "targetPresent": "{host} 在其中。",
+        "showUrls": "展开这个域名下的 {count} 个 URL",
+        "mode": {
+          "retrieval_probe": "检索探针 · 各问三次",
+          "natural_demand": "自然需求问题 · 各问一次"
+        }
+      },
+      "actionKinds": {
+        "do": "去做",
+        "external_data": "去查",
+        "avoid": "别做"
+      },
+      "actionBasis": {
+        "questions": "依据这些题：{questions}",
+        "noRatio": "这一项没有对应的比值。"
+      },
+      "handoff": {
+        "copyMarkdown": "复制可读版",
+        "copiedMarkdown": "可读版已复制",
+        "markdownNote": "同一个包的纯文本形式，给人看的，不是给 agent 的。"
       }
     },
     "seo": {

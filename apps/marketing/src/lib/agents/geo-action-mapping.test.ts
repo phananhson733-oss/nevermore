@@ -172,7 +172,122 @@ const NOT_CITED = [
 ] as const;
 const NO_CITATIONS = [[], [], []] as const;
 
+const TWO_RIVALS = [
+  ["https://rival.test/a", "https://other.test/b"],
+  ["https://rival.test/a"],
+  ["https://other.test/b"],
+] as const;
+
 describe("deriveGeoActionPlan", () => {
+  // An evidence tool that can only say "build this" spends the reader's week on
+  // whichever gap ranked first. Added 2026-08-18 after the first real report
+  // produced four build proposals and nothing to not do.
+  it("says not to start with a new page when others are cited and you are not", () => {
+    const plan = deriveGeoActionPlan(
+      report([question("category_discovery", [...TWO_RIVALS])]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.reason).toBe("avoid_new_page_as_first_step");
+    // The counts are the sentence, and the sentence is about samples: all three
+    // countable answers went to somebody else. A distinct-host count rendered
+    // through the same sentence would assert a sample fact nothing measured.
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
+    // Ranked above every proposal to build something, below the free lookup.
+    const kinds = plan.candidates.map((c) => c.kind);
+    expect(kinds.indexOf("avoid")).toBeLessThan(kinds.indexOf("do"));
+  });
+
+  // Regression: the first version counted distinct hosts, so one sparse answer
+  // that happened to link two pages outweighed eighteen answers that all reached
+  // for the same one. Found by cross-model review on 2026-08-18.
+  it("fires on a single host cited in every countable answer", () => {
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a"],
+          ["https://rival.test/b"],
+          ["https://rival.test/c"],
+        ]),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
+  });
+
+  it("withholds the avoid when only one answer cited anyone", () => {
+    // Two distinct hosts in one of three answers is not a source pattern; the
+    // old distinct-host rule fired here.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a", "https://other.test/b"],
+          [],
+          [],
+        ]),
+      ]),
+    );
+
+    expect(plan.candidates.some((c) => c.kind === "avoid")).toBe(false);
+  });
+
+  it("attributes the avoid only to the questions that produced those citations", () => {
+    // Claiming every query id put unevaluable and unrelated questions in the
+    // basis line the panel prints.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [...NO_CITATIONS]),
+        question("due_diligence", [...TWO_RIVALS]),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.queryIds).toEqual(["core-due_diligence"]);
+  });
+
+  it("withholds the avoid when the answers cited nobody at all", () => {
+    // "Do not build a page" needs a source pattern to point at instead. An
+    // answer set that cited no one has none, and the advice would rest on air.
+    const plan = deriveGeoActionPlan(
+      report([question("category_discovery", [...NO_CITATIONS])]),
+    );
+
+    expect(plan.candidates.some((c) => c.kind === "avoid")).toBe(false);
+  });
+
+  it("withholds the avoid when the site was cited", () => {
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://acme.test/a", "https://rival.test/a"],
+          ["https://rival.test/a", "https://other.test/b"],
+          ["https://other.test/b"],
+        ]),
+      ]),
+    );
+
+    expect(plan.candidates.some((c) => c.kind === "avoid")).toBe(false);
+  });
+
+  it("derives kind from the reason, never separately", () => {
+    const plan = deriveGeoActionPlan(
+      report([question("category_discovery", [...TWO_RIVALS])]),
+      "https://acme.test/pricing",
+    );
+
+    for (const candidate of plan.candidates) {
+      const expected =
+        candidate.reason === "avoid_new_page_as_first_step"
+          ? "avoid"
+          : candidate.reason === "needs_page_inventory" ||
+              candidate.reason === "needs_more_evidence"
+            ? "external_data"
+            : "do";
+      expect(candidate.kind).toBe(expected);
+    }
+  });
+
   it("returns zero actions with a reason when nothing was evaluable", () => {
     const plan = deriveGeoActionPlan(
       report([question("category_discovery", ["unanswered", "unanswered", "unanswered"])]),

@@ -3406,12 +3406,47 @@
       "actionReasons": {
         "needs_page_inventory": "The entered URL is the only page identity this run knows for certain. Check what already answers this before building anything new.",
         "needs_more_evidence": "Not enough evaluable samples to say anything yet.",
-        "existing_page_fit_confirmed": "An existing page already fits what was asked for."
+        "existing_page_fit_confirmed": "An existing page already fits what was asked for.",
+        "avoid_new_page_as_first_step": "Do not start with a new page."
       },
       "actionReasonsCounted": {
         "target_not_observed_in_samples": "Observed in {observed} of {evaluable} citation-evaluable samples.",
         "target_observed_in_minority_of_samples": "Observed in {observed} of {evaluable} citation-evaluable samples — present sometimes, not always.",
-        "citation_source_pattern_observed": "Observed in {observed} of {evaluable} citation-evaluable samples, while other hosts were cited. This is an off-site problem before it is a page problem."
+        "citation_source_pattern_observed": "Observed in {observed} of {evaluable} citation-evaluable samples, while other hosts were cited. This is an off-site problem before it is a page problem.",
+        "avoid_new_page_as_first_step": "{observed} of {evaluable} citation-evaluable samples cited someone else and never you. Read those hosts before writing anything."
+      },
+      "sources": {
+        "title": "Who these answers actually cited",
+        "note": "Counted from the same evidence listed above, against the same denominator. Hosts only — this run cannot tell you what any of these pages is, only that the answer linked to it.",
+        "empty": "No citation-evaluable sample cited anything, so there is no source pattern to read.",
+        "colDomain": "Host",
+        "colSamples": "Samples",
+        "colQuestions": "Questions",
+        "denominator": "{domains} hosts cited across {samples} citation-evaluable samples and {questions} questions.",
+        "yours": "Yours",
+        "sampleShare": "{cited} of {total}",
+        "questionShare": "{cited} of {total}",
+        "targetAbsent": "{host} is not among them.",
+        "targetPresent": "{host} is among them.",
+        "showUrls": "Show the {count} URLs on this host",
+        "mode": {
+          "retrieval_probe": "Retrieval probes · asked three times each",
+          "natural_demand": "Natural-demand questions · asked once each"
+        }
+      },
+      "actionKinds": {
+        "do": "Do",
+        "external_data": "Look up",
+        "avoid": "Do not"
+      },
+      "actionBasis": {
+        "questions": "From: {questions}",
+        "noRatio": "No ratio applies to this item."
+      },
+      "handoff": {
+        "copyMarkdown": "Copy the readable version",
+        "copiedMarkdown": "Readable version copied",
+        "markdownNote": "The same packet as plain text, for a person rather than an agent."
       }
     },
     "seo": {
