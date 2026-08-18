@@ -3,7 +3,11 @@
 // @pos    -- fail-closed seam before dynamic record/evidence translations render
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
-import { SEO_AUDIT_RECORD_IDS } from "@sf/public-tools/seo-audit/record-ledger";
+import {
+  SEARCH_PERFORMANCE_LIMITATION_CODES,
+  SEO_AUDIT_LIMITATION_CODES,
+  SEO_AUDIT_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/record-ledger";
 import {
   SEARCH_PERFORMANCE_EVIDENCE_LABELS,
   SEARCH_PERFORMANCE_RECORD_IDS,
@@ -72,17 +76,17 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
 ]);
 
+/**
+ * Derived, because a hand-kept copy is what took the panel dark.
+ *
+ * This seam refuses a record whose limitation code it cannot name, and it
+ * refuses silently: the results view simply does not render. One record
+ * publishes its code unconditionally, so a single missing entry blanked every
+ * audit while every unit test stayed green.
+ */
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
-  "resource_not_observed_does_not_prove_absence",
-  "static_response_directives_only",
-  "normalised_text_match_within_inspected_pages",
-  "bounded_static_html_crawl_inlinks_only",
-  "uncollected_link_targets_not_classified",
-  "static_html_json_ld_only",
-  "no_sitemap_collected_membership_not_testable",
-  "character_count_only_rendered_pixel_width_not_measured",
-  "bounded_static_html_crawl_outlinks_only",
-  "depth_from_bounded_crawl_entry_point_only",
+  ...SEO_AUDIT_LIMITATION_CODES,
+  ...SEARCH_PERFORMANCE_LIMITATION_CODES,
 ]);
 
 /**
@@ -97,7 +101,14 @@ export function supportsAgentDisplayVocabulary(
 ): boolean {
   if (data.run.agent !== expectedAgent) return false;
   const supportedIds = AGENT_RECORD_IDS[expectedAgent];
-  return data.result.records.every(
+  // Side regions render through the same seam, so they have to pass the same
+  // check. Walking only `records` left the search region entirely unvalidated —
+  // a vocabulary gap there would have reached a visitor rather than failing
+  // closed, which is the opposite failure and the harder one to notice.
+  return [
+    ...data.result.records,
+    ...(data.result.searchPerformance?.records ?? []),
+  ].every(
     (record) =>
       supportedIds.has(record.id) &&
       (record.limitation === null ||

@@ -5,6 +5,7 @@ import type { SeoAuditRaw } from "../seo-audit/scan.ts";
 import { PAGE_AUDIT_GROUPS, SITE_AUDIT_GROUPS } from "./catalog.ts";
 import {
   SEO_AUDIT_EVIDENCE_LABELS,
+  SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "../seo-audit/record-ledger.ts";
 
@@ -143,6 +144,22 @@ describe("catalog / detector contract", () => {
     );
     expect([...published].filter((label) => !declared.has(label))).toEqual([]);
     expect(published.size).toBeGreaterThan(10);
+  });
+
+  it("publishes no limitation code the ledger does not declare", () => {
+    // The third fail-closed list, and the one that actually took the panel
+    // dark: the display seam refuses a record whose limitation it cannot name,
+    // and it refuses by rendering nothing at all. `average_response_time`
+    // publishes its code on every run, so one unlisted string blanked every
+    // audit while every unit test stayed green.
+    const declared = new Set(SEO_AUDIT_LIMITATION_CODES);
+    const published = new Set(
+      buildSeoAuditReport(raw())
+        .records.map((record) => record.limitation)
+        .filter((code): code is string => code !== null),
+    );
+    expect([...published].filter((code) => !declared.has(code))).toEqual([]);
+    expect(published.size).toBeGreaterThan(3);
   });
 
   it("keeps the catalog the only consumer contract for a ready check", () => {

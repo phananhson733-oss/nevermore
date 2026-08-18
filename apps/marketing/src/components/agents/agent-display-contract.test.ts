@@ -4,7 +4,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  SEARCH_PERFORMANCE_LIMITATION_CODES,
   SEO_AUDIT_EVIDENCE_LABELS,
+  SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
 import {
@@ -17,6 +19,7 @@ import zhMessages from "../../i18n/messages/zh.json";
 
 import {
   AGENT_EVIDENCE_LABELS,
+  AGENT_LIMITATION_CODES,
   supportsAgentDisplayVocabulary,
 } from "./agent-display-contract";
 
@@ -107,6 +110,14 @@ describe("record vocabulary", () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it("names every limitation code the ledger's records publish", () => {
+    const unknown = [
+      ...SEO_AUDIT_LIMITATION_CODES,
+      ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+    ].filter((code) => !AGENT_LIMITATION_CODES.has(code));
+    expect(unknown).toEqual([]);
   });
 
   it("names every evidence label the ledger's records publish", () => {

@@ -103,3 +103,35 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "deepest_click_depth",
   "pages_measured",
 ];
+
+/**
+ * Every limitation code those records publish.
+ *
+ * The third fail-closed list this ledger now covers, and the one that caught us
+ * out: a record's limitation code is checked by the same display seam as its id
+ * and its observation labels, and a code it cannot name blanks the whole panel
+ * silently. `average_response_time` publishes one unconditionally, so a single
+ * unlisted code took every audit dark.
+ */
+export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
+  "resource_not_observed_does_not_prove_absence",
+  "static_response_directives_only",
+  "normalised_text_match_within_inspected_pages",
+  "bounded_static_html_crawl_inlinks_only",
+  "uncollected_link_targets_not_classified",
+  "static_html_json_ld_only",
+  "no_sitemap_collected_membership_not_testable",
+  "character_count_only_rendered_pixel_width_not_measured",
+  "bounded_static_html_crawl_outlinks_only",
+  "depth_from_bounded_crawl_entry_point_only",
+  "single_uncached_request_per_url_not_a_field_measurement",
+  "redirect_destination_status_not_observed_for_every_redirect",
+];
+
+/** Limitation codes the per-visitor search region publishes. */
+export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
+  "query_rows_hit_the_row_cap_so_the_reported_total_is_short",
+  "share_of_reported_queries_only_banded_by_one_average_position_each",
+  "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing",
+  "search_console_window_may_predate_a_recently_published_page",
+];
