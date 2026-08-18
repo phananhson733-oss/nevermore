@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
         "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured.",
         "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
-        "character_count_only_rendered_pixel_width_not_measured": "Character count only. Rendered pixel width, which is what Google truncates on, was not measured.",
+        "display_width_approximation_rendered_pixel_width_not_measured": "Approximated by display width, counting CJK characters as two. The rendered pixel width Google actually truncates by is not measured.",
         "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
         "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point."
       },
@@ -1068,8 +1068,8 @@
         "malformed_blocks": "Malformed JSON-LD blocks",
         "types_observed": "JSON-LD types observed",
         "broken_link_targets": "Broken link targets",
-        "title_characters": "Title characters",
-        "description_characters": "Description characters",
+        "title_display_width": "Title display width",
+        "description_display_width": "Description display width",
         "reviewed_range": "Reviewed range",
         "observed_outbound_internal_links": "Observed outbound internal links",
         "observed_click_depth": "Observed click depth",
@@ -2022,7 +2022,7 @@
         "market": "Market",
         "language": "Language",
         "pageRole": "Page role",
-        "marketScope": "Market and language are not part of this check: the request carries the page URL, the queries and the page role. They are carried over when you open the SEO Agent from here."
+        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent."
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2084,7 +2084,7 @@
         "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
         "sub_headings_underivable_h1_cap_reached": "Sub-headings could not be separated on this page, because its H1 list hit the collector's own limit. Reported as unavailable rather than guessed.",
         "opening_text_first_500_chars_static_extraction": "Opening text is the first 500 characters of the statically extracted body, after nav, footer and aside blocks are removed. It is not what a browser paints.",
-        "density_basis_captured_text_only": "Density is measured inside the collected text — title, description, headings and that opening text — not across the whole page body, which is not collected.",
+        "density_basis_captured_text_only": "Density is measured over the captured text — title, description, headings and the opening — not the whole body. The whole-page leaderboard below is counted against the body's own unit total, so the two percentages are not comparable.",
         "static_body_words_unavailable_for_cjk": "The page word count is withheld: this page is written mostly without word gaps, where splitting on spaces is off by an order of magnitude.",
         "extract_lists_truncated": "A heading list was cut to its own limit before publication, so a keyword further down the page may not be counted."
       },
@@ -2184,7 +2184,9 @@
         "charset": {
           "_label": "Character encoding",
           "missing": "No charset declared, so non-ASCII text can be read under the wrong encoding.",
-          "declared": "Declared {charset}."
+          "declared": "Declared {charset}.",
+          "fromHeader": "The HTTP response header declares {charset}, which is the value the browser actually decodes with.",
+          "conflict": "The response header says {header} and the meta tag says {meta}. The browser decodes by the header, so one of the two declarations is wrong."
         },
         "lang": {
           "_label": "HTML lang",
@@ -2199,8 +2201,11 @@
         "h1": {
           "_label": "H1",
           "missing": "No H1.",
-          "single": "One H1: “{h1}”, width {width}.",
-          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things."
+          "single": "One H1, “{h1}”, width {width}, inside the common {min}–{max} range.",
+          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things.",
+          "tooShort": "The H1 “{h1}” is only {width} wide, under the common {min} — a heading is this page's promise to a searcher, and this one does not say much.",
+          "tooLong": "The H1 “{h1}” is {width} wide, over the common {max} — long headings get cut in results and in listings alike.",
+          "tooLongClipped": "The H1 is at least {width} wide (shown here cut to 200 characters), far past the common {max}."
         },
         "bodyWords": {
           "_label": "Body words",
@@ -2208,7 +2213,11 @@
           "thin": "Only {words} words. At this length the rest of the sheet has little to stand on.",
           "low": "{words} words, on the thin side.",
           "fair": "{words} words.",
-          "good": "{words} words."
+          "good": "{words} words.",
+          "thinUnits": "The body runs about {words} characters — under 300 rarely carries a topic.",
+          "lowUnits": "The body runs about {words} characters, on the short side.",
+          "fairUnits": "The body runs about {words} characters, enough to cover one thing properly.",
+          "goodUnits": "The body runs about {words} characters, a full-length piece."
         },
         "subHeadings": {
           "_label": "Sub-headings",
@@ -2394,6 +2403,36 @@
             "clear": "This page is within four clicks of the homepage.",
             "notTested": "That rule tested a qualifying subset and did not cover this page."
           }
+        },
+        "imageDimensions": {
+          "_label": "Declared image dimensions",
+          "all": "All {total} images declare width and height, so the browser can reserve the space before they load.",
+          "some": "{missing} of {total} images do not declare both width and height. This reads markup only — a CSS aspect-ratio reserves the same box and no stylesheet is visible here."
+        },
+        "imageLoading": {
+          "_label": "Image lazy loading",
+          "none": "None of the {total} images declare loading=\"lazy\".",
+          "some": "{lazy} of {total} images declare loading=\"lazy\". Not graded: deferring the image at the top of the page delays the very thing a visitor is waiting for, and we cannot tell which image is where."
+        },
+        "urlShape": {
+          "_label": "URL shape",
+          "unavailable": "This page's URL could not be parsed, so it is not judged.",
+          "clean": "The path is {characters} characters over {segments} levels — readable and repeatable.",
+          "parameters": "The URL carries {parameters} query parameters, which is hard to remember or share{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "uppercase": "The path contains upper-case letters, which is how one page ends up with two URLs{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "deep": "The path is {segments} levels deep, past the common depth{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "long": "The path runs {characters} characters, on the long side{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "underscores": "The path separates words with underscores; search engines read hyphens more reliably{others, plural, =0 {} other {, and # other thing could read better}}."
+        },
+        "rendering": {
+          "_label": "Content in the static HTML",
+          "serverSide": "The static HTML already carries {textBytes} bytes of body text (scripts {scriptKb} KB), so nothing waits on JavaScript.",
+          "clientSide": "The static HTML carries almost no body text ({textBytes} bytes) against {scriptKb} KB of script — the copy is probably rendered by JavaScript. Search engines do run it, so this is a dependency rather than a fault, but it costs a render queue a server-rendered page never pays."
+        },
+        "demandCapture": {
+          "_label": "Whether this page can act",
+          "none": "The static HTML contains no form, input, button or canvas. A component mounted by client JavaScript is not in the transferred HTML and cannot be seen here, so this describes the static document and is not a claim that the page does nothing.",
+          "present": "The static HTML carries {controls} interactive elements (forms {forms}, inputs {inputs}, buttons {buttons}) — a visitor can act right here."
         }
       },
       "grades": {
@@ -2442,6 +2481,76 @@
         "checksHeading": "Every check",
         "previewHeading": "How it looks elsewhere",
         "keywordHeading": "Where the keywords land"
+      },
+      "terms": {
+        "heading": "Whole-page term frequency",
+        "sizeLabel": "{size} words",
+        "phrase": "Phrase",
+        "count": "Occurrences",
+        "frequencyDensity": "Frequency density",
+        "occupancyDensity": "Occupancy density",
+        "basis": "Divided by the {total} text units in this page's body — one per CJK character, and whitespace-separated runs for everything else. Frequency density is occurrences over that total; occupancy density multiplies by the phrase length so phrases of different lengths can be compared. Overlapping occurrences are each counted, so on a page that repeats one term heavily a long phrase can read over 100%.",
+        "legend": "Green means the row contains one of your target queries in full; amber means it shares part of one.",
+        "stopWords": "The one-word table leaves out function words like “the” and “and”. Phrase tables keep them — “the astrology of” is how people actually write.",
+        "unavailable": "This crawl did not capture body text, so there is no term leaderboard."
+      },
+      "landscape": {
+        "heading": "The results page",
+        "position": "Position",
+        "domain": "Domain",
+        "sitelinkColumn": "Sitelinks",
+        "you": "(your domain)",
+        "summary": {
+          "present": "On page one for “{query}” ({market}), this page's domain sits at position {position}.",
+          "absent": "This page's domain is not among the top {results} results for “{query}” ({market}). That means it is not on the page we read, not that it does not rank.",
+          "otherPage": "On page one for “{query}” ({market}) your domain sits at position {position}, but the result holding it is another page on your site, not the one you checked."
+        },
+        "sitelinks": "{withSitelinks} of the top {results} results show sitelinks. Sitelinks follow brand and navigational demand, so the number says who Google already treats as a destination — a different sentence from “this query is hard”.",
+        "features": "Also on that page: {features}.",
+        "basis": "Query “{query}”, market {market}, language {language}, desktop page one, sampled once. Results move daily; this is how it looked at that moment.",
+        "unavailable": {
+          "no_target_query": "No target query was submitted, so no results page was looked up.",
+          "market_not_supported": "This market or language is outside what we look up, so no call was made and nothing was spent.",
+          "provider_not_configured": "This deployment has no credential for the results-page lookup, so this section has no data. Every other check is unaffected.",
+          "provider_unavailable": "The results page could not be read this time. Every other check is unaffected."
+        },
+        "youThisPage": "(this page)",
+        "youOtherPage": "(your domain, a different page)"
+      },
+      "coverage": {
+        "title": "What this checks, and what it does not",
+        "intro": "What follows is everything it can actually read. Anything not listed gets no verdict — stating the edge here beats leaving you to infer it from a report that never mentions it.",
+        "checks": {
+          "meta": "Title, description, canonical, robots directives, viewport, encoding, language, favicon. Lengths are measured by display width, with CJK characters counting double.",
+          "content": "Body length (characters for CJK), H1 count and length, H2–H6 sub-heading count, text-to-markup ratio, and whether the page carries anything a visitor can act through.",
+          "keyword": "Where your submitted queries land in the title, description, H1, sub-headings, opening text and URL, plus a whole-page leaderboard of one- to five-word phrases.",
+          "links": "Internal outlinks, empty anchor text, external destinations and their rel safety.",
+          "media": "Image alt coverage, declared width and height, and lazy loading.",
+          "social": "Open Graph title/description/image, Twitter card, and JSON-LD types and parse errors.",
+          "technical": "HTTPS, status and redirects, response time, URL shape, HTML weight, hreflang, robots.txt and sitemap reachability, sitemap membership, and whether the body is in the static HTML.",
+          "site": "The ones only a full-site crawl can answer: duplicate titles and descriptions, sitemap pages nothing links to, broken outbound links, and click depth.",
+          "serp": "Page one for your primary query in the market you chose: who holds the top ten, whether you are among them, and how many results show sitelinks."
+        },
+        "notTitle": "What it does not do",
+        "not": {
+          "rendering": "It does not run JavaScript. Content, components and links mounted by client script are invisible to it — it will tell you whether the body is in the static HTML, but not what the page looks like after the script runs.",
+          "css": "It does not read stylesheets. Text hidden with CSS and boxes reserved with aspect-ratio are both outside what it can judge.",
+          "ranking": "It does not predict rankings or score difficulty. The results-page section is one sample taken now, not a trend.",
+          "backlinks": "It does not look at backlinks, domain authority or traffic. What this page cannot change about itself is outside its scope.",
+          "headings": "It does not give a heading outline. The crawl does not retain H2–H6 levels, so sub-headings can only be one merged list.",
+          "density": "It does not grade keyword density. The denominator is the captured text, where a correctly optimised page already reads around 20% — a band borrowed from whole-body density would call that page stuffed."
+        },
+        "labels": {
+          "meta": "Meta",
+          "content": "Content",
+          "keyword": "Keywords",
+          "links": "Links",
+          "media": "Images",
+          "social": "Sharing and structured data",
+          "technical": "Technical",
+          "site": "Site context",
+          "serp": "The results page"
+        }
       }
     }
   },

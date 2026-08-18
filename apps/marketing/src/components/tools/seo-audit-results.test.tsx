@@ -24,6 +24,7 @@ function record(
     state: "observed",
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 12,
     affected: 0,
     observations: [],
@@ -68,6 +69,7 @@ const records: readonly SeoAuditRecord[] = [
     category: "crawl",
     unit: "site_resource",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 1,
     affected: 1,
     observations: [

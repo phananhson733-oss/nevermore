@@ -7,21 +7,26 @@
 
 import { useTranslations } from "next-intl";
 import type { SeoAuditTargetPageExtract } from "@sf/public-tools/seo-audit/types";
+import {
+  clipToWidth,
+  SNIPPET_DESCRIPTION_WIDTH,
+  SNIPPET_TITLE_WIDTH,
+} from "@sf/public-tools/seo-audit/text-width";
 
 /**
  * Where a search result stops showing the rest.
  *
  * Approximate on purpose. Google truncates by rendered pixel width, not by
  * character count, and the cut moves with the device and the query. These are
- * common working widths, and the preview says it is approximate rather than
- * implying we know where the line falls.
+ * the same widths the title and description checks judge by — the preview used
+ * its own numbers and cut on `.length`, so a Chinese title was flagged as
+ * "width 90, outside 15–60, likely truncated" directly above a preview that
+ * showed it whole and called itself a truncation sketch.
  */
-const TITLE_PREVIEW_WIDTH = 60;
-const DESCRIPTION_PREVIEW_WIDTH = 160;
+const TITLE_PREVIEW_WIDTH = SNIPPET_TITLE_WIDTH.max;
+const DESCRIPTION_PREVIEW_WIDTH = SNIPPET_DESCRIPTION_WIDTH.max;
 
-function clip(value: string, width: number): string {
-  return value.length <= width ? value : `${value.slice(0, width)}…`;
-}
+const clip = clipToWidth;
 
 function breadcrumb(url: string): string {
   try {

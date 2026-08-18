@@ -14,7 +14,11 @@ import type {
   SeoAuditTargetPageExtract,
   SeoAuditTargetResponseFacts,
 } from "../types.ts";
-import { cjkShare } from "./text-units.ts";
+import {
+  cjkShare,
+  cjkShareFromCounts,
+  textUnitsFromCounts,
+} from "./text-units.ts";
 
 /** Heading entries kept per list, and characters kept per entry. */
 export const MAX_EXTRACT_H1 = 10;
@@ -28,6 +32,13 @@ export const MAX_EXTRACT_ENTRY_CHARS = 200;
  * wrong by two orders of magnitude. Past this share the count is withheld
  * rather than published — an obviously absent number can be explained, a
  * confidently wrong one cannot.
+ *
+ * The share is now measured over the whole body. It used to be measured on the
+ * 500-character excerpt and then applied to the full-body count, so a page
+ * opening in English and continuing in Chinese came in under the threshold and
+ * published a count wrong by two orders of magnitude — which the score then
+ * read as a thin page and capped at 35. On a Chinese-first product that is the
+ * common shape, not an edge case.
  */
 const CJK_WORD_COUNT_THRESHOLD = 0.3;
 
@@ -124,6 +135,8 @@ function declaredFactsOf(
       withAlt: onPage.images.withAlt,
       withEmptyAlt: onPage.images.withEmptyAlt,
       withoutAlt: onPage.images.withoutAlt,
+      withDimensions: onPage.images.withDimensions,
+      lazyLoaded: onPage.images.lazyLoaded,
     },
     externalLinks: {
       total: onPage.externalLinks.total,
@@ -132,6 +145,17 @@ function declaredFactsOf(
     },
     htmlBytes: onPage.htmlBytes,
     visibleTextBytes: onPage.visibleTextBytes,
+    scriptBytes: onPage.scriptBytes,
+    interactive: {
+      forms: onPage.interactive.forms,
+      inputs: onPage.interactive.inputs,
+      buttons: onPage.interactive.buttons,
+      selects: onPage.interactive.selects,
+      textareas: onPage.interactive.textareas,
+      canvases: onPage.interactive.canvases,
+      media: onPage.interactive.media,
+      iframes: onPage.interactive.iframes,
+    },
   };
 }
 
@@ -167,8 +191,15 @@ export function buildTargetPageExtract(
     derived === null ? null : capList(derived, MAX_EXTRACT_SUB_HEADINGS);
   const openingText = projection.bodyExcerpt;
 
-  const wordCountIsMeaningful =
-    openingText === null || cjkShare(openingText) <= CJK_WORD_COUNT_THRESHOLD;
+  // Whole-body counts when the crawl carried them; the 500-character excerpt
+  // only as a last resort, and then labelled by what it actually measured.
+  const bodyShare =
+    onPage === undefined
+      ? openingText === null
+        ? 0
+        : cjkShare(openingText)
+      : cjkShareFromCounts(onPage.textMetrics);
+  const wordCountIsMeaningful = bodyShare <= CJK_WORD_COUNT_THRESHOLD;
 
   return {
     url: projection.fetchUrl,
@@ -178,6 +209,18 @@ export function buildTargetPageExtract(
     subHeadings: subHeadings === null ? null : subHeadings.kept,
     openingText,
     staticBodyWords: wordCountIsMeaningful ? projection.wordCount : null,
+    staticBodyUnits:
+      onPage === undefined ? null : textUnitsFromCounts(onPage.textMetrics),
+    termFrequencies:
+      onPage === undefined
+        ? null
+        : onPage.termFrequencies.map((table) => ({
+            size: table.size,
+            rows: table.rows.map((row) => ({
+              phrase: row.phrase,
+              count: row.count,
+            })),
+          })),
     truncatedLists: h1.truncated || (subHeadings?.truncated ?? false),
     response: responseFactsOf(projection),
     declared: onPage === undefined ? null : declaredFactsOf(onPage),

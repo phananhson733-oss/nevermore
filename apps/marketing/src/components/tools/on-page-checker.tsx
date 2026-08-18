@@ -9,18 +9,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
-import type {
-  SeoAuditRecord,
-  SeoAuditSiteResources,
-  SeoAuditTargetPageExtract,
-} from "@sf/public-tools/seo-audit/types";
+import type { SeoAuditTargetPageExtract } from "@sf/public-tools/seo-audit/types";
 import {
   buildOnPageScore,
   type OnPageScore,
 } from "../../lib/on-page-checker/scoring.ts";
-import { OnPageScoreCard } from "./on-page-score-card.tsx";
-import { OnPageCheckList } from "./on-page-check-list.tsx";
-import { OnPageSerpPreview } from "./on-page-serp-preview.tsx";
+import {
+  coverageAvailabilityOf,
+  countAt,
+  errorCodeOf,
+  formatCollectedAt,
+  hostOf,
+  monotonicNow,
+  retryAfterSeconds,
+  type AuditResponse,
+} from "../../lib/on-page-checker/response-reading.ts";
+import { OnPageHistoryPanel } from "./on-page-history-panel.tsx";
+import { OnPageReportSections } from "./on-page-report-sections.tsx";
+import { OnPageKeywordEvidence } from "./on-page-keyword-evidence.tsx";
+import {
+  isSerpLandscape,
+  type SerpLandscape,
+} from "../../lib/agents/audit-contract.ts";
 
 import {
   appendOnPageHistory,
@@ -88,107 +98,6 @@ const CRAWL_ERROR_CODES = new Set([
   "unknown",
 ]);
 
-interface AuditResponse {
-  readonly data?: {
-    readonly run?: {
-      readonly source?: {
-        readonly cache?: { readonly status?: unknown };
-      };
-    };
-    readonly result?: {
-      readonly targetUrl?: unknown;
-      readonly scannedAt?: unknown;
-      readonly targetInspected?: unknown;
-      readonly inspectedTargetUrl?: unknown;
-      readonly coverage?: Readonly<Record<string, unknown>>;
-      readonly targetPageExtract?: SeoAuditTargetPageExtract | null;
-      readonly siteResources?: SeoAuditSiteResources;
-      readonly records?: readonly SeoAuditRecord[];
-      readonly keywordEvidence?: KeywordEvidence;
-    };
-  };
-  readonly error?: { readonly code?: unknown };
-}
-
-function errorCodeOf(body: unknown): string | null {
-  if (typeof body !== "object" || body === null) return null;
-  const code = (body as AuditResponse).error?.code;
-  return typeof code === "string" ? code : null;
-}
-
-/**
- * A count the response actually carried, or `null`.
- *
- * Never 0 for a missing number: this value is stored and read back later, and a
- * zero there says "we looked and there were none" about something we were never
- * told. The house rule is that unavailable is not zero, and a crawl that
- * reported nothing about skipped URLs is unavailable, not clean.
- */
-function countAt(
-  source: Readonly<Record<string, unknown>> | undefined,
-  key: string,
-): number | null {
-  const value = source?.[key];
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : null;
-}
-
-function coverageAvailabilityOf(
-  source: Readonly<Record<string, unknown>> | undefined,
-): "available" | "partial" | "unavailable" {
-  const value = source?.["availability"];
-  return value === "available" || value === "partial" ? value : "unavailable";
-}
-
-/**
- * Elapsed time comes off a clock that cannot go backwards.
- *
- * `Date.now()` moves when the system clock is corrected or the machine wakes
- * from sleep, and this counter runs for up to four minutes beside a claim about
- * how long the visitor has waited.
- */
-function monotonicNow(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
-}
-
-/**
- * The collection time, in the reader's own locale.
- *
- * Rendered only after a client-side run, so there is no server pass to disagree
- * with. An unparsable timestamp reads as the raw value rather than as a date we
- * made up.
- */
-function formatCollectedAt(scannedAt: string, locale: string): string {
-  const parsed = new Date(scannedAt);
-  if (Number.isNaN(parsed.getTime())) return scannedAt;
-  try {
-    return parsed.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return parsed.toISOString();
-  }
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url.includes("://") ? url : `https://${url}`).hostname;
-  } catch {
-    return "";
-  }
-}
-
-/** Retry-After only when it is a plain integer count of seconds we can show. */
-function retryAfterSeconds(headers: Headers): number | null {
-  const raw = headers.get("retry-after");
-  if (raw === null || !/^\d+$/.test(raw.trim())) return null;
-  const seconds = Number(raw.trim());
-  if (!Number.isSafeInteger(seconds)) return null;
-  return Math.min(Math.max(seconds, 1), 3_600);
-}
-
 type RunState =
   | { readonly kind: "idle" }
   | { readonly kind: "running"; readonly startedAt: number }
@@ -208,6 +117,8 @@ type RunState =
        * ever disagreeing about the same run.
        */
       readonly score: OnPageScore | null;
+      /** Page one for the primary query, or null when it was not looked up. */
+      readonly landscape: SerpLandscape | null;
     }
   | {
       readonly kind: "failed";
@@ -358,6 +269,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           url: url.trim(),
           targetQueries: queries,
           pageRole,
+          // These two used to stop at the form. They reach the results-page
+          // lookup now, and nothing else: the crawl ignores both.
+          market: country,
+          language,
         }),
         signal: controller.signal,
       });
@@ -436,6 +351,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       cacheStatus: cache,
       extract,
       score,
+      // Validated, not cast. The checker reads this response with a TypeScript
+      // interface, which is erased at runtime — so the guard written for this
+      // shape was never reached on the one route that produces it, and a
+      // malformed landscape would have crashed the report on `rows.map`.
+      landscape: isSerpLandscape(result?.serpLandscape)
+        ? result.serpLandscape
+        : null,
     });
 
     // Only a whole success is remembered, so the list never suggests a run
@@ -454,6 +376,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             locale: language,
             pageType: pageRole,
             focus: evidence.focus,
+            // Null when the run could not be scored, so the trend column reads
+            // "—" rather than implying this page came back a zero.
+            score:
+              score === null
+                ? null
+                : { value: score.score, grade: score.grade },
             coverage: {
               availability: coverageAvailabilityOf(result?.coverage),
               pagesInspected: countAt(result?.coverage, "pagesInspected"),
@@ -699,12 +627,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
 
           {/*
-            Market and language do not reach the check.
-
-            The request carries the URL, the queries and the page role, and
-            nothing else — so these two are carried into the SEO Agent when the
-            visitor opens it, and change nothing about the numbers below. Asking
-            for them without saying so reads as "checked for that market".
+            Market and language reach exactly one thing: the results-page
+            lookup. The crawl and every check built on it are the same in every
+            market, and saying so is cheaper than letting a visitor read the
+            whole report as "checked for that market".
           */}
           <p
             className="text-[12.5px] leading-[1.6] text-text-dark-faint"
@@ -832,183 +758,17 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 })}
               </p>
             </div>
-            {/*
-              The score first, then what it is made of. A visitor who wants one
-              number gets it without scrolling; a visitor who wants to check it
-              has every check that produced it on the same screen.
-            */}
-            {run.score !== null && run.extract !== null && (
-              <div className="grid gap-5">
-                <OnPageScoreCard extract={run.extract} score={run.score} />
-              </div>
-            )}
+            <OnPageReportSections
+              extract={run.extract}
+              score={run.score}
+              landscape={run.landscape}
+              evidence={available}
+            />
 
-            {run.extract !== null && (
-              <section className="grid gap-3">
-                <h3 className="text-[15px] text-text-dark-primary">
-                  {t("sections.previewHeading")}
-                </h3>
-                <OnPageSerpPreview extract={run.extract} />
-              </section>
-            )}
-
-            {run.score !== null && (
-              <section className="grid gap-3">
-                <h3 className="text-[15px] text-text-dark-primary">
-                  {t("sections.checksHeading")}
-                </h3>
-                <OnPageCheckList categories={run.score.categories} />
-              </section>
-            )}
-
-            <h3 className="text-[15px] text-text-dark-primary">
-              {t("sections.keywordHeading")}
-            </h3>
-            <p className="text-[14px] text-text-dark-primary">
-              {t("focus.summary", {
-                covered: available.focus.covered,
-                applicable: available.focus.applicable,
-              })}
-            </p>
-            <p className="text-[12.5px] text-text-dark-faint">
-              {t("focus.notAScore")}
-            </p>
-            {/*
-              A query the visitor typed can be absent from the table: the wire
-              normalizes and de-duplicates, so two spellings of one query arrive
-              as one. Saying so is cheaper than letting them hunt for it.
-            */}
-            {available.queries.length < queries.length && (
-              <p className="text-[12.5px] text-brand-warning">
-                {t("provenance.queriesMerged", {
-                  submitted: queries.length,
-                  measured: available.queries.length,
-                })}
-              </p>
-            )}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13.5px]">
-                <thead>
-                  <tr className="text-text-dark-faint">
-                    <th className="py-2 pr-3 font-normal">
-                      {t("table.query")}
-                    </th>
-                    <th className="py-2 pr-3 font-normal">
-                      {t("table.title")}
-                    </th>
-                    <th className="py-2 pr-3 font-normal">
-                      {t("table.description")}
-                    </th>
-                    <th className="py-2 pr-3 font-normal">{t("table.h1")}</th>
-                    <th className="py-2 pr-3 font-normal">
-                      {t("table.subHeadings")}
-                    </th>
-                    <th className="py-2 pr-3 font-normal">
-                      {t("table.openingText")}
-                    </th>
-                    <th className="py-2 pr-3 font-normal">{t("table.url")}</th>
-                  </tr>
-                </thead>
-                <tbody className="font-mono tabular-nums">
-                  {available.queries.map((query) => (
-                    <tr
-                      className="border-t border-brand-border-card"
-                      key={query.displayQuery}
-                    >
-                      <td className="py-2 pr-3 font-sans text-text-dark-primary">
-                        {query.displayQuery}
-                        {query.isPrimary && (
-                          <span className="ml-2 rounded-full bg-brand-accent/10 px-2 py-0.5 font-mono text-[10.5px] text-brand-accent-text">
-                            {t("table.primary")}
-                          </span>
-                        )}
-                        {query.brandCandidate === "matched" && (
-                          <span className="ml-2 rounded-full border border-brand-border-card px-2 py-0.5 font-mono text-[10.5px] text-text-dark-faint">
-                            {t("table.brand")}
-                          </span>
-                        )}
-                      </td>
-                      {(
-                        [
-                          query.slots.title,
-                          query.slots.description,
-                          query.slots.h1,
-                          query.slots.subHeadings,
-                          query.slots.openingText,
-                        ] as const
-                      ).map((slot, index) => (
-                        <td className="py-2 pr-3" key={index}>
-                          <SlotCell
-                            label={t(`slotStates.${slot.state}`)}
-                            occurrences={slot.occurrences}
-                            state={slot.state}
-                          />
-                        </td>
-                      ))}
-                      <td className="py-2 pr-3">
-                        <SlotCell
-                          label={t(`slotStates.${query.slots.url.state}`)}
-                          occurrences={null}
-                          state={query.slots.url.state}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <ul className="grid gap-1.5">
-              {available.queries.map((query) => (
-                <li
-                  className="text-[13px] text-text-dark-secondary"
-                  key={`density-${query.displayQuery}`}
-                >
-                  {query.density === null
-                    ? t("density.unavailable", { query: query.displayQuery })
-                    : t("density.value", {
-                        query: query.displayQuery,
-                        percent: (query.density.value * 100).toFixed(2),
-                        units: query.density.denominatorUnits,
-                        // Words and CJK characters are both "units" and are not
-                        // the same thing; a reader comparing two pages has to
-                        // be able to see which was counted.
-                        unitsBasis: t(
-                          `density.units.${query.density.unitsBasis}`,
-                        ),
-                        occurrences: query.capturedOccurrences,
-                      })}
-                </li>
-              ))}
-            </ul>
-
-            {/*
-              The declared page role's one consumer. Without it the selector was
-              an input that changed nothing, which is the mirror image of a
-              required field that changes nothing.
-            */}
-            <div className="border-t border-brand-border-card pt-4">
-              <h3 className="text-[15px] text-text-dark-primary">
-                {t("fixes.title")}
-              </h3>
-              <p className="mt-2 max-w-[640px] text-[13.5px] leading-[1.7] text-text-dark-secondary">
-                {t(`fixes.${available.pageRole ?? "homepage"}`)}
-              </p>
-              <p className="mt-2 text-[12.5px] text-text-dark-faint">
-                {t("fixes.basis")}
-              </p>
-            </div>
-
-            <ul className="grid gap-1.5 border-t border-brand-border-card pt-4">
-              {available.limitations.map((code) => (
-                <li
-                  className="text-[12.5px] leading-[1.6] text-text-dark-faint"
-                  key={code}
-                >
-                  {t(`limitations.${code}`)}
-                </li>
-              ))}
-            </ul>
+            <OnPageKeywordEvidence
+              available={available}
+              submittedQueries={queries.length}
+            />
 
             <div className="flex flex-wrap items-center gap-3 border-t border-brand-border-card pt-4">
               <button
@@ -1054,83 +814,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         )}
       </section>
 
-      <section
-        aria-labelledby="onpage-history"
-        className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7"
-      >
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h2
-            className="text-[19px] text-text-dark-primary"
-            id="onpage-history"
-          >
-            {t("history.title")}
-          </h2>
-          {history.length > 0 && (
-            <button
-              className="ml-auto text-[13px] text-text-dark-secondary underline underline-offset-4 hover:text-text-dark-primary"
-              onClick={clearHistory}
-              type="button"
-            >
-              {t("history.clear")}
-            </button>
-          )}
-        </div>
-        <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-faint">
-          {t("history.localOnly")}
-        </p>
-        {history.length === 0 ? (
-          <p className="mt-4 text-[14px] text-text-dark-secondary">
-            {t("history.empty")}
-          </p>
-        ) : (
-          <ul className="mt-4 grid gap-2">
-            {[...history].reverse().map((entry) => (
-              <li
-                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-brand-border-card pt-2 text-[13px]"
-                key={entry.id}
-              >
-                <span className="font-mono text-text-dark-primary">
-                  {entry.url}
-                </span>
-                <span className="text-text-dark-faint">
-                  {entry.targetQueries.join(", ")}
-                </span>
-                <span className="ml-auto font-mono tabular-nums text-text-dark-secondary">
-                  {t("focus.short", {
-                    covered: entry.focus.covered,
-                    applicable: entry.focus.applicable,
-                  })}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <OnPageHistoryPanel history={history} onClear={clearHistory} />
     </div>
-  );
-}
-
-function SlotCell({
-  label,
-  occurrences,
-  state,
-}: {
-  readonly label: string;
-  readonly occurrences: number | null;
-  readonly state: "covered" | "not_covered" | "not_applicable";
-}) {
-  const tone =
-    state === "covered"
-      ? "text-brand-success"
-      : state === "not_covered"
-        ? "text-brand-warning"
-        : "text-text-dark-faint";
-  return (
-    <span className={tone}>
-      {label}
-      {occurrences !== null && occurrences > 0 && (
-        <span className="text-text-dark-faint"> ({occurrences})</span>
-      )}
-    </span>
   );
 }

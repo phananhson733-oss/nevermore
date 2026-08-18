@@ -55,7 +55,13 @@ describe("default Agent audit request delegation", () => {
     expect(response.status).toBe(502);
     expect(mocks.delegate).toHaveBeenCalledWith(incoming, undefined, {
       forceBufferedJson: true,
-      input: { url: "acme.test", targetQueries: null, pageRole: null },
+      input: {
+        url: "acme.test",
+        targetQueries: null,
+        pageRole: null,
+        market: null,
+        language: null,
+      },
     });
   });
 });

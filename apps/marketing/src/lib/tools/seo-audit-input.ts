@@ -30,6 +30,8 @@ const ALLOWED_INPUT_KEYS: ReadonlySet<string> = new Set([
   "url",
   "targetQueries",
   "pageRole",
+  "market",
+  "language",
 ]);
 
 const PAGE_ROLES: ReadonlySet<string> = new Set([
@@ -44,6 +46,16 @@ export interface SeoAuditRequestInput {
   /** Null when the caller sent no queries at all, never an empty list. */
   readonly targetQueries: readonly NormalizedTargetQuery[] | null;
   readonly pageRole: KeywordEvidencePageRole | null;
+  /**
+   * Where the visitor wants to rank, and in what language.
+   *
+   * Read only by the results-page lookup, which is why they arrive here rather
+   * than being inferred: a market guessed from the page's own language would
+   * spend a provider call on the wrong country and then report the answer as
+   * though it had been asked for. The crawl itself ignores both.
+   */
+  readonly market: string | null;
+  readonly language: string | null;
 }
 
 /**
@@ -72,6 +84,8 @@ export function readSeoAuditInput(
     readonly url?: unknown;
     readonly targetQueries?: unknown;
     readonly pageRole?: unknown;
+    readonly market?: unknown;
+    readonly language?: unknown;
   };
 
   let targetQueries: readonly NormalizedTargetQuery[] | null = null;
@@ -95,5 +109,34 @@ export function readSeoAuditInput(
     pageRole = input.pageRole as KeywordEvidencePageRole;
   }
 
-  return { ok: true, value: { url: input.url, targetQueries, pageRole } };
+  let market: string | null = null;
+  if (input.market !== undefined) {
+    if (
+      typeof input.market !== "string" ||
+      !/^[A-Za-z]{2}$/.test(input.market)
+    ) {
+      return { ok: false };
+    }
+    market = input.market.toUpperCase();
+  }
+
+  let language: string | null = null;
+  if (input.language !== undefined) {
+    // A BCP-47 shape, bounded. Which languages can actually be served is the
+    // lookup's business, not this validator's: failing the whole request over
+    // a field the crawl never reads would lose the check to keep the context.
+    if (
+      typeof input.language !== "string" ||
+      input.language.length > 16 ||
+      !/^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/.test(input.language)
+    ) {
+      return { ok: false };
+    }
+    language = input.language;
+  }
+
+  return {
+    ok: true,
+    value: { url: input.url, targetQueries, pageRole, market, language },
+  };
 }

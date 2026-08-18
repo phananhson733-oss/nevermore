@@ -203,16 +203,69 @@ describe("buildTargetPageExtract on-page facts", () => {
     charset: "utf-8",
     faviconDeclared: true,
     hreflang: ["en"],
-    images: { total: 4, withAlt: 3, withEmptyAlt: 1, withoutAlt: 0 },
+    images: {
+      total: 4,
+      withAlt: 3,
+      withEmptyAlt: 1,
+      withoutAlt: 0,
+      withDimensions: 2,
+      lazyLoaded: 1,
+    },
     externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
     htmlBytes: 31_744,
     visibleTextBytes: 10_729,
+    scriptBytes: 4_096,
+    interactive: {
+      forms: 1,
+      inputs: 3,
+      buttons: 1,
+      selects: 0,
+      textareas: 0,
+      canvases: 0,
+      media: 0,
+      iframes: 0,
+    },
+    textMetrics: { cjkChars: 0, nonCjkWords: 1_800, denseChars: 9_000 },
+    termFrequencies: [
+      { size: 1, rows: [{ phrase: "astrology", count: 42 }] },
+    ],
   } as const;
 
   it("reports what the page declared", () => {
     const extract = buildTargetPageExtract(projection(), onPage);
 
-    expect(extract.declared).toEqual(onPage);
+    // `textMetrics` is deliberately not among them: it is how the body was
+    // measured, not something the markup declared, and it leaves through
+    // `staticBodyUnits` instead.
+    const { textMetrics: _measured, termFrequencies: _terms, ...declared } = onPage;
+    expect(extract.declared).toEqual(declared);
+  });
+
+  it("publishes the body length in units every script can be counted in", () => {
+    const latin = buildTargetPageExtract(projection(), onPage);
+    expect(latin.staticBodyUnits).toEqual({ units: 1_800, basis: "words" });
+
+    const chinese = buildTargetPageExtract(projection(), {
+      ...onPage,
+      textMetrics: { cjkChars: 4_200, nonCjkWords: 40, denseChars: 4_300 },
+    });
+    // A Chinese page used to have no length at all here, which the score read
+    // as a page too thin to rank.
+    expect(chinese.staticBodyUnits).toEqual({ units: 4_240, basis: "mixed" });
+    expect(chinese.staticBodyWords).toBeNull();
+  });
+
+  it("decides the withheld word count on the body, not on its opening", () => {
+    // English opening, Chinese body. Measured on the 500-character excerpt this
+    // page passed the threshold and published a whitespace count of about 40
+    // for five thousand characters of Chinese — read downstream as thin.
+    const extract = buildTargetPageExtract(
+      projection({ bodyExcerpt: "An English opening sentence, and then more." }),
+      { ...onPage, textMetrics: { cjkChars: 5_000, nonCjkWords: 40, denseChars: 5_200 } },
+    );
+
+    expect(extract.staticBodyWords).toBeNull();
+    expect(extract.staticBodyUnits?.units).toBe(5_040);
   });
 
   it("reports the crawl's own HTTP journey", () => {

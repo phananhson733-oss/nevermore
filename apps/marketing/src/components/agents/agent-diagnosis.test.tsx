@@ -141,6 +141,7 @@ function record(id: string, overrides: Partial<AuditRecord> = {}): AuditRecord {
     state: "not_observed",
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 24,
     affected: 0,
     observations: [],
@@ -167,7 +168,7 @@ function auditData({
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v6",
+        schemaVersion: "seo_audit.sitewide.v7",
         completedAt: "2026-08-13T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },

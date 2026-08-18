@@ -89,6 +89,18 @@ export interface OnPageHistoryEntry {
   readonly pageType: OnPageCheckerPageType;
   readonly focus: { readonly covered: number; readonly applicable: number };
   /**
+   * The published score, so the list can show a trend rather than a log.
+   *
+   * Optional on read and null on entries written before scoring existed. A
+   * closed key set would have rejected those outright and silently emptied
+   * somebody's list on upgrade, which is a worse trade than one column reading
+   * "—" for the checks that predate the number.
+   */
+  readonly score?: {
+    readonly value: number;
+    readonly grade: "A" | "B" | "C" | "D";
+  } | null;
+  /**
    * What the crawl behind this check managed to see.
    *
    * Every count is nullable and the availability is carried, because both facts
@@ -106,6 +118,9 @@ export interface OnPageHistoryEntry {
   };
   readonly cacheStatus: "hit" | "miss" | "unknown";
 }
+
+/** Written by a build that predates the field, and still perfectly readable. */
+const OPTIONAL_HISTORY_KEYS: ReadonlySet<string> = new Set(["score"]);
 
 const HISTORY_KEYS: ReadonlySet<string> = new Set([
   "id",
@@ -380,11 +395,25 @@ export function clearOnPageDraft(storage: OnPageKeyedStorage): void {
   }
 }
 
+function isHistoryScore(
+  value: unknown,
+): value is { readonly value: number; readonly grade: "A" | "B" | "C" | "D" } {
+  return (
+    isObject(value) &&
+    Object.keys(value).length === 2 &&
+    isNonNegativeInteger(value.value) &&
+    value.value <= 100 &&
+    typeof value.grade === "string" &&
+    ["A", "B", "C", "D"].includes(value.grade)
+  );
+}
+
 function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
   if (!isObject(value)) return null;
   const keys = Object.keys(value);
-  if (keys.length !== HISTORY_KEYS.size) return null;
-  if (keys.some((key) => !HISTORY_KEYS.has(key))) return null;
+  if (keys.some((key) => !HISTORY_KEYS.has(key) && !OPTIONAL_HISTORY_KEYS.has(key)))
+    return null;
+  if ([...HISTORY_KEYS].some((key) => !keys.includes(key))) return null;
   const {
     id,
     createdAt,
@@ -397,6 +426,7 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     focus,
     coverage,
     cacheStatus,
+    score,
   } = value;
 
   if (
@@ -421,7 +451,8 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     !isNullableCount(coverage.urlsSkipped) ||
     !isNullableCount(coverage.urlsBlocked) ||
     !isNullableCount(coverage.urlsErrored) ||
-    (cacheStatus !== "hit" && cacheStatus !== "miss" && cacheStatus !== "unknown")
+    (cacheStatus !== "hit" && cacheStatus !== "miss" && cacheStatus !== "unknown") ||
+    !(score === undefined || score === null || isHistoryScore(score))
   ) {
     return null;
   }
@@ -444,6 +475,10 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
       urlsErrored: coverage.urlsErrored,
     },
     cacheStatus,
+    score:
+      score === undefined || score === null
+        ? null
+        : { value: score.value, grade: score.grade },
   };
 }
 
