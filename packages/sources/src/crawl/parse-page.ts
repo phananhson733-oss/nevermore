@@ -712,7 +712,7 @@ function collectInteractiveFacts(html: string): ParsedInteractiveFacts {
  * higher one; a cross-package test drives the real parser and the real counter
  * over the same corpus so the two cannot drift apart unnoticed.
  */
-const CJK_UNIT_PATTERN = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/gu;
+const CJK_UNIT_PATTERN = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/gu;
 
 function textMetricsOf(bodyText: string): ParsedTextMetrics {
   const cjkMatches = bodyText.match(CJK_UNIT_PATTERN);

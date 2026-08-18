@@ -1,4 +1,8 @@
-import { parsePage, unitStream } from "@sf/sources/crawl-public-preview";
+import {
+  isCjkUnit,
+  parsePage,
+  unitStream,
+} from "@sf/sources/crawl-public-preview";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -180,5 +184,31 @@ describe("the crawler's counts and this counter agree", () => {
     // disagree the page shows one length and a set of percentages taken against
     // another, with nothing on screen to say which is which.
     expect(unitStream(bodyText)).toHaveLength(fromText.units);
+  });
+});
+
+/**
+ * The crawler's per-character test and the frozen counter must agree exactly.
+ *
+ * Two spellings of one rule, in two packages, and one of them was written by
+ * copying characters: the copy arrived with U+8C48 where U+F900 belonged, which
+ * renders identically and covers twenty-seven thousand more code points — Yi,
+ * private use, Latin Extended-D, all silently counted as CJK. A corpus test
+ * cannot find that, because a corpus contains the characters someone thought
+ * of. This walks the whole plane the ranges live in.
+ */
+describe("the CJK unit ranges", () => {
+  it("are the same set on both sides", () => {
+    const disagreements: string[] = [];
+    for (let code = 0; code <= 0xffff; code += 1) {
+      // Surrogate halves are not characters; `hasCjk` sees a lone one as a
+      // replacement and the numeric test never receives one from a real stream.
+      if (code >= 0xd800 && code <= 0xdbff) continue;
+      const char = String.fromCodePoint(code);
+      if (hasCjk(char) !== isCjkUnit(code)) {
+        disagreements.push(`U+${code.toString(16).toUpperCase()}`);
+      }
+    }
+    expect(disagreements).toEqual([]);
   });
 });

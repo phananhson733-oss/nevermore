@@ -47,6 +47,7 @@ export { parsePage } from "./parse-page.ts";
  */
 export {
   buildTermFrequencyTables,
+  isCjkUnit,
   TERM_TABLE_LIMITS,
   unitStream,
 } from "./term-frequency.ts";

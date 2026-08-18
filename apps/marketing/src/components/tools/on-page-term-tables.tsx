@@ -26,7 +26,7 @@ function tokens(value: string): readonly string[] {
     if (chunk === "") continue;
     let latin = "";
     for (const char of chunk) {
-      if (/[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/u.test(char)) {
+      if (/[\u3400-\u9fff\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/u.test(char)) {
         if (latin !== "") {
           out.push(latin);
           latin = "";

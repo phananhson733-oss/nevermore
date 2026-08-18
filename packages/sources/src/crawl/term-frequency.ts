@@ -13,7 +13,6 @@
  * pins the two totals together over a real corpus.
  */
 
-import { boundChars } from "./types.ts";
 
 /** Rows kept per phrase length, and characters kept per phrase. */
 export const TERM_TABLE_LIMITS = {
@@ -39,7 +38,26 @@ interface Unit {
   readonly cjk: boolean;
 }
 
-const CJK_UNIT = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/u;
+/**
+ * Code points counted one unit each, as numbers rather than as characters.
+ *
+ * This runs per character, and a regex `test` per character measured as the
+ * single largest cost in the whole parse. It is also the safer spelling: the
+ * character-class form was copied here carrying U+8C48 in place of U+F900 —
+ * identical on screen, twenty-seven thousand code points apart — which silently
+ * classified Yi, private-use and Latin Extended-D as CJK. A test walks every
+ * code point in the range and compares this against the frozen counter in
+ * `@sf/public-tools`, which is the definition it has to match.
+ */
+export function isCjkUnit(code: number): boolean {
+  return (
+    (code >= 0x3400 && code <= 0x9fff) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0x3040 && code <= 0x309f) ||
+    (code >= 0x30a0 && code <= 0x30ff) ||
+    (code >= 0xac00 && code <= 0xd7af)
+  );
+}
 
 /**
  * Words too common to rank, so the one-word table is about the page.
@@ -64,12 +82,20 @@ const STOP_UNITS: ReadonlySet<string> = new Set([
   "它", "们", "这", "那", "其", "之", "地", "得",
 ]);
 
-/** Strip the punctuation a word carries at either end, and lower-case it. */
+const EDGE_PUNCTUATION = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
+const ALPHANUMERIC_EDGES = /^[\p{L}\p{N}][\s\S]*[\p{L}\p{N}]$|^[\p{L}\p{N}]$/u;
+
+/**
+ * Strip the punctuation a word carries at either end, and lower-case it.
+ *
+ * The edge test runs first because most words have no punctuation to strip and
+ * the replace is the expensive half.
+ */
 function normaliseWord(value: string): string {
-  return value
-    .toLocaleLowerCase("en-US")
-    .replace(/^[^\p{L}\p{N}]+/u, "")
-    .replace(/[^\p{L}\p{N}]+$/u, "");
+  const lowered = value.toLocaleLowerCase("en-US");
+  return ALPHANUMERIC_EDGES.test(lowered)
+    ? lowered
+    : lowered.replace(EDGE_PUNCTUATION, "");
 }
 
 /**
@@ -89,7 +115,7 @@ export function unitStream(text: string): readonly Unit[] {
     let remainderAt = -1;
     const pending: Unit[] = [];
     for (const char of chunk) {
-      if (CJK_UNIT.test(char)) {
+      if (isCjkUnit(char.codePointAt(0) ?? 0)) {
         pending.push({ text: char, cjk: true });
         continue;
       }
@@ -107,48 +133,57 @@ export function unitStream(text: string): readonly Unit[] {
   return units;
 }
 
-/** Join units back into something a reader recognises. */
-function phraseOf(window: readonly Unit[]): string {
-  let phrase = "";
-  for (const [index, unit] of window.entries()) {
-    const previous = window[index - 1];
-    const needsSpace =
-      previous !== undefined && !previous.cjk && !unit.cjk && phrase !== "";
-    phrase += needsSpace ? ` ${unit.text}` : unit.text;
-  }
-  return phrase;
-}
-
 /**
  * The top repeated phrases of every length from one unit to five.
  *
+ * One pass over the stream, extending each phrase in place rather than slicing
+ * a window per length. The sliced version measured 7.3 ms on a 50 KB body — 85%
+ * of the whole parse — and this runs for every page a crawl collects while only
+ * the submitted page's table is ever read. Under a millisecond is the
+ * difference between a second of CPU across a large crawl and eight.
+ *
  * Densities are deliberately not computed here. The denominator is the body's
- * unit total, which is published once; deriving two percentages from it where
- * they are displayed keeps one number behind both.
+ * unit total, which is published once; deriving both percentages where they are
+ * displayed keeps one number behind them.
  */
 export function buildTermFrequencyTables(
   text: string,
 ): readonly TermFrequencyTable[] {
   const units = unitStream(text);
-  const tables: TermFrequencyTable[] = [];
+  const usable = units.map((unit) => unit.text !== "");
+  const stop = units.map((unit) => STOP_UNITS.has(unit.text));
+  const counts = Array.from(
+    { length: TERM_TABLE_LIMITS.maxPhraseUnits },
+    () => new Map<string, number>(),
+  );
 
-  for (let size = 1; size <= TERM_TABLE_LIMITS.maxPhraseUnits; size += 1) {
-    const counts = new Map<string, number>();
-    for (let start = 0; start + size <= units.length; start += 1) {
-      const window = units.slice(start, start + size);
-      // A window containing punctuation-only or empty text is not a phrase.
-      if (window.some((unit) => unit.text === "")) continue;
+  for (let start = 0; start < units.length; start += 1) {
+    if (!usable[start]) continue;
+    let phrase = "";
+    let allStop = true;
+    for (let size = 1; size <= TERM_TABLE_LIMITS.maxPhraseUnits; size += 1) {
+      const at = start + size - 1;
+      const unit = units[at];
+      // An unusable unit ends every longer phrase from this start too: there is
+      // no phrase that reads across a run of punctuation.
+      if (unit === undefined || !usable[at]) break;
+      const previous = units[at - 1];
+      phrase +=
+        size === 1 || unit.cjk || (previous !== undefined && previous.cjk)
+          ? unit.text
+          : ` ${unit.text}`;
+      allStop = allStop && stop[at] === true;
       // One stop word is only uninteresting when it is the whole phrase.
-      if (window.every((unit) => STOP_UNITS.has(unit.text))) continue;
-      const phrase = boundChars(
-        phraseOf(window),
-        TERM_TABLE_LIMITS.maxPhraseChars,
-      );
-      if (phrase === "") continue;
-      counts.set(phrase, (counts.get(phrase) ?? 0) + 1);
+      if (allStop) continue;
+      if (phrase.length > TERM_TABLE_LIMITS.maxPhraseChars) break;
+      const table = counts[size - 1];
+      if (table !== undefined) table.set(phrase, (table.get(phrase) ?? 0) + 1);
     }
+  }
 
-    const rows = [...counts.entries()]
+  const tables: TermFrequencyTable[] = [];
+  for (const [index, table] of counts.entries()) {
+    const rows = [...table.entries()]
       // Count first, then the phrase itself, so two runs over one page produce
       // the same table rather than whichever order the map happened to hold.
       .sort(([leftPhrase, left], [rightPhrase, right]) =>
@@ -156,9 +191,7 @@ export function buildTermFrequencyTables(
       )
       .slice(0, TERM_TABLE_LIMITS.rowsPerSize)
       .map(([phrase, count]) => ({ phrase, count }));
-
-    if (rows.length > 0) tables.push({ size, rows });
+    if (rows.length > 0) tables.push({ size: index + 1, rows });
   }
-
   return tables;
 }

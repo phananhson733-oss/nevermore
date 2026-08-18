@@ -32,7 +32,17 @@ export interface TextUnits {
  * way the reader can predict and we can state, rather than wrong in a way that
  * looks like a real word count.
  */
-const CJK_PATTERN = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/gu;
+/**
+ * Written as escapes, not as the characters themselves.
+ *
+ * The literal form was copied into three other modules and one of them arrived
+ * carrying U+8C48 in place of U+F900 — two characters that render identically
+ * and differ by twenty-seven thousand code points, which silently classified
+ * Yi, private-use and Latin Extended-D as CJK. Escapes cannot be swapped by a
+ * homoglyph. The set is unchanged: U+3400-U+9FFF, U+F900-U+FAFF, U+3040-U+309F,
+ * U+30A0-U+30FF, U+AC00-U+D7AF.
+ */
+const CJK_PATTERN = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/gu;
 
 /**
  * Count text in `text_units.v1`.
