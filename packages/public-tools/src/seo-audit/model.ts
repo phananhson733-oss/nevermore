@@ -362,35 +362,54 @@ function buildRecords(
         }),
       ];
     })(),
-    record({
-      id: "redirect_destination_error",
-      category: "crawl",
-      // Only redirecting pages qualify, so this record's silence says nothing
-      // about a URL that never redirected.
-      population: "conditional_subset",
-      // Tested over the redirecting pages only: a URL that never redirected
-      // cannot have a broken redirect destination, and counting it would make
-      // the share of broken destinations look smaller than it is.
-      tested: pages.filter((page) => page.redirectHops > 0).length,
-      observations: pages
-        .filter(
-          (page) =>
-            page.redirectHops > 0 &&
-            page.finalStatus !== null &&
-            page.finalStatus >= 400 &&
-            page.finalStatus < 600,
-        )
-        .map((page) =>
-          pageObservation(page, {
-            redirect_hops: page.redirectHops,
-            final_url: page.finalUrl,
-            final_status: page.finalStatus,
-          }),
-        ),
-    }),
+    ...(() => {
+      const redirecting = pages.filter((page) => page.redirectHops > 0);
+      const settled = redirecting.filter((page) => page.finalStatus !== null);
+      const unsettled = redirecting.length - settled.length;
+      return [
+        record({
+          id: "redirect_destination_error",
+          category: "crawl",
+          // Only redirecting pages qualify, so this record's silence says
+          // nothing about a URL that never redirected.
+          population: "conditional_subset",
+          // A redirect whose destination never returned a status was not
+          // tested. Counting it would let an unknown destination read as a
+          // clean one, which is the failure this whole panel exists to avoid.
+          tested: settled.length,
+          // A site with no redirects has no redirect destination that could be
+          // broken. That is a conclusion, not a gap: leaving it unverified is
+          // what fills the panel with grey labels nobody can act on.
+          ...(redirecting.length === 0
+            ? { state: "not_observed" as const }
+            : {}),
+          observations: settled
+            .filter(
+              (page) =>
+                page.finalStatus !== null &&
+                page.finalStatus >= 400 &&
+                page.finalStatus < 600,
+            )
+            .map((page) =>
+              pageObservation(page, {
+                redirect_hops: page.redirectHops,
+                final_url: page.finalUrl,
+                final_status: page.finalStatus,
+              }),
+            ),
+          limitation:
+            unsettled > 0
+              ? "redirect_destination_status_not_observed_for_every_redirect"
+              : null,
+        }),
+      ];
+    })(),
     record({
       id: "server_error_response",
       category: "crawl",
+      // A page that never returned a status was not tested for a server error,
+      // so its absence here is not evidence that it is healthy.
+      population: "conditional_subset",
       tested: pages.filter((page) => page.finalStatus !== null).length,
       observations: pages
         .filter(
@@ -409,7 +428,12 @@ function buildRecords(
     record({
       id: "fetch_without_direct_page",
       category: "crawl",
-      tested: pages.length,
+      // A request that produced no status at all is our crawl not finishing,
+      // not the site spending budget. Charging it to the site would report our
+      // own timeout as their waste, so it is left out of the population rather
+      // than counted as clean or as waste.
+      population: "conditional_subset",
+      tested: pages.filter((page) => page.finalStatus !== null).length,
       // A fetch that did not land straight on a 2xx document: either it ended
       // somewhere other than 200-299, or it got there through a redirect. Both
       // spend a request that a correct link would not have spent. Non-HTML 2xx
@@ -417,10 +441,10 @@ function buildRecords(
       observations: pages
         .filter(
           (page) =>
-            page.finalStatus === null ||
-            page.finalStatus < 200 ||
-            page.finalStatus >= 300 ||
-            page.redirectHops > 0,
+            page.finalStatus !== null &&
+            (page.finalStatus < 200 ||
+              page.finalStatus >= 300 ||
+              page.redirectHops > 0),
         )
         .map((page) =>
           pageObservation(page, {

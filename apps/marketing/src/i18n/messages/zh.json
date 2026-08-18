@@ -3086,7 +3086,7 @@
         "healthHint": "仅使用已评估且参与加权的检查",
         "evaluatedTotal": "已评估 {evaluated} / {total}",
         "engineCoverage": "引擎就绪 {ready} / {total}",
-        "inventoryCoverage": "已接入检测器 {ready} / {total}；其余检查本次不会有结论，每项都标注了原因",
+        "inventoryCoverage": "本次可判定 {ready} / {total}；其余检查不会有结论，每项都标注了原因",
         "groupsLabel": "审计分组",
         "checksLabel": "检查项",
         "selectCheck": "查看 {check}",

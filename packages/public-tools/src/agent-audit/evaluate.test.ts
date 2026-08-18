@@ -101,6 +101,11 @@ describe("v2 Agent audit evaluator", () => {
     expect(check(10, 3)?.result).toBe("warning");
     expect(check(100, 5)?.result).toBe("pass");
     expect(check(10, 0)?.result).toBe("pass");
+    // "At least 90%" includes exactly 90%. Expressed as the exclusive
+    // "missing share below 10%", a site sitting precisely on its own published
+    // mark failed it.
+    expect(check(10, 1)?.result).toBe("pass");
+    expect(check(100, 11)?.result).toBe("warning");
     // Coverage is a real measurement here, not a borrowed one.
     expect(check(10, 3)?.engine).toBe("ready");
     expect(check(10, 3)?.truth).toBe("observed");

@@ -25,10 +25,10 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["A3", "Discovered, currently not indexed rate", "已发现但尚未编入索引占比", "Below 10%; otherwise Warning", "低于 10%；否则为警告"],
   ["A4", "Soft 404 page count", "软 404 页数", "0 pages; above 0 is Blocker", "0 页；大于 0 为阻断"],
   ["A5", "Pages incorrectly blocked by robots.txt", "robots.txt 误拦截页数", "0 pages; above 0 is Blocker", "0 页；大于 0 为阻断"],
-  ["A6", "Redirect destinations returning 404", "跳转终点为 404 的 URL 数", "0 URLs; above 0 is Warning", "0 个 URL；大于 0 为警告"],
+  ["A6", "Redirect destinations returning an error", "跳转终点返回错误的 URL 数", "0 URLs; above 0 is Warning. Counts any 4xx or 5xx destination, so a 5xx one is also counted under crawl efficiency.", "0 个 URL；大于 0 为警告。统计任何 4xx 或 5xx 终点，因此 5xx 终点也会同时计入抓取效率。"],
   ["A7", "Pages carrying a noindex directive", "带 noindex 指令的页数", "Listed for review, not judged: noindex is often deliberate. Confirm each page is meant to stay out of the index.", "仅列出待复核，不作判定：noindex 常常是有意为之。请逐页确认确实不希望被索引。"],
   ["A8", "Pages served over HTTP", "以 HTTP 提供的页数", "0 pages; any page whose final URL is not HTTPS is a Warning", "0 页；最终 URL 非 HTTPS 的页面均为警告"],
-  ["B1", "Crawl waste rate", "抓取浪费率", "Below 10%; above 20% is Warning", "低于 10%；高于 20% 为警告"],
+  ["B1", "Crawl waste rate", "抓取浪费率", "Below 10% passes; 10-20% is a Tip; above 20% is a Warning", "低于 10% 通过；10–20% 为提示；高于 20% 为警告"],
   ["B2", "5XX response rate", "5XX 占比", "Below 0.5%; otherwise Warning", "低于 0.5%；否则为警告"],
   ["B3", "Average response time", "平均响应时间", "Below 500 ms; above 1 s is Warning", "低于 500 毫秒；高于 1 秒为警告"],
   ["B4", "Crawl sufficiency", "抓取充裕度", "Internal heuristic only. Crawl budget has no published per-URL rate; compare a site against its own history.", "仅为内部启发式。抓取预算没有官方的单 URL 速率；只与站点自身历史比较。"],
@@ -256,8 +256,10 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   D5: [
     {
       recordId: "json_ld_missing",
-      kind: "affected-ratio",
-      passBelow: 0.1,
+      // "At least 90% covered" is satisfied at exactly 90%, so the bound is
+      // inclusive on the missing share.
+      kind: "affected-ratio-at-most",
+      passAtOrBelow: 0.1,
     },
   ],
 };
@@ -433,12 +435,12 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "深度是从抓取入口算的，所以这说的是到达路径，不是页面本身。从一个较浅且相关的页面加一条链接就能解决。如果很多页面都在这个深度，说明站点导航在它们之前就断了，加一个栏目索引能一次挪动整组。",
   ),
   A6: l(
-    "A redirect that lands on an error is worse than no redirect: the reader is sent somewhere and finds nothing, and the crawler spends the request anyway. Per URL, repoint the redirect at a live page that serves the same intent, or remove the redirect and let the original URL return 404 honestly. Do not blanket-redirect these to the homepage — a homepage that answers nothing the reader asked is read as a soft 404.",
-    "跳到错误页的跳转比不跳转更糟：读者被送到某处却什么也没有，而抓取器照样花掉了这次请求。逐个 URL 处理：把跳转改指向一个服务同样意图的可用页面，或者干脆撤掉跳转、让原 URL 老实返回 404。不要把它们一律跳到首页——一个回答不了读者问题的首页会被判为软 404。",
+    "A redirect that lands on an error is worse than no redirect: the reader is sent somewhere and finds nothing, and the crawler spends the request anyway. Read the destination status first — a 4xx means the target is gone, so repoint the redirect at a live page serving the same intent or drop the redirect and let the original URL return 404 honestly; a 5xx means the target exists and its server failed, which is a server fix, not a redirect fix. Do not blanket-redirect these to the homepage — a homepage that answers nothing the reader asked is read as a soft 404.",
+    "跳到错误页的跳转比不跳转更糟：读者被送到某处却什么也没有，而抓取器照样花掉了这次请求。先看终点状态码——4xx 说明目标没了，把跳转改指向一个服务同样意图的可用页面，或者干脆撤掉跳转、让原 URL 老实返回 404；5xx 说明目标存在但它的服务器出错了，那是服务端的修法，不是跳转的修法。不要把它们一律跳到首页——一个回答不了读者问题的首页会被判为软 404。",
   ),
   B1: l(
-    "This is the share of requests that did not land straight on a page. Two causes dominate and they are fixed differently: internal links pointing at a URL that redirects (repoint the links at the destination), and links to URLs that no longer resolve (repoint or remove). Both are edits to the linking page, not to the target — the redirect itself should stay for external traffic.",
-    "这是没有直接落到页面上的请求占比。主要有两个成因，修法不同：内链指向了会跳转的 URL（把链接改指向终点），以及链接指向了已经解析不了的 URL（改指向或删除）。两者都是改发出链接的那个页面，不是改目标——跳转本身要为外部流量保留。",
+    "Read the cause off each row before deciding where to edit, because they do not share a fix. A row with redirect hops and a 2xx destination is a link problem: repoint the internal links at the destination and keep the redirect for external traffic. A 4xx destination is also a link problem: repoint or remove it. A 5xx destination is not — nothing about the linking page is wrong, and the work is on the server that failed. Fixing the first two is usually most of the number.",
+    "先从每一行读出成因再决定改哪里，因为它们的修法不一样。有跳转且终点是 2xx 的行是链接问题：把内链改指向终点，跳转本身为外部流量保留。终点是 4xx 的也是链接问题：改指向或删除。终点是 5xx 的不是——发出链接的页面没有任何问题，要做的事在出错的那台服务器上。修掉前两类通常就解决了这个数字的大部分。",
   ),
   B2: l(
     "A 5xx means the server failed, not that the page is wrong, and a crawler that meets enough of them slows down across the whole site. Read the server log for these exact URLs at the timestamp of this run: the usual causes are a dependency timing out, a memory limit, or one slow query on a page type. Confirm the fix by requesting the same URLs again rather than by the page loading in a browser.",
@@ -453,8 +455,8 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "平均深度衡量的是站点形状：它说的是典型页面离入口有多远，不是说某个页面有问题。数值偏高，意味着导航在覆盖到站点大部分之前就断了——聚合页、栏目索引，或者不只链接下一页的分页，每一样都能一次挪动一整组。逐页加链接对平均值几乎没有影响。",
   ),
   D5: l(
-    "Coverage is low because a page template emits no JSON-LD, not because individual pages were forgotten. Find the template behind the largest uncovered group and add one block there whose @type matches what those pages are — Article, Product, FAQPage. Derive every property from data the template already renders, so the markup cannot drift from the visible page later.",
-    "覆盖率低是因为某个页面模板根本不输出 JSON-LD，不是因为个别页面漏了。找到未覆盖数量最大那组背后的模板，在那里加一个 @type 与这些页面身份匹配的块——Article、Product、FAQPage。每个字段都从模板已经渲染的数据里取，这样标记以后不会和可见页面脱节。",
+    "This run knows which pages parsed no JSON-LD; it does not know why. Sort the uncovered URLs by path shape first: if they share one, the template behind them emits no markup and one edit covers the group, which is the cheap case. If they do not, they were missed individually. Either way add a block whose @type matches what the page actually is and derive every property from data the template already renders.",
+    "本次运行知道哪些页面解析不出 JSON-LD，但不知道原因。先按路径形状给未覆盖的 URL 分组：如果它们共用一种路径，说明背后的模板不输出标记，改一处就覆盖一整组，这是便宜的情况。如果不共用，那就是逐个漏掉的。两种情况都一样：加一个 @type 与页面实际身份匹配的块，每个字段都从模板已经渲染的数据里取。",
   ),
   "7.1": l(
     "No parseable JSON-LD block was found, so nothing on this page is machine-readable beyond the HTML itself. Add one block whose @type matches what the page actually is, and fill only properties the visible page supports. Validate the output, not the source — a template that emits invalid JSON produces the same result as no markup at all.",

@@ -537,6 +537,80 @@ describe("crawl-response records", () => {
     expect(record?.tested).toBe(2);
   });
 
+  it("counts a redirect onto a server error, which the check now names", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/old", "https://acme.test/down", 503),
+        ],
+      }),
+    );
+
+    expect(
+      byId(report, "redirect_destination_error")?.observations.map((e) => e.url),
+    ).toEqual(["https://acme.test/old"]);
+  });
+
+  it("concludes a site with no redirects rather than leaving it unverified", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [page("https://acme.test/", {}, 0), page("https://acme.test/b")],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    // Nothing redirected, so no redirect destination can be broken. Reporting
+    // that as unverified is what puts a grey label on a site that is fine.
+    expect(record?.state).toBe("not_observed");
+    expect(record?.observations).toEqual([]);
+  });
+
+  it("does not read a redirect with an unknown destination as a clean one", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/timeout", {
+            redirectChain: ["https://acme.test/somewhere"],
+            finalStatus: null,
+          }),
+        ],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    // The redirect exists and its destination never answered, so it was not
+    // tested. Counting it would turn "we do not know" into "it is fine".
+    expect(record?.tested).toBe(0);
+    expect(record?.limitation).toBe(
+      "redirect_destination_status_not_observed_for_every_redirect",
+    );
+  });
+
+  it("charges a request with no status to the crawl, not to the site", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/aborted", { finalStatus: null }),
+          page("https://acme.test/fine"),
+        ],
+      }),
+    );
+
+    // Our own timeout is not the site's crawl waste, and it is not a healthy
+    // page either: it leaves the tested population entirely.
+    const waste = byId(report, "fetch_without_direct_page");
+    expect(waste?.tested).toBe(2);
+    expect(waste?.observations).toEqual([]);
+    expect(waste?.population).toBe("conditional_subset");
+
+    const serverErrors = byId(report, "server_error_response");
+    expect(serverErrors?.tested).toBe(2);
+    expect(serverErrors?.population).toBe("conditional_subset");
+  });
+
   it("does not read a direct 404 as a broken redirect destination", () => {
     const report = buildSeoAuditReport(
       raw({

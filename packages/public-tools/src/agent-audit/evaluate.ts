@@ -198,10 +198,14 @@ function issueSeverity(
   const rule = check.issueRules.find((entry) => entry.recordId === record.id);
   if (rule === undefined) return "full";
 
-  if (rule.kind === "affected-ratio") {
+  if (rule.kind === "affected-ratio" || rule.kind === "affected-ratio-at-most") {
     if (record.tested <= 0) return "full";
     const share = record.affected / record.tested;
-    if (share < rule.passBelow) return "none";
+    const passes =
+      rule.kind === "affected-ratio"
+        ? share < rule.passBelow
+        : share <= rule.passAtOrBelow;
+    if (passes) return "none";
     if (rule.failAbove === undefined || share > rule.failAbove) return "full";
     return "degraded";
   }

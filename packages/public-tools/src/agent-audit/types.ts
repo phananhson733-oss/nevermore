@@ -51,6 +51,20 @@ export type AgentAuditIssueRule =
       /** Affected share above which the record takes the full failure result. */
       readonly failAbove?: number;
     }
+  /**
+   * The inclusive form, for a threshold that reads "at least 90% covered" —
+   * which is satisfied at exactly 90%. Expressing it as the exclusive
+   * `passBelow: 0.1` fails a site sitting precisely on its own published mark,
+   * so the two bounds are separate kinds rather than one field plus a flag.
+   */
+  | {
+      readonly recordId: string;
+      readonly kind: "affected-ratio-at-most";
+      /** Highest affected share that is still not an issue. */
+      readonly passAtOrBelow: number;
+      /** Affected share above which the record takes the full failure result. */
+      readonly failAbove?: number;
+    }
   | {
       readonly recordId: string;
       readonly kind: "observation-value-max";
