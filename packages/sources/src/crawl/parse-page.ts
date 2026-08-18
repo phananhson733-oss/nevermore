@@ -496,6 +496,20 @@ function anchorAccessibleName(
   return null;
 }
 
+/**
+ * Known gap: this collector is not quote-aware and the external one is.
+ *
+ * `<a title="1 > 0" href="/pricing">` ends at the `>` inside `title`, so `href`
+ * is never read and `/pricing` is missing from both the link graph and the
+ * crawl frontier. `collectExternalLinkFacts` reads the same anchor correctly,
+ * so the two disagree about one tag.
+ *
+ * Left as it is on purpose. `internalOutlinks` IS the frozen `crawl.page.v1`
+ * metric the product persists, and recovering links it has been dropping
+ * changes stored values under an unchanged metric key — the same reason
+ * `<base href>` is not honoured above. Fixing it means bumping the metric and
+ * migrating, not editing a regex.
+ */
 function collectInternalOutlinks(
   html: string,
   pageUrl: string,

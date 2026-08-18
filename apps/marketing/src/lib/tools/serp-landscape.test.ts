@@ -87,7 +87,25 @@ describe("readSerpLandscape", () => {
       { client, onCost },
     );
 
-    expect(onCost).toHaveBeenCalledWith(0.002);
+    expect(onCost).toHaveBeenCalledWith(0.002, "US", "q");
+  });
+
+  it("logs what it spent when nobody is listening", async () => {
+    // The provider itemises nothing per tool, so a call nobody records is a
+    // charge nobody can attribute.
+    const { client } = clientReturning(ROWS);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await readSerpLandscape(
+        { query: "q", market: "US", language: "en", targetUrl: "https://a.test/" },
+        { client },
+      );
+      expect(info).toHaveBeenCalledWith(
+        expect.stringContaining("[serp-landscape] paid_call cost_usd=0.002"),
+      );
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("spends nothing on a market it cannot look up", async () => {

@@ -117,6 +117,15 @@ export function hostKey(value: string): string | null {
   return null;
 }
 
+/** One line per paid call, so the spend can be summed out of the logs. */
+function logProviderCost(usd: number, market: string, query: string): void {
+  console.info(
+    `[serp-landscape] paid_call cost_usd=${usd} market=${market} query_units=${
+      [...query].length
+    }`,
+  );
+}
+
 export interface SerpLandscapeInput {
   readonly query: string | null;
   readonly market: string | null;
@@ -128,8 +137,15 @@ export interface SerpLandscapeDependencies {
   readonly client?: DataForSeoKeywordMetricsClient;
   readonly login?: string;
   readonly password?: string;
-  /** Reports what the call cost, since the provider itemises nothing per tool. */
-  readonly onCost?: (usd: number) => void;
+  /**
+   * Reports what the call cost. Defaults to a server-side log line.
+   *
+   * The provider itemises nothing per tool, so a call nobody records is a
+   * charge nobody can attribute — the invoice shows one number for every tool
+   * that talks to DataForSEO. A log line is enough to sum from; a ledger row
+   * would put provider cost in a table whose subject is user credits.
+   */
+  readonly onCost?: (usd: number, market: string, query: string) => void;
 }
 
 /**
@@ -187,7 +203,7 @@ export async function readSerpLandscape(
       languageCode: language,
       depth: SERP_DEPTH,
     });
-    dependencies.onCost?.(response.costUsd);
+    (dependencies.onCost ?? logProviderCost)(response.costUsd, market, query);
 
     const target = hostKey(input.targetUrl);
     const targetPath = pathKey(input.targetUrl);
