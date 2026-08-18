@@ -48,6 +48,46 @@ function ratioRecord(
 }
 
 describe("v2 Agent audit evaluator", () => {
+  it("compares a published average against the aggregate, not the affected count", () => {
+    const aggregate = (id: string, label: string, value: number | null) => ({
+      id,
+      category: "crawl" as const,
+      state: "observed" as const,
+      unit: "pages" as const,
+      population: "every_collected_page" as const,
+      tested: 40,
+      affected: 1,
+      observations: [
+        {
+          url: null,
+          values: value === null ? [] : [{ label, value }],
+        },
+      ],
+      limitation: null,
+    });
+    const b3 = (value: number | null) =>
+      evaluateAgentAuditScope("site", {
+        availability: "available",
+        records: [aggregate("average_response_time", "average_response_ms", value)],
+      }).checks.find((entry) => entry.check.id === "B3");
+
+    // Published threshold: below 500 ms, above 1 s is a Warning.
+    expect(b3(320)?.result).toBe("pass");
+    expect(b3(700)?.result).toBe("tip");
+    expect(b3(1_400)?.result).toBe("warning");
+
+    // An aggregate the detector never computed is a gap, not a pass: the whole
+    // point of this engine state is that unmeasured never reads as within-limit.
+    expect(b3(null)?.result).toBe("excluded");
+    expect(b3(null)?.engine).toBe("needs-supplement");
+
+    // The panel has to show the number the engine compared. Counting affected
+    // observations would print "1 affected across 40 tested" for every average.
+    expect(b3(320)?.measurement?.en).toContain("320 ms");
+    expect(b3(320)?.measurement?.zh).toContain("320 毫秒");
+    expect(b3(320)?.measurement?.en).not.toContain("affected");
+  });
+
   it("reads site-wide Schema coverage as a share of the same JSON-LD record", () => {
     const check = (tested: number, affected: number) =>
       evaluateAgentAuditScope("site", {

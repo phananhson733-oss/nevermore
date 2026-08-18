@@ -309,6 +309,59 @@ function buildRecords(
           }),
         ),
     }),
+    ...(() => {
+      // Aggregates, not affected-unit counts: both checks publish a threshold
+      // about the population as a whole, so each emits one site-level value the
+      // evaluator compares directly. A page with no timing is left out of the
+      // mean rather than counted as zero.
+      const timings = raw.pages
+        .map((entry) => entry.projection.responseMs)
+        .filter((ms): ms is number => typeof ms === "number" && ms >= 0);
+      const depths = htmlPages.map((entry) => entry.depth);
+      const mean = (input: readonly number[]) =>
+        input.reduce((sum, value) => sum + value, 0) / input.length;
+
+      return [
+        record({
+          id: "average_response_time",
+          category: "crawl",
+          tested: timings.length,
+          observations:
+            timings.length === 0
+              ? []
+              : [
+                  {
+                    url: null,
+                    values: values({
+                      average_response_ms: Math.round(mean(timings)),
+                      slowest_response_ms: Math.max(...timings),
+                      pages_timed: timings.length,
+                    }),
+                  },
+                ],
+          limitation: "single_uncached_request_per_url_not_a_field_measurement",
+        }),
+        record({
+          id: "average_click_depth",
+          category: "links",
+          tested: depths.length,
+          observations:
+            depths.length === 0
+              ? []
+              : [
+                  {
+                    url: null,
+                    values: values({
+                      average_click_depth: Number(mean(depths).toFixed(2)),
+                      deepest_click_depth: Math.max(...depths),
+                      pages_measured: depths.length,
+                    }),
+                  },
+                ],
+          limitation: "depth_from_bounded_crawl_entry_point_only",
+        }),
+      ];
+    })(),
     record({
       id: "redirect_destination_error",
       category: "crawl",

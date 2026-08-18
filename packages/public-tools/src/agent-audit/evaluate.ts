@@ -119,7 +119,40 @@ function matchingRecords(
  * de-duplicated rather than summed: a page missing both a title and an H1 is one
  * affected page, and 100 pages tested twice are still 100 tested units.
  */
-function measurement(records: readonly SeoAuditRecord[]): AgentAuditLocalizedText {
+/** Renders an aggregate in the unit its label declares, so it reads as measured. */
+function formatAggregate(label: string, value: number): [string, string] {
+  if (label.endsWith("_share")) {
+    const pct = `${(value * 100).toFixed(1)}%`;
+    return [pct, pct];
+  }
+  if (label.endsWith("_ms")) return [`${Math.round(value)} ms`, `${Math.round(value)} 毫秒`];
+  const rounded = value.toFixed(1).replace(/\.0$/, "");
+  return [rounded, rounded];
+}
+
+function measurement(
+  records: readonly SeoAuditRecord[],
+  check: AgentAuditCheckDefinition,
+): AgentAuditLocalizedText {
+  // A check whose published threshold is about the population as a whole must
+  // display that same aggregate. Counting affected observations here would show
+  // "1 affected" for every average, which is neither the executed number nor a
+  // fact about the site.
+  const aggregate = check.issueRules.find(
+    (rule) => rule.kind === "aggregate-max" || rule.kind === "aggregate-min",
+  );
+  if (aggregate !== undefined) {
+    const source = records.find((entry) => entry.id === aggregate.recordId);
+    const value = source ? namedValue(source, aggregate.label) : null;
+    if (source !== undefined && value !== null) {
+      const [en, zh] = formatAggregate(aggregate.label, value);
+      return l(
+        `${en} across ${source.tested} measured units`,
+        `${source.tested} 个已测单元上为 ${zh}`,
+      );
+    }
+  }
+
   const affectedUrls = new Set<string>();
   let siteLevelAffected = 0;
   for (const record of records) {
@@ -139,6 +172,20 @@ function measurement(records: readonly SeoAuditRecord[]): AgentAuditLocalizedTex
   );
 }
 
+/** The single finite number a record publishes under a label, or null. */
+function namedValue(record: SeoAuditRecord, label: string): number | null {
+  for (const observation of record.observations) {
+    for (const entry of observation.values) {
+      if (entry.label !== label) continue;
+      if (typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+        continue;
+      }
+      return entry.value;
+    }
+  }
+  return null;
+}
+
 type RecordIssueSeverity = "none" | "degraded" | "full" | "unmeasured";
 
 /** Applies the check's published threshold to one record. */
@@ -156,6 +203,25 @@ function issueSeverity(
     const share = record.affected / record.tested;
     if (share < rule.passBelow) return "none";
     if (rule.failAbove === undefined || share > rule.failAbove) return "full";
+    return "degraded";
+  }
+
+  if (rule.kind === "aggregate-max" || rule.kind === "aggregate-min") {
+    const aggregate = namedValue(record, rule.label);
+    // An aggregate the detector did not compute must never read as "within the
+    // limit": there is no number to compare, which is a gap, not a pass.
+    if (aggregate === null) return "unmeasured";
+    if (rule.kind === "aggregate-max") {
+      if (aggregate <= rule.passAtOrBelow) return "none";
+      if (rule.failAbove === undefined || aggregate > rule.failAbove) {
+        return "full";
+      }
+      return "degraded";
+    }
+    if (aggregate >= rule.passAtOrAbove) return "none";
+    if (rule.failBelow === undefined || aggregate < rule.failBelow) {
+      return "full";
+    }
     return "degraded";
   }
 
@@ -241,7 +307,7 @@ function evaluateCheck(
       result: "excluded",
       engine: "needs-supplement",
       truth: "partial",
-      measurement: measurement(records),
+      measurement: measurement(records, check),
       evidenceRecordIds: records.map((record) => record.id),
       scoreValue: null,
       scoreContribution: null,
@@ -280,7 +346,7 @@ function evaluateCheck(
     result,
     engine: "ready",
     truth,
-    measurement: measurement(records),
+    measurement: measurement(records, check),
     evidenceRecordIds: records.map((record) => record.id),
     scoreValue,
     scoreContribution:

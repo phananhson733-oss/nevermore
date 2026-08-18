@@ -167,6 +167,8 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "6.2": ["page_without_outbound_internal_link"],
   "6.4": ["click_depth_beyond_reviewed_limit"],
   A6: ["redirect_destination_error"],
+  B3: ["average_response_time"],
+  C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
   // C5 stays unwired on purpose. A link-following crawl reaches a page either
@@ -231,6 +233,24 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "server_error_response",
       kind: "affected-ratio",
       passBelow: 0.005,
+    },
+  ],
+  B3: [
+    {
+      recordId: "average_response_time",
+      kind: "aggregate-max",
+      label: "average_response_ms",
+      passAtOrBelow: 500,
+      failAbove: 1_000,
+    },
+  ],
+  C3: [
+    {
+      recordId: "average_click_depth",
+      kind: "aggregate-max",
+      label: "average_click_depth",
+      passAtOrBelow: 3,
+      failAbove: 4,
     },
   ],
   D5: [
@@ -423,6 +443,14 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   B2: l(
     "A 5xx means the server failed, not that the page is wrong, and a crawler that meets enough of them slows down across the whole site. Read the server log for these exact URLs at the timestamp of this run: the usual causes are a dependency timing out, a memory limit, or one slow query on a page type. Confirm the fix by requesting the same URLs again rather than by the page loading in a browser.",
     "5xx 说明服务端出错，不是页面写错，而抓取器碰到足够多之后会把整站的抓取速度降下来。按本次运行的时间戳去查这些确切 URL 的服务端日志：常见成因是某个依赖超时、内存超限，或某类页面上的一条慢查询。验证方式是重新请求同样这些 URL，而不是在浏览器里打开看它加载出来了。",
+  ),
+  B3: l(
+    "This is one uncached request per URL from one location, so treat it as a signal about the server rather than as what your visitors feel. Compare the slowest URL against a fast one on the same site: if only some page types are slow, the cost is in that template's data fetching; if everything is slow, it is the host, the origin region, or a cold start. Field data from CrUX is what confirms user impact — this run does not collect it.",
+    "这是每个 URL 从单一位置发起的一次无缓存请求，所以把它当作关于服务端的信号，而不是访客的真实体感。拿最慢的 URL 和同站一个快的比：如果只有某些页面类型慢，成本在那个模板的数据获取上；如果全都慢，那是主机、源站区域或冷启动。真正确认用户影响的是 CrUX 现场数据——本次运行不采集它。",
+  ),
+  C3: l(
+    "Average depth is a shape measurement: it says how far the typical page sits from the entry point, not that any one page is wrong. If it is high, the navigation stops before it reaches most of the site — hub pages, a section index, or pagination that links more than the next page each move a whole group at once. Adding links page by page moves the average almost not at all.",
+    "平均深度衡量的是站点形状：它说的是典型页面离入口有多远，不是说某个页面有问题。数值偏高，意味着导航在覆盖到站点大部分之前就断了——聚合页、栏目索引，或者不只链接下一页的分页，每一样都能一次挪动一整组。逐页加链接对平均值几乎没有影响。",
   ),
   D5: l(
     "Coverage is low because a page template emits no JSON-LD, not because individual pages were forgotten. Find the template behind the largest uncovered group and add one block there whose @type matches what those pages are — Article, Product, FAQPage. Derive every property from data the template already renders, so the markup cannot drift from the visible page later.",

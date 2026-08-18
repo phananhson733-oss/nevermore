@@ -553,6 +553,59 @@ describe("crawl-response records", () => {
     ).toEqual(["https://acme.test/missing"]);
   });
 
+  it("averages response time over the pages that were actually timed", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", { responseMs: 100 }, 0),
+          page("https://acme.test/b", { responseMs: 300 }),
+          // No timing: left out of the mean rather than counted as zero, which
+          // would drag the average down and read as a faster site.
+          page("https://acme.test/c", { responseMs: null }),
+        ],
+      }),
+    );
+    const record = byId(report, "average_response_time");
+    const value = (label: string) =>
+      record?.observations[0]?.values.find((entry) => entry.label === label)
+        ?.value;
+
+    expect(record?.tested).toBe(2);
+    expect(value("average_response_ms")).toBe(200);
+    expect(value("slowest_response_ms")).toBe(300);
+    expect(record?.observations[0]?.url).toBeNull();
+  });
+
+  it("reports no timing at all rather than an average of nothing", () => {
+    const report = buildSeoAuditReport(
+      raw({ pages: [page("https://acme.test/", { responseMs: null }, 0)] }),
+    );
+    const record = byId(report, "average_response_time");
+
+    expect(record?.observations).toEqual([]);
+    expect(record?.state).toBe("unverified");
+  });
+
+  it("averages click depth over collected HTML pages", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/b", {}, 2),
+          page("https://acme.test/c", {}, 4),
+        ],
+      }),
+    );
+    const record = byId(report, "average_click_depth");
+    const value = (label: string) =>
+      record?.observations[0]?.values.find((entry) => entry.label === label)
+        ?.value;
+
+    expect(value("average_click_depth")).toBe(2);
+    expect(value("deepest_click_depth")).toBe(4);
+    expect(record?.tested).toBe(3);
+  });
+
   it("separates a server failure from a missing page", () => {
     const report = buildSeoAuditReport(
       raw({
