@@ -24,7 +24,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["A2", "Deprecated URL impression share", "废弃 URL 曝光占比", "Below 5%; above 20% is Blocker", "低于 5%；高于 20% 为阻断"],
   ["A3", "Discovered, currently not indexed rate", "已发现但尚未编入索引占比", "Below 10%; otherwise Warning", "低于 10%；否则为警告"],
   ["A4", "Soft 404 page count", "软 404 页数", "0 pages; above 0 is Blocker", "0 页；大于 0 为阻断"],
-  ["A5", "Pages incorrectly blocked by robots.txt", "robots.txt 误拦截页数", "0 pages; above 0 is Blocker", "0 页；大于 0 为阻断"],
+  ["A5", "Sitemap URLs robots.txt blocks from search", "robots.txt 拦截的 sitemap URL 数", "0 URLs; above 0 is Blocker. Counts URLs the sitemap declares for indexing that robots.txt forbids Google's crawler from fetching.", "0 个 URL；大于 0 为阻断。统计 sitemap 声明要收录、而 robots.txt 又禁止 Google 抓取的 URL。"],
   ["A6", "Redirect destinations returning an error", "跳转终点返回错误的 URL 数", "0 URLs; above 0 is Warning. Counts any 4xx or 5xx destination, so a 5xx one is also counted under crawl efficiency.", "0 个 URL；大于 0 为警告。统计任何 4xx 或 5xx 终点，因此 5xx 终点也会同时计入抓取效率。"],
   ["A7", "Pages carrying a noindex directive", "带 noindex 指令的页数", "Listed for review, not judged: noindex is often deliberate. Confirm each page is meant to stay out of the index.", "仅列出待复核，不作判定：noindex 常常是有意为之。请逐页确认确实不希望被索引。"],
   ["A8", "Pages served over HTTP", "以 HTTP 提供的页数", "0 pages; any page whose final URL is not HTTPS is a Warning", "0 页；最终 URL 非 HTTPS 的页面均为警告"],
@@ -55,7 +55,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
 
 const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.1", "HTTP status code", "HTTP 状态码", "200; any other final status is Blocker", "200；其他最终状态均为阻断"],
-  ["1.2", "robots.txt allowance", "robots.txt 放行", "Allowed; a disallowed target page is Blocker", "允许；目标页被禁止抓取为阻断"],
+  ["1.2", "robots.txt allowance for search", "robots.txt 对搜索抓取的放行", "Allowed for Google's crawler; disallowed is Blocker. Read from the collected robots.txt for one crawler token, not from this run's own access.", "对 Google 的抓取器放行；被禁止为阻断。依据已采集的 robots.txt 按单一抓取器标记判定，不是依据本次运行自己的访问权限。"],
   ["1.3", "noindex directive", "noindex 标签", "Absent; presence is Blocker", "不存在；存在即为阻断"],
   ["1.4", "Canonical target", "Canonical 目标", "A canonical is present and self-referencing; a missing canonical or one pointing elsewhere is a Warning. Destination status is not collected.", "存在且自指的 Canonical；缺失或指向他页为警告。本工具不采集 Canonical 目标的状态码。"],
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
@@ -92,7 +92,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["7.2", "Schema type matches page type", "Schema 类型是否匹配页面", "Matches confirmed page type; otherwise Tip", "匹配已确认页面类型；否则为提示"],
   ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present; otherwise Warning", "所有必填字段均存在；否则为警告"],
   ["7.4", "FAQPage matches visible FAQ", "FAQPage 与页面 FAQ 是否一致", "Every item matches visible content; otherwise Warning", "逐条匹配可见内容；否则为警告"],
-  ["7.5", "BreadcrumbList matches visible breadcrumbs", "BreadcrumbList 与可见面包屑是否一致", "Exact visible-route correspondence; otherwise Tip", "与可见路径精确对应；否则为提示"],
+  ["7.5", "BreadcrumbList markup below the root", "根目录以下页面的 BreadcrumbList 标记", "Present on pages below the root; otherwise Tip. Presence only: this run keeps no visible trail to compare the markup against.", "根目录以下的页面存在该标记；否则为提示。仅判定是否存在：本次运行不保留可见路径，无法与标记比对。"],
   ["8.1", "Largest Contentful Paint (LCP)", "最大内容绘制（LCP）", "CrUX p75 over 28 days: 2.5 s or less good, over 2.5 s to 4.0 s needs improvement, over 4.0 s poor", "CrUX 28 天窗口 p75：不超过 2.5 秒为良好，超过 2.5 秒至 4.0 秒待改进，超过 4.0 秒为差"],
   ["8.2", "Interaction to Next Paint (INP)", "交互到下次绘制（INP）", "CrUX p75 over 28 days: 200 ms or less good, over 200 ms to 500 ms needs improvement, over 500 ms poor", "CrUX 28 天窗口 p75：不超过 200 毫秒为良好，超过 200 毫秒至 500 毫秒待改进，超过 500 毫秒为差"],
   ["8.3", "Cumulative Layout Shift (CLS)", "累积布局偏移（CLS）", "CrUX p75 over 28 days: 0.1 or less good, over 0.1 to 0.25 needs improvement, over 0.25 poor", "CrUX 28 天窗口 p75：不超过 0.1 为良好，超过 0.1 至 0.25 待改进，超过 0.25 为差"],
@@ -146,6 +146,23 @@ const BLOCKER_CAPABLE = new Set([
   "1.8",
 ]);
 
+/**
+ * Which record, when it fires, makes a check a Blocker rather than a Warning.
+ *
+ * Separate from `BLOCKER_CAPABLE`, which only says a check is allowed to reach
+ * that severity. Both are needed and they used to disagree silently: A5 and 1.2
+ * publish "above 0 is Blocker", were listed as capable, and had no record here,
+ * so a site that failed them was told Warning. The published text and the
+ * executed severity are tied together by a test rather than by discipline.
+ */
+const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
+  "1.1": ["non_2xx_final_status"],
+  "1.3": ["noindex_directive"],
+  "1.6": ["non_2xx_final_status"],
+  "1.2": ["page_disallowed_for_search_crawler"],
+  A5: ["sitemap_url_disallowed_by_robots"],
+};
+
 const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C1: ["sitemap_page_without_observed_inlink"],
   C2: ["internal_target_http_error"],
@@ -177,6 +194,9 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   E2: ["impression_share_top_positions"],
   E3: ["impression_share_low_click_positions"],
   "9.5": ["target_query_ranking_band"],
+  A5: ["sitemap_url_disallowed_by_robots"],
+  "1.2": ["page_disallowed_for_search_crawler"],
+  "7.5": ["page_without_breadcrumb_list"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -523,6 +543,18 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
     "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
   ),
+  A5: l(
+    "Each of these URLs is on the sitemap, which is the site asking for it to be indexed, and is also matched by a Disallow rule, which forbids fetching it. Both cannot be intended. Decide which one is right before editing anything: if the page should be indexed, remove or narrow the Disallow — it is usually a prefix that grew wider than it was meant to. If it should not be, take it out of the sitemap instead, and note that Disallow does not remove an already-indexed URL. That needs noindex, which requires the crawler to be allowed to fetch the page and read it.",
+    "这些 URL 同时出现在两处：一是 sitemap，等于站点在要求收录它；二是被某条 Disallow 规则匹配，等于禁止抓取它。两者不可能都是本意。动手前先判断哪一边是对的：如果这个页面应该被收录，就删掉或收窄那条 Disallow——通常是某个前缀写得比原意更宽。如果不该被收录，那就把它从 sitemap 里去掉；并且要知道 Disallow 并不能移除已经收录的 URL，那需要 noindex，而 noindex 又要求抓取器能被允许抓到页面并读到它。",
+  ),
+  "1.2": l(
+    "A Disallow rule matching this page stops Google fetching it, and a page that cannot be fetched cannot be judged on anything else this report says about it. Find the rule by longest match, not by reading top to bottom: the most specific matching pattern wins, and an equally specific Allow beats a Disallow. The common cause is a group written for one crawler while the site assumed it applied to all of them, or a prefix that covers more than it was meant to. Fix the file, then confirm the page fetches cleanly before treating any other finding on it as real.",
+    "有一条 Disallow 规则匹配到了这个页面，Google 因此无法抓取它；而抓不到的页面，本报告对它说的其他任何结论都无从判定。找那条规则要按最长匹配来找，不能从上往下读：最具体的匹配模式生效，同等具体时 Allow 胜过 Disallow。常见成因是某条规则是为某一个抓取器写的、但站点以为它对所有抓取器都生效，或者某个前缀覆盖的范围超出了本意。改完文件后，先确认页面能被正常抓到，再把这个页面上的其他发现当真。",
+  ),
+  "7.5": l(
+    "This page sits below the root and declares no BreadcrumbList, so search systems have no machine-readable statement of where it belongs. Add one whose itemListElement mirrors the trail a reader actually sees, in the same order, with the same names, ending at this page. Do not invent a hierarchy the navigation does not show — markup that disagrees with the page is worse than none, and this run cannot check the agreement for you: it reads only the markup.",
+    "这个页面位于根目录以下，却没有声明 BreadcrumbList，搜索系统因此拿不到关于它归属位置的机器可读说明。加一个，让 itemListElement 与读者实际看到的路径一致：同样的顺序、同样的名称，最后一级落在本页。不要编造导航里并不存在的层级——与页面不符的标记比没有标记更糟，而本次运行无法替你核对这一致性：它只读得到标记本身。",
+  ),
   "9.5": l(
     "This is where the page already sits for the queries you confirmed, averaged across them and weighted by impressions, so a query it is barely shown for cannot flatter the number. Read the best and worst beside it before acting: one average over several queries hides the case worth working, which is four near the top and one far outside. Past position 10 the page is being shown and almost never clicked, and the usual cause is not the page but the competition for that query — check what the results above it actually are before rewriting anything. Between 7 and 10 the cheapest move is almost always making one page unambiguously own the query, because two pages competing for it is the most common reason neither reaches the top band.",
     "这是该页面在你确认的目标词上目前所处的位置，按曝光加权取平均，所以一个几乎没被展示的词无法把数字拉好看。动手前先看旁边的最好和最差：一个跨多词的平均值，恰好会掩盖最值得处理的情况——四个靠前、一个远远在外。排到 10 名以后，页面在被展示却几乎没人点，常见原因不在页面本身而在这个词的竞争强度；先看清排在它上面的到底是什么结果，再决定要不要改写。落在 7 到 10 时，最便宜的动作几乎总是让某一个页面毫不含糊地独占这个词——两个页面互相争抢，是两个都进不了前档最常见的原因。",
@@ -580,16 +612,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
   // 47 entries against 24 real detectors, so the panel advertised what the
   // requirements document covered as though it were working code.
   const ready = (EVIDENCE[id] ?? []).length > 0;
-  const blockerEvidenceRecordIds =
-    scope === "page"
-      ? id === "1.1"
-        ? ["non_2xx_final_status"]
-        : id === "1.3"
-          ? ["noindex_directive"]
-          : id === "1.6"
-            ? ["non_2xx_final_status"]
-            : []
-      : [];
+  const blockerEvidenceRecordIds = BLOCKER_EVIDENCE[id] ?? [];
   const blocking = BLOCKER_CAPABLE.has(id);
   // A check that publishes "this does not judge the page" must not move the
   // score, so the exclusion is read off the threshold rather than kept in a

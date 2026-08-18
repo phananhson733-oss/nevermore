@@ -9,6 +9,7 @@
     "./crawl-context-profile": "./src/crawl/context-profile.ts",
     "./crawl-page-value": "./src/crawl/page-value.ts",
     "./crawl-public-preview": "./src/crawl/public-preview.ts",
+    "./crawl-robots": "./src/crawl/robots.ts",
     "./public-http": "./src/public-http/index.ts",
     "./url-safety": "./src/url-safety/index.ts"
   },

@@ -958,7 +958,9 @@
         "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "The query rows hit this run's cap, so the reported total is short and no share is published against it.",
         "share_of_reported_queries_only_banded_by_one_average_position_each": "A share of the queries Search Console reports, each banded by one impression-weighted average position. Low-volume and anonymised queries are withheld.",
         "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "The page rows hit this run's cap, so a page that does have impressions may be missing from the list.",
-        "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown."
+        "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown.",
+        "robots_rules_read_for_one_search_crawler_token_only": "robots.txt rules were read for a single search-crawler token. A group written for a different crawler is not reflected here.",
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "Only whether BreadcrumbList markup exists. Whether it matches the breadcrumb a reader sees is not checked here."
       },
       "records": {
         "robots_resource": {
@@ -1092,6 +1094,18 @@
         "target_query_ranking_band": {
           "title": "Current ranking band for the confirmed queries",
           "description": "Where this page currently sits for the queries confirmed for it, averaged across them and weighted by impressions so a query it is barely shown for cannot move the number. Read from a Search Console request narrowed to this one URL, not from the site-wide query list, whose position for the same query is the property's average across every page that ranked for it."
+        },
+        "page_disallowed_for_search_crawler": {
+          "title": "Pages robots.txt blocks from search",
+          "description": "Collected pages that a Disallow rule in the site's robots.txt matches for Google's crawler. Read for one crawler token; a file can allow this run through and stop a search crawler."
+        },
+        "sitemap_url_disallowed_by_robots": {
+          "title": "Sitemap URLs robots.txt blocks",
+          "description": "URLs the sitemap declares for indexing that robots.txt forbids Google's crawler from fetching. Counted from the sitemap rather than from collected pages, because a URL this run was forbidden to fetch never became a page."
+        },
+        "page_without_breadcrumb_list": {
+          "title": "Pages below the root without BreadcrumbList",
+          "description": "Collected pages deeper than the site root that declare no BreadcrumbList in their JSON-LD. Presence only: this run keeps no visible breadcrumb trail to compare the markup against."
         }
       },
       "evidence": {
@@ -1144,7 +1158,9 @@
         "worst_query_average_position": "Worst query position",
         "worst_query": "Worst query",
         "queries_confirmed": "Queries confirmed",
-        "clicks_total": "Clicks"
+        "clicks_total": "Clicks",
+        "robots_user_agent": "Crawler token",
+        "robots_allowed": "Allowed by robots.txt"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

@@ -53,6 +53,9 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   page_without_outbound_internal_link: "links",
   click_depth_beyond_reviewed_limit: "links",
   json_ld_missing: "structured_data",
+  page_disallowed_for_search_crawler: "crawl",
+  sitemap_url_disallowed_by_robots: "crawl",
+  page_without_breadcrumb_list: "structured_data",
 } as const satisfies Readonly<Record<string, SeoAuditCategory>>;
 
 export const SEO_AUDIT_RECORD_IDS = Object.keys(SEO_AUDIT_RECORD_CATEGORIES);
@@ -102,6 +105,8 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "average_click_depth",
   "deepest_click_depth",
   "pages_measured",
+  "robots_user_agent",
+  "robots_allowed",
 ];
 
 /**
@@ -126,6 +131,8 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "depth_from_bounded_crawl_entry_point_only",
   "single_uncached_request_per_url_not_a_field_measurement",
   "redirect_destination_status_not_observed_for_every_redirect",
+  "robots_rules_read_for_one_search_crawler_token_only",
+  "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
 ];
 
 /** Limitation codes the per-visitor search region publishes. */

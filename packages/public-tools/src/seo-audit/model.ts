@@ -1,5 +1,9 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import {
+  searchCrawlerMayFetch,
+  SEARCH_CRAWLER_USER_AGENT,
+} from "./robots-allowance.ts";
+import {
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
@@ -193,6 +197,12 @@ function buildRecords(
   const collectedBySubject = new Map(
     pages.map((page) => [page.subjectUrl, page] as const),
   );
+  // An unfetched robots.txt is not permission. Reading it as permission is how
+  // a check that could not run turns into a clean pass.
+  const robotsReadable = raw.robots.fetched;
+  // A homepage has nothing above it to put in a breadcrumb, so including the
+  // root would make every correctly-built site fail 7.5 by exactly one page.
+  const belowRootHtmlPages = htmlPages.filter((page) => page.depth > 0);
   const linkTargetErrors = new Map<
     string,
     { readonly page: SeoAuditPage; readonly sources: Set<string> }
@@ -705,6 +715,91 @@ function buildRecords(
         .filter((page) => page.jsonLdTypes.length === 0)
         .map((page) => pageObservation(page, { json_ld_blocks: 0 })),
       limitation: "static_html_json_ld_only",
+    }),
+    record({
+      // 1.2. Not "did our crawler get in" — it did, or this page would not be
+      // here. The question is whether the crawler that decides indexing is let
+      // through, and a file can allow one and stop the other.
+      id: "page_disallowed_for_search_crawler",
+      category: "crawl",
+      tested: robotsReadable ? pages.length : 0,
+      state: robotsReadable ? undefined : "unverified",
+      observations: (robotsReadable ? pages : [])
+        .filter((page) => searchCrawlerMayFetch(raw.robots, page.url) === false)
+        .map((page) =>
+          pageObservation(page, {
+            robots_user_agent: SEARCH_CRAWLER_USER_AGENT,
+            robots_allowed: false,
+            sitemap_member: page.sitemapMember,
+          }),
+        ),
+      limitation: robotsReadable
+        ? "robots_rules_read_for_one_search_crawler_token_only"
+        : "resource_not_observed_does_not_prove_absence",
+    }),
+    record({
+      // A5. Read against the sitemap rather than the collected pages on
+      // purpose: a URL our own crawler was forbidden to fetch never became a
+      // page, so counting pages would report zero on exactly the site that has
+      // the problem. The sitemap is the site's own list of what it wants
+      // indexed, and a URL on it that robots.txt forbids is the site
+      // contradicting itself.
+      id: "sitemap_url_disallowed_by_robots",
+      category: "crawl",
+      unit: "site_resource",
+      population: "site_resource",
+      tested:
+        robotsReadable && raw.sitemap.fetched ? raw.sitemap.subjectUrls.length : 0,
+      state: robotsReadable && raw.sitemap.fetched ? undefined : "unverified",
+      observations: (robotsReadable && raw.sitemap.fetched
+        ? raw.sitemap.subjectUrls
+        : []
+      )
+        .filter((url) => searchCrawlerMayFetch(raw.robots, url) === false)
+        .map((url) => ({
+          url,
+          values: values({
+            robots_user_agent: SEARCH_CRAWLER_USER_AGENT,
+            robots_allowed: false,
+            sitemap_member: true,
+          }),
+        })),
+      limitation: !robotsReadable
+        ? "resource_not_observed_does_not_prove_absence"
+        : raw.sitemap.fetched
+          ? "robots_rules_read_for_one_search_crawler_token_only"
+          : "no_sitemap_collected_membership_not_testable",
+    }),
+    record({
+      // 7.5, presence only. Whether the markup matches the breadcrumb a reader
+      // sees is not decidable here: the parser keeps no visible trail to
+      // compare against. What is decidable is whether a page below the root
+      // declares one at all, and the root is excluded because a homepage
+      // legitimately has no breadcrumb to declare.
+      id: "page_without_breadcrumb_list",
+      category: "structured_data",
+      unit: "pages",
+      // Runs over every collected page; the root simply never fails it, which
+      // is the right verdict rather than an exemption. Declaring a subset here
+      // instead would make a clean page unreadable: the page projection only
+      // treats absence as evidence for a record that tested everything, so a
+      // page that correctly declares its breadcrumb would come back "not
+      // tested" rather than "passes".
+      tested: htmlPages.length,
+      observations: belowRootHtmlPages
+        .filter(
+          (page) =>
+            !page.jsonLdTypes.some(
+              (type) => type.trim().toLowerCase() === "breadcrumblist",
+            ),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            types_observed: page.jsonLdTypes.join(", ") || null,
+            observed_click_depth: page.depth,
+          }),
+        ),
+      limitation: "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
     }),
     record({
       id: "json_ld_parse_error",

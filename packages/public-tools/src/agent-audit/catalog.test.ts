@@ -26,7 +26,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(34);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(37);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -97,12 +97,30 @@ describe("v2 Agent audit catalog", () => {
     }
   });
 
+  it("can actually reach Blocker wherever its threshold promises one", () => {
+    // Two separate switches decide this — one says a check may reach Blocker,
+    // the other names the record that takes it there — and they disagreed
+    // silently. A5 and 1.2 published "above 0 is Blocker", were listed as
+    // capable, and had no record mapped, so a site that failed them was told
+    // Warning. Nothing tied the sentence to the wiring.
+    const broken = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+      .flatMap((group) => group.checks)
+      .filter(
+        (check) =>
+          check.inventoryReady &&
+          /\bBlocker\b/.test(check.threshold.en) &&
+          check.blockerEvidenceRecordIds.length === 0,
+      )
+      .map((check) => check.id);
+    expect(broken).toEqual([]);
+  });
+
   it("gives every decidable check instructions written for that check", () => {
     const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(34);
+    expect(decidable).toHaveLength(37);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its

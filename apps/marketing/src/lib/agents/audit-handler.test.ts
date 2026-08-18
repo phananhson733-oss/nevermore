@@ -258,7 +258,7 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.searchPerformance).toEqual(searchRegion);
     // Beside, not inside: the crawl ledger is what gets cached by host, and
     // these numbers belong to one visitor's verified property.
-    expect(body.data.result.records).toHaveLength(29);
+    expect(body.data.result.records).toHaveLength(32);
   });
 
   it("omits the region entirely when nothing covers the host", async () => {
@@ -474,7 +474,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(29);
+    expect(body.data.result.records).toHaveLength(32);
   });
 
   it.each([

@@ -958,7 +958,9 @@
         "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "查询行数触到了本次运行的上限，报告出来的总量偏少，因此不基于它发布任何占比。",
         "share_of_reported_queries_only_banded_by_one_average_position_each": "只是 Search Console 报告出来的查询的占比，每个查询按一个曝光加权平均位置归档。低频与匿名查询不会返回。",
         "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "页面行数触到了本次运行的上限，确实有曝光的页面可能不在这份清单里。",
-        "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。"
+        "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。",
+        "robots_rules_read_for_one_search_crawler_token_only": "robots.txt 规则只按单一搜索抓取器标记读取。为其他抓取器单独写的分组不体现在这里。",
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "只判定 BreadcrumbList 标记是否存在。它与读者实际看到的面包屑是否一致，这里不作检查。"
       },
       "records": {
         "robots_resource": {
@@ -1092,6 +1094,18 @@
         "target_query_ranking_band": {
           "title": "已确认目标词的当前排名区间",
           "description": "该页面在为它确认的目标词上目前所处的位置，跨这些词按曝光加权取平均，所以一个几乎没被展示的词无法拉动这个数字。数据来自一次收窄到这一个 URL 的 Search Console 请求，而不是全站查询列表——后者对同一个词给出的位置，是资源下所有排到该词的页面的平均值。"
+        },
+        "page_disallowed_for_search_crawler": {
+          "title": "被 robots.txt 拦在搜索之外的页面",
+          "description": "已采集的页面中，被站点 robots.txt 里某条 Disallow 规则匹配到、Google 抓取器因此无法抓取的页面。按单一抓取器标记判定；同一份文件可能放行本次运行、却拦住搜索抓取器。"
+        },
+        "sitemap_url_disallowed_by_robots": {
+          "title": "被 robots.txt 拦截的 sitemap URL",
+          "description": "sitemap 声明要收录、而 robots.txt 又禁止 Google 抓取器抓取的 URL。按 sitemap 而不是按已采集页面统计，因为本次运行被禁止抓取的 URL 根本不会变成页面。"
+        },
+        "page_without_breadcrumb_list": {
+          "title": "根目录以下缺少 BreadcrumbList 的页面",
+          "description": "层级深于站点根目录、且 JSON-LD 中没有声明 BreadcrumbList 的已采集页面。仅判定是否存在：本次运行不保留可见面包屑路径，无法与标记比对。"
         }
       },
       "evidence": {
@@ -1144,7 +1158,9 @@
         "worst_query_average_position": "最差词排名",
         "worst_query": "表现最差的词",
         "queries_confirmed": "已确认目标词数",
-        "clicks_total": "点击"
+        "clicks_total": "点击",
+        "robots_user_agent": "抓取器标记",
+        "robots_allowed": "robots.txt 是否放行"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

@@ -5,6 +5,7 @@
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   SEARCH_PERFORMANCE_LIMITATION_CODES,
+  SEO_AUDIT_EVIDENCE_LABELS,
   SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
@@ -37,42 +38,17 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
   tech: NEUTRAL_AGENT_RECORD_IDS,
 };
 
+/**
+ * Derived too, and for the same reason the other two are.
+ *
+ * This was a hand-written transcription of the crawl ledger sitting beside two
+ * derived lists. Three detectors landed with two new labels between them and it
+ * silently did not grow, which fails the panel closed on a record the producer
+ * is entitled to emit — the same shape of bug, in the one place still typing it
+ * out by hand.
+ */
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
-  "fetched",
-  "groups_observed",
-  "sitemap_references",
-  "urls_observed",
-  "initial_status",
-  "final_status",
-  "redirect_hops",
-  "final_url",
-  "final_protocol",
-  "robots_directive",
-  "canonical_target",
-  "page_subject",
-  "title",
-  "matching_pages",
-  "meta_description",
-  "h1_count",
-  "sitemap_member",
-  "observed_inbound_links",
-  "observed_source_pages",
-  "malformed_blocks",
-  "types_observed",
-  "broken_link_targets",
-  "title_characters",
-  "description_characters",
-  "reviewed_range",
-  "observed_outbound_internal_links",
-  "observed_click_depth",
-  "reviewed_limit",
-  "json_ld_blocks",
-  "average_response_ms",
-  "slowest_response_ms",
-  "pages_timed",
-  "average_click_depth",
-  "deepest_click_depth",
-  "pages_measured",
+  ...SEO_AUDIT_EVIDENCE_LABELS,
   ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
 ]);
 
