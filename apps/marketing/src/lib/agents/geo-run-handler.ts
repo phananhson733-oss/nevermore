@@ -7,6 +7,7 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
+import { normalizeGeoText } from "./geo-canonical.ts";
 import {
   consumeGeoDailyBudget,
   createGeoCostAccumulator,
@@ -185,7 +186,9 @@ export async function validateGeoRunInput(
   }
   // The recomputed value is the one used downstream; the supplied one only has
   // to agree, and a disagreement stops the run before the budget claim.
-  if ((await geoQuerySetContentHash(querySet)) !== querySet.querySetContentHash) {
+  if (
+    (await geoQuerySetContentHash(querySet)) !== querySet.querySetContentHash
+  ) {
     return { ok: false, code: "geo_query_set_mismatch" };
   }
   if (
@@ -260,8 +263,17 @@ function buildProvenance(
     searchModeRequested: "web_search_permitted",
     modelRequested: GEO_PROVIDER_MODEL,
     // Sorted deterministically, never in response arrival order: two identical
-    // runs must serialize identically.
-    modelObserved: [...modelsObserved].sort(),
+    // runs must serialize identically. Normalized for the same reason the
+    // citation strings are: this is another value the provider names and the
+    // report contract will only accept in normalized form, and one stray space
+    // in it would refuse a run that had already been billed.
+    modelObserved: [
+      ...new Set(
+        [...modelsObserved]
+          .map((model) => normalizeGeoText(model))
+          .filter((model) => model.length > 0 && model.length <= 100),
+      ),
+    ].sort(),
     maxOutputTokensRequested: 4_096,
     webSearchCountryIsoCodeRequested: context.marketCode,
     calibrationMarket: "US",
@@ -373,7 +385,10 @@ export async function handleGeoRunRequest(
   // With a margin for the claim itself, which is a network round trip: a check
   // that only cleared the per-call minimum could still leave nothing once the
   // claim returned, and the claim is never refunded.
-  if (remainingMs() < GEO_MIN_BUDGET_FOR_CALL_MS + GEO_BUDGET_CLAIM_ALLOWANCE_MS) {
+  if (
+    remainingMs() <
+    GEO_MIN_BUDGET_FOR_CALL_MS + GEO_BUDGET_CLAIM_ALLOWANCE_MS
+  ) {
     return errorResponse("geo_time_budget_exhausted", 503);
   }
 

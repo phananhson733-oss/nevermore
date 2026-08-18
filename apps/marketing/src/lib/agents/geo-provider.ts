@@ -314,12 +314,21 @@ function readAnswerText(items: readonly unknown[]): string {
   return parts.join("\n");
 }
 
-/** Keep a verbatim value, or nothing. Never a shortened version of it. */
+/**
+ * Keep the provider's whole value, or nothing. Never a shortened version of it.
+ *
+ * This transport layer does not normalize: the caller decides what the record
+ * it is building requires. `observeToSample` folds whitespace and applies NFC
+ * before these strings enter the report, because the report contract accepts
+ * only normalized text. Do not read "verbatim" here as a promise the reader
+ * sees byte-for-byte what the provider sent — it promises only that nothing was
+ * truncated or paraphrased.
+ */
 function boundedVerbatim(value: unknown, limit: number): string | null {
   if (typeof value !== "string") return null;
-  // Dropped rather than truncated. The report says these strings are exactly
-  // what the provider attached to the answer, and a silently shortened one
-  // would make that sentence false for the record that carries it.
+  // Dropped rather than truncated. The report says these strings are complete,
+  // and a silently shortened one would make that sentence false for the record
+  // that carries it.
   return value.length > 0 && codePointLength(value) <= limit ? value : null;
 }
 

@@ -2,10 +2,8 @@
 // @output -- one orthogonal sample per planned call, with its evidence preserved
 // @pos    -- the only place a provider answer becomes a reportable observation
 
-import {
-  findGeoAliasMatch,
-  geoMentionSnippet,
-} from "./geo-alias-match.ts";
+import { findGeoAliasMatch, geoMentionSnippet } from "./geo-alias-match.ts";
+import { normalizeGeoText } from "./geo-canonical.ts";
 import {
   deriveGeoMentionEligibility,
   type GeoAliasMatcherScope,
@@ -23,6 +21,9 @@ import {
   deriveProbeStatus,
 } from "./geo-report-derive.ts";
 import {
+  GEO_MAX_EVIDENCE_ANNOTATION_LENGTH,
+  GEO_MAX_EVIDENCE_TITLE_LENGTH,
+  GEO_MAX_MENTION_SNIPPET_LENGTH,
   type GeoCitationEvidenceRefV1,
   type GeoEvidenceRefV1,
   type GeoMentionEvidenceRefV1,
@@ -107,6 +108,30 @@ export function buildGeoExecutionPlan(
  * that points at the customer. It makes the whole sample's citation reading
  * unavailable, which is the honest answer to "we could not read this".
  */
+/**
+ * Reduce provider-supplied prose to the exact shape the report contract accepts.
+ *
+ * The provider hands back what the answer carried: hard line breaks between a
+ * title and its site name, runs of spaces, decomposed accents. The contract
+ * requires normalized text, so before this existed a single citation title with
+ * a newline in it failed the guard and voided the whole report — after all
+ * eighteen calls had been issued and billed. The producer and the guard have to
+ * agree on what "text" means, and this is where they are made to.
+ *
+ * Null when nothing survives normalization, and null rather than a shortened
+ * value when the result still will not fit: the report presents these strings
+ * as complete, so a silently truncated one would make that sentence false.
+ */
+function normalizeReportText(
+  value: string | null,
+  maxLength: number,
+): string | null {
+  if (value === null) return null;
+  const normalized = normalizeGeoText(value);
+  if (normalized.length === 0 || normalized.length > maxLength) return null;
+  return normalized;
+}
+
 function citationEvidence(
   sampleId: string,
   citations: readonly GeoProviderCitationAnnotation[],
@@ -123,8 +148,11 @@ function citationEvidence(
       exactUrl: citation.url,
       // Recomputed, never carried alongside and trusted.
       domain,
-      title: citation.title,
-      annotationText: citation.annotationText,
+      title: normalizeReportText(citation.title, GEO_MAX_EVIDENCE_TITLE_LENGTH),
+      annotationText: normalizeReportText(
+        citation.annotationText,
+        GEO_MAX_EVIDENCE_ANNOTATION_LENGTH,
+      ),
       providerOutputItemIndex: citation.providerOutputItemIndex,
       sectionIndex: citation.sectionIndex,
       startIndex: citation.startIndex,
@@ -191,7 +219,13 @@ export function observeToSample(
             kind: "mention",
             evidenceId: `${slot.sampleId}-m1`,
             matchedAlias: match.alias,
-            mentionSnippet: geoMentionSnippet(observation.answerText, match),
+            // Cut from the NFC answer, which still carries the paragraph breaks
+            // the assistant wrote. Normalized here for the same reason the
+            // citation strings are.
+            mentionSnippet: normalizeReportText(
+              geoMentionSnippet(observation.answerText, match),
+              GEO_MAX_MENTION_SNIPPET_LENGTH,
+            ),
             snippetBasis: "provider_answer_text",
           },
         ];
@@ -285,7 +319,8 @@ export function applyProbeStatus(
       ...sample,
       probeStatus: status,
       limitations:
-        failedTrigger && !sample.limitations.includes("retrieval_trigger_failed")
+        failedTrigger &&
+        !sample.limitations.includes("retrieval_trigger_failed")
           ? [...sample.limitations, "retrieval_trigger_failed"]
           : sample.limitations,
     };
