@@ -72,6 +72,8 @@ export interface AgentAuditHandlerDependencies {
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
+    readonly targetPageUrl: string | null;
+    readonly targetQueries: readonly string[];
   }) => Promise<AgentSearchPerformance | null>;
   /**
    * Which tool the visitor actually ran.
@@ -438,6 +440,17 @@ export async function handleAgentAuditRequest(
       (await dependencies.readSearchPerformance?.({
         siteOrigin: result.siteOrigin,
         pages: result.pages,
+        // The URL the crawl landed on, and only when it landed: Search Console
+        // keys rows by the URL it indexed, so a submitted form that redirected
+        // matches nothing and would report a ranking page as never shown.
+        targetPageUrl: result.targetInspected
+          ? (result.inspectedTargetUrl ?? result.targetUrl)
+          : null,
+        // The visitor's own spelling, not the lowercase identity: it is echoed
+        // back in the evidence, and the match lowercases both sides anyway.
+        targetQueries: (input.value.targetQueries ?? []).map(
+          (query) => query.displayQuery,
+        ),
       })) ?? null;
   } catch {
     searchPerformance = null;

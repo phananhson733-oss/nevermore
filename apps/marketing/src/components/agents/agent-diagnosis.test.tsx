@@ -514,7 +514,7 @@ describe("AgentDiagnosis", () => {
         result: {
           ...data.result,
           searchPerformance: {
-            version: "search_performance.agent.v1" as const,
+            version: "search_performance.agent.v2" as const,
             property: "sc-domain:astrologywiki.com",
             startDate: "2026-07-19",
             endDate: "2026-08-15",

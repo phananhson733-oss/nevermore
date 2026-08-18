@@ -945,7 +945,20 @@
         "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
         "character_count_only_rendered_pixel_width_not_measured": "仅统计字符数。未测量 Google 实际据以截断的渲染像素宽度。",
         "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
-        "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。"
+        "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。",
+        "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "这个页面没有确认任何目标词，因此没有可以报告排名的查询。",
+        "the_submitted_page_was_not_collected_so_no_per_page_query_rows_were_requested": "提交的页面未被本次抓取采集，因此没有请求该页面的逐查询数据。",
+        "target_page_query_rows_hit_the_row_cap_so_a_confirmed_query_may_be_missing": "该页面的逐查询行数触到了本次运行的上限，某个已确认目标词可能不在这个平均值里。",
+        "search_console_reported_no_impressions_for_the_confirmed_queries_on_this_url": "在统计窗口内，Search Console 没有记录到这些查询在该 URL 上的任何曝光，因此没有位置可以归档。这不等于排名第 0 位。",
+        "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average": "部分已确认目标词在该 URL 上没有曝光，未计入这个平均值。",
+        "one_impression_weighted_average_per_query_over_the_reported_window_only": "每个查询在报告窗口内只有一个按曝光加权的平均位置。低频与匿名查询由 Search Console 保留不发。",
+        "search_console_returned_a_position_this_run_cannot_band_for_this_url": "Search Console 返回了本次运行无法为该 URL 归档的位置值。",
+        "single_uncached_request_per_url_not_a_field_measurement": "每个 URL 从单一位置发起一次无缓存请求。这是本次运行中服务端的表现，不是访客在各自网络和设备上的真实体感。",
+        "redirect_destination_status_not_observed_for_every_redirect": "只检查了本次运行同时抓取到的跳转终点。抓取范围之外的终点，两个方向都未作判定。",
+        "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "查询行数触到了本次运行的上限，报告出来的总量偏少，因此不基于它发布任何占比。",
+        "share_of_reported_queries_only_banded_by_one_average_position_each": "只是 Search Console 报告出来的查询的占比，每个查询按一个曝光加权平均位置归档。低频与匿名查询不会返回。",
+        "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "页面行数触到了本次运行的上限，确实有曝光的页面可能不在这份清单里。",
+        "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。"
       },
       "records": {
         "robots_resource": {
@@ -1075,6 +1088,10 @@
         "impression_share_low_click_positions": {
           "title": "排名 7–10 的曝光占比",
           "description": "在 Search Console 报告出来的查询中，平均排名四舍五入落在第七至第十位的曝光量占比。低频与匿名查询不在其中。"
+        },
+        "target_query_ranking_band": {
+          "title": "已确认目标词的当前排名区间",
+          "description": "该页面在为它确认的目标词上目前所处的位置，跨这些词按曝光加权取平均，所以一个几乎没被展示的词无法拉动这个数字。数据来自一次收窄到这一个 URL 的 Search Console 请求，而不是全站查询列表——后者对同一个词给出的位置，是资源下所有排到该词的页面的平均值。"
         }
       },
       "evidence": {
@@ -1119,7 +1136,15 @@
         "impressions_in_band": "该档曝光量",
         "impressions_total": "总曝光量",
         "queries_measured": "已测量查询数",
-        "property": "Search Console 属性"
+        "property": "Search Console 属性",
+        "query_position_band": "排名区间",
+        "query_average_position": "平均排名",
+        "best_query_average_position": "最好词排名",
+        "best_query": "表现最好的词",
+        "worst_query_average_position": "最差词排名",
+        "worst_query": "表现最差的词",
+        "queries_confirmed": "已确认目标词数",
+        "clicks_total": "点击"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

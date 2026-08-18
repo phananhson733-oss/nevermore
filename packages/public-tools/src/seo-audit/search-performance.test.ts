@@ -40,7 +40,9 @@ function row(
   return { key, clicks: 0, impressions, position };
 }
 
-function raw(overrides: Partial<SearchPerformanceRaw> = {}): SearchPerformanceRaw {
+function raw(
+  overrides: Partial<SearchPerformanceRaw> = {},
+): SearchPerformanceRaw {
   return {
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
@@ -49,8 +51,24 @@ function raw(overrides: Partial<SearchPerformanceRaw> = {}): SearchPerformanceRa
     queries: [],
     pagesTruncated: false,
     queriesTruncated: false,
+    targetPageQueries: null,
+    targetPageUrl: null,
+    confirmedQueries: [],
+    targetPageQueriesTruncated: false,
     ...overrides,
   };
+}
+
+/** A run that did ask for the target page's own rows. */
+function withTarget(
+  overrides: Partial<SearchPerformanceRaw> = {},
+): SearchPerformanceRaw {
+  return raw({
+    targetPageUrl: "https://acme.test/chart",
+    confirmedQueries: ["Natal Chart"],
+    targetPageQueries: [],
+    ...overrides,
+  });
 }
 
 function byId(records: readonly SeoAuditRecord[], id: string) {
@@ -59,8 +77,9 @@ function byId(records: readonly SeoAuditRecord[], id: string) {
 
 describe("search performance records", () => {
   it("emits nothing at all when no grant covered the run", () => {
-    expect(buildSearchPerformanceRecords(null, [page("https://acme.test/")]))
-      .toEqual([]);
+    expect(
+      buildSearchPerformanceRecords(null, [page("https://acme.test/")]),
+    ).toEqual([]);
     expect(buildSearchPerformanceRecords(undefined, [])).toEqual([]);
   });
 
@@ -104,9 +123,14 @@ describe("search performance records", () => {
       )?.value;
 
     // Two of three rows sit in 7-10, but they are a tenth of the impressions.
-    expect(share("impression_share_top_positions", "top_position_impression_share")).toBe(0.9);
     expect(
-      share("impression_share_low_click_positions", "low_click_position_impression_share"),
+      share("impression_share_top_positions", "top_position_impression_share"),
+    ).toBe(0.9);
+    expect(
+      share(
+        "impression_share_low_click_positions",
+        "low_click_position_impression_share",
+      ),
     ).toBe(0.1);
   });
 
@@ -116,9 +140,12 @@ describe("search performance records", () => {
         raw({ queries: [row("q", 100, position)] }),
         [],
       );
-      return byId(records, "impression_share_top_positions")?.observations[0]
-        ?.values.find((entry) => entry.label === "top_position_impression_share")
-        ?.value;
+      return byId(
+        records,
+        "impression_share_top_positions",
+      )?.observations[0]?.values.find(
+        (entry) => entry.label === "top_position_impression_share",
+      )?.value;
     };
 
     // 6.4 was shown at position 6 more often than at 7.
@@ -127,11 +154,7 @@ describe("search performance records", () => {
   });
 
   it("publishes no share from a capped query list", () => {
-    const rows = [
-      row("top", 900, 2),
-      row("low", 50, 8),
-      row("rest", 50, 30),
-    ];
+    const rows = [row("top", 900, 2), row("low", 50, 8), row("rest", 50, 30)];
     const share = (queriesTruncated: boolean) =>
       byId(
         buildSearchPerformanceRecords(
@@ -201,9 +224,7 @@ describe("search performance checks", () => {
     const covered = (count: number) =>
       buildSearchPerformanceRecords(
         raw({
-          pages: pages
-            .slice(0, count)
-            .map((entry) => row(entry.url, 10, 5)),
+          pages: pages.slice(0, count).map((entry) => row(entry.url, 10, 5)),
         }),
         pages,
       );
@@ -252,10 +273,8 @@ describe("search performance checks", () => {
           [],
         ),
       );
-    const resultOf = (
-      outcome: ReturnType<typeof withShare>,
-      id: string,
-    ) => outcome.checks.find((entry) => entry.check.id === id)?.result;
+    const resultOf = (outcome: ReturnType<typeof withShare>, id: string) =>
+      outcome.checks.find((entry) => entry.check.id === id)?.result;
 
     // E2 publishes "at least 20%", so exactly 20% passes.
     expect(resultOf(withShare(200, 100), "E2")).toBe("pass");
@@ -266,5 +285,121 @@ describe("search performance checks", () => {
     expect(resultOf(withShare(200, 400), "E3")).toBe("pass");
     expect(resultOf(withShare(200, 500), "E3")).toBe("tip");
     expect(resultOf(withShare(200, 700), "E3")).toBe("warning");
+  });
+});
+
+describe("target query ranking band (9.5)", () => {
+  const bandOf = (input: SearchPerformanceRaw) =>
+    byId(buildSearchPerformanceRecords(input, []), "target_query_ranking_band");
+  const valueOf = (record: SeoAuditRecord | undefined, label: string) =>
+    record?.observations[0]?.values.find((entry) => entry.label === label)
+      ?.value;
+
+  it("is emitted on every authorized run, measured or not", () => {
+    // Absent it would read to the wire guard as a producer that broke, and the
+    // whole search region would be refused rather than one check excluded.
+    for (const input of [
+      raw(),
+      withTarget(),
+      withTarget({ confirmedQueries: [] }),
+    ]) {
+      expect(bandOf(input)).toBeDefined();
+    }
+  });
+
+  it.each([
+    ["no query was confirmed", withTarget({ confirmedQueries: [] })],
+    ["the page was not collected", raw({ confirmedQueries: ["natal chart"] })],
+    [
+      "the row cap was hit",
+      withTarget({
+        targetPageQueries: [row("natal chart", 90, 4)],
+        targetPageQueriesTruncated: true,
+      }),
+    ],
+    ["Search Console reported nothing", withTarget({ targetPageQueries: [] })],
+    [
+      "every matching row had zero impressions",
+      withTarget({ targetPageQueries: [row("natal chart", 0, 0)] }),
+    ],
+  ])("reports %s as unmeasured, never as a band", (_label, input) => {
+    const record = bandOf(input);
+
+    // A zero-impression row carries position 0, which as a number would be the
+    // best possible ranking. Reading it as a measurement turns "never shown"
+    // into "ranked first".
+    expect(record?.state).toBe("unverified");
+    expect(record?.observations).toEqual([]);
+    expect(record?.limitation).toBeTruthy();
+  });
+
+  it("matches a confirmed query to Search Console's own casing", () => {
+    const record = bandOf(
+      withTarget({
+        confirmedQueries: ["Natal  Chart"],
+        targetPageQueries: [row("natal chart", 100, 4)],
+      }),
+    );
+
+    // Search Console lower-cases and collapses the queries it reports, so a
+    // literal comparison would report a ranking page as never shown.
+    expect(record?.state).toBe("observed");
+    expect(valueOf(record, "query_average_position")).toBe(4);
+  });
+
+  it("weights the average by impressions and names the spread", () => {
+    const record = bandOf(
+      withTarget({
+        confirmedQueries: ["a", "b"],
+        targetPageQueries: [row("a", 900, 3), row("b", 100, 40)],
+      }),
+    );
+
+    // Row count would put this at 21.5 and fail the check; impressions put it
+    // at 6.7, which is what the page is actually experiencing.
+    expect(valueOf(record, "query_average_position")).toBe(6.7);
+    expect(valueOf(record, "best_query")).toBe("a");
+    expect(valueOf(record, "worst_query")).toBe("b");
+    expect(valueOf(record, "worst_query_average_position")).toBe(40);
+    // And the reader is told the one at 40 exists, because a single average
+    // over several queries hides exactly the case worth working.
+    expect(valueOf(record, "queries_measured")).toBe(2);
+  });
+
+  it("says so when a confirmed query had no impressions on the page", () => {
+    const record = bandOf(
+      withTarget({
+        confirmedQueries: ["a", "b"],
+        targetPageQueries: [row("a", 900, 3)],
+      }),
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(valueOf(record, "queries_confirmed")).toBe(2);
+    expect(valueOf(record, "queries_measured")).toBe(1);
+    expect(record?.limitation).toContain("some_confirmed_queries");
+  });
+
+  it("decides 9.5 against its published bands", () => {
+    const at = (position: number) =>
+      evaluateAgentAuditScope("page", {
+        availability: "available",
+        records: buildSearchPerformanceRecords(
+          withTarget({
+            targetPageQueries: [row("natal chart", 100, position)],
+          }),
+          [],
+        ),
+        targetUrl: "https://acme.test/chart",
+        targetInspected: true,
+        inspectedTargetUrl: "https://acme.test/chart",
+      }).checks.find((entry) => entry.check.id === "9.5")?.result;
+
+    // Published as "1-6 preferred; 7-10 low-click; 11+ ineffective".
+    expect(at(6)).toBe("pass");
+    expect(at(6.4)).toBe("pass");
+    expect(at(7)).toBe("tip");
+    expect(at(10)).toBe("tip");
+    expect(at(10.5)).toBe("warning");
   });
 });

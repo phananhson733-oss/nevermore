@@ -945,7 +945,20 @@
         "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
         "character_count_only_rendered_pixel_width_not_measured": "Character count only. Rendered pixel width, which is what Google truncates on, was not measured.",
         "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
-        "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point."
+        "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point.",
+        "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "No target query was confirmed for this page, so there is no query to report a position for.",
+        "the_submitted_page_was_not_collected_so_no_per_page_query_rows_were_requested": "The submitted page was not collected in this crawl, so no per-page query rows were requested.",
+        "target_page_query_rows_hit_the_row_cap_so_a_confirmed_query_may_be_missing": "The per-page query rows hit this run's cap, so a confirmed query may be missing from the average.",
+        "search_console_reported_no_impressions_for_the_confirmed_queries_on_this_url": "Search Console recorded no impressions for these queries on this URL in the window, so there is no position to band. That is not position zero.",
+        "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average": "Some confirmed queries had no impressions on this URL and are not part of this average.",
+        "one_impression_weighted_average_per_query_over_the_reported_window_only": "One impression-weighted average per query over the reported window. Low-volume and anonymised queries are withheld by Search Console.",
+        "search_console_returned_a_position_this_run_cannot_band_for_this_url": "Search Console returned a position this run cannot place in a band for this URL.",
+        "single_uncached_request_per_url_not_a_field_measurement": "One uncached request per URL from a single location. This is what the server did for this run, not what visitors experience on their own connections and devices.",
+        "redirect_destination_status_not_observed_for_every_redirect": "Only redirect destinations this run also fetched were checked. A destination outside the crawl was not classified either way.",
+        "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "The query rows hit this run's cap, so the reported total is short and no share is published against it.",
+        "share_of_reported_queries_only_banded_by_one_average_position_each": "A share of the queries Search Console reports, each banded by one impression-weighted average position. Low-volume and anonymised queries are withheld.",
+        "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "The page rows hit this run's cap, so a page that does have impressions may be missing from the list.",
+        "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown."
       },
       "records": {
         "robots_resource": {
@@ -1075,6 +1088,10 @@
         "impression_share_low_click_positions": {
           "title": "Impression share in positions 7-10",
           "description": "Share of impressions from the queries Search Console reports whose average position rounds into seven through ten. Low-volume and anonymised queries are not included."
+        },
+        "target_query_ranking_band": {
+          "title": "Current ranking band for the confirmed queries",
+          "description": "Where this page currently sits for the queries confirmed for it, averaged across them and weighted by impressions so a query it is barely shown for cannot move the number. Read from a Search Console request narrowed to this one URL, not from the site-wide query list, whose position for the same query is the property's average across every page that ranked for it."
         }
       },
       "evidence": {
@@ -1119,7 +1136,15 @@
         "impressions_in_band": "Impressions in band",
         "impressions_total": "Total impressions",
         "queries_measured": "Queries measured",
-        "property": "Search Console property"
+        "property": "Search Console property",
+        "query_position_band": "Position band",
+        "query_average_position": "Average position",
+        "best_query_average_position": "Best query position",
+        "best_query": "Best query",
+        "worst_query_average_position": "Worst query position",
+        "worst_query": "Worst query",
+        "queries_confirmed": "Queries confirmed",
+        "clicks_total": "Clicks"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

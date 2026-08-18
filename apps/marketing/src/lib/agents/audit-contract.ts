@@ -128,9 +128,15 @@ export type AgentAuditResult = Pick<
  * request and freezes its own decisions — the window, the finalisation lag, the
  * row cap, how a query's average position becomes a band — none of which the
  * crawl version describes. Changing any of them has to change this literal.
+ *
+ * v2 adds the target page's own query rows and the band record built from them.
+ * A v1 payload is not a v2 payload missing a field: its ledger is complete for
+ * three records and the guard below requires four, so an old cached or in-
+ * flight body is rejected rather than rendered with a check that silently never
+ * decides.
  */
 export const AGENT_SEARCH_PERFORMANCE_VERSION =
-  "search_performance.agent.v1" as const;
+  "search_performance.agent.v2" as const;
 
 /** The visitor's own search numbers for this host, read fresh on every run. */
 export interface AgentSearchPerformance {
@@ -192,10 +198,7 @@ export type AgentAuditResponseEnvelope =
 
 export interface SeoAuditUpstreamSuccessEnvelope {
   readonly data: {
-    readonly run: Omit<
-      SeoAuditPayload["run"],
-      "schemaVersion" | "scope"
-    > & {
+    readonly run: Omit<SeoAuditPayload["run"], "schemaVersion" | "scope"> & {
       readonly schemaVersion: typeof AGENT_AUDIT_SOURCE_SCHEMA_VERSION;
       readonly scope: typeof AGENT_AUDIT_SOURCE_SCOPE;
     };

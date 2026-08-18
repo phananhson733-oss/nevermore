@@ -41,12 +41,32 @@ export const RETRYABLE_BACKOFF_JITTER_MS = 600;
 
 export type SearchAnalyticsDimension = "query" | "page" | "date";
 
+/**
+ * One equality filter, which is all the callers here need.
+ *
+ * Deliberately not the API's full filter grammar. `contains` and the regex
+ * operators make it easy to write a filter that quietly matches more than the
+ * caller meant — a page filter that also catches every child path, say — and
+ * the numbers that come back would still look like an answer about one URL.
+ */
+export interface SearchAnalyticsEqualsFilter {
+  readonly dimension: SearchAnalyticsDimension;
+  readonly expression: string;
+}
+
 export interface SearchAnalyticsRequest {
   readonly dimensions: readonly SearchAnalyticsDimension[];
   readonly startDate: string;
   readonly endDate: string;
   readonly rowLimit: number;
   readonly startRow: number;
+  /**
+   * Narrows the rows to those matching every entry, or omitted for all rows.
+   *
+   * Absent from the request body entirely when empty, so an unfiltered call is
+   * byte-identical to what it sent before this existed.
+   */
+  readonly filters?: readonly SearchAnalyticsEqualsFilter[];
 }
 
 export interface SearchAnalyticsRow {
@@ -191,6 +211,20 @@ export function createSearchAnalyticsClient(
           rowLimit: request.rowLimit,
           startRow: request.startRow,
           dataState: GSC_DATA_STATE,
+          ...(request.filters === undefined || request.filters.length === 0
+            ? {}
+            : {
+                dimensionFilterGroups: [
+                  {
+                    groupType: "and",
+                    filters: request.filters.map((filter) => ({
+                      dimension: filter.dimension,
+                      operator: "equals",
+                      expression: filter.expression,
+                    })),
+                  },
+                ],
+              }),
         }),
         signal: scope.signal,
       });

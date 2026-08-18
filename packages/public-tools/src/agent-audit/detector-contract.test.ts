@@ -8,6 +8,7 @@ import {
   SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "../seo-audit/record-ledger.ts";
+import { SEARCH_PERFORMANCE_RECORD_IDS } from "../seo-audit/search-performance.ts";
 
 function page(url: string, depth = 1): CrawlPageRecord {
   return {
@@ -46,10 +47,42 @@ function raw(): SeoAuditRaw {
     pages: [
       page("https://acme.test/", 0),
       page("https://acme.test/about"),
-      { ...page("https://acme.test/gone"), projection: { ...page("https://acme.test/gone").projection, finalStatus: 404 } },
-      { ...page("https://acme.test/down"), projection: { ...page("https://acme.test/down").projection, finalStatus: 503 } },
-      { ...page("https://acme.test/old"), projection: { ...page("https://acme.test/old").projection, redirectChain: ["https://acme.test/gone"], finalStatus: 404 } },
-      { ...page("http://acme.test/insecure"), projection: { ...page("http://acme.test/insecure").projection, fetchUrl: "http://acme.test/insecure", robotsIndexable: false, title: null, metaDescription: null, h1: [], jsonLd: { types: [], errorCount: 1 }, sitemapMember: false, canonicalTarget: "https://acme.test/" } },
+      {
+        ...page("https://acme.test/gone"),
+        projection: {
+          ...page("https://acme.test/gone").projection,
+          finalStatus: 404,
+        },
+      },
+      {
+        ...page("https://acme.test/down"),
+        projection: {
+          ...page("https://acme.test/down").projection,
+          finalStatus: 503,
+        },
+      },
+      {
+        ...page("https://acme.test/old"),
+        projection: {
+          ...page("https://acme.test/old").projection,
+          redirectChain: ["https://acme.test/gone"],
+          finalStatus: 404,
+        },
+      },
+      {
+        ...page("http://acme.test/insecure"),
+        projection: {
+          ...page("http://acme.test/insecure").projection,
+          fetchUrl: "http://acme.test/insecure",
+          robotsIndexable: false,
+          title: null,
+          metaDescription: null,
+          h1: [],
+          jsonLd: { types: [], errorCount: 1 },
+          sitemapMember: false,
+          canonicalTarget: "https://acme.test/",
+        },
+      },
     ],
     robots: {
       fetched: true,
@@ -99,14 +132,13 @@ describe("catalog / detector contract", () => {
       (group) => group.checks,
     );
 
-    // E1-E3 read records the Agent layer derives per visitor, so a crawl report
+    // These read records the Agent layer derives per visitor, so a crawl report
     // does not emit them and must not: their category is refused by the payload
-    // guard precisely so one visitor's property cannot land in a shared cache row.
-    const perVisitor = new Set([
-      "page_without_search_impressions",
-      "impression_share_top_positions",
-      "impression_share_low_click_positions",
-    ]);
+    // guard precisely so one visitor's property cannot land in a shared cache
+    // row. Taken from their own producer rather than re-listed here — a
+    // hand-written copy of this set is what would quietly exempt the next
+    // per-visitor record from the check that exists to catch it.
+    const perVisitor = new Set(SEARCH_PERFORMANCE_RECORD_IDS);
     const missing = checks.flatMap((check) =>
       check.evidenceRecordIds
         .filter((id) => !emitted.has(id) && !perVisitor.has(id))

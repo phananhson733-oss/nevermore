@@ -56,7 +56,26 @@ export interface SearchPerformanceReadInput {
   readonly property: string;
   /** From this request's grant resolution; never captured at module scope. */
   readonly accessToken: string;
+  /**
+   * The collected page the band question is about, or null when there is none.
+   *
+   * Must be the URL the crawl actually landed on, not the submitted one:
+   * Search Console keys rows by the final URL, so filtering on a form that
+   * redirected returns nothing and reads as "never shown".
+   */
+  readonly targetPageUrl: string | null;
+  /** Queries the visitor confirmed for that page; empty skips the third read. */
+  readonly targetQueries: readonly string[];
 }
+
+/**
+ * Rows for one page, one per query.
+ *
+ * A page rarely has thousands of distinct queries, and unlike the site lists
+ * this one is not a denominator — hitting the cap means a confirmed query might
+ * be missing, which the record reports rather than averages around.
+ */
+const TARGET_PAGE_ROW_LIMIT = 1_000;
 
 export function createSearchPerformanceReader(options: {
   readonly now?: () => Date;
@@ -65,7 +84,7 @@ export function createSearchPerformanceReader(options: {
 }): (input: SearchPerformanceReadInput) => Promise<SearchPerformanceRaw> {
   const now = options.now ?? (() => new Date());
 
-  return async ({ property, accessToken }) => {
+  return async ({ property, accessToken, targetPageUrl, targetQueries }) => {
     const client = createSearchAnalyticsClient({
       // The client's field is named `siteUrl` because that is what Google calls
       // the path segment; what it wants there is the property identifier.
@@ -88,17 +107,35 @@ export function createSearchPerformanceReader(options: {
     // Two separate reads, never one `[page, query]` breakdown: impressions on a
     // cross-dimension result do not sum to the site total, and every share here
     // is a share of that total.
-    const [pages, queries] = await Promise.all([
+    //
+    // The third is not a share, which is why it is allowed to be per-page: the
+    // band check asks where one URL ranks for one query, and the site-wide
+    // query list answers a different question — its position for that query is
+    // the property's average across every page that ranked for it. It is only
+    // requested when there is both a collected page and a confirmed query, so
+    // an audit that cannot use it never spends the call.
+    const wantsTargetRows = targetPageUrl !== null && targetQueries.length > 0;
+    const [pages, queries, targetRows] = await Promise.all([
       client({ ...window, dimensions: ["page"] }),
       client({ ...window, dimensions: ["query"] }),
+      wantsTargetRows
+        ? client({
+            ...window,
+            rowLimit: TARGET_PAGE_ROW_LIMIT,
+            dimensions: ["query"],
+            filters: [{ dimension: "page", expression: targetPageUrl }],
+          })
+        : null,
     ]);
 
-    const rows = (response: { readonly rows: readonly {
-      readonly keys: readonly string[];
-      readonly clicks: number;
-      readonly impressions: number;
-      readonly position: number;
-    }[] }) =>
+    const rows = (response: {
+      readonly rows: readonly {
+        readonly keys: readonly string[];
+        readonly clicks: number;
+        readonly impressions: number;
+        readonly position: number;
+      }[];
+    }) =>
       response.rows.flatMap((row) => {
         const key = row.keys[0];
         return key === undefined
@@ -121,6 +158,14 @@ export function createSearchPerformanceReader(options: {
       queries: rows(queries),
       pagesTruncated: pages.rows.length >= ROW_LIMIT,
       queriesTruncated: queries.rows.length >= ROW_LIMIT,
+      // Null and empty are different answers here. Null is "not asked"; empty
+      // is "asked, and Search Console reported nothing for that URL" — the
+      // second is a measurement the record is entitled to state.
+      targetPageQueries: targetRows === null ? null : rows(targetRows),
+      targetPageUrl: wantsTargetRows ? targetPageUrl : null,
+      confirmedQueries: targetQueries,
+      targetPageQueriesTruncated:
+        targetRows !== null && targetRows.rows.length >= TARGET_PAGE_ROW_LIMIT,
     };
   };
 }

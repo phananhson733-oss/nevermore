@@ -176,6 +176,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   E1: ["page_without_search_impressions"],
   E2: ["impression_share_top_positions"],
   E3: ["impression_share_low_click_positions"],
+  "9.5": ["target_query_ranking_band"],
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
@@ -269,6 +270,17 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       label: "low_click_position_impression_share",
       passAtOrBelow: 0.4,
       failAbove: 0.6,
+    },
+  ],
+  "9.5": [
+    {
+      // Published as "1-6 preferred; 7-10 low-click; 11+ ineffective", which
+      // is a bound on the position itself, not on how many pages are affected.
+      recordId: "target_query_ranking_band",
+      kind: "aggregate-max",
+      label: "query_position_band",
+      passAtOrBelow: 6,
+      failAbove: 10,
     },
   ],
   B3: [
@@ -510,6 +522,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   E3: l(
     "Positions 7 to 10 earn impressions and very few clicks, so a large share here is effort already spent that has not converted into traffic. Treat it as a queue, not a defect: these are the queries closest to paying off. Work the ones where a single page already ranks and the intent matches what that page does; a query whose intent no page on the site serves belongs in a content decision, not in a fix list.",
     "排名 7 到 10 有曝光、几乎没有点击，所以这一档占比大，意味着已经付出的功夫还没有转化成流量。把它当队列而不是缺陷：这些是最接近见效的查询。优先处理那些已经有单一页面在排、且意图与该页面所做的事情吻合的；如果某个查询的意图站内没有页面在服务，那属于内容决策，不属于修复清单。",
+  ),
+  "9.5": l(
+    "This is where the page already sits for the queries you confirmed, averaged across them and weighted by impressions, so a query it is barely shown for cannot flatter the number. Read the best and worst beside it before acting: one average over several queries hides the case worth working, which is four near the top and one far outside. Past position 10 the page is being shown and almost never clicked, and the usual cause is not the page but the competition for that query — check what the results above it actually are before rewriting anything. Between 7 and 10 the cheapest move is almost always making one page unambiguously own the query, because two pages competing for it is the most common reason neither reaches the top band.",
+    "这是该页面在你确认的目标词上目前所处的位置，按曝光加权取平均，所以一个几乎没被展示的词无法把数字拉好看。动手前先看旁边的最好和最差：一个跨多词的平均值，恰好会掩盖最值得处理的情况——四个靠前、一个远远在外。排到 10 名以后，页面在被展示却几乎没人点，常见原因不在页面本身而在这个词的竞争强度；先看清排在它上面的到底是什么结果，再决定要不要改写。落在 7 到 10 时，最便宜的动作几乎总是让某一个页面毫不含糊地独占这个词——两个页面互相争抢，是两个都进不了前档最常见的原因。",
   ),
   D5: l(
     "This run knows which pages parsed no JSON-LD; it does not know why. Sort the uncovered URLs by path shape first: if they share one, the template behind them emits no markup and one edit covers the group, which is the cheap case. If they do not, they were missed individually. Either way add a block whose @type matches what the page actually is and derive every property from data the template already renders.",

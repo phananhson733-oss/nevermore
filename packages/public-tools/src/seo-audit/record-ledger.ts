@@ -134,4 +134,11 @@ export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "share_of_reported_queries_only_banded_by_one_average_position_each",
   "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing",
   "search_console_window_may_predate_a_recently_published_page",
+  "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report",
+  "the_submitted_page_was_not_collected_so_no_per_page_query_rows_were_requested",
+  "target_page_query_rows_hit_the_row_cap_so_a_confirmed_query_may_be_missing",
+  "search_console_reported_no_impressions_for_the_confirmed_queries_on_this_url",
+  "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average",
+  "one_impression_weighted_average_per_query_over_the_reported_window_only",
+  "search_console_returned_a_position_this_run_cannot_band_for_this_url",
 ];

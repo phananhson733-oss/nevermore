@@ -52,6 +52,10 @@ function rawRows(): SearchPerformanceRaw {
     queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
     pagesTruncated: false,
     queriesTruncated: false,
+    targetPageQueries: null,
+    targetPageUrl: null,
+    confirmedQueries: [],
+    targetPageQueriesTruncated: false,
   };
 }
 
@@ -68,6 +72,8 @@ describe("readAgentSearchPerformance", () => {
     expect(read).toHaveBeenCalledWith({
       property: "sc-domain:acme.test",
       accessToken: "token-abc",
+      targetPageUrl: null,
+      targetQueries: [],
     });
     expect(result?.property).toBe("sc-domain:acme.test");
     expect(result?.startDate).toBe("2026-07-19");
@@ -75,7 +81,28 @@ describe("readAgentSearchPerformance", () => {
       "page_without_search_impressions",
       "impression_share_top_positions",
       "impression_share_low_click_positions",
+      "target_query_ranking_band",
     ]);
+  });
+
+  it("passes the collected URL and the visitor's queries through", async () => {
+    const read = vi.fn(async () => rawRows());
+    await readAgentSearchPerformance(
+      {
+        siteOrigin: "https://acme.test/",
+        pages,
+        targetPageUrl: "https://acme.test/chart",
+        targetQueries: ["natal chart"],
+      },
+      { resolveGrant: async () => GRANT, read },
+    );
+
+    expect(read).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetPageUrl: "https://acme.test/chart",
+        targetQueries: ["natal chart"],
+      }),
+    );
   });
 
   it.each([

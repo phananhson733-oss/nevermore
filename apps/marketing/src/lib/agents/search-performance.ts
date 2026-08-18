@@ -51,6 +51,16 @@ export async function readAgentSearchPerformance(
     /** The crawl's own origin, which is the population every check counts. */
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
+    /**
+     * The URL the crawl landed on for the submitted page, or null.
+     *
+     * The final URL, never the submitted one: Search Console keys its rows by
+     * the URL it indexed, so filtering on a form that redirected returns no
+     * rows and would be read as a page nobody has ever been shown.
+     */
+    readonly targetPageUrl?: string | null;
+    /** Queries the visitor confirmed for that page. */
+    readonly targetQueries?: readonly string[];
   },
   dependencies: SearchPerformanceDependencies = DEFAULT_SEARCH_PERFORMANCE_DEPENDENCIES,
 ): Promise<AgentSearchPerformance | null> {
@@ -68,6 +78,8 @@ export async function readAgentSearchPerformance(
   const raw = await dependencies.read({
     property,
     accessToken: grant.accessToken,
+    targetPageUrl: input.targetPageUrl ?? null,
+    targetQueries: input.targetQueries ?? [],
   });
   const records = buildSearchPerformanceRecords(raw, input.pages);
   if (records.length === 0) return null;

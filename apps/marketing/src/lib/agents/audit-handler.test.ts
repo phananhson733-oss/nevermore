@@ -172,7 +172,7 @@ function dependencies(
 
 describe("handleAgentAuditRequest", () => {
   const searchRegion = {
-    version: "search_performance.agent.v1" as const,
+    version: "search_performance.agent.v2" as const,
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
     endDate: "2026-08-15",
@@ -224,6 +224,10 @@ describe("handleAgentAuditRequest", () => {
           ],
           pagesTruncated: false,
           queriesTruncated: false,
+          targetPageQueries: null,
+          targetPageUrl: null,
+          confirmedQueries: [],
+          targetPageQueriesTruncated: false,
         },
         [],
       ),

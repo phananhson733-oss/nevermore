@@ -112,22 +112,43 @@ describe("record vocabulary", () => {
     expect(missing).toEqual([]);
   });
 
-  it("names every limitation code the ledger's records publish", () => {
-    const unknown = [
-      ...SEO_AUDIT_LIMITATION_CODES,
-      ...SEARCH_PERFORMANCE_LIMITATION_CODES,
-    ].filter((code) => !AGENT_LIMITATION_CODES.has(code));
-    expect(unknown).toEqual([]);
+  // These two used to compare the ledger against a set built from the ledger,
+  // which proved nothing: both sides moved together and the assertion could
+  // not fail. They now cross into the shipped message catalogues, which is
+  // where the real gap is — next-intl renders a missing key as its own path,
+  // so an unnamed code reaches a visitor as
+  // "limitations.search_console_reported_no_impressions_..." instead of
+  // failing anywhere a test could see.
+  it("names every limitation code in both shipped catalogues", () => {
+    const missing: string[] = [];
+    for (const locale of ["en", "zh"] as const) {
+      const copy = (locale === "en" ? enMessages : zhMessages).tools.seoAudit
+        .limitations as Readonly<Record<string, string>>;
+      for (const code of [
+        ...SEO_AUDIT_LIMITATION_CODES,
+        ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+      ]) {
+        if (!copy[code]?.trim()) missing.push(`${locale}:${code}`);
+        if (!AGENT_LIMITATION_CODES.has(code)) missing.push(`seam:${code}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
-  it("names every evidence label the ledger's records publish", () => {
-    const unknown = [
-      ...SEO_AUDIT_EVIDENCE_LABELS,
-      ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
-    ].filter(
-      (label) => !AGENT_EVIDENCE_LABELS.has(label),
-    );
-    expect(unknown).toEqual([]);
+  it("names every evidence label in both shipped catalogues", () => {
+    const missing: string[] = [];
+    for (const locale of ["en", "zh"] as const) {
+      const copy = (locale === "en" ? enMessages : zhMessages).tools.seoAudit
+        .evidence as Readonly<Record<string, string>>;
+      for (const label of [
+        ...SEO_AUDIT_EVIDENCE_LABELS,
+        ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+      ]) {
+        if (!copy[label]?.trim()) missing.push(`${locale}:${label}`);
+        if (!AGENT_EVIDENCE_LABELS.has(label)) missing.push(`seam:${label}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });
 
