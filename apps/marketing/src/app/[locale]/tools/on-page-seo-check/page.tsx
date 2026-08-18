@@ -25,6 +25,13 @@ interface FaqItem {
   readonly a: string;
 }
 
+interface RelatedTool {
+  /** The destination itself, never a route that redirects to it. */
+  readonly href: string;
+  readonly name: string;
+  readonly blurb: string;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -58,6 +65,7 @@ export default async function OnPageSeoCheckPage({
   const home = locale === "zh" ? "首页" : "Home";
   const tools = locale === "zh" ? "工具" : "Tools";
   const faqItems = t.raw("faq.items") as readonly FaqItem[];
+  const relatedTools = t.raw("related.items") as readonly RelatedTool[];
 
   return (
     <div className="min-h-screen bg-brand-bg pt-9 pb-24">
@@ -175,6 +183,41 @@ export default async function OnPageSeoCheckPage({
               </div>
             ))}
           </dl>
+        </section>
+
+        {/*
+          Where the page hands off.
+
+          The checker answers one question about one page; everything it
+          deliberately does not answer — the site around that page, what to
+          write next, why traffic moved — is a different tool here, and a
+          visitor who reaches the bottom of this report is exactly the person
+          with that next question.
+        */}
+        <section className="mt-14 border-t border-brand-border pt-10">
+          <h2 className="text-[21px] text-text-dark-primary">
+            {t("related.title")}
+          </h2>
+          <p className="mt-3 max-w-[720px] text-[14px] leading-[1.7] text-text-dark-secondary">
+            {t("related.intro")}
+          </p>
+          <ul className="mt-6 grid gap-4 md:grid-cols-2">
+            {relatedTools.map((tool) => (
+              <li key={tool.href}>
+                <a
+                  className="block rounded-xl border border-brand-border-card bg-brand-panel p-5 transition-colors hover:border-brand-accent/40"
+                  href={localePath(locale, tool.href)}
+                >
+                  <span className="block text-[15px] text-text-dark-primary">
+                    {tool.name}
+                  </span>
+                  <span className="mt-1.5 block text-[13.5px] leading-[1.7] text-text-dark-secondary">
+                    {tool.blurb}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </div>
