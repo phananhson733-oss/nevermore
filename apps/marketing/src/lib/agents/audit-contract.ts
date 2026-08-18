@@ -27,6 +27,7 @@ import {
   isSeoAuditPayload,
   isSeoAuditRecord,
   isKeywordEvidenceRecord,
+  isPagePerformanceRecord,
   isSearchPerformanceRecord,
 } from "@sf/public-tools/seo-audit/contract";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@sf/public-tools/seo-audit/record-ledger";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 
 export { isCanonicalIsoTimestamp };
 
@@ -110,6 +112,14 @@ export type AgentAuditResult = Pick<
    */
   readonly keywordChecks?: AgentKeywordChecks;
   /**
+   * CrUX field data for the submitted page, when a key is configured.
+   *
+   * Absent means one of two settled facts, both stated by the records: no key
+   * at the deploy boundary, or CrUX had nothing for that URL. Neither is a
+   * failure of the audit.
+   */
+  readonly pagePerformance?: AgentPagePerformance;
+  /**
    * Present only when the visitor holds a Search Console grant covering the
    * audited host.
    *
@@ -131,6 +141,38 @@ export type AgentAuditResult = Pick<
    */
   readonly searchPerformanceUnavailable?: true;
 };
+
+/**
+ * Version of the CrUX field region.
+ *
+ * Freezes the form factor, that origin-level data is used as a fallback and
+ * labelled, and that a metric CrUX withheld is unverified rather than zero.
+ */
+export const AGENT_PAGE_PERFORMANCE_VERSION =
+  "page_performance.agent.v1" as const;
+
+export interface AgentPagePerformance {
+  readonly version: typeof AGENT_PAGE_PERFORMANCE_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentPagePerformance(
+  value: unknown,
+): value is AgentPagePerformance {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_PAGE_PERFORMANCE_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isPagePerformanceRecord)
+  ) {
+    return false;
+  }
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = PAGE_PERFORMANCE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
 
 /**
  * Version of the derived keyword-check region.
@@ -243,6 +285,7 @@ export function allAgentAuditRecords(
     ...data.result.records,
     ...(data.result.searchPerformance?.records ?? []),
     ...(data.result.keywordChecks?.records ?? []),
+    ...(data.result.pagePerformance?.records ?? []),
   ];
 }
 
@@ -496,6 +539,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.keywordChecks === undefined ||
       isAgentKeywordChecks(value.keywordChecks)
+    ) ||
+    !(
+      value.pagePerformance === undefined ||
+      isAgentPagePerformance(value.pagePerformance)
     ) ||
     !(
       value.searchPerformance === undefined ||

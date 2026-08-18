@@ -263,6 +263,10 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
   D1: ["title_duplicate"],
+  "8.1": ["core_web_vital_lcp"],
+  "8.2": ["core_web_vital_inp"],
+  "8.3": ["core_web_vital_cls"],
+  "8.4": ["core_web_vital_ttfb"],
   "2.3": ["title_without_target_query"],
   "3.2": ["h1_without_target_query"],
   C3: ["average_click_depth"],
@@ -391,6 +395,44 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       max: 0.2,
     },
   ],
+  // The three published CrUX bands, expressed exactly: pass at or below the
+  // good bound, degrade through the needs-improvement band, fail past it.
+  "8.1": [
+    {
+      recordId: "core_web_vital_lcp",
+      kind: "aggregate-max",
+      label: "lcp_ms",
+      passAtOrBelow: 2_500,
+      failAbove: 4_000,
+    },
+  ],
+  "8.2": [
+    {
+      recordId: "core_web_vital_inp",
+      kind: "aggregate-max",
+      label: "inp_ms",
+      passAtOrBelow: 200,
+      failAbove: 500,
+    },
+  ],
+  "8.3": [
+    {
+      recordId: "core_web_vital_cls",
+      kind: "aggregate-max",
+      label: "cls_score",
+      passAtOrBelow: 0.1,
+      failAbove: 0.25,
+    },
+  ],
+  "8.4": [
+    {
+      recordId: "core_web_vital_ttfb",
+      kind: "aggregate-max",
+      label: "ttfb_ms",
+      passAtOrBelow: 800,
+      failAbove: 1_800,
+    },
+  ],
   "9.5": [
     {
       // Published as "1-6 preferred; 7-10 low-click; 11+ ineffective", which
@@ -473,7 +515,11 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   if (["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5", "9.5"].includes(id)) {
     return "access-required";
   }
-  if (/^8\./.test(id) || /^9\.[134]$/.test(id)) return "not-integrated";
+  // 8.5 and 8.6 stay: both need Lighthouse lab audit details (transfer bytes,
+  // render-blocking resources) that the field read does not return, and 8.6's
+  // detail array is absent rather than empty when the audit did not run, which
+  // reads as a pass on something unmeasured.
+  if (/^8\.[56]$/.test(id) || /^9\.[134]$/.test(id)) return "not-integrated";
   return ready ? "ready" : "needs-integration";
 }
 
@@ -657,6 +703,22 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "1.8": l(
     "This page answers 200 while telling the reader it has nothing. Both signals had to be present for it to be reported — the not-found wording and a body below the published floor — so a short page that says nothing of the kind is not here, and neither is an article about error pages. Serve 404 or 410 if the URL is gone; if it should exist, treat this as a rendering failure and fix what the page is not producing. Do not add noindex as the fix: the URL still resolves, still consumes crawl budget, and still collects internal links.",
     "这个页面返回 200，却在告诉读者它什么都没有。要被报出来必须两个信号同时成立——「找不到」类措辞，以及正文量低于公布的下限——所以内容少但没说这类话的页面不在这里，讲错误页的文章也不在这里。如果这个 URL 已经没有了，就返回 404 或 410；如果它本该存在，就把这当作渲染失败来查，修的是页面没能产出的东西。不要用 noindex 当修法：URL 依然解析得通，依然消耗抓取预算，依然在收内链。",
+  ),
+  "8.1": l(
+    "LCP is when the largest thing above the fold finishes painting, so the fix is almost always about that one element rather than about the page. Find it first — it is usually the hero image or the first block of text — and then work in this order: make sure it is discoverable in the initial HTML rather than inserted by script, give it priority so nothing queues ahead of it, and only then optimise its bytes. Reordering what loads first beats compressing what loads late. This is CrUX p75 over a 28-day window of real visits, so it lags anything you ship today by weeks.",
+    "LCP 是首屏中最大的那个元素完成绘制的时刻，所以修法几乎总是围绕那一个元素，而不是围绕整个页面。先把它找出来——通常是首屏大图或第一段文字——然后按这个顺序做：确认它在初始 HTML 里就能被发现、而不是由脚本插入；给它优先级，别让别的东西排在它前面；最后才去压它的体积。调整加载顺序的收益，大于压缩晚到的资源。这是真实访问在 28 天窗口上的 CrUX p75，所以你今天发布的改动要几周后才反映到这里。",
+  ),
+  "8.2": l(
+    "INP measures how long the page takes to respond after a real person taps or clicks, so it is about the main thread being busy, not about download size. Look for the work that runs on interaction: a handler doing layout-triggering reads and writes together, a large re-render where a small one would do, third-party script executing on the same thread. Break long tasks up and yield between them — a visible response inside 200 ms with the real work continuing behind it counts as fast, because that is what the metric asks.",
+    "INP 衡量的是真人点击或触摸之后，页面需要多久才响应，所以它关乎主线程是否繁忙，而不关乎下载体积。去找在交互时运行的那部分工作：一个把读布局和写布局混在一起的处理函数、一次本可以很小的大范围重渲染、跑在同一线程上的第三方脚本。把长任务拆开并在之间让出线程——在 200 毫秒内给出可见的响应、真正的工作在后面继续，这就算快，因为这正是这个指标所问的。",
+  ),
+  "8.3": l(
+    "CLS counts content moving after the reader has started reading, and every cause is something that took up space it had not reserved. Give images and video explicit width and height, or an aspect ratio, so the box exists before the file arrives. Reserve the space for anything injected later — a banner, a consent notice, an ad slot — rather than pushing the page down when it appears. Late-loading webfonts shift text; a size-adjusted fallback stops that. None of this is a size problem, so compressing assets will not move it.",
+    "CLS 统计的是读者已经开始阅读之后内容仍在移动，而每一个成因都是某个东西占了它没有事先预留的空间。给图片和视频写明宽高，或者写明宽高比，让盒子在文件到达之前就存在。为任何后插入的东西预留空间——横幅、同意提示、广告位——而不是等它出现时把页面往下推。晚加载的网页字体会让文字位移；用做过尺寸调整的兜底字体可以消除这一点。这些都不是体积问题，所以压缩资源不会让它变好。",
+  ),
+  "8.4": l(
+    "TTFB is time spent before the first byte arrives, which means it is server and network, not page. Split it before optimising: DNS and connection setup, then how long the server took to produce the document, then how far the response travelled. A slow server response usually means an uncached database query or a render on every request; distance usually means the document is served from one region to a worldwide audience, and a CDN in front of the HTML — not just the assets — is the fix. Note that this number is above 800 ms for many perfectly healthy sites serving a distant audience, so read it next to where your visitors actually are.",
+    "TTFB 是第一个字节到达之前花掉的时间，也就是说它属于服务端和网络，不属于页面。优化前先拆开看：DNS 与连接建立、服务端产出文档所用的时间、以及响应走过的距离。服务端慢通常意味着某个没有缓存的数据库查询或者每次请求都在重新渲染；距离远通常意味着文档只从一个区域提供给全球访客，此时该做的是在 HTML 前面——不只是静态资源前面——加一层 CDN。要注意：对许多完全健康、但受众离服务器很远的站点，这个数字也会超过 800 毫秒，所以要结合你的访客究竟在哪里来读它。",
   ),
   D1: l(
     "Two pages with the same title are two pages asking to be shown for the same thing, and a search system picks one. Group the duplicates before editing: an exact repeat across a paginated archive or a filtered listing is a template that never varies its title, and the fix is to give the template a variable — the page number, the filter, the section — not to hand-write forty titles. If the pages really are the same page, the duplicate title is the symptom and the canonical is the fix. Variants that already converge on a canonical are excluded from this count, so what is left is genuinely competing.",

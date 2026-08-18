@@ -23,8 +23,14 @@ import {
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
 import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  buildPagePerformanceRecords,
+  type PagePerformanceRaw,
+} from "@sf/public-tools/seo-audit/page-performance";
+import { defaultPagePerformanceReader } from "./page-performance-reader.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
+  AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
@@ -71,6 +77,16 @@ export interface AgentAuditHandlerDependencies {
    * Takes the collected pages because coverage is a statement about the pages
    * this crawl saw, and the projected result deliberately drops them.
    */
+  /**
+   * CrUX field data for the collected target page, or null.
+   *
+   * Optional and best-effort, exactly like Search Console: a run with no key,
+   * no field data or a slow PageSpeed response is a complete audit whose
+   * performance checks report the source they need. Never a failed audit.
+   */
+  readonly readPagePerformance?: (input: {
+    readonly url: string;
+  }) => Promise<PagePerformanceRaw | null>;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
@@ -107,6 +123,8 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   reportFirstRun: reportFirstToolRun,
   reportAs: "agent-audit",
   readSearchPerformance: (input) => readAgentSearchPerformance(input),
+  readPagePerformance: (input) =>
+    defaultPagePerformanceReader()?.(input) ?? Promise.resolve(null),
 };
 
 /**
@@ -459,6 +477,21 @@ export async function handleAgentAuditRequest(
     searchUnavailable = true;
   }
 
+  // Never lets PageSpeed decide whether the audit succeeded. Every way it can
+  // produce nothing — no key, no field data, a slow answer, a shared-quota 429
+  // — is the same settled outcome, and the records name which one.
+  let pagePerformance: PagePerformanceRaw | null = null;
+  if (result.targetInspected) {
+    try {
+      pagePerformance =
+        (await dependencies.readPagePerformance?.({
+          url: result.inspectedTargetUrl ?? result.targetUrl,
+        })) ?? null;
+    } catch {
+      pagePerformance = null;
+    }
+  }
+
   const keywordEvidence =
     input.value.targetQueries === null
       ? null
@@ -519,6 +552,16 @@ export async function handleAgentAuditRequest(
       // Same reason, one step further: a cache row is shared by host and these
       // numbers belong to one visitor's verified property.
       ...(searchPerformance === null ? {} : { searchPerformance }),
+      // Same boundary again: fetched per run against one URL, so it never
+      // enters the payload cached by host.
+      ...(result.targetInspected
+        ? {
+            pagePerformance: {
+              version: AGENT_PAGE_PERFORMANCE_VERSION,
+              records: buildPagePerformanceRecords(pagePerformance),
+            },
+          }
+        : {}),
       ...(searchUnavailable ? { searchPerformanceUnavailable: true } : {}),
     },
   };

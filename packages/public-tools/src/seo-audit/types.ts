@@ -45,7 +45,13 @@ export type SeoAuditCategory =
    * `search_performance` is: a crawl payload is cached by host and shared, and
    * one visitor's queries must never answer the next visitor's audit.
    */
-  | "keyword_evidence";
+  | "keyword_evidence"
+  /**
+   * CrUX field data for the submitted page. Outside CRAWL_CATEGORIES like the
+   * other two derived regions: it is fetched per run against one URL and does
+   * not belong in a payload cached by host.
+   */
+  | "page_performance";
 
 export type SeoAuditEvidenceValue = string | number | boolean | null;
 

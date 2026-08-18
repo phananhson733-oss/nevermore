@@ -5,7 +5,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
 import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
+import { buildPagePerformanceRecords } from "@sf/public-tools/seo-audit/page-performance";
 import {
+  AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_AUDIT_RECORD_CATEGORIES,
   AGENT_SEARCH_PERFORMANCE_VERSION,
   isAgentAuditSuccessEnvelope,
@@ -171,29 +173,34 @@ function dependencies(
 }
 
 describe("handleAgentAuditRequest", () => {
+  // Built by the producer, never written out by hand. The hand-written version
+  // was a single record chosen to satisfy the guard, so when a fourth record
+  // joined the ledger the fixture silently described a region the guard refuses
+  // — and the tests that read it never noticed, because they read the records
+  // rather than the envelope.
   const searchRegion = {
-    version: "search_performance.agent.v2" as const,
+    version: AGENT_SEARCH_PERFORMANCE_VERSION,
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
     endDate: "2026-08-15",
-    records: [
+    records: buildSearchPerformanceRecords(
       {
-        id: "impression_share_top_positions",
-        category: "search_performance" as const,
-        state: "observed" as const,
-        unit: "pages" as const,
-        population: "conditional_subset" as const,
-        tested: 1,
-        affected: 1,
-        observations: [
-          {
-            url: null,
-            values: [{ label: "top_position_impression_share", value: 0.42 }],
-          },
+        property: "sc-domain:acme.test",
+        startDate: "2026-07-19",
+        endDate: "2026-08-15",
+        pages: [
+          { key: "https://acme.test/", clicks: 3, impressions: 90, position: 4 },
         ],
-        limitation: null,
+        queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
+        pagesTruncated: false,
+        queriesTruncated: false,
+        targetPageQueries: null,
+        targetPageUrl: null,
+        confirmedQueries: [],
+        targetPageQueriesTruncated: false,
       },
-    ],
+      [],
+    ),
   };
 
   it("returns a region the client guard actually accepts", async () => {
@@ -241,6 +248,44 @@ describe("handleAgentAuditRequest", () => {
 
     expect(response.status).toBe(200);
     expect(region.records.length).toBeGreaterThan(0);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+  });
+
+  it("accepts every region this handler can attach, not only the search one", async () => {
+    // The gap the round-trip test above left. It proved one region's producer
+    // survives the guard; a later region used a population value the guard's
+    // own hand-written list did not know, so the whole envelope was refused —
+    // and every test that read the records rather than the envelope passed.
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => searchRegion,
+        readPagePerformance: async () => ({
+          url: "https://acme.test/",
+          sourceLevel: "url" as const,
+          lcp: 2_100,
+          inp: 150,
+          cls: 0.04,
+          ttfb: 600,
+          formFactor: "mobile" as const,
+        }),
+      }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          keywordChecks?: { records: readonly unknown[] };
+          pagePerformance?: { records: readonly unknown[] };
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    // Every region present, and the guard accepting the whole envelope with
+    // all of them attached at once.
+    expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(4);
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
@@ -399,6 +444,15 @@ describe("handleAgentAuditRequest", () => {
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
+          // Present with nothing measured, which is the informative shape: the
+          // limitation code says "no field-data source was configured" rather
+          // than leaving the reader to guess between that and "CrUX has no data
+          // for your page". The records come from the producer so this cannot
+          // drift from what the handler attaches.
+          pagePerformance: {
+            version: AGENT_PAGE_PERFORMANCE_VERSION,
+            records: buildPagePerformanceRecords(null),
+          },
         },
       },
     });
@@ -460,6 +514,10 @@ describe("handleAgentAuditRequest", () => {
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
+      pagePerformance: {
+        version: AGENT_PAGE_PERFORMANCE_VERSION,
+        records: buildPagePerformanceRecords(null),
+      },
     });
     expect(JSON.stringify(body)).not.toContain("private");
   });

@@ -3,6 +3,7 @@ import type {
   SeoAuditPage,
   SeoAuditPayload,
   SeoAuditRecord,
+  SeoAuditRecordPopulation,
   SeoAuditSiteResources,
   SeoAuditTargetPageExtract,
 } from "./types.ts";
@@ -46,11 +47,26 @@ function isEvidenceValue(
   );
 }
 
+/**
+ * Every population value, proved complete at compile time.
+ *
+ * A `Record` keyed by the union rather than an array of strings, because an
+ * array only proves there are no extras — adding a member to the type left this
+ * list short and the wire guard silently refused every region that used the new
+ * value. `satisfies` would not have caught it either, for the same reason.
+ * Adding a member to `SeoAuditRecordPopulation` now fails the build here.
+ */
+const RECORD_POPULATIONS: Readonly<Record<SeoAuditRecordPopulation, true>> = {
+  every_collected_page: true,
+  conditional_subset: true,
+  site_resource: true,
+  target_page: true,
+};
+
 function isRecordPopulation(value: unknown): boolean {
   return (
-    value === "every_collected_page" ||
-    value === "conditional_subset" ||
-    value === "site_resource"
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(RECORD_POPULATIONS, value)
   );
 }
 
@@ -62,7 +78,8 @@ const CRAWL_CATEGORIES = [
   "structure",
   "links",
   "structured_data",
-  // `search_performance` and `keyword_evidence` are deliberately absent. A
+  // `search_performance`, `keyword_evidence` and `page_performance` are
+  // deliberately absent. A
   // crawl payload is cached by host and shared across visitors, while both of
   // those belong to one visitor — an authorized property, a typed-in query.
   // Refusing the categories here is what stops such a record from ever
@@ -91,6 +108,13 @@ export function isKeywordEvidenceRecord(
   value: unknown,
 ): value is SeoAuditRecord {
   return isRecordOfCategory(value, ["keyword_evidence"]);
+}
+
+/** The same, for the CrUX field region fetched per run against one URL. */
+export function isPagePerformanceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["page_performance"]);
 }
 
 function isRecordOfCategory(

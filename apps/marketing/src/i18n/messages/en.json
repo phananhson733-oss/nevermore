@@ -971,7 +971,11 @@
         "this_page_has_no_title_so_there_was_no_text_to_compare": "This page has no title at all, which is reported by its own check. There was no text here to compare to the query.",
         "this_page_has_no_h1_so_there_was_no_text_to_compare": "This page has no H1 at all, which is reported by its own check. There was no text here to compare to the query.",
         "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "Matched as a token sequence on the confirmed query. No synonyms, no stemming, and multi-word queries must appear adjacent and in order.",
-        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "A page is reported only when it states a not-found phrase AND falls below the published body floor. A soft 404 with a long body of suggestions is not detected here."
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "A page is reported only when it states a not-found phrase AND falls below the published body floor. A soft 404 with a long body of suggestions is not detected here.",
+        "no_field_data_source_was_configured_for_this_run": "No field-data source was configured for this run, so CrUX was never asked. This is not a statement that CrUX has nothing for the page.",
+        "crux_reported_no_field_data_for_this_metric_on_this_url": "CrUX reported no field data for this metric on this URL, which usually means too few real visits to publish a p75.",
+        "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values": "CrUX had no URL-level data, so these are the whole origin's p75 values. A fast page can inherit a slow site's numbers here.",
+        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "CrUX p75 over a 28-day window of real visits. It lags anything shipped today by weeks."
       },
       "records": {
         "robots_resource": {
@@ -1149,6 +1153,22 @@
         "soft_404_page": {
           "title": "Pages that answer 200 while saying they have nothing",
           "description": "Collected pages that return 200, state a not-found phrase in their title or opening text, and carry less body text than the published floor. Both signals are required: thin content alone is a short page, and the phrase alone is an article about error pages."
+        },
+        "core_web_vital_lcp": {
+          "title": "Largest Contentful Paint (CrUX p75)",
+          "description": "The 75th-percentile LCP CrUX reports for this URL over a 28-day window of real visits, on mobile. Field data, never a lab estimate."
+        },
+        "core_web_vital_inp": {
+          "title": "Interaction to Next Paint (CrUX p75)",
+          "description": "The 75th-percentile INP CrUX reports for this URL over a 28-day window of real visits, on mobile. Measures how long the page took to respond to a real tap or click."
+        },
+        "core_web_vital_cls": {
+          "title": "Cumulative Layout Shift (CrUX p75)",
+          "description": "The 75th-percentile CLS CrUX reports for this URL over a 28-day window of real visits, on mobile. Unitless; counts content moving after the reader began reading."
+        },
+        "core_web_vital_ttfb": {
+          "title": "Time to First Byte (CrUX p75)",
+          "description": "The 75th-percentile TTFB CrUX reports for this URL over a 28-day window of real visits, on mobile. Server and network time, not page time."
         }
       },
       "evidence": {
@@ -1226,7 +1246,13 @@
         "matched_phrase": "Phrase found",
         "body_text_units": "Body text units",
         "text_units_basis": "Counted as",
-        "text_units_floor": "Floor"
+        "text_units_floor": "Floor",
+        "lcp_ms": "LCP",
+        "inp_ms": "INP",
+        "cls_score": "CLS",
+        "ttfb_ms": "TTFB",
+        "crux_source_level": "CrUX data level",
+        "crux_form_factor": "Form factor"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -1288,7 +1314,7 @@
       "limit1Title": "Search Console and index coverage",
       "limit1Body": "The tool does not connect to GSC and does not claim that a page is indexed, ranking, or receiving traffic.",
       "limit2Title": "Rendered and performance data",
-      "limit2Body": "The tool does not execute page JavaScript and does not produce Lighthouse, CrUX, Core Web Vitals, or mobile-render results.",
+      "limit2Body": "This tool does not execute page JavaScript and produces no Lighthouse or mobile-render results. The Agent audit reads CrUX field data for the submitted page when a key is configured; this public tool does not.",
       "limit3Title": "A complete inventory for very large sites",
       "limit3Body": "The synchronous tool collects as much as the current run can safely cover. Large sites may receive partial coverage; truly large site-wide crawls require a future asynchronous job version.",
       "useCasesEyebrow": "Audit records",
@@ -2899,7 +2925,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "Public crawl facts only",
-      "dataBoundaryBody": "This run is not saved to an app project and does not use PSI, CrUX, JavaScript rendering, GSC index coverage, traffic, or ranking data.",
+      "dataBoundaryBody": "This run is not saved to an app project. It reads CrUX field data for the submitted page when a key is configured, and does not use JavaScript rendering, GSC index coverage, or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "Technical evidence before guidance",
       "howBody": "The Agent reports only what the bounded crawl collected and keeps every unverified condition separate from a checked condition.",
@@ -3704,7 +3730,7 @@
       "tech": {
         "title": "Start a technical evidence run",
         "body": "Enter a public host or URL. The server normalizes and validates the destination; private and local networks remain blocked.",
-        "scope": "This run returns crawl, indexability, and link records only. It does not run PSI/CrUX, JavaScript rendering, or a score."
+        "scope": "This run returns crawl, indexability and link records, plus CrUX field data for the submitted page when a key is configured. It does not execute JavaScript."
       },
       "accountGate": "Verified account required · identity access only",
       "urlLabel": "Website host or URL",

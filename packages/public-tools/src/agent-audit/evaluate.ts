@@ -130,6 +130,13 @@ function formatAggregate(label: string, value: number): [string, string] {
     return [pct, pct];
   }
   if (label.endsWith("_ms")) return [`${Math.round(value)} ms`, `${Math.round(value)} 毫秒`];
+  // A unitless score needs its own precision. One decimal renders a CLS of
+  // 0.05 as "0.1" — the pass boundary itself — so a page comfortably inside
+  // the good band displays as sitting exactly on the line.
+  if (label.endsWith("_score")) {
+    const score = value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+    return [score, score];
+  }
   const rounded = value.toFixed(1).replace(/\.0$/, "");
   return [rounded, rounded];
 }

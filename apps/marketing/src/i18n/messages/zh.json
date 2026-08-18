@@ -971,7 +971,11 @@
         "this_page_has_no_title_so_there_was_no_text_to_compare": "这个页面根本没有 title，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
         "this_page_has_no_h1_so_there_was_no_text_to_compare": "这个页面根本没有 H1，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
         "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "按已确认目标词的词序列匹配。不做同义词、不做词形还原，多词查询必须相邻且保持顺序。",
-        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "只有同时满足「出现『找不到』类措辞」与「正文量低于公布下限」才会被报出。一个带有大量推荐内容、正文很长的软 404 在这里检测不到。"
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "只有同时满足「出现『找不到』类措辞」与「正文量低于公布下限」才会被报出。一个带有大量推荐内容、正文很长的软 404 在这里检测不到。",
+        "no_field_data_source_was_configured_for_this_run": "本次运行没有配置实况数据来源，因此从未向 CrUX 发起查询。这不代表 CrUX 对该页面没有数据。",
+        "crux_reported_no_field_data_for_this_metric_on_this_url": "CrUX 就该 URL 的这项指标没有返回实况数据，通常意味着真实访问量不足以发布 p75。",
+        "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values": "CrUX 没有 URL 级数据，因此这里是整个源站的 p75 值。一个快的页面可能在这里继承整站的慢。",
+        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "真实访问在 28 天窗口上的 CrUX p75。今天发布的任何改动要几周后才反映到这里。"
       },
       "records": {
         "robots_resource": {
@@ -1149,6 +1153,22 @@
         "soft_404_page": {
           "title": "返回 200 却声称什么都没有的页面",
           "description": "已采集页面中，返回 200、在标题或开头文本里出现「找不到」类措辞、且正文量低于公布下限的页面。两个信号必须同时成立：仅内容少只是短页面，仅有措辞则可能是讲错误页的文章。"
+        },
+        "core_web_vital_lcp": {
+          "title": "最大内容绘制（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 LCP 第 75 百分位值。实况数据，不是实验室估算。"
+        },
+        "core_web_vital_inp": {
+          "title": "交互到下次绘制（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 INP 第 75 百分位值。衡量页面在真人点击或触摸后需要多久才响应。"
+        },
+        "core_web_vital_cls": {
+          "title": "累积布局偏移（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 CLS 第 75 百分位值。无单位；统计读者开始阅读之后内容仍在移动的程度。"
+        },
+        "core_web_vital_ttfb": {
+          "title": "首字节时间（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 TTFB 第 75 百分位值。属于服务端与网络时间，不是页面时间。"
         }
       },
       "evidence": {
@@ -1226,7 +1246,13 @@
         "matched_phrase": "命中的措辞",
         "body_text_units": "正文计量单位数",
         "text_units_basis": "计量方式",
-        "text_units_floor": "下限"
+        "text_units_floor": "下限",
+        "lcp_ms": "LCP",
+        "inp_ms": "INP",
+        "cls_score": "CLS",
+        "ttfb_ms": "TTFB",
+        "crux_source_level": "CrUX 数据层级",
+        "crux_form_factor": "设备形态"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -1288,7 +1314,7 @@
       "limit1Title": "Search Console 与真实索引覆盖",
       "limit1Body": "工具不接入 GSC，也不声称页面已被收录、获得排名或产生流量。",
       "limit2Title": "渲染与性能数据",
-      "limit2Body": "工具不执行页面 JavaScript，也不生成 Lighthouse、CrUX、Core Web Vitals 或移动端渲染结果。",
+      "limit2Body": "本工具不执行页面 JavaScript，也不产出 Lighthouse 或移动端渲染结果。Agent 审计在配置了密钥时会读取所提交页面的 CrUX 实况数据；本公开工具不会。",
       "limit3Title": "大型网站的完整页面全集",
       "limit3Body": "同步工具会在当前运行能力内尽可能采集；大型网站可能只得到部分覆盖，真正的大规模全站扫描需要后续异步任务版本。",
       "useCasesEyebrow": "审计记录",
@@ -2899,7 +2925,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "仅使用公开抓取事实",
-      "dataBoundaryBody": "本次运行不会保存到 App 项目，也不使用 PSI、CrUX、JavaScript 渲染、GSC 索引覆盖、流量或排名数据。",
+      "dataBoundaryBody": "本次运行不会保存到 App 项目。在配置了密钥时会读取所提交页面的 CrUX 实况数据；不使用 JavaScript 渲染、GSC 索引覆盖或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "先看技术证据，再看建议",
       "howBody": "Agent 只报告有边界抓取实际采集到的内容，并将每个无法核验项与已检查情况分开。",
@@ -2911,7 +2937,7 @@
       "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的技术方案",
       "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
-      "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
+      "finalBoundary": "模板是可调整预览。本 Agent 不会运行 Lighthouse、不执行 JavaScript、不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
     },
     "workbench": {
       "stage1": "阶段 01 · 目标",
@@ -3704,7 +3730,7 @@
       "tech": {
         "title": "开始技术证据检查",
         "body": "输入公开主机名或 URL。服务端会规范化并验证目标；私有网络和本机地址仍会被拦截。",
-        "scope": "本次运行只返回抓取、索引性和链接记录，不运行 PSI/CrUX、JavaScript 渲染或评分。"
+        "scope": "本次运行返回抓取、可索引性与链接记录，并在配置了密钥时返回所提交页面的 CrUX 实况数据。不执行 JavaScript。"
       },
       "accountGate": "需要已验证账号 · 仅身份信息访问",
       "urlLabel": "网站主机名或 URL",
