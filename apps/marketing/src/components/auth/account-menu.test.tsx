@@ -227,4 +227,41 @@ describe("AccountSummaryMobile", () => {
 
     expect(host.textContent).toBe("");
   });
+
+  /**
+   * Sign-out reads after the account has been named, not before. The other way
+   * round the sheet offered to sign you out before saying whose session it was.
+   */
+  it("offers sign-out below the account it names", async () => {
+    await mount(SIGNED_IN);
+
+    const text = host.textContent ?? "";
+    expect(text).toContain(en.common.signOut);
+    expect(text.indexOf("ada@example.test")).toBeLessThan(
+      text.indexOf(en.common.signOut),
+    );
+  });
+
+  it("ends the session when sign-out is chosen", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(null, { status: 200 }),
+    ) as unknown as typeof fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, reload: vi.fn() },
+    });
+
+    await mount(SIGNED_IN);
+    const button = [...host.querySelectorAll("button")].find((node) =>
+      (node.textContent ?? "").includes(en.common.signOut),
+    );
+    await act(async () => {
+      button?.click();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/sign-out", {
+      method: "POST",
+    });
+  });
 });

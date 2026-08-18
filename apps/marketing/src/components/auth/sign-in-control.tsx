@@ -1,5 +1,5 @@
 // @input  -- the header 的共享登录态、localePath、common.*
-// @output — 未登录时的登录按钮与指向 SEO Agent 的主审计按钮（登出在 account-menu）
+// @output — 未登录时的登录按钮与指向 SEO Agent 的主审计按钮（登出全在 account-menu）
 // @pos    -- Header 右侧的登录入口，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -7,7 +7,6 @@
 import { useLocale, useTranslations } from "next-intl";
 import { localePath } from "../../lib/locale-path";
 import type { AccountState } from "../../lib/auth/use-account.ts";
-import { signOut } from "./sign-out-action.ts";
 
 /**
  * The header's sign-in affordance.
@@ -96,20 +95,21 @@ export function SignInControlMobile({
       >
         {t("common.runAudit")}
       </a>
-      <button
-        type="button"
-        onClick={() => {
-          if (signedIn) {
-            void signOut();
-            return;
-          }
-          onNavigate();
-          onSignIn();
-        }}
-        className="text-center text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
-      >
-        {signedIn ? t("common.signOut") : t("common.signIn")}
-      </button>
+      {/* Signed in, sign-out sits with the account facts in AccountSummaryMobile
+          below, mirroring the desktop split. Putting it here left the sheet
+          reading "sign out" before it said whose account it was. */}
+      {signedIn ? null : (
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate();
+            onSignIn();
+          }}
+          className="text-center text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
+        >
+          {t("common.signIn")}
+        </button>
+      )}
     </>
   );
 }
