@@ -3558,7 +3558,30 @@
         "evidenceNotObservedTitle": "No affected unit observed",
         "evidenceNotObservedBody": "This check ran against the collected sample and found no affected unit. Nothing was found inside the bounded crawl; that is not proof that nothing exists outside it.",
         "evidenceNoObservationTitle": "No displayable observation",
-        "evidenceNoObservationBody": "This run kept no observation record for the selected page on this check. Read the measured value and evidence source above before treating it as actionable."
+        "evidenceNoObservationBody": "This run kept no observation record for the selected page on this check. Read the measured value and evidence source above before treating it as actionable.",
+        "draft": {
+          "action": "Draft it",
+          "running": "Drafting…",
+          "offer": "Writes a draft from the text this run collected on the page. Preview only — nothing is applied to the site.",
+          "readyLabel": "Draft · review only",
+          "boundary": "The draft is written only from text this run collected on the page, so it will not promise something the page cannot deliver. Check it before you publish.",
+          "fields": {
+            "title": "Title",
+            "metaDescription": "Meta description",
+            "openingLine": "Opening line",
+            "h1": "H1",
+            "h2": "H2"
+          },
+          "errors": {
+            "auth_required": "Sign in to draft.",
+            "auth_unavailable": "Your sign-in state could not be read just now. Try again shortly.",
+            "invalid_request": "There is no page text to draft from for this item.",
+            "rate_limited": "You have used this hour's drafts. Try again shortly.",
+            "quota_unavailable": "The quota could not be read just now. Try again shortly.",
+            "drafts_unavailable": "This deployment has no drafting model configured.",
+            "draft_unusable": "The reply came back in a format we cannot use, so nothing is shown. You can try again."
+          }
+        }
       },
       "seo": {
         "title": "Start an SEO evidence run",

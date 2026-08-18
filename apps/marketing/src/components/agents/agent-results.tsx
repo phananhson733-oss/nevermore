@@ -259,6 +259,7 @@ export function AgentResults({
         targetUrl={data.result.targetUrl}
         evaluatedChecks={scopedChecks}
         records={data.result.records}
+        targetPageExtract={data.result.targetPageExtract}
         profile={profile}
         selectedRecommendationId={selectedRecommendationIds[scope]}
         onSelectRecommendation={(recommendationId) =>

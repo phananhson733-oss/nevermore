@@ -3558,7 +3558,30 @@
         "evidenceNotObservedTitle": "未观察到受影响单元",
         "evidenceNotObservedBody": "该检查已在已采集样本上执行，未发现受影响的单元。有边界抓取范围内没有发现，并不能证明范围之外也没有。",
         "evidenceNoObservationTitle": "没有可展示的观测",
-        "evidenceNoObservationBody": "本次运行没有为所选页面在该检查上保留观测记录。在把它当作可执行项之前，请先看上方的实测值与证据来源。"
+        "evidenceNoObservationBody": "本次运行没有为所选页面在该检查上保留观测记录。在把它当作可执行项之前，请先看上方的实测值与证据来源。",
+        "draft": {
+          "action": "生成草稿",
+          "running": "正在生成…",
+          "offer": "按本页已采集到的文字生成一份草稿。仅供审阅，不会应用到站点。",
+          "readyLabel": "草稿 · 仅供审阅",
+          "boundary": "草稿只依据本页已采集到的文字写成，不会替页面许下它兑现不了的承诺。发布前请自行核对。",
+          "fields": {
+            "title": "Title",
+            "metaDescription": "Meta description",
+            "openingLine": "首句",
+            "h1": "H1",
+            "h2": "H2"
+          },
+          "errors": {
+            "auth_required": "请先登录再生成草稿。",
+            "auth_unavailable": "登录状态暂时读不到，请稍后再试。",
+            "invalid_request": "这一项没有可用于生成草稿的页面文字。",
+            "rate_limited": "本小时的草稿次数已用完，稍后再试。",
+            "quota_unavailable": "配额暂时读不到，请稍后再试。",
+            "drafts_unavailable": "本部署未配置生成模型，暂不提供草稿。",
+            "draft_unusable": "这次返回的内容格式不可用，没有展示。可以再试一次。"
+          }
+        }
       },
       "seo": {
         "title": "开始 SEO 证据检查",

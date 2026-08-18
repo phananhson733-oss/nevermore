@@ -15,7 +15,8 @@
     "./keyword-opportunity/csv": "./src/keyword-opportunity/csv.ts",
     "./keyword-opportunity/next-checks": "./src/keyword-opportunity/next-checks.ts",
     "./seo-audit/record-ledger": "./src/seo-audit/record-ledger.ts",
-    "./seo-audit/search-performance": "./src/seo-audit/search-performance.ts"
+    "./seo-audit/search-performance": "./src/seo-audit/search-performance.ts",
+    "./seo-audit/solution-draft": "./src/seo-audit/solution-draft.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

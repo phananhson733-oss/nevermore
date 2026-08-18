@@ -14,7 +14,15 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import type { SeoAuditEvidenceValue, SeoAuditRecord } from "@sf/public-tools";
+import type {
+  SeoAuditEvidenceValue,
+  SeoAuditRecord,
+  SeoAuditTargetPageExtract,
+} from "@sf/public-tools";
+import {
+  AgentSolutionDraft,
+  draftKindFor,
+} from "./agent-solution-draft";
 import type {
   AgentAuditEngineState,
   AgentAuditEvaluatedCheck,
@@ -221,10 +229,12 @@ function SelectedSolution({
   recommendation,
   locale,
   profile,
+  targetPageExtract,
 }: {
   readonly recommendation: RankedAgentRecommendation;
   readonly locale: string;
   readonly profile: AgentProfileDraft;
+  readonly targetPageExtract: SeoAuditTargetPageExtract | null;
 }) {
   const t = useTranslations("agents.workbench.recommendations");
   const diagnosisT = useTranslations("agents.workbench.diagnosis");
@@ -257,6 +267,7 @@ function SelectedSolution({
     measurement,
     evidenceRecords: recommendation.evidenceRecords,
   });
+  const draftKind = draftKindFor(template.kind);
   const contextFacts =
     recommendation.agent === "seo"
       ? [
@@ -348,6 +359,21 @@ function SelectedSolution({
               ? `${t("unavailableInvestigation")}\n\n${template.preview}`
               : template.preview}
           </pre>
+          {/*
+            The preview above prints what this run measured and then a slot for
+            every sentence the owner still has to write. For the two shapes a
+            model can fill truthfully, offer to fill them — on request, so one
+            report is one call per solution the reader actually opens.
+          */}
+          {gated || draftKind === null ? null : (
+            <AgentSolutionDraft
+              kind={draftKind}
+              targetUrl={profile.targetUrl}
+              extract={targetPageExtract}
+              targetQuery={profile.targetQuery}
+              pageType={pageTypeLabel}
+            />
+          )}
         </DetailSection>
 
         <DetailSection icon={Gauge} label={t("contextLabel")}>
@@ -440,6 +466,15 @@ export interface AgentRecommendationsProps {
   readonly targetUrl: string;
   readonly evaluatedChecks: readonly AgentAuditEvaluatedCheck[];
   readonly records: readonly SeoAuditRecord[];
+  /**
+   * The inspected page's own static text.
+   *
+   * Passed to the draft endpoint rather than re-crawled: this is exactly the
+   * text the reader is looking at, and fetching it again would spend a request
+   * to learn nothing new. Null when the target was never collected as a page,
+   * which is also when a draft would have nothing true to work from.
+   */
+  readonly targetPageExtract: SeoAuditTargetPageExtract | null;
   readonly profile: AgentProfileDraft;
   readonly selectedRecommendationId: string | null;
   readonly onSelectRecommendation: (recommendationId: string) => void;
@@ -452,6 +487,7 @@ export function AgentRecommendations({
   targetUrl,
   evaluatedChecks,
   records,
+  targetPageExtract,
   profile,
   selectedRecommendationId,
   onSelectRecommendation,
@@ -570,6 +606,7 @@ export function AgentRecommendations({
         recommendation={selected}
         locale={locale}
         profile={profile}
+        targetPageExtract={targetPageExtract}
       />
     </div>
   );
