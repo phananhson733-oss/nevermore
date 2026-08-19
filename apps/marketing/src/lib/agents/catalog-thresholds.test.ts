@@ -6,6 +6,8 @@
 import { describe, expect, it } from "vitest";
 import { parsePage } from "@sf/sources/crawl-public-preview";
 import { buildSeoAuditReport, PAGE_AUDIT_GROUPS } from "@sf/public-tools";
+// The subpath, not the barrel: the width function is not on the package root.
+import { displayWidth } from "@sf/public-tools/seo-audit/text-width";
 import type { SeoAuditRaw } from "@sf/public-tools";
 
 /**
@@ -33,14 +35,23 @@ function catalogueCheck(id: string) {
 
 function statedRange(id: string): { readonly min: number; readonly max: number } {
   const check = catalogueCheck(id);
-  const text = check.threshold.en;
-  const match = /(\d+)[–-](\d+)/.exec(text);
-  if (!match?.[1] || !match[2]) {
-    throw new Error(`no range in the rule text for ${id}: ${text}`);
-  }
+  const ranges = [check.threshold.en, check.threshold.zh].map((text) => {
+    const match = /(\d+)[–-](\d+)/.exec(text);
+    if (!match?.[1] || !match[2]) {
+      throw new Error(`no range in the rule text for ${id}: ${text}`);
+    }
+    return { min: Number(match[1]), max: Number(match[2]) };
+  });
+  const [en, zh] = ranges;
+  if (!en || !zh) throw new Error(`missing a localisation for ${id}`);
+  // Both catalogues interpolate the same constants today. Reading only English
+  // would let a future hand-edit move the Chinese numbers on their own, and the
+  // audience most affected by a width-versus-characters mix-up reads that one.
+  expect(zh, `${id} zh range differs from en`).toEqual(en);
   // Stated in display width, not characters: the distinction is the whole bug.
-  expect(text, id).toMatch(/display width/i);
-  return { min: Number(match[1]), max: Number(match[2]) };
+  expect(check.threshold.en, id).toMatch(/display width/i);
+  expect(check.threshold.zh, id).toContain("显示宽度");
+  return en;
 }
 
 function rawFromPages(
@@ -152,13 +163,50 @@ describe("the rule the catalogue prints is the rule the evaluator applies", () =
     ).toBe(1);
   });
 
+  it("flags a description exactly one unit below the stated minimum, and not at it", () => {
+    const { min } = statedRange("2.4");
+    const title = "a".repeat(30);
+    expect(
+      flagged(buildSeoAuditReport(rawFromPages([pageWith(title, "d".repeat(min))])), "meta_description_length_outside_range"),
+    ).toBe(0);
+    expect(
+      flagged(buildSeoAuditReport(rawFromPages([pageWith(title, "d".repeat(min - 1))])), "meta_description_length_outside_range"),
+    ).toBe(1);
+  });
+
+  it("measures the description bound in display width too", () => {
+    // Title and description are separate call sites. One of them returning to
+    // a character count while the other stays on width is a real shape for
+    // this bug to come back in, and the title case alone would not see it.
+    const { max } = statedRange("2.4");
+    const title = "a".repeat(30);
+    const atMax = "字".repeat(max / 2);
+    expect(displayWidth(atMax)).toBe(max);
+    expect(
+      flagged(buildSeoAuditReport(rawFromPages([pageWith(title, atMax)])), "meta_description_length_outside_range"),
+    ).toBe(0);
+    expect(
+      flagged(buildSeoAuditReport(rawFromPages([pageWith(title, `${atMax}字`)])), "meta_description_length_outside_range"),
+    ).toBe(1);
+  });
+
   it("measures the stated bound in display width, so CJK counts double", () => {
     // The distinction the old sentence lost. Half as many CJK characters reach
     // the same bound, and a catalogue that says "characters" sends a Chinese
     // author to exactly the wrong length.
     const { max } = statedRange("2.1");
-    const cjkAtMax = "字".repeat(max / 2);
-    const cjkOverMax = "字".repeat(max / 2 + 1);
+    // Built to the bound by measured width rather than by a halved count, so an
+    // odd bound fails here loudly instead of silently testing one unit short:
+    // `repeat` truncates a fractional count without complaining.
+    const perCjkChar = displayWidth("字");
+    expect(perCjkChar).toBe(2);
+    expect(max % perCjkChar, "bound not reachable in whole CJK characters").toBe(
+      0,
+    );
+    const cjkAtMax = "字".repeat(max / perCjkChar);
+    const cjkOverMax = `${cjkAtMax}字`;
+    expect(displayWidth(cjkAtMax)).toBe(max);
+    expect(displayWidth(cjkOverMax)).toBe(max + perCjkChar);
 
     expect(
       flagged(buildSeoAuditReport(rawFromPages([pageWith(cjkAtMax, FILLER.repeat(2))])), "title_length_outside_range"),

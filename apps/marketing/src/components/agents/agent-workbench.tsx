@@ -24,6 +24,7 @@ import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
 import {
   applyAgentProfileRefresh,
+  checkerHandoffEdits,
   createAgentProfileDraft,
   updateAgentProfile,
   type AgentProfileDraft,
@@ -868,12 +869,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       */
       setProfile(
         checkerDraft
-          ? updateAgentProfile(scoped, {
-              country: checkerDraft.country,
-              locale: checkerDraft.locale,
-              pageType: checkerDraft.pageType,
-              targetQuery: checkerDraft.targetQueries[0] ?? scoped.targetQuery,
-            })
+          ? updateAgentProfile(scoped, checkerHandoffEdits(checkerDraft))
           : scoped,
       );
       setHandoffQueries(checkerDraft ? checkerDraft.targetQueries : null);
