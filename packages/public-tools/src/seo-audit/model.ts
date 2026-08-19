@@ -365,6 +365,47 @@ function buildRecords(
       (node) =>
         REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !== undefined,
     ).map((node) => ({ type: node.type.trim().toLowerCase(), keys: node.keys }));
+  /**
+   * Lowercased, punctuation-free, whitespace-collapsed.
+   *
+   * A FAQPage routinely writes the question with a different apostrophe or a
+   * trailing question mark than the heading does. Matching the raw strings
+   * would report a page whose FAQ is right there on screen.
+   */
+  const normalizeForMatch = (text: string): string =>
+    text
+      .toLowerCase()
+      .replace(/[\p{P}\p{S}]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const visibleTextIndexOf = (page: SeoAuditPage): string => {
+    const raw = rawByUrl.get(page.url);
+    if (raw === undefined) return "";
+    return normalizeForMatch(
+      [...raw.projection.headings, ...raw.projection.paragraphs].join(" "),
+    );
+  };
+
+  /**
+   * Whether a missing question would mean the site broke its promise.
+   *
+   * The crawl keeps the first 50 paragraphs of a page. A long FAQ page puts
+   * its later answers past that line, so a question absent from what we kept
+   * is not a question absent from the page. Only judge when the paragraph
+   * list came back under the cap and there is a promise to judge.
+   */
+  const faqPromiseIsCheckable = (page: SeoAuditPage): boolean => {
+    const raw = rawByUrl.get(page.url);
+    if (raw === undefined) return false;
+    return (
+      (onPageOf(page)?.faqQuestions ?? []).length > 0 &&
+      raw.projection.paragraphs.length <
+        CRAWL_PROJECTION_LIMITS.maxParagraphs &&
+      raw.projection.headings.length < CRAWL_PROJECTION_LIMITS.maxHeadings
+    );
+  };
+
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -372,6 +413,22 @@ function buildRecords(
       page.finalStatus < 300 &&
       isHtml(page.contentType),
   );
+
+  const entrySubjectUrl = subjectUrlOf(`${raw.origin}/`);
+  /**
+   * Whether "nothing links here" means the site, or only means this crawl.
+   *
+   * An inbound count is a claim about every page that exists, built from the
+   * pages this run happened to fetch and the links it happened to keep. Both
+   * of those are bounded, and when either bound was reached the count stops
+   * being evidence about the site.
+   */
+  const outlinkListTruncated = raw.pages.some(
+    (page) =>
+      page.projection.internalOutlinks.length >=
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
+  );
+  const discoveryJudgeable = raw.stopReason === null && !outlinkListTruncated;
   // Duplicate detection runs only over self-canonical pages: a page whose
   // canonical resolves to another subject is excluded from grouping AND from
   // `tested`, so `tested` counts exactly the population the check ran over.
@@ -788,6 +845,46 @@ function buildRecords(
       observations: htmlPages
         .filter((page) => page.h1Count > 1)
         .map((page) => pageObservation(page, { h1_count: page.h1Count })),
+    }),
+    record({
+      id: "page_without_any_discovery_path",
+      // Tested population: collected HTML pages other than the entry URL.
+      //
+      // Distinct from `sitemap_page_without_observed_inlink`, which asks the
+      // narrower question "is this sitemap member linked to?". This one asks
+      // whether the page has ANY route in: no inbound internal link and no
+      // sitemap entry means the only way this run reached it was a redirect
+      // hop, and a search engine starting from the homepage has no path at all.
+      population: "conditional_subset",
+      category: "links",
+      tested: discoveryJudgeable
+        ? htmlPages.filter((page) => page.subjectUrl !== entrySubjectUrl)
+        : [],
+      observations: discoveryJudgeable
+        ? htmlPages
+            .filter(
+              (page) =>
+                page.subjectUrl !== entrySubjectUrl &&
+                page.inboundLinks === 0 &&
+                !page.sitemapMember,
+            )
+            .map((page) =>
+              pageObservation(page, {
+                observed_inbound_links: 0,
+                sitemap_member: false,
+                redirect_hops: page.redirectHops,
+              }),
+            )
+        : [],
+      // Two ways this run could invent an orphan that does not exist, both of
+      // them about what the crawl did not see rather than what the site did:
+      // a page linked only from beyond another page's 500-link cap, and a
+      // crawl that stopped before fetching the page that links here. Neither
+      // is distinguishable from a real orphan after the fact, so the rule
+      // declines to judge the whole site rather than name innocent pages.
+      limitation: discoveryJudgeable
+        ? "bounded_static_html_crawl_inlinks_only"
+        : "crawl_incomplete_inlinks_unreliable",
     }),
     record({
       id: "sitemap_page_without_observed_inlink",
@@ -1378,6 +1475,33 @@ function buildRecords(
         "only_types_in_the_reviewed_required_property_table_are_judged",
     }),
     record({
+      id: "faq_schema_question_not_on_page",
+      category: "structured_data",
+      // Tested population: pages that declare a FAQPage with questions.
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => faqPromiseIsCheckable(page)),
+      observations: htmlPages.flatMap((page) => {
+        if (!faqPromiseIsCheckable(page)) return [];
+        const visible = visibleTextIndexOf(page);
+        const absent = (onPageOf(page)?.faqQuestions ?? []).filter(
+          (question) => !visible.includes(normalizeForMatch(question)),
+        );
+        return absent.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                declared_faq_questions: (onPageOf(page)?.faqQuestions ?? [])
+                  .length,
+                questions_not_found_in_visible_text: absent.length,
+                // Named, not just counted: "3 of 8 questions are missing" is
+                // not something the reader can act on without knowing which.
+                first_missing_question: absent[0] ?? "",
+              }),
+            ];
+      }),
+      limitation: "faq_match_against_collected_paragraphs_only",
+    }),
+    record({
       id: "json_ld_parse_error",
       category: "structured_data",
       tested: htmlPages,
@@ -1499,7 +1623,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v9",
+      schemaVersion: "seo_audit.sitewide.v10",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

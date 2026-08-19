@@ -1006,7 +1006,9 @@
         "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish": "No clicks were reported in the window, so there is no split to publish.",
         "brand_terms_derived_from_the_property_and_matched_as_substrings": "Brand terms are derived from the authorised property and matched as substrings, so a query containing the name counts as brand.",
         "this_page_has_no_h3_so_there_is_no_section_to_measure": "This page has no H3 at all, so there is no section to measure. Whether the outline should have a third level is check 3.5's finding.",
-        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "The first image in document order, judged only when the markup declares a size large enough for it to be the image a reader came for. A static crawl has no viewport, and a 32-pixel logo mark is the first image on a very large share of sites."
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "The first image in document order, judged only when the markup declares a size large enough for it to be the image a reader came for. A static crawl has no viewport, and a 32-pixel logo mark is the first image on a very large share of sites.",
+        "crawl_incomplete_inlinks_unreliable": "This run did not fetch the whole site, or a page carried more internal links than the crawl keeps, so \"nothing links here\" cannot be told apart from \"this crawl did not see the link\". No page is named.",
+        "faq_match_against_collected_paragraphs_only": "Questions are matched against the headings and paragraphs this crawl kept, which is bounded. A page whose FAQ runs past that point is not judged."
       },
       "records": {
         "robots_resource": {
@@ -1260,6 +1262,14 @@
         "non_brand_click_share": {
           "title": "Share of clicks not from the site's own name",
           "description": "Clicks from queries that do not contain a brand term, over all reported clicks. Brand terms are derived from the authorised property and matched as substrings, so \"acme pricing\" counts as brand. Published, never judged."
+        },
+        "page_without_any_discovery_path": {
+          "title": "Page with no discovery path",
+          "description": "Collected pages with neither an observed inbound internal link nor a sitemap entry, excluding the entry URL."
+        },
+        "faq_schema_question_not_on_page": {
+          "title": "FAQ markup promises a question the page does not show",
+          "description": "Pages declaring a FAQPage whose Question names were not found in the collected headings or paragraphs."
         }
       },
       "evidence": {
@@ -2750,6 +2760,18 @@
             "flagged": "Reaching this page from the homepage takes more than four clicks.",
             "clear": "This page is within four clicks of the homepage.",
             "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "page_without_any_discovery_path": {
+            "_label": "No discovery path",
+            "flagged": "Nothing links to this page and it is not in the sitemap, so the only way this run reached it was a redirect.",
+            "clear": "This page is reachable through an internal link or the sitemap.",
+            "notTested": "That rule was not judged for this run, or did not cover this page."
+          },
+          "faq_schema_question_not_on_page": {
+            "_label": "FAQ markup promise",
+            "flagged": "This page declares FAQ questions that were not found in its visible content.",
+            "clear": "Every FAQ question this page declares was found in its visible content.",
+            "notTested": "That rule only tests pages declaring a FAQPage and did not cover this page."
           }
         },
         "imageDimensions": {

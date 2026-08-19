@@ -1006,7 +1006,9 @@
         "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish": "统计窗口内没有任何点击被报告，因此没有可公布的占比。",
         "brand_terms_derived_from_the_property_and_matched_as_substrings": "品牌词由已授权资源派生并按子串匹配，因此包含品牌名的查询会算作品牌词。",
         "this_page_has_no_h3_so_there_is_no_section_to_measure": "这个页面根本没有 H3，因此没有可衡量的小节。大纲该不该有第三层，由 3.5 判定。",
-        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。"
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。",
+        "crawl_incomplete_inlinks_unreliable": "本次运行未抓完整站，或某个页面的内链数超出抓取保留上限，因此「没有页面链接到这里」与「本次抓取没看到那条链接」无法区分。不点名任何页面。",
+        "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。"
       },
       "records": {
         "robots_resource": {
@@ -1260,6 +1262,14 @@
         "non_brand_click_share": {
           "title": "非品牌词点击占比",
           "description": "不含品牌词的查询带来的点击，占全部报告点击的比例。品牌词由已授权资源派生并按子串匹配，所以「acme pricing」算作品牌词。只公布，不判定。"
+        },
+        "page_without_any_discovery_path": {
+          "title": "没有任何发现路径的页面",
+          "description": "既没有观察到内链指向、也不在 sitemap 里的已采集页面，不含入口 URL。"
+        },
+        "faq_schema_question_not_on_page": {
+          "title": "FAQ 标记承诺了页面上没有的问题",
+          "description": "声明了 FAQPage，但其 Question 名称在已采集的标题或段落中找不到的页面。"
         }
       },
       "evidence": {
@@ -2750,6 +2760,18 @@
             "flagged": "从首页出发要点 4 次以上才能到这一页。",
             "clear": "从首页出发 4 次点击以内可以到这一页。",
             "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "page_without_any_discovery_path": {
+            "_label": "无发现路径",
+            "flagged": "没有任何页面链接到这里，它也不在 sitemap 里，本次运行只能靠跳转到达。",
+            "clear": "这个页面可以通过内链或 sitemap 到达。",
+            "notTested": "该规则本次未作判定，或未覆盖此页面。"
+          },
+          "faq_schema_question_not_on_page": {
+            "_label": "FAQ 标记承诺",
+            "flagged": "这个页面声明的 FAQ 问题在可见内容里找不到。",
+            "clear": "这个页面声明的每个 FAQ 问题都能在可见内容里找到。",
+            "notTested": "该规则只检查声明了 FAQPage 的页面，未覆盖此页面。"
           }
         },
         "imageDimensions": {

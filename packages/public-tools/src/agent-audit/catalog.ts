@@ -225,6 +225,8 @@ const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
 
 const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C1: ["sitemap_page_without_observed_inlink"],
+  C5: ["page_without_any_discovery_path"],
+  "7.4": ["faq_schema_question_not_on_page"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
   D3: ["title_missing", "h1_missing"],
@@ -598,6 +600,14 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   C1: l(
     "These pages are in your sitemap but nothing on the site links to them, so a crawler only reaches them by reading the sitemap. Decide per page: if it matters, add a link from the section page or hub that owns it, using anchor text that describes the destination; if it does not, remove it from the sitemap rather than leaving a page you do not vouch for.",
     "这些页面在 sitemap 里，但站内没有任何链接指向它们，抓取器只能靠读 sitemap 找到。逐页决定：重要的，就从它所属的栏目页或聚合页加一条链接过去，锚文本要描述目标页内容；不重要的，就从 sitemap 里删掉，而不是留着一个你自己都不背书的页面。",
+  ),
+  C5: l(
+    "Nothing links to these pages and they are not in your sitemap either, so the only reason this run found them is that a redirect led here. A search engine starting at your homepage has no route in at all. Per page, pick one: link it from the hub that owns it and add it to the sitemap if it should be found, or let it 410 if it should not — leaving it reachable only through a redirect is the one option that helps nobody.",
+    "没有任何页面链接到它们，它们也不在 sitemap 里，本次运行能找到它们只是因为有跳转指过来。搜索引擎从首页出发根本没有路径进来。逐页二选一：应该被找到的，就从所属聚合页加链接并补进 sitemap；不该存在的，就让它返回 410——只留一条跳转能到，是唯一对谁都没好处的做法。",
+  ),
+  "7.4": l(
+    "Your FAQPage markup promises questions a reader cannot find on the page. Google treats that as marking up content that is not there, and it costs the rich result for the whole page rather than the one entry. Per question, pick one: put the question and its answer in the visible content, matching the wording, or delete that entry from the markup. Do not keep markup for an answer only the crawler sees.",
+    "你的 FAQPage 标记承诺了读者在页面上找不到的问题。Google 视其为给不存在的内容打标记，代价是整页失去富媒体结果，而不只是那一条。逐个问题二选一：把问题和答案按同样的措辞放进可见正文，或者把那一条从标记里删掉。不要保留只有抓取器看得到的答案。",
   ),
   C2: l(
     "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",

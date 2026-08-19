@@ -79,6 +79,9 @@ export const CRAWL_PROJECTION_LIMITS = {
   maxJsonLdTypeChars: 256,
   maxJsonLdBlocks: 100,
   maxJsonLdNodes: 5_000,
+  /** A FAQPage with more entries than this is a list, not a page's FAQ. */
+  maxFaqQuestions: 50,
+  maxFaqQuestionChars: 512,
   maxContentTypeChars: 256,
   maxRobotsGroups: 64,
   maxRobotsRulesPerGroup: 128,

@@ -249,6 +249,14 @@ export interface ParsedOnPageFacts {
     readonly type: string;
     readonly keys: readonly string[];
   }[];
+  /**
+   * The `name` of each `Question` node this page declares.
+   *
+   * A FAQPage promises the reader will find these on the page. Without the
+   * text there is nothing to compare the promise against, so this is the one
+   * JSON-LD value collected rather than only its key.
+   */
+  readonly faqQuestions: readonly string[];
   readonly externalLinks: ParsedExternalLinkFacts;
   /**
    * UTF-8 byte counts, not character counts.
@@ -546,10 +554,15 @@ function collectTypes(value: unknown, types: Set<string>): void {
  * properties it needs; the values are the site's content and none of our
  * business. Nested nodes are walked so a `Product` inside a `@graph` counts.
  */
-function collectJsonLdProperties(
-  html: string,
-): readonly { readonly type: string; readonly keys: readonly string[] }[] {
+function collectJsonLdProperties(html: string): {
+  readonly properties: readonly {
+    readonly type: string;
+    readonly keys: readonly string[];
+  }[];
+  readonly faqQuestions: readonly string[];
+} {
   const out: { type: string; keys: string[] }[] = [];
+  const questions: string[] = [];
   const blocks = html.matchAll(
     /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi,
   );
@@ -580,6 +593,26 @@ function collectJsonLdProperties(
       }
       const declared = record["@type"];
       const types = Array.isArray(declared) ? declared : [declared];
+      // The one place a value is read rather than a key. A FAQPage makes a
+      // claim about what the reader will see, and the only way to check that
+      // claim is to hold the question it promises.
+      if (
+        types.some(
+          (type) =>
+            typeof type === "string" && type.trim().toLowerCase() === "question",
+        )
+      ) {
+        const name = record["name"];
+        if (
+          typeof name === "string" &&
+          name.trim() !== "" &&
+          questions.length < CRAWL_PROJECTION_LIMITS.maxFaqQuestions
+        ) {
+          questions.push(
+            truncate(name.trim(), CRAWL_PROJECTION_LIMITS.maxFaqQuestionChars),
+          );
+        }
+      }
       for (const type of types) {
         if (typeof type !== "string" || type.trim() === "") continue;
         if (out.length >= CRAWL_PROJECTION_LIMITS.maxJsonLdTypes) break;
@@ -592,7 +625,7 @@ function collectJsonLdProperties(
       }
     }
   }
-  return out;
+  return { properties: out, faqQuestions: questions };
 }
 
 function collectJsonLd(html: string): CrawlJsonLdProjection {
@@ -1154,6 +1187,7 @@ function collectOnPageFacts(
   /** The document as transferred, comments included: this is what weighs. */
   rawHtml: string,
 ): ParsedOnPageFacts {
+  const jsonLd = collectJsonLdProperties(withoutComments(rawHtml));
   return {
     lang: normalisedAttributeText(
       attr(htmlTag, "lang"),
@@ -1178,7 +1212,8 @@ function collectOnPageFacts(
     renderBlocking: collectRenderBlocking(withoutComments(rawHtml)),
     firstImage: collectFirstImage(markup),
     wordsUnderEachH3: collectWordsUnderEachH3(markup),
-    jsonLdProperties: collectJsonLdProperties(withoutComments(rawHtml)),
+    jsonLdProperties: jsonLd.properties,
+    faqQuestions: jsonLd.faqQuestions,
     externalLinks: collectExternalLinkFacts(markup, pageUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,
