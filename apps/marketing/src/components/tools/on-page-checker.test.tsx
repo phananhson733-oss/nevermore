@@ -614,6 +614,26 @@ describe("On-Page checker local state", () => {
    * The copy for a refused clipboard tells the visitor to select the report and
    * copy it, which needs a report on the page to select.
    */
+  it("offers the copy control on a run that could not be scored", async () => {
+    /*
+      The control moved beside the score, and on a run with no score there is
+      no score card to host it — so it disappeared from exactly the runs whose
+      report someone would most want a second opinion on. Every fixture here
+      produces an unscored run, which is why the move was caught at all.
+
+      The scored branch is not covered here: no fixture in this file carries
+      `siteResources`, so `buildOnPageScore` returns null throughout.
+    */
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host);
+
+    expect(buttonWith(host, "Copy report for an assistant")).not.toBeNull();
+  });
+
   it("puts the report on the page when the clipboard refuses it", async () => {
     globalThis.fetch = vi.fn(async () =>
       auditResponse(["pricing"]),
@@ -637,7 +657,7 @@ describe("On-Page checker local state", () => {
     const fallback = host.querySelector("textarea");
     expect(fallback).not.toBeNull();
     expect((fallback as HTMLTextAreaElement).value).toContain(
-      "# On-page keyword check",
+      "# On-page SEO check",
     );
     expect((fallback as HTMLTextAreaElement).readOnly).toBe(true);
   });

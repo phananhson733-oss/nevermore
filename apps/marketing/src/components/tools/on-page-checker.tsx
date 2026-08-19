@@ -55,6 +55,8 @@ import {
   type OnPageHistoryEntry,
 } from "../../lib/on-page-checker/storage";
 import { buildCopyReport } from "../../lib/on-page-checker/copy-report";
+import { checkLabelKey } from "../../lib/on-page-checker/check-types.ts";
+import { pageVitals } from "../../lib/on-page-checker/vitals.ts";
 import { storePageFocusedAgentIntent } from "../agents/agent-intent";
 import { localePath } from "../../lib/locale-path";
 
@@ -138,6 +140,9 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   const t = useTranslations("tools.onPageChecker");
   /** One account of the crawl gate, shared with the tool that owns it. */
   const tCrawl = useTranslations("tools.seoAudit.errors");
+  /** Resolved where the wording lives, so the paste reads what the screen reads. */
+  const tCheck = useTranslations("tools.onPageChecker.checks");
+  const tCategory = useTranslations("tools.onPageChecker.scoreCategories");
   const [url, setUrl] = useState("");
   /**
    * The typed line is the source of truth; the list is read out of it.
@@ -402,6 +407,16 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
 
   const copyReport = useCallback(async () => {
     if (run.kind !== "done") return;
+    /*
+      The whole report, not just the keyword region.
+
+      This paste exists to be handed to an assistant that will be asked to
+      implement the fixes, and for a long time it carried the coverage table and
+      nothing else — no score, no caps, and none of the forty per-check findings
+      that actually say what to change. It read like a report and was missing
+      the part worth acting on.
+    */
+    const score = run.score;
     const text = buildCopyReport({
       targetUrl: run.targetUrl,
       scannedAt: run.scannedAt,
@@ -413,6 +428,47 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           : []
         ).map((code) => [code, t(`limitations.${code}`)]),
       ),
+      result:
+        score === null
+          ? null
+          : {
+              score: score.score,
+              grade: t(`grades.${score.grade}`),
+              counts: {
+                pass: score.counts.pass,
+                warn: score.counts.warn,
+                fail: score.counts.fail,
+              },
+              topicFocus: score.topicFocus,
+              categories: score.categories.map((category) => ({
+                label: tCategory(category.category),
+                earned: category.score,
+                available: category.max,
+              })),
+              caps: score.caps.map((cap) =>
+                t(`score.caps.${cap.reason}`, { ceiling: cap.ceiling }),
+              ),
+              checks: score.checks.map((entry) => ({
+                id: entry.id,
+                state: entry.state,
+                score: entry.score,
+                max: entry.max,
+                label: tCheck(checkLabelKey(entry)),
+                detail: tCheck(entry.detail.key, entry.detail.values),
+                categoryLabel: tCategory(entry.category),
+              })),
+            },
+      vitals:
+        run.extract === null
+          ? []
+          : pageVitals(run.extract).map((vital) => ({
+              label: t(`vitals.${vital.labelKey}`),
+              value: vital.value,
+            })),
+      fixes:
+        run.evidence.availability === "available"
+          ? t(`fixes.${run.evidence.pageRole ?? "homepage"}`)
+          : null,
     });
     try {
       await navigator.clipboard.writeText(text);
@@ -424,7 +480,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       setCopied("failed");
       setFallbackReport(text);
     }
-  }, [run, t]);
+  }, [run, t, tCategory, tCheck]);
 
   /**
    * Hand this page and its queries to the Agent.
@@ -453,6 +509,37 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     clearOnPageHistory(webStore("local"), webStore("session"));
     setHistory([]);
   }, [webStore]);
+
+  /*
+    Beside the score, not past the whole report.
+
+    It sat at the very bottom, which is a long way from the number that makes
+    someone want to hand this to an assistant in the first place.
+  */
+  const scoredHere =
+    run.kind === "done" && run.score !== null && run.extract !== null;
+  const copyControl = (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        className="rounded-lg border border-brand-border-card px-3 py-2 text-[13.5px] text-text-dark-secondary hover:border-brand-accent/40 hover:text-text-dark-primary"
+        onClick={() => void copyReport()}
+        type="button"
+      >
+        {t("actions.copyReport")}
+      </button>
+      <p
+        aria-live="polite"
+        className="text-[12.5px] text-text-dark-faint"
+        role="status"
+      >
+        {copied === "done"
+          ? t("actions.copyDone")
+          : copied === "failed"
+            ? t("actions.copyFailed")
+            : ""}
+      </p>
+    </div>
+  );
 
   const evidence = run.kind === "done" ? run.evidence : null;
   const available =
@@ -805,6 +892,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               </p>
             </div>
             <OnPageReportSections
+            scoreAction={scoredHere ? copyControl : undefined}
               extract={run.extract}
               score={run.score}
               landscape={run.landscape}
@@ -817,24 +905,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             />
 
             <div className="flex flex-wrap items-center gap-3 border-t border-brand-border-card pt-4">
-              <button
-                className="rounded-lg border border-brand-border-card px-3 py-2 text-[13.5px] text-text-dark-secondary hover:border-brand-accent/40 hover:text-text-dark-primary"
-                onClick={() => void copyReport()}
-                type="button"
-              >
-                {t("actions.copyReport")}
-              </button>
-              <p
-                aria-live="polite"
-                className="text-[12.5px] text-text-dark-faint"
-                role="status"
-              >
-                {copied === "done"
-                  ? t("actions.copyDone")
-                  : copied === "failed"
-                    ? t("actions.copyFailed")
-                    : ""}
-              </p>
+              {/*
+                Only when the score card is not there to hold it. A run that
+                could not be scored still produced a report worth handing on,
+                and hosting the control solely beside the score made it vanish
+                on exactly those runs.
+              */}
+              {!scoredHere && copyControl}
               <button
                 className="ml-auto text-[13.5px] text-brand-accent-text underline underline-offset-4 hover:text-brand-accent-hover"
                 onClick={openAgent}
