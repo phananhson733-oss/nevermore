@@ -97,6 +97,7 @@ function raw(): SeoAuditRaw {
       fetched: true,
       urlCount: 2,
       subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+      complete: true,
     },
     availability: "available",
     capturedAt: "2026-08-18T09:00:00.000Z",

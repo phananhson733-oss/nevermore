@@ -53,7 +53,7 @@ function raw(pages: readonly CrawlPageRecord[]): SeoAuditRaw {
     requestedUrl: TARGET,
     pages,
     robots: { fetched: true, groups: [], sitemaps: [] },
-    sitemap: { fetched: true, urlCount: 0, subjectUrls: [] },
+    sitemap: { fetched: true, urlCount: 0, subjectUrls: [], complete: true },
     availability: "available",
     capturedAt: "2026-08-19T00:00:00.000Z",
     sourceWindow: { start: null, end: null },

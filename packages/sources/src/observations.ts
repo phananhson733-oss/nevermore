@@ -94,6 +94,16 @@ export interface CrawlSitemapProjection {
   readonly fetched: boolean;
   readonly urlCount: number;
   readonly subjectUrls: readonly string[];
+  /**
+   * Every sitemap this site referenced was read to the end.
+   *
+   * False when a child would not fetch, or when a depth, document or member
+   * cap stopped the walk. The collector degrades to fewer members rather than
+   * erroring, which means `subjectUrls.length` cannot distinguish a small
+   * sitemap from a truncated one — anything that divides by this list needs
+   * this flag to know whether it holds a population or a sample.
+   */
+  readonly complete: boolean;
 }
 
 // ---------------------------------------------------------------------------

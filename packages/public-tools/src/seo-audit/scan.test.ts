@@ -12,7 +12,7 @@ const fixture = {
   host: "acme.test",
   pages: [],
   robots: { fetched: true, groups: [], sitemaps: [] },
-  sitemap: { fetched: true, urlCount: 0, subjectUrls: [] },
+  sitemap: { fetched: true, urlCount: 0, subjectUrls: [], complete: true },
   availability: "available",
   capturedAt: "2026-07-30T09:00:00.000Z",
   sourceWindow: {

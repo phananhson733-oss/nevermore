@@ -77,7 +77,7 @@ const outcome = {
     host: "example.com",
     pages: [],
     robots: { fetched: true, groups: [], sitemaps: [] },
-    sitemap: { fetched: true, urlCount: 0, subjectUrls: [] },
+    sitemap: { fetched: true, urlCount: 0, subjectUrls: [], complete: true },
     availability: "available",
     capturedAt,
     sourceWindow,
@@ -879,6 +879,7 @@ describe("persistCollectionResult crawl page materialization", () => {
           fetched: true,
           urlCount: 1,
           subjectUrls: ["https://example.com/pricing"],
+          complete: true,
         },
         availability,
         capturedAt,
@@ -1411,6 +1412,7 @@ describe("persistCollectionResult crawl page materialization", () => {
         fetched: true,
         urlCount: 1,
         subjectUrls: [`${foreignOrigin}/pricing`],
+        complete: true,
       },
     };
 

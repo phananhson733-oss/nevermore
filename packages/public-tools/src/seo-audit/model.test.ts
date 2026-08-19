@@ -3,6 +3,7 @@ import type { CrawlPageRecord } from "@sf/sources";
 import { buildSeoAuditPayload, buildSeoAuditReport } from "./model.ts";
 import { isSeoAuditPayload } from "./contract.ts";
 import type { SeoAuditRaw } from "./scan.ts";
+import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
 
 function page(
   url: string,
@@ -75,6 +76,7 @@ function raw(overrides: Partial<SeoAuditRaw> = {}): SeoAuditRaw {
       fetched: true,
       urlCount: 2,
       subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+      complete: true,
     },
     availability: "available",
     capturedAt: "2026-07-30T09:00:00.000Z",
@@ -153,7 +155,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
 
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
@@ -499,7 +501,7 @@ describe("site-wide SEO audit model", () => {
     const report = buildSeoAuditReport(
       raw({
         robots: { fetched: false, groups: [], sitemaps: [] },
-        sitemap: { fetched: false, urlCount: 0, subjectUrls: [] },
+        sitemap: { fetched: false, urlCount: 0, subjectUrls: [], complete: false },
       }),
     );
 
@@ -897,7 +899,7 @@ describe("seo audit record invariants", () => {
 
   it("only tests sitemap membership when a sitemap was collected", () => {
     const withoutSitemap = buildSeoAuditReport(
-      raw({ sitemap: { fetched: false, urlCount: 0, subjectUrls: [] } }),
+      raw({ sitemap: { fetched: false, urlCount: 0, subjectUrls: [], complete: false } }),
     );
     const record = withoutSitemap.records.find(
       (entry) => entry.id === "page_not_in_sitemap",
@@ -1098,7 +1100,7 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v17");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v18");
 
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);
@@ -1148,5 +1150,51 @@ describe("cache eligibility of the audit payload", () => {
         }),
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * The seam, not the producer.
+ *
+ * `collectSitemap` learning to report degradation buys nothing if the model
+ * keeps deciding completeness from a length. Mutation-checked: dropping the
+ * `raw.sitemap.complete` term below turns exactly this block red, and nothing
+ * else in the repository noticed.
+ */
+describe("sitemap completeness reaches the published payload", () => {
+  const complete = (sitemap: Partial<SeoAuditRaw["sitemap"]>) =>
+    buildSeoAuditReport(
+      raw({
+        sitemap: {
+          fetched: true,
+          urlCount: 2,
+          subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+          complete: true,
+          ...sitemap,
+        },
+      }),
+    ).siteResources.sitemapUrlsComplete;
+
+  it("publishes complete when the crawl read every referenced sitemap", () => {
+    expect(complete({})).toBe(true);
+  });
+
+  it("refuses to publish complete when the crawl degraded", () => {
+    // The list still fits the publication cap — that was the whole problem.
+    // Index coverage divides by it, so "the survivors fit" must not be allowed
+    // to stand in for "these are all of them".
+    expect(complete({ complete: false })).toBe(false);
+  });
+
+  it("still refuses when the list is longer than the publication cap", () => {
+    expect(
+      complete({
+        urlCount: SITEMAP_URLS_PUBLISHED_CAP + 1,
+        subjectUrls: Array.from(
+          { length: SITEMAP_URLS_PUBLISHED_CAP + 1 },
+          (_, i) => `https://acme.test/p${i}`,
+        ),
+      }),
+    ).toBe(false);
   });
 });

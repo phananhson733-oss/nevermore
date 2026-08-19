@@ -163,6 +163,7 @@ describe("collectSitemap exact fetch identities", () => {
       fetched: true,
       urlCount: 1,
       subjectUrls: ["https://example.com/docs"],
+      complete: true,
     });
     expect(onMember).toHaveBeenCalledTimes(2);
     expect(onMember).toHaveBeenNthCalledWith(1, {
@@ -251,4 +252,100 @@ describe("sitemap and page-parser decoding agree", () => {
       expect(fromHref).toBe(fromSitemap);
     },
   );
+});
+
+/**
+ * The count cannot tell a small sitemap from a truncated one.
+ *
+ * Every early exit here removes members and leaves nothing behind in
+ * `urlCount`, so a reader that infers completeness from the length is inferring
+ * it from the wrong number. Index coverage divides by this list against a rail
+ * that publishes a Blocker below 70%, which makes the difference between a
+ * population and a sample that looks like one a published falsehood.
+ */
+describe("collectSitemap reports whether it degraded", () => {
+  const index = (children: readonly string[]) =>
+    `<sitemapindex>${children
+      .map((url) => `<sitemap><loc>${url}</loc></sitemap>`)
+      .join("")}</sitemapindex>`;
+  const urlset = (urls: readonly string[]) =>
+    `<urlset>${urls.map((url) => `<url><loc>${url}</loc></url>`).join("")}</urlset>`;
+
+  const collect = (documents: Readonly<Record<string, string | null>>) =>
+    collectSitemap("https://example.com", ["https://example.com/sitemap.xml"], {
+      fetchText: async (url: string) => documents[url] ?? null,
+    });
+
+  it("is complete when every referenced child answered", async () => {
+    const projection = await collect({
+      "https://example.com/sitemap.xml": index([
+        "https://example.com/a.xml",
+        "https://example.com/b.xml",
+      ]),
+      "https://example.com/a.xml": urlset(["https://example.com/one"]),
+      "https://example.com/b.xml": urlset(["https://example.com/two"]),
+    });
+
+    expect(projection.complete).toBe(true);
+    expect(projection.urlCount).toBe(2);
+  });
+
+  it("is incomplete when a child did not answer, however many siblings did", async () => {
+    // The shape that published a measured 100%: nine indexed URLs in the child
+    // that answered, ninety-one excluded ones in the child that timed out, and
+    // a length that fits the publication cap either way.
+    const projection = await collect({
+      "https://example.com/sitemap.xml": index([
+        "https://example.com/a.xml",
+        "https://example.com/b.xml",
+      ]),
+      "https://example.com/a.xml": urlset(["https://example.com/one"]),
+      "https://example.com/b.xml": null,
+    });
+
+    expect(projection.complete).toBe(false);
+    // The members it did read are still returned; what changes is the claim
+    // anyone may make about them.
+    expect(projection.urlCount).toBe(1);
+    expect(projection.fetched).toBe(true);
+  });
+
+  it("is incomplete when the document cap stopped the walk", async () => {
+    const children = Array.from(
+      { length: 60 },
+      (_, i) => `https://example.com/c${i}.xml`,
+    );
+    const documents: Record<string, string> = {
+      "https://example.com/sitemap.xml": index(children),
+    };
+    for (const [i, child] of children.entries()) {
+      documents[child] = urlset([`https://example.com/p${i}`]);
+    }
+
+    const projection = await collect(documents);
+
+    expect(projection.complete).toBe(false);
+  });
+
+  it("is not complete when nothing was read at all", async () => {
+    // "Complete reading of nothing" is not a population either.
+    const projection = await collect({});
+
+    expect(projection.fetched).toBe(false);
+    expect(projection.complete).toBe(false);
+  });
+
+  it("stays complete when an off-origin loc is skipped", async () => {
+    // Skipping a URL that is not part of this site's sitemap drops nothing the
+    // population contains, so it is not a degradation.
+    const projection = await collect({
+      "https://example.com/sitemap.xml": urlset([
+        "https://example.com/one",
+        "https://cdn.other.test/two",
+      ]),
+    });
+
+    expect(projection.complete).toBe(true);
+    expect(projection.urlCount).toBe(1);
+  });
 });

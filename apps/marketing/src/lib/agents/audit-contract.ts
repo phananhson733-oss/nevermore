@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v17 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v18 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -110,7 +110,7 @@ export type SerpLandscape =
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v17" as const;
+  "seo_audit.sitewide.v18" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 

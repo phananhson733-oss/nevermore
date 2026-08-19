@@ -36,7 +36,7 @@ function rawFromHtml(html: string, url = "https://acme.test/"): SeoAuditRaw {
     providerUsage: {},
     limitation: "discoverable_same_origin_static_html_audit",
     robots: { fetched: true, groups: [], sitemaps: [] },
-    sitemap: { fetched: true, urlCount: 1, subjectUrls: [url] },
+    sitemap: { fetched: true, urlCount: 1, subjectUrls: [url], complete: true },
     pages: [
       {
         // canonical_url.v1 keeps the root slash and drops it elsewhere. Getting

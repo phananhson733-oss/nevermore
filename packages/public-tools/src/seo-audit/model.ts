@@ -1687,7 +1687,15 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
       sitemapUrls: raw.sitemap.subjectUrls.slice(0, SITEMAP_URLS_PUBLISHED_CAP),
+      // Two separate facts, and the length alone was only ever the first.
+      // "The survivors fit inside the publication cap" says nothing about the
+      // children that never answered, the caps that stopped the walk, or the
+      // members that were dropped on the way here — and index coverage divides
+      // by this list against a rail that reports a Blocker below 70%. A site
+      // whose sitemap index lost four of five children to timeouts published
+      // a measured 100% over the ninth of its pages that replied.
       sitemapUrlsComplete:
+        raw.sitemap.complete &&
         raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
     records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
@@ -1699,7 +1707,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

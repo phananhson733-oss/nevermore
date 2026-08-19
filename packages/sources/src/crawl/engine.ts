@@ -310,6 +310,13 @@ function boundedSitemapProjection(
     fetched: projection.fetched,
     urlCount: subjectUrls.length,
     subjectUrls,
+    // This bound drops members too, so it carries the same consequence as a
+    // child that would not fetch: whoever divides by this list is holding a
+    // sample. Both the collector's own completeness and this projection's have
+    // to hold for the list to be a population.
+    complete:
+      projection.complete &&
+      subjectUrls.length === projection.subjectUrls.length,
   };
 }
 

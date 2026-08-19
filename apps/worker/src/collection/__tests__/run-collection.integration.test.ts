@@ -2406,6 +2406,7 @@ describeDb("collection runner (spec §13)", () => {
           fetched: true,
           urlCount: 1,
           subjectUrls: [foreignPage],
+          complete: true,
         },
         availability: "available",
         capturedAt,

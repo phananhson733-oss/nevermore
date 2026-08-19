@@ -136,6 +136,15 @@ export interface SitemapDeps {
  * Fetch and parse the seed sitemap URLs (following `<sitemapindex>` children),
  * returning the same-origin member subjectUrls as a `CrawlSitemapProjection`.
  * A broken or looping sitemap degrades to fewer members, never an error.
+ *
+ * Because it degrades silently, it also reports whether it degraded. Every way
+ * this function stops early — a child that would not fetch, the document cap,
+ * the depth cap, the member cap — removes members without leaving a trace in
+ * the count, and a downstream reader cannot tell a small sitemap from a
+ * truncated one by looking at its length. Index coverage divides by this list,
+ * so a site with four of five children timing out would otherwise publish a
+ * rate over the ninth of its pages that answered: `complete` is the difference
+ * between a population and a sample that looks like one.
  */
 export async function collectSitemap(
   origin: string,
@@ -146,6 +155,8 @@ export async function collectSitemap(
   const visited = new Set<string>();
   let fetchedAny = false;
   let documents = 0;
+  /** Set the moment anything is dropped, whatever dropped it. */
+  let degraded = false;
 
   const sameOrigin = (url: string): boolean => {
     try {
@@ -156,29 +167,51 @@ export async function collectSitemap(
   };
 
   const visit = async (sitemapUrl: string, depth: number): Promise<void> => {
-    if (depth > MAX_SITEMAP_DEPTH) return;
-    if (documents >= MAX_SITEMAP_DOCUMENTS) return;
-    if (members.size >= MAX_SITEMAP_URLS) return;
+    if (depth > MAX_SITEMAP_DEPTH) {
+      degraded = true;
+      return;
+    }
+    if (documents >= MAX_SITEMAP_DOCUMENTS) {
+      degraded = true;
+      return;
+    }
+    if (members.size >= MAX_SITEMAP_URLS) {
+      degraded = true;
+      return;
+    }
     const key = canonicalizeUrl(sitemapUrl)?.fetchUrl ?? sitemapUrl;
     if (visited.has(key) || !sameOrigin(key)) return;
     visited.add(key);
     documents += 1;
 
     const body = await deps.fetchText(key);
-    if (body === null) return;
+    if (body === null) {
+      // A child that did not answer is members we do not have. Its siblings
+      // having answered is exactly what makes this invisible in the count.
+      degraded = true;
+      return;
+    }
     fetchedAny = true;
 
     const document = parseSitemapXml(body);
     if (document.isIndex) {
       for (const child of document.locs) {
-        if (members.size >= MAX_SITEMAP_URLS) break;
+        if (members.size >= MAX_SITEMAP_URLS) {
+          degraded = true;
+          break;
+        }
         await visit(child, depth + 1);
       }
       return;
     }
     for (const loc of document.locs) {
-      if (members.size >= MAX_SITEMAP_URLS) break;
+      if (members.size >= MAX_SITEMAP_URLS) {
+        degraded = true;
+        break;
+      }
       const pair = canonicalizeUrl(loc);
+      // An off-origin or unparseable `<loc>` is not a member of this site's
+      // sitemap, so skipping it drops nothing this population contains.
       if (!pair || !sameOrigin(pair.fetchUrl)) continue;
       deps.onMember?.({
         fetchUrl: pair.fetchUrl,
@@ -195,5 +228,7 @@ export async function collectSitemap(
     fetched: fetchedAny,
     urlCount: subjectUrls.length,
     subjectUrls,
+    // Nothing was read at all is not a complete reading of nothing.
+    complete: fetchedAny && !degraded,
   };
 }
