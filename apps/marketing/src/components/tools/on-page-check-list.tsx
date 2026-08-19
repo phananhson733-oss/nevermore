@@ -10,6 +10,7 @@ import type {
   CheckState,
   OnPageCheck,
 } from "../../lib/on-page-checker/check-types.ts";
+import { checkLabelKey } from "../../lib/on-page-checker/check-types.ts";
 import type { CategoryScore } from "../../lib/on-page-checker/scoring.ts";
 
 const STATE_MARK: Readonly<Record<CheckState, string>> = {
@@ -32,12 +33,6 @@ const STATE_TONE: Readonly<Record<CheckState, string>> = {
  * Site-wide rules are keyed by their audit rule id, which lives under its own
  * namespace so a rule and a markup check can never collide on a name.
  */
-function labelKey(entry: OnPageCheck): string {
-  return entry.category === "site"
-    ? `site.${entry.id}._label`
-    : `${entry.id}._label`;
-}
-
 export function OnPageCheckList({
   categories,
 }: {
@@ -101,7 +96,7 @@ export function OnPageCheckList({
                       {STATE_MARK[entry.state]}
                     </span>
                     <span className="text-[13.5px] text-text-dark-primary">
-                      {tk(labelKey(entry))}
+                      {tk(checkLabelKey(entry))}
                     </span>
                     {entry.max > 0 ? (
                       <span className="font-mono text-[11px] tabular-nums text-text-dark-faint">

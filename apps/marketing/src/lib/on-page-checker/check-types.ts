@@ -107,3 +107,16 @@ export function observation(
 ): OnPageCheck {
   return check(id, category, "info", 0, 0, key, values);
 }
+
+/**
+ * The message key holding a check's display name.
+ *
+ * Site-wide checks are namespaced because their ids collide with page-level
+ * ones. Shared so the list on screen and the copied report cannot disagree
+ * about what a check is called.
+ */
+export function checkLabelKey(entry: OnPageCheck): string {
+  return entry.category === "site"
+    ? `site.${entry.id}._label`
+    : `${entry.id}._label`;
+}
