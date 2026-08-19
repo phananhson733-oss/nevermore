@@ -177,18 +177,46 @@ const BLOCKER_CAPABLE = new Set([
 export const UNMEASURABLE_HERE: Readonly<
   Record<string, AgentAuditLocalizedText>
 > = {
+  // Not a budget or an authorization problem, so connecting Search Console
+  // does not move either one: Google publishes no API for the Crawl Stats
+  // report at all. The Search Console API exposes exactly eleven methods —
+  // sites, sitemaps, searchanalytics.query, urlInspection and the
+  // mobile-friendly test — and none of them return crawl volume. The BigQuery
+  // bulk export carries search performance only.
   B4: l(
-    "Crawl budget has no published per-URL rate, and a comparison against the site's own history needs crawl logs this run does not receive.",
-    "抓取预算没有官方的单 URL 速率，而与站点自身历史比较需要本次运行拿不到的抓取日志。",
+    "Google publishes no API for crawl statistics, so the only crawl volume this product could chart is its own — a number about our crawler, not Google's.",
+    "Google 没有为抓取统计提供任何 API，因此本产品唯一能记录的抓取量是它自己的——那是关于我们爬虫的数字，不是 Google 的。",
   ),
   B5: l(
-    "Separating discovery crawls from refresh crawls needs server logs or Search Console crawl stats; neither is available to this run.",
-    "区分发现型抓取与刷新型抓取需要服务器日志或 Search Console 抓取统计，本次运行两者都拿不到。",
+    "Separating discovery crawls from refresh crawls needs server logs or the Crawl Stats report, and Google publishes no API for the latter.",
+    "区分发现型抓取与刷新型抓取需要服务器日志或抓取统计报表，而后者 Google 没有提供 API。",
   ),
+  // The impressions half is trivially available. The classification half is
+  // not obtainable at any budget: every page-observable proxy misclassifies in
+  // a direction that corrupts a published threshold. Article/BlogPosting
+  // over-covers so hard that a purely evergreen blog classifies near 100% and
+  // trips the ">60% is Warning" rail; narrowing to NewsArticle under-covers so
+  // hard that pricing, event, seasonal and "best X of 2026" pages — all
+  // genuinely time-sensitive, none of them declaring it — fall out.
   E5: l(
-    "No publish or modified date is collected, and whether content is time-sensitive is a judgement about the subject rather than a fact on the page.",
-    "本工具不采集发布或修改日期，而内容是否具有时效性是关于主题的判断，不是页面上的事实。",
+    "Whether content is time-sensitive is a claim about its subject, and no fact on the page asserts it. Every available proxy misreads a correct site in one direction or the other.",
+    "内容是否具有时效性是关于主题的判断，页面上没有任何事实能证实它。所有可用的替代信号都会在某一个方向上误判一个本来正常的站点。",
   ),
+  // Blocked by typing, not by quota. `coverageState` is the only field that
+  // carries this distinction and the discovery document types it as a bare
+  // string with no enum, while every sibling field (verdict, indexingState,
+  // pageFetchState) carries a full one. It is a localized UI label, and Google
+  // reworded these labels wholesale in the 2023 Page Indexing rework. A
+  // detector keyed on it does not break loudly — it reports 0%, which is a
+  // pass, in the exact direction that hides a broken site.
+  A3: l(
+    "The only field naming \"discovered, currently not indexed\" is an untyped, localized UI label with no enumeration, so a detector keyed on it fails silently toward a pass whenever Google rewords it.",
+    "唯一能表达「已发现但尚未编入索引」的字段是没有枚举的本地化界面文案，一旦 Google 改写措辞，依赖它的检测器就会静默地滑向「通过」。",
+  ),
+  // Mechanically buildable now that the fetch budget is authorized, and still
+  // wrong: the top ten for a query routinely mixes intents, so a pricing page
+  // measured against a median built from long-form guides is reported as thin
+  // for being exactly the right length for what it is.
   "4.1": l(
     "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
     "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
