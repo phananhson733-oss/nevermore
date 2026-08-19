@@ -108,6 +108,26 @@ describe("v2 Agent audit catalog", () => {
     });
   });
 
+  it("never renders a Warning for a check that says it does not judge", () => {
+    // 4.2 published "density is not used to judge a page" and resolved to
+    // Warning anyway, because the severity came from a hand-kept list that
+    // nobody had added it to. It is read off the same sentence now.
+    const declines = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+      .flatMap((group) => group.checks)
+      .filter((check) =>
+        /Internal heuristic only|Display only|Listed for review, not judged/.test(
+          check.threshold.en,
+        ),
+      );
+
+    expect(declines.length).toBeGreaterThan(0);
+    expect(
+      declines.filter((check) => check.failureResult !== "tip").map((c) => c.id),
+    ).toEqual([]);
+    // And none of them moves the score either.
+    expect(declines.filter((check) => check.scored).map((c) => c.id)).toEqual([]);
+  });
+
   it("can actually reach Blocker wherever its threshold promises one", () => {
     // Two separate switches decide this — one says a check may reach Blocker,
     // the other names the record that takes it there — and they disagreed

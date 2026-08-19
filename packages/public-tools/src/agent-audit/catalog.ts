@@ -75,9 +75,9 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Use the confirmed page-type substance preset", "使用已确认页面类型的内容充实度预设"],
   ["4.1", "Main-content word count", "正文字数", "At least 60% of the reviewed top-10 median; otherwise Warning", "至少为已审阅前十中位数的 60%；否则为警告"],
-  ["4.2", "Target-query density", "目标词密度", "Internal heuristic only. Keyword density is not a documented ranking signal and is not used to judge a page.", "仅为内部启发式。关键词密度不是有据可查的排名信号，不用于判定页面。"],
+  ["4.2", "Target-query density", "目标词密度", "Listed for review, not judged: keyword density is not a documented ranking signal and is not used to judge a page.", "仅列出待复核，不作判定：关键词密度不是有据可查的排名信号，不用于判定页面。"],
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
-  ["4.4", "Content-to-code ratio", "内容与代码比", "Internal heuristic only. No documented ratio threshold exists; treat it as a rendering-weight hint.", "仅为内部启发式。不存在有据可查的比例阈值；仅作渲染体积提示。"],
+  ["4.4", "Content-to-code ratio", "内容与代码比", "Listed for review, not judged: no documented ratio threshold exists. Read it as a rendering-weight hint, never as a defect.", "仅列出待复核，不作判定：不存在有据可查的比例阈值。把它当作体积提示来读，不要当成缺陷。"],
   ["4.5", "Similarity with other site pages", "与站内其他页相似度", "Below 70%; otherwise Warning; P6 false-positive gate required", "低于 70%；否则为警告；必须通过 P6 假阳性门禁"],
   ["5.1", "Images missing alt text", "无 alt 图片数", "0 images with no alt attribute; otherwise Warning. An empty alt marks a decorative image and counts as covered.", "没有 alt 属性的图片为 0 张；否则为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
@@ -87,7 +87,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["6.2", "Outbound internal link count", "出站内链数", "At least 1 observed outbound internal link; zero is Warning", "至少观察到 1 条出站内链；0 条为警告"],
   ["6.3", "Broken internal links on this page", "本页出站断链数", "0 broken outbound internal links; above 0 is Warning", "本页出站内链断链为 0；大于 0 为警告"],
   ["6.4", "Click depth", "点击深度", "At most 4 clicks from the crawl entry point; deeper is a Tip", "距抓取入口最多 4 次点击；更深为提示"],
-  ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Display only; no pass/fail threshold", "仅展示，不设通过阈值"],
+  ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Listed for review, not judged: display only, no pass/fail threshold. Included because nofollow on outbound links is a choice, not a score.", "仅列出待复核，不作判定：仅展示，不设通过阈值。列在这里是因为出站链接加不加 nofollow 是选择，不是分数。"],
   ["7.1", "JSON-LD presence", "JSON-LD 是否存在", "At least one parseable JSON-LD block; absent or malformed is a Tip", "至少 1 个可解析的 JSON-LD 块；缺失或损坏为提示"],
   ["7.2", "Schema type matches page type", "Schema 类型与页面类型匹配", "Declares a type from the reviewed set for the confirmed page type; otherwise Tip. Site-furniture types are ignored, and the reviewed set is published with the finding.", "声明了已确认页面类型对应审阅集合中的某个类型；否则为提示。站点通用类型不计入，审阅集合会与发现一同给出。"],
   ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present; otherwise Warning", "所有必填字段均存在；否则为警告"],
@@ -920,7 +920,13 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     scored,
     blocking,
     blockerEvidenceRecordIds,
-    failureResult: ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4"].includes(id)
+    // A check that publishes "not judged" must not then render a Warning.
+    // The severity is read off the same sentence the reader sees, rather than
+    // from a second list beside it — 4.2 says density "is not used to judge a
+    // page" and was still resolving to Warning because nobody added it.
+    failureResult:
+      DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,
