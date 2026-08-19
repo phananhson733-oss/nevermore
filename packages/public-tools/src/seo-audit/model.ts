@@ -361,6 +361,9 @@ function buildRecords(
     onPageByUrl.get(page.url) ?? null;
   const hreflangTargetsOf = (page: SeoAuditPage) =>
     onPageOf(page)?.hreflangAlternates ?? [];
+  /** Any page whose alternates list was cut short by the crawl's own cap. */
+  const anyHreflangTruncated = (): boolean =>
+    raw.pages.some((entry) => entry.onPage?.hreflangAlternatesTruncated === true);
   /** JSON-LD nodes whose type this run has a reviewed opinion about. */
   const judgedJsonLdNodes = (page: SeoAuditPage) =>
     (onPageOf(page)?.jsonLdProperties ?? [])
@@ -1370,7 +1373,13 @@ function buildRecords(
               }),
             ];
       }),
-      limitation: "hreflang_targets_outside_this_crawl_were_not_classified",
+      // A truncated list is a different gap from an unfetched target, and the
+      // published rule ("no alternate returns 4xx or 5xx") is a claim about
+      // all of them. Naming the truncation takes precedence, because the other
+      // sentence would let a prefix stand in for the set.
+      limitation: anyHreflangTruncated()
+        ? "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps"
+        : "hreflang_targets_outside_this_crawl_were_not_classified",
     }),
     record({
       // 4.4. Published as a rendering-weight hint with no threshold, so this
@@ -1425,11 +1434,19 @@ function buildRecords(
       // readable without running anything.
       id: "render_blocking_head_resource",
       category: "structure",
-      population: "every_collected_page",
-      tested: htmlPages,
+      // Narrower than every collected page now: a document whose head region
+      // could not be located is not a page with nothing blocking its render.
+      population: "conditional_subset",
+      // Only pages whose head region could actually be located. `<head>` and
+      // `</head>` are optional in HTML5 and minifiers strip them, and a page
+      // whose head could not be found used to contribute a zero — which reads
+      // as "nothing blocks rendering here" about a document nobody parsed.
+      tested: htmlPages.filter(
+        (page) => onPageOf(page)?.renderBlocking?.measured === true,
+      ),
       observations: htmlPages.flatMap((page) => {
         const blocking = onPageOf(page)?.renderBlocking;
-        if (blocking === undefined) return [];
+        if (blocking === undefined || !blocking.measured) return [];
         const total = blocking.stylesheets + blocking.scripts;
         return total === 0
           ? []

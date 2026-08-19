@@ -191,6 +191,7 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "redirect_destination_status_not_observed_for_every_redirect",
   "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
   "hreflang_targets_outside_this_crawl_were_not_classified",
+  "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps",
   "utf8_bytes_of_the_delivered_html_no_rendering_performed",
   "declared_in_the_head_markup_no_lab_run_and_no_network_timing",
   "first_image_in_document_order_with_a_declared_size_no_viewport_is_available",
