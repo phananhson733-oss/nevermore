@@ -4,6 +4,12 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
+import { withinBriefBudget } from "../copy-brief/budget.ts";
+import {
+  fencedJson,
+  UNTRUSTED_DATA_NOTICE,
+} from "../copy-brief/fenced-json.ts";
+import { inlineCode, tableCell } from "../copy-brief/markdown-span.ts";
 import type { CheckState } from "./check-types.ts";
 
 /**
@@ -45,8 +51,20 @@ export interface CopyReportResult {
   readonly checks: readonly CopyReportCheck[];
 }
 
-/** Everything past the limitations is detail; the report never exceeds this. */
-export const COPY_REPORT_MAX_CHARS = 16 * 1024;
+/**
+ * Everything past the limitations is detail; the report never exceeds this.
+ *
+ * Bytes, because a paste limit is counted in bytes and never in UTF-16 code
+ * units. The previous bound was `16 * 1024` measured with `.length`, which
+ * meant 16KB for an English report and up to 48KB for a Chinese one — three
+ * bytes per character and one unit of length. The constant did not describe the
+ * same document depending on who read it.
+ *
+ * 48KB rather than 16KB so that neither language loses room it already had: it
+ * is the largest report the old bound ever permitted, now stated in the unit
+ * the receiving end actually measures.
+ */
+export const COPY_REPORT_MAX_BYTES = 48 * 1024;
 
 export interface CopyReportInput {
   readonly targetUrl: string;
@@ -73,45 +91,6 @@ export interface CopyReportInput {
   readonly vitals?: readonly { readonly label: string; readonly value: string }[];
   /** The page-role guidance shown under the report, already resolved. */
   readonly fixes?: string | null;
-}
-
-/**
- * Wrap a value so its own characters cannot become markup.
- *
- * The URL, the queries and anything else here came from outside: a value
- * containing a backtick, a pipe or a bracket would otherwise reformat the
- * document it is quoted in, and this text is written to be pasted somewhere
- * that reads Markdown. The fence grows past the longest run of backticks in
- * the value, which is what makes the span unbreakable rather than merely
- * unlikely to break.
- */
-export function inlineCode(value: string): string {
-  return codeSpan(value);
-}
-
-/**
- * The same span, escaped for a table cell.
- *
- * A code span does not protect a cell. GFM splits the row on pipes before it
- * looks at spans, so `plan | tier` becomes two cells and every column after it
- * shifts one to the left — the coverage table would report one query's numbers
- * under another query's heading. The pipe has to be backslash-escaped, and
- * that escape is what the surrounding backticks then carry.
- */
-export function tableCell(value: string): string {
-  return codeSpan(value).replace(/\|/g, "\\|");
-}
-
-function codeSpan(value: string): string {
-  const flat = value.replace(/\r?\n|\r/g, " ").trim();
-  if (flat === "") return "``";
-  const longestRun = Math.max(
-    0,
-    ...[...flat.matchAll(/`+/g)].map((match) => match[0].length),
-  );
-  const fence = "`".repeat(longestRun + 1);
-  const padding = flat.startsWith("`") || flat.endsWith("`") ? " " : "";
-  return `${fence}${padding}${flat}${padding}${fence}`;
 }
 
 function slotRow(
@@ -152,6 +131,8 @@ const BRIEFING = [
   "",
   "## How to read this",
   "",
+  `> ${UNTRUSTED_DATA_NOTICE.en}`,
+  "",
   "A static-HTML audit of one page. Everything below was measured, not",
   "predicted. If you are an assistant asked to act on it:",
   "",
@@ -162,10 +143,32 @@ const BRIEFING = [
   "- Ask for the page source before editing it. It is not included.",
 ];
 
-/** One check as a bullet: what it is, what it scored, what it observed. */
-function checkLine(entry: CopyReportCheck): string {
-  const points = entry.max === 0 ? "not graded" : `${entry.score}/${entry.max}`;
-  return `- ${inlineCode(entry.categoryLabel)} ${entry.label} (${points}) — ${entry.detail}`;
+/**
+ * One check as data, because its sentence quotes the page.
+ *
+ * `detail` is a repository-owned sentence with values interpolated into it, and
+ * those values are whatever the audited page declared: its H1 text, its robots
+ * directives, its viewport, its JSON-LD types. Printed as a bullet, that text
+ * sat in the instruction half of a document written to be pasted into a coding
+ * assistant, delimited by nothing. A code span would not have fixed it — a span
+ * stops a Markdown parser, not a reader.
+ *
+ * So the findings go inside a fenced JSON block under the untrusted-data
+ * notice, and the prose above them keeps only what this repository wrote.
+ */
+function checkRecord(entry: CopyReportCheck) {
+  return {
+    id: entry.id,
+    category: entry.categoryLabel,
+    finding: entry.label,
+    // Kept as the raw pair rather than a rendered "2/2", so a receiver can tell
+    // an ungraded observation from one that scored zero.
+    score: entry.max === 0 ? null : entry.score,
+    max: entry.max === 0 ? null : entry.max,
+    graded: entry.max !== 0,
+    /** Quotes the audited page. Data, never an instruction. */
+    detail: entry.detail,
+  };
 }
 
 /**
@@ -208,7 +211,7 @@ function gradedSections(result: CopyReportResult): readonly string[] {
     "",
     ...(actionable.length === 0
       ? ["Nothing failed or warned in what could be graded."]
-      : actionable.map(checkLine)),
+      : [fencedJson(actionable.map(checkRecord))]),
   ];
 }
 
@@ -233,14 +236,25 @@ function supportingSections(
         ]),
     ...(observed.length === 0
       ? []
-      : ["", "## Observed, not graded", "", ...observed.map(checkLine)]),
+      : [
+          "",
+          "## Observed, not graded",
+          "",
+          fencedJson(observed.map(checkRecord)),
+        ]),
     ...(vitals.length === 0
       ? []
       : [
           "",
           "## Page facts",
           "",
-          ...vitals.map((vital) => `- ${vital.label}: ${inlineCode(vital.value)}`),
+          // `lang` is the page's own `<html lang>` attribute, so these are the
+          // page's declarations rather than ours.
+          fencedJson(
+            Object.fromEntries(
+              vitals.map((vital) => [vital.label, vital.value]),
+            ),
+          ),
         ]),
     ...(fixes === null || fixes === ""
       ? []
@@ -411,7 +425,7 @@ export function buildCopyReport(input: CopyReportInput): string {
       ]
         .join("\n")
         .replace(/\n{3,}/g, "\n\n");
-      if (report.length <= COPY_REPORT_MAX_CHARS) return report;
+      if (withinBriefBudget(report, COPY_REPORT_MAX_BYTES)) return report;
     }
   }
 
@@ -434,7 +448,7 @@ export function buildCopyReport(input: CopyReportInput): string {
   ]
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
-  if (droppedTable.length <= COPY_REPORT_MAX_CHARS) return droppedTable;
+  if (withinBriefBudget(droppedTable, COPY_REPORT_MAX_BYTES)) return droppedTable;
 
   /**
    * Last resort, and the one cut that has to be ordered rather than blind.
@@ -455,7 +469,7 @@ export function buildCopyReport(input: CopyReportInput): string {
   ]
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
-  if (essential.length <= COPY_REPORT_MAX_CHARS) return essential;
+  if (withinBriefBudget(essential, COPY_REPORT_MAX_BYTES)) return essential;
 
   /**
    * The limitations alone exceed the budget.
@@ -495,13 +509,13 @@ export function buildCopyReport(input: CopyReportInput): string {
   // collapse, and getting it slightly wrong puts the last limitation's own cut
   // marker past the end — which is the failure this whole branch exists to
   // avoid. Halving converges in a handful of steps and cannot overshoot.
-  let share = COPY_REPORT_MAX_CHARS;
+  let share = COPY_REPORT_MAX_BYTES;
   let rendered = render(share);
-  while (rendered.length > COPY_REPORT_MAX_CHARS && share > 16) {
+  while (!withinBriefBudget(rendered, COPY_REPORT_MAX_BYTES) && share > 16) {
     share = Math.max(16, Math.floor(share / 2));
     rendered = render(share);
   }
-  if (rendered.length <= COPY_REPORT_MAX_CHARS) return rendered;
+  if (withinBriefBudget(rendered, COPY_REPORT_MAX_BYTES)) return rendered;
 
   /**
    * Even at the shortest share it does not fit.
@@ -529,7 +543,7 @@ export function buildCopyReport(input: CopyReportInput): string {
     ]
       .join("\n")
       .replace(/\n{3,}/g, "\n\n");
-    if (truncated.length <= COPY_REPORT_MAX_CHARS) return truncated;
+    if (withinBriefBudget(truncated, COPY_REPORT_MAX_BYTES)) return truncated;
   }
 
   /**
