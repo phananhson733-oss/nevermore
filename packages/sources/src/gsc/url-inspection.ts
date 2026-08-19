@@ -60,11 +60,19 @@ export function maxCensusUrls(budgetMs: number): number {
  * Google's verdict enumeration, as the discovery document types it.
  *
  * Every one of these is a real enum in the API. `coverageState` — the field
- * that would name "Discovered, currently not indexed" — is deliberately NOT
- * read: the discovery document types it as a bare string with no enumeration,
- * it is a localized UI label, and Google reworded these labels wholesale in
- * the 2023 Page Indexing rework. A detector keyed on it fails silently toward
- * "indexed", which is the direction that hides a broken site.
+ * whose wording names "Discovered, currently not indexed" — is deliberately
+ * NOT read: the discovery document types it as a bare string with no
+ * enumeration while every sibling here carries a full one, so a detector keyed
+ * on its wording breaks silently toward "indexed", the direction that hides a
+ * broken site.
+ *
+ * Two things this comment used to claim, and should not have. The field is not
+ * localized in the sense that mattered: `languageCode` on the request is set
+ * by the caller and defaults to en-US, so the wording does not follow the
+ * property owner's locale. And no specific rewording event supports the risk —
+ * the Coverage report was renamed Page indexing, which is not the same as the
+ * API's strings changing. The untyped premise carries this on its own; the
+ * embellishments did not survive checking.
  */
 export type UrlIndexVerdict =
   | "VERDICT_UNSPECIFIED"

@@ -36,13 +36,21 @@ describe("v2 Agent audit catalog", () => {
     for (const check of all) {
       if (check.engine !== "needs-integration") continue;
       expect(check.evidenceRecordIds).toEqual([]);
-      // Two different sentences, and the difference matters to a reader
-      // planning work: "no detector reads it yet" promises a later release,
-      // while "outside what this run can observe" is a boundary they can plan
-      // around. Every unwired check must say exactly one of them.
-      expect(check.dataSource.en).toMatch(
-        /no detector reads it yet|Outside what a bounded anonymous crawl can observe/,
-      );
+      // The difference matters to a reader planning work: "no detector reads
+      // it yet" promises a later release, while a named source is a boundary
+      // they can plan around — and for the undecided five that source has to
+      // be the real one. A single sentence covering all of them told four
+      // checks that a bounded anonymous crawl was the blocker when the blocker
+      // was an API this product already calls or a provider it already pays.
+      const named = UNMEASURABLE_HERE[check.id] !== undefined;
+      if (named) {
+        expect(check.dataSource.en).not.toMatch(/anonymous crawl/i);
+        expect(check.dataSource.en).not.toMatch(/no detector reads it yet/);
+      } else {
+        expect(check.dataSource.en).toMatch(/no detector reads it yet/);
+      }
+      // Never the sentence that means a detector ran and matched nothing.
+      expect(check.dataSource.en).not.toBe("Bounded crawl");
     }
     // Impression shares only exist in Search Console, whatever supplies the URLs.
     for (const id of ["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5"]) {
