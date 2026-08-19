@@ -1011,7 +1011,11 @@
         "faq_match_against_collected_paragraphs_only": "Questions are matched against the headings and paragraphs this crawl kept, which is bounded. A page whose FAQ runs past that point is not judged.",
         "similarity_measured_on_collected_paragraphs_after_chrome": "Similarity is measured on the paragraphs this crawl kept, after paragraphs shared by most pages are removed as site chrome. Pages with little text left are not scored.",
         "page_weight_is_one_lab_load_on_an_emulated_mobile_device": "Measured by one Lighthouse load on an emulated mobile device, not by a real visit. A page that serves different bytes to different devices will differ.",
-        "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved": "Counts only URLs this crawl actually fetched. A URL with impressions that the crawl never reached is left out of both the numerator and the denominator, because \"the site dropped it\" and \"we did not reach it\" look identical."
+        "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved": "Counts only URLs this crawl actually fetched. A URL with impressions that the crawl never reached is left out of both the numerator and the denominator, because \"the site dropped it\" and \"we did not reach it\" look identical.",
+        "image_weights_are_the_bytes_this_run_transferred": "These are the bytes this run actually transferred, capped at the budget — a file that reached the cap is known to be over it, but its true total was not downloaded. A CDN may serve different bytes to a different browser.",
+        "no_image_weights_were_measured_for_this_run": "No image weights were measured on this run.",
+        "the_page_declared_no_images_to_weigh": "The target page declares no images, so there was nothing to weigh.",
+        "no_declared_image_could_be_fetched_this_run": "Every image this page declares failed to fetch, so nothing about their size is claimed."
       },
       "records": {
         "robots_resource": {
@@ -1285,6 +1289,10 @@
         "abandoned_url_impression_share": {
           "title": "Impression share on abandoned URLs",
           "description": "Share of reported impressions landing on URLs this crawl fetched and found gone or redirected."
+        },
+        "image_over_transfer_budget": {
+          "title": "Image over the transfer budget",
+          "description": "Images on the target page whose transferred bytes reached or passed the reviewed per-image budget."
         }
       },
       "evidence": {
@@ -1411,7 +1419,9 @@
         "first_image_width": "First image width",
         "first_image_height": "First image height",
         "total_transfer_bytes": "Total transferred bytes",
-        "abandoned_url_impression_share": "Abandoned URL impression share"
+        "abandoned_url_impression_share": "Abandoned URL impression share",
+        "image_transfer_bytes": "Transferred bytes",
+        "image_size_is_exact": "Size is exact"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

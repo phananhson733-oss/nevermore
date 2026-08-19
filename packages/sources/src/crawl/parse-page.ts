@@ -257,6 +257,8 @@ export interface ParsedOnPageFacts {
    * JSON-LD value collected rather than only its key.
    */
   readonly faqQuestions: readonly string[];
+  /** Absolute, de-duplicated `src` of each `<img>`, in document order. */
+  readonly imageSources: readonly string[];
   /** The page declares `rel="next"` or `rel="prev"`: it is one of a series. */
   readonly partOfASequence: boolean;
   readonly externalLinks: ParsedExternalLinkFacts;
@@ -844,6 +846,41 @@ function collectImageFormats(html: string): readonly string[] {
   return out;
 }
 
+/**
+ * Absolute URLs of the images a reader would see, in document order.
+ *
+ * Separate from `imageFormats`, which only needs the extension. This carries
+ * the whole address because measuring an image's weight means fetching it, and
+ * a relative `src` cannot be fetched from anywhere but the page it sat on.
+ *
+ * `srcset` candidates are deliberately not collected. The browser picks one by
+ * viewport and pixel density, so there is no single "the image" among them, and
+ * measuring every candidate would report a page as heavy for offering a small
+ * one to small screens — the opposite of what it did right.
+ */
+function collectImageSources(html: string, pageUrl: string): readonly string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const match of html.matchAll(openingTagPattern("img", "gi"))) {
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxImages) break;
+    const src = attr(match[0], "src")?.trim();
+    if (!src || src.startsWith("data:")) continue;
+    let resolved: string;
+    try {
+      resolved = new URL(decodeHtml(src), pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
+    // One fetch per address, not per placement: a spacer or an icon repeated
+    // down the page is one image and one download.
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
+
 /** Stylesheets and scripts in `<head>` that stop the parser where they sit. */
 /** Comments removed; the elements a reader never sees are left in place. */
 function withoutComments(html: string): string {
@@ -1224,6 +1261,7 @@ function collectOnPageFacts(
     hreflangAlternates: collectHreflangAlternates(markup, pageUrl),
     images: collectImageFacts(markup),
     imageFormats: collectImageFormats(markup),
+    imageSources: collectImageSources(markup, pageUrl),
     headingLevels: collectHeadingLevels(markup),
     // Comment-stripped but script-preserved: both of these read <script> tags,
     // which `markup` removes.

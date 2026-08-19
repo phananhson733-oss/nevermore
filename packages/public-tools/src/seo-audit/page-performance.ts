@@ -45,6 +45,23 @@ export interface PageWeightRaw {
 /** The catalogue's published rule for 8.5, restated where it is enforced. */
 export const PAGE_WEIGHT_BUDGET_BYTES = 2 * 1024 * 1024;
 
+/** The catalogue's published rule for 5.2, restated where it is enforced. */
+export const IMAGE_TRANSFER_BUDGET_BYTES = 200 * 1024;
+
+/** What one image cost to transfer. */
+export interface ImageWeightRaw {
+  readonly url: string;
+  readonly transferredBytes: number;
+  /**
+   * Whether the whole file arrived.
+   *
+   * False means the read stopped at the budget, so `transferredBytes` is a
+   * floor rather than a total — which is all this check needs, because a file
+   * that reaches the budget has already failed the rule.
+   */
+  readonly complete: boolean;
+}
+
 const METRICS = [
   {
     id: "core_web_vital_lcp",
@@ -215,9 +232,71 @@ export function buildPageWeightRecords(
   ];
 }
 
+/**
+ * The record behind 5.2, from a bounded fetch of each declared image.
+ *
+ * Deliberately NOT derived from the Lighthouse lab run beside it. Lighthouse
+ * records only what its emulated mobile Chrome fetched during one no-scroll
+ * navigation, so a `loading="lazy"` image below the fold never appears and a
+ * `srcset` yields the small mobile candidate. A page carrying twenty-four
+ * images would report "0 affected of 3 tested" directly under 5.3, which
+ * counts every `<img>` in the markup — two surfaces disagreeing about the same
+ * page, with the failure landing on the side of a false pass.
+ */
+export function buildImageWeightRecords(
+  images: readonly ImageWeightRaw[] | null | undefined,
+  /** Named so an unmeasurable run says which kind of nothing it got. */
+  limitation = "no_image_weights_were_measured_for_this_run",
+): readonly SeoAuditRecord[] {
+  if (images === null || images === undefined || images.length === 0) {
+    return [
+      {
+        id: "image_over_transfer_budget",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation,
+      } satisfies SeoAuditRecord,
+    ];
+  }
+  // A file that filled the cap is at least the budget, and the published rule
+  // is "below 200KB" — so reaching it is already over, whatever the true total.
+  const over = images.filter(
+    (image) =>
+      !image.complete || image.transferredBytes >= IMAGE_TRANSFER_BUDGET_BYTES,
+  );
+  return [
+    {
+      id: "image_over_transfer_budget",
+      category: "page_performance",
+      state: "observed",
+      unit: "pages",
+      population: "target_page",
+      targetTested: true,
+      tested: images.length,
+      affected: over.length,
+      observations: over.map((image) => ({
+        url: image.url,
+        values: [
+          { label: "image_transfer_bytes", value: image.transferredBytes },
+          // Published so a floor is never read as a total.
+          { label: "image_size_is_exact", value: image.complete },
+        ],
+      })),
+      limitation: "image_weights_are_the_bytes_this_run_transferred",
+    } satisfies SeoAuditRecord,
+  ];
+}
+
 export const PAGE_PERFORMANCE_RECORD_IDS: readonly string[] = [
   ...METRICS.map((metric) => metric.id),
   "page_total_transfer_bytes",
+  "image_over_transfer_budget",
 ];
 
 export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
@@ -225,6 +304,8 @@ export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   "crux_source_level",
   "crux_form_factor",
   "total_transfer_bytes",
+  "image_transfer_bytes",
+  "image_size_is_exact",
 ];
 
 export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
@@ -232,4 +313,8 @@ export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values",
   "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped",
   "page_weight_is_one_lab_load_on_an_emulated_mobile_device",
+  "image_weights_are_the_bytes_this_run_transferred",
+  "no_image_weights_were_measured_for_this_run",
+  "the_page_declared_no_images_to_weigh",
+  "no_declared_image_could_be_fetched_this_run",
 ];

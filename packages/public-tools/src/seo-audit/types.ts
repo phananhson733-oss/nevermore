@@ -193,6 +193,8 @@ export interface SeoAuditTargetDeclaredFacts {
       readonly width: number | null;
       readonly height: number | null;
     } | null;
+    /** Absolute `src` of each `<img>`, de-duplicated, in document order. */
+    readonly sources: readonly string[];
   };
   readonly externalLinks: {
     readonly total: number;

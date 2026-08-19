@@ -221,10 +221,6 @@ export const UNMEASURABLE_HERE: Readonly<
     "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
     "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
   ),
-  "5.2": l(
-    "Per-image byte size needs one request per image, which is roughly two and a half times this run's entire request ceiling.",
-    "逐张图片的字节大小需要每张图一个请求，约为本次运行整个请求上限的两倍半。",
-  ),
 };
 
 const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
@@ -246,6 +242,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "7.4": ["faq_schema_question_not_on_page"],
   "4.5": ["page_near_duplicate_of_another_page"],
   "8.5": ["page_total_transfer_bytes"],
+  "5.2": ["image_over_transfer_budget"],
   A2: ["abandoned_url_impression_share"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
@@ -677,6 +674,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   A2: l(
     "These URLs no longer serve the page they rank for, and search results are still sending people to them. Per URL, pick one: 301 it to the page that replaced it if one exists, or restore it if it should never have gone. If neither, let it return 410 rather than 404 — 410 tells Google the removal was deliberate and retires the result faster. A redirect chain counts here too: point the link at the destination, not at the hop.",
     "这些 URL 已经不再提供它们排名所对应的页面，而搜索结果还在往那里送人。逐个二选一：有替代页就 301 过去；本不该下线就恢复。两者都不是的话，让它返回 410 而不是 404——410 告诉 Google 这是有意移除，结果会更快退出。跳转链也算在内：链接要直接指向终点，不要指向中间跳。",
+  ),
+  "5.2": l(
+    "Each of these files costs the reader real time before the page finishes. Per image, pick one: export it at the size it is actually displayed rather than full resolution, save it as WebP or AVIF instead of PNG or JPEG, or drop its quality to around 80 — most photographs are indistinguishable there at a fraction of the bytes. If it is decorative, consider whether it needs to ship at all.",
+    "这些文件每一个都会在页面加载完成前实打实占用读者的时间。逐张三选一：按实际显示尺寸导出而不是原分辨率；存成 WebP 或 AVIF 而不是 PNG/JPEG；把质量降到 80 左右——多数照片在那个档位肉眼看不出差别，字节数却只剩一小部分。如果它只是装饰性的，先想想它需不需要发出去。",
   ),
   C2: l(
     "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",

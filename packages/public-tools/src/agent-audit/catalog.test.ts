@@ -27,7 +27,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(72);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(73);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -70,6 +70,26 @@ describe("v2 Agent audit catalog", () => {
       substanceWords: 60,
       blocker: false,
     });
+  });
+
+  it("never makes a check blocker-capable that does not publish a Blocker", () => {
+    // The forward direction is checked below. This is the reverse, and it can
+    // happen silently: BLOCKER_EVIDENCE and EVIDENCE are adjacent tables with
+    // overlapping keys, so an entry meant for one lands in the other and the
+    // check quietly gains a severity its own published sentence never offers.
+    // 5.2 — "Below 200 KB; otherwise Tip" — did exactly that.
+    const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
+      (group) => group.checks,
+    );
+    const overclaiming = all
+      .filter(
+        (check) =>
+          check.blockerEvidenceRecordIds.length > 0 &&
+          !/blocker/i.test(check.threshold.en),
+      )
+      .map((check) => check.id);
+
+    expect(overclaiming).toEqual([]);
   });
 
   it("never calls a working check unobservable", () => {
@@ -168,7 +188,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(72);
+    expect(decidable).toHaveLength(73);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its

@@ -1,3 +1,5 @@
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources";
+
 import type {
   SeoAuditCoverage,
   SeoAuditPage,
@@ -377,7 +379,11 @@ const IMAGE_COUNT_KEYS: readonly string[] = [
   "lazyLoaded",
 ];
 
-const IMAGE_FACTS_KEYS: readonly string[] = [...IMAGE_COUNT_KEYS, "first"];
+const IMAGE_FACTS_KEYS: readonly string[] = [
+  ...IMAGE_COUNT_KEYS,
+  "first",
+  "sources",
+];
 
 const FIRST_IMAGE_KEYS: readonly string[] = ["lazyLoaded", "width", "height"];
 
@@ -397,7 +403,15 @@ function isImageFacts(value: unknown): boolean {
     isObject(value) &&
     hasExactly(value, IMAGE_FACTS_KEYS) &&
     IMAGE_COUNT_KEYS.every((key) => isNonNegativeInteger(value[key])) &&
-    isFirstImage(value["first"])
+    isFirstImage(value["first"]) &&
+    // The parser's own caps, not a second copy of them: a guard that hard-codes
+    // the numbers passes a payload the parser can no longer produce, and fails
+    // one it can, the moment either cap moves.
+    isBoundedStringList(
+      value["sources"],
+      CRAWL_PROJECTION_LIMITS.maxImages,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    )
   );
 }
 
@@ -592,7 +606,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v13" &&
+    run.schemaVersion === "seo_audit.sitewide.v14" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

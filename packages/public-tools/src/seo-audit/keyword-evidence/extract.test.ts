@@ -218,6 +218,7 @@ describe("buildTargetPageExtract on-page facts", () => {
       withDimensions: 2,
       lazyLoaded: 1,
       first: null,
+      sources: [],
     },
     externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
     htmlBytes: 31_744,
@@ -235,6 +236,7 @@ describe("buildTargetPageExtract on-page facts", () => {
     },
     textMetrics: { cjkChars: 0, nonCjkWords: 1_800, denseChars: 9_000 },
     imageFormats: [],
+    imageSources: [],
     headingLevels: [1],
     termFrequencies: [
       { size: 1, rows: [{ phrase: "astrology", count: 42 }] },
@@ -253,6 +255,7 @@ describe("buildTargetPageExtract on-page facts", () => {
       // Measurements too, for the same reason: how the body and its images were
       // counted, not something the markup declared.
       imageFormats: _formats,
+      imageSources: [],
       headingLevels: _levels,
       // Also a measurement, not a declaration: whether an alternate resolves is
       // something this run went and checked, not something the markup said.

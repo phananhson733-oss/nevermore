@@ -146,6 +146,15 @@ function declaredFactsOf(
        * from a lazy 32-pixel logo mark, which is what the count could not do.
        */
       first: onPage.firstImage,
+      /**
+       * Addresses, so the caller can weigh them.
+       *
+       * Published rather than measured here because this module is a pure
+       * projection: fetching belongs to the boundary that owns credentials and
+       * timeouts. The cached row only ever serves the same target URL
+       * (cachedSeoAuditMatches), so these stay the target page's own.
+       */
+      sources: [...onPage.imageSources],
     },
     externalLinks: {
       total: onPage.externalLinks.total,

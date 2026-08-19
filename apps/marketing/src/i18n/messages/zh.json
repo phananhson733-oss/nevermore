@@ -1011,7 +1011,11 @@
         "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。",
         "similarity_measured_on_collected_paragraphs_after_chrome": "相似度基于本次抓取保留的段落计算，并先剔除大多数页面共有的段落（视为站点框架）。剩余文本过少的页面不打分。",
         "page_weight_is_one_lab_load_on_an_emulated_mobile_device": "这是模拟移动设备上一次 Lighthouse 加载的结果，不是真实访问。对不同设备发送不同字节的页面会有出入。",
-        "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved": "只统计本次抓取真正访问过的 URL。有曝光但抓取没到过的 URL 既不进分子也不进分母，因为「站点下线了它」和「我们没抓到」看起来完全一样。"
+        "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved": "只统计本次抓取真正访问过的 URL。有曝光但抓取没到过的 URL 既不进分子也不进分母，因为「站点下线了它」和「我们没抓到」看起来完全一样。",
+        "image_weights_are_the_bytes_this_run_transferred": "这是本次运行实际传输的字节，上限就是预算——读满上限的文件可以确定超标，但没有下载它的真实总量。CDN 可能给不同浏览器发送不同字节。",
+        "no_image_weights_were_measured_for_this_run": "本次运行没有称量任何图片体积。",
+        "the_page_declared_no_images_to_weigh": "目标页没有声明任何图片，无从称量。",
+        "no_declared_image_could_be_fetched_this_run": "这个页面声明的图片全部抓取失败，因此不对它们的体积作任何断言。"
       },
       "records": {
         "robots_resource": {
@@ -1285,6 +1289,10 @@
         "abandoned_url_impression_share": {
           "title": "废弃 URL 的曝光占比",
           "description": "落在本次抓取访问过、且已失效或跳转的 URL 上的曝光，占已报告曝光的比例。"
+        },
+        "image_over_transfer_budget": {
+          "title": "超出传输预算的图片",
+          "description": "目标页上传输字节数达到或超过审阅的单图预算的图片。"
         }
       },
       "evidence": {
@@ -1411,7 +1419,9 @@
         "first_image_width": "第一张图宽度",
         "first_image_height": "第一张图高度",
         "total_transfer_bytes": "传输字节总数",
-        "abandoned_url_impression_share": "废弃 URL 曝光占比"
+        "abandoned_url_impression_share": "废弃 URL 曝光占比",
+        "image_transfer_bytes": "传输字节数",
+        "image_size_is_exact": "体积为精确值"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

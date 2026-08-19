@@ -5,7 +5,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
 import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
-import { buildPagePerformanceRecords, buildPageWeightRecords } from "@sf/public-tools/seo-audit/page-performance";
+import {
+  buildPagePerformanceRecords,
+  buildPageWeightRecords,
+  buildImageWeightRecords,
+} from "@sf/public-tools/seo-audit/page-performance";
 import {
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -58,7 +62,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v13",
+    schemaVersion: "seo_audit.sitewide.v14",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -184,6 +188,7 @@ function successWithExtract(
       withDimensions: 0,
       lazyLoaded: 0,
       first: null,
+      sources: [],
     },
               externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
               htmlBytes: 24_576,
@@ -449,15 +454,26 @@ describe("handleAgentAuditRequest", () => {
     };
 
     const records = body.data.result.pagePerformance?.records ?? [];
-    // Five: the four Core Web Vitals plus the page-weight record behind 8.5,
-    // which shares the region because it is the other half of the same paid
-    // PageSpeed response.
-    expect(records).toHaveLength(5);
-    for (const record of records) {
+    // Six: the four Core Web Vitals, the page-weight record behind 8.5, and
+    // the image-weight record behind 5.2. All three sources are per-visitor
+    // measurements of one page, which is what the region is for.
+    expect(records).toHaveLength(6);
+    // The five PageSpeed-sourced records say the source was not configured.
+    // The image record does NOT: its bytes come from our own fetches, not from
+    // PageSpeed, and borrowing PageSpeed's reason for it would state something
+    // about a provider that has nothing to do with why there are no weights.
+    const [psiSourced, imageSourced] = [records.slice(0, 5), records[5]];
+    for (const record of psiSourced) {
       expect(record.limitation).toBe(
         "no_field_data_source_was_configured_for_this_run",
       );
     }
+    // This fixture wires no image reader at all, and that is its own fact —
+    // distinct from "the page declares no images" and from "every fetch
+    // failed", both of which this run would be lying about if it claimed them.
+    expect(imageSourced?.limitation).toBe(
+      "no_image_weights_were_measured_for_this_run",
+    );
   });
 
   it.each([
@@ -549,7 +565,7 @@ describe("handleAgentAuditRequest", () => {
     // Every region present, and the guard accepting the whole envelope with
     // all of them attached at once.
     expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
-    expect(body.data.result.pagePerformance?.records).toHaveLength(5);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(6);
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
@@ -695,7 +711,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v13",
+            schemaVersion: "seo_audit.sitewide.v14",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -720,6 +736,7 @@ describe("handleAgentAuditRequest", () => {
             records: [
               ...buildPagePerformanceRecords(null),
               ...buildPageWeightRecords(null),
+              ...buildImageWeightRecords(null),
             ],
           },
         },
@@ -788,6 +805,7 @@ describe("handleAgentAuditRequest", () => {
         records: [
           ...buildPagePerformanceRecords(null),
           ...buildPageWeightRecords(null),
+          ...buildImageWeightRecords(null),
         ],
       },
     });

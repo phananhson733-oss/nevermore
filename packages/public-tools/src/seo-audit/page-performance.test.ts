@@ -8,6 +8,7 @@ import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
 import {
   buildPagePerformanceRecords,
   buildPageWeightRecords,
+  buildImageWeightRecords,
   PAGE_PERFORMANCE_RECORD_IDS,
   type PagePerformanceRaw,
 } from "./page-performance.ts";
@@ -47,7 +48,7 @@ describe("page performance records", () => {
     }
   });
 
-  it("fills the region's exact id list between its two builders", () => {
+  it("fills the region's exact id list between its three builders", () => {
     // PAGE_PERFORMANCE_RECORD_IDS is the wire guard's exact list, and the
     // region is refused whole when the records do not match it. The field half
     // and the lab half are built separately, so nothing but this asserts that
@@ -62,6 +63,7 @@ describe("page performance records", () => {
           [
             ...buildPagePerformanceRecords(input),
             ...buildPageWeightRecords(weight),
+            ...buildImageWeightRecords(null),
           ].map((record) => record.id),
         ).toEqual(PAGE_PERFORMANCE_RECORD_IDS);
       }

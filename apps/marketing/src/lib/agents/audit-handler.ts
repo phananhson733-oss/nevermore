@@ -31,10 +31,13 @@ import { AGENT_AUDIT_HEADING_PRESETS } from "@sf/public-tools/agent-audit";
 import {
   buildPagePerformanceRecords,
   buildPageWeightRecords,
+  buildImageWeightRecords,
   type PagePerformanceGap,
   type PagePerformanceRaw,
   type PageWeightRaw,
+  type ImageWeightRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
+import { createImageWeightReader } from "./image-weight-reader.ts";
 import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
@@ -107,6 +110,19 @@ export interface AgentAuditHandlerDependencies {
   readonly readPagePerformance?: (input: {
     readonly url: string;
   }) => Promise<PagePerformanceReadResult> | undefined;
+  /**
+   * Transferred bytes for the target page's own images, or nothing.
+   *
+   * Best-effort like the two above. These are the only subresource requests
+   * this product makes, and they are bounded twice over: to the target page,
+   * and to the first images in document order.
+   */
+  readonly readImageWeights?: (input: {
+    readonly sources: readonly string[];
+  }) => Promise<
+    | { readonly status: "ok"; readonly images: readonly ImageWeightRaw[] }
+    | { readonly status: "unavailable"; readonly reason: string }
+  >;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
@@ -169,6 +185,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   // visitor's own traffic that this run never went and looked for. Leaving it
   // undefined lets the handler's `source_not_configured` initial value stand.
   readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
+  readImageWeights: createImageWeightReader(),
 };
 
 /**
@@ -624,6 +641,8 @@ export async function handleAgentAuditRequest(
   // — is the same settled outcome, and the records name which one.
   let pagePerformance: PagePerformanceRaw | null = null;
   let pageWeight: PageWeightRaw | null = null;
+  let imageWeights: readonly ImageWeightRaw[] | null = null;
+  let imageWeightLimitation = "no_image_weights_were_measured_for_this_run";
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   if (result.targetInspected) {
     try {
@@ -644,6 +663,20 @@ export async function handleAgentAuditRequest(
       // Independent of the field block: a page too new for CrUX still weighs
       // something, and that is exactly the page 8.5 is worth running on.
       pageWeight = read?.weight ?? null;
+    } catch {
+      pagePerformanceGap = "provider_unavailable";
+    }
+    try {
+      const sources = result.targetPageExtract?.declared?.images.sources ?? [];
+      const weighed = await dependencies.readImageWeights?.({ sources });
+      if (weighed?.status === "ok") {
+        imageWeights = weighed.images;
+      } else if (weighed?.status === "unavailable") {
+        imageWeightLimitation =
+          weighed.reason === "no_images_declared"
+            ? "the_page_declared_no_images_to_weigh"
+            : "no_declared_image_could_be_fetched_this_run";
+      }
     } catch {
       pagePerformanceGap = "provider_unavailable";
     }
@@ -786,6 +819,7 @@ export async function handleAgentAuditRequest(
                 // one page, and `page_performance` is excluded from
                 // CRAWL_CATEGORIES so it can never reach the shared cache row.
                 ...buildPageWeightRecords(pageWeight, pagePerformanceGap),
+                ...buildImageWeightRecords(imageWeights, imageWeightLimitation),
               ],
             },
           }

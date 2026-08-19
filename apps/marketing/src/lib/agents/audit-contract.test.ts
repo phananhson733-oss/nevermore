@@ -27,7 +27,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v13",
+        schemaVersion: "seo_audit.sitewide.v14",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -335,6 +335,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       withDimensions: 0,
       lazyLoaded: 0,
       first: null,
+      sources: [],
     },
             externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
             htmlBytes: 24_576,

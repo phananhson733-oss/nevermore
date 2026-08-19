@@ -856,6 +856,7 @@ describe("On-Page checker report depth", () => {
       withDimensions: 0,
       lazyLoaded: 0,
       first: null,
+      sources: [],
     },
         externalLinks: { total: 3, nofollow: 1, blankWithoutNoopener: 1 },
         htmlBytes: 51_200,
