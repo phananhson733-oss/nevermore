@@ -3442,7 +3442,6 @@
         "title": "What this run observed",
         "sampledAt": "Sampled {date}",
         "identityTitle": "Run identity",
-        "coverageTitle": "Coverage",
         "coverageNote": "Each block below is counted against its own denominator, and only the first states anything about the run as a whole. Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a sample that observed nothing is excluded rather than counted as a zero.",
         "notStored": "Report contents, provider answers and evidence are not stored server-side. Minimal billing, quota and abuse-prevention metadata is retained by the existing credits system. There is no paired recheck in this version.",
         "questionsTitle": "Question by question",
