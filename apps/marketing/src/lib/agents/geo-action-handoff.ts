@@ -102,7 +102,7 @@ export function sanitizeGeoExportUrl(exactUrl: string): GeoSafeUrl {
  * entry that says not to construct anything, which is exactly what carrying an
  * explicit kind was for.
  */
-const TASK_KIND: Readonly<Record<GeoActionKind, string>> = {
+export const GEO_ACTION_TASK_KIND: Readonly<Record<GeoActionKind, string>> = {
   do: "propose_asset",
   external_data: "collect_missing_input",
   avoid: "do_not_propose_asset",
@@ -491,7 +491,7 @@ export function buildGeoActionHandoff(
     // machine-readable half — to construct work for the one entry that says not
     // to construct it, which is exactly what carrying the kind was for.
     ...selected.map((candidate) => ({
-      kind: TASK_KIND[candidate.kind],
+      kind: GEO_ACTION_TASK_KIND[candidate.kind],
       params: {
         actionId: candidate.actionId,
         assetType: candidate.assetType,
