@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v5 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v6 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -45,11 +45,11 @@ export { isCanonicalIsoTimestamp };
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v5" as const;
+  "seo_audit.sitewide.v6" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v5. */
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v6. */
 /**
  * Re-exported, not re-declared.
  *
@@ -249,7 +249,7 @@ function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
 /**
  * Version of the derived search region, separate from the crawl payload's.
  *
- * `seo_audit.sitewide.v5` versions the shared crawl. This region is derived per
+ * `seo_audit.sitewide.v6` versions the shared crawl. This region is derived per
  * request and freezes its own decisions — the window, the finalisation lag, the
  * row cap, how a query's average position becomes a band — none of which the
  * crawl version describes. Changing any of them has to change this literal.

@@ -982,7 +982,10 @@
         "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks.",
         "the_field_data_provider_rejected_this_deployments_credentials": "The field-data provider rejected this deployment's credentials, so no measurement was taken. This is a configuration problem on our side, not a statement about your page.",
         "the_field_data_providers_quota_for_this_deployment_was_already_spent": "The field-data provider's quota for this deployment was already spent, so no measurement was taken. Nothing here is a statement about your page.",
-        "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again."
+        "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again.",
+        "no_results_page_provider_was_configured_for_this_run": "No results-page provider was configured for this run, so no results page was sampled. Nothing here is a statement about the query.",
+        "this_runs_market_is_not_one_the_results_page_provider_covers": "This run's market is not one the results-page provider covers, so no sample was taken and no paid call was made.",
+        "the_results_page_provider_did_not_answer_this_run": "The results-page provider did not answer this run, so no sample was taken. Worth trying again."
       },
       "records": {
         "robots_resource": {

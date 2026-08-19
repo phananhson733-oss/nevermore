@@ -34,16 +34,17 @@ function page(overrides: {
     sitemapMember: true,
     jsonLdTypes: [],
     jsonLdErrorCount: 0,
-    assets: overrides.noAssets
-      ? null
-      : {
-          images: [],
-          imageCount: 0,
-          openGraph: { title: false, description: false, image: false },
-          headingLevels: [1],
-          bodyText: overrides.bodyText ?? "Short body.",
-        },
   };
+}
+
+/** What the raw crawl carried for that page, which is where body text lives. */
+function body(overrides: {
+  readonly title?: string | null;
+  readonly bodyText?: string | null;
+  readonly finalStatus?: number;
+  readonly noAssets?: boolean;
+}) {
+  return overrides.noAssets ? null : (overrides.bodyText ?? "Short body.");
 }
 
 /** Enough words to clear the floor without being about anything. */
@@ -53,9 +54,7 @@ const LONG_CJK = "内容".repeat(150);
 
 describe("softNotFoundVerdict", () => {
   it("reports a page that says it is missing and has nothing else", () => {
-    const verdict = softNotFoundVerdict(
-      page({ title: "404 - Page not found", bodyText: "Sorry, nothing here." }),
-    );
+    const verdict = softNotFoundVerdict(page({ title: "404 - Page not found", bodyText: "Sorry, nothing here." }), body({ title: "404 - Page not found", bodyText: "Sorry, nothing here." }));
 
     expect(verdict?.matchedPhrase).toBe("404");
     expect(verdict?.bodyUnits.basis).toBe("words");
@@ -65,7 +64,7 @@ describe("softNotFoundVerdict", () => {
     // A pricing page with six words and a table is a short page, which other
     // checks report. Condemning it here would make a Blocker out of brevity.
     expect(
-      softNotFoundVerdict(page({ title: "Pricing", bodyText: "Two plans." })),
+      softNotFoundVerdict(page({ title: "Pricing", bodyText: "Two plans." }), body({ title: "Pricing", bodyText: "Two plans." })),
     ).toBeNull();
   });
 
@@ -73,29 +72,27 @@ describe("softNotFoundVerdict", () => {
     // The phrase is present and deliberate. Without the body floor this is the
     // false positive that would fail a healthy page at Blocker severity.
     expect(
-      softNotFoundVerdict(
-        page({ title: "How to fix 404 errors", bodyText: LONG_LATIN }),
-      ),
+      softNotFoundVerdict(page({ title: "How to fix 404 errors", bodyText: LONG_LATIN }), body({ title: "How to fix 404 errors", bodyText: LONG_LATIN })),
     ).toBeNull();
   });
 
   it("does not read a footer link as the page's own statement", () => {
     // "404" in a footer appears on entirely healthy sites, so only the title
     // and the opening of the body are searched.
-    const body = `${"Real content here. ".repeat(5)}${"filler ".repeat(60)} 404`;
-    expect(softNotFoundVerdict(page({ title: "Guide", bodyText: body }))).toBeNull();
+    const text = `${"Real content here. ".repeat(5)}${"filler ".repeat(60)} 404`;
+    expect(
+      softNotFoundVerdict(page({ title: "Guide", bodyText: text }), text),
+    ).toBeNull();
   });
 
   it("never fires on a page that did not answer 200", () => {
     expect(
-      softNotFoundVerdict(
-        page({ title: "404", bodyText: "Nothing", finalStatus: 404 }),
-      ),
+      softNotFoundVerdict(page({ title: "404", bodyText: "Nothing", finalStatus: 404 }), body({ title: "404", bodyText: "Nothing", finalStatus: 404 })),
     ).toBeNull();
   });
 
   it("returns nothing rather than guessing when the body was not captured", () => {
-    expect(softNotFoundVerdict(page({ title: "404", noAssets: true }))).toBeNull();
+    expect(softNotFoundVerdict(page({ title: "404", noAssets: true }), body({ title: "404", noAssets: true }))).toBeNull();
   });
 
   describe("Chinese pages", () => {
@@ -106,22 +103,18 @@ describe("softNotFoundVerdict", () => {
       // own site is Chinese first.
       expect(LONG_CJK.split(/\s+/).filter(Boolean)).toHaveLength(1);
       expect(
-        softNotFoundVerdict(page({ title: "产品定价", bodyText: LONG_CJK })),
+        softNotFoundVerdict(page({ title: "产品定价", bodyText: LONG_CJK }), body({ title: "产品定价", bodyText: LONG_CJK })),
       ).toBeNull();
     });
 
     it("does not condemn a long Chinese page that mentions the phrase", () => {
       expect(
-        softNotFoundVerdict(
-          page({ title: "页面不存在时该怎么办", bodyText: LONG_CJK }),
-        ),
+        softNotFoundVerdict(page({ title: "页面不存在时该怎么办", bodyText: LONG_CJK }), body({ title: "页面不存在时该怎么办", bodyText: LONG_CJK })),
       ).toBeNull();
     });
 
     it("still reports a real Chinese soft 404", () => {
-      const verdict = softNotFoundVerdict(
-        page({ title: "页面不存在", bodyText: "抱歉，你访问的页面不存在。" }),
-      );
+      const verdict = softNotFoundVerdict(page({ title: "页面不存在", bodyText: "抱歉，你访问的页面不存在。" }), body({ title: "页面不存在", bodyText: "抱歉，你访问的页面不存在。" }));
 
       expect(verdict?.matchedPhrase).toBe("页面不存在");
       // Not "words": full-width punctuation is not a CJK unit, so a page of

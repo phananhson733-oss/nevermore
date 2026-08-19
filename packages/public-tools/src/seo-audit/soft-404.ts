@@ -73,9 +73,10 @@ export interface SoftNotFoundVerdict {
  */
 export function softNotFoundVerdict(
   page: SeoAuditPage,
+  /** Read from the raw crawl: the published page carries no body text. */
+  bodyText: string | null | undefined,
 ): SoftNotFoundVerdict | null {
   if (page.finalStatus !== 200) return null;
-  const bodyText = page.assets?.bodyText;
   if (bodyText === undefined || bodyText === null) return null;
 
   const bodyUnits = countTextUnits(bodyText);

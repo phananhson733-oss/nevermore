@@ -25,6 +25,13 @@ const SAMPLE_DEPTH = 10;
 const DEFAULT_MARKET = "US";
 const DEFAULT_LANGUAGE = "en";
 
+export type SerpShapeReadResult =
+  | { readonly status: "ok"; readonly sample: SerpShapeRaw }
+  | {
+      readonly status: "unavailable";
+      readonly reason: "market_not_supported" | "provider_unavailable";
+    };
+
 export interface SerpShapeReadInput {
   readonly keyword: string;
   readonly marketCode?: string | undefined;
@@ -35,7 +42,7 @@ export function createSerpShapeReader(options: {
   readonly login: string;
   readonly password: string;
   readonly fetchImpl?: typeof fetch;
-}): (input: SerpShapeReadInput) => Promise<SerpShapeRaw | null> {
+}): (input: SerpShapeReadInput) => Promise<SerpShapeReadResult> {
   const client = createDataForSeoKeywordMetricsClient({
     login: options.login,
     password: options.password,
@@ -55,7 +62,9 @@ export function createSerpShapeReader(options: {
     try {
       locationCode = keywordLocationCode(market);
     } catch (error) {
-      if (error instanceof KeywordMarketError) return null;
+      if (error instanceof KeywordMarketError) {
+        return { status: "unavailable", reason: "market_not_supported" };
+      }
       throw error;
     }
 
@@ -67,17 +76,20 @@ export function createSerpShapeReader(options: {
         depth: SAMPLE_DEPTH,
       });
       return {
-        keyword,
-        itemTypes: response.itemTypes,
-        unresolvedItemCount: response.unresolvedItemCount,
-        organicCount: response.rows.length,
-        marketCode: market,
-        languageCode: language,
+        status: "ok",
+        sample: {
+          keyword,
+          itemTypes: response.itemTypes,
+          unresolvedItemCount: response.unresolvedItemCount,
+          organicCount: response.rows.length,
+          marketCode: market,
+          languageCode: language,
+        },
       };
     } catch {
-      // A provider that did not answer is not a fact about the results page.
-      // The records report the sample they do not have.
-      return null;
+      // A provider that did not answer is not a fact about the results page,
+      // and it is not the visitor failing to confirm a query either.
+      return { status: "unavailable", reason: "provider_unavailable" };
     }
   };
 }
@@ -90,7 +102,7 @@ export function createSerpShapeReader(options: {
  * the right default for a deployment that has not opted in.
  */
 export function defaultSerpShapeReader():
-  | ((input: SerpShapeReadInput) => Promise<SerpShapeRaw | null>)
+  | ((input: SerpShapeReadInput) => Promise<SerpShapeReadResult>)
   | null {
   const login = process.env["DATAFORSEO_LOGIN"];
   const password = process.env["DATAFORSEO_PASSWORD"];

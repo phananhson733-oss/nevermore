@@ -3,6 +3,7 @@ import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
 } from "./soft-404.ts";
+import type { CrawlPageAssets } from "@sf/sources";
 import {
   searchCrawlerMayFetch,
   SEARCH_CRAWLER_USER_AGENT,
@@ -173,7 +174,6 @@ function buildPages(raw: CrawlRaw): readonly SeoAuditPage[] {
       inboundLinks: inbound.get(page.subjectUrl) ?? 0,
       outboundLinks: page.projection.internalOutlinks.length,
       sitemapMember: page.projection.sitemapMember,
-      assets: page.assets ?? null,
       jsonLdTypes: page.projection.jsonLd.types,
       jsonLdErrorCount: page.projection.jsonLd.errorCount,
     };
@@ -198,15 +198,17 @@ function imageExtension(src: string | null): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-function readableFormats(page: SeoAuditPage): readonly string[] {
-  return (page.assets?.images ?? [])
+function readableFormats(
+  assets: CrawlPageAssets | null,
+): readonly string[] {
+  return (assets?.images ?? [])
     .map((image) => imageExtension(image.src))
     .filter((extension): extension is string => extension !== null);
 }
 
 /** Share of format-readable images that are not WebP or AVIF. */
-function legacyFormatShare(page: SeoAuditPage): number {
-  const formats = readableFormats(page);
+function legacyFormatShare(assets: CrawlPageAssets | null): number {
+  const formats = readableFormats(assets);
   if (formats.length === 0) return 0;
   const legacy = formats.filter(
     (extension) => !MODERN_IMAGE_FORMATS.has(extension),
@@ -224,9 +226,9 @@ function legacyFormatShare(page: SeoAuditPage): number {
  * its own level scan in the first place.
  */
 function firstSkippedLevel(
-  page: SeoAuditPage,
+  assets: CrawlPageAssets | null,
 ): { readonly from: number; readonly to: number } | null {
-  const levels = page.assets?.headingLevels ?? [];
+  const levels = assets?.headingLevels ?? [];
   let previous: number | null = null;
   for (const level of levels) {
     if (previous !== null && level > previous + 1) {
@@ -253,6 +255,19 @@ function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
 ): readonly SeoAuditRecord[] {
+  // Read from the raw crawl, never from the projected page.
+  //
+  // `assets` carries every page's full body text and up to three hundred image
+  // references. Hanging it on SeoAuditPage put it inside `result.pages`, which
+  // IS the cached payload — a real run of this site came to 1,907,879 bytes
+  // against a 1,500,000 cap, so `writeCrawlCache` silently discarded every
+  // write and each visitor paid for a fresh sixty-second crawl. It is 88.7% of
+  // the payload and none of it is published.
+  const assetsByUrl = new Map(
+    raw.pages.map((record) => [record.projection.fetchUrl, record.assets] as const),
+  );
+  const assetsOf = (page: SeoAuditPage): CrawlPageAssets | null =>
+    assetsByUrl.get(page.url) ?? null;
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -281,7 +296,7 @@ function buildRecords(
   // tested would report a text-only site as fully covered rather than as not
   // applicable.
   const pagesWithImages = htmlPages.filter(
-    (page) => (page.assets?.images.length ?? 0) > 0,
+    (page) => (assetsOf(page)?.images.length ?? 0) > 0,
   );
   const linkTargetErrors = new Map<
     string,
@@ -908,15 +923,15 @@ function buildRecords(
       tested: htmlPages.length,
       observations: pagesWithImages
         .filter((page) =>
-          (page.assets?.images ?? []).some((image) => !image.hasAltAttribute),
+          (assetsOf(page)?.images ?? []).some((image) => !image.hasAltAttribute),
         )
         .map((page) =>
           pageObservation(page, {
-            images_without_alt: (page.assets?.images ?? []).filter(
+            images_without_alt: (assetsOf(page)?.images ?? []).filter(
               (image) => !image.hasAltAttribute,
             ).length,
-            images_observed: page.assets?.images.length ?? 0,
-            images_on_page: page.assets?.imageCount ?? 0,
+            images_observed: assetsOf(page)?.images.length ?? 0,
+            images_on_page: assetsOf(page)?.imageCount ?? 0,
           }),
         ),
       limitation:
@@ -946,7 +961,7 @@ function buildRecords(
                     (
                       1 -
                       pagesWithImages.filter((page) =>
-                        (page.assets?.images ?? []).some(
+                        (assetsOf(page)?.images ?? []).some(
                           (image) => !image.hasAltAttribute,
                         ),
                       ).length /
@@ -955,7 +970,7 @@ function buildRecords(
                   ),
                   pages_with_images: pagesWithImages.length,
                   pages_with_uncovered_images: pagesWithImages.filter((page) =>
-                    (page.assets?.images ?? []).some(
+                    (assetsOf(page)?.images ?? []).some(
                       (image) => !image.hasAltAttribute,
                     ),
                   ).length,
@@ -973,16 +988,16 @@ function buildRecords(
       category: "structure",
       tested: htmlPages.length,
       observations: htmlPages
-        .filter((page) => legacyFormatShare(page) > 0)
+        .filter((page) => legacyFormatShare(assetsOf(page)) > 0)
         .map((page) => {
-          const readable = readableFormats(page);
+          const readable = readableFormats(assetsOf(page));
           return pageObservation(page, {
             modern_format_share: Number(
-              (1 - legacyFormatShare(page)).toFixed(4),
+              (1 - legacyFormatShare(assetsOf(page))).toFixed(4),
             ),
-            legacy_format_share: Number(legacyFormatShare(page).toFixed(4)),
+            legacy_format_share: Number(legacyFormatShare(assetsOf(page)).toFixed(4)),
             images_with_readable_format: readable.length,
-            images_on_page: page.assets?.imageCount ?? 0,
+            images_on_page: assetsOf(page)?.imageCount ?? 0,
           });
         }),
       limitation:
@@ -997,14 +1012,14 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => {
-          const og = page.assets?.openGraph;
+          const og = assetsOf(page)?.openGraph;
           return og !== undefined && !(og.title && og.description && og.image);
         })
         .map((page) =>
           pageObservation(page, {
-            open_graph_title: page.assets?.openGraph.title ?? false,
-            open_graph_description: page.assets?.openGraph.description ?? false,
-            open_graph_image: page.assets?.openGraph.image ?? false,
+            open_graph_title: assetsOf(page)?.openGraph.title ?? false,
+            open_graph_description: assetsOf(page)?.openGraph.description ?? false,
+            open_graph_image: assetsOf(page)?.openGraph.image ?? false,
           }),
         ),
       limitation: "static_html_meta_tags_only",
@@ -1017,12 +1032,12 @@ function buildRecords(
       category: "structure",
       tested: htmlPages.length,
       observations: htmlPages
-        .filter((page) => firstSkippedLevel(page) !== null)
+        .filter((page) => firstSkippedLevel(assetsOf(page)) !== null)
         .map((page) =>
           pageObservation(page, {
-            skipped_from_level: firstSkippedLevel(page)?.from ?? null,
-            skipped_to_level: firstSkippedLevel(page)?.to ?? null,
-            heading_levels_observed: page.assets?.headingLevels.length ?? 0,
+            skipped_from_level: firstSkippedLevel(assetsOf(page))?.from ?? null,
+            skipped_to_level: firstSkippedLevel(assetsOf(page))?.to ?? null,
+            heading_levels_observed: assetsOf(page)?.headingLevels.length ?? 0,
           }),
         ),
       limitation: "heading_levels_read_from_static_html_in_document_order",
@@ -1036,7 +1051,7 @@ function buildRecords(
       category: "indexability",
       tested: htmlPages.length,
       observations: htmlPages.flatMap((page) => {
-        const verdict = softNotFoundVerdict(page);
+        const verdict = softNotFoundVerdict(page, assetsOf(page)?.bodyText);
         return verdict === null
           ? []
           : [
@@ -1128,7 +1143,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v5",
+      schemaVersion: "seo_audit.sitewide.v6",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

@@ -57,7 +57,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v5",
+    schemaVersion: "seo_audit.sitewide.v6",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -251,6 +251,81 @@ describe("handleAgentAuditRequest", () => {
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
+  it("says no source was configured, not that CrUX has nothing for the page", async () => {
+    // This is production today: PAGESPEED_API_KEY is set in no environment of
+    // the marketing project. The first version substituted a fabricated
+    // `no_field_data` result here, which publishes a claim about the visitor's
+    // own real-user traffic that the run never went and looked for.
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readPagePerformance: () => undefined }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          pagePerformance?: {
+            records: readonly { readonly limitation: string }[];
+          };
+        };
+      };
+    };
+
+    const records = body.data.result.pagePerformance?.records ?? [];
+    expect(records).toHaveLength(4);
+    for (const record of records) {
+      expect(record.limitation).toBe(
+        "no_field_data_source_was_configured_for_this_run",
+      );
+    }
+  });
+
+  it.each([
+    ["market_not_supported", "this_runs_market_is_not_one_the_results_page_provider_covers"],
+    ["provider_unavailable", "the_results_page_provider_did_not_answer_this_run"],
+  ])("does not blame the visitor for a %s sample", async (reason, code) => {
+    // The region is only attached when a query WAS confirmed, so
+    // "no target query was confirmed" is false in every state that can show it.
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        readSerpShape: async () =>
+          ({ status: "unavailable", reason }) as never,
+      }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          serpShape?: { records: readonly { readonly limitation: string }[] };
+        };
+      };
+    };
+
+    const records = body.data.result.serpShape?.records ?? [];
+    expect(records).toHaveLength(2);
+    for (const record of records) expect(record.limitation).toBe(code);
+  });
+
+  it("says no provider was configured when there is no reader at all", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({ readSerpShape: () => undefined }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          serpShape?: { records: readonly { readonly limitation: string }[] };
+        };
+      };
+    };
+
+    expect(body.data.result.serpShape?.records[0]?.limitation).toBe(
+      "no_results_page_provider_was_configured_for_this_run",
+    );
+  });
+
   it("accepts every region this handler can attach, not only the search one", async () => {
     // The gap the round-trip test above left. It proved one region's producer
     // survives the guard; a later region used a population value the guard's
@@ -432,7 +507,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v5",
+            schemaVersion: "seo_audit.sitewide.v6",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },

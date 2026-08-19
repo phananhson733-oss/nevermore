@@ -34,9 +34,13 @@ import {
 } from "./page-performance-reader.ts";
 import {
   buildSerpShapeRecords,
+  type SerpShapeGap,
   type SerpShapeRaw,
 } from "@sf/public-tools/seo-audit/serp-shape";
-import { defaultSerpShapeReader } from "./serp-shape-reader.ts";
+import {
+  defaultSerpShapeReader,
+  type SerpShapeReadResult,
+} from "./serp-shape-reader.ts";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import {
   AGENT_SERP_SHAPE_VERSION,
@@ -96,7 +100,7 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readPagePerformance?: (input: {
     readonly url: string;
-  }) => Promise<PagePerformanceReadResult>;
+  }) => Promise<PagePerformanceReadResult> | undefined;
   /**
    * One live results-page sample for the confirmed query, or null.
    *
@@ -106,7 +110,7 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readSerpShape?: (input: {
     readonly keyword: string;
-  }) => Promise<SerpShapeRaw | null>;
+  }) => Promise<SerpShapeReadResult> | undefined;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
@@ -143,14 +147,14 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   reportFirstRun: reportFirstToolRun,
   reportAs: "agent-audit",
   readSearchPerformance: (input) => readAgentSearchPerformance(input),
-  readPagePerformance: (input) =>
-    defaultPagePerformanceReader()?.(input) ??
-    Promise.resolve({
-      status: "unavailable" as const,
-      reason: "no_field_data" as const,
-    }),
-  readSerpShape: (input) =>
-    defaultSerpShapeReader()?.(input) ?? Promise.resolve(null),
+  // Undefined, not a fabricated result. Substituting `no_field_data` here
+  // reintroduced the exact lie the reason union exists to prevent: with no key
+  // configured — which is production today — all four Core Web Vitals records
+  // published "CrUX reported no field data for this URL", a claim about the
+  // visitor's own traffic that this run never went and looked for. Leaving it
+  // undefined lets the handler's `source_not_configured` initial value stand.
+  readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
+  readSerpShape: (input) => defaultSerpShapeReader()?.(input),
 };
 
 /**
@@ -526,13 +530,21 @@ export async function handleAgentAuditRequest(
   const primaryQueryText =
     input.value.targetQueries?.[0]?.displayQuery ?? null;
   let serpShape: SerpShapeRaw | null = null;
+  let serpShapeGap: SerpShapeGap = "no_confirmed_query";
   if (primaryQueryText !== null) {
+    // A query WAS confirmed by the time we get here, so "no query was
+    // confirmed" is false in every state this branch can produce. The reader
+    // now names which of the real causes it hit.
+    serpShapeGap = "provider_unavailable";
     try {
-      serpShape =
-        (await dependencies.readSerpShape?.({ keyword: primaryQueryText })) ??
-        null;
+      const read = await dependencies.readSerpShape?.({
+        keyword: primaryQueryText,
+      });
+      if (read?.status === "ok") serpShape = read.sample;
+      else if (read !== undefined) serpShapeGap = read.reason;
+      else serpShapeGap = "source_not_configured";
     } catch {
-      serpShape = null;
+      serpShapeGap = "provider_unavailable";
     }
   }
 
@@ -603,7 +615,7 @@ export async function handleAgentAuditRequest(
         : {
             serpShape: {
               version: AGENT_SERP_SHAPE_VERSION,
-              records: buildSerpShapeRecords(serpShape),
+              records: buildSerpShapeRecords(serpShape, serpShapeGap),
             },
           }),
       ...(result.targetInspected

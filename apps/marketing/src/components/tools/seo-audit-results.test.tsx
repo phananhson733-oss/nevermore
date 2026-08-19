@@ -60,7 +60,6 @@ const page: SeoAuditPage = {
   sitemapMember: true,
   jsonLdTypes: [],
   jsonLdErrorCount: 0,
-    assets: null,
 };
 
 const records: readonly SeoAuditRecord[] = [

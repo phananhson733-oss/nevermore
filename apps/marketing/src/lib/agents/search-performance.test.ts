@@ -31,7 +31,6 @@ function page(url: string): SeoAuditReport["pages"][number] {
     sitemapMember: true,
     jsonLdTypes: [],
     jsonLdErrorCount: 0,
-    assets: null,
   };
 }
 

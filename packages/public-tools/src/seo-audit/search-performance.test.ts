@@ -29,7 +29,6 @@ function page(url: string): SeoAuditPage {
     sitemapMember: true,
     jsonLdTypes: ["WebPage"],
     jsonLdErrorCount: 0,
-    assets: null,
   };
 }
 

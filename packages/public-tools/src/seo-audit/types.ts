@@ -1,5 +1,3 @@
-import type { CrawlPageAssets } from "@sf/sources";
-
 import type { PublicToolResultEnvelope } from "../contract.ts";
 
 export type SeoAuditAvailability = "available" | "partial" | "unavailable";
@@ -116,14 +114,6 @@ export interface SeoAuditPage {
   readonly sitemapMember: boolean;
   readonly jsonLdTypes: readonly string[];
   readonly jsonLdErrorCount: number;
-  /**
-   * Facts the crawl collected that `crawl.page.v1` does not carry.
-   *
-   * Optional because a page record built before the parser produced them, or
-   * by a fixture, genuinely has none — and a check that reads a missing block
-   * as an empty one would report a page with no images as fully covered.
-   */
-  readonly assets: CrawlPageAssets | null;
 }
 
 export interface SeoAuditCoverage {

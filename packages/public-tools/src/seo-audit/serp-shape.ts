@@ -55,9 +55,35 @@ export interface SerpShapeRaw {
   readonly languageCode: string;
 }
 
+/**
+ * Why there is no sample, when there is none.
+ *
+ * The first version had one sentence for all of them — "no target query was
+ * confirmed" — which the handler could only ever emit AFTER a query had been
+ * confirmed, so it was false in every state that could show it and it hid the
+ * three causes worth acting on.
+ */
+export type SerpShapeGap =
+  | "no_confirmed_query"
+  | "source_not_configured"
+  | "market_not_supported"
+  | "provider_unavailable";
+
+const GAP_LIMITATION: Readonly<Record<SerpShapeGap, string>> = {
+  no_confirmed_query:
+    "no_target_query_was_confirmed_so_no_results_page_was_sampled",
+  source_not_configured:
+    "no_results_page_provider_was_configured_for_this_run",
+  market_not_supported:
+    "this_runs_market_is_not_one_the_results_page_provider_covers",
+  provider_unavailable:
+    "the_results_page_provider_did_not_answer_this_run",
+};
+
 function shapeRecord(
   id: string,
   raw: SerpShapeRaw | null | undefined,
+  gap: SerpShapeGap,
   present: (types: readonly string[]) => readonly string[],
   presentLabel: string,
   /** Whether finding the shape is the problem (9.1) or missing it is (9.4). */
@@ -79,11 +105,7 @@ function shapeRecord(
     limitation,
   });
 
-  if (!raw) {
-    return unmeasured(
-      "no_target_query_was_confirmed_so_no_results_page_was_sampled",
-    );
-  }
+  if (!raw) return unmeasured(GAP_LIMITATION[gap]);
   if (raw.itemTypes === null) {
     // The whole check is about which blocks the page carried. Without that list
     // there is nothing to read, and reading its absence as "no blocks" would
@@ -140,11 +162,13 @@ function shapeRecord(
  */
 export function buildSerpShapeRecords(
   raw: SerpShapeRaw | null | undefined,
+  gap: SerpShapeGap = "no_confirmed_query",
 ): readonly SeoAuditRecord[] {
   return [
     shapeRecord(
       "ai_answer_block_present",
       raw,
+      gap,
       (types) => types.filter((type) => AI_ANSWER_ITEM_TYPES.includes(type)),
       "ai_answer_item_types",
       "present",
@@ -152,6 +176,7 @@ export function buildSerpShapeRecords(
     shapeRecord(
       "no_community_result_present",
       raw,
+      gap,
       (types) => types.filter((type) => COMMUNITY_ITEM_TYPES.includes(type)),
       "community_item_types",
       "absent",
@@ -176,7 +201,7 @@ export const SERP_SHAPE_EVIDENCE_LABELS: readonly string[] = [
 ];
 
 export const SERP_SHAPE_LIMITATION_CODES: readonly string[] = [
-  "no_target_query_was_confirmed_so_no_results_page_was_sampled",
+  ...Object.values(GAP_LIMITATION),
   "the_provider_reported_no_item_type_list_for_this_results_page",
   "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one",
   "one_live_sample_of_one_results_page_which_changes_between_requests",
