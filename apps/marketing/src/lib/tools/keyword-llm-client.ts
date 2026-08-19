@@ -1,5 +1,5 @@
 // @input  -- OPENAI_* / AZURE_OPENAI_* env, an injected fetch, one chat request
-// @output -- a bounded JSON-mode completion with token usage, or a KeywordLlmError
+// @output -- a request-deadlined JSON completion with usage, or KeywordLlmError
 // @pos    -- the marketing site's only LLM transport; consumed by keyword-prompts.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -107,13 +107,12 @@ const OPENAI_CHAT_COMPLETIONS_URL =
   "https://api.openai.com/v1/chat/completions";
 
 /**
- * Per-request deadline.
+ * Default per-request deadline.
  *
  * Both stages run inside a serverless function that must still return an error
  * envelope the surface can render, so the model may not own the whole budget.
- * Expansion is the long call (a few thousand output tokens); 45s leaves room
- * for it and still returns before a platform-level timeout turns the response
- * into an opaque 504.
+ * Lightweight calls use this default; heavier callers may set a task-specific
+ * request override while preserving the same transport behavior.
  */
 export const KEYWORD_LLM_TIMEOUT_MS = 45_000;
 
@@ -134,6 +133,8 @@ export interface KeywordLlmRequest {
   readonly user: string;
   readonly temperature: number;
   readonly maxOutputTokens: number;
+  /** Optional task-specific deadline; otherwise the client/default wins. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -468,7 +469,7 @@ export interface KeywordLlmClientOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Offline test seam. Defaults to the global `fetch`. */
   readonly fetchImpl?: KeywordLlmFetch;
-  /** Offline test seam. Defaults to `KEYWORD_LLM_TIMEOUT_MS`. */
+  /** Offline fallback seam; requests may override it per task. */
   readonly timeoutMs?: number;
 }
 
@@ -499,7 +500,8 @@ class ChatCompletionsClient implements KeywordLlmClient {
   async complete(request: KeywordLlmRequest): Promise<KeywordLlmCompletion> {
     const config = this.resolveConfig();
     const fetchImpl = this.options.fetchImpl ?? globalThis.fetch;
-    const timeoutMs = this.options.timeoutMs ?? KEYWORD_LLM_TIMEOUT_MS;
+    const timeoutMs =
+      request.timeoutMs ?? this.options.timeoutMs ?? KEYWORD_LLM_TIMEOUT_MS;
 
     const body = JSON.stringify({
       model: config.model,

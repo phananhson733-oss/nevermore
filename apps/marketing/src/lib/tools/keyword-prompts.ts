@@ -1,5 +1,5 @@
 // @input  -- crawled pages, propositions, seed terms and a KeywordLlmClient
-// @output -- validated propositions / candidate drafts plus this run's token usage
+// @output -- validated stage-bounded drafts plus this run's token usage
 // @pos    -- the two LLM seams of the Keyword Opportunity Map, prompt + strict parse
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -115,6 +115,9 @@ export const MAX_KEYWORD_WORDS = 12;
  */
 export const MAX_PROPOSITION_OUTPUT_TOKENS = 1_500;
 export const MAX_CANDIDATE_OUTPUT_TOKENS = 6_000;
+
+/** Expansion may emit 150 structured rows, so it owns a longer deadline. */
+export const KEYWORD_EXPANSION_LLM_TIMEOUT_MS = 90_000;
 
 /** Extraction must be reproducible; expansion is a divergent-search task. */
 export const PROPOSITION_TEMPERATURE = 0.2;
@@ -760,6 +763,7 @@ export async function expandKeywordCandidates(
       user: buildCandidateUserPrompt(input),
       temperature: CANDIDATE_TEMPERATURE,
       maxOutputTokens: MAX_CANDIDATE_OUTPUT_TOKENS,
+      timeoutMs: KEYWORD_EXPANSION_LLM_TIMEOUT_MS,
     },
     (raw) =>
       parseCandidates(raw, {
