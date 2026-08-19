@@ -14,7 +14,9 @@ import {
   Gauge,
 } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { gscAuthorizeHref } from "../tools/gsc-connect-panel";
 
 import type {
   AgentAuditCheckView,
@@ -157,9 +159,12 @@ function AxisChip({
   return (
     <span
       aria-describedby={describedBy}
-      className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[9px] tracking-[0.07em] uppercase ${className ?? "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"}`}
+      className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[11px] tracking-[0.06em] uppercase ${className ?? "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"}`}
     >
-      <span className="text-text-dark-faint">{label}</span>
+      {/* The axis name is half of what the chip says. The faint tier is
+          documented as "unreadable is fine, no information is lost" — that is
+          false for a label whose value is meaningless without it. */}
+      <span className="text-text-dark-secondary">{label}</span>
       {value}
     </span>
   );
@@ -181,7 +186,7 @@ function CheckState({
     <span className="flex flex-wrap items-center gap-1.5">
       <span
         aria-describedby={`${axisPrefix}-result`}
-        className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[9px] tracking-[0.07em] uppercase ${RESULT_STYLE[check.result]}`}
+        className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[11px] tracking-[0.06em] uppercase ${RESULT_STYLE[check.result]}`}
       >
         <Icon aria-hidden="true" className="size-3" />
         {t(`results.${check.result}`)}
@@ -225,7 +230,7 @@ function AxisLegend({ axisPrefix }: { readonly axisPrefix: string }) {
     >
       {axes.map(([axis, term, description]) => (
         <div key={axis} className="min-w-0">
-          <dt className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+          <dt className="font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
             {term}
           </dt>
           <dd
@@ -249,7 +254,7 @@ function DetailFact({
 }) {
   return (
     <div className="min-w-0 rounded-row border border-brand-border-faint bg-brand-panel-raised p-3.5">
-      <dt className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+      <dt className="font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
         {label}
       </dt>
       <dd className="mt-1.5 break-words text-[12px] leading-[1.6] text-text-dark-primary">
@@ -339,7 +344,7 @@ function PolicyEditor({
         </div>
         <span
           data-policy-dirty={String(dirty)}
-          className={`rounded border px-2.5 py-1 font-mono text-[9px] tracking-[0.06em] uppercase ${
+          className={`rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] uppercase ${
             dirty
               ? "border-brand-warning/30 bg-brand-warning/[0.07] text-brand-warning"
               : "border-brand-border-strong text-text-dark-secondary"
@@ -351,7 +356,7 @@ function PolicyEditor({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
         <label className="block">
-          <span className="mb-1.5 block font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+          <span className="mb-1.5 block font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
             {t("threshold")}
           </span>
           <input
@@ -365,7 +370,7 @@ function PolicyEditor({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+          <span className="mb-1.5 block font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
             {t("weight")}
           </span>
           <input
@@ -475,7 +480,7 @@ export function AgentDiagnosis({
       <header className="rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-6">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
           <div className="min-w-0">
-            <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
+            <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
               {t("eyebrow")}
             </p>
             <h2
@@ -490,7 +495,7 @@ export function AgentDiagnosis({
           </div>
           <span
             data-context-status={contextStatus}
-            className={`inline-flex w-fit rounded border px-2.5 py-1 font-mono text-[9.5px] tracking-[0.08em] uppercase ${
+            className={`inline-flex w-fit rounded border px-2.5 py-1 font-mono text-[11px] tracking-[0.08em] uppercase ${
               contextStatus === "confirmed"
                 ? "border-brand-success/35 bg-brand-success/10 text-brand-success"
                 : "border-brand-warning/35 bg-brand-warning/10 text-brand-warning"
@@ -515,7 +520,7 @@ export function AgentDiagnosis({
               key={label}
               className="min-w-0 bg-brand-panel-sunken px-3.5 py-3"
             >
-              <p className="font-mono text-[8.5px] tracking-[0.09em] text-text-dark-faint uppercase">
+              <p className="font-mono text-[10.5px] tracking-[0.09em] text-text-dark-faint uppercase">
                 {label}
               </p>
               <p className="mt-1 truncate text-[11.5px] font-medium text-text-dark-primary">
@@ -535,7 +540,7 @@ export function AgentDiagnosis({
       <div className="rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+            <p className="font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
               {t("scopeLabel")}
             </p>
             <div className="mt-2 inline-flex rounded-[10px] border border-brand-border bg-brand-panel-sunken p-1">
@@ -563,7 +568,7 @@ export function AgentDiagnosis({
               })}
             </div>
           </div>
-          <p className="font-mono text-[10px] text-text-dark-secondary">
+          <p className="font-mono text-[10.5px] text-text-dark-secondary">
             {t("scopeSummary", {
               groups: activeScope.groups.length,
               total: activeScope.total,
@@ -575,7 +580,7 @@ export function AgentDiagnosis({
               data-policy-action="reset-scope"
               disabled={!scopePolicyDirty}
               onClick={() => onResetScopePolicy(scope)}
-              className="rounded-[8px] border border-brand-border-strong px-3 py-2 font-mono text-[9.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-45"
+              className="rounded-[8px] border border-brand-border-strong px-3 py-2 font-mono text-[11px] text-text-dark-secondary transition-colors hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-45"
             >
               {t(
                 scopePolicyDirty ? "policy.resetScope" : "policy.scopeAtPreset",
@@ -586,7 +591,7 @@ export function AgentDiagnosis({
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-row border border-brand-error/25 bg-brand-error/[0.06] p-4">
-            <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.09em] text-brand-error uppercase">
+            <p className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.09em] text-brand-error uppercase">
               <AlertTriangle aria-hidden="true" className="size-3.5" />
               {t("blockers")}
             </p>
@@ -606,7 +611,7 @@ export function AgentDiagnosis({
                 : "border-brand-accent/25 bg-brand-accent/[0.06]"
             }`}
           >
-            <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.09em] text-brand-accent-text uppercase">
+            <p className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.09em] text-brand-accent-text uppercase">
               <Gauge aria-hidden="true" className="size-3.5" />
               {t("health")}
             </p>
@@ -652,7 +657,7 @@ export function AgentDiagnosis({
             ) : null}
           </article>
           <article className="rounded-row border border-brand-border bg-brand-panel-sunken p-4">
-            <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.09em] text-text-dark-faint uppercase">
+            <p className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.09em] text-text-dark-faint uppercase">
               <FileSearch aria-hidden="true" className="size-3.5" />
               {t("checksLabel")}
             </p>
@@ -667,7 +672,7 @@ export function AgentDiagnosis({
             </p>
           </article>
           <article className="rounded-row border border-brand-border bg-brand-panel-sunken p-4">
-            <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.09em] text-text-dark-faint uppercase">
+            <p className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.09em] text-text-dark-faint uppercase">
               <Database aria-hidden="true" className="size-3.5" />
               {t("axes.engine")}
             </p>
@@ -686,6 +691,44 @@ export function AgentDiagnosis({
           </article>
         </div>
 
+        {/*
+          The one thing a signed-in visitor could not tell from this panel: six
+          checks say "authorized source required" and nothing said whether this
+          tool had ever asked. Signing in with Google does not grant Search
+          Console to the audit, so the state has to be visible and the way to
+          change it has to be one click from here.
+        */}
+        <p
+          data-testid="diagnosis-search-source"
+          className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-text-dark-primary"
+        >
+          <Database aria-hidden="true" className="size-3.5 shrink-0 text-text-dark-faint" />
+          {model.searchSource.state === "connected" ? (
+            <span>
+              {t("searchSource.present", {
+                property: model.searchSource.property,
+                start: model.searchSource.startDate,
+                end: model.searchSource.endDate,
+              })}
+            </span>
+          ) : model.searchSource.state === "unavailable" ? (
+            // Reachable and did not answer. Offering the grant here would send
+            // a visitor who is already connected back through OAuth to fix
+            // something OAuth cannot.
+            <span>{t("searchSource.unavailable")}</span>
+          ) : (
+            <>
+              <span>{t("searchSource.absent")}</span>
+              <Link
+                href={gscAuthorizeHref(model.locale, "/agents/seo")}
+                className="font-semibold text-brand-accent-text underline decoration-brand-border underline-offset-4 transition-colors hover:text-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-accent"
+              >
+                {t("searchSource.connect")}
+              </Link>
+            </>
+          )}
+        </p>
+
         <p
           data-testid="diagnosis-boundary"
           className="mt-3 rounded-row border border-brand-border-dashed bg-brand-panel-sunken px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-text-dark-primary"
@@ -699,7 +742,7 @@ export function AgentDiagnosis({
           aria-label={t("groupsLabel")}
           className="rounded-card border border-brand-border-card bg-brand-panel p-4"
         >
-          <p className="px-1 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+          <p className="px-1 font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
             {t("groupsLabel")}
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -718,13 +761,13 @@ export function AgentDiagnosis({
                       : "border-brand-border-faint bg-brand-panel-sunken hover:border-brand-border-strong"
                   }`}
                 >
-                  <span className="font-mono text-[10px] font-semibold text-brand-accent-text">
+                  <span className="font-mono text-[10.5px] font-semibold text-brand-accent-text">
                     {group.id}
                   </span>
                   <span className="min-w-0 truncate text-[11.5px] font-medium text-text-dark-primary">
                     {group.title}
                   </span>
-                  <span className="font-mono text-[9px] text-text-dark-faint">
+                  <span className="font-mono text-[10.5px] text-text-dark-faint">
                     {group.evaluated}/{group.total}
                   </span>
                 </button>
@@ -736,14 +779,14 @@ export function AgentDiagnosis({
         <section className="rounded-card border border-brand-border-card bg-brand-panel p-4 md:p-5">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-brand-border pb-4">
             <div>
-              <p className="font-mono text-[9px] tracking-[0.1em] text-brand-accent-text uppercase">
+              <p className="font-mono text-[10.5px] tracking-[0.1em] text-brand-accent-text uppercase">
                 {activeGroup?.id} · {t("checksLabel")}
               </p>
               <h3 className="mt-1.5 text-[17px] font-semibold text-text-dark-primary">
                 {activeGroup?.title}
               </h3>
             </div>
-            <span className="font-mono text-[9.5px] text-text-dark-secondary">
+            <span className="font-mono text-[11px] text-text-dark-secondary">
               {activeGroup
                 ? t("evaluatedTotal", {
                     evaluated: activeGroup.evaluated,
@@ -773,7 +816,7 @@ export function AgentDiagnosis({
                   }`}
                 >
                   <span className="min-w-0">
-                    <span className="font-mono text-[9px] text-brand-accent-text">
+                    <span className="font-mono text-[10.5px] text-brand-accent-text">
                       {check.id}
                     </span>
                     <strong className="mt-1 block text-[12px] font-semibold text-text-dark-primary">
@@ -795,7 +838,7 @@ export function AgentDiagnosis({
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="font-mono text-[9px] tracking-[0.1em] text-brand-info uppercase">
+              <p className="font-mono text-[10.5px] tracking-[0.1em] text-brand-info uppercase">
                 {t("headingPreset.label")}
               </p>
               <p className="mt-2 text-[13px] font-semibold text-text-dark-primary">
@@ -808,7 +851,7 @@ export function AgentDiagnosis({
                 })}
               </p>
             </div>
-            <span className="rounded border border-brand-info/30 px-2.5 py-1 font-mono text-[9px] text-brand-info uppercase">
+            <span className="rounded border border-brand-info/30 px-2.5 py-1 font-mono text-[10.5px] text-brand-info uppercase">
               {t("headingPreset.softRule")}
             </span>
           </div>
@@ -826,7 +869,7 @@ export function AgentDiagnosis({
           <>
             <header className="grid gap-4 border-b border-brand-border pb-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div>
-                <p className="font-mono text-[9px] tracking-[0.1em] text-brand-accent-text uppercase">
+                <p className="font-mono text-[10.5px] tracking-[0.1em] text-brand-accent-text uppercase">
                   {activeCheck.id} · {t("detailLabel")}
                 </p>
                 <h3 className="mt-2 text-[19px] font-semibold text-text-dark-primary">

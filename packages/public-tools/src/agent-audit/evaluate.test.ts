@@ -50,12 +50,76 @@ function ratioRecord(
 }
 
 describe("v2 Agent audit evaluator", () => {
+  it("compares a published average against the aggregate, not the affected count", () => {
+    const aggregate = (id: string, label: string, value: number | null) => ({
+      id,
+      category: "crawl" as const,
+      state: "observed" as const,
+      unit: "pages" as const,
+      population: "every_collected_page" as const,
+      targetTested: null,
+      tested: 40,
+      affected: 1,
+      observations: [
+        {
+          url: null,
+          values: value === null ? [] : [{ label, value }],
+        },
+      ],
+      limitation: null,
+    });
+    const b3 = (value: number | null) =>
+      evaluateAgentAuditScope("site", {
+        availability: "available",
+        records: [aggregate("average_response_time", "average_response_ms", value)],
+      }).checks.find((entry) => entry.check.id === "B3");
+
+    // Published threshold: below 500 ms, above 1 s is a Warning.
+    expect(b3(320)?.result).toBe("pass");
+    expect(b3(700)?.result).toBe("tip");
+    expect(b3(1_400)?.result).toBe("warning");
+
+    // An aggregate the detector never computed is a gap, not a pass: the whole
+    // point of this engine state is that unmeasured never reads as within-limit.
+    expect(b3(null)?.result).toBe("excluded");
+    expect(b3(null)?.engine).toBe("needs-supplement");
+
+    // The panel has to show the number the engine compared. Counting affected
+    // observations would print "1 affected across 40 tested" for every average.
+    expect(b3(320)?.measurement?.en).toContain("320 ms");
+    expect(b3(320)?.measurement?.zh).toContain("320 毫秒");
+    expect(b3(320)?.measurement?.en).not.toContain("affected");
+  });
+
+  it("reads site-wide Schema coverage as a share of the same JSON-LD record", () => {
+    const check = (tested: number, affected: number) =>
+      evaluateAgentAuditScope("site", {
+        availability: "available",
+        records: [ratioRecord("json_ld_missing", tested, affected)],
+      }).checks.find((entry) => entry.check.id === "D5");
+
+    // D5 publishes "at least 90% coverage", which is the same measurement as
+    // the page-level "is there any JSON-LD" check read as a share, so it reuses
+    // the record instead of the crawl paying for it twice.
+    expect(check(10, 3)?.result).toBe("warning");
+    expect(check(100, 5)?.result).toBe("pass");
+    expect(check(10, 0)?.result).toBe("pass");
+    // "At least 90%" includes exactly 90%. Expressed as the exclusive
+    // "missing share below 10%", a site sitting precisely on its own published
+    // mark failed it.
+    expect(check(10, 1)?.result).toBe("pass");
+    expect(check(100, 11)?.result).toBe("warning");
+    // Coverage is a real measurement here, not a borrowed one.
+    expect(check(10, 3)?.engine).toBe("ready");
+    expect(check(10, 3)?.truth).toBe("observed");
+  });
+
   it("keeps unavailable checks excluded instead of zero or pass", () => {
     const result = evaluateAgentAuditScope("page", {
       availability: "unavailable",
       records: [],
     });
-    expect(result.checks).toHaveLength(50);
+    expect(result.checks).toHaveLength(49);
     expect(result.evaluated).toBe(0);
     expect(result.health).toBeNull();
     expect(result.checks.every((check) => check.result === "excluded")).toBe(
@@ -144,7 +208,12 @@ describe("v2 Agent audit evaluator", () => {
     expect(uniqueness?.evidenceRecordIds).toEqual(["title_duplicate"]);
   });
 
-  it("keeps the D1 false-positive detector excluded until the P6 gate is fixed", () => {
+  it("decides D1 now that both halves of its P6 gate are met", () => {
+    // The gate asked for two things: exclude canonical-converged variants, and
+    // pass known true-positive and false-positive fixtures. The first has
+    // always been true of this record — the duplicate detectors run only over
+    // self-canonical pages — and the second is executed in
+    // duplicate-title-gate.test.ts rather than asserted in prose.
     const result = evaluateAgentAuditScope("site", {
       availability: "available",
       records: [record("title_duplicate", "observed", 2)],
@@ -153,8 +222,8 @@ describe("v2 Agent audit evaluator", () => {
       (check) => check.check.id === "D1",
     );
 
-    expect(duplicateTitles?.result).toBe("excluded");
-    expect(duplicateTitles?.evidenceRecordIds).toEqual([]);
+    expect(duplicateTitles?.result).not.toBe("excluded");
+    expect(duplicateTitles?.evidenceRecordIds).toEqual(["title_duplicate"]);
   });
 
   it("passes a tested condition with no affected unit while keeping its bounded truth", () => {
@@ -304,6 +373,7 @@ describe("v2 Agent audit target identity", () => {
         {
           ...record("title_duplicate", "observed", 1),
           population: "conditional_subset",
+          targetTested: null,
         },
       ],
     });
@@ -458,8 +528,8 @@ describe("v2 Agent audit published thresholds", () => {
             unit: "pages",
             population: "every_collected_page" as const,
             targetTested: null,
-            tested: 10,
-            affected: 1,
+                  tested: 10,
+                  affected: 1,
             observations: [
               {
                 url: "https://example.com/",
@@ -488,8 +558,8 @@ describe("v2 Agent audit published thresholds", () => {
           unit: "pages",
           population: "every_collected_page" as const,
           targetTested: null,
-          tested: 10,
-          affected: 1,
+              tested: 10,
+              affected: 1,
           observations: [
             {
               url: "https://example.com/",

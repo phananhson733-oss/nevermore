@@ -233,6 +233,46 @@ describe("handleSeoAuditRequest", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
+  it("re-crawls rather than serving a cache entry from the previous schema", async () => {
+    const normalizedUrl = "https://acme.test/docs";
+    const freshPayload = {
+      ...payload,
+      result: { ...payload.result, targetUrl: normalizedUrl },
+    } satisfies SeoAuditPayload;
+    // Structurally valid, one schema behind: exactly what the cache holds for
+    // up to its TTL after a version bump ships. Serving it would hand the
+    // reader fields it was not built for; erroring would take the tool down for
+    // an hour. It has to read as a miss.
+    const stale = {
+      ...freshPayload,
+      run: { ...freshPayload.run, schemaVersion: "seo_audit.sitewide.v4" },
+    };
+    const scan = vi.fn(async () => ({ ...raw, requestedUrl: normalizedUrl }));
+    const release = vi.fn();
+    const deps = dependencies({
+      normalizeUrl: () => ({ ok: true, url: normalizedUrl }),
+      scan,
+      buildPayload: () => freshPayload,
+      openGate: async () => ({
+        ok: true,
+        kind: "cached",
+        payload: stale,
+        capturedAt: "2026-07-30T08:00:00.000Z",
+        release,
+      }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test/docs" }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(scan).toHaveBeenCalledOnce();
+    await expect(response.json()).resolves.toEqual({ data: freshPayload });
+  });
+
   it.each([null, {}, { result: null }, { result: { targetUrl: 42 } }])(
     "safely treats an invalid cached payload as a miss: %j",
     async (cachedPayload) => {

@@ -12,6 +12,7 @@ import {
   type AgentAuditTruthState as ContractTruthState,
 } from "@sf/public-tools/agent-audit";
 
+import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import type {
   AgentAuditScope as ProfileAuditScope,
@@ -117,6 +118,25 @@ export interface AgentAuditViewModel {
     readonly completedAt: string;
   };
   readonly evaluatedChecks: readonly AgentAuditEvaluatedCheck[];
+  /**
+   * Which Search Console property answered this run, or null.
+   *
+   * Null is the state worth surfacing: six checks report "authorized source
+   * required" and, before this existed, the panel gave a visitor who had
+   * already signed in with Google no way to tell that this tool never asked
+   * for their Search Console data at all.
+   */
+  readonly searchSource:
+    | {
+        readonly state: "connected";
+        readonly property: string;
+        readonly startDate: string;
+        readonly endDate: string;
+      }
+    /** Nothing covers this host; authorizing is what changes it. */
+    | { readonly state: "absent" }
+    /** Reachable and did not answer; waiting is what changes it. */
+    | { readonly state: "unavailable" };
 }
 
 function localized(value: { readonly en: string; readonly zh: string }, locale: string) {
@@ -232,13 +252,18 @@ export function buildAgentAuditViewModel({
 }): AgentAuditViewModel {
   const evidence = {
     availability: data.result.coverage.availability,
-    records: data.result.records,
+    // The search records travel beside the crawl ledger rather than inside it,
+    // because the crawl payload is cached by host and these belong to one
+    // visitor's verified property. The evaluator wants one list, so they are
+    // joined here, at read time, and never on the way to a cache.
+    records: allAgentAuditRecords(data),
     targetUrl: data.result.targetUrl,
     targetInspected: data.result.targetInspected,
     inspectedTargetUrl: data.result.inspectedTargetUrl,
   } as const;
   const site = evaluateAgentAuditScope("site", evidence);
   const page = evaluateAgentAuditScope("page", evidence);
+  const region = data.result.searchPerformance;
   const defaults = AGENT_AUDIT_DEFAULT_GROUPS[agent];
   const headingPreset =
     AGENT_AUDIT_HEADING_PRESETS[context.pageType] ??
@@ -264,6 +289,17 @@ export function buildAgentAuditViewModel({
       persistence: data.run.persistence,
       completedAt: data.run.source.completedAt,
     },
+    searchSource:
+      region !== undefined
+        ? {
+            state: "connected",
+            property: region.property,
+            startDate: region.startDate,
+            endDate: region.endDate,
+          }
+        : data.result.searchPerformanceUnavailable === true
+          ? { state: "unavailable" }
+          : { state: "absent" },
     evaluatedChecks: [...site.checks, ...page.checks],
   };
 }

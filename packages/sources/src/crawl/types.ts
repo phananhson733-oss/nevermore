@@ -86,6 +86,8 @@ export const CRAWL_PROJECTION_LIMITS = {
   maxUserAgentChars: 256,
   maxSitemaps: 50,
   maxSitemapUrls: 2_000,
+  maxImages: 300,
+  maxHeadingLevels: 100,
 } as const;
 
 /** Crawl budget knobs (spec §7.2, §7.3). Overridable only for tests/fixtures. */

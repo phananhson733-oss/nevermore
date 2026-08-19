@@ -97,6 +97,15 @@ const messages = {
           unavailable: "Unavailable",
           illustrative: "Illustrative",
         },
+        searchSource: {
+          absent:
+            "This run did not read Search Console. The search-performance checks stay excluded until it is authorized — signing in with Google is not the same as granting this tool access.",
+          connect: "Connect Search Console",
+          present:
+            "Search performance read from {property}, {start} to {end}.",
+          unavailable:
+            "Search Console did not answer this run — a timeout or a rate limit. The authorization is fine; run it again shortly.",
+        },
         excludedBoundary:
           "Unavailable and source-gated checks are excluded, never zero or pass.",
         headingPreset: {
@@ -272,6 +281,15 @@ function render(
 }
 
 /** Markup of one element, from its test id to the end of its open element. */
+/** The rendered <p> carrying an exact sentence, so a size rule names its target. */
+function paragraphContaining(html: string, sentence: string): string {
+  const end = html.indexOf(sentence);
+  expect(end).toBeGreaterThan(-1);
+  const start = html.lastIndexOf("<p ", end);
+  expect(start).toBeGreaterThan(-1);
+  return html.slice(start, end);
+}
+
 function element(html: string, testId: string, closingTag: string): string {
   const start = html.indexOf(`data-testid="${testId}"`);
   expect(start).toBeGreaterThan(-1);
@@ -296,7 +314,7 @@ describe("AgentDiagnosis", () => {
   it("renders the complete selected-group ledger and focused explainability detail", () => {
     const html = render("page", "9");
 
-    expect(html).toContain("9 groups · 50 checks");
+    expect(html).toContain("9 groups · 49 checks");
     expect(html).toContain('data-testid="diagnosis-group-9"');
     expect(html).toContain('data-testid="diagnosis-check-9.1"');
     expect(html).toContain("Measured value");
@@ -434,6 +452,88 @@ describe("AgentDiagnosis", () => {
     });
   });
 
+  describe("the search source", () => {
+    it("keeps the shipped catalogues in step with this fixture", async () => {
+      // The fixture above is hand-written, so the component can render a
+      // missing key and nothing here would notice: next-intl prints the dotted
+      // path instead of throwing, and a `toContain` on the prose passes on the
+      // path itself. Reading the real catalogues is the only check that a key
+      // this component asks for actually ships.
+      const [en, zh] = await Promise.all([
+        import("../../i18n/messages/en.json"),
+        import("../../i18n/messages/zh.json"),
+      ]);
+      for (const catalogue of [en.default, zh.default]) {
+        const source = (
+          catalogue as unknown as {
+            agents: {
+              workbench: {
+                diagnosis: { searchSource?: Record<string, string> };
+              };
+            };
+          }
+        ).agents.workbench.diagnosis.searchSource;
+        expect(Object.keys(source ?? {}).sort()).toEqual([
+          "absent",
+          "connect",
+          "present",
+          "unavailable",
+        ]);
+      }
+    });
+
+    it("says the run did not read Search Console, and offers the grant", () => {
+      const html = render("site", "E");
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      // Six checks report "authorized source required" and, before this, a
+      // visitor who had already signed in with Google had no way to learn that
+      // signing in is not the same as granting this tool access.
+      expect(notice).toContain("did not read Search Console");
+      expect(notice).toContain("signing in with Google is not the same");
+      expect(notice).toContain(
+        "/api/auth/google/start?scope=gsc&amp;next=%2Fagents%2Fseo",
+      );
+    });
+
+    it("does not offer the grant when the source was simply not answering", () => {
+      const html = render("site", "E", {
+        ...data,
+        result: { ...data.result, searchPerformanceUnavailable: true },
+      });
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      expect(notice).toContain("did not answer this run");
+      // Sending a visitor who is already connected back through OAuth would ask
+      // them to fix something OAuth cannot.
+      expect(notice).not.toContain("/api/auth/google/start");
+    });
+
+    it("names the property and window once a grant answered", () => {
+      const html = render("site", "E", {
+        ...data,
+        result: {
+          ...data.result,
+          searchPerformance: {
+            version: "search_performance.agent.v2" as const,
+            property: "sc-domain:astrologywiki.com",
+            startDate: "2026-07-19",
+            endDate: "2026-08-15",
+            records: [],
+          },
+        },
+      });
+      const notice = element(html, "diagnosis-search-source", "</p>");
+
+      expect(notice).toContain("sc-domain:astrologywiki.com");
+      expect(notice).toContain("2026-07-19");
+      expect(notice).toContain("2026-08-15");
+      // No connect link once connected: an offer to do what is already done
+      // reads as the connection not having worked.
+      expect(notice).not.toContain("/api/auth/google/start");
+    });
+  });
+
   describe("honesty copy legibility", () => {
     it("keeps boundary and hint copy at body size and body colour", () => {
       const html = render("site", "E", richEvidence);
@@ -442,10 +542,30 @@ describe("AgentDiagnosis", () => {
 
       expect(boundary).toContain("text-[12.5px]");
       expect(boundary).toContain("text-text-dark-primary");
-      expect(healthCard).toContain("text-[12px]");
-      expect(healthCard).not.toContain("text-[10.5px]");
-      expect(html).not.toContain("text-[10.5px]");
-      expect(html).not.toContain("text-[8.5px] tracking-[0.09em] hint");
+
+      // Assert on the honesty sentences themselves. Banning a size string from
+      // the whole card also caught the card's own eyebrow — a label, not
+      // honesty copy — so the rule fired on the wrong element and blocked
+      // raising the legibility floor everywhere else.
+      for (const sentence of [
+        "Derived from 5 scored checks",
+        "Excluded checks never become zero.",
+      ]) {
+        const line = paragraphContaining(healthCard, sentence);
+        expect(line).toContain("text-[12px]");
+        expect(line).toContain("text-text-dark-primary");
+      }
+    });
+
+    it("renders nothing below the 10.5px legibility floor", () => {
+      const html = render("site", "E", richEvidence);
+      // Derived from what actually rendered rather than from a list of known
+      // offenders: a new 9px label added tomorrow has to trip this too.
+      const sizes = [...html.matchAll(/text-\[(\d+(?:\.\d+)?)px\]/g)].map(
+        (match) => Number(match[1]),
+      );
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10.5);
     });
   });
 

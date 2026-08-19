@@ -219,7 +219,7 @@ function profileRefreshErrorKey(errorCode: string): string {
 
 function LocalAdjustmentChip({ label }: { readonly label: string }) {
   return (
-    <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-brand-info/30 bg-brand-info/[0.07] px-2 py-1 font-mono text-[9px] tracking-[0.06em] text-brand-info uppercase">
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-brand-info/30 bg-brand-info/[0.07] px-2 py-1 font-mono text-[10.5px] tracking-[0.06em] text-brand-info uppercase">
       <Check aria-hidden="true" className="size-3" />
       {label}
     </span>
@@ -240,7 +240,7 @@ function SourceChip({
     <span
       data-profile-source={source}
       data-profile-section-source={sectionSource}
-      className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9px] tracking-[0.06em] uppercase ${
+      className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10.5px] tracking-[0.06em] uppercase ${
         supplied
           ? "border-brand-accent/30 bg-brand-accent/[0.07] text-brand-accent-text"
           : "border-brand-warning/30 bg-brand-warning/[0.07] text-brand-warning"
@@ -278,7 +278,7 @@ function Fact({
       data-profile-provenance={provenance?.derivation}
       data-profile-source-class={provenance?.sourceClass}
     >
-      <dt className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+      <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
         {label}
       </dt>
       <dd className="mt-1 text-[11.5px] leading-[1.5] text-text-dark-secondary">
@@ -299,11 +299,11 @@ function StageHeader({
     <div className="flex min-w-0 items-center gap-2.5">
       <span
         aria-hidden="true"
-        className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-accent/35 bg-brand-accent/[0.07] font-mono text-[9px] font-semibold tracking-[0.08em] text-brand-accent-text"
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-accent/35 bg-brand-accent/[0.07] font-mono text-[10.5px] font-semibold tracking-[0.08em] text-brand-accent-text"
       >
         {number}
       </span>
-      <p className="min-w-0 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+      <p className="min-w-0 font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
         {label}
       </p>
     </div>
@@ -326,7 +326,7 @@ function ProductInformationSection({
     >
       <div className="mb-4 flex min-w-0 items-center gap-2">
         <FileText aria-hidden="true" className="size-3.5 shrink-0 text-brand-accent" />
-        <h4 className="min-w-0 font-mono text-[10px] font-semibold tracking-[0.08em] text-text-dark-secondary uppercase">
+        <h4 className="min-w-0 font-mono text-[10.5px] font-semibold tracking-[0.08em] text-text-dark-secondary uppercase">
           {label}
         </h4>
       </div>
@@ -713,7 +713,7 @@ export function AgentProfilePanel({
       />
       <header className="grid gap-4 border-b border-brand-border-faint p-5 md:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.13em] text-brand-accent-text uppercase">
+          <p className="font-mono text-[10.5px] tracking-[0.13em] text-brand-accent-text uppercase">
             {t("stage")}
           </p>
           <h2
@@ -726,7 +726,7 @@ export function AgentProfilePanel({
             {t(`${agent}.body`)}
           </p>
         </div>
-        <span className="inline-flex w-fit items-center gap-2 rounded-md border border-brand-border-strong bg-brand-panel-sunken px-3 py-2 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
+        <span className="inline-flex w-fit items-center gap-2 rounded-md border border-brand-border-strong bg-brand-panel-sunken px-3 py-2 font-mono text-[11px] tracking-[0.06em] text-text-dark-secondary uppercase">
           {profile.reviewState === "confirmed" ? (
             <Check aria-hidden="true" className="size-3 text-brand-accent" />
           ) : (
@@ -743,7 +743,7 @@ export function AgentProfilePanel({
           className="grid gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-4 lg:grid-cols-[minmax(18rem,1fr)_minmax(9rem,0.28fr)_minmax(10rem,0.32fr)_auto] lg:items-end"
         >
           <label className="block" htmlFor={`${agent}-profile-target-url`}>
-            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+            <span className="mb-2 block font-mono text-[11px] tracking-[0.1em] text-text-dark-secondary uppercase">
               {t("fields.targetUrl")}
             </span>
             <span className="flex h-12 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70 focus-within:ring-2 focus-within:ring-brand-accent/30">
@@ -768,7 +768,7 @@ export function AgentProfilePanel({
           </label>
 
           <label className="block" htmlFor={`${agent}-profile-market`}>
-            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+            <span className="mb-2 block font-mono text-[11px] tracking-[0.1em] text-text-dark-secondary uppercase">
               {t("refresh.fields.market")}
             </span>
             <input
@@ -796,7 +796,7 @@ export function AgentProfilePanel({
           </label>
 
           <label className="block" htmlFor={`${agent}-profile-language`}>
-            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+            <span className="mb-2 block font-mono text-[11px] tracking-[0.1em] text-text-dark-secondary uppercase">
               {t("refresh.fields.language")}
             </span>
             <input
@@ -883,13 +883,13 @@ export function AgentProfilePanel({
                 </strong>
                 <span
                   data-profile-refresh-cache={refreshData.cache.status}
-                  className="rounded border border-brand-accent/25 bg-brand-accent/[0.06] px-2 py-1 font-mono text-[9px] tracking-[0.05em] text-brand-accent-text uppercase"
+                  className="rounded border border-brand-accent/25 bg-brand-accent/[0.06] px-2 py-1 font-mono text-[10.5px] tracking-[0.05em] text-brand-accent-text uppercase"
                 >
                   {t(`refresh.cache.${refreshData.cache.status}`)}
                 </span>
                 <time
                   dateTime={refreshData.cache.capturedAt}
-                  className="font-mono text-[9.5px] text-text-dark-faint"
+                  className="font-mono text-[11px] text-text-dark-faint"
                 >
                   {refreshData.cache.capturedAt}
                 </time>
@@ -921,7 +921,7 @@ export function AgentProfilePanel({
                       data-profile-refresh-metric={hook}
                       className="rounded-md border border-brand-border-faint bg-brand-bg px-3 py-2"
                     >
-                      <dt className="font-mono text-[8.5px] tracking-[0.06em] text-text-dark-faint uppercase">
+                      <dt className="font-mono text-[10.5px] tracking-[0.06em] text-text-dark-faint uppercase">
                         {label}
                       </dt>
                       <dd className="mt-1 text-[13px] font-semibold text-text-dark-primary">
@@ -950,7 +950,7 @@ export function AgentProfilePanel({
                       data-profile-refresh-count={name}
                       className="rounded-md border border-brand-border-faint bg-brand-bg px-3 py-2"
                     >
-                      <dt className="font-mono text-[8.5px] tracking-[0.06em] text-text-dark-faint uppercase">
+                      <dt className="font-mono text-[10.5px] tracking-[0.06em] text-text-dark-faint uppercase">
                         {t(`refresh.counts.${name}`)}
                       </dt>
                       <dd className="mt-1 text-[13px] font-semibold text-text-dark-primary">
@@ -975,7 +975,7 @@ export function AgentProfilePanel({
                       .map((field) => (
                         <li
                           key={field.path}
-                          className="rounded border border-brand-border-faint bg-brand-bg px-2 py-1 font-mono text-[9px] leading-[1.35] text-text-dark-secondary"
+                          className="rounded border border-brand-border-faint bg-brand-bg px-2 py-1 font-mono text-[10.5px] leading-[1.35] text-text-dark-secondary"
                         >
                           {t(`fields.${field.path}`)}
                         </li>
@@ -992,7 +992,7 @@ export function AgentProfilePanel({
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
-                      <p className="font-mono text-[9px] tracking-[0.08em] text-brand-info uppercase">
+                      <p className="font-mono text-[10.5px] tracking-[0.08em] text-brand-info uppercase">
                         {t("refresh.proposals.eyebrow")}
                       </p>
                       <h3
@@ -1040,13 +1040,13 @@ export function AgentProfilePanel({
                             data-profile-refresh-proposal-current
                             className="min-w-0"
                           >
-                            <p className="font-mono text-[8.5px] tracking-[0.07em] text-text-dark-faint uppercase">
+                            <p className="font-mono text-[10.5px] tracking-[0.07em] text-text-dark-faint uppercase">
                               {t("refresh.proposals.current")}
                             </p>
                             <p className="mt-1 break-words text-[11px] leading-[1.5] text-text-dark-secondary">
                               {proposalValue(proposal.currentValue)}
                             </p>
-                            <p className="mt-1 font-mono text-[8.5px] tracking-[0.04em] text-text-dark-faint uppercase">
+                            <p className="mt-1 font-mono text-[10.5px] tracking-[0.04em] text-text-dark-faint uppercase">
                               {t(
                                 `provenance.sourceClasses.${profileSourceClass(proposal.currentSource)}`,
                               )}
@@ -1056,7 +1056,7 @@ export function AgentProfilePanel({
                             data-profile-refresh-proposal-live
                             className="min-w-0"
                           >
-                            <p className="font-mono text-[8.5px] tracking-[0.07em] text-brand-info uppercase">
+                            <p className="font-mono text-[10.5px] tracking-[0.07em] text-brand-info uppercase">
                               {t("refresh.proposals.live")}
                             </p>
                             <p className="mt-1 break-words text-[11px] leading-[1.5] text-text-dark-primary">
@@ -1069,7 +1069,7 @@ export function AgentProfilePanel({
                                 href={proposal.evidenceUrls[0]}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="mt-1 inline-flex max-w-full items-center gap-1 text-[9.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
+                                className="mt-1 inline-flex max-w-full items-center gap-1 text-[11px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
                               >
                                 <span className="truncate">{evidenceLabel}</span>
                                 <ExternalLink
@@ -1082,7 +1082,7 @@ export function AgentProfilePanel({
                                 data-profile-refresh-proposal-evidence
                                 className="group mt-1.5 rounded border border-brand-info/15 bg-brand-info/[0.025] px-2 py-1.5"
                               >
-                                <summary className="cursor-pointer text-[9.5px] font-medium text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info">
+                                <summary className="cursor-pointer text-[11px] font-medium text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info">
                                   {evidenceLabel}
                                 </summary>
                                 <ul className="mt-1.5 grid gap-1.5">
@@ -1093,7 +1093,7 @@ export function AgentProfilePanel({
                                         href={evidenceUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="inline-flex max-w-full items-center gap-1 text-[9px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
+                                        className="inline-flex max-w-full items-center gap-1 text-[10.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2"
                                       >
                                         <span className="truncate">
                                           {evidenceUrl}
@@ -1122,7 +1122,7 @@ export function AgentProfilePanel({
                               onClick={() =>
                                 acceptRefreshFields([proposal.path])
                               }
-                              className="inline-flex w-full items-center justify-center rounded-md border border-brand-border-strong bg-brand-panel-raised px-3 py-2 text-[10px] font-semibold text-text-dark-primary transition-colors hover:border-brand-info/55 hover:text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info disabled:cursor-not-allowed disabled:opacity-55 md:w-auto"
+                              className="inline-flex w-full items-center justify-center rounded-md border border-brand-border-strong bg-brand-panel-raised px-3 py-2 text-[10.5px] font-semibold text-text-dark-primary transition-colors hover:border-brand-info/55 hover:text-brand-info focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-info disabled:cursor-not-allowed disabled:opacity-55 md:w-auto"
                             >
                               {manual
                                 ? t("refresh.proposals.manualRetained")
@@ -1165,7 +1165,7 @@ export function AgentProfilePanel({
               <div className="grid gap-2">
                 <p
                   data-profile-refresh-source-total
-                  className="font-mono text-[9px] tracking-[0.06em] text-text-dark-faint uppercase"
+                  className="font-mono text-[10.5px] tracking-[0.06em] text-text-dark-faint uppercase"
                 >
                   <strong className="text-text-dark-secondary">
                     {refreshData.diagnostics.sourceUrls.length}
@@ -1369,7 +1369,7 @@ export function AgentProfilePanel({
                           key={tier.name}
                           className="min-w-0 rounded-md border border-brand-border-faint bg-brand-panel-raised/55 p-3"
                         >
-                          <p className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+                          <p className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
                             {tier.name}
                           </p>
                           <p className="mt-1.5 text-[15px] font-semibold tracking-[-0.01em] text-text-dark-primary">
@@ -1687,7 +1687,7 @@ export function AgentProfilePanel({
                     : "block"
                 }
               >
-                <span className="mb-1.5 block font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+                <span className="mb-1.5 block font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
                   {t(`fields.${field}`)}
                 </span>
                 <input
@@ -1706,7 +1706,7 @@ export function AgentProfilePanel({
 
             {LIST_FIELDS.map((field) => (
               <label key={field} className="block md:col-span-2">
-                <span className="mb-1.5 block font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+                <span className="mb-1.5 block font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
                   {t(`fields.${field}`)}
                 </span>
                 <input
@@ -1724,7 +1724,7 @@ export function AgentProfilePanel({
             ))}
 
             <label className="block">
-              <span className="mb-1.5 block font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+              <span className="mb-1.5 block font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
                 {t("fields.device")}
               </span>
               <select
@@ -1742,7 +1742,7 @@ export function AgentProfilePanel({
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+              <span className="mb-1.5 block font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
                 {t("fields.pageType")}
               </span>
               <select
@@ -1765,7 +1765,7 @@ export function AgentProfilePanel({
             </label>
 
             <label className="block md:col-span-2">
-              <span className="mb-1.5 block font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+              <span className="mb-1.5 block font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
                 {t("fields.auditScope")}
               </span>
               <select

@@ -945,7 +945,49 @@
         "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
         "display_width_approximation_rendered_pixel_width_not_measured": "按显示宽度近似（中日韩字符计两格）。未测量 Google 实际据以截断的渲染像素宽度。",
         "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
-        "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。"
+        "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。",
+        "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "这个页面没有确认任何目标词，因此没有可以报告排名的查询。",
+        "the_submitted_page_was_not_collected_so_no_per_page_query_rows_were_requested": "提交的页面未被本次抓取采集，因此没有请求该页面的逐查询数据。",
+        "target_page_query_rows_hit_the_row_cap_so_a_confirmed_query_may_be_missing": "该页面的逐查询行数触到了本次运行的上限，某个已确认目标词可能不在这个平均值里。",
+        "search_console_reported_no_impressions_for_the_confirmed_queries_on_this_url": "在统计窗口内，Search Console 没有记录到这些查询在该 URL 上的任何曝光，因此没有位置可以归档。这不等于排名第 0 位。",
+        "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average": "部分已确认目标词在该 URL 上没有曝光，未计入这个平均值。",
+        "one_impression_weighted_average_per_query_over_the_reported_window_only": "每个查询在报告窗口内只有一个按曝光加权的平均位置。低频与匿名查询由 Search Console 保留不发。",
+        "search_console_returned_a_position_this_run_cannot_band_for_this_url": "Search Console 返回了本次运行无法为该 URL 归档的位置值。",
+        "single_uncached_request_per_url_not_a_field_measurement": "每个 URL 从单一位置发起一次无缓存请求。这是本次运行中服务端的表现，不是访客在各自网络和设备上的真实体感。",
+        "redirect_destination_status_not_observed_for_every_redirect": "只检查了本次运行同时抓取到的跳转终点。抓取范围之外的终点，两个方向都未作判定。",
+        "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "查询行数触到了本次运行的上限，报告出来的总量偏少，因此不基于它发布任何占比。",
+        "share_of_reported_queries_only_banded_by_one_average_position_each": "只是 Search Console 报告出来的查询的占比，每个查询按一个曝光加权平均位置归档。低频与匿名查询不会返回。",
+        "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "页面行数触到了本次运行的上限，确实有曝光的页面可能不在这份清单里。",
+        "search_console_window_may_predate_a_recently_published_page": "Search Console 的统计窗口可能早于新发布的页面，这类页面会在这里显示为从未被展示过。",
+        "robots_rules_read_for_one_search_crawler_token_only": "robots.txt 规则只按单一搜索抓取器标记读取。为其他抓取器单独写的分组不体现在这里。",
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "只判定 BreadcrumbList 标记是否存在。它与读者实际看到的面包屑是否一致，这里不作检查。",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "仅统计静态 HTML 中的 <img> 标签。由 CSS 或脚本插入的图片在这里看不到。",
+        "format_read_from_the_url_extension_only_not_from_the_response": "格式依据 URL 扩展名读取，不依据响应内容。以 WebP 提供、但 URL 无扩展名的图片两个方向都不计。",
+        "static_html_meta_tags_only": "仅依据静态 HTML 的 meta 标签。加载后由脚本追加的标签在这里看不到。",
+        "heading_levels_read_from_static_html_in_document_order": "标题层级依据静态 HTML 按文档顺序读取，从页面的第一个标题开始计。",
+        "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against": "本次运行没有确认任何目标词，因此没有东西可以拿来与页面文本比对。",
+        "the_submitted_page_was_not_captured_so_its_text_could_not_be_read": "提交的页面未被本次抓取采集，因此读不到它的文本。",
+        "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "页面文本提取缺失，因此页面上没有任何部分能与目标词比对。",
+        "this_page_has_no_title_so_there_was_no_text_to_compare": "这个页面根本没有 title，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
+        "this_page_has_no_h1_so_there_was_no_text_to_compare": "这个页面根本没有 H1，这一点由它自己的检查报告。这里没有可与目标词比对的文本。",
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "按已确认目标词的词序列匹配。不做同义词、不做词形还原，多词查询必须相邻且保持顺序。",
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "只有同时满足「出现『找不到』类措辞」与「正文量低于公布下限」才会被报出。一个带有大量推荐内容、正文很长的软 404 在这里检测不到。",
+        "no_field_data_source_was_configured_for_this_run": "本次运行没有配置实况数据来源，因此从未向 CrUX 发起查询。这不代表 CrUX 对该页面没有数据。",
+        "crux_reported_no_field_data_for_this_metric_on_this_url": "CrUX 就该 URL 的这项指标没有返回实况数据，通常意味着真实访问量不足以发布 p75。",
+        "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values": "CrUX 没有 URL 级数据，因此这里是整个源站的 p75 值。一个快的页面可能在这里继承整站的慢。",
+        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "真实访问在 28 天窗口上的 CrUX p75。今天发布的任何改动要几周后才反映到这里。",
+        "no_target_query_was_confirmed_so_no_results_page_was_sampled": "没有确认目标词，因此没有采样任何结果页，也没有产生付费调用。",
+        "the_provider_reported_no_item_type_list_for_this_results_page": "供应商没有返回该结果页的条目类型清单。这是响应中的缺口，不等于该页面上没有任何区块。",
+        "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one": "采样中部分自然结果条目不可用，因此这是一个比完整首页更薄的样本。",
+        "one_live_sample_of_one_results_page_which_changes_between_requests": "对单个结果页的一次实时采样。同一个查询再采一次，返回的区块组合可能不同。",
+        "the_field_data_provider_rejected_this_deployments_credentials": "实况数据供应商拒绝了本次部署的凭据，因此没有取到任何实测值。这是我们这边的配置问题，不是对你页面的判断。",
+        "the_field_data_providers_quota_for_this_deployment_was_already_spent": "本次部署在实况数据供应商处的配额已经用完，因此没有取到任何实测值。这里的一切都不是对你页面的判断。",
+        "the_field_data_provider_did_not_answer_this_run": "实况数据供应商没有在本次运行的时限内应答，因此没有取到任何实测值。值得再试一次。",
+        "no_results_page_provider_was_configured_for_this_run": "本次运行没有配置结果页数据供应商，因此没有采样任何结果页。这里的一切都不是对这个查询的判断。",
+        "this_runs_market_is_not_one_the_results_page_provider_covers": "本次运行的市场不在结果页供应商覆盖范围内，因此没有采样，也没有产生付费调用。",
+        "the_results_page_provider_did_not_answer_this_run": "结果页数据供应商本次未应答，因此没有采样。值得再试一次。",
+        "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "本次运行的 robots.txt 规则触到了自身上限，某条 Disallow 可能在被读到之前就被丢掉了。相关放行检查按「未验证」报告，而不是按「已放行」。",
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。"
       },
       "records": {
         "robots_resource": {
@@ -1043,6 +1085,110 @@
         "json_ld_missing": {
           "title": "无 JSON-LD 块",
           "description": "完全不含 JSON-LD 结构化数据的已采集 HTML 页面。"
+        },
+        "redirect_destination_error": {
+          "title": "跳转终点报错",
+          "description": "发生跳转、且终点返回 4xx 或 5xx 的已采集 URL。"
+        },
+        "server_error_response": {
+          "title": "服务端错误响应",
+          "description": "最终响应为 5xx 的已采集页面；与「页面不存在」分开计。"
+        },
+        "fetch_without_direct_page": {
+          "title": "未直接落到页面的请求",
+          "description": "最终状态非 2xx，或经由跳转才到达的已采集请求。"
+        },
+        "average_response_time": {
+          "title": "平均响应时间",
+          "description": "已计时页面的平均首次响应耗时；每个 URL 从单一位置发起一次无缓存请求。"
+        },
+        "average_click_depth": {
+          "title": "平均点击深度",
+          "description": "已采集 HTML 页面距抓取入口的平均点击次数。"
+        },
+        "page_without_search_impressions": {
+          "title": "无搜索曝光的页面",
+          "description": "本次抓取采集到、但在统计窗口内 Search Console 从未展示过的页面。"
+        },
+        "impression_share_top_positions": {
+          "title": "排名 1–6 的曝光占比",
+          "description": "在 Search Console 报告出来的查询中，平均排名四舍五入落在前六位的曝光量占比。低频与匿名查询不在其中。"
+        },
+        "impression_share_low_click_positions": {
+          "title": "排名 7–10 的曝光占比",
+          "description": "在 Search Console 报告出来的查询中，平均排名四舍五入落在第七至第十位的曝光量占比。低频与匿名查询不在其中。"
+        },
+        "target_query_ranking_band": {
+          "title": "已确认目标词的当前排名区间",
+          "description": "该页面在为它确认的目标词上目前所处的位置，跨这些词按曝光加权取平均，所以一个几乎没被展示的词无法拉动这个数字。数据来自一次收窄到这一个 URL 的 Search Console 请求，而不是全站查询列表——后者对同一个词给出的位置，是资源下所有排到该词的页面的平均值。"
+        },
+        "page_disallowed_for_search_crawler": {
+          "title": "被 robots.txt 拦在搜索之外的页面",
+          "description": "已采集的页面中，被站点 robots.txt 里某条 Disallow 规则匹配到、Google 抓取器因此无法抓取的页面。按单一抓取器标记判定；同一份文件可能放行本次运行、却拦住搜索抓取器。"
+        },
+        "sitemap_url_disallowed_by_robots": {
+          "title": "被 robots.txt 拦截的 sitemap URL",
+          "description": "sitemap 声明要收录、而 robots.txt 又禁止 Google 抓取器抓取的 URL。按 sitemap 而不是按已采集页面统计，因为本次运行被禁止抓取的 URL 根本不会变成页面。"
+        },
+        "page_without_breadcrumb_list": {
+          "title": "根目录以下缺少 BreadcrumbList 的页面",
+          "description": "层级深于站点根目录、且 JSON-LD 中没有声明 BreadcrumbList 的已采集页面。仅判定是否存在：本次运行不保留可见面包屑路径，无法与标记比对。"
+        },
+        "image_without_alt_text": {
+          "title": "存在无 alt 属性图片的页面",
+          "description": "已采集页面中，至少有一张 <img> 完全没有 alt 属性的页面。空 alt 是装饰性图片的标记，计为已覆盖。依据静态 HTML 读取，由 CSS 或脚本插入的图片看不到。"
+        },
+        "image_in_legacy_format": {
+          "title": "以旧格式提供图片的页面",
+          "description": "已采集页面中，URL 能读出格式的图片里 WebP 或 AVIF 占比低于 80% 的页面。读不出扩展名的图片不计入该比例，也不算作旧格式。"
+        },
+        "open_graph_incomplete": {
+          "title": "缺少 Open Graph 属性的页面",
+          "description": "已采集页面中，未同时带内容声明 og:title、og:description、og:image 三项的页面。仅依据静态 meta 标签。"
+        },
+        "heading_level_skipped": {
+          "title": "标题层级跳级的页面",
+          "description": "已采集页面中，按文档顺序标题层级跳过了某一级的页面——例如 h2 后面直接接 h4。层级从页面的第一个标题开始统计，也包含只有图标没有文字的标题。"
+        },
+        "image_alt_coverage": {
+          "title": "全站图片 alt 覆盖率",
+          "description": "在含图片的已采集页面中，每张图片都带 alt 属性的页面所占比例。没有图片的页面不在这个分母里，因此以文字为主的站点无法靠稀释混过这条线。空 alt 计为已覆盖。"
+        },
+        "title_without_target_query": {
+          "title": "Title 未包含目标词",
+          "description": "已确认的目标词没有以词序列的形式出现在这个页面的 title 里。按词相等匹配，所以 chart 不会在 charter 里被找到；不做同义词也不做词形还原。"
+        },
+        "h1_without_target_query": {
+          "title": "H1 未包含目标词",
+          "description": "已确认的目标词没有以词序列的形式出现在这个页面的 H1 里。一个用不同词表达同一意思的标题会在这里被报出来，而它未必是错的。"
+        },
+        "soft_404_page": {
+          "title": "返回 200 却声称什么都没有的页面",
+          "description": "已采集页面中，返回 200、在标题或开头文本里出现「找不到」类措辞、且正文量低于公布下限的页面。两个信号必须同时成立：仅内容少只是短页面，仅有措辞则可能是讲错误页的文章。"
+        },
+        "core_web_vital_lcp": {
+          "title": "最大内容绘制（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 LCP 第 75 百分位值。实况数据，不是实验室估算。"
+        },
+        "core_web_vital_inp": {
+          "title": "交互到下次绘制（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 INP 第 75 百分位值。衡量页面在真人点击或触摸后需要多久才响应。"
+        },
+        "core_web_vital_cls": {
+          "title": "累积布局偏移（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 CLS 第 75 百分位值。无单位；统计读者开始阅读之后内容仍在移动的程度。"
+        },
+        "core_web_vital_ttfb": {
+          "title": "首字节时间（CrUX p75）",
+          "description": "CrUX 就该 URL 在 28 天真实访问窗口上报告的移动端 TTFB 第 75 百分位值。属于服务端与网络时间，不是页面时间。"
+        },
+        "ai_answer_block_present": {
+          "title": "结果页出现了 AI 答案块",
+          "description": "供应商对该结果页单次实时采样返回的条目类型清单中包含 AI 答案块。仅判定是否存在——它是否完整回答了查询属于内容判断，本次运行不作此判断。"
+        },
+        "no_community_result_present": {
+          "title": "结果页没有出现社区型结果",
+          "description": "对结果页的单次实时采样中没有论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。"
         }
       },
       "evidence": {
@@ -1074,7 +1220,67 @@
         "observed_outbound_internal_links": "观察到的出站内链数",
         "observed_click_depth": "观察到的点击深度",
         "reviewed_limit": "审阅上限",
-        "json_ld_blocks": "JSON-LD 块数"
+        "json_ld_blocks": "JSON-LD 块数",
+        "average_response_ms": "平均响应耗时（毫秒）",
+        "slowest_response_ms": "最慢响应耗时（毫秒）",
+        "pages_timed": "已计时页面数",
+        "average_click_depth": "平均点击深度",
+        "deepest_click_depth": "最深点击深度",
+        "pages_measured": "已测量页面数",
+        "impressions": "曝光量",
+        "top_position_impression_share": "前六位曝光占比",
+        "low_click_position_impression_share": "7–10 位曝光占比",
+        "impressions_in_band": "该档曝光量",
+        "impressions_total": "总曝光量",
+        "queries_measured": "已测量查询数",
+        "property": "Search Console 属性",
+        "query_position_band": "排名区间",
+        "query_average_position": "平均排名",
+        "best_query_average_position": "最好词排名",
+        "best_query": "表现最好的词",
+        "worst_query_average_position": "最差词排名",
+        "worst_query": "表现最差的词",
+        "queries_confirmed": "已确认目标词数",
+        "clicks_total": "点击",
+        "robots_user_agent": "抓取器标记",
+        "robots_allowed": "robots.txt 是否放行",
+        "images_without_alt": "无 alt 属性的图片数",
+        "images_observed": "已读取图片数",
+        "images_on_page": "页面图片总数",
+        "modern_format_share": "现代格式占比",
+        "legacy_format_share": "旧格式占比",
+        "images_with_readable_format": "可读出格式的图片数",
+        "open_graph_title": "og:title",
+        "open_graph_description": "og:description",
+        "open_graph_image": "og:image",
+        "skipped_from_level": "从第几级跳",
+        "skipped_to_level": "跳到第几级",
+        "heading_levels_observed": "已读取标题层级数",
+        "alt_coverage_share": "alt 覆盖率",
+        "pages_with_images": "含图片的页面数",
+        "pages_with_uncovered_images": "存在未覆盖图片的页面数",
+        "target_query": "目标词",
+        "query_tokenization": "目标词的切分方式",
+        "slot_occurrences": "此处出现次数",
+        "source_pages": "链到这里的页面",
+        "matched_phrase": "命中的措辞",
+        "body_text_units": "正文计量单位数",
+        "text_units_basis": "计量方式",
+        "text_units_floor": "下限",
+        "lcp_ms": "LCP",
+        "inp_ms": "INP",
+        "cls_score": "CLS",
+        "ttfb_ms": "TTFB",
+        "crux_source_level": "CrUX 数据层级",
+        "crux_form_factor": "设备形态",
+        "sampled_query": "采样的查询",
+        "ai_answer_item_types": "命中的 AI 答案块",
+        "community_item_types": "命中的社区型结果",
+        "serp_item_types": "页面上的全部区块",
+        "organic_results_sampled": "采样到的自然结果数",
+        "unresolved_serp_items": "因不可用而丢弃的条目数",
+        "sampled_market": "市场",
+        "sampled_language": "语言"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -1136,7 +1342,7 @@
       "limit1Title": "Search Console 与真实索引覆盖",
       "limit1Body": "工具不接入 GSC，也不声称页面已被收录、获得排名或产生流量。",
       "limit2Title": "渲染与性能数据",
-      "limit2Body": "工具不执行页面 JavaScript，也不生成 Lighthouse、CrUX、Core Web Vitals 或移动端渲染结果。",
+      "limit2Body": "本工具不执行页面 JavaScript，也不产出 Lighthouse 或移动端渲染结果。Agent 审计在配置了密钥时会读取所提交页面的 CrUX 实况数据；本公开工具不会。",
       "limit3Title": "大型网站的完整页面全集",
       "limit3Body": "同步工具会在当前运行能力内尽可能采集；大型网站可能只得到部分覆盖，真正的大规模全站扫描需要后续异步任务版本。",
       "useCasesEyebrow": "审计记录",
@@ -3460,7 +3666,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "不保存到项目",
-      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。本报告不声称使用了 GSC、流量或排名数据。",
+      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。只有你已连接的 Search Console 资源才会出现搜索表现数据；未连接时报告不声称任何流量或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "从 URL 到检查结论的有界路径",
       "howBody": "Agent 将已采集证据、无法核验项和可调整建议分开呈现，不会把限制误写成通过或评分。",
@@ -3469,7 +3675,7 @@
       "step2Title": "检查公开 HTML",
       "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的 SEO 方案",
       "step4Body": "结合证据和已确认的搜索上下文确定优先级，再检查页面级变更与验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
@@ -3485,7 +3691,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "仅使用公开抓取事实",
-      "dataBoundaryBody": "本次运行不会保存到 App 项目，也不使用 PSI、CrUX、JavaScript 渲染、GSC 索引覆盖、流量或排名数据。",
+      "dataBoundaryBody": "本次运行不会保存到 App 项目。在配置了密钥时会读取所提交页面的 CrUX 实况数据；不使用 JavaScript 渲染、GSC 索引覆盖或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "先看技术证据，再看建议",
       "howBody": "Agent 只报告有边界抓取实际采集到的内容，并将每个无法核验项与已检查情况分开。",
@@ -3494,10 +3700,10 @@
       "step2Title": "检查有边界响应",
       "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "81 项目录检查中，有 24 项由本次抓取采集的证据判定；其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
       "step4Title": "审阅选中的技术方案",
       "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
-      "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
+      "finalBoundary": "模板是可调整预览。本 Agent 不会运行 Lighthouse、不执行 JavaScript、不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
     },
     "workbench": {
       "stage1": "阶段 01 · 目标",
@@ -3824,7 +4030,7 @@
         "healthHint": "仅使用已评估且参与加权的检查",
         "evaluatedTotal": "已评估 {evaluated} / {total}",
         "engineCoverage": "引擎就绪 {ready} / {total}",
-        "inventoryCoverage": "需求库存：{ready} / {total} 已就绪；不代表本次运行已完成这些检查",
+        "inventoryCoverage": "本次可判定 {ready} / {total}；其余检查不会有结论，每项都标注了原因",
         "groupsLabel": "审计分组",
         "checksLabel": "检查项",
         "selectCheck": "查看 {check}",
@@ -3909,6 +4115,12 @@
           "result": "本次运行对该检查的判定：阻断、警告、提示、通过或已排除。",
           "engine": "该检查背后的检测器是否已接入，以及本次运行是否拿到可读的数据源。",
           "truth": "这个结论是怎么来的：在有边界样本中观测到、已实测但未观测到，或根本没有实测。"
+        },
+        "searchSource": {
+          "absent": "本次运行未读取 Search Console。搜索表现相关的检查需要授权后才有结论——用 Google 登录站点并不代表已授权本工具读取。",
+          "connect": "连接 Search Console",
+          "present": "搜索表现读自 {property}，窗口 {start} 至 {end}。",
+          "unavailable": "本次没能读到 Search Console——请求超时或被限流。授权本身没问题，稍后重跑即可。"
         }
       },
       "auditCatalog": {
@@ -3926,7 +4138,7 @@
             "A3": "已发现但尚未编入索引占比",
             "A4": "软 404 页数",
             "A5": "robots.txt 误拦截页数",
-            "A6": "跳转终点为 404 的 URL 数",
+            "A6": "跳转终点返回错误的 URL 数",
             "B1": "抓取浪费率",
             "B2": "5XX 占比",
             "B3": "平均响应时间",
@@ -3947,7 +4159,11 @@
             "E2": "排名 1–6 的曝光占比",
             "E3": "排名 7–10 的曝光占比",
             "E4": "非品牌点击占比",
-            "E5": "时效内容曝光占比"
+            "E5": "时效内容曝光占比",
+            "A7": "带 noindex 指令的页数",
+            "A8": "以 HTTP 提供的页数",
+            "C6": "经跳转到达的页数",
+            "D7": "Canonical 指向他页的页数"
           }
         },
         "page": {
@@ -4009,7 +4225,6 @@
             "8_5": "页面总体积",
             "8_6": "渲染阻塞资源数",
             "9_1": "目标词是否被 AI Overview 完整覆盖",
-            "9_2": "前十是否有近两年注册域名",
             "9_3": "前十是否有低流量站点",
             "9_4": "是否有 UGC 结果位",
             "9_5": "当前排名区间"
@@ -4247,7 +4462,31 @@
         "evidenceNotObservedTitle": "未观察到受影响单元",
         "evidenceNotObservedBody": "该检查已在已采集样本上执行，未发现受影响的单元。有边界抓取范围内没有发现，并不能证明范围之外也没有。",
         "evidenceNoObservationTitle": "没有可展示的观测",
-        "evidenceNoObservationBody": "本次运行没有为所选页面在该检查上保留观测记录。在把它当作可执行项之前，请先看上方的实测值与证据来源。"
+        "evidenceNoObservationBody": "本次运行没有为所选页面在该检查上保留观测记录。在把它当作可执行项之前，请先看上方的实测值与证据来源。",
+        "draft": {
+          "action": "生成草稿",
+          "running": "正在生成…",
+          "offer": "按本页已采集到的文字生成一份草稿。仅供审阅，不会应用到站点。",
+          "readyLabel": "草稿 · 仅供审阅",
+          "boundary": "草稿只把本页已采集到的文字作为依据写成，并被要求不许编造。模型仍可能出错——发布前请逐句核对。",
+          "fields": {
+            "title": "Title",
+            "metaDescription": "Meta description",
+            "openingLine": "首句",
+            "h1": "H1",
+            "h2": "H2"
+          },
+          "errors": {
+            "auth_required": "请先登录再生成草稿。",
+            "auth_unavailable": "登录状态暂时读不到，请稍后再试。",
+            "invalid_request": "这一项没有可用于生成草稿的页面文字。",
+            "rate_limited": "本小时的草稿次数已用完，稍后再试。",
+            "quota_unavailable": "配额暂时读不到，请稍后再试。",
+            "drafts_unavailable": "本部署未配置生成模型，暂不提供草稿。",
+            "draft_unusable": "这次返回的内容格式不可用，没有展示。可以再试一次。",
+            "draft_provider_unavailable": "模型这次没有作答（可能是超时或限流）。这是可以重试的。"
+          }
+        }
       },
       "seo": {
         "title": "开始 SEO 证据检查",
@@ -4257,7 +4496,7 @@
       "tech": {
         "title": "开始技术证据检查",
         "body": "输入公开主机名或 URL。服务端会规范化并验证目标；私有网络和本机地址仍会被拦截。",
-        "scope": "本次运行只返回抓取、索引性和链接记录，不运行 PSI/CrUX、JavaScript 渲染或评分。"
+        "scope": "本次运行返回抓取、可索引性与链接记录，并在配置了密钥时返回所提交页面的 CrUX 实况数据。不执行 JavaScript。"
       },
       "accountGate": "需要已验证账号 · 仅身份信息访问",
       "urlLabel": "网站主机名或 URL",

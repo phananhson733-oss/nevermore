@@ -6,15 +6,21 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent-audit": "./src/agent-audit/index.ts",
-    "./seo-audit/types": "./src/seo-audit/types.ts",
-    "./seo-audit/contract": "./src/seo-audit/contract.ts",
-    "./seo-audit/keyword-evidence/types": "./src/seo-audit/keyword-evidence/types.ts",
-    "./quick-wins/csv": "./src/quick-wins/csv.ts",
-    "./quick-wins/track": "./src/quick-wins/track.ts",
-    "./keyword-opportunity/types": "./src/keyword-opportunity/types.ts",
     "./keyword-opportunity/csv": "./src/keyword-opportunity/csv.ts",
     "./keyword-opportunity/next-checks": "./src/keyword-opportunity/next-checks.ts",
-    "./seo-audit/text-width": "./src/seo-audit/text-width.ts"
+    "./keyword-opportunity/types": "./src/keyword-opportunity/types.ts",
+    "./quick-wins/csv": "./src/quick-wins/csv.ts",
+    "./quick-wins/track": "./src/quick-wins/track.ts",
+    "./seo-audit/contract": "./src/seo-audit/contract.ts",
+    "./seo-audit/keyword-evidence/records": "./src/seo-audit/keyword-evidence/records.ts",
+    "./seo-audit/keyword-evidence/types": "./src/seo-audit/keyword-evidence/types.ts",
+    "./seo-audit/page-performance": "./src/seo-audit/page-performance.ts",
+    "./seo-audit/record-ledger": "./src/seo-audit/record-ledger.ts",
+    "./seo-audit/search-performance": "./src/seo-audit/search-performance.ts",
+    "./seo-audit/serp-shape": "./src/seo-audit/serp-shape.ts",
+    "./seo-audit/solution-draft": "./src/seo-audit/solution-draft.ts",
+    "./seo-audit/text-width": "./src/seo-audit/text-width.ts",
+    "./seo-audit/types": "./src/seo-audit/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

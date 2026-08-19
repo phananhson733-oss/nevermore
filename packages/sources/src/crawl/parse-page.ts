@@ -172,6 +172,25 @@ export interface ParsedOnPageFacts {
   readonly faviconDeclared: boolean;
   readonly hreflang: readonly string[];
   readonly images: ParsedImageFacts;
+  /**
+   * The file extension of each image reference, in document order.
+   *
+   * Only the extension: resolving the reference would turn a broken or
+   * templated `src` into a URL that looks measured, and the only question
+   * asked of it is which format was served. An unreadable reference — a data
+   * URI, an extensionless CDN path — contributes nothing rather than counting
+   * as an old format.
+   */
+  readonly imageFormats: readonly string[];
+  /**
+   * Heading levels in document order, collected independently of the text.
+   *
+   * `headings` keeps only headings that have text and a closing tag. Both are
+   * right for a list of strings and wrong for a level sequence: an icon-only
+   * `<h2>` still occupies a level, and dropping it invents a skip from h1 to h3
+   * that the document does not contain.
+   */
+  readonly headingLevels: readonly number[];
   readonly externalLinks: ParsedExternalLinkFacts;
   /**
    * UTF-8 byte counts, not character counts.
@@ -279,8 +298,15 @@ function firstTag(html: string, pattern: RegExp): string | undefined {
  * document before this step because they are about exactly what was shipped.
  */
 const NON_RENDERED_ELEMENT =
-  /<\s*(script|style|template)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi;
+  /<\s*(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi;
 
+/**
+ * `noscript` is in that list because its contents are exactly what a reader
+ * with scripting enabled never sees — which is every browser that renders the
+ * pages this crawls. The Facebook Pixel ships an alt-less tracking image inside
+ * one, and it is on a large share of commercial sites, so counting it failed
+ * the alt checks on pages whose only visible image is correctly labelled.
+ */
 function withoutNonRenderedElements(html: string): string {
   return html.replace(NON_RENDERED_ELEMENT, " ");
 }
@@ -655,6 +681,31 @@ function metaContent(
   );
 }
 
+/** Extensions of the images a reader would see, in document order. */
+function collectImageFormats(html: string): readonly string[] {
+  const out: string[] = [];
+  for (const match of html.matchAll(openingTagPattern("img", "gi"))) {
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxImages) break;
+    const src = attr(match[0], "src");
+    if (src === null) continue;
+    const withoutQuery = decodeHtml(src).split(/[?#]/)[0] ?? "";
+    const extension = /\.([a-z0-9]{2,5})$/i.exec(withoutQuery)?.[1];
+    if (extension !== undefined) out.push(extension.toLowerCase());
+  }
+  return out;
+}
+
+/** Heading levels in document order; see `headingLevels` for why it is separate. */
+function collectHeadingLevels(html: string): readonly number[] {
+  const out: number[] = [];
+  for (const match of html.matchAll(openingTagPattern("h[1-6]", "gi"))) {
+    const level = Number(/<h([1-6])/i.exec(match[0])?.[1]);
+    if (Number.isInteger(level)) out.push(level);
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadingLevels) break;
+  }
+  return out;
+}
+
 function collectImageFacts(html: string): ParsedImageFacts {
   const tags = [...html.matchAll(openingTagPattern("img", "gi"))].map(
     (match) => match[0],
@@ -900,6 +951,8 @@ function collectOnPageFacts(
     faviconDeclared: collectFaviconDeclared(markup),
     hreflang: collectHreflang(markup),
     images: collectImageFacts(markup),
+    imageFormats: collectImageFormats(markup),
+    headingLevels: collectHeadingLevels(markup),
     externalLinks: collectExternalLinkFacts(markup, pageUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,

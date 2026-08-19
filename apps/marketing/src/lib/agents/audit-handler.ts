@@ -5,6 +5,7 @@
 import type {
   SeoAuditCoverage,
   SeoAuditRecord,
+  SeoAuditReport,
   SeoAuditSiteResources,
 } from "@sf/public-tools";
 import {
@@ -20,13 +21,34 @@ import {
   type SeoAuditRequestInput,
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
+import { readAgentSearchPerformance } from "./search-performance.ts";
+import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  buildPagePerformanceRecords,
+  type PagePerformanceGap,
+  type PagePerformanceRaw,
+} from "@sf/public-tools/seo-audit/page-performance";
+import {
+  defaultPagePerformanceReader,
+  type PagePerformanceReadResult,
+} from "./page-performance-reader.ts";
+import {
+  buildSerpShapeRecords,
+  type SerpShapeGap,
+  type SerpShapeRaw,
+} from "@sf/public-tools/seo-audit/serp-shape";
+
 import { buildKeywordEvidence } from "@sf/public-tools";
 import { readSerpLandscape } from "../tools/serp-landscape.ts";
 import {
+  AGENT_SERP_SHAPE_VERSION,
+  AGENT_PAGE_PERFORMANCE_VERSION,
+  AGENT_KEYWORD_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
   type AgentAuditSuccessData,
+  type AgentSearchPerformance,
   type AgentKind,
   type SerpLandscape,
 } from "./audit-contract.ts";
@@ -56,6 +78,34 @@ export interface AgentAuditHandlerDependencies {
    * an attacker either way.
    */
   readonly reportFirstRun?: (tool: QualifyingTool) => void;
+  /**
+   * The visitor's own Search Console numbers for the audited host, or null.
+   *
+   * Optional and best-effort by contract. An audit that cannot reach Search
+   * Console — no grant, no property covering this host, an expired token, a
+   * slow response — is a complete audit with the search checks reporting the
+   * authorization they need. It is never a failed audit, so a throw here is
+   * caught and read as "no grant" rather than surfaced to the visitor.
+   *
+   * Takes the collected pages because coverage is a statement about the pages
+   * this crawl saw, and the projected result deliberately drops them.
+   */
+  /**
+   * CrUX field data for the collected target page, or null.
+   *
+   * Optional and best-effort, exactly like Search Console: a run with no key,
+   * no field data or a slow PageSpeed response is a complete audit whose
+   * performance checks report the source they need. Never a failed audit.
+   */
+  readonly readPagePerformance?: (input: {
+    readonly url: string;
+  }) => Promise<PagePerformanceReadResult> | undefined;
+  readonly readSearchPerformance?: (input: {
+    readonly siteOrigin: string;
+    readonly pages: SeoAuditReport["pages"];
+    readonly targetPageUrl: string | null;
+    readonly targetQueries: readonly string[];
+  }) => Promise<AgentSearchPerformance | null>;
   /**
    * Which tool the visitor actually ran.
    *
@@ -104,6 +154,14 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
     }),
   reportFirstRun: reportFirstToolRun,
   reportAs: "agent-audit",
+  readSearchPerformance: (input) => readAgentSearchPerformance(input),
+  // Undefined, not a fabricated result. Substituting `no_field_data` here
+  // reintroduced the exact lie the reason union exists to prevent: with no key
+  // configured — which is production today — all four Core Web Vitals records
+  // published "CrUX reported no field data for this URL", a claim about the
+  // visitor's own traffic that this run never went and looked for. Leaving it
+  // undefined lets the handler's `source_not_configured` initial value stand.
+  readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
 };
 
 /**
@@ -118,6 +176,25 @@ export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   reportAs: "on-page-seo-check",
   readSerpLandscape: (input) => readSerpLandscape(input),
 };
+
+/**
+ * The URL the crawl actually landed on for the submitted page, or null.
+ *
+ * Search Console keys its rows by the URL it indexed, which is the end of the
+ * redirect journey. The report carries both: `inspectedTargetUrl` is what was
+ * requested and each page's `finalUrl` is where it arrived.
+ */
+function landedTargetUrl(result: {
+  readonly targetInspected: boolean;
+  readonly inspectedTargetUrl: string | null;
+  readonly targetUrl: string;
+  readonly pages: SeoAuditReport["pages"];
+}): string | null {
+  if (!result.targetInspected) return null;
+  const requested = result.inspectedTargetUrl ?? result.targetUrl;
+  const page = result.pages.find((entry) => entry.url === requested);
+  return page?.finalUrl ?? requested;
+}
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
 
@@ -510,6 +587,56 @@ export async function handleAgentAuditRequest(
   if (cache === null) return errorResponse("audit_response_invalid", 502);
 
   const { run, result } = envelope.data;
+  // Never lets Search Console decide whether the audit succeeded — but the two
+  // ways it can produce nothing are different facts, and only one of them is
+  // fixed by authorizing.
+  let searchPerformance: AgentSearchPerformance | null = null;
+  let searchUnavailable = false;
+  try {
+    searchPerformance =
+      (await dependencies.readSearchPerformance?.({
+        siteOrigin: result.siteOrigin,
+        pages: result.pages,
+        // The URL the crawl LANDED on — `finalUrl`, not `inspectedTargetUrl`.
+        //
+        // `inspectedTargetUrl` is the URL the crawl requested, so on any site
+        // that redirects (trailing slash, http to https) the equality filter
+        // was sent the pre-redirect form, matched nothing, and 9.5 published
+        // "Search Console reported no impressions for this URL" about a page
+        // that ranks. This comment described that failure while the line below
+        // it caused it.
+        targetPageUrl: landedTargetUrl(result),
+        // The visitor's own spelling, not the lowercase identity: it is echoed
+        // back in the evidence, and the match lowercases both sides anyway.
+        targetQueries: (input.value.targetQueries ?? []).map(
+          (query) => query.displayQuery,
+        ),
+      })) ?? null;
+  } catch {
+    searchPerformance = null;
+    searchUnavailable = true;
+  }
+
+  // Never lets PageSpeed decide whether the audit succeeded. Every way it can
+  // produce nothing — no key, no field data, a slow answer, a shared-quota 429
+  // — is the same settled outcome, and the records name which one.
+  let pagePerformance: PagePerformanceRaw | null = null;
+  let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
+  if (result.targetInspected) {
+    try {
+      const read = await dependencies.readPagePerformance?.({
+        url: result.inspectedTargetUrl ?? result.targetUrl,
+      });
+      if (read?.status === "ok") {
+        pagePerformance = read.field;
+      } else if (read !== undefined) {
+        pagePerformanceGap = read.reason;
+      }
+    } catch {
+      pagePerformanceGap = "provider_unavailable";
+    }
+  }
+
 
   const evidence =
     input.value.targetQueries === null
@@ -581,8 +708,67 @@ export async function handleAgentAuditRequest(
       records: result.records.map(projectRecord),
       // Derived here, never cached: a cache row is shared by host, so a stored
       // region would answer the next visitor with this one's queries.
-      ...(evidence === null ? {} : { keywordEvidence: evidence }),
+      ...(evidence === null
+        ? {}
+        : {
+            keywordEvidence: evidence,
+            // The same region restated as records, so the checks about the
+            // confirmed query read evidence rather than an empty form.
+            keywordChecks: {
+              version: AGENT_KEYWORD_CHECKS_VERSION,
+              records: buildKeywordEvidenceRecords(
+                result.inspectedTargetUrl ?? result.targetUrl,
+                evidence,
+              ),
+            },
+          }),
       ...(landscape === null ? {} : { serpLandscape: landscape }),
+      // 9.1 and 9.4 read the landscape the checker already paid for. They add
+      // no provider call of their own: a second lookup for the same query in
+      // the same run doubles the cost of every audit to learn the same fact.
+      ...(landscape === null
+        ? {}
+        : {
+            serpShape: {
+              version: AGENT_SERP_SHAPE_VERSION,
+              records: buildSerpShapeRecords(
+                landscape.availability === "available"
+                  ? {
+                      keyword: landscape.query,
+                      itemTypes: landscape.features,
+                      unresolvedItemCount: 0,
+                      organicCount: landscape.resultsObserved,
+                      marketCode: landscape.market,
+                      languageCode: landscape.language,
+                    }
+                  : null,
+                landscape.availability === "available"
+                  ? "no_confirmed_query"
+                  : landscape.reason === "no_target_query"
+                    ? "no_confirmed_query"
+                    : landscape.reason === "market_not_supported"
+                      ? "market_not_supported"
+                      : landscape.reason === "provider_not_configured"
+                        ? "source_not_configured"
+                        : "provider_unavailable",
+              ),
+            },
+          }),
+      // Same reason, one step further: a cache row is shared by host and these
+      // numbers belong to one visitor's verified property.
+      ...(searchPerformance === null ? {} : { searchPerformance }),
+      ...(result.targetInspected
+        ? {
+            pagePerformance: {
+              version: AGENT_PAGE_PERFORMANCE_VERSION,
+              records: buildPagePerformanceRecords(
+                pagePerformance,
+                pagePerformanceGap,
+              ),
+            },
+          }
+        : {}),
+      ...(searchUnavailable ? { searchPerformanceUnavailable: true } : {}),
     },
   };
 

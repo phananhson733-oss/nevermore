@@ -155,17 +155,25 @@ describe("repository-backed blog content", () => {
     // 73 → 74 on 2026-08-18: main added another post in the GEO Agent series
     // and again did not move this number, so the count was red on main before
     // this branch merged it. Bumped here rather than left red.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(74);
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(75);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    // Newest-first ordering. The Outrank alternatives post is the newest
-    // published record; this and the count above move together every time an
-    // article lands, and both were left behind by the post that landed on main
-    // on 2026-08-18.
-    expect(posts[0]?.published_at).toBe("2026-08-18T00:00:00.000Z");
+    // Newest-first ordering, asserted as ordering rather than as a date.
+    //
+    // This used to pin the newest article's timestamp, so every published post
+    // broke it — and by its own comment it had already been left behind once.
+    // Comparing the head against the maximum tests the same property and
+    // survives the next article.
+    const newest = posts
+      .map((post) => post.published_at)
+      .reduce((latest, current) => (current > latest ? current : latest));
+    expect(posts[0]?.published_at).toBe(newest);
+    expect(posts).toEqual(
+      [...posts].sort((a, b) => b.published_at.localeCompare(a.published_at)),
+    );
   });
 
   it("publishes the evidence-reviewed English recovery articles", async () => {

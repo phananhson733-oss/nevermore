@@ -281,6 +281,33 @@ async function readPageMeta(
  * carries no visitor data beyond the two pages' own titles and the query they
  * both rank for.
  */
+/**
+ * One model completion, with this deployment's retry, JSON-mode fallback and
+ * token ceiling already applied.
+ *
+ * Narrower than `createDraftDependencies` because the second consumer — the
+ * Agent audit's Stage 04 drafts — has a page in hand and needs no crawl seam.
+ * What it does need is every lesson baked into `complete`: the ceiling
+ * calibrated against the real deployment, the retry that drops `json_mode` for
+ * gateways that reject the field, and the deadline. A second implementation
+ * would relearn all three the expensive way.
+ *
+ * Returns null when this deployment has no model configured, which is the
+ * signal to offer no drafts rather than to fail.
+ */
+export function createDraftCompletion(options: {
+  readonly remainingMs: () => number;
+  readonly fetchImpl?: typeof fetch;
+  readonly model?: DraftModelConfig | null;
+}): ((prompt: string) => Promise<DraftCompletion>) | null {
+  const model =
+    options.model === undefined ? draftModelFromEnv() : options.model;
+  if (model === null) return null;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  return (prompt: string) =>
+    complete(prompt, model, fetchImpl, options.remainingMs);
+}
+
 export function createDraftDependencies(options: {
   readonly property: string;
   /**

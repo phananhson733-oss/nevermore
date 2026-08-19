@@ -945,7 +945,49 @@
         "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
         "display_width_approximation_rendered_pixel_width_not_measured": "Approximated by display width, counting CJK characters as two. The rendered pixel width Google actually truncates by is not measured.",
         "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
-        "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point."
+        "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point.",
+        "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "No target query was confirmed for this page, so there is no query to report a position for.",
+        "the_submitted_page_was_not_collected_so_no_per_page_query_rows_were_requested": "The submitted page was not collected in this crawl, so no per-page query rows were requested.",
+        "target_page_query_rows_hit_the_row_cap_so_a_confirmed_query_may_be_missing": "The per-page query rows hit this run's cap, so a confirmed query may be missing from the average.",
+        "search_console_reported_no_impressions_for_the_confirmed_queries_on_this_url": "Search Console recorded no impressions for these queries on this URL in the window, so there is no position to band. That is not position zero.",
+        "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average": "Some confirmed queries had no impressions on this URL and are not part of this average.",
+        "one_impression_weighted_average_per_query_over_the_reported_window_only": "One impression-weighted average per query over the reported window. Low-volume and anonymised queries are withheld by Search Console.",
+        "search_console_returned_a_position_this_run_cannot_band_for_this_url": "Search Console returned a position this run cannot place in a band for this URL.",
+        "single_uncached_request_per_url_not_a_field_measurement": "One uncached request per URL from a single location. This is what the server did for this run, not what visitors experience on their own connections and devices.",
+        "redirect_destination_status_not_observed_for_every_redirect": "Only redirect destinations this run also fetched were checked. A destination outside the crawl was not classified either way.",
+        "query_rows_hit_the_row_cap_so_the_reported_total_is_short": "The query rows hit this run's cap, so the reported total is short and no share is published against it.",
+        "share_of_reported_queries_only_banded_by_one_average_position_each": "A share of the queries Search Console reports, each banded by one impression-weighted average position. Low-volume and anonymised queries are withheld.",
+        "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing": "The page rows hit this run's cap, so a page that does have impressions may be missing from the list.",
+        "search_console_window_may_predate_a_recently_published_page": "The Search Console window may predate a recently published page, which would appear here as a page that has never been shown.",
+        "robots_rules_read_for_one_search_crawler_token_only": "robots.txt rules were read for a single search-crawler token. A group written for a different crawler is not reflected here.",
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail": "Only whether BreadcrumbList markup exists. Whether it matches the breadcrumb a reader sees is not checked here.",
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen": "Only <img> tags in the static HTML. Images inserted by CSS or by script are not seen here.",
+        "format_read_from_the_url_extension_only_not_from_the_response": "Format is read from the URL extension, not from the response. An image served as WebP from an extensionless URL is not counted either way.",
+        "static_html_meta_tags_only": "Read from the static HTML meta tags only. Tags added by script after load are not seen.",
+        "heading_levels_read_from_static_html_in_document_order": "Heading levels are read from the static HTML in document order, counting from the page's first heading.",
+        "no_target_query_was_confirmed_so_this_page_has_nothing_to_be_checked_against": "No target query was confirmed for this run, so there is nothing to compare the page's text against.",
+        "the_submitted_page_was_not_captured_so_its_text_could_not_be_read": "The submitted page was not captured in this crawl, so its text could not be read.",
+        "the_page_text_extract_was_missing_so_no_slot_could_be_compared": "The page text extract was missing, so no part of the page could be compared to the query.",
+        "this_page_has_no_title_so_there_was_no_text_to_compare": "This page has no title at all, which is reported by its own check. There was no text here to compare to the query.",
+        "this_page_has_no_h1_so_there_was_no_text_to_compare": "This page has no H1 at all, which is reported by its own check. There was no text here to compare to the query.",
+        "token_sequence_match_on_the_confirmed_query_no_synonyms_or_stemming": "Matched as a token sequence on the confirmed query. No synonyms, no stemming, and multi-word queries must appear adjacent and in order.",
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor": "A page is reported only when it states a not-found phrase AND falls below the published body floor. A soft 404 with a long body of suggestions is not detected here.",
+        "no_field_data_source_was_configured_for_this_run": "No field-data source was configured for this run, so CrUX was never asked. This is not a statement that CrUX has nothing for the page.",
+        "crux_reported_no_field_data_for_this_metric_on_this_url": "CrUX reported no field data for this metric on this URL, which usually means too few real visits to publish a p75.",
+        "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values": "CrUX had no URL-level data, so these are the whole origin's p75 values. A fast page can inherit a slow site's numbers here.",
+        "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped": "CrUX p75 over a 28-day window of real visits. It lags anything shipped today by weeks.",
+        "no_target_query_was_confirmed_so_no_results_page_was_sampled": "No target query was confirmed, so no results page was sampled and no paid call was made.",
+        "the_provider_reported_no_item_type_list_for_this_results_page": "The provider returned no item-type list for this results page. That is a gap in the response, not a page with no blocks on it.",
+        "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one": "Some organic items in the sample were unusable, so this is a thinner sample than a full page one.",
+        "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks.",
+        "the_field_data_provider_rejected_this_deployments_credentials": "The field-data provider rejected this deployment's credentials, so no measurement was taken. This is a configuration problem on our side, not a statement about your page.",
+        "the_field_data_providers_quota_for_this_deployment_was_already_spent": "The field-data provider's quota for this deployment was already spent, so no measurement was taken. Nothing here is a statement about your page.",
+        "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again.",
+        "no_results_page_provider_was_configured_for_this_run": "No results-page provider was configured for this run, so no results page was sampled. Nothing here is a statement about the query.",
+        "this_runs_market_is_not_one_the_results_page_provider_covers": "This run's market is not one the results-page provider covers, so no sample was taken and no paid call was made.",
+        "the_results_page_provider_did_not_answer_this_run": "The results-page provider did not answer this run, so no sample was taken. Worth trying again.",
+        "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "This run's robots.txt rules hit its own cap, so a Disallow may have been dropped before it could be read. The allowance checks are reported as unverified rather than as permission.",
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "The sitemap hit this run's URL cap, so a declared URL may be missing from what was checked. Members are read in order, so what falls off is a whole late-alphabet section."
       },
       "records": {
         "robots_resource": {
@@ -1043,6 +1085,110 @@
         "json_ld_missing": {
           "title": "No JSON-LD block",
           "description": "Collected HTML pages that carried no JSON-LD structured data at all."
+        },
+        "redirect_destination_error": {
+          "title": "Redirect destination errors",
+          "description": "Collected URLs that redirected and whose destination answered 4xx or 5xx."
+        },
+        "server_error_response": {
+          "title": "Server error responses",
+          "description": "Collected pages whose final response was 5xx, counted apart from missing pages."
+        },
+        "fetch_without_direct_page": {
+          "title": "Requests that did not land on a page",
+          "description": "Collected requests that ended outside 2xx, or reached it only through a redirect."
+        },
+        "average_response_time": {
+          "title": "Average response time",
+          "description": "Mean first response across timed pages, from one uncached request per URL from one location."
+        },
+        "average_click_depth": {
+          "title": "Average click depth",
+          "description": "Mean clicks from the crawl entry point across collected HTML pages."
+        },
+        "page_without_search_impressions": {
+          "title": "Pages with no search impressions",
+          "description": "Pages this crawl collected that Search Console never showed in a result during the window."
+        },
+        "impression_share_top_positions": {
+          "title": "Impression share in positions 1-6",
+          "description": "Share of impressions from the queries Search Console reports whose average position rounds into the first six. Low-volume and anonymised queries are not included."
+        },
+        "impression_share_low_click_positions": {
+          "title": "Impression share in positions 7-10",
+          "description": "Share of impressions from the queries Search Console reports whose average position rounds into seven through ten. Low-volume and anonymised queries are not included."
+        },
+        "target_query_ranking_band": {
+          "title": "Current ranking band for the confirmed queries",
+          "description": "Where this page currently sits for the queries confirmed for it, averaged across them and weighted by impressions so a query it is barely shown for cannot move the number. Read from a Search Console request narrowed to this one URL, not from the site-wide query list, whose position for the same query is the property's average across every page that ranked for it."
+        },
+        "page_disallowed_for_search_crawler": {
+          "title": "Pages robots.txt blocks from search",
+          "description": "Collected pages that a Disallow rule in the site's robots.txt matches for Google's crawler. Read for one crawler token; a file can allow this run through and stop a search crawler."
+        },
+        "sitemap_url_disallowed_by_robots": {
+          "title": "Sitemap URLs robots.txt blocks",
+          "description": "URLs the sitemap declares for indexing that robots.txt forbids Google's crawler from fetching. Counted from the sitemap rather than from collected pages, because a URL this run was forbidden to fetch never became a page."
+        },
+        "page_without_breadcrumb_list": {
+          "title": "Pages below the root without BreadcrumbList",
+          "description": "Collected pages deeper than the site root that declare no BreadcrumbList in their JSON-LD. Presence only: this run keeps no visible breadcrumb trail to compare the markup against."
+        },
+        "image_without_alt_text": {
+          "title": "Pages with an image that has no alt attribute",
+          "description": "Collected pages carrying at least one <img> with no alt attribute at all. An empty alt marks a decorative image and counts as covered. Read from static HTML, so images inserted by CSS or script are not seen."
+        },
+        "image_in_legacy_format": {
+          "title": "Pages serving images in a legacy format",
+          "description": "Collected pages where fewer than 80% of the images whose URL states a format are WebP or AVIF. An image whose extension cannot be read leaves the ratio rather than counting against it."
+        },
+        "open_graph_incomplete": {
+          "title": "Pages missing an Open Graph property",
+          "description": "Collected pages that do not declare all three of og:title, og:description and og:image with content. Read from static meta tags only."
+        },
+        "heading_level_skipped": {
+          "title": "Pages whose heading outline skips a level",
+          "description": "Collected pages where the heading sequence jumps past a level in document order — an h2 followed directly by an h4, for example. Levels are counted from the page's first heading and include headings that contain only an icon."
+        },
+        "image_alt_coverage": {
+          "title": "Image alt coverage across the site",
+          "description": "Share of the collected pages that carry images and have an alt attribute on every one of them. Pages with no images are outside this denominator, so a mostly-text site cannot dilute its way past the bar. An empty alt counts as covered."
+        },
+        "title_without_target_query": {
+          "title": "Title does not contain the target query",
+          "description": "The confirmed target query does not appear in this page's title as a token sequence. Token equality, so \"chart\" is not found inside \"charter\"; no synonym or stemming set is applied."
+        },
+        "h1_without_target_query": {
+          "title": "H1 does not contain the target query",
+          "description": "The confirmed target query does not appear in this page's H1 as a token sequence. A heading that means the same thing in different words is reported here and is not necessarily wrong."
+        },
+        "soft_404_page": {
+          "title": "Pages that answer 200 while saying they have nothing",
+          "description": "Collected pages that return 200, state a not-found phrase in their title or opening text, and carry less body text than the published floor. Both signals are required: thin content alone is a short page, and the phrase alone is an article about error pages."
+        },
+        "core_web_vital_lcp": {
+          "title": "Largest Contentful Paint (CrUX p75)",
+          "description": "The 75th-percentile LCP CrUX reports for this URL over a 28-day window of real visits, on mobile. Field data, never a lab estimate."
+        },
+        "core_web_vital_inp": {
+          "title": "Interaction to Next Paint (CrUX p75)",
+          "description": "The 75th-percentile INP CrUX reports for this URL over a 28-day window of real visits, on mobile. Measures how long the page took to respond to a real tap or click."
+        },
+        "core_web_vital_cls": {
+          "title": "Cumulative Layout Shift (CrUX p75)",
+          "description": "The 75th-percentile CLS CrUX reports for this URL over a 28-day window of real visits, on mobile. Unitless; counts content moving after the reader began reading."
+        },
+        "core_web_vital_ttfb": {
+          "title": "Time to First Byte (CrUX p75)",
+          "description": "The 75th-percentile TTFB CrUX reports for this URL over a 28-day window of real visits, on mobile. Server and network time, not page time."
+        },
+        "ai_answer_block_present": {
+          "title": "An AI answer block appeared on the results page",
+          "description": "The provider's item-type list for one live sample of the results page included an AI answer block. Presence only — whether it fully answers the query is a content judgement this run does not make."
+        },
+        "no_community_result_present": {
+          "title": "No community result appeared on the results page",
+          "description": "One live sample of the results page carried no forum, Q&A or video result, which says the audience for this query is being served by publishers rather than by each other."
         }
       },
       "evidence": {
@@ -1074,7 +1220,67 @@
         "observed_outbound_internal_links": "Observed outbound internal links",
         "observed_click_depth": "Observed click depth",
         "reviewed_limit": "Reviewed limit",
-        "json_ld_blocks": "JSON-LD blocks"
+        "json_ld_blocks": "JSON-LD blocks",
+        "average_response_ms": "Average response (ms)",
+        "slowest_response_ms": "Slowest response (ms)",
+        "pages_timed": "Pages timed",
+        "average_click_depth": "Average click depth",
+        "deepest_click_depth": "Deepest click depth",
+        "pages_measured": "Pages measured",
+        "impressions": "Impressions",
+        "top_position_impression_share": "Top-position impression share",
+        "low_click_position_impression_share": "Low-click position impression share",
+        "impressions_in_band": "Impressions in band",
+        "impressions_total": "Total impressions",
+        "queries_measured": "Queries measured",
+        "property": "Search Console property",
+        "query_position_band": "Position band",
+        "query_average_position": "Average position",
+        "best_query_average_position": "Best query position",
+        "best_query": "Best query",
+        "worst_query_average_position": "Worst query position",
+        "worst_query": "Worst query",
+        "queries_confirmed": "Queries confirmed",
+        "clicks_total": "Clicks",
+        "robots_user_agent": "Crawler token",
+        "robots_allowed": "Allowed by robots.txt",
+        "images_without_alt": "Images with no alt attribute",
+        "images_observed": "Images read",
+        "images_on_page": "Images on page",
+        "modern_format_share": "Modern format share",
+        "legacy_format_share": "Legacy format share",
+        "images_with_readable_format": "Images with a readable format",
+        "open_graph_title": "og:title",
+        "open_graph_description": "og:description",
+        "open_graph_image": "og:image",
+        "skipped_from_level": "Skipped from level",
+        "skipped_to_level": "Skipped to level",
+        "heading_levels_observed": "Heading levels read",
+        "alt_coverage_share": "Alt coverage",
+        "pages_with_images": "Pages with images",
+        "pages_with_uncovered_images": "Pages with an uncovered image",
+        "target_query": "Target query",
+        "query_tokenization": "How the query was split",
+        "slot_occurrences": "Occurrences here",
+        "source_pages": "Linking pages",
+        "matched_phrase": "Phrase found",
+        "body_text_units": "Body text units",
+        "text_units_basis": "Counted as",
+        "text_units_floor": "Floor",
+        "lcp_ms": "LCP",
+        "inp_ms": "INP",
+        "cls_score": "CLS",
+        "ttfb_ms": "TTFB",
+        "crux_source_level": "CrUX data level",
+        "crux_form_factor": "Form factor",
+        "sampled_query": "Query sampled",
+        "ai_answer_item_types": "AI answer blocks found",
+        "community_item_types": "Community results found",
+        "serp_item_types": "All blocks on the page",
+        "organic_results_sampled": "Organic results sampled",
+        "unresolved_serp_items": "Items dropped as unusable",
+        "sampled_market": "Market",
+        "sampled_language": "Language"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -1136,7 +1342,7 @@
       "limit1Title": "Search Console and index coverage",
       "limit1Body": "The tool does not connect to GSC and does not claim that a page is indexed, ranking, or receiving traffic.",
       "limit2Title": "Rendered and performance data",
-      "limit2Body": "The tool does not execute page JavaScript and does not produce Lighthouse, CrUX, Core Web Vitals, or mobile-render results.",
+      "limit2Body": "This tool does not execute page JavaScript and produces no Lighthouse or mobile-render results. The Agent audit reads CrUX field data for the submitted page when a key is configured; this public tool does not.",
       "limit3Title": "A complete inventory for very large sites",
       "limit3Body": "The synchronous tool collects as much as the current run can safely cover. Large sites may receive partial coverage; truly large site-wide crawls require a future asynchronous job version.",
       "useCasesEyebrow": "Audit records",
@@ -3460,7 +3666,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "No project persistence",
-      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. This report does not claim GSC, traffic, or ranking data.",
+      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. Search Console figures appear only for a property you have connected; without that connection the report claims no traffic or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "A bounded path from URL to review",
       "howBody": "The Agent separates collected evidence, unverified checks, and adaptable guidance so a limitation never becomes a pass or a score.",
@@ -3469,7 +3675,7 @@
       "step2Title": "Inspect public HTML",
       "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected SEO solution",
       "step4Body": "Prioritize evidence and the confirmed search context, then inspect a page-specific change and validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
@@ -3485,7 +3691,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "Public crawl facts only",
-      "dataBoundaryBody": "This run is not saved to an app project and does not use PSI, CrUX, JavaScript rendering, GSC index coverage, traffic, or ranking data.",
+      "dataBoundaryBody": "This run is not saved to an app project. It reads CrUX field data for the submitted page when a key is configured, and does not use JavaScript rendering, GSC index coverage, or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "Technical evidence before guidance",
       "howBody": "The Agent reports only what the bounded crawl collected and keeps every unverified condition separate from a checked condition.",
@@ -3494,7 +3700,7 @@
       "step2Title": "Inspect bounded responses",
       "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "24 of the 81 catalogue checks are decided by the evidence this crawl collects. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
       "step4Title": "Review the selected technical solution",
       "step4Body": "Trace the affected response, directive, link, template, or configuration and inspect a code-oriented validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."
@@ -3824,7 +4030,7 @@
         "healthHint": "Health uses evaluated, weighted checks only",
         "evaluatedTotal": "{evaluated} / {total} evaluated",
         "engineCoverage": "{ready} / {total} engines ready",
-        "inventoryCoverage": "Requirements inventory: {ready} / {total} ready; this is not proof of the current run",
+        "inventoryCoverage": "{ready} / {total} checks can return a verdict this run; the rest cannot, and each one says why",
         "groupsLabel": "Audit groups",
         "checksLabel": "Checks",
         "selectCheck": "Inspect {check}",
@@ -3909,6 +4115,12 @@
           "result": "What this run decided for the check: blocker, warning, tip, pass, or excluded.",
           "engine": "Whether the detector behind the check is integrated and had a source to read this run.",
           "truth": "How the value was learned: observed in the bounded sample, tested with nothing observed, or not measured at all."
+        },
+        "searchSource": {
+          "absent": "This run did not read Search Console. The search-performance checks stay excluded until it is authorized — signing in with Google is not the same as granting this tool access.",
+          "connect": "Connect Search Console",
+          "present": "Search performance read from {property}, {start} to {end}.",
+          "unavailable": "Search Console did not answer this run — a timeout or a rate limit. The authorization is fine; run it again shortly."
         }
       },
       "auditCatalog": {
@@ -3926,7 +4138,7 @@
             "A3": "Discovered, currently not indexed rate",
             "A4": "Soft 404 page count",
             "A5": "Pages incorrectly blocked by robots.txt",
-            "A6": "Redirect destinations returning 404",
+            "A6": "Redirect destinations returning an error",
             "B1": "Crawl waste rate",
             "B2": "5XX response rate",
             "B3": "Average response time",
@@ -3947,7 +4159,11 @@
             "E2": "Impression share in positions 1–6",
             "E3": "Impression share in positions 7–10",
             "E4": "Non-brand click share",
-            "E5": "Time-sensitive content impression share"
+            "E5": "Time-sensitive content impression share",
+            "A7": "Pages carrying a noindex directive",
+            "A8": "Pages served over HTTP",
+            "C6": "Pages reached through a redirect",
+            "D7": "Pages whose canonical points at another page"
           }
         },
         "page": {
@@ -4009,7 +4225,6 @@
             "8_5": "Total page weight",
             "8_6": "Render-blocking resource count",
             "9_1": "Target query fully answered by AI Overview",
-            "9_2": "Recently registered domains in the top 10",
             "9_3": "Lower-traffic sites in the top 10",
             "9_4": "UGC result presence",
             "9_5": "Current ranking band"
@@ -4247,7 +4462,31 @@
         "evidenceNotObservedTitle": "No affected unit observed",
         "evidenceNotObservedBody": "This check ran against the collected sample and found no affected unit. Nothing was found inside the bounded crawl; that is not proof that nothing exists outside it.",
         "evidenceNoObservationTitle": "No displayable observation",
-        "evidenceNoObservationBody": "This run kept no observation record for the selected page on this check. Read the measured value and evidence source above before treating it as actionable."
+        "evidenceNoObservationBody": "This run kept no observation record for the selected page on this check. Read the measured value and evidence source above before treating it as actionable.",
+        "draft": {
+          "action": "Draft it",
+          "running": "Drafting…",
+          "offer": "Writes a draft from the text this run collected on the page. Preview only — nothing is applied to the site.",
+          "readyLabel": "Draft · review only",
+          "boundary": "The draft is written from text this run collected on the page, and the model is told not to invent anything. It can still get things wrong — check each line before you publish.",
+          "fields": {
+            "title": "Title",
+            "metaDescription": "Meta description",
+            "openingLine": "Opening line",
+            "h1": "H1",
+            "h2": "H2"
+          },
+          "errors": {
+            "auth_required": "Sign in to draft.",
+            "auth_unavailable": "Your sign-in state could not be read just now. Try again shortly.",
+            "invalid_request": "There is no page text to draft from for this item.",
+            "rate_limited": "You have used this hour's drafts. Try again shortly.",
+            "quota_unavailable": "The quota could not be read just now. Try again shortly.",
+            "drafts_unavailable": "This deployment has no drafting model configured.",
+            "draft_unusable": "The reply came back in a format we cannot use, so nothing is shown. You can try again.",
+            "draft_provider_unavailable": "The model did not answer this time — a timeout or a rate limit. This one is worth retrying."
+          }
+        }
       },
       "seo": {
         "title": "Start an SEO evidence run",
@@ -4257,7 +4496,7 @@
       "tech": {
         "title": "Start a technical evidence run",
         "body": "Enter a public host or URL. The server normalizes and validates the destination; private and local networks remain blocked.",
-        "scope": "This run returns crawl, indexability, and link records only. It does not run PSI/CrUX, JavaScript rendering, or a score."
+        "scope": "This run returns crawl, indexability and link records, plus CrUX field data for the submitted page when a key is configured. It does not execute JavaScript."
       },
       "accountGate": "Verified account required · identity access only",
       "urlLabel": "Website host or URL",

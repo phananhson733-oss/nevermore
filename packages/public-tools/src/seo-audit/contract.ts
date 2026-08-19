@@ -3,6 +3,7 @@ import type {
   SeoAuditPage,
   SeoAuditPayload,
   SeoAuditRecord,
+  SeoAuditRecordPopulation,
   SeoAuditSiteResources,
   SeoAuditTargetPageExtract,
 } from "./types.ts";
@@ -46,26 +47,89 @@ function isEvidenceValue(
   );
 }
 
+/**
+ * Every population value, proved complete at compile time.
+ *
+ * A `Record` keyed by the union rather than an array of strings, because an
+ * array only proves there are no extras — adding a member to the type left this
+ * list short and the wire guard silently refused every region that used the new
+ * value. `satisfies` would not have caught it either, for the same reason.
+ * Adding a member to `SeoAuditRecordPopulation` now fails the build here.
+ */
+const RECORD_POPULATIONS: Readonly<Record<SeoAuditRecordPopulation, true>> = {
+  every_collected_page: true,
+  conditional_subset: true,
+  site_resource: true,
+  target_page: true,
+};
+
 function isRecordPopulation(value: unknown): boolean {
   return (
-    value === "every_collected_page" ||
-    value === "conditional_subset" ||
-    value === "site_resource"
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(RECORD_POPULATIONS, value)
   );
 }
 
+/** Categories a crawl payload may carry. */
+const CRAWL_CATEGORIES = [
+  "crawl",
+  "indexability",
+  "metadata",
+  "structure",
+  "links",
+  "structured_data",
+  // `search_performance`, `keyword_evidence`, `page_performance` and
+  // `serp_shape` are deliberately absent. A
+  // crawl payload is cached by host and shared across visitors, while both of
+  // those belong to one visitor — an authorized property, a typed-in query.
+  // Refusing the categories here is what stops such a record from ever
+  // reaching a shared cache row.
+] as const;
+
 export function isSeoAuditRecord(value: unknown): value is SeoAuditRecord {
+  return isRecordOfCategory(value, CRAWL_CATEGORIES);
+}
+
+/**
+ * The same shape, for the one category a crawl payload must never carry.
+ *
+ * Split rather than widened: reusing `isSeoAuditRecord` for the per-visitor
+ * search region meant every real region was refused by the guard meant to
+ * protect it, and widening it would delete the cache boundary instead.
+ */
+export function isSearchPerformanceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["search_performance"]);
+}
+
+/** The same, for the region derived from one visitor's confirmed queries. */
+export function isKeywordEvidenceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["keyword_evidence"]);
+}
+
+/** The same, for the CrUX field region fetched per run against one URL. */
+export function isPagePerformanceRecord(
+  value: unknown,
+): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["page_performance"]);
+}
+
+/** The same, for the one live results-page sample a run may take. */
+export function isSerpShapeRecord(value: unknown): value is SeoAuditRecord {
+  return isRecordOfCategory(value, ["serp_shape"]);
+}
+
+function isRecordOfCategory(
+  value: unknown,
+  categories: readonly string[],
+): value is SeoAuditRecord {
   if (!isObject(value)) return false;
   if (
     typeof value.id !== "string" ||
-    ![
-      "crawl",
-      "indexability",
-      "metadata",
-      "structure",
-      "links",
-      "structured_data",
-    ].includes(value.category as string) ||
+    !categories.includes(value.category as string) ||
     !["observed", "not_observed", "unverified"].includes(
       value.state as string,
     ) ||

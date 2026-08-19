@@ -376,7 +376,13 @@ export type {
   ContextProfileStopReason,
 } from "./crawl/context-profile.ts";
 export { parsePage, directivesIndexable } from "./crawl/parse-page.ts";
-export type { ParsedPage } from "./crawl/parse-page.ts";
+export type {
+  ParsedImageFacts,
+  ParsedOnPageFacts,
+  ParsedOpenGraph,
+  ParsedPage,
+  ParsedTextMetrics,
+} from "./crawl/parse-page.ts";
 export {
   buildCrawlSiteLanguageSummary,
   parseCrawlSiteLanguageSnapshotSummary,

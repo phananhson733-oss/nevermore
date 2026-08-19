@@ -1,5 +1,14 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import {
+  SOFT_404_BODY_FLOOR_UNITS,
+  softNotFoundVerdict,
+} from "./soft-404.ts";
+import { CRAWL_PROJECTION_LIMITS, type ParsedOnPageFacts } from "@sf/sources";
+import {
+  searchCrawlerMayFetch,
+  SEARCH_CRAWLER_USER_AGENT,
+} from "./robots-allowance.ts";
+import {
   isAllowedPublicToolEntryRedirect,
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
@@ -206,12 +215,105 @@ function buildPages(raw: CrawlRaw): readonly SeoAuditPage[] {
   });
 }
 
+/** Image formats a modern-format check treats as current. */
+const MODERN_IMAGE_FORMATS = new Set(["webp", "avif"]);
+
+/**
+ * The file extension of an image reference, or null when it has none.
+ *
+ * Read from the URL text and nothing else. A data URI, a query-string image
+ * service and an extensionless CDN path all return null, which keeps them out
+ * of the ratio entirely — an unreadable format is not an old format, and
+ * guessing one would publish a share of something never measured.
+ */
+function imageExtension(src: string | null): string | null {
+  if (src === null) return null;
+  const withoutQuery = src.split(/[?#]/)[0] ?? "";
+  const match = /\.([a-z0-9]{2,5})$/i.exec(withoutQuery);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function readableFormats(
+  assets: ParsedOnPageFacts | null,
+): readonly string[] {
+  return assets?.imageFormats ?? [];
+}
+
+/** Share of format-readable images that are not WebP or AVIF. */
+function legacyFormatShare(assets: ParsedOnPageFacts | null): number {
+  const formats = readableFormats(assets);
+  if (formats.length === 0) return 0;
+  const legacy = formats.filter(
+    (extension) => !MODERN_IMAGE_FORMATS.has(extension),
+  ).length;
+  return legacy / formats.length;
+}
+
+/**
+ * The first place the heading outline jumps a level, or null.
+ *
+ * Counts from the first heading the document actually has rather than from a
+ * notional level zero. Starting at zero makes a page whose first heading is an
+ * `<h2>` — a nav heading above the title, which is ordinary — report a skip it
+ * does not have, and that false positive is the whole reason this check needs
+ * its own level scan in the first place.
+ */
+function firstSkippedLevel(
+  assets: ParsedOnPageFacts | null,
+): { readonly from: number; readonly to: number } | null {
+  const levels = assets?.headingLevels ?? [];
+  let previous: number | null = null;
+  for (const level of levels) {
+    if (previous !== null && level > previous + 1) {
+      return { from: previous, to: level };
+    }
+    // Compared against the heading immediately before it, in document order.
+    // Coming back up to a shallower level is how every document is structured
+    // and is never a skip; only a jump downward past a level is.
+    previous = level;
+  }
+  return null;
+}
+
+/**
+ * How many linking pages one broken target lists by URL.
+ *
+ * Enough to act on — a shared template shows up as a shape within two or three
+ * — without turning one observation into a page of text. The count is published
+ * beside it, so a truncated list is visible rather than implied.
+ */
+const MAX_LISTED_SOURCE_PAGES = 5;
+
+/** Whether a URL is the origin's own root, which has nothing above it. */
+function isOriginRoot(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname === "/" && parsed.search === "";
+  } catch {
+    return false;
+  }
+}
+
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
   targetSubjectUrl: string | null,
 ): readonly SeoAuditRecord[] {
   const record = recorderFor(targetSubjectUrl);
+  // Read from the raw crawl, never from the projected page. `onPage` carries
+  // per-page counts and the whole body's text metrics; hanging anything that
+  // size on SeoAuditPage would put it inside `result.pages`, which IS the
+  // cached payload.
+  const rawByUrl = new Map(
+    raw.pages.map((entry) => [entry.projection.fetchUrl, entry] as const),
+  );
+  const onPageByUrl = new Map(
+    raw.pages.map(
+      (entry) => [entry.projection.fetchUrl, entry.onPage] as const,
+    ),
+  );
+  const onPageOf = (page: SeoAuditPage): ParsedOnPageFacts | null =>
+    onPageByUrl.get(page.url) ?? null;
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -229,6 +331,45 @@ function buildRecords(
   );
   const collectedBySubject = new Map(
     pages.map((page) => [page.subjectUrl, page] as const),
+  );
+  // An unfetched robots.txt is not permission. Reading it as permission is how
+  // a check that could not run turns into a clean pass.
+  //
+  // Neither is a TRUNCATED one. The crawl projection slices each group's rules
+  // at 128 and the group list at 64, and a Disallow that fell off the end is
+  // indistinguishable from one that was never written — so a page it forbids
+  // comes back allowed and two Blocker-capable checks pass. A file at either
+  // cap is read as unreadable rather than as permissive.
+  const robotsTruncated =
+    raw.robots.groups.length >= CRAWL_PROJECTION_LIMITS.maxRobotsGroups ||
+    raw.robots.groups.some(
+      (group) =>
+        group.disallow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
+        group.allow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup,
+    );
+  const robotsReadable = raw.robots.fetched && !robotsTruncated;
+  // Same shape for the sitemap: the projection slices at 2,000 and then reports
+  // the SLICED length as the count, so the cut leaves no trace. Members are
+  // sorted, so what falls off is a whole late-alphabet branch — exactly the
+  // kind of section a site disallows.
+  const sitemapTruncated =
+    raw.sitemap.subjectUrls.length >= CRAWL_PROJECTION_LIMITS.maxSitemapUrls;
+  const sitemapReadable = raw.sitemap.fetched && !sitemapTruncated;
+  // "Below the root" is a fact about the URL, not about crawl order. Reading it
+  // as depth > 0 exempted the submitted page from 7.5 entirely: the engine
+  // enqueues the seed at depth 0 and never lowers it, so the ONE page the
+  // page-scope check is about could never fail — and any page reached first
+  // from the seed was judged while the seed itself was not.
+  const belowRootHtmlPages = htmlPages.filter((page) => !isOriginRoot(page.url));
+  // A page with no images cannot fail an image check, and counting it as
+  // tested would report a text-only site as fully covered rather than as not
+  // applicable.
+  // Counted from the true image total, not the stored sample.
+  const pagesWithImages = htmlPages.filter(
+    (page) => (onPageOf(page)?.images.total ?? 0) > 0,
+  );
+  const uncoveredImagePages = pagesWithImages.filter(
+    (page) => (onPageOf(page)?.images.withoutAlt ?? 0) > 0,
   );
   const linkTargetErrors = new Map<
     string,
@@ -343,6 +484,151 @@ function buildRecords(
           pageObservation(page, {
             redirect_hops: page.redirectHops,
             final_url: page.finalUrl,
+          }),
+        ),
+    }),
+    ...(() => {
+      // Aggregates, not affected-unit counts: both checks publish a threshold
+      // about the population as a whole, so each emits one site-level value the
+      // evaluator compares directly. A page with no timing is left out of the
+      // mean rather than counted as zero.
+      const timings = raw.pages
+        .map((entry) => entry.projection.responseMs)
+        .filter((ms): ms is number => typeof ms === "number" && ms >= 0);
+      const depths = htmlPages.map((entry) => entry.depth);
+      const mean = (input: readonly number[]) =>
+        input.reduce((sum, value) => sum + value, 0) / input.length;
+
+      return [
+        record({
+          id: "average_response_time",
+          category: "crawl",
+          tested: timings.length,
+          observations:
+            timings.length === 0
+              ? []
+              : [
+                  {
+                    url: null,
+                    values: values({
+                      average_response_ms: Math.round(mean(timings)),
+                      slowest_response_ms: Math.max(...timings),
+                      pages_timed: timings.length,
+                    }),
+                  },
+                ],
+          limitation: "single_uncached_request_per_url_not_a_field_measurement",
+        }),
+        record({
+          id: "average_click_depth",
+          category: "links",
+          tested: depths.length,
+          observations:
+            depths.length === 0
+              ? []
+              : [
+                  {
+                    url: null,
+                    values: values({
+                      average_click_depth: Number(mean(depths).toFixed(2)),
+                      deepest_click_depth: Math.max(...depths),
+                      pages_measured: depths.length,
+                    }),
+                  },
+                ],
+          limitation: "depth_from_bounded_crawl_entry_point_only",
+        }),
+      ];
+    })(),
+    ...(() => {
+      const redirecting = pages.filter((page) => page.redirectHops > 0);
+      const settled = redirecting.filter((page) => page.finalStatus !== null);
+      const unsettled = redirecting.length - settled.length;
+      return [
+        record({
+          id: "redirect_destination_error",
+          category: "crawl",
+          // Only redirecting pages qualify, so this record's silence says
+          // nothing about a URL that never redirected.
+          population: "conditional_subset",
+          // A redirect whose destination never returned a status was not
+          // tested. Counting it would let an unknown destination read as a
+          // clean one, which is the failure this whole panel exists to avoid.
+          tested: settled.length,
+          // A site with no redirects has no redirect destination that could be
+          // broken. That is a conclusion, not a gap: leaving it unverified is
+          // what fills the panel with grey labels nobody can act on.
+          ...(redirecting.length === 0
+            ? { state: "not_observed" as const }
+            : {}),
+          observations: settled
+            .filter(
+              (page) =>
+                page.finalStatus !== null &&
+                page.finalStatus >= 400 &&
+                page.finalStatus < 600,
+            )
+            .map((page) =>
+              pageObservation(page, {
+                redirect_hops: page.redirectHops,
+                final_url: page.finalUrl,
+                final_status: page.finalStatus,
+              }),
+            ),
+          limitation:
+            unsettled > 0
+              ? "redirect_destination_status_not_observed_for_every_redirect"
+              : null,
+        }),
+      ];
+    })(),
+    record({
+      id: "server_error_response",
+      category: "crawl",
+      // A page that never returned a status was not tested for a server error,
+      // so its absence here is not evidence that it is healthy.
+      population: "conditional_subset",
+      tested: pages.filter((page) => page.finalStatus !== null).length,
+      observations: pages
+        .filter(
+          (page) =>
+            page.finalStatus !== null &&
+            page.finalStatus >= 500 &&
+            page.finalStatus < 600,
+        )
+        .map((page) =>
+          pageObservation(page, {
+            initial_status: page.initialStatus,
+            final_status: page.finalStatus,
+          }),
+        ),
+    }),
+    record({
+      id: "fetch_without_direct_page",
+      category: "crawl",
+      // A request that produced no status at all is our crawl not finishing,
+      // not the site spending budget. Charging it to the site would report our
+      // own timeout as their waste, so it is left out of the population rather
+      // than counted as clean or as waste.
+      population: "conditional_subset",
+      tested: pages.filter((page) => page.finalStatus !== null).length,
+      // A fetch that did not land straight on a 2xx document: either it ended
+      // somewhere other than 200-299, or it got there through a redirect. Both
+      // spend a request that a correct link would not have spent. Non-HTML 2xx
+      // responses are excluded — a PDF that answers the request is not waste.
+      observations: pages
+        .filter(
+          (page) =>
+            page.finalStatus !== null &&
+            (page.finalStatus < 200 ||
+              page.finalStatus >= 300 ||
+              page.redirectHops > 0),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            initial_status: page.initialStatus,
+            final_status: page.finalStatus,
+            redirect_hops: page.redirectHops,
           }),
         ),
     }),
@@ -498,6 +784,15 @@ function buildRecords(
         pageObservation(page, {
           final_status: page.finalStatus,
           observed_source_pages: sources.size,
+          // The URLs, not just how many. "3 pages link to this 404" is not a
+          // fix instruction — the reader cannot open the three pages, and on
+          // our own site it took reading the source to find them. Bounded and
+          // sorted so the sample is stable between runs; the count beside it
+          // says whether anything was left out.
+          source_pages: [...sources]
+            .sort()
+            .slice(0, MAX_LISTED_SOURCE_PAGES)
+            .join(" "),
         }),
       ),
       limitation: "uncollected_link_targets_not_classified",
@@ -517,7 +812,11 @@ function buildRecords(
     record({
       id: "page_not_in_sitemap",
       // Tested population: collected pages, only when a sitemap was retrieved.
-      population: "conditional_subset",
+      // Every collected page, whenever a sitemap was collected at all. Declaring a
+      // subset made the page projection refuse to read absence as evidence, so a
+      // page that IS in the sitemap came back "not tested" instead of passing.
+      // With no sitemap the record is already unverified via tested === 0.
+      population: "every_collected_page",
       category: "crawl",
       tested: sitemapWasFetched ? htmlPages : [],
       observations: sitemapWasFetched
@@ -608,6 +907,249 @@ function buildRecords(
         .filter((page) => page.jsonLdTypes.length === 0)
         .map((page) => pageObservation(page, { json_ld_blocks: 0 })),
       limitation: "static_html_json_ld_only",
+    }),
+    record({
+      // 1.2. Not "did our crawler get in" — it did, or this page would not be
+      // here. The question is whether the crawler that decides indexing is let
+      // through, and a file can allow one and stop the other.
+      id: "page_disallowed_for_search_crawler",
+      category: "crawl",
+      tested: robotsReadable ? pages.length : 0,
+      ...(robotsReadable ? {} : { state: "unverified" as const }),
+      observations: (robotsReadable ? pages : [])
+        .filter((page) => searchCrawlerMayFetch(raw.robots, page.url) === false)
+        .map((page) =>
+          pageObservation(page, {
+            robots_user_agent: SEARCH_CRAWLER_USER_AGENT,
+            robots_allowed: false,
+            sitemap_member: page.sitemapMember,
+          }),
+        ),
+      limitation: robotsTruncated
+        ? "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped"
+        : robotsReadable
+          ? "robots_rules_read_for_one_search_crawler_token_only"
+          : "resource_not_observed_does_not_prove_absence",
+    }),
+    record({
+      // A5. Read against the sitemap rather than the collected pages on
+      // purpose: a URL our own crawler was forbidden to fetch never became a
+      // page, so counting pages would report zero on exactly the site that has
+      // the problem. The sitemap is the site's own list of what it wants
+      // indexed, and a URL on it that robots.txt forbids is the site
+      // contradicting itself.
+      id: "sitemap_url_disallowed_by_robots",
+      category: "crawl",
+      unit: "site_resource",
+      population: "site_resource",
+      tested:
+        robotsReadable && sitemapReadable ? raw.sitemap.subjectUrls.length : 0,
+      ...(robotsReadable && sitemapReadable
+        ? {}
+        : { state: "unverified" as const }),
+      observations: (robotsReadable && sitemapReadable
+        ? raw.sitemap.subjectUrls
+        : []
+      )
+        .filter((url) => searchCrawlerMayFetch(raw.robots, url) === false)
+        .map((url) => ({
+          url,
+          values: values({
+            robots_user_agent: SEARCH_CRAWLER_USER_AGENT,
+            robots_allowed: false,
+            sitemap_member: true,
+          }),
+        })),
+      limitation: robotsTruncated
+        ? "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped"
+        : !robotsReadable
+          ? "resource_not_observed_does_not_prove_absence"
+          : sitemapTruncated
+            ? "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing"
+            : raw.sitemap.fetched
+              ? "robots_rules_read_for_one_search_crawler_token_only"
+              : "no_sitemap_collected_membership_not_testable",
+    }),
+    record({
+      // 7.5, presence only. Whether the markup matches the breadcrumb a reader
+      // sees is not decidable here: the parser keeps no visible trail to
+      // compare against. What is decidable is whether a page below the root
+      // declares one at all, and the root is excluded because a homepage
+      // legitimately has no breadcrumb to declare.
+      id: "page_without_breadcrumb_list",
+      category: "structured_data",
+      unit: "pages",
+      // Runs over every collected page; the root simply never fails it, which
+      // is the right verdict rather than an exemption. Declaring a subset here
+      // instead would make a clean page unreadable: the page projection only
+      // treats absence as evidence for a record that tested everything, so a
+      // page that correctly declares its breadcrumb would come back "not
+      // tested" rather than "passes".
+      tested: htmlPages.length,
+      observations: belowRootHtmlPages
+        .filter(
+          (page) =>
+            !page.jsonLdTypes.some(
+              (type) => type.trim().toLowerCase() === "breadcrumblist",
+            ),
+        )
+        .map((page) =>
+          pageObservation(page, {
+            types_observed: page.jsonLdTypes.join(", ") || null,
+            observed_click_depth: page.depth,
+          }),
+        ),
+      limitation: "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
+    }),
+    record({
+      // D4 and 5.1 read the same condition at two scales. `alt=""` counts as
+      // covered: an empty alt is how correct markup marks a decorative image,
+      // and calling it a defect would push every accessible site below the bar.
+      id: "image_without_alt_text",
+      category: "structure",
+      // Every collected page, not the image-carrying subset. A page with no
+      // images has no image missing alt, which is a true pass — and it is the
+      // only shape the page projection can read: for a conditional subset it
+      // cannot tell a clean page from one that never qualified, so every
+      // correctly-marked-up page came back "excluded".
+      tested: htmlPages.length,
+      observations: htmlPages
+        // The uncapped count. The stored list stops at 300, so filtering on it
+        // published a page whose last fifty images have no alt as covered.
+        .filter((page) => (onPageOf(page)?.images.withoutAlt ?? 0) > 0)
+        .map((page) =>
+          pageObservation(page, {
+            images_without_alt: onPageOf(page)?.images.withoutAlt ?? 0,
+            images_observed: onPageOf(page)?.images.total ?? 0,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
+          }),
+        ),
+      limitation:
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
+    }),
+    record({
+      // D4. A share of the pages that carry images, which is what the
+      // published threshold is about. Counting every collected page instead
+      // would let a mostly-text site dilute its way past the bar with five
+      // percent image pages that are all broken.
+      id: "image_alt_coverage",
+      category: "structure",
+      unit: "site_resource",
+      population: "site_resource",
+      tested: pagesWithImages.length,
+      ...(pagesWithImages.length === 0
+        ? { state: "unverified" as const }
+        : {}),
+      observations:
+        pagesWithImages.length === 0
+          ? []
+          : [
+              {
+                url: null,
+                values: values({
+                  alt_coverage_share: Number(
+                    (
+                      1 -
+                      uncoveredImagePages.length / pagesWithImages.length
+                    ).toFixed(4),
+                  ),
+                  pages_with_images: pagesWithImages.length,
+                  pages_with_uncovered_images: uncoveredImagePages.length,
+                }),
+              },
+            ],
+      limitation:
+        "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
+    }),
+    record({
+      // 5.3. The denominator is images whose extension is readable at all, so
+      // a data URI or an extensionless CDN path leaves the ratio rather than
+      // counting against it — an unreadable format is not an old format.
+      id: "image_in_legacy_format",
+      category: "structure",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => legacyFormatShare(onPageOf(page)) > 0)
+        .map((page) => {
+          const readable = readableFormats(onPageOf(page));
+          return pageObservation(page, {
+            modern_format_share: Number(
+              (1 - legacyFormatShare(onPageOf(page))).toFixed(4),
+            ),
+            legacy_format_share: Number(legacyFormatShare(onPageOf(page)).toFixed(4)),
+            images_with_readable_format: readable.length,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
+          });
+        }),
+      limitation:
+        "format_read_from_the_url_extension_only_not_from_the_response",
+    }),
+    record({
+      // 2.6. All three or none: a card that renders a title and no image is
+      // not two-thirds of a share preview, it is a share preview that looks
+      // broken.
+      id: "open_graph_incomplete",
+      category: "metadata",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => {
+          const og = onPageOf(page)?.openGraph;
+          return (
+            og !== undefined &&
+            !(og.title !== null && og.description !== null && og.image !== null)
+          );
+        })
+        .map((page) =>
+          pageObservation(page, {
+            open_graph_title: (onPageOf(page)?.openGraph.title ?? null) !== null,
+            open_graph_description: (onPageOf(page)?.openGraph.description ?? null) !== null,
+            open_graph_image: (onPageOf(page)?.openGraph.image ?? null) !== null,
+          }),
+        ),
+      limitation: "static_html_meta_tags_only",
+    }),
+    record({
+      // 3.3. Levels come from their own scan, so an icon-only heading still
+      // occupies its level; the text collector drops it, and a level dropped
+      // between h1 and h3 fabricates exactly the skip this reports.
+      id: "heading_level_skipped",
+      category: "structure",
+      tested: htmlPages.length,
+      observations: htmlPages
+        .filter((page) => firstSkippedLevel(onPageOf(page)) !== null)
+        .map((page) =>
+          pageObservation(page, {
+            skipped_from_level: firstSkippedLevel(onPageOf(page))?.from ?? null,
+            skipped_to_level: firstSkippedLevel(onPageOf(page))?.to ?? null,
+            heading_levels_observed: onPageOf(page)?.headingLevels.length ?? 0,
+          }),
+        ),
+      limitation: "heading_levels_read_from_static_html_in_document_order",
+    }),
+    record({
+      // A4 and 1.8. Both Blocker-capable, so the detection needs two
+      // independent signals: a page that says it is missing AND has nothing
+      // else on it. Thin content alone is a short page, which other checks
+      // report; a not-found phrase alone is an article about error pages.
+      id: "soft_404_page",
+      category: "indexability",
+      tested: htmlPages.length,
+      observations: htmlPages.flatMap((page) => {
+        const verdict = softNotFoundVerdict(page, onPageOf(page)?.textMetrics ?? null, rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null);
+        return verdict === null
+          ? []
+          : [
+              pageObservation(page, {
+                final_status: page.finalStatus,
+                matched_phrase: verdict.matchedPhrase,
+                body_text_units: verdict.bodyUnits.units,
+                text_units_basis: verdict.bodyUnits.basis,
+                text_units_floor: SOFT_404_BODY_FLOOR_UNITS,
+              }),
+            ];
+      }),
+      limitation:
+        "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
     }),
     record({
       id: "json_ld_parse_error",

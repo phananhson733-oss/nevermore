@@ -26,8 +26,20 @@ import {
   isCanonicalIsoTimestamp,
   isSeoAuditPayload,
   isSeoAuditRecord,
+  isKeywordEvidenceRecord,
+  isPagePerformanceRecord,
+  isSearchPerformanceRecord,
   isSeoAuditTargetPageExtract,
+  isSerpShapeRecord,
 } from "@sf/public-tools/seo-audit/contract";
+import {
+  SEO_AUDIT_RECORD_CATEGORIES,
+  SEO_AUDIT_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/record-ledger";
+import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
+import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
+import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
 
 export { isCanonicalIsoTimestamp };
@@ -89,35 +101,20 @@ export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v7. */
-export const AGENT_AUDIT_RECORD_CATEGORIES = {
-  robots_resource: "crawl",
-  sitemap_resource: "crawl",
-  non_2xx_final_status: "crawl",
-  redirect_chain: "crawl",
-  http_url: "crawl",
-  noindex_directive: "indexability",
-  canonical_missing: "indexability",
-  canonical_differs: "indexability",
-  title_missing: "metadata",
-  title_duplicate: "metadata",
-  meta_description_missing: "metadata",
-  meta_description_duplicate: "metadata",
-  h1_missing: "structure",
-  multiple_h1: "structure",
-  sitemap_page_without_observed_inlink: "links",
-  internal_target_http_error: "links",
-  json_ld_parse_error: "structured_data",
-  page_outbound_broken_link: "links",
-  page_not_in_sitemap: "crawl",
-  title_length_outside_range: "metadata",
-  meta_description_length_outside_range: "metadata",
-  page_without_outbound_internal_link: "links",
-  click_depth_beyond_reviewed_limit: "links",
-  json_ld_missing: "structured_data",
-} as const satisfies Readonly<Record<string, SeoAuditCategory>>;
+/**
+ * Re-exported, not re-declared.
+ *
+ * This was a second hand-written copy of the producer's ledger, and the guard
+ * below refuses any upstream payload whose records differ from it at all. The
+ * tests here build their fixtures from the copy, so a detector added to the
+ * crawl never met the guard: five landed, a real run published twenty-nine
+ * records against a list of twenty-four, and the Agent audit answered 502 while
+ * every unit test stayed green. Verified against main's copy at merge time —
+ * it holds nothing the shared ledger lacks.
+ */
+export { SEO_AUDIT_RECORD_CATEGORIES as AGENT_AUDIT_RECORD_CATEGORIES } from "@sf/public-tools/seo-audit/record-ledger";
 
-const AGENT_AUDIT_RECORD_IDS = Object.keys(AGENT_AUDIT_RECORD_CATEGORIES);
+const AGENT_AUDIT_RECORD_IDS = SEO_AUDIT_RECORD_IDS;
 
 export interface AgentAuditSourceProvenance {
   readonly tool: "seo_audit";
@@ -160,6 +157,44 @@ export type AgentAuditResult = Pick<
    */
   readonly keywordEvidence?: KeywordEvidence;
   /**
+   * The same region's findings, as records the checks read.
+   *
+   * Separate from `keywordEvidence` rather than folded into it: that region is
+   * a published shape with its own version and its own readers, and adding a
+   * field to it would mean every consumer of `keyword_evidence.v1` had to be
+   * re-versioned to gain two audit records.
+   */
+  readonly keywordChecks?: AgentKeywordChecks;
+  /**
+   * CrUX field data for the submitted page, when a key is configured.
+   *
+   * Absent means one of two settled facts, both stated by the records: no key
+   * at the deploy boundary, or CrUX had nothing for that URL. Neither is a
+   * failure of the audit.
+   */
+  readonly pagePerformance?: AgentPagePerformance;
+  /**
+   * Present only when the visitor holds a Search Console grant covering the
+   * audited host.
+   *
+   * Absent from `SeoAuditReport` for the same reason as the keyword region, and
+   * a stronger one: the crawl payload is cached by host and shared, while these
+   * numbers belong to one visitor's verified property. Storing them beside a
+   * crawl would answer the next visitor with this one's search data. The
+   * payload guard refuses their evidence category outright, so the mistake
+   * cannot be made quietly.
+   */
+  readonly searchPerformance?: AgentSearchPerformance;
+  /**
+   * Set when Search Console was reachable in principle and did not answer.
+   *
+   * Absent means one of two settled facts: the region is present, or nothing
+   * covers this host. Without this third state a timeout, a rate limit or an
+   * expired token all rendered as "authorize this tool" — sending a visitor
+   * who is already connected back through OAuth to fix something OAuth cannot.
+   */
+  readonly searchPerformanceUnavailable?: true;
+  /**
    * Page one for the primary query, when this boundary looked it up.
    *
    * Absent from the cached payload for the same reason the keyword region is:
@@ -167,7 +202,194 @@ export type AgentAuditResult = Pick<
    * is shared by every visitor to the host.
    */
   readonly serpLandscape?: SerpLandscape;
+  /**
+   * 9.1 and 9.4, read off the landscape above.
+   *
+   * A separate region because the checks need their own versioned ledger and
+   * guard, not because they need their own lookup: a second paid call for the
+   * same query in the same run would double the cost of every audit to learn a
+   * fact already in hand.
+   */
+  readonly serpShape?: AgentSerpShape;
+
 };
+
+/**
+ * Version of the results-page sample region.
+ *
+ * Freezes the depth, that one query is sampled rather than all of them, and
+ * which provider item types count as an AI answer or as a community result.
+ */
+export const AGENT_SERP_SHAPE_VERSION = "serp_shape.agent.v1" as const;
+
+export interface AgentSerpShape {
+  readonly version: typeof AGENT_SERP_SHAPE_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentSerpShape(value: unknown): value is AgentSerpShape {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_SERP_SHAPE_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isSerpShapeRecord)
+  ) {
+    return false;
+  }
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = SERP_SHAPE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
+
+/**
+ * Version of the CrUX field region.
+ *
+ * Freezes the form factor, that origin-level data is used as a fallback and
+ * labelled, and that a metric CrUX withheld is unverified rather than zero.
+ */
+export const AGENT_PAGE_PERFORMANCE_VERSION =
+  "page_performance.agent.v1" as const;
+
+export interface AgentPagePerformance {
+  readonly version: typeof AGENT_PAGE_PERFORMANCE_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentPagePerformance(
+  value: unknown,
+): value is AgentPagePerformance {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_PAGE_PERFORMANCE_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isPagePerformanceRecord)
+  ) {
+    return false;
+  }
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = PAGE_PERFORMANCE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
+
+/**
+ * Version of the derived keyword-check region.
+ *
+ * Freezes its own decisions — which query is judged, what a `not_applicable`
+ * slot means, and that matching is a token sequence with no synonyms — none of
+ * which the crawl version or the keyword evidence version describes.
+ */
+export const AGENT_KEYWORD_CHECKS_VERSION = "keyword_checks.agent.v1" as const;
+
+/** Records derived from this visitor's confirmed queries, never cached. */
+export interface AgentKeywordChecks {
+  readonly version: typeof AGENT_KEYWORD_CHECKS_VERSION;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_KEYWORD_CHECKS_VERSION ||
+    !Array.isArray(value.records) ||
+    !value.records.every(isKeywordEvidenceRecord)
+  ) {
+    return false;
+  }
+  // Complete or not a region: a subset would render as a check that decided
+  // when its record was simply missing.
+  const ids = value.records.map((record) => record.id).sort();
+  const expected = KEYWORD_EVIDENCE_RECORD_IDS.slice().sort();
+  return (
+    ids.length === expected.length && ids.every((id, i) => id === expected[i])
+  );
+}
+
+/**
+ * Version of the derived search region, separate from the crawl payload's.
+ *
+ * `seo_audit.sitewide.v6` versions the shared crawl. This region is derived per
+ * request and freezes its own decisions — the window, the finalisation lag, the
+ * row cap, how a query's average position becomes a band — none of which the
+ * crawl version describes. Changing any of them has to change this literal.
+ *
+ * v2 adds the target page's own query rows and the band record built from them.
+ * A v1 payload is not a v2 payload missing a field: its ledger is complete for
+ * three records and the guard below requires four, so an old cached or in-
+ * flight body is rejected rather than rendered with a check that silently never
+ * decides.
+ */
+export const AGENT_SEARCH_PERFORMANCE_VERSION =
+  "search_performance.agent.v2" as const;
+
+/** The visitor's own search numbers for this host, read fresh on every run. */
+export interface AgentSearchPerformance {
+  readonly version: typeof AGENT_SEARCH_PERFORMANCE_VERSION;
+  /** Property identifier the rows came from, for display beside the result. */
+  readonly property: string;
+  /** Inclusive window, in the property's own reporting days. */
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly records: SeoAuditReport["records"];
+}
+
+function isAgentSearchPerformance(
+  value: unknown,
+): value is AgentSearchPerformance {
+  if (!isObject(value)) return false;
+  if (
+    value.version !== AGENT_SEARCH_PERFORMANCE_VERSION ||
+    typeof value.property !== "string" ||
+    value.property.trim() === "" ||
+    typeof value.startDate !== "string" ||
+    typeof value.endDate !== "string" ||
+    !Array.isArray(value.records) ||
+    // The crawl guard refuses this category by design, so reusing it here
+    // rejected every real region and let an empty one through. Its own guard
+    // accepts exactly the category a crawl may not carry.
+    !value.records.every(isSearchPerformanceRecord)
+  ) {
+    return false;
+  }
+  // The ledger is complete or the region is not one: a subset would render as
+  // a check that decided when its record was simply missing. Ids come from the
+  // producer rather than a second list beside it.
+  const ids = value.records.map((record) => record.id).sort();
+  return (
+    ids.length === SEARCH_PERFORMANCE_RECORD_IDS.length &&
+    ids.every(
+      (id, index) => id === SEARCH_PERFORMANCE_RECORD_IDS.slice().sort()[index],
+    )
+  );
+}
+
+/**
+ * Every record one run publishes, from every region.
+ *
+ * One function because there were three copies of this join — the evaluator,
+ * the results view and the display seam each spread the regions by hand — and
+ * a region added to two of them renders records the third refuses, or worse,
+ * passes a vocabulary check the panel never applies. Adding a region here
+ * reaches all of them.
+ *
+ * The regions stay separate on the wire: the crawl payload is cached by host
+ * and shared, while these belong to one visitor. They are joined at read time
+ * and never on the way to a cache.
+ */
+export function allAgentAuditRecords(
+  data: AgentAuditSuccessData,
+): SeoAuditReport["records"] {
+  return [
+    ...data.result.records,
+    ...(data.result.searchPerformance?.records ?? []),
+    ...(data.result.keywordChecks?.records ?? []),
+    ...(data.result.pagePerformance?.records ?? []),
+    ...(data.result.serpShape?.records ?? []),
+  ];
+}
 
 export interface AgentAuditSuccessData {
   readonly run: AgentAuditRun;
@@ -188,10 +410,7 @@ export type AgentAuditResponseEnvelope =
 
 export interface SeoAuditUpstreamSuccessEnvelope {
   readonly data: {
-    readonly run: Omit<
-      SeoAuditPayload["run"],
-      "schemaVersion" | "scope"
-    > & {
+    readonly run: Omit<SeoAuditPayload["run"], "schemaVersion" | "scope"> & {
       readonly schemaVersion: typeof AGENT_AUDIT_SOURCE_SCHEMA_VERSION;
       readonly scope: typeof AGENT_AUDIT_SOURCE_SCOPE;
     };
@@ -248,10 +467,10 @@ function hasCompleteNeutralRecordLedger(
   const observedIds = new Set<string>();
   for (const record of records) {
     if (
-      !Object.hasOwn(AGENT_AUDIT_RECORD_CATEGORIES, record.id) ||
+      !Object.hasOwn(SEO_AUDIT_RECORD_CATEGORIES, record.id) ||
       record.category !==
-        AGENT_AUDIT_RECORD_CATEGORIES[
-          record.id as keyof typeof AGENT_AUDIT_RECORD_CATEGORIES
+        SEO_AUDIT_RECORD_CATEGORIES[
+          record.id as keyof typeof SEO_AUDIT_RECORD_CATEGORIES
         ] ||
       observedIds.has(record.id)
     ) {
@@ -483,6 +702,22 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.keywordEvidence === undefined ||
       isKeywordEvidenceShape(value.keywordEvidence)
+    ) ||
+    !(
+      value.keywordChecks === undefined ||
+      isAgentKeywordChecks(value.keywordChecks)
+    ) ||
+    !(
+      value.pagePerformance === undefined ||
+      isAgentPagePerformance(value.pagePerformance)
+    ) ||
+    !(
+      value.searchPerformance === undefined ||
+      isAgentSearchPerformance(value.searchPerformance)
+    ) ||
+    !(
+      value.searchPerformanceUnavailable === undefined ||
+      value.searchPerformanceUnavailable === true
     ) ||
     !(
       value.serpLandscape === undefined ||

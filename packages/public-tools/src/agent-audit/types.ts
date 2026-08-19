@@ -51,12 +51,55 @@ export type AgentAuditIssueRule =
       /** Affected share above which the record takes the full failure result. */
       readonly failAbove?: number;
     }
+  /**
+   * The inclusive form, for a threshold that reads "at least 90% covered" —
+   * which is satisfied at exactly 90%. Expressing it as the exclusive
+   * `passBelow: 0.1` fails a site sitting precisely on its own published mark,
+   * so the two bounds are separate kinds rather than one field plus a flag.
+   */
+  | {
+      readonly recordId: string;
+      readonly kind: "affected-ratio-at-most";
+      /** Highest affected share that is still not an issue. */
+      readonly passAtOrBelow: number;
+      /** Affected share above which the record takes the full failure result. */
+      readonly failAbove?: number;
+    }
   | {
       readonly recordId: string;
       readonly kind: "observation-value-max";
       readonly label: string;
       /** Highest still-acceptable value for the named observation entry. */
       readonly max: number;
+    }
+  /**
+   * A published threshold about the population as a whole rather than about
+   * each affected unit: an average, or a share weighted by something other than
+   * unit count. Average response time and impression share in positions 1-6 are
+   * both of this shape, and neither can be expressed as "how many units are
+   * affected" without changing what the check says it measures.
+   *
+   * The record carries one site-level observation whose named value is the
+   * computed aggregate, so the number the engine compares is the number the
+   * panel displays.
+   */
+  | {
+      readonly recordId: string;
+      readonly kind: "aggregate-max";
+      readonly label: string;
+      /** Aggregate at or below this passes. */
+      readonly passAtOrBelow: number;
+      /** Aggregate above this takes the full failure result. */
+      readonly failAbove?: number;
+    }
+  | {
+      readonly recordId: string;
+      readonly kind: "aggregate-min";
+      readonly label: string;
+      /** Aggregate at or above this passes. */
+      readonly passAtOrAbove: number;
+      /** Aggregate below this takes the full failure result. */
+      readonly failBelow?: number;
     };
 
 export interface AgentAuditCheckDefinition {

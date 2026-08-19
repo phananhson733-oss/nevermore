@@ -82,13 +82,13 @@ describe("buildAgentAuditViewModel", () => {
       });
       expect(model.scopes.site.groups).toHaveLength(5);
       expect(model.scopes.site.total).toBe(31);
-      expect(model.scopes.site.inventoryReady).toBe(25);
+      expect(model.scopes.site.inventoryReady).toBe(22);
       expect(model.scopes.page.groups).toHaveLength(9);
-      expect(model.scopes.page.total).toBe(50);
-      expect(model.scopes.page.inventoryReady).toBe(22);
+      expect(model.scopes.page.total).toBe(49);
+      expect(model.scopes.page.inventoryReady).toBe(31);
       expect(
         model.scopes.site.total + model.scopes.page.total,
-      ).toBe(81);
+      ).toBe(80);
     },
   );
 
@@ -108,7 +108,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.scopes.page.health).toBeNull();
     expect(model.scopes.site.evaluated).toBe(0);
     expect(model.scopes.page.evaluated).toBe(0);
-    expect(checks).toHaveLength(81);
+    expect(checks).toHaveLength(80);
     expect(checks.every((check) => check.result === "excluded")).toBe(true);
     expect(checks.some((check) => check.result === "pass")).toBe(false);
     expect(checks.every((check) => check.measurement === null)).toBe(true);

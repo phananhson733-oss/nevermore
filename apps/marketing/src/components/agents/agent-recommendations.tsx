@@ -14,7 +14,15 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import type { SeoAuditEvidenceValue, SeoAuditRecord } from "@sf/public-tools";
+import type {
+  SeoAuditEvidenceValue,
+  SeoAuditRecord,
+  SeoAuditTargetPageExtract,
+} from "@sf/public-tools";
+import {
+  AgentSolutionDraft,
+  draftKindFor,
+} from "./agent-solution-draft";
 import type {
   AgentAuditEngineState,
   AgentAuditEvaluatedCheck,
@@ -171,14 +179,14 @@ function EvidenceList({
             key={`${record.id}:${observation.url ?? "site"}:${index}`}
             className="rounded-row border border-brand-border bg-brand-panel-sunken p-3.5"
           >
-            <p className="break-all font-mono text-[10px] text-brand-accent-text">
+            <p className="break-all font-mono text-[10.5px] text-brand-accent-text">
               {observation.url ?? auditT("siteLevelObservation")}
             </p>
             {observation.values.length > 0 ? (
               <dl className="mt-2 grid gap-2 sm:grid-cols-2">
                 {observation.values.map((entry) => (
                   <div key={entry.label} className="min-w-0">
-                    <dt className="font-mono text-[8.5px] tracking-[0.08em] text-text-dark-faint uppercase">
+                    <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
                       {auditT(`evidence.${entry.label}`)}
                     </dt>
                     <dd className="mt-1 break-all font-mono text-[10.5px] text-text-dark-primary">
@@ -221,10 +229,12 @@ function SelectedSolution({
   recommendation,
   locale,
   profile,
+  targetPageExtract,
 }: {
   readonly recommendation: RankedAgentRecommendation;
   readonly locale: string;
   readonly profile: AgentProfileDraft;
+  readonly targetPageExtract: SeoAuditTargetPageExtract | null;
 }) {
   const t = useTranslations("agents.workbench.recommendations");
   const diagnosisT = useTranslations("agents.workbench.diagnosis");
@@ -257,6 +267,7 @@ function SelectedSolution({
     measurement,
     evidenceRecords: recommendation.evidenceRecords,
   });
+  const draftKind = draftKindFor(template.kind);
   const contextFacts =
     recommendation.agent === "seo"
       ? [
@@ -283,7 +294,7 @@ function SelectedSolution({
     >
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-brand-border pb-5">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
+          <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
             {t("stage4")}
           </p>
           <h3 className="mt-2 text-[18px] font-semibold text-text-dark-primary">
@@ -295,7 +306,7 @@ function SelectedSolution({
         </div>
         <span
           data-testid="agent-solution-boundary"
-          className={`rounded border px-2.5 py-1 font-mono text-[9px] tracking-[0.08em] uppercase ${
+          className={`rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.08em] uppercase ${
             gated
               ? "border-brand-warning/30 bg-brand-warning/10 text-brand-warning"
               : "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
@@ -319,7 +330,7 @@ function SelectedSolution({
         <DetailSection icon={FileSearch} label={t("evidenceLabel")}>
           <div className="mb-3 grid gap-2 sm:grid-cols-2">
             <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
-              <span className="font-mono text-[8.5px] tracking-[0.08em] text-text-dark-faint uppercase">
+              <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
                 {t("measuredLabel")}
               </span>
               <p className="mt-1 text-[11px] text-text-dark-primary">
@@ -327,7 +338,7 @@ function SelectedSolution({
               </p>
             </div>
             <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
-              <span className="font-mono text-[8.5px] tracking-[0.08em] text-text-dark-faint uppercase">
+              <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
                 {t("sourceLabel")}
               </span>
               <p className="mt-1 text-[11px] text-text-dark-primary">
@@ -348,6 +359,25 @@ function SelectedSolution({
               ? `${t("unavailableInvestigation")}\n\n${template.preview}`
               : template.preview}
           </pre>
+          {/*
+            The preview above prints what this run measured and then a slot for
+            every sentence the owner still has to write. For the two shapes a
+            model can fill truthfully, offer to fill them — on request, so one
+            report is one call per solution the reader actually opens.
+          */}
+          {gated || draftKind === null ? null : (
+            <AgentSolutionDraft
+              // Keyed so a draft cannot outlive the solution it was asked for:
+              // without it React reuses the instance across a switch and the
+              // previous kind's draft stays on screen under the new one.
+              key={`${profile.targetUrl}:${check.id}:${draftKind}`}
+              kind={draftKind}
+              targetUrl={profile.targetUrl}
+              extract={targetPageExtract}
+              targetQuery={profile.targetQuery}
+              pageType={pageTypeLabel}
+            />
+          )}
         </DetailSection>
 
         <DetailSection icon={Gauge} label={t("contextLabel")}>
@@ -360,7 +390,7 @@ function SelectedSolution({
                 key={label}
                 className="rounded-row border border-brand-border bg-brand-panel-sunken p-3"
               >
-                <dt className="font-mono text-[8.5px] tracking-[0.08em] text-text-dark-faint uppercase">
+                <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
                   {label}
                 </dt>
                 <dd className="mt-1 break-words text-[11px] text-text-dark-primary">
@@ -371,7 +401,7 @@ function SelectedSolution({
           </dl>
           <p
             data-testid="agent-solution-states"
-            className="mt-2 font-mono text-[10px] text-text-dark-faint"
+            className="mt-2 font-mono text-[10.5px] text-text-dark-faint"
           >
             {t("statesLabel")}:{" "}
             {axisLabel(
@@ -440,6 +470,15 @@ export interface AgentRecommendationsProps {
   readonly targetUrl: string;
   readonly evaluatedChecks: readonly AgentAuditEvaluatedCheck[];
   readonly records: readonly SeoAuditRecord[];
+  /**
+   * The inspected page's own static text.
+   *
+   * Passed to the draft endpoint rather than re-crawled: this is exactly the
+   * text the reader is looking at, and fetching it again would spend a request
+   * to learn nothing new. Null when the target was never collected as a page,
+   * which is also when a draft would have nothing true to work from.
+   */
+  readonly targetPageExtract: SeoAuditTargetPageExtract | null;
   readonly profile: AgentProfileDraft;
   readonly selectedRecommendationId: string | null;
   readonly onSelectRecommendation: (recommendationId: string) => void;
@@ -452,6 +491,7 @@ export function AgentRecommendations({
   targetUrl,
   evaluatedChecks,
   records,
+  targetPageExtract,
   profile,
   selectedRecommendationId,
   onSelectRecommendation,
@@ -477,7 +517,7 @@ export function AgentRecommendations({
       <section
         className={`rounded-card border border-brand-border-card bg-brand-panel p-6 ${className}`}
       >
-        <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
+        <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
           {t("stage3")}
         </p>
         <h3 className="mt-2 text-[18px] font-semibold text-text-dark-primary">
@@ -500,7 +540,7 @@ export function AgentRecommendations({
         aria-labelledby={`${agent}-recommendations-title`}
         className="rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-6"
       >
-        <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
+        <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
           {t("stage3")}
         </p>
         <h3
@@ -533,7 +573,7 @@ export function AgentRecommendations({
                   }`}
                 >
                   <span className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-[9px] tracking-[0.08em] text-brand-accent-text uppercase">
+                    <span className="font-mono text-[10.5px] tracking-[0.08em] text-brand-accent-text uppercase">
                       {recommendation.priority} ·{" "}
                       {axisLabel(
                         diagnosisT,
@@ -542,7 +582,7 @@ export function AgentRecommendations({
                         String(recommendation.check.result),
                       )}
                     </span>
-                    <span className="font-mono text-[9px] text-text-dark-faint">
+                    <span className="font-mono text-[10.5px] text-text-dark-faint">
                       {presence === "observed"
                         ? t("reach", { count: recommendation.reach })
                         : t(EMPTY_EVIDENCE_COPY[presence][0])}
@@ -555,7 +595,7 @@ export function AgentRecommendations({
                     {localized(check.impact, locale)}
                   </span>
                   {active ? (
-                    <span className="mt-3 block font-mono text-[9px] tracking-[0.06em] text-brand-accent-text uppercase">
+                    <span className="mt-3 block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase">
                       {t("selected")}
                     </span>
                   ) : null}
@@ -570,6 +610,7 @@ export function AgentRecommendations({
         recommendation={selected}
         locale={locale}
         profile={profile}
+        targetPageExtract={targetPageExtract}
       />
     </div>
   );

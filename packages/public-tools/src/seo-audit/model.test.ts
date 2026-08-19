@@ -154,6 +154,7 @@ describe("site-wide SEO audit model", () => {
     expect(payload.run).toEqual({
       tool: "seo_audit",
       schemaVersion: "seo_audit.sitewide.v7",
+
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
@@ -487,6 +488,9 @@ describe("site-wide SEO audit model", () => {
       values: [
         { label: "final_status", value: 404 },
         { label: "observed_source_pages", value: 1 },
+        // The URL, not just the count. "3 pages link to this 404" is not a fix
+        // instruction: the reader cannot open the three pages.
+        { label: "source_pages", value: "https://acme.test/" },
       ],
     });
   });
@@ -510,6 +514,214 @@ describe("site-wide SEO audit model", () => {
       tested: 0,
       affected: 0,
     });
+  });
+});
+
+describe("crawl-response records", () => {
+  const redirected = (url: string, to: string, finalStatus: number) =>
+    page(url, { redirectChain: [to], finalStatus });
+
+  it("reports a redirect whose destination errors, and only over redirects", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/old", "https://acme.test/gone", 404),
+          redirected("https://acme.test/moved", "https://acme.test/new", 200),
+        ],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    expect(record?.observations.map((entry) => entry.url)).toEqual([
+      "https://acme.test/old",
+    ]);
+    // Only the two redirecting pages are the population: counting the direct
+    // 200 would make the share of broken destinations read as one in three.
+    expect(record?.tested).toBe(2);
+  });
+
+  it("counts a redirect onto a server error, which the check now names", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/old", "https://acme.test/down", 503),
+        ],
+      }),
+    );
+
+    expect(
+      byId(report, "redirect_destination_error")?.observations.map((e) => e.url),
+    ).toEqual(["https://acme.test/old"]);
+  });
+
+  it("concludes a site with no redirects rather than leaving it unverified", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [page("https://acme.test/", {}, 0), page("https://acme.test/b")],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    // Nothing redirected, so no redirect destination can be broken. Reporting
+    // that as unverified is what puts a grey label on a site that is fine.
+    expect(record?.state).toBe("not_observed");
+    expect(record?.observations).toEqual([]);
+  });
+
+  it("does not read a redirect with an unknown destination as a clean one", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/timeout", {
+            redirectChain: ["https://acme.test/somewhere"],
+            finalStatus: null,
+          }),
+        ],
+      }),
+    );
+    const record = byId(report, "redirect_destination_error");
+
+    // The redirect exists and its destination never answered, so it was not
+    // tested. Counting it would turn "we do not know" into "it is fine".
+    expect(record?.tested).toBe(0);
+    expect(record?.limitation).toBe(
+      "redirect_destination_status_not_observed_for_every_redirect",
+    );
+  });
+
+  it("charges a request with no status to the crawl, not to the site", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/aborted", { finalStatus: null }),
+          page("https://acme.test/fine"),
+        ],
+      }),
+    );
+
+    // Our own timeout is not the site's crawl waste, and it is not a healthy
+    // page either: it leaves the tested population entirely.
+    const waste = byId(report, "fetch_without_direct_page");
+    expect(waste?.tested).toBe(2);
+    expect(waste?.observations).toEqual([]);
+    expect(waste?.population).toBe("conditional_subset");
+
+    const serverErrors = byId(report, "server_error_response");
+    expect(serverErrors?.tested).toBe(2);
+    expect(serverErrors?.population).toBe("conditional_subset");
+  });
+
+  it("does not read a direct 404 as a broken redirect destination", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+        ],
+      }),
+    );
+
+    expect(byId(report, "redirect_destination_error")?.observations).toEqual([]);
+    expect(
+      byId(report, "non_2xx_final_status")?.observations.map((e) => e.url),
+    ).toEqual(["https://acme.test/missing"]);
+  });
+
+  it("averages response time over the pages that were actually timed", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", { responseMs: 100 }, 0),
+          page("https://acme.test/b", { responseMs: 300 }),
+          // No timing: left out of the mean rather than counted as zero, which
+          // would drag the average down and read as a faster site.
+          page("https://acme.test/c", { responseMs: null }),
+        ],
+      }),
+    );
+    const record = byId(report, "average_response_time");
+    const value = (label: string) =>
+      record?.observations[0]?.values.find((entry) => entry.label === label)
+        ?.value;
+
+    expect(record?.tested).toBe(2);
+    expect(value("average_response_ms")).toBe(200);
+    expect(value("slowest_response_ms")).toBe(300);
+    expect(record?.observations[0]?.url).toBeNull();
+  });
+
+  it("reports no timing at all rather than an average of nothing", () => {
+    const report = buildSeoAuditReport(
+      raw({ pages: [page("https://acme.test/", { responseMs: null }, 0)] }),
+    );
+    const record = byId(report, "average_response_time");
+
+    expect(record?.observations).toEqual([]);
+    expect(record?.state).toBe("unverified");
+  });
+
+  it("averages click depth over collected HTML pages", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/b", {}, 2),
+          page("https://acme.test/c", {}, 4),
+        ],
+      }),
+    );
+    const record = byId(report, "average_click_depth");
+    const value = (label: string) =>
+      record?.observations[0]?.values.find((entry) => entry.label === label)
+        ?.value;
+
+    expect(value("average_click_depth")).toBe(2);
+    expect(value("deepest_click_depth")).toBe(4);
+    expect(record?.tested).toBe(3);
+  });
+
+  it("separates a server failure from a missing page", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          page("https://acme.test/down", { finalStatus: 503 }),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+        ],
+      }),
+    );
+    const record = byId(report, "server_error_response");
+
+    expect(record?.observations.map((entry) => entry.url)).toEqual([
+      "https://acme.test/down",
+    ]);
+    expect(record?.tested).toBe(3);
+  });
+
+  it("counts a redirect as a request that did not land on a page", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page("https://acme.test/", {}, 0),
+          redirected("https://acme.test/moved", "https://acme.test/new", 200),
+          page("https://acme.test/missing", { finalStatus: 404 }),
+          page("https://acme.test/fine"),
+        ],
+      }),
+    );
+    const record = byId(report, "fetch_without_direct_page");
+
+    // The redirect resolved to 200 and is still waste: a correct link would not
+    // have spent the hop.
+    expect(record?.observations.map((entry) => entry.url).sort()).toEqual([
+      "https://acme.test/missing",
+      "https://acme.test/moved",
+    ]);
+    expect(record?.tested).toBe(4);
   });
 });
 
@@ -581,6 +793,20 @@ describe("seo audit record invariants", () => {
     // These ran over everything collected, so absence is real evidence.
     expect(populations.get("noindex_directive")).toBe("every_collected_page");
     expect(populations.get("json_ld_missing")).toBe("every_collected_page");
+
+    // Swept rather than listed: a record that tested fewer units than the
+    // crawl collected has a qualifying population, and saying otherwise turns
+    // its silence into evidence about pages it never looked at. A named list
+    // only covers the records someone remembered to add to it.
+    const collected = report.pages.length;
+    for (const record of report.records) {
+      if (record.unit !== "pages") continue;
+      if (record.tested >= collected) continue;
+      expect([record.id, record.population]).toEqual([
+        record.id,
+        "conditional_subset",
+      ]);
+    }
   });
 
   it("reports the collected page that is the submitted target", () => {
@@ -871,6 +1097,7 @@ describe("target page extract", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
     expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v7");
+
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);
   });

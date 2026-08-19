@@ -4,37 +4,23 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
+import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
+import { buildPagePerformanceRecords } from "@sf/public-tools/seo-audit/page-performance";
+import {
+  AGENT_PAGE_PERFORMANCE_VERSION,
+  AGENT_AUDIT_RECORD_CATEGORIES,
+  AGENT_SEARCH_PERFORMANCE_VERSION,
+  isAgentAuditSuccessEnvelope,
+} from "./audit-contract.ts";
 import {
   handleAgentAuditRequest,
   type AgentAuditHandlerDependencies,
 } from "./audit-handler.ts";
 
-const RECORD_SPECS = [
-  ["robots_resource", "crawl"],
-  ["sitemap_resource", "crawl"],
-  ["non_2xx_final_status", "crawl"],
-  ["redirect_chain", "crawl"],
-  ["http_url", "crawl"],
-  ["noindex_directive", "indexability"],
-  ["canonical_missing", "indexability"],
-  ["canonical_differs", "indexability"],
-  ["title_missing", "metadata"],
-  ["title_duplicate", "metadata"],
-  ["meta_description_missing", "metadata"],
-  ["meta_description_duplicate", "metadata"],
-  ["h1_missing", "structure"],
-  ["multiple_h1", "structure"],
-  ["sitemap_page_without_observed_inlink", "links"],
-  ["internal_target_http_error", "links"],
-  ["json_ld_parse_error", "structured_data"],
-  ["page_outbound_broken_link", "links"],
-  ["page_not_in_sitemap", "crawl"],
-  ["title_length_outside_range", "metadata"],
-  ["meta_description_length_outside_range", "metadata"],
-  ["page_without_outbound_internal_link", "links"],
-  ["click_depth_beyond_reviewed_limit", "links"],
-  ["json_ld_missing", "structured_data"],
-] as const satisfies readonly (readonly [string, SeoAuditRecord["category"]])[];
+// Derived from the producer's ledger. A fourth hand-written copy of it lived
+// here, which is part of why a detector could land in the crawl and this
+// handler could start answering 502 with every one of these tests green.
+const RECORD_SPECS = Object.entries(AGENT_AUDIT_RECORD_CATEGORIES);
 
 function record(
   id: string,
@@ -240,6 +226,313 @@ function dependencies(
 }
 
 describe("handleAgentAuditRequest", () => {
+  // Built by the producer, never written out by hand. The hand-written version
+  // was a single record chosen to satisfy the guard, so when a fourth record
+  // joined the ledger the fixture silently described a region the guard refuses
+  // — and the tests that read it never noticed, because they read the records
+  // rather than the envelope.
+  const searchRegion = {
+    version: AGENT_SEARCH_PERFORMANCE_VERSION,
+    property: "sc-domain:acme.test",
+    startDate: "2026-07-19",
+    endDate: "2026-08-15",
+    records: buildSearchPerformanceRecords(
+      {
+        property: "sc-domain:acme.test",
+        startDate: "2026-07-19",
+        endDate: "2026-08-15",
+        pages: [
+          { key: "https://acme.test/", clicks: 3, impressions: 90, position: 4 },
+        ],
+        queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
+        pagesTruncated: false,
+        queriesTruncated: false,
+        targetPageQueries: null,
+        targetPageUrl: null,
+        confirmedQueries: [],
+        targetPageQueriesTruncated: false,
+      },
+      [],
+    ),
+  };
+
+  it("returns a region the client guard actually accepts", async () => {
+    // Built by the real producer and read by the real guard. Both previous
+    // rounds shipped a consumer that refused its own producer's output while
+    // every unit test passed, because the fixtures were written to match the
+    // guard rather than taken from the thing that feeds it.
+    const region = {
+      version: AGENT_SEARCH_PERFORMANCE_VERSION,
+      property: "sc-domain:acme.test",
+      startDate: "2026-07-19",
+      endDate: "2026-08-15",
+      records: buildSearchPerformanceRecords(
+        {
+          property: "sc-domain:acme.test",
+          startDate: "2026-07-19",
+          endDate: "2026-08-15",
+          pages: [
+            {
+              key: "https://acme.test/",
+              clicks: 3,
+              impressions: 90,
+              position: 4,
+            },
+          ],
+          queries: [
+            { key: "acme", clicks: 3, impressions: 90, position: 4 },
+          ],
+          pagesTruncated: false,
+          queriesTruncated: false,
+          targetPageQueries: null,
+          targetPageUrl: null,
+          confirmedQueries: [],
+          targetPageQueriesTruncated: false,
+        },
+        [],
+      ),
+    };
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => region }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(region.records.length).toBeGreaterThan(0);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+  });
+
+  it("asks Search Console about the URL the crawl landed on, not the one it requested", async () => {
+    // On any site that redirects — trailing slash, http to https — the
+    // requested form matches no Search Console row, so 9.5 published "no
+    // impressions for this URL" about a page that ranks.
+    const seen: { url: string | null }[] = [];
+    const requested = "https://acme.test/pricing";
+    const landed = "https://acme.test/pricing/";
+    const collected = {
+      url: requested,
+      subjectUrl: requested,
+      // Where the journey ended. Search Console keys its rows by this one.
+      finalUrl: landed,
+      depth: 1,
+      initialStatus: 301,
+      finalStatus: 200,
+      redirectHops: 1,
+      contentType: "text/html",
+      robotsDirectiveState: "noindex_not_observed" as const,
+      canonicalTarget: landed,
+      title: "Pricing",
+      metaDescription: "D",
+      h1Count: 1,
+      headingsCount: 1,
+      wordCount: 100,
+      inboundLinks: 1,
+      outboundLinks: 1,
+      sitemapMember: true,
+      jsonLdTypes: [],
+      jsonLdErrorCount: 0,
+    };
+    await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetInspected: true,
+                inspectedTargetUrl: requested,
+                pages: [collected],
+              },
+            },
+          }),
+        readSearchPerformance: async (input) => {
+          seen.push({ url: input.targetPageUrl });
+          return null;
+        },
+      }),
+    );
+
+    expect(seen[0]?.url).toBe(landed);
+  });
+
+  it("says no source was configured, not that CrUX has nothing for the page", async () => {
+    // This is production today: PAGESPEED_API_KEY is set in no environment of
+    // the marketing project. The first version substituted a fabricated
+    // `no_field_data` result here, which publishes a claim about the visitor's
+    // own real-user traffic that the run never went and looked for.
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readPagePerformance: () => undefined }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          pagePerformance?: {
+            records: readonly { readonly limitation: string }[];
+          };
+        };
+      };
+    };
+
+    const records = body.data.result.pagePerformance?.records ?? [];
+    expect(records).toHaveLength(4);
+    for (const record of records) {
+      expect(record.limitation).toBe(
+        "no_field_data_source_was_configured_for_this_run",
+      );
+    }
+  });
+
+  it.each([
+    ["market_not_supported", "this_runs_market_is_not_one_the_results_page_provider_covers"],
+    ["provider_unavailable", "the_results_page_provider_did_not_answer_this_run"],
+  ])("does not blame the visitor for a %s sample", async (reason, code) => {
+    // The region is only attached when a query WAS confirmed, so
+    // "no target query was confirmed" is false in every state that can show it.
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        readSerpLandscape: async () =>
+          ({ availability: "unavailable", reason }) as never,
+      }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          serpShape?: { records: readonly { readonly limitation: string }[] };
+        };
+      };
+    };
+
+    const records = body.data.result.serpShape?.records ?? [];
+    expect(records).toHaveLength(2);
+    for (const record of records) expect(record.limitation).toBe(code);
+  });
+
+  it("says no provider was configured when there is no reader at all", async () => {
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        readSerpLandscape: async () => ({
+          availability: "unavailable" as const,
+          reason: "provider_not_configured" as const,
+        }),
+      }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          serpShape?: { records: readonly { readonly limitation: string }[] };
+        };
+      };
+    };
+
+    expect(body.data.result.serpShape?.records[0]?.limitation).toBe(
+      "no_results_page_provider_was_configured_for_this_run",
+    );
+  });
+
+  it("accepts every region this handler can attach, not only the search one", async () => {
+    // The gap the round-trip test above left. It proved one region's producer
+    // survives the guard; a later region used a population value the guard's
+    // own hand-written list did not know, so the whole envelope was refused —
+    // and every test that read the records rather than the envelope passed.
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => searchRegion,
+        readPagePerformance: async () => ({
+          status: "ok" as const,
+          field: {
+            url: "https://acme.test/",
+            sourceLevel: "url" as const,
+            lcp: 2_100,
+            inp: 150,
+            cls: 0.04,
+            ttfb: 600,
+            formFactor: "mobile" as const,
+          },
+        }),
+      }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          keywordChecks?: { records: readonly unknown[] };
+          pagePerformance?: { records: readonly unknown[] };
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    // Every region present, and the guard accepting the whole envelope with
+    // all of them attached at once.
+    expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(4);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+  });
+
+  it("attaches the visitor's search region beside the crawl ledger", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => searchRegion }),
+    );
+    const body = (await response.json()) as {
+      data: { result: { searchPerformance?: typeof searchRegion; records: unknown[] } };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.data.result.searchPerformance).toEqual(searchRegion);
+    // Beside, not inside: the crawl ledger is what gets cached by host, and
+    // these numbers belong to one visitor's verified property.
+    expect(body.data.result.records).toHaveLength(38);
+  });
+
+  it("omits the region entirely when nothing covers the host", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance: async () => null }),
+    );
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+
+    expect(response.status).toBe(200);
+    expect("searchPerformance" in body.data.result).toBe(false);
+  });
+
+  it("finishes the audit when the Search Console read throws", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => {
+          throw new Error("429 from Search Console");
+        },
+      }),
+    );
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+
+    // A rate limit, an expired token or a slow property is not a failed audit.
+    // The crawl evidence is complete and the search checks report the
+    // authorization they need, which is a state the visitor can act on.
+    expect(response.status).toBe(200);
+    expect("searchPerformance" in body.data.result).toBe(false);
+  });
+
   it("returns auth_required before reading the body or invoking the audit", async () => {
     const incoming = request();
     const delegate = vi.fn(async () => success());
@@ -345,6 +638,15 @@ describe("handleAgentAuditRequest", () => {
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
           records: upstreamPayload.result.records,
+          // Present with nothing measured, which is the informative shape: the
+          // limitation code says "no field-data source was configured" rather
+          // than leaving the reader to guess between that and "CrUX has no data
+          // for your page". The records come from the producer so this cannot
+          // drift from what the handler attaches.
+          pagePerformance: {
+            version: AGENT_PAGE_PERFORMANCE_VERSION,
+            records: buildPagePerformanceRecords(null),
+          },
         },
       },
     });
@@ -406,6 +708,10 @@ describe("handleAgentAuditRequest", () => {
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
       records: upstreamPayload.result.records,
+      pagePerformance: {
+        version: AGENT_PAGE_PERFORMANCE_VERSION,
+        records: buildPagePerformanceRecords(null),
+      },
     });
     expect(JSON.stringify(body)).not.toContain("private");
   });
@@ -420,7 +726,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(24);
+    expect(body.data.result.records).toHaveLength(38);
   });
 
   it.each([
@@ -705,8 +1011,9 @@ describe("handleAgentAuditRequest", () => {
           ...upstreamPayload,
           run: {
             ...upstreamPayload.run,
-            // Any version that is not the one this boundary accepts. Pinning it
-            // to the current literal would make the case pass by agreeing.
+            // An older schema: what a cache entry written before a bump holds.
+            // A reader must refuse a version it was not built for rather than
+            // assume the fields it knows are still there.
             schemaVersion: "seo_audit.sitewide.v5",
           },
         },

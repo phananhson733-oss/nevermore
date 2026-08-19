@@ -8,6 +8,7 @@ import { FileSearch, Link2, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 
+import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
   buildAgentAuditViewModel,
@@ -157,7 +158,7 @@ export function AgentResults({
       <header className="rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-6">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
           <div className="min-w-0">
-            <p className="font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
+            <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
               {t("capturedReport")}
             </p>
             <h2
@@ -172,11 +173,11 @@ export function AgentResults({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded border border-brand-accent/30 bg-brand-accent/10 px-2.5 py-1 font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
+            <span className="inline-flex items-center gap-1.5 rounded border border-brand-accent/30 bg-brand-accent/10 px-2.5 py-1 font-mono text-[11px] tracking-[0.08em] text-brand-accent-text uppercase">
               <ShieldCheck aria-hidden="true" className="size-3" />
               {t(`availability.${data.result.coverage.availability}`)}
             </span>
-            <span className="rounded border border-brand-border-strong px-2.5 py-1 font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+            <span className="rounded border border-brand-border-strong px-2.5 py-1 font-mono text-[11px] tracking-[0.08em] text-text-dark-secondary uppercase">
               {data.run.source.cache.status === "hit"
                 ? t("cachedCapture")
                 : t("newCapture")}
@@ -187,14 +188,14 @@ export function AgentResults({
         <dl className="mt-5 grid gap-px overflow-hidden rounded-row border border-brand-border-card bg-brand-border-card sm:grid-cols-2 xl:grid-cols-4">
           {capturedFacts.map(({ label, value, hint }) => (
             <div key={label} className="bg-brand-panel-sunken p-4">
-              <dt className="font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+              <dt className="font-mono text-[10.5px] tracking-[0.1em] text-text-dark-faint uppercase">
                 {label}
               </dt>
               <dd className="mt-2 font-mono text-[18px] font-medium text-text-dark-primary">
                 {value === null ? auditT("availability.unavailable") : value}
               </dd>
               {hint ? (
-                <dd className="mt-1.5 font-mono text-[9.5px] text-text-dark-faint">
+                <dd className="mt-1.5 font-mono text-[11px] text-text-dark-faint">
                   {hint}
                 </dd>
               ) : null}
@@ -258,7 +259,11 @@ export function AgentResults({
         locale={locale}
         targetUrl={data.result.targetUrl}
         evaluatedChecks={scopedChecks}
-        records={data.result.records}
+        // The same joined list the evaluator decided from. Handing the crawl
+        // ledger alone would show a search check that decided beside no
+        // evidence at all, because its record lives in the other list.
+        records={allAgentAuditRecords(data)}
+        targetPageExtract={data.result.targetPageExtract}
         profile={profile}
         selectedRecommendationId={selectedRecommendationIds[scope]}
         onSelectRecommendation={(recommendationId) =>
@@ -296,7 +301,7 @@ export function AgentResults({
         </div>
       ) : null}
 
-      <p className="text-center font-mono text-[9.5px] tracking-[0.05em] text-text-dark-faint">
+      <p className="text-center font-mono text-[11px] tracking-[0.05em] text-text-dark-faint">
         {t("runBoundary", {
           agent: data.run.agent.toUpperCase(),
           schema: data.run.source.schemaVersion,

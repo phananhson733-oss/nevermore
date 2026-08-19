@@ -199,6 +199,7 @@ describe("AgentRecommendations", () => {
             targetUrl="https://example.com/target"
             evaluatedChecks={evaluatedChecks}
             records={evidence}
+            targetPageExtract={null}
             profile={profile(agent)}
             selectedRecommendationId={selectedRecommendationId}
             onSelectRecommendation={onSelectRecommendation}
