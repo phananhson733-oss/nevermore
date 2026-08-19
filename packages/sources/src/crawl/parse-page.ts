@@ -257,6 +257,8 @@ export interface ParsedOnPageFacts {
    * JSON-LD value collected rather than only its key.
    */
   readonly faqQuestions: readonly string[];
+  /** The page declares `rel="next"` or `rel="prev"`: it is one of a series. */
+  readonly partOfASequence: boolean;
   readonly externalLinks: ParsedExternalLinkFacts;
   /**
    * UTF-8 byte counts, not character counts.
@@ -1109,6 +1111,21 @@ function collectHreflangAlternates(
   return out;
 }
 
+/**
+ * Whether the page declares itself part of a sequence.
+ *
+ * A `rel="next"` or `rel="prev"` is a page saying "I am one of several like
+ * me". Pages in a sequence resemble each other by design, and a check that
+ * reports that as duplication reports every paginated archive on the web.
+ */
+function collectSequenceMembership(html: string): boolean {
+  for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
+    const rel = attr(match[0], "rel")?.trim().toLowerCase();
+    if (rel === "next" || rel === "prev") return true;
+  }
+  return false;
+}
+
 function collectHreflang(html: string): readonly string[] {
   const tags = [...html.matchAll(openingTagPattern("link", "gi"))].map(
     (match) => match[0],
@@ -1202,6 +1219,7 @@ function collectOnPageFacts(
     viewport: metaContent(metaTags, "viewport", "name"),
     charset: collectCharset(metaTags),
     faviconDeclared: collectFaviconDeclared(markup),
+    partOfASequence: collectSequenceMembership(markup),
     hreflang: collectHreflang(markup),
     hreflangAlternates: collectHreflangAlternates(markup, pageUrl),
     images: collectImageFacts(markup),

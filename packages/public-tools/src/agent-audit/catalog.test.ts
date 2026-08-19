@@ -4,6 +4,7 @@ import {
   AGENT_AUDIT_HEADING_PRESETS,
   PAGE_AUDIT_GROUPS,
   SITE_AUDIT_GROUPS,
+  UNMEASURABLE_HERE,
 } from "./catalog.ts";
 
 describe("v2 Agent audit catalog", () => {
@@ -26,7 +27,7 @@ describe("v2 Agent audit catalog", () => {
     // Inventory readiness is derived, not listed, so it cannot drift from the
     // detectors again. A hand-kept list is what let 47 checks advertise
     // readiness while only 24 could ever produce a verdict.
-    expect(all.filter((check) => check.inventoryReady)).toHaveLength(69);
+    expect(all.filter((check) => check.inventoryReady)).toHaveLength(70);
     for (const check of all) {
       expect(check.inventoryReady).toBe(check.evidenceRecordIds.length > 0);
     }
@@ -71,6 +72,21 @@ describe("v2 Agent audit catalog", () => {
     });
   });
 
+  it("never calls a working check unobservable", () => {
+    // This label overrides every other data-source string, so an id left in
+    // the table after its detector lands renders "outside what a bounded
+    // anonymous crawl can observe" directly above a result that same crawl
+    // produced. 7.3, 7.4 and 4.5 each sat here while shipping.
+    const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
+      (group) => group.checks,
+    );
+    const contradictory = all
+      .filter((check) => check.inventoryReady && UNMEASURABLE_HERE[check.id])
+      .map((check) => check.id);
+
+    expect(contradictory).toEqual([]);
+  });
+
   it("marks every v2 blocker-capable check and locks the P6 detectors", () => {
     const all = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS].flatMap(
       (group) => group.checks,
@@ -89,17 +105,18 @@ describe("v2 Agent audit catalog", () => {
       "1.7",
       "1.8",
     ]);
-    // 4.5 stays behind the gate: page bodies are collected, but the published
-    // rule needs a false-positive gate first and a paginated archive is exactly
-    // what it would get wrong. D1 cleared it — the record it reads has always
-    // excluded canonical-converged variants, and the fixtures the gate names
-    // are executed in duplicate-title-gate.test.ts.
+    // 4.5 cleared the gate. The paginated archive this lock named is the
+    // KNOWN FALSE POSITIVE fixture in page-similarity.test.ts, and it is
+    // handled by the page's own `rel="next"`/`rel="prev"` rather than by a
+    // guess about its URL — the exemption has to be earned by the markup, or
+    // any site could opt out by having similar pages. Site chrome is removed
+    // before anything is compared, and pages with too little text left are
+    // not scored. Both fixtures execute; neither is asserted in prose.
     const similarity = all.find((candidate) => candidate.id === "4.5");
     expect(similarity).toMatchObject({
-      inventoryReady: false,
-      evidenceRecordIds: [],
+      inventoryReady: true,
+      evidenceRecordIds: ["page_near_duplicate_of_another_page"],
     });
-    expect(similarity?.boundary.en).toContain("false-positive gate");
 
     const duplicateTitles = all.find((candidate) => candidate.id === "D1");
     expect(duplicateTitles).toMatchObject({
@@ -151,7 +168,7 @@ describe("v2 Agent audit catalog", () => {
       (group) => group.checks,
     );
     const decidable = all.filter((check) => check.evidenceRecordIds.length > 0);
-    expect(decidable).toHaveLength(69);
+    expect(decidable).toHaveLength(70);
 
     // The group fallback emits one sentence for every check in a group, so a
     // check still sharing its text with a sibling has no instructions of its

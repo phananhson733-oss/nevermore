@@ -46,7 +46,7 @@ function data(): AgentAuditSuccessData {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v10",
+        schemaVersion: "seo_audit.sitewide.v11",
         completedAt: "2026-08-12T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },

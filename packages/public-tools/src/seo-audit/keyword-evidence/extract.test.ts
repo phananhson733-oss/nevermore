@@ -208,6 +208,7 @@ describe("buildTargetPageExtract on-page facts", () => {
     wordsUnderEachH3: [],
     jsonLdProperties: [],
     faqQuestions: [],
+    partOfASequence: false,
     hreflang: ["en"],
     images: {
       total: 4,
@@ -260,7 +261,8 @@ describe("buildTargetPageExtract on-page facts", () => {
       firstImage: _lazy,
       wordsUnderEachH3: _sections2,
       jsonLdProperties: _properties,
-      faqQuestions: [],
+      faqQuestions: _questions,
+      partOfASequence: _sequence,
       ...declared
     } = onPage;
     expect(extract.declared).toEqual(declared);

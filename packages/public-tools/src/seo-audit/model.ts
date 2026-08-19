@@ -1,4 +1,5 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
+import { measurePageSimilarity } from "./page-similarity.ts";
 import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
@@ -406,12 +407,30 @@ function buildRecords(
     );
   };
 
+  /** The published bar: at or above this, two pages compete with each other. */
+  const NEAR_DUPLICATE_THRESHOLD = 0.7;
+
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
       page.finalStatus >= 200 &&
       page.finalStatus < 300 &&
       isHtml(page.contentType),
+  );
+
+  /**
+   * Computed once for the whole run: every page needs every other page.
+   *
+   * Keyed by `page.url` to match `onPageByUrl` and `rawByUrl` beside it.
+   */
+  const similarityByUrl = new Map(
+    measurePageSimilarity(
+      htmlPages.map((page) => ({
+        url: page.url,
+        paragraphs: rawByUrl.get(page.url)?.projection.paragraphs ?? [],
+        partOfASequence: onPageOf(page)?.partOfASequence ?? false,
+      })),
+    ).map((entry) => [entry.url, entry] as const),
   );
 
   const entrySubjectUrl = subjectUrlOf(`${raw.origin}/`);
@@ -1475,6 +1494,33 @@ function buildRecords(
         "only_types_in_the_reviewed_required_property_table_are_judged",
     }),
     record({
+      id: "page_near_duplicate_of_another_page",
+      // Same category as the other whole-body measurements beside it; there is
+      // no separate content category and inventing one moves every consumer.
+      category: "structure",
+      // Tested population: pages with enough distinctive text left to score.
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => similarityByUrl.get(page.url)?.similarity !== null &&
+          similarityByUrl.get(page.url) !== undefined,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const measured = similarityByUrl.get(page.url);
+        const score = measured?.similarity ?? null;
+        if (score === null || score < NEAR_DUPLICATE_THRESHOLD) return [];
+        return [
+          pageObservation(page, {
+            similarity_to_nearest_page: Math.round(score * 100) / 100,
+            // Named, not just scored. "This page is 84% similar to something"
+            // is not actionable without knowing what it is similar to.
+            nearest_page: measured?.nearest ?? "",
+            distinctive_blocks_compared: measured?.distinctiveShingles ?? 0,
+          }),
+        ];
+      }),
+      limitation: "similarity_measured_on_collected_paragraphs_after_chrome",
+    }),
+    record({
       id: "faq_schema_question_not_on_page",
       category: "structured_data",
       // Tested population: pages that declare a FAQPage with questions.
@@ -1623,7 +1669,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v10",
+      schemaVersion: "seo_audit.sitewide.v11",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

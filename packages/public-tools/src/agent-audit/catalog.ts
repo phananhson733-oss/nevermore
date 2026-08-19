@@ -164,7 +164,18 @@ const BLOCKER_CAPABLE = new Set([
  * not be in the next one either. Saying so is the difference between a gap and
  * a boundary, and the visitor can only plan around the second.
  */
-const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
+/**
+ * Why a check cannot be answered by a bounded anonymous crawl.
+ *
+ * This label overrides every other data-source string, so an entry left here
+ * after the check starts working tells the reader "outside what a bounded
+ * anonymous crawl can observe" directly above a result the bounded anonymous
+ * crawl produced. `catalog.test.ts` refuses any id that is also
+ * `inventoryReady` — the two claims cannot both be true.
+ */
+export const UNMEASURABLE_HERE: Readonly<
+  Record<string, AgentAuditLocalizedText>
+> = {
   B4: l(
     "Crawl budget has no published per-URL rate, and a comparison against the site's own history needs crawl logs this run does not receive.",
     "抓取预算没有官方的单 URL 速率，而与站点自身历史比较需要本次运行拿不到的抓取日志。",
@@ -172,10 +183,6 @@ const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
   B5: l(
     "Separating discovery crawls from refresh crawls needs server logs or Search Console crawl stats; neither is available to this run.",
     "区分发现型抓取与刷新型抓取需要服务器日志或 Search Console 抓取统计，本次运行两者都拿不到。",
-  ),
-  C5: l(
-    "A link-following crawl reaches a page by an internal link or from the sitemap, so a page in neither was discovered from a page this run's budget dropped. The filter would report our own budget as the site's defect.",
-    "跟随链接的抓取只能通过内链或 sitemap 到达页面，因此两者都不在的页面，其实是从本次预算丢掉的那个页面被发现的。这个过滤器只会把我们自己的预算当成站点的缺陷来报。",
   ),
   E5: l(
     "No publish or modified date is collected, and whether content is time-sensitive is a judgement about the subject rather than a fact on the page.",
@@ -188,26 +195,6 @@ const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "5.2": l(
     "Per-image byte size needs one request per image, which is roughly two and a half times this run's entire request ceiling.",
     "逐张图片的字节大小需要每张图一个请求，约为本次运行整个请求上限的两倍半。",
-  ),
-  "5.4": l(
-    "A static crawl has no viewport, so it has no fold to measure against.",
-    "静态抓取没有视口，因此也就没有可供衡量的首屏折线。",
-  ),
-  "6.5": l(
-    "External outbound links are dropped during parsing, and this check declares itself unscored in any case.",
-    "外部出站链接在解析阶段就被丢弃了，而且这项检查本身也声明不参与评分。",
-  ),
-  "7.3": l(
-    "The parser keeps JSON-LD types and error counts, not property keys, and no registry of required properties per type exists here.",
-    "解析器只保留 JSON-LD 的类型和错误计数，不保留属性键，而且这里也没有「每种类型必需哪些属性」的登记表。",
-  ),
-  "7.4": l(
-    "Same as 7.3, plus it would need a similarity judgement between markup and visible text that the launch gate forbids.",
-    "与 7.3 相同，此外它还需要在标记与可见文本之间做相似度判断，而上线门槛禁止这样做。",
-  ),
-  "4.5": l(
-    "Page bodies are collected, but the published rule requires a false-positive gate before it can run, and a paginated archive is the case it would get wrong.",
-    "页面正文是采集到了，但公布的规则要求先通过假阳性门槛才能运行，而分页归档正是它最容易判错的那种情况。",
   ),
 };
 
@@ -227,6 +214,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C1: ["sitemap_page_without_observed_inlink"],
   C5: ["page_without_any_discovery_path"],
   "7.4": ["faq_schema_question_not_on_page"],
+  "4.5": ["page_near_duplicate_of_another_page"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
   D3: ["title_missing", "h1_missing"],
@@ -608,6 +596,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "7.4": l(
     "Your FAQPage markup promises questions a reader cannot find on the page. Google treats that as marking up content that is not there, and it costs the rich result for the whole page rather than the one entry. Per question, pick one: put the question and its answer in the visible content, matching the wording, or delete that entry from the markup. Do not keep markup for an answer only the crawler sees.",
     "你的 FAQPage 标记承诺了读者在页面上找不到的问题。Google 视其为给不存在的内容打标记，代价是整页失去富媒体结果，而不只是那一条。逐个问题二选一：把问题和答案按同样的措辞放进可见正文，或者把那一条从标记里删掉。不要保留只有抓取器看得到的答案。",
+  ),
+  "4.5": l(
+    "This page and the one named beside it say close to the same thing, so search engines have to pick one and you do not get to choose which. Per pair, pick one: merge them into the stronger URL and 301 the other, or make each genuinely about a different question — different intent, different examples, not a reworded intro. Adding a canonical without merging keeps the weaker page alive and still spends crawl on it.",
+    "这个页面和旁边点名的那一页说的几乎是同一件事，搜索引擎只会挑一个，而挑哪个不由你决定。逐对二选一：合并到更强的那个 URL 并把另一个 301 过去；或者让两页真的各答一个问题——不同意图、不同例子，而不是改写开头。只加 canonical 不合并，等于留着弱的那页继续消耗抓取预算。",
   ),
   C2: l(
     "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",

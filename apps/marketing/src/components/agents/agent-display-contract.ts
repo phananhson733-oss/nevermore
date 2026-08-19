@@ -99,6 +99,7 @@ export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   "bounded_static_html_crawl_inlinks_only",
   "crawl_incomplete_inlinks_unreliable",
   "faq_match_against_collected_paragraphs_only",
+  "similarity_measured_on_collected_paragraphs_after_chrome",
   "uncollected_link_targets_not_classified",
   "static_html_json_ld_only",
   "no_sitemap_collected_membership_not_testable",

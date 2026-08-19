@@ -1008,7 +1008,8 @@
         "this_page_has_no_h3_so_there_is_no_section_to_measure": "这个页面根本没有 H3，因此没有可衡量的小节。大纲该不该有第三层，由 3.5 判定。",
         "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。",
         "crawl_incomplete_inlinks_unreliable": "本次运行未抓完整站，或某个页面的内链数超出抓取保留上限，因此「没有页面链接到这里」与「本次抓取没看到那条链接」无法区分。不点名任何页面。",
-        "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。"
+        "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。",
+        "similarity_measured_on_collected_paragraphs_after_chrome": "相似度基于本次抓取保留的段落计算，并先剔除大多数页面共有的段落（视为站点框架）。剩余文本过少的页面不打分。"
       },
       "records": {
         "robots_resource": {
@@ -1270,6 +1271,10 @@
         "faq_schema_question_not_on_page": {
           "title": "FAQ 标记承诺了页面上没有的问题",
           "description": "声明了 FAQPage，但其 Question 名称在已采集的标题或段落中找不到的页面。"
+        },
+        "page_near_duplicate_of_another_page": {
+          "title": "页面与另一页高度重复",
+          "description": "去掉站点框架后，其独有文本与另一已采集页面的重合度达到或超过审阅阈值的页面。"
         }
       },
       "evidence": {
@@ -2772,6 +2777,12 @@
             "flagged": "这个页面声明的 FAQ 问题在可见内容里找不到。",
             "clear": "这个页面声明的每个 FAQ 问题都能在可见内容里找到。",
             "notTested": "该规则只检查声明了 FAQPage 的页面，未覆盖此页面。"
+          },
+          "page_near_duplicate_of_another_page": {
+            "_label": "内容高度重复",
+            "flagged": "这个页面的正文与站内另一页高度相同，两者会争夺同一个搜索结果。",
+            "clear": "这个页面的正文与其他已采集页面有区分度。",
+            "notTested": "该规则需要足够的独有文本才能比较，未覆盖此页面。"
           }
         },
         "imageDimensions": {

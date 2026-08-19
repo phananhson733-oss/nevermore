@@ -1008,7 +1008,8 @@
         "this_page_has_no_h3_so_there_is_no_section_to_measure": "This page has no H3 at all, so there is no section to measure. Whether the outline should have a third level is check 3.5's finding.",
         "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "The first image in document order, judged only when the markup declares a size large enough for it to be the image a reader came for. A static crawl has no viewport, and a 32-pixel logo mark is the first image on a very large share of sites.",
         "crawl_incomplete_inlinks_unreliable": "This run did not fetch the whole site, or a page carried more internal links than the crawl keeps, so \"nothing links here\" cannot be told apart from \"this crawl did not see the link\". No page is named.",
-        "faq_match_against_collected_paragraphs_only": "Questions are matched against the headings and paragraphs this crawl kept, which is bounded. A page whose FAQ runs past that point is not judged."
+        "faq_match_against_collected_paragraphs_only": "Questions are matched against the headings and paragraphs this crawl kept, which is bounded. A page whose FAQ runs past that point is not judged.",
+        "similarity_measured_on_collected_paragraphs_after_chrome": "Similarity is measured on the paragraphs this crawl kept, after paragraphs shared by most pages are removed as site chrome. Pages with little text left are not scored."
       },
       "records": {
         "robots_resource": {
@@ -1270,6 +1271,10 @@
         "faq_schema_question_not_on_page": {
           "title": "FAQ markup promises a question the page does not show",
           "description": "Pages declaring a FAQPage whose Question names were not found in the collected headings or paragraphs."
+        },
+        "page_near_duplicate_of_another_page": {
+          "title": "Page near-duplicates another page",
+          "description": "Pages whose distinctive text overlaps another collected page at or above the reviewed threshold, after site chrome is removed."
         }
       },
       "evidence": {
@@ -2772,6 +2777,12 @@
             "flagged": "This page declares FAQ questions that were not found in its visible content.",
             "clear": "Every FAQ question this page declares was found in its visible content.",
             "notTested": "That rule only tests pages declaring a FAQPage and did not cover this page."
+          },
+          "page_near_duplicate_of_another_page": {
+            "_label": "Near-duplicate content",
+            "flagged": "This page's text closely matches another page on the site, so the two compete for the same result.",
+            "clear": "This page's text is distinct from the other pages collected.",
+            "notTested": "That rule needs enough distinctive text to compare and did not cover this page."
           }
         },
         "imageDimensions": {
