@@ -153,7 +153,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v17",
 
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
@@ -978,6 +978,8 @@ describe("target page extract", () => {
       staticBodyUnits: null,
       termFrequencies: null,
       truncatedLists: false,
+      headingLevels: null,
+      wordsUnderEachH3: null,
       // The crawl's own journey to this page, always known once collected.
       response: {
         status: 200,
@@ -1096,7 +1098,7 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v7");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v17");
 
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);

@@ -71,6 +71,8 @@ const extract: SeoAuditTargetPageExtract = {
   staticBodyUnits: null,
   termFrequencies: null,
   truncatedLists: false,
+  headingLevels: null,
+  wordsUnderEachH3: null,
   response: {
     status: 200,
     finalStatus: 200,
@@ -873,6 +875,8 @@ describe("On-Page checker report depth", () => {
       withoutAlt: 1,
       withDimensions: 0,
       lazyLoaded: 0,
+      first: null,
+      sources: [],
     },
         externalLinks: { total: 3, nofollow: 1, blankWithoutNoopener: 1 },
         htmlBytes: 51_200,
@@ -905,6 +909,8 @@ describe("On-Page checker report depth", () => {
               robotsGroupsObserved: 4,
               sitemapReferencesObserved: 1,
               sitemapFetched: true,
+              sitemapUrls: [],
+              sitemapUrlsComplete: true,
             },
             records: [
               {

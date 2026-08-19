@@ -7,7 +7,10 @@ import {
   shapeCruxField,
   type PsiLoadingExperience,
 } from "../diagnostics/technical-health/worker/data-sources/crux-source";
-import type { PagePerformanceRaw } from "@sf/public-tools/seo-audit/page-performance";
+import type {
+  PagePerformanceRaw,
+  PageWeightRaw,
+} from "@sf/public-tools/seo-audit/page-performance";
 
 const PSI_ENDPOINT =
   "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
@@ -29,8 +32,25 @@ const FORM_FACTOR = "mobile" as const;
  */
 const READ_TIMEOUT_MS = 20_000;
 
-/** Only the field block is read; the Lighthouse categories are not requested. */
+/**
+ * Runs the Lighthouse performance category.
+ *
+ * PSI runs it whether or not we ask — the REST reference says a request naming
+ * no category runs Performance anyway — so the lab block arrives in every
+ * response we already pay for. This reader used to parse it out and drop it,
+ * while 8.5 stood in the catalogue marked unmeasurable for wanting exactly the
+ * number sitting in the discarded half of the body.
+ */
 const CATEGORY = "performance";
+
+/**
+ * Lighthouse's id for the sum of every network request's transferred bytes.
+ *
+ * `numericValue` only. Never `.score`, which is a log-normal curve against
+ * Lighthouse's own reference points; the catalogue's published rule is a flat
+ * 2 MB and scoring it on someone else's curve answers a different question.
+ */
+const TOTAL_BYTE_WEIGHT_AUDIT = "total-byte-weight";
 
 export interface PagePerformanceReadInput {
   /** The URL the crawl actually landed on, never the submitted form. */
@@ -54,16 +74,56 @@ export type PagePerformanceUnavailableReason =
   | "provider_quota_exhausted"
   | "provider_unavailable";
 
-export type PagePerformanceReadResult =
+/**
+ * The lab block travels beside the field block, never inside it.
+ *
+ * CrUX field data and the Lighthouse lab run are independent facts about one
+ * response: a page with no real-visit sample still gets weighed, and a page
+ * with a full CrUX profile can still come back without the lab audit. Folding
+ * the weight into the `ok` arm would have thrown it away in exactly the case
+ * 8.5 exists for — a brand-new page too fresh for CrUX and too heavy to load.
+ */
+export type PagePerformanceReadResult = (
   | { readonly status: "ok"; readonly field: PagePerformanceRaw }
   | {
       readonly status: "unavailable";
       readonly reason: PagePerformanceUnavailableReason;
-    };
+    }
+) & {
+  /** Null when PSI answered without a usable `total-byte-weight` audit. */
+  readonly weight: PageWeightRaw | null;
+};
 
 interface PsiFieldResponse {
   readonly loadingExperience?: PsiLoadingExperience;
   readonly originLoadingExperience?: PsiLoadingExperience;
+  readonly lighthouseResult?: {
+    readonly finalUrl?: unknown;
+    readonly requestedUrl?: unknown;
+    readonly audits?: Record<string, { readonly numericValue?: unknown }>;
+  };
+}
+
+/**
+ * The transferred weight of the page Lighthouse actually loaded.
+ *
+ * Fail-closed on every field. A non-integer, a negative, or a missing audit
+ * yields null rather than a zero — a page reported as weighing nothing would
+ * pass 8.5 outright, which is the "unavailable is not 0" rule broken in the
+ * direction that hides the finding.
+ */
+function readWeight(body: PsiFieldResponse): PageWeightRaw | null {
+  const lab = body.lighthouseResult;
+  if (lab === undefined) return null;
+  const value = lab.audits?.[TOTAL_BYTE_WEIGHT_AUDIT]?.numericValue;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  // The URL Lighthouse ended on, so the record names the page that was weighed
+  // rather than the one we asked about. They differ on every redirect.
+  const landed = lab.finalUrl ?? lab.requestedUrl;
+  if (typeof landed !== "string" || landed.trim() === "") return null;
+  return { url: landed, totalTransferBytes: Math.round(value) };
 }
 
 export function createPagePerformanceReader(options: {
@@ -90,25 +150,44 @@ export function createPagePerformanceReader(options: {
         // Named, not collapsed. A rejected key and an exhausted quota are our
         // problems; reporting either as "CrUX has no data for this page" states
         // something about the site's traffic that was never observed.
-        if (response.status === 400 || response.status === 401 ||
-            response.status === 403) {
-          return { status: "unavailable", reason: "provider_rejected_credentials" };
+        if (
+          response.status === 400 ||
+          response.status === 401 ||
+          response.status === 403
+        ) {
+          return {
+            status: "unavailable",
+            reason: "provider_rejected_credentials",
+            weight: null,
+          };
         }
         if (response.status === 429) {
-          return { status: "unavailable", reason: "provider_quota_exhausted" };
+          return {
+            status: "unavailable",
+            reason: "provider_quota_exhausted",
+            weight: null,
+          };
         }
-        return { status: "unavailable", reason: "provider_unavailable" };
+        return {
+          status: "unavailable",
+          reason: "provider_unavailable",
+          weight: null,
+        };
       }
       const body = (await response.json()) as PsiFieldResponse;
+      const weight = readWeight(body);
       const field = shapeCruxField(
         body.loadingExperience,
         body.originLoadingExperience,
       );
       // The one case that IS about the page: PSI answered, and CrUX published
-      // no p75 for this URL or its origin.
-      if (field === null) return { status: "unavailable", reason: "no_field_data" };
+      // no p75 for this URL or its origin. The lab run still happened, so the
+      // weight rides along rather than dying with the field block.
+      if (field === null)
+        return { status: "unavailable", reason: "no_field_data", weight };
       return {
         status: "ok",
+        weight,
         field: {
           url,
           sourceLevel: field.source,
@@ -120,7 +199,11 @@ export function createPagePerformanceReader(options: {
         },
       };
     } catch {
-      return { status: "unavailable", reason: "provider_unavailable" };
+      return {
+        status: "unavailable",
+        reason: "provider_unavailable",
+        weight: null,
+      };
     } finally {
       clearTimeout(timer);
     }

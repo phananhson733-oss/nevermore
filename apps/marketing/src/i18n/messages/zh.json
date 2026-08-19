@@ -987,7 +987,47 @@
         "this_runs_market_is_not_one_the_results_page_provider_covers": "本次运行的市场不在结果页供应商覆盖范围内，因此没有采样，也没有产生付费调用。",
         "the_results_page_provider_did_not_answer_this_run": "结果页数据供应商本次未应答，因此没有采样。值得再试一次。",
         "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "本次运行的 robots.txt 规则触到了自身上限，某条 Disallow 可能在被读到之前就被丢掉了。相关放行检查按「未验证」报告，而不是按「已放行」。",
-        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。"
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。",
+        "hreflang_targets_outside_this_crawl_were_not_classified": "抓取范围之外的备用地址两个方向都不判定。跨域的簇在这里只显示被抓到的那部分。",
+        "utf8_bytes_of_the_delivered_html_no_rendering_performed": "按交付 HTML 的 UTF-8 字节数计。不做渲染，因此这是被传输的内容，不是浏览器最终呈现的内容。",
+        "external_links_counted_by_destination_not_by_anchor": "外链按目标地址统计，同一页面上多次链到同一合作方只算一个。",
+        "no_page_type_was_confirmed_so_there_is_no_reviewed_range_to_compare_against": "本次运行没有确认页面类型，因此没有可用来对比标题数量的审阅区间。",
+        "a_reviewed_range_for_the_confirmed_page_type_not_a_documented_rule": "这是针对已确认页面类型审阅过的工作区间，不是有据可查的规则。区间会印在数量旁边。",
+        "no_confirmed_query_or_no_captured_text_to_compute_a_density_over": "没有确认目标词，或者没有可用来计算密度的采集文本。",
+        "density_over_the_captured_text_only_and_never_judged": "密度基于本次运行采集到的文本，不是整页，而且从不用于判定任何结论。",
+        "no_page_type_was_confirmed_so_there_is_nothing_to_match_the_schema_against": "没有确认页面类型，因此没有东西可以拿来与声明的 Schema 匹配。",
+        "the_submitted_page_was_not_collected_so_it_declared_nothing": "提交的页面未被本次抓取采集，因此读不到它声明的任何内容。",
+        "this_page_declares_only_site_furniture_types_which_check_7_1_reports": "这个页面只声明了 BreadcrumbList、WebSite 这类站点通用类型。它到底有没有可用的结构化数据，由 7.1 报告。",
+        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "这是一份审阅过的「页面类型到 Schema 类型」对照关系，不是规则。一个页面完全可能同时是好几种东西，所以这一项是提示。",
+        "declared_in_the_head_markup_no_lab_run_and_no_network_timing": "依据 head 声明的内容判定。没有实验室运行也没有网络计时，所以它说的是「什么会阻塞」，不是「某一次阻塞了多久」。",
+        "whitespace_words_between_headings_not_a_cjk_safe_measure": "按标题之间的空白分词计数。不使用词间空格的文字所写的页面在这里完全不参与判定。",
+        "only_types_in_the_reviewed_required_property_table_are_judged": "只判定审阅必填字段表里的类型。表外的类型不作处理，因此这一项通过并不代表页面上每一个块都没问题。",
+        "slot_order_not_a_character_offset_and_never_judged": "按槽位报告，不是按字符偏移，而且从不用于判定任何结论。",
+        "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish": "统计窗口内没有任何点击被报告，因此没有可公布的占比。",
+        "brand_terms_derived_from_the_property_and_matched_as_substrings": "品牌词由已授权资源派生并按子串匹配，因此包含品牌名的查询会算作品牌词。",
+        "this_page_has_no_h3_so_there_is_no_section_to_measure": "这个页面根本没有 H3，因此没有可衡量的小节。大纲该不该有第三层，由 3.5 判定。",
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。",
+        "crawl_incomplete_inlinks_unreliable": "本次运行未抓完整站，或某个页面的内链数超出抓取保留上限，因此「没有页面链接到这里」与「本次抓取没看到那条链接」无法区分。不点名任何页面。",
+        "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。",
+        "similarity_measured_on_collected_paragraphs_after_chrome": "相似度基于本次抓取保留的段落计算，并先剔除大多数页面共有的段落（视为站点框架）。剩余文本过少的页面不打分。",
+        "page_weight_is_one_lab_load_on_an_emulated_mobile_device": "这是模拟移动设备上一次 Lighthouse 加载的结果，不是真实访问。对不同设备发送不同字节的页面会有出入。",
+        "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved": "只统计本次抓取真正访问过的 URL。有曝光但抓取没到过的 URL 既不进分子也不进分母，因为「站点下线了它」和「我们没抓到」看起来完全一样。",
+        "image_weights_are_the_bytes_this_run_transferred": "这是本次运行实际传输的字节，上限就是预算——读满上限的文件可以确定超标，但没有下载它的真实总量。CDN 可能给不同浏览器发送不同字节。",
+        "no_image_weights_were_measured_for_this_run": "本次运行没有称量任何图片体积。",
+        "the_page_declared_no_images_to_weigh": "目标页没有声明任何图片，无从称量。",
+        "no_declared_image_could_be_fetched_this_run": "这个页面声明的图片全部抓取失败，因此不对它们的体积作任何断言。",
+        "no_index_status_source_was_configured_for_this_run": "本次运行未配置索引状态来源，没有向 Google 询问过。",
+        "the_sitemap_declares_more_urls_than_this_run_can_census_so_no_rate_is_published": "这个 sitemap 声明的 URL 超出了一次运行能普查的数量。对部分清单算出的比例又变回抽样，而这种抽样的误差方向是把不合格的站点报成健康——所以不发布比例。",
+        "this_site_declares_no_sitemap_urls_to_measure": "这个站点没有声明任何 sitemap URL，没有可供衡量覆盖率的已声明总体。",
+        "the_propertys_url_inspection_quota_was_already_spent": "该资源的网址检查配额已经用完。这是按站点计的上限，与指向同一资源的其他所有工具共享。",
+        "this_grant_does_not_cover_url_inspection_for_this_property": "当前授权不包含该资源的网址检查权限。",
+        "the_index_status_source_did_not_finish_this_run": "索引状态读取没能在本次运行的时间预算内完成，因此不发布比例。",
+        "index_status_is_googles_own_verdict_per_declared_url": "每一条判定都来自 Google 本身，逐个 URL 读取。比例的分子分母都只统计 sitemap 声明过的 URL。",
+        "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized": "这个市场没有流量估算来源，因此没有测量页面一的规模。没有发送请求，而不是花钱换来同一个答案。",
+        "traffic_estimates_are_modelled_not_measured_visits": "流量数字是供应商对月度自然访问的建模值，不是实测值。供应商没有给出数据的域名会被完全排除，而不是算作小站。",
+        "not_every_declared_image_could_be_weighed_this_run": "这个页面声明的图片有一部分没有被称量——跨域、抓不到，或超出单次上限——因此不给出「全部合格」的结论。但仍可能判不合格：发现一张超标的图就足以证明。",
+        "not_every_page_one_domain_could_be_sized_this_run": "流量数据源对页面一上至少一个域名没有返回结果，因此无法断言「这里没有小站」。反过来，发现小站本来是可以直接下结论的。",
+        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。"
       },
       "records": {
         "robots_resource": {
@@ -1189,6 +1229,90 @@
         "no_community_result_present": {
           "title": "结果页没有出现社区型结果",
           "description": "对结果页的单次实时采样中没有论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。"
+        },
+        "hreflang_target_http_error": {
+          "title": "hreflang 备用地址无法解析的页面",
+          "description": "已采集页面中，声明了返回 4xx 或 5xx 的 hreflang 备用地址的页面。只对本次运行同时抓取到的备用地址判定；抓取范围之外的报为未分类，绝不算作有效。"
+        },
+        "content_to_code_ratio": {
+          "title": "交付 HTML 中可见文字的占比",
+          "description": "可见文字的 UTF-8 字节数除以交付文档的 UTF-8 字节数，不做渲染。作为体积提示公布，不套用任何阈值。"
+        },
+        "external_link_follow_mix": {
+          "title": "出站链接及其中的 nofollow 数",
+          "description": "外链按目标地址统计而不是按锚点统计，所以一个合作方即使在导航、正文、页脚各链一次也只算一个。含在新标签打开却没有 rel=noopener 的链接。"
+        },
+        "h2_count_outside_reviewed_range": {
+          "title": "H2 数量超出审阅区间",
+          "description": "H2 标题数量落在已确认页面类型的审阅区间之外。区间会与结论一同给出：它是工作区间，不是有据可查的规则。"
+        },
+        "h3_count_outside_reviewed_range": {
+          "title": "H3 数量超出审阅区间",
+          "description": "H3 标题数量落在已确认页面类型的审阅区间之外。要和 H2 数量放在一起看，别单独看。"
+        },
+        "target_query_density": {
+          "title": "已确认目标词在采集文本中的密度",
+          "description": "已确认目标词在本次运行采集到的文本中出现的频率，占该文本的比例。只公布，不判定：密度不是有据可查的排名信号。"
+        },
+        "schema_type_unmatched_to_page_type": {
+          "title": "声明的 Schema 类型与已确认页面类型不匹配",
+          "description": "页面声明了结构化数据，但不属于你所确认的页面类型对应的审阅集合。BreadcrumbList、WebSite 这类站点通用类型在判定时不计入。"
+        },
+        "render_blocking_head_resource": {
+          "title": "head 中存在渲染阻塞资源的页面",
+          "description": "head 中未标注非屏幕 media 的样式表，以及带 src 且既无 async 也无 defer 的脚本。两者都会在所在位置把解析器停住。依据标记判定，不是依据实验室运行。"
+        },
+        "first_image_lazy_loaded": {
+          "title": "第一张图片被延迟加载的页面",
+          "description": "文档顺序中的第一张图片带有 loading=lazy。静态抓取没有视口，因此以文档顺序代替首屏折线。"
+        },
+        "thin_section_under_h3": {
+          "title": "H3 小节内容偏少的页面",
+          "description": "按标题边界切分后，每个 H3 下正文的平均词数。按空白分词计数，因此不使用词间空格的文字所写的页面不在此判定。"
+        },
+        "json_ld_missing_required_property": {
+          "title": "声明了类型却缺必填字段的页面",
+          "description": "已声明的 JSON-LD 类型缺少审阅表为该类型列出的必填字段。表外的类型不作判定，也不假定其完整。"
+        },
+        "target_query_first_appearance": {
+          "title": "目标词首次出现的位置",
+          "description": "按读者遇到的顺序（title、H1、开头文本、子标题、description），目标词首次出现在哪个槽位。只公布，不判定。"
+        },
+        "non_brand_click_share": {
+          "title": "非品牌词点击占比",
+          "description": "不含品牌词的查询带来的点击，占全部报告点击的比例。品牌词由已授权资源派生并按子串匹配，所以「acme pricing」算作品牌词。只公布，不判定。"
+        },
+        "page_without_any_discovery_path": {
+          "title": "没有任何发现路径的页面",
+          "description": "既没有观察到内链指向、也不在 sitemap 里的已采集页面，不含入口 URL。"
+        },
+        "faq_schema_question_not_on_page": {
+          "title": "FAQ 标记承诺了页面上没有的问题",
+          "description": "声明了 FAQPage，但其 Question 名称在已采集的标题或段落中找不到的页面。"
+        },
+        "page_near_duplicate_of_another_page": {
+          "title": "页面与另一页高度重复",
+          "description": "去掉站点框架后，其独有文本与另一已采集页面的重合度达到或超过审阅阈值的页面。"
+        },
+        "page_total_transfer_bytes": {
+          "title": "整页传输体积",
+          "description": "PageSpeed 的 Lighthouse 加载目标页时，所有网络请求传输字节的总和。"
+        },
+        "abandoned_url_impression_share": {
+          "title": "废弃 URL 的曝光占比",
+          "description": "落在本次抓取访问过、且已失效或跳转的 URL 上的曝光，占已报告曝光的比例。"
+        },
+        "image_over_transfer_budget": {
+          "title": "超出传输预算的图片",
+          "description": "目标页上传输字节数达到或超过审阅的单图预算的图片。"
+        },
+        "sitemap_url_not_indexed": {
+          "title": "已声明但 Google 未展示的 URL",
+          "description": "sitemap 声明的 URL 中，网址检查判定不是「已编入索引」的那些。"
+        },
+        "page_one_without_a_low_traffic_site": {
+          "title": "页面一没有低流量站点",
+          "description": "抽样结果页上是否存在小到有可能被一个更好的页面取代的域名。"
         }
       },
       "evidence": {
@@ -1197,7 +1321,7 @@
         "sitemap_references": "Sitemap 引用",
         "urls_observed": "已观测 URL",
         "initial_status": "初始状态",
-        "final_status": "最终状态",
+        "final_status": "最终 HTTP 状态码",
         "redirect_hops": "重定向跳数",
         "final_url": "最终 URL",
         "final_protocol": "最终协议",
@@ -1280,7 +1404,49 @@
         "organic_results_sampled": "采样到的自然结果数",
         "unresolved_serp_items": "因不可用而丢弃的条目数",
         "sampled_market": "市场",
-        "sampled_language": "语言"
+        "sampled_language": "语言",
+        "broken_hreflang_targets": "失效的备用地址数",
+        "declared_hreflang_alternates": "声明的备用地址数",
+        "broken_hreflang_sample": "失效的备用地址",
+        "visible_text_bytes": "可见文字字节数",
+        "html_bytes": "HTML 字节数",
+        "script_bytes": "脚本字节数",
+        "content_to_code_ratio": "文字占 HTML 比例",
+        "external_links": "外链数",
+        "external_links_nofollow": "标记 nofollow 的",
+        "external_links_blank_without_noopener": "新标签打开且无 noopener 的",
+        "heading_count": "该层级标题数",
+        "reviewed_minimum": "审阅下限",
+        "reviewed_maximum": "审阅上限",
+        "confirmed_page_type": "已确认页面类型",
+        "query_density": "密度",
+        "density_numerator_units": "目标词计量单位数",
+        "density_denominator_units": "文本计量单位数",
+        "declared_schema_types": "已声明的类型",
+        "expected_schema_types": "该页面类型的审阅类型",
+        "render_blocking_stylesheets": "阻塞样式表数",
+        "render_blocking_scripts": "阻塞脚本数",
+        "first_image_lazy_loaded": "第一张图是否 lazy",
+        "average_words_under_h3": "每个 H3 小节平均词数",
+        "h3_sections": "H3 小节数",
+        "thinnest_section_words": "最少的小节词数",
+        "missing_required_properties": "缺失的必填字段",
+        "judged_json_ld_types": "已判定的类型",
+        "first_slot_containing_query": "首次出现的槽位",
+        "non_brand_click_share": "非品牌点击占比",
+        "brand_clicks": "品牌词点击",
+        "brand_terms_used": "使用的品牌词",
+        "first_image_width": "第一张图宽度",
+        "first_image_height": "第一张图高度",
+        "total_transfer_bytes": "传输字节总数",
+        "abandoned_url_impression_share": "废弃 URL 曝光占比",
+        "image_transfer_bytes": "传输字节数",
+        "image_size_is_exact": "体积为精确值",
+        "index_coverage_rate": "索引覆盖率",
+        "sitemap_urls_inspected": "已检查的声明 URL 数",
+        "index_status_verdict": "索引状态判定",
+        "page_one_domains_sized": "已测规模的页面一域名数",
+        "smallest_page_one_traffic": "页面一最小流量"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -2646,6 +2812,24 @@
             "flagged": "从首页出发要点 4 次以上才能到这一页。",
             "clear": "从首页出发 4 次点击以内可以到这一页。",
             "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "page_without_any_discovery_path": {
+            "_label": "无发现路径",
+            "flagged": "没有任何页面链接到这里，它也不在 sitemap 里，本次运行只能靠跳转到达。",
+            "clear": "这个页面可以通过内链或 sitemap 到达。",
+            "notTested": "该规则本次未作判定，或未覆盖此页面。"
+          },
+          "faq_schema_question_not_on_page": {
+            "_label": "FAQ 标记承诺",
+            "flagged": "这个页面声明的 FAQ 问题在可见内容里找不到。",
+            "clear": "这个页面声明的每个 FAQ 问题都能在可见内容里找到。",
+            "notTested": "该规则只检查声明了 FAQPage 的页面，未覆盖此页面。"
+          },
+          "page_near_duplicate_of_another_page": {
+            "_label": "内容高度重复",
+            "flagged": "这个页面的正文与站内另一页高度相同，两者会争夺同一个搜索结果。",
+            "clear": "这个页面的正文与其他已采集页面有区分度。",
+            "notTested": "该规则需要足够的独有文本才能比较，未覆盖此页面。"
           }
         },
         "imageDimensions": {
@@ -2656,7 +2840,8 @@
         "imageLoading": {
           "_label": "图片懒加载",
           "none": "{total} 张图片都没有声明 loading=\"lazy\"。",
-          "some": "{total} 张图片里有 {lazy} 张声明了 loading=\"lazy\"。这里不判分：首屏那张图懒加载反而会拖慢访客等的东西，而我们看不出哪张在首屏。"
+          "some": "{total} 张图片中有 {lazy} 张声明了 loading=\"lazy\"。只对首图评分，而首图不在其中——更下方的图片本就应该延迟加载。",
+          "leadLazy": "页面第一张图片（{width}×{height}）要等读者滚动后才开始加载，而它正是读者最先想看到的东西。首图改为正常加载，延迟加载留给更下方的图片。"
         },
         "urlShape": {
           "_label": "URL 形态",

@@ -23,6 +23,8 @@ const extract: SeoAuditTargetPageExtract = {
   staticBodyUnits: { units: 800, basis: "words" },
   termFrequencies: null,
   truncatedLists: false,
+  headingLevels: null,
+  wordsUnderEachH3: null,
   response: {
     status: 200,
     finalStatus: 200,

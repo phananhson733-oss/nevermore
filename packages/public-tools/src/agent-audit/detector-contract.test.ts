@@ -11,6 +11,7 @@ import {
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "../seo-audit/search-performance.ts";
 import { KEYWORD_EVIDENCE_RECORD_IDS } from "../seo-audit/keyword-evidence/records.ts";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "../seo-audit/page-performance.ts";
+import { INDEX_COVERAGE_RECORD_IDS } from "../seo-audit/index-coverage.ts";
 import { SERP_SHAPE_RECORD_IDS } from "../seo-audit/serp-shape.ts";
 
 function page(url: string, depth = 1): CrawlPageRecord {
@@ -146,6 +147,7 @@ describe("catalog / detector contract", () => {
       ...KEYWORD_EVIDENCE_RECORD_IDS,
       ...PAGE_PERFORMANCE_RECORD_IDS,
       ...SERP_SHAPE_RECORD_IDS,
+      ...INDEX_COVERAGE_RECORD_IDS,
     ]);
     const missing = checks.flatMap((check) =>
       check.evidenceRecordIds

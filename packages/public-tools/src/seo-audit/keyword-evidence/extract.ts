@@ -137,6 +137,24 @@ function declaredFactsOf(
       withoutAlt: onPage.images.withoutAlt,
       withDimensions: onPage.images.withDimensions,
       lazyLoaded: onPage.images.lazyLoaded,
+      /**
+       * The first image, and what it declares about its own size.
+       *
+       * Carried because a lazy-loaded count alone cannot be graded — the
+       * On-Page Checker says so in its own comment and declines to grade it.
+       * The first image plus a declared size can be: it separates a lazy hero
+       * from a lazy 32-pixel logo mark, which is what the count could not do.
+       */
+      first: onPage.firstImage,
+      /**
+       * Addresses, so the caller can weigh them.
+       *
+       * Published rather than measured here because this module is a pure
+       * projection: fetching belongs to the boundary that owns credentials and
+       * timeouts. The cached row only ever serves the same target URL
+       * (cachedSeoAuditMatches), so these stay the target page's own.
+       */
+      sources: [...onPage.imageSources],
     },
     externalLinks: {
       total: onPage.externalLinks.total,
@@ -224,5 +242,12 @@ export function buildTargetPageExtract(
     truncatedLists: h1.truncated || (subHeadings?.truncated ?? false),
     response: responseFactsOf(projection),
     declared: onPage === undefined ? null : declaredFactsOf(onPage),
+    // Beside `declared` rather than inside it: a level sequence is a
+    // measurement of the document, not something the markup declares, and it
+    // is here because the heading-shape checks need the target page's own
+    // sequence and the report deliberately drops per-page facts.
+    headingLevels: onPage === undefined ? null : onPage.headingLevels,
+    wordsUnderEachH3:
+      onPage === undefined ? null : onPage.wordsUnderEachH3,
   };
 }

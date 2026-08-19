@@ -202,6 +202,13 @@ describe("buildTargetPageExtract on-page facts", () => {
     viewport: "width=device-width, initial-scale=1",
     charset: "utf-8",
     faviconDeclared: true,
+    hreflangAlternates: [],
+    renderBlocking: { stylesheets: 0, scripts: 0 },
+    firstImage: null,
+    wordsUnderEachH3: [],
+    jsonLdProperties: [],
+    faqQuestions: [],
+    partOfASequence: false,
     hreflang: ["en"],
     images: {
       total: 4,
@@ -210,6 +217,8 @@ describe("buildTargetPageExtract on-page facts", () => {
       withoutAlt: 0,
       withDimensions: 2,
       lazyLoaded: 1,
+      first: null,
+      sources: [],
     },
     externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
     htmlBytes: 31_744,
@@ -227,6 +236,7 @@ describe("buildTargetPageExtract on-page facts", () => {
     },
     textMetrics: { cjkChars: 0, nonCjkWords: 1_800, denseChars: 9_000 },
     imageFormats: [],
+    imageSources: [],
     headingLevels: [1],
     termFrequencies: [
       { size: 1, rows: [{ phrase: "astrology", count: 42 }] },
@@ -245,7 +255,17 @@ describe("buildTargetPageExtract on-page facts", () => {
       // Measurements too, for the same reason: how the body and its images were
       // counted, not something the markup declared.
       imageFormats: _formats,
+      imageSources: [],
       headingLevels: _levels,
+      // Also a measurement, not a declaration: whether an alternate resolves is
+      // something this run went and checked, not something the markup said.
+      hreflangAlternates: _alternates,
+      renderBlocking: _blocking,
+      firstImage: _lazy,
+      wordsUnderEachH3: _sections2,
+      jsonLdProperties: _properties,
+      faqQuestions: _questions,
+      partOfASequence: _sequence,
       ...declared
     } = onPage;
     expect(extract.declared).toEqual(declared);

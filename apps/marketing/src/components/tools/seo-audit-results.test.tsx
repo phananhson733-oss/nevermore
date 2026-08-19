@@ -190,6 +190,8 @@ const report: SeoAuditReport = {
     robotsGroupsObserved: 1,
     sitemapReferencesObserved: 1,
     sitemapFetched: false,
+    sitemapUrls: [],
+    sitemapUrlsComplete: true,
   },
   records,
   pages: [page],

@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v7 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v17 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -84,6 +84,19 @@ export type SerpLandscape =
       /** True only when one of those results is the submitted page itself. */
       readonly targetPageOnPage: boolean;
       readonly rows: readonly SerpLandscapeRow[];
+      /**
+       * Estimated monthly organic traffic per page-one domain, or null.
+       *
+       * Null means this market has no traffic-estimate source, or the lookup
+       * did not answer. Kept apart from an empty list, which would state that
+       * page one holds no small site — a finding, not a gap.
+       */
+      readonly domainTraffic:
+        | readonly {
+            readonly domain: string;
+            readonly organicEtv: number | null;
+          }[]
+        | null;
     }
   | {
       readonly availability: "unavailable";
@@ -97,7 +110,7 @@ export type SerpLandscape =
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v7" as const;
+  "seo_audit.sitewide.v17" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 

@@ -28,6 +28,14 @@ export const SCRIPT_DOMINANCE = 5;
 /** Reviewed URL shape. Neither is a ranking factor; both are legibility. */
 export const URL_PATH = { maxChars: 100, maxSegments: 5 } as const;
 
+/**
+ * Smallest declared edge that could plausibly be the image a reader came for.
+ *
+ * Shared with the Agent catalogue's 5.4 so the two surfaces cannot give
+ * different verdicts about the same image.
+ */
+const LEAD_IMAGE_MIN_EDGE = 200;
+
 export function linkChecks(input: CheckInput): readonly OnPageCheck[] {
   const { response, declared } = input.extract;
   const checks: OnPageCheck[] = [];
@@ -115,17 +123,28 @@ export function linkChecks(input: CheckInput): readonly OnPageCheck[] {
             "imageDimensions.some",
             { total: images.total, missing },
           ),
-      // Published, not graded: lazy-loading the image at the top of the page
-      // delays the very thing a visitor is waiting for, so a higher number is
-      // not automatically better and we cannot tell which images are where.
-      images.lazyLoaded === 0
-        ? observation("imageLoading", "media", "imageLoading.none", {
-            total: images.total,
+      // The count alone still cannot be graded — a page with nine lazy images
+      // below the fold is doing the right thing. What CAN be graded is the
+      // first image when the markup declares a size large enough for it to be
+      // the one the reader came for: lazy-loading that delays the very paint
+      // the visitor is waiting for. A 32-pixel logo mark is the first image on
+      // a large share of sites, so a size gate is what separates the two.
+      images.first !== null &&
+      images.first.lazyLoaded &&
+      Math.max(images.first.width ?? 0, images.first.height ?? 0) >=
+        LEAD_IMAGE_MIN_EDGE
+        ? check("imageLoading", "media", "warn", 1, 3, "imageLoading.leadLazy", {
+            width: images.first.width ?? 0,
+            height: images.first.height ?? 0,
           })
-        : observation("imageLoading", "media", "imageLoading.some", {
-            total: images.total,
-            lazy: images.lazyLoaded,
-          }),
+        : images.lazyLoaded === 0
+          ? observation("imageLoading", "media", "imageLoading.none", {
+              total: images.total,
+            })
+          : observation("imageLoading", "media", "imageLoading.some", {
+              total: images.total,
+              lazy: images.lazyLoaded,
+            }),
     );
   }
 

@@ -25,6 +25,8 @@ function extract(
     staticBodyUnits: { units: 1_400, basis: "words" },
     termFrequencies: null,
     truncatedLists: false,
+    headingLevels: null,
+    wordsUnderEachH3: null,
     response: {
       status: 200,
       finalStatus: 200,
@@ -59,6 +61,8 @@ function extract(
       withoutAlt: 0,
       withDimensions: 0,
       lazyLoaded: 0,
+      first: null,
+      sources: [],
     },
       externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
       htmlBytes: 40_000,
@@ -132,6 +136,8 @@ const SITE_RESOURCES = {
   robotsGroupsObserved: 3,
   sitemapReferencesObserved: 1,
   sitemapFetched: true,
+  sitemapUrls: [],
+  sitemapUrlsComplete: true,
 } as const;
 
 function record(
@@ -700,11 +706,57 @@ describe("what the sheet can now say", () => {
             withoutAlt: 0,
             withDimensions: 3,
             lazyLoaded: 2,
+            first: null,
+            sources: [],
           },
         },
       },
     });
     expect(find(declared, "imageDimensions")?.state).toBe("pass");
     expect(find(declared, "imageLoading")?.detail.values?.lazy).toBe(2);
+  });
+
+  describe("imageLoading grades the lead image, not the count", () => {
+    const withFirst = (
+      first: { lazyLoaded: boolean; width: number | null; height: number | null } | null,
+    ) =>
+      find(
+        score({
+          extract: {
+            declared: {
+              ...extract().declared!,
+              images: {
+                ...extract().declared!.images,
+                total: 4,
+                lazyLoaded: 3,
+                first,
+              },
+            },
+          },
+        }),
+        "imageLoading",
+      );
+
+    it("warns when the lead image defers its own load", () => {
+      const result = withFirst({ lazyLoaded: true, width: 1200, height: 600 });
+      expect(result?.state).toBe("warn");
+      expect(result?.detail.key).toBe("imageLoading.leadLazy");
+    });
+
+    it("stays an observation when only later images are lazy", () => {
+      // Three of four images deferred is a page doing the right thing. The
+      // count alone would have called this the worst case in the fixture.
+      expect(withFirst({ lazyLoaded: false, width: 1200, height: 600 })?.state).toBe("info");
+    });
+
+    it("stays an observation for a lazy logo mark", () => {
+      // The same 32-pixel case the Agent catalogue's 5.4 excludes. The two
+      // surfaces read the same markup and must not disagree about it.
+      expect(withFirst({ lazyLoaded: true, width: 32, height: 32 })?.state).toBe("info");
+    });
+
+    it("stays an observation when the lead image declares no size", () => {
+      expect(withFirst({ lazyLoaded: true, width: null, height: null })?.state).toBe("info");
+    });
   });
 });

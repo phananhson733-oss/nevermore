@@ -17,6 +17,7 @@ function raw(overrides: Partial<SerpShapeRaw> = {}): SerpShapeRaw {
     itemTypes: ["organic", "people_also_ask"],
     unresolvedItemCount: 0,
     organicCount: 10,
+    domainTraffic: null,
     marketCode: "US",
     languageCode: "en",
     ...overrides,

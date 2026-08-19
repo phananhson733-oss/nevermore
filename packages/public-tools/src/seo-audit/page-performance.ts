@@ -28,11 +28,61 @@ export interface PagePerformanceRaw {
   readonly formFactor: "mobile" | "desktop";
 }
 
+/**
+ * What the page weighed when Lighthouse loaded it.
+ *
+ * Separate from `PagePerformanceRaw` because it comes from the lab half of the
+ * PageSpeed response, not the CrUX field half. A page can have one and not the
+ * other, and merging them would make each hostage to the other's absence.
+ */
+export interface PageWeightRaw {
+  /** The URL Lighthouse finished on — the post-redirect form. */
+  readonly url: string;
+  /** Sum of every network request's transferred bytes. */
+  readonly totalTransferBytes: number;
+}
+
+/** The catalogue's published rule for 8.5, restated where it is enforced. */
+export const PAGE_WEIGHT_BUDGET_BYTES = 2 * 1024 * 1024;
+
+/** The catalogue's published rule for 5.2, restated where it is enforced. */
+export const IMAGE_TRANSFER_BUDGET_BYTES = 200 * 1024;
+
+/** What one image cost to transfer. */
+export interface ImageWeightRaw {
+  readonly url: string;
+  readonly transferredBytes: number;
+  /**
+   * Whether the whole file arrived.
+   *
+   * False means the read stopped at the budget, so `transferredBytes` is a
+   * floor rather than a total — which is all this check needs, because a file
+   * that reaches the budget has already failed the rule.
+   */
+  readonly complete: boolean;
+}
+
 const METRICS = [
-  { id: "core_web_vital_lcp", label: "lcp_ms", read: (raw: PagePerformanceRaw) => raw.lcp },
-  { id: "core_web_vital_inp", label: "inp_ms", read: (raw: PagePerformanceRaw) => raw.inp },
-  { id: "core_web_vital_cls", label: "cls_score", read: (raw: PagePerformanceRaw) => raw.cls },
-  { id: "core_web_vital_ttfb", label: "ttfb_ms", read: (raw: PagePerformanceRaw) => raw.ttfb },
+  {
+    id: "core_web_vital_lcp",
+    label: "lcp_ms",
+    read: (raw: PagePerformanceRaw) => raw.lcp,
+  },
+  {
+    id: "core_web_vital_inp",
+    label: "inp_ms",
+    read: (raw: PagePerformanceRaw) => raw.inp,
+  },
+  {
+    id: "core_web_vital_cls",
+    label: "cls_score",
+    read: (raw: PagePerformanceRaw) => raw.cls,
+  },
+  {
+    id: "core_web_vital_ttfb",
+    label: "ttfb_ms",
+    read: (raw: PagePerformanceRaw) => raw.ttfb,
+  },
 ] as const;
 
 /**
@@ -132,18 +182,173 @@ export function buildPagePerformanceRecords(
   });
 }
 
-export const PAGE_PERFORMANCE_RECORD_IDS: readonly string[] = METRICS.map(
-  (metric) => metric.id,
-);
+/**
+ * The record behind 8.5, from the lab half of the same PageSpeed response.
+ *
+ * One record, always emitted, `unverified` when nothing was weighed. The
+ * observation carries the byte count rather than a verdict so the catalogue's
+ * published 2 MB rule stays the only place the threshold lives.
+ */
+export function buildPageWeightRecords(
+  weight: PageWeightRaw | null | undefined,
+  gap: PagePerformanceGap = "source_not_configured",
+): readonly SeoAuditRecord[] {
+  if (weight === null || weight === undefined) {
+    return [
+      {
+        id: "page_total_transfer_bytes",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: GAP_LIMITATION[gap],
+      } satisfies SeoAuditRecord,
+    ];
+  }
+  return [
+    {
+      id: "page_total_transfer_bytes",
+      category: "page_performance",
+      state: "observed",
+      unit: "pages",
+      population: "target_page",
+      targetTested: true,
+      tested: 1,
+      affected: 1,
+      observations: [
+        {
+          url: weight.url,
+          values: [
+            { label: "total_transfer_bytes", value: weight.totalTransferBytes },
+          ],
+        },
+      ],
+      limitation: "page_weight_is_one_lab_load_on_an_emulated_mobile_device",
+    } satisfies SeoAuditRecord,
+  ];
+}
+
+/**
+ * The record behind 5.2, from a bounded fetch of each declared image.
+ *
+ * Deliberately NOT derived from the Lighthouse lab run beside it. Lighthouse
+ * records only what its emulated mobile Chrome fetched during one no-scroll
+ * navigation, so a `loading="lazy"` image below the fold never appears and a
+ * `srcset` yields the small mobile candidate. A page carrying twenty-four
+ * images would report "0 affected of 3 tested" directly under 5.3, which
+ * counts every `<img>` in the markup — two surfaces disagreeing about the same
+ * page, with the failure landing on the side of a false pass.
+ */
+export function buildImageWeightRecords(
+  images: readonly ImageWeightRaw[] | null | undefined,
+  /** Named so an unmeasurable run says which kind of nothing it got. */
+  limitation = "no_image_weights_were_measured_for_this_run",
+  /**
+   * Whether every image the page declares was weighed.
+   *
+   * A partial sample cannot clear this check. "None of the images I managed to
+   * fetch is over budget" is not "none of the page's images is over budget",
+   * and the gap between them is where the heavy image lives: one small image
+   * plus twenty-four failed fetches would otherwise render as a clean page.
+   * A partial sample may still FAIL — finding one oversized image is proof —
+   * so it is only the clean verdict that is withheld.
+   *
+   * Required, with no default. A default of `true` makes omission read as
+   * proof of completeness, so the next caller that forgets it silently gets
+   * the fail-open behaviour this argument was added to remove.
+   */
+  complete: boolean,
+): readonly SeoAuditRecord[] {
+  if (images === null || images === undefined || images.length === 0) {
+    return [
+      {
+        id: "image_over_transfer_budget",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation,
+      } satisfies SeoAuditRecord,
+    ];
+  }
+  // A file that filled the cap is at least the budget, and the published rule
+  // is "below 200KB" — so reaching it is already over, whatever the true total.
+  const over = images.filter(
+    (image) =>
+      !image.complete || image.transferredBytes >= IMAGE_TRANSFER_BUDGET_BYTES,
+  );
+  // Nothing over budget, but we did not see every image: that is an unfinished
+  // measurement, not a pass.
+  if (over.length === 0 && !complete) {
+    return [
+      {
+        id: "image_over_transfer_budget",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: "not_every_declared_image_could_be_weighed_this_run",
+      } satisfies SeoAuditRecord,
+    ];
+  }
+  return [
+    {
+      id: "image_over_transfer_budget",
+      category: "page_performance",
+      state: "observed",
+      unit: "pages",
+      population: "target_page",
+      targetTested: true,
+      tested: images.length,
+      affected: over.length,
+      observations: over.map((image) => ({
+        url: image.url,
+        values: [
+          { label: "image_transfer_bytes", value: image.transferredBytes },
+          // Published so a floor is never read as a total.
+          { label: "image_size_is_exact", value: image.complete },
+        ],
+      })),
+      limitation: "image_weights_are_the_bytes_this_run_transferred",
+    } satisfies SeoAuditRecord,
+  ];
+}
+
+export const PAGE_PERFORMANCE_RECORD_IDS: readonly string[] = [
+  ...METRICS.map((metric) => metric.id),
+  "page_total_transfer_bytes",
+  "image_over_transfer_budget",
+];
 
 export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   ...METRICS.map((metric) => metric.label),
   "crux_source_level",
   "crux_form_factor",
+  "total_transfer_bytes",
+  "image_transfer_bytes",
+  "image_size_is_exact",
 ];
 
 export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   ...Object.values(GAP_LIMITATION),
   "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values",
   "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped",
+  "page_weight_is_one_lab_load_on_an_emulated_mobile_device",
+  "image_weights_are_the_bytes_this_run_transferred",
+  "no_image_weights_were_measured_for_this_run",
+  "the_page_declared_no_images_to_weigh",
+  "no_declared_image_could_be_fetched_this_run",
+  "not_every_declared_image_could_be_weighed_this_run",
 ];

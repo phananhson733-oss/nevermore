@@ -3,6 +3,8 @@
 // @pos    -- single authority shared by the producer and every consumer guard
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import { INDEX_COVERAGE_LIMITATION_CODES } from "./index-coverage.ts";
+
 import type { SeoAuditCategory } from "./types.ts";
 
 /**
@@ -43,8 +45,11 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   meta_description_duplicate: "metadata",
   h1_missing: "structure",
   multiple_h1: "structure",
+  page_without_any_discovery_path: "links",
   sitemap_page_without_observed_inlink: "links",
   internal_target_http_error: "links",
+  faq_schema_question_not_on_page: "structured_data",
+  page_near_duplicate_of_another_page: "structure",
   json_ld_parse_error: "structured_data",
   page_outbound_broken_link: "links",
   page_not_in_sitemap: "crawl",
@@ -54,6 +59,12 @@ export const SEO_AUDIT_RECORD_CATEGORIES = {
   click_depth_beyond_reviewed_limit: "links",
   json_ld_missing: "structured_data",
   soft_404_page: "indexability",
+  hreflang_target_http_error: "indexability",
+  content_to_code_ratio: "structure",
+  render_blocking_head_resource: "structure",
+  first_image_lazy_loaded: "structure",
+  json_ld_missing_required_property: "structured_data",
+  external_link_follow_mix: "links",
   page_disallowed_for_search_crawler: "crawl",
   sitemap_url_disallowed_by_robots: "crawl",
   page_without_breadcrumb_list: "structured_data",
@@ -97,6 +108,23 @@ export const SEO_AUDIT_EVIDENCE_LABELS: readonly string[] = [
   "observed_source_pages",
   "source_pages",
   "matched_phrase",
+  "broken_hreflang_targets",
+  "declared_hreflang_alternates",
+  "broken_hreflang_sample",
+  "visible_text_bytes",
+  "render_blocking_stylesheets",
+  "render_blocking_scripts",
+  "first_image_lazy_loaded",
+  "first_image_width",
+  "first_image_height",
+  "missing_required_properties",
+  "judged_json_ld_types",
+  "html_bytes",
+  "script_bytes",
+  "content_to_code_ratio",
+  "external_links",
+  "external_links_nofollow",
+  "external_links_blank_without_noopener",
   "body_text_units",
   "text_units_basis",
   "text_units_floor",
@@ -149,6 +177,9 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "static_response_directives_only",
   "normalised_text_match_within_inspected_pages",
   "bounded_static_html_crawl_inlinks_only",
+  "crawl_incomplete_inlinks_unreliable",
+  "faq_match_against_collected_paragraphs_only",
+  "similarity_measured_on_collected_paragraphs_after_chrome",
   "uncollected_link_targets_not_classified",
   "static_html_json_ld_only",
   "no_sitemap_collected_membership_not_testable",
@@ -158,6 +189,12 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "single_uncached_request_per_url_not_a_field_measurement",
   "redirect_destination_status_not_observed_for_every_redirect",
   "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
+  "hreflang_targets_outside_this_crawl_were_not_classified",
+  "utf8_bytes_of_the_delivered_html_no_rendering_performed",
+  "declared_in_the_head_markup_no_lab_run_and_no_network_timing",
+  "first_image_in_document_order_with_a_declared_size_no_viewport_is_available",
+  "only_types_in_the_reviewed_required_property_table_are_judged",
+  "external_links_counted_by_destination_not_by_anchor",
   "robots_rules_read_for_one_search_crawler_token_only",
   "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped",
   "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing",
@@ -170,6 +207,9 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
 
 /** Limitation codes the per-visitor search region publishes. */
 export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
+  ...INDEX_COVERAGE_LIMITATION_CODES,
+  "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved",
+  "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge",
   "query_rows_hit_the_row_cap_so_the_reported_total_is_short",
   "share_of_reported_queries_only_banded_by_one_average_position_each",
   "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing",
@@ -181,4 +221,6 @@ export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "some_confirmed_queries_had_no_impressions_on_this_url_and_are_not_in_this_average",
   "one_impression_weighted_average_per_query_over_the_reported_window_only",
   "search_console_returned_a_position_this_run_cannot_band_for_this_url",
+  "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+  "brand_terms_derived_from_the_property_and_matched_as_substrings",
 ];

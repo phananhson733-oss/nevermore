@@ -4,6 +4,7 @@
 
 import type {
   SeoAuditCoverage,
+  SeoAuditTargetPageExtract,
   SeoAuditRecord,
   SeoAuditReport,
   SeoAuditSiteResources,
@@ -22,12 +23,21 @@ import {
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
-import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  buildKeywordEvidenceRecords,
+  type HeadingShapeInput,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import { AGENT_AUDIT_HEADING_PRESETS } from "@sf/public-tools/agent-audit";
 import {
   buildPagePerformanceRecords,
+  buildPageWeightRecords,
+  buildImageWeightRecords,
   type PagePerformanceGap,
   type PagePerformanceRaw,
+  type PageWeightRaw,
+  type ImageWeightRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
+import { createImageWeightReader } from "./image-weight-reader.ts";
 import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
@@ -100,11 +110,30 @@ export interface AgentAuditHandlerDependencies {
   readonly readPagePerformance?: (input: {
     readonly url: string;
   }) => Promise<PagePerformanceReadResult> | undefined;
+  /**
+   * Transferred bytes for the target page's own images, or nothing.
+   *
+   * Best-effort like the two above. These are the only subresource requests
+   * this product makes, and they are bounded twice over: to the target page,
+   * and to the first images in document order.
+   */
+  readonly readImageWeights?: (input: {
+    readonly sources: readonly string[];
+  }) => Promise<
+    | {
+        readonly status: "ok";
+        readonly images: readonly ImageWeightRaw[];
+        readonly complete: boolean;
+      }
+    | { readonly status: "unavailable"; readonly reason: string }
+  >;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
     readonly targetPageUrl: string | null;
     readonly targetQueries: readonly string[];
+    readonly sitemapUrls: readonly string[];
+    readonly sitemapUrlsComplete: boolean;
   }) => Promise<AgentSearchPerformance | null>;
   /**
    * Which tool the visitor actually ran.
@@ -162,6 +191,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   // visitor's own traffic that this run never went and looked for. Leaving it
   // undefined lets the handler's `source_not_configured` initial value stand.
   readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
+  readImageWeights: createImageWeightReader(),
 };
 
 /**
@@ -194,6 +224,33 @@ function landedTargetUrl(result: {
   const requested = result.inspectedTargetUrl ?? result.targetUrl;
   const page = result.pages.find((entry) => entry.url === requested);
   return page?.finalUrl ?? requested;
+}
+
+/**
+ * The heading shape the confirmed page type asks for, or null.
+ *
+ * Null when the visitor confirmed no page type — the checks then report that
+ * there is no reviewed range to compare against, which is the honest answer.
+ * The range travels with the finding so a reader can judge the judgement.
+ */
+function headingShapeFor(
+  pageRole: string | null | undefined,
+  result: { readonly targetPageExtract: SeoAuditTargetPageExtract | null },
+): HeadingShapeInput | null {
+  if (!pageRole) return null;
+  const preset = AGENT_AUDIT_HEADING_PRESETS[pageRole];
+  const levels = result.targetPageExtract?.headingLevels;
+  if (preset === undefined || levels === undefined || levels === null) {
+    return null;
+  }
+  return {
+    levels,
+    pageType: preset.pageType,
+    h2: preset.h2,
+    h3: preset.h3,
+    substanceWords: preset.substanceWords,
+    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
+  };
 }
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -372,6 +429,11 @@ function projectSiteResources(
     robotsGroupsObserved: siteResources.robotsGroupsObserved,
     sitemapReferencesObserved: siteResources.sitemapReferencesObserved,
     sitemapFetched: siteResources.sitemapFetched,
+    // Carried, not blanked. This is the population A1 divides by, and an empty
+    // list here does not read as "we could not measure" — it reads as "this
+    // site declares no sitemap URLs", which is a statement about the site.
+    sitemapUrls: [...siteResources.sitemapUrls],
+    sitemapUrlsComplete: siteResources.sitemapUrlsComplete,
   };
 }
 
@@ -464,6 +526,13 @@ function projectTargetPageExtract(
             })),
           })),
     truncatedLists: extract.truncatedLists,
+    // Rebuilt field by field like every other projected value, so the browser
+    // gets what this boundary decided to publish and not whatever the payload
+    // happened to carry.
+    headingLevels:
+      extract.headingLevels === null ? null : [...extract.headingLevels],
+    wordsUnderEachH3:
+      extract.wordsUnderEachH3 === null ? null : [...extract.wordsUnderEachH3],
     response: {
       status: extract.response.status,
       finalStatus: extract.response.finalStatus,
@@ -480,49 +549,10 @@ function projectTargetPageExtract(
       internalOutlinksWithoutAnchorText:
         extract.response.internalOutlinksWithoutAnchorText,
     },
-    declared:
-      extract.declared === null
-        ? null
-        : {
-            lang: extract.declared.lang,
-            openGraph: {
-              title: extract.declared.openGraph.title,
-              description: extract.declared.openGraph.description,
-              image: extract.declared.openGraph.image,
-            },
-            twitterCard: extract.declared.twitterCard,
-            viewport: extract.declared.viewport,
-            charset: extract.declared.charset,
-            faviconDeclared: extract.declared.faviconDeclared,
-            hreflang: [...extract.declared.hreflang],
-            images: {
-              total: extract.declared.images.total,
-              withAlt: extract.declared.images.withAlt,
-              withEmptyAlt: extract.declared.images.withEmptyAlt,
-              withoutAlt: extract.declared.images.withoutAlt,
-              withDimensions: extract.declared.images.withDimensions,
-              lazyLoaded: extract.declared.images.lazyLoaded,
-            },
-            externalLinks: {
-              total: extract.declared.externalLinks.total,
-              nofollow: extract.declared.externalLinks.nofollow,
-              blankWithoutNoopener:
-                extract.declared.externalLinks.blankWithoutNoopener,
-            },
-            htmlBytes: extract.declared.htmlBytes,
-            visibleTextBytes: extract.declared.visibleTextBytes,
-            scriptBytes: extract.declared.scriptBytes,
-            interactive: {
-              forms: extract.declared.interactive.forms,
-              inputs: extract.declared.interactive.inputs,
-              buttons: extract.declared.interactive.buttons,
-              selects: extract.declared.interactive.selects,
-              textareas: extract.declared.interactive.textareas,
-              canvases: extract.declared.interactive.canvases,
-              media: extract.declared.interactive.media,
-              iframes: extract.declared.interactive.iframes,
-            },
-          },
+    // Passed through rather than re-listed field by field: a hand-written copy
+    // of this shape is a copy that silently drops whatever the parser learns
+    // next, and this file already lost `images.first` that way.
+    declared: extract.declared,
   };
 }
 
@@ -606,6 +636,9 @@ export async function handleAgentAuditRequest(
         // that ranks. This comment described that failure while the line below
         // it caused it.
         targetPageUrl: landedTargetUrl(result),
+        // A1's denominator: the pages this site declares it wants indexed.
+        sitemapUrls: result.siteResources.sitemapUrls,
+        sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
         // The visitor's own spelling, not the lowercase identity: it is echoed
         // back in the evidence, and the match lowercases both sides anyway.
         targetQueries: (input.value.targetQueries ?? []).map(
@@ -621,22 +654,49 @@ export async function handleAgentAuditRequest(
   // produce nothing — no key, no field data, a slow answer, a shared-quota 429
   // — is the same settled outcome, and the records name which one.
   let pagePerformance: PagePerformanceRaw | null = null;
+  let pageWeight: PageWeightRaw | null = null;
+  let imageWeights: readonly ImageWeightRaw[] | null = null;
+  let imageWeightLimitation = "no_image_weights_were_measured_for_this_run";
+  let imageWeightsComplete = true;
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   if (result.targetInspected) {
     try {
       const read = await dependencies.readPagePerformance?.({
-        url: result.inspectedTargetUrl ?? result.targetUrl,
+        // The landed URL, for the same reason the search region above uses it:
+        // `inspectedTargetUrl` is what the crawl REQUESTED, so on a site that
+        // redirects we were asking PageSpeed about a URL that 301s. CrUX has no
+        // url-level sample for a redirect, so 8.1-8.4 quietly fell back to the
+        // whole origin's p75 on every such site — the fast page inheriting the
+        // slow site's verdict that this module's own comment warns about.
+        url: landedTargetUrl(result) ?? result.targetUrl,
       });
       if (read?.status === "ok") {
         pagePerformance = read.field;
       } else if (read !== undefined) {
         pagePerformanceGap = read.reason;
       }
+      // Independent of the field block: a page too new for CrUX still weighs
+      // something, and that is exactly the page 8.5 is worth running on.
+      pageWeight = read?.weight ?? null;
+    } catch {
+      pagePerformanceGap = "provider_unavailable";
+    }
+    try {
+      const sources = result.targetPageExtract?.declared?.images.sources ?? [];
+      const weighed = await dependencies.readImageWeights?.({ sources });
+      if (weighed?.status === "ok") {
+        imageWeights = weighed.images;
+        imageWeightsComplete = weighed.complete;
+      } else if (weighed?.status === "unavailable") {
+        imageWeightLimitation =
+          weighed.reason === "no_images_declared"
+            ? "the_page_declared_no_images_to_weigh"
+            : "no_declared_image_could_be_fetched_this_run";
+      }
     } catch {
       pagePerformanceGap = "provider_unavailable";
     }
   }
-
 
   const evidence =
     input.value.targetQueries === null
@@ -653,8 +713,10 @@ export async function handleAgentAuditRequest(
   // disagree about which word this page is being judged on.
   const primaryQuery =
     evidence !== null && evidence.availability === "available"
-      ? (evidence.queries.find((query) => query.isPrimary) ??
-          evidence.queries[0])?.displayQuery ?? null
+      ? ((
+          evidence.queries.find((query) => query.isPrimary) ??
+          evidence.queries[0]
+        )?.displayQuery ?? null)
       : null;
   // Wrapped even though the seam's own contract is that it resolves. The crawl
   // has already succeeded and the credit is already spent by the time this
@@ -719,6 +781,8 @@ export async function handleAgentAuditRequest(
               records: buildKeywordEvidenceRecords(
                 result.inspectedTargetUrl ?? result.targetUrl,
                 evidence,
+                headingShapeFor(input.value.pageRole, result),
+                result.targetPageExtract?.response.jsonLdTypes ?? null,
               ),
             },
           }),
@@ -738,6 +802,7 @@ export async function handleAgentAuditRequest(
                       itemTypes: landscape.features,
                       unresolvedItemCount: 0,
                       organicCount: landscape.resultsObserved,
+                      domainTraffic: landscape.domainTraffic,
                       marketCode: landscape.market,
                       languageCode: landscape.language,
                     }
@@ -761,10 +826,22 @@ export async function handleAgentAuditRequest(
         ? {
             pagePerformance: {
               version: AGENT_PAGE_PERFORMANCE_VERSION,
-              records: buildPagePerformanceRecords(
-                pagePerformance,
-                pagePerformanceGap,
-              ),
+              records: [
+                ...buildPagePerformanceRecords(
+                  pagePerformance,
+                  pagePerformanceGap,
+                ),
+                // Rides in the same region because it shares the region's whole
+                // reason for existing: it is one visitor's paid measurement of
+                // one page, and `page_performance` is excluded from
+                // CRAWL_CATEGORIES so it can never reach the shared cache row.
+                ...buildPageWeightRecords(pageWeight, pagePerformanceGap),
+                ...buildImageWeightRecords(
+                  imageWeights,
+                  imageWeightLimitation,
+                  imageWeightsComplete,
+                ),
+              ],
             },
           }
         : {}),

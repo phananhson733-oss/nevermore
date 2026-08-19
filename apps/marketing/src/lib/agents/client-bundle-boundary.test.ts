@@ -27,6 +27,8 @@ import { describe, expect, it } from "vitest";
  * is a type import", and dropping it fails here rather than in `next build`.
  */
 const SOURCE_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+/** Repository root, so the walk can follow a workspace subpath into its source. */
+const REPO_ROOT = fileURLToPath(new URL("../../../../..", import.meta.url));
 
 /** Barrels whose transitive graph contains a Node-only module. */
 const FORBIDDEN_SPECIFIERS = ["@sf/public-tools", "@sf/sources", "@sf/engine"];
@@ -91,7 +93,7 @@ function resolveRelative(from: string, specifier: string): string | null {
     ? resolve(dirname(from), specifier)
     : specifier.startsWith("@/")
       ? resolve(SOURCE_ROOT, specifier.slice(2))
-      : null;
+      : workspaceSubpath(specifier);
   if (base === null) return null;
   for (const candidate of [
     base,
@@ -107,6 +109,43 @@ function resolveRelative(from: string, specifier: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Resolve `@sf/<pkg>/<subpath>` into the workspace file it names.
+ *
+ * Without this the walk stopped dead at the package boundary: a client
+ * component may legitimately import a narrow subpath like
+ * `@sf/public-tools/seo-audit/contract`, and whatever THAT file imports was
+ * simply never visited. A bare `@sf/sources` barrel import sitting one level
+ * inside a package was therefore invisible here and only surfaced as a
+ * Turbopack chunking error in `next build` — which is how this guard stayed
+ * green through the exact break it exists to prevent, twice.
+ *
+ * A bare barrel specifier (`@sf/sources` with no subpath) resolves to null on
+ * purpose: it is the thing being reported, not a file to walk into.
+ */
+function workspaceSubpath(specifier: string): string | null {
+  const match = /^@sf\/([^/]+)\/(.+)$/.exec(specifier);
+  if (match === null) return null;
+  const [, pkg, subpath] = match;
+  if (pkg === undefined || subpath === undefined) return null;
+  const manifest = join(REPO_ROOT, "packages", pkg, "package.json");
+  try {
+    const exports = (
+      JSON.parse(readFileSync(manifest, "utf8")) as {
+        exports?: Record<string, string>;
+      }
+    ).exports;
+    const target = exports?.[`./${subpath}`];
+    if (target !== undefined) {
+      return resolve(join(REPO_ROOT, "packages", pkg), target);
+    }
+  } catch {
+    // Not a workspace package we can follow; the barrel check still applies.
+  }
+  // Not in the exports map, but the source layout is uniform enough to try.
+  return join(REPO_ROOT, "packages", pkg, "src", subpath);
 }
 
 /** Every module a client entry point pulls in, transitively. */

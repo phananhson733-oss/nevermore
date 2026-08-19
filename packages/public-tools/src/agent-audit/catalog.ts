@@ -1,3 +1,4 @@
+import { PAGE_WEIGHT_BUDGET_BYTES } from "../seo-audit/page-performance.ts";
 import type {
   AgentAuditCheckDefinition,
   AgentAuditEngineState,
@@ -57,7 +58,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["D3", "Pages missing title or H1", "缺失 Title 或 H1 的页数", "0 pages; above 0 is Warning", "0 页；大于 0 为警告"],
   ["D4", "Image alt coverage", "图片 alt 覆盖率", "100% of the pages carrying images have alt on all of them; below 95% is Warning. An empty alt marks a decorative image and counts as covered.", "含图片的页面中，100% 的页面其图片都带 alt；低于 95% 为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["D5", "Schema coverage", "Schema 覆盖率", "At least 90%; otherwise Warning", "至少 90%；否则为警告"],
-  ["D6", "hreflang cluster completeness", "hreflang 簇完整性", "100% valid targets; any 404 target is Blocker", "目标 100% 有效；任何 404 目标均为阻断"],
+  ["D6", "hreflang cluster completeness", "hreflang 簇完整性", "100% valid targets; any 4xx or 5xx target is Blocker. Only alternates this run also fetched are classified; one outside the crawl is reported as unclassified, never as valid.", "目标 100% 有效；任何 4xx 或 5xx 目标均为阻断。只对本次运行同时抓取到的备用地址判定；抓取范围之外的报为未分类，绝不算作有效。"],
   ["D7", "Pages whose canonical points at another page", "Canonical 指向他页的页数", "Listed for review, not judged: cross-page canonicals are often deliberate consolidation. Confirm each target is the intended one.", "仅列出待复核，不作判定：跨页 Canonical 常是有意收敛。请确认每个目标都是预期页面。"],
   ["E1", "Pages with impressions", "有曝光页数占比", "At least 60%; below 30% is Warning", "至少 60%；低于 30% 为警告"],
   ["E2", "Impression share in positions 1–6", "排名 1–6 的曝光占比", "At least 20%; below 10% is Warning", "至少 20%；低于 10% 为警告"],
@@ -73,7 +74,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.4", "Canonical target", "Canonical 目标", "A canonical is present and self-referencing; a missing canonical or one pointing elsewhere is a Warning. Destination status is not collected.", "存在且自指的 Canonical；缺失或指向他页为警告。本工具不采集 Canonical 目标的状态码。"],
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
-  ["1.7", "hreflang target validity", "hreflang 目标有效性", "Every target returns 200; a 404 target is Blocker", "所有目标均返回 200；指向 404 为阻断"],
+  ["1.7", "hreflang target validity", "hreflang 目标有效性", "No alternate returns 4xx or 5xx; one that does is Blocker. Only alternates this run also fetched are classified.", "没有返回 4xx 或 5xx 的备用地址；出现即为阻断。只对本次运行同时抓取到的备用地址判定。"],
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
   ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
@@ -84,26 +85,26 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
   ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
-  ["3.4", "H2 count", "H2 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
-  ["3.5", "H3 count", "H3 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
-  ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Use the confirmed page-type substance preset", "使用已确认页面类型的内容充实度预设"],
+  ["3.4", "H2 count", "H2 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
+  ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
+  ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Within the reviewed substance range for the confirmed page type; below it is a Tip. Whitespace words between headings, so a CJK page is not measured here.", "落在已确认页面类型的审阅内容量区间内；低于该区间为提示。按标题之间的空白分词计，因此中日韩页面不在此判定。"],
   ["4.1", "Main-content word count", "正文字数", "At least 60% of the reviewed top-10 median; otherwise Warning", "至少为已审阅前十中位数的 60%；否则为警告"],
-  ["4.2", "Target-query density", "目标词密度", "Internal heuristic only. Keyword density is not a documented ranking signal and is not used to judge a page.", "仅为内部启发式。关键词密度不是有据可查的排名信号，不用于判定页面。"],
+  ["4.2", "Target-query density", "目标词密度", "Listed for review, not judged: keyword density is not a documented ranking signal and is not used to judge a page.", "仅列出待复核，不作判定：关键词密度不是有据可查的排名信号，不用于判定页面。"],
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
-  ["4.4", "Content-to-code ratio", "内容与代码比", "Internal heuristic only. No documented ratio threshold exists; treat it as a rendering-weight hint.", "仅为内部启发式。不存在有据可查的比例阈值；仅作渲染体积提示。"],
+  ["4.4", "Content-to-code ratio", "内容与代码比", "Listed for review, not judged: no documented ratio threshold exists. Read it as a rendering-weight hint, never as a defect.", "仅列出待复核，不作判定：不存在有据可查的比例阈值。把它当作体积提示来读，不要当成缺陷。"],
   ["4.5", "Similarity with other site pages", "与站内其他页相似度", "Below 70%; otherwise Warning; P6 false-positive gate required", "低于 70%；否则为警告；必须通过 P6 假阳性门禁"],
   ["5.1", "Images missing alt text", "无 alt 图片数", "0 images with no alt attribute; otherwise Warning. An empty alt marks a decorative image and counts as covered.", "没有 alt 属性的图片为 0 张；否则为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
   ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF among images whose format the URL states; otherwise Tip. An unreadable extension leaves the ratio rather than counting against it.", "在 URL 能读出格式的图片中，WebP 或 AVIF 至少占 80%；否则为提示。读不出扩展名的图片不计入该比例，也不算作旧格式。"],
-  ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "No; otherwise Warning", "否；否则为警告"],
+  ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "The first image in document order is not lazy-loaded; otherwise Warning. A static crawl has no viewport, so document order stands in for the fold.", "文档顺序中的第一张图片没有被 lazy-load；否则为警告。静态抓取没有视口，因此以文档顺序代替首屏折线。"],
   ["6.1", "Inbound internal link count", "入站内链数", "At least 1; zero is Warning; 2× check weight", "至少 1 条；0 条为警告；检查权重 2 倍"],
   ["6.2", "Outbound internal link count", "出站内链数", "At least 1 observed outbound internal link; zero is Warning", "至少观察到 1 条出站内链；0 条为警告"],
   ["6.3", "Broken internal links on this page", "本页出站断链数", "0 broken outbound internal links; above 0 is Warning", "本页出站内链断链为 0；大于 0 为警告"],
   ["6.4", "Click depth", "点击深度", "At most 4 clicks from the crawl entry point; deeper is a Tip", "距抓取入口最多 4 次点击；更深为提示"],
-  ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Display only; no pass/fail threshold", "仅展示，不设通过阈值"],
+  ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Listed for review, not judged: display only, no pass/fail threshold. Included because nofollow on outbound links is a choice, not a score.", "仅列出待复核，不作判定：仅展示，不设通过阈值。列在这里是因为出站链接加不加 nofollow 是选择，不是分数。"],
   ["7.1", "JSON-LD presence", "JSON-LD 是否存在", "At least one parseable JSON-LD block; absent or malformed is a Tip", "至少 1 个可解析的 JSON-LD 块；缺失或损坏为提示"],
-  ["7.2", "Schema type matches page type", "Schema 类型是否匹配页面", "Matches confirmed page type; otherwise Tip", "匹配已确认页面类型；否则为提示"],
-  ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present; otherwise Warning", "所有必填字段均存在；否则为警告"],
+  ["7.2", "Schema type matches page type", "Schema 类型与页面类型匹配", "Declares a type from the reviewed set for the confirmed page type; otherwise Tip. Site-furniture types are ignored, and the reviewed set is published with the finding.", "声明了已确认页面类型对应审阅集合中的某个类型；否则为提示。站点通用类型不计入，审阅集合会与发现一同给出。"],
+  ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present for the types in the reviewed table; otherwise Warning. A type outside the table is not judged rather than assumed complete.", "审阅表中所列类型的必填字段齐全；否则为警告。表外的类型不作判定，而不是假定其完整。"],
   ["7.4", "FAQPage matches visible FAQ", "FAQPage 与页面 FAQ 是否一致", "Every item matches visible content; otherwise Warning", "逐条匹配可见内容；否则为警告"],
   ["7.5", "BreadcrumbList markup below the root", "根目录以下页面的 BreadcrumbList 标记", "Present on pages below the root; otherwise Tip. Presence only: this run keeps no visible trail to compare the markup against.", "根目录以下的页面存在该标记；否则为提示。仅判定是否存在：本次运行不保留可见路径，无法与标记比对。"],
   ["8.1", "Largest Contentful Paint (LCP)", "最大内容绘制（LCP）", "CrUX p75 over 28 days: 2.5 s or less good, over 2.5 s to 4.0 s needs improvement, over 4.0 s poor", "CrUX 28 天窗口 p75：不超过 2.5 秒为良好，超过 2.5 秒至 4.0 秒待改进，超过 4.0 秒为差"],
@@ -111,7 +112,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["8.3", "Cumulative Layout Shift (CLS)", "累积布局偏移（CLS）", "CrUX p75 over 28 days: 0.1 or less good, over 0.1 to 0.25 needs improvement, over 0.25 poor", "CrUX 28 天窗口 p75：不超过 0.1 为良好，超过 0.1 至 0.25 待改进，超过 0.25 为差"],
   ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "800 ms or less good, over 800 ms to 1.8 s needs improvement, over 1.8 s poor", "不超过 800 毫秒为良好，超过 800 毫秒至 1.8 秒待改进，超过 1.8 秒为差"],
   ["8.5", "Total page weight", "页面总体积", "Below 2 MB", "低于 2MB"],
-  ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 in a separate Lighthouse lab run", "独立 Lighthouse 实验室运行中为 0"],
+  ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 render-blocking stylesheets or synchronous scripts in the head; above 0 is a Tip. Read from the markup, not from a lab run.", "head 中阻塞渲染的样式表与同步脚本为 0；大于 0 为提示。依据标记判定，不是实验室运行。"],
   ["9.1", "AI answer block on the results page", "结果页是否出现 AI 答案块", "Absent; present is Warning because ranking may not produce a click. Presence only — whether the block fully answers the query is a content judgement this run does not make.", "不存在；存在则为警告，因为获得排名也可能没有点击。仅判定是否存在——该答案块是否完整回答了查询属于内容判断，本次运行不作此判断。"],
   // 9.2 "recently registered domains in the top 10" was removed on 2026-08-18.
   // It needs a domain registration date, which no wired provider returns. The
@@ -177,54 +178,67 @@ const BLOCKER_CAPABLE = new Set([
  * not be in the next one either. Saying so is the difference between a gap and
  * a boundary, and the visitor can only plan around the second.
  */
-const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
+/**
+ * Why a check cannot be answered by a bounded anonymous crawl.
+ *
+ * This label overrides every other data-source string, so an entry left here
+ * after the check starts working tells the reader "outside what a bounded
+ * anonymous crawl can observe" directly above a result the bounded anonymous
+ * crawl produced. `catalog.test.ts` refuses any id that is also
+ * `inventoryReady` — the two claims cannot both be true.
+ */
+export const UNMEASURABLE_HERE: Readonly<
+  Record<string, AgentAuditLocalizedText>
+> = {
+  // Not a budget or an authorization problem, so connecting Search Console
+  // does not move either one: Google publishes no API for the Crawl Stats
+  // report at all. The Search Console API exposes exactly eleven methods —
+  // sites, sitemaps, searchanalytics.query, urlInspection and the
+  // mobile-friendly test — and none of them return crawl volume. The BigQuery
+  // bulk export carries search performance only.
   B4: l(
-    "Crawl budget has no published per-URL rate, and a comparison against the site's own history needs crawl logs this run does not receive.",
-    "抓取预算没有官方的单 URL 速率，而与站点自身历史比较需要本次运行拿不到的抓取日志。",
+    "Google publishes no API for crawl statistics, so the only crawl volume this product could chart is its own — a number about our crawler, not Google's.",
+    "Google 没有为抓取统计提供任何 API，因此本产品唯一能记录的抓取量是它自己的——那是关于我们爬虫的数字，不是 Google 的。",
   ),
   B5: l(
-    "Separating discovery crawls from refresh crawls needs server logs or Search Console crawl stats; neither is available to this run.",
-    "区分发现型抓取与刷新型抓取需要服务器日志或 Search Console 抓取统计，本次运行两者都拿不到。",
+    "Separating discovery crawls from refresh crawls needs server logs or the Crawl Stats report, and Google publishes no API for the latter.",
+    "区分发现型抓取与刷新型抓取需要服务器日志或抓取统计报表，而后者 Google 没有提供 API。",
   ),
-  C5: l(
-    "A link-following crawl reaches a page by an internal link or from the sitemap, so a page in neither was discovered from a page this run's budget dropped. The filter would report our own budget as the site's defect.",
-    "跟随链接的抓取只能通过内链或 sitemap 到达页面，因此两者都不在的页面，其实是从本次预算丢掉的那个页面被发现的。这个过滤器只会把我们自己的预算当成站点的缺陷来报。",
-  ),
+  // The impressions half is trivially available. The classification half is
+  // not obtainable at any budget: every page-observable proxy misclassifies in
+  // a direction that corrupts a published threshold. Article/BlogPosting
+  // over-covers so hard that a purely evergreen blog classifies near 100% and
+  // trips the ">60% is Warning" rail; narrowing to NewsArticle under-covers so
+  // hard that pricing, event, seasonal and "best X of 2026" pages — all
+  // genuinely time-sensitive, none of them declaring it — fall out.
   E5: l(
-    "No publish or modified date is collected, and whether content is time-sensitive is a judgement about the subject rather than a fact on the page.",
-    "本工具不采集发布或修改日期，而内容是否具有时效性是关于主题的判断，不是页面上的事实。",
+    "Whether content is time-sensitive is a claim about its subject, and no fact on the page asserts it. Every available proxy misreads a correct site in one direction or the other.",
+    "内容是否具有时效性是关于主题的判断，页面上没有任何事实能证实它。所有可用的替代信号都会在某一个方向上误判一个本来正常的站点。",
   ),
+  // Blocked by typing, not by quota. `coverageState` is the only field that
+  // carries this distinction and the discovery document types it as a bare
+  // string with no enum, while every sibling field (verdict, indexingState,
+  // pageFetchState) carries a full one. It is a localized UI label, and Google
+  // reworded these labels wholesale in the 2023 Page Indexing rework. A
+  // detector keyed on it does not break loudly — it reports 0%, which is a
+  // pass, in the exact direction that hides a broken site.
+  A3: l(
+    "The only field naming \"discovered, currently not indexed\" is an untyped, localized UI label with no enumeration, so a detector keyed on it fails silently toward a pass whenever Google rewords it.",
+    "唯一能表达「已发现但尚未编入索引」的字段是没有枚举的本地化界面文案，一旦 Google 改写措辞，依赖它的检测器就会静默地滑向「通过」。",
+  ),
+  // Mechanically buildable now that the fetch budget is authorized, and still
+  // wrong: the top ten for a query routinely mixes intents, so a pricing page
+  // measured against a median built from long-form guides is reported as thin
+  // for being exactly the right length for what it is.
   "4.1": l(
     "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
     "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
   ),
-  "5.2": l(
-    "Per-image byte size needs one request per image, which is roughly two and a half times this run's entire request ceiling.",
-    "逐张图片的字节大小需要每张图一个请求，约为本次运行整个请求上限的两倍半。",
-  ),
-  "5.4": l(
-    "A static crawl has no viewport, so it has no fold to measure against.",
-    "静态抓取没有视口，因此也就没有可供衡量的首屏折线。",
-  ),
-  "6.5": l(
-    "External outbound links are dropped during parsing, and this check declares itself unscored in any case.",
-    "外部出站链接在解析阶段就被丢弃了，而且这项检查本身也声明不参与评分。",
-  ),
-  "7.3": l(
-    "The parser keeps JSON-LD types and error counts, not property keys, and no registry of required properties per type exists here.",
-    "解析器只保留 JSON-LD 的类型和错误计数，不保留属性键，而且这里也没有「每种类型必需哪些属性」的登记表。",
-  ),
-  "7.4": l(
-    "Same as 7.3, plus it would need a similarity judgement between markup and visible text that the launch gate forbids.",
-    "与 7.3 相同，此外它还需要在标记与可见文本之间做相似度判断，而上线门槛禁止这样做。",
-  ),
-  "4.5": l(
-    "Page bodies are collected, but the published rule requires a false-positive gate before it can run, and a paginated archive is the case it would get wrong.",
-    "页面正文是采集到了，但公布的规则要求先通过假阳性门槛才能运行，而分页归档正是它最容易判错的那种情况。",
-  ),
 };
 
 const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
+  D6: ["hreflang_target_http_error"],
+  "1.7": ["hreflang_target_http_error"],
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
   "1.1": ["non_2xx_final_status"],
@@ -232,10 +246,19 @@ const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "1.6": ["non_2xx_final_status"],
   "1.2": ["page_disallowed_for_search_crawler"],
   A5: ["sitemap_url_disallowed_by_robots"],
+  A2: ["abandoned_url_impression_share"],
+  A1: ["sitemap_url_not_indexed"],
 };
 
 const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C1: ["sitemap_page_without_observed_inlink"],
+  C5: ["page_without_any_discovery_path"],
+  "7.4": ["faq_schema_question_not_on_page"],
+  "4.5": ["page_near_duplicate_of_another_page"],
+  "8.5": ["page_total_transfer_bytes"],
+  "5.2": ["image_over_transfer_budget"],
+  A1: ["sitemap_url_not_indexed"],
+  A2: ["abandoned_url_impression_share"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
   D3: ["title_missing", "h1_missing"],
@@ -276,6 +299,20 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
   D1: ["title_duplicate"],
+  D6: ["hreflang_target_http_error"],
+  "1.7": ["hreflang_target_http_error"],
+  "4.4": ["content_to_code_ratio"],
+  "6.5": ["external_link_follow_mix"],
+  "3.4": ["h2_count_outside_reviewed_range"],
+  "3.5": ["h3_count_outside_reviewed_range"],
+  "4.2": ["target_query_density"],
+  "7.2": ["schema_type_unmatched_to_page_type"],
+  "8.6": ["render_blocking_head_resource"],
+  "5.4": ["first_image_lazy_loaded"],
+  "3.6": ["thin_section_under_h3"],
+  "7.3": ["json_ld_missing_required_property"],
+  "4.3": ["target_query_first_appearance"],
+  E4: ["non_brand_click_share"],
   "8.1": ["core_web_vital_lcp"],
   "8.2": ["core_web_vital_inp"],
   "8.3": ["core_web_vital_cls"],
@@ -296,6 +333,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   // "is there any JSON-LD" check, read as a share instead of a verdict, so it
   // reuses the record rather than crawling for it twice.
   D5: ["json_ld_missing"],
+  "9.3": ["page_one_without_a_low_traffic_site"],
 };
 
 /**
@@ -412,6 +450,38 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   ],
   // The three published CrUX bands, expressed exactly: pass at or below the
   // good bound, degrade through the needs-improvement band, fail past it.
+  // Without this rule the evaluator reads any record with `affected > 0` as a
+  // full failure, and 8.5's record is always affected:1 when it measured
+  // anything — so a 40 KB page would publish the same verdict as a 40 MB one.
+  A1: [
+    {
+      recordId: "sitemap_url_not_indexed",
+      kind: "aggregate-min",
+      label: "index_coverage_rate",
+      passAtOrAbove: 0.9,
+      failBelow: 0.7,
+    },
+  ],
+  A2: [
+    {
+      recordId: "abandoned_url_impression_share",
+      kind: "aggregate-max",
+      label: "abandoned_url_impression_share",
+      passAtOrBelow: 0.05,
+      failAbove: 0.2,
+    },
+  ],
+  "8.5": [
+    {
+      recordId: "page_total_transfer_bytes",
+      kind: "aggregate-max",
+      label: "total_transfer_bytes",
+      // The published sentence is "Below 2MB", so exactly 2MB is on the
+      // failing side. `passAtOrBelow` compares with <=, so the pass mark is
+      // one byte under the budget rather than the budget itself.
+      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES - 1,
+    },
+  ],
   "8.1": [
     {
       recordId: "core_web_vital_lcp",
@@ -523,6 +593,27 @@ function authority(id: string): AgentAuditThresholdAuthority {
  * for a detector that ran and matched nothing. That is a measurement, not a gap,
  * and reading it as a gap is what made the panel look uniformly unfinished.
  */
+/**
+ * Checks whose numbers come from PageSpeed Insights, not from our crawl.
+ *
+ * `dataSource` is otherwise derived from engine state, so every ready check
+ * renders "Bounded crawl". That was already false for 8.1-8.4, which are CrUX
+ * field data — real visits to the site, measured by Chrome — and naming our
+ * crawler as the source of someone else's field data misrepresents both what
+ * was measured and how current it is.
+ *
+ * The two sources stay apart because they answer differently: CrUX is the p75
+ * of real visits over 28 days, while the lab run is one load on one emulated
+ * device right now.
+ */
+const EXTERNALLY_MEASURED: Readonly<Record<string, AgentAuditLocalizedText>> = {
+  "8.1": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.2": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.3": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.4": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.5": l("PageSpeed Insights lab run", "PageSpeed Insights 实验室加载"),
+};
+
 function engine(id: string, ready: boolean): AgentAuditEngineState {
   // A2 and E5 read like crawl checks because the crawl supplies the URL set,
   // but both are impression shares and an impression only exists in Search
@@ -530,14 +621,15 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   if (["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5", "9.5"].includes(id)) {
     return "access-required";
   }
-  // 8.5 and 8.6 stay: both need Lighthouse lab audit details (transfer bytes,
-  // render-blocking resources) that the field read does not return, and 8.6's
-  // detail array is absent rather than empty when the audit did not run, which
-  // reads as a pass on something unmeasured.
-  // 9.3 stays: it needs a traffic estimate per page-one domain, which is a
-  // second paid call against a different endpoint, and the sample this one
-  // takes carries domains without any measure of what they receive.
-  if (/^8\.[56]$/.test(id) || id === "9.3") return "not-integrated";
+  // 8.5 came off this list: it never did need one request per asset. PageSpeed
+  // already runs the full Lighthouse performance category on every call this
+  // product makes, and `total-byte-weight` is the sum of every network
+  // request's transferred bytes — the exact number, sitting in the half of the
+  // response the reader used to parse and throw away.
+  //
+  // 9.3 came off it too, once the traffic lookup landed: the ten domains were
+  // always free — the SERP sample already carries them — and sizing all ten is
+  // a single bulk call, not one per domain.
   return ready ? "ready" : "needs-integration";
 }
 
@@ -593,6 +685,34 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   C1: l(
     "These pages are in your sitemap but nothing on the site links to them, so a crawler only reaches them by reading the sitemap. Decide per page: if it matters, add a link from the section page or hub that owns it, using anchor text that describes the destination; if it does not, remove it from the sitemap rather than leaving a page you do not vouch for.",
     "这些页面在 sitemap 里，但站内没有任何链接指向它们，抓取器只能靠读 sitemap 找到。逐页决定：重要的，就从它所属的栏目页或聚合页加一条链接过去，锚文本要描述目标页内容；不重要的，就从 sitemap 里删掉，而不是留着一个你自己都不背书的页面。",
+  ),
+  C5: l(
+    "Nothing links to these pages and they are not in your sitemap either, so the only reason this run found them is that a redirect led here. A search engine starting at your homepage has no route in at all. Per page, pick one: link it from the hub that owns it and add it to the sitemap if it should be found, or let it 410 if it should not — leaving it reachable only through a redirect is the one option that helps nobody.",
+    "没有任何页面链接到它们，它们也不在 sitemap 里，本次运行能找到它们只是因为有跳转指过来。搜索引擎从首页出发根本没有路径进来。逐页二选一：应该被找到的，就从所属聚合页加链接并补进 sitemap；不该存在的，就让它返回 410——只留一条跳转能到，是唯一对谁都没好处的做法。",
+  ),
+  "7.4": l(
+    "Your FAQPage markup promises questions a reader cannot find on the page. Google treats that as marking up content that is not there, and it costs the rich result for the whole page rather than the one entry. Per question, pick one: put the question and its answer in the visible content, matching the wording, or delete that entry from the markup. Do not keep markup for an answer only the crawler sees.",
+    "你的 FAQPage 标记承诺了读者在页面上找不到的问题。Google 视其为给不存在的内容打标记，代价是整页失去富媒体结果，而不只是那一条。逐个问题二选一：把问题和答案按同样的措辞放进可见正文，或者把那一条从标记里删掉。不要保留只有抓取器看得到的答案。",
+  ),
+  "4.5": l(
+    "This page and the one named beside it say close to the same thing, so search engines have to pick one and you do not get to choose which. Per pair, pick one: merge them into the stronger URL and 301 the other, or make each genuinely about a different question — different intent, different examples, not a reworded intro. Adding a canonical without merging keeps the weaker page alive and still spends crawl on it.",
+    "这个页面和旁边点名的那一页说的几乎是同一件事，搜索引擎只会挑一个，而挑哪个不由你决定。逐对二选一：合并到更强的那个 URL 并把另一个 301 过去；或者让两页真的各答一个问题——不同意图、不同例子，而不是改写开头。只加 canonical 不合并，等于留着弱的那页继续消耗抓取预算。",
+  ),
+  "9.3": l(
+    "Nobody on page one is small enough to look displaceable, which usually means this query is held by established sites rather than by better pages. Two honest moves: go after a more specific version of the query where the field is weaker, or accept that ranking here is a long project and budget for it rather than expecting a page edit to do it. Do not read this as a defect in your page.",
+    "页面一上没有任何一个站点小到看起来可以取代，这通常意味着这个词被老牌站点把持，而不是被更好的页面把持。两个诚实的选择：改打这个词更具体的长尾版本，那里的对手更弱；或者承认在这里排名是个长期工程并按长期投入，而不是指望改一版页面就能上去。不要把这条读成你页面的缺陷。",
+  ),
+  A1: l(
+    "Google is not showing these pages, and your sitemap says you want them shown. Work down the list rather than across it: open each URL in Search Console's URL Inspection and read the reason it gives — a noindex, a canonical pointing elsewhere, a redirect, a 404, or simply not crawled yet. Those are five different fixes and only the report can tell you which one you have. If a page should not be indexed, the fix is to remove it from the sitemap, not to leave a declaration you do not mean.",
+    "Google 没有展示这些页面，而你的 sitemap 说你希望它们被展示。逐条往下查，不要横向猜：在 Search Console 的网址检查里打开每个 URL，读它给出的原因——noindex、canonical 指向别处、跳转、404，或者只是还没被抓。这是五种不同的修法，只有那份报告能告诉你是哪一种。如果某个页面本来就不该被索引，正确的做法是把它从 sitemap 里删掉，而不是留着一句你并不想兑现的声明。",
+  ),
+  A2: l(
+    "These URLs no longer serve the page they rank for, and search results are still sending people to them. Per URL, pick one: 301 it to the page that replaced it if one exists, or restore it if it should never have gone. If neither, let it return 410 rather than 404 — 410 tells Google the removal was deliberate and retires the result faster. A redirect chain counts here too: point the link at the destination, not at the hop.",
+    "这些 URL 已经不再提供它们排名所对应的页面，而搜索结果还在往那里送人。逐个二选一：有替代页就 301 过去；本不该下线就恢复。两者都不是的话，让它返回 410 而不是 404——410 告诉 Google 这是有意移除，结果会更快退出。跳转链也算在内：链接要直接指向终点，不要指向中间跳。",
+  ),
+  "5.2": l(
+    "Each of these files costs the reader real time before the page finishes. Per image, pick one: export it at the size it is actually displayed rather than full resolution, save it as WebP or AVIF instead of PNG or JPEG, or drop its quality to around 80 — most photographs are indistinguishable there at a fraction of the bytes. If it is decorative, consider whether it needs to ship at all.",
+    "这些文件每一个都会在页面加载完成前实打实占用读者的时间。逐张三选一：按实际显示尺寸导出而不是原分辨率；存成 WebP 或 AVIF 而不是 PNG/JPEG；把质量降到 80 左右——多数照片在那个档位肉眼看不出差别，字节数却只剩一小部分。如果它只是装饰性的，先想想它需不需要发出去。",
   ),
   C2: l(
     "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",
@@ -746,6 +866,62 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "No forum, Q&A or video result appeared in this sample, which says the audience for this query is being served by publishers rather than by each other. That makes it harder, not impossible: there is no discussion thread to outrank, so the competition is other pages doing the same job as yours. Read it beside the AI answer check — a query with a block and no community results is one where the answer is settled and a page has little room to add, and that is the clearest signal to spend the effort somewhere else.",
     "本次采样中没有出现论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。这让它更难，但不是不可能：没有讨论帖可以超越，竞争对手就是其他在做同样事情的页面。要和 AI 答案那一项结合起来读——一个既有答案块、又没有社区型结果的查询，意味着答案已经定型、页面能补充的空间很小，这是把力气花到别处去的最清晰信号。",
   ),
+  "3.4": l(
+    "The count sits outside the range reviewed for this page type, and the range is printed beside it so you can judge the judgement. Too few usually means one long section doing the work of three, and the fix is to find where the reader's question changes and put a heading there. Too many usually means headings used for emphasis rather than structure — those belong in the text. Neither is a rule: it is a working band, and a page with a good reason to sit outside it is a page sitting outside it on purpose.",
+    "H2 数量落在为该页面类型审阅过的区间之外，区间就印在旁边，你可以自己判断这个判断。偏少通常意味着一个长小节在干三个小节的活，修法是找到读者的问题发生转变的地方，在那里加一个标题。偏多通常意味着标题被当成强调在用，而不是当成结构——那些内容应该回到正文里。两者都不是规则：这是一个工作区间，一个有充分理由待在区间之外的页面，就是有意待在外面。",
+  ),
+  "3.5": l(
+    "Same reading as the H2 count, one level down: H3s are the steps inside a section, so too few means a section that a reader cannot scan and too many means the section should probably have been two. Check this one against the H2 count rather than on its own — a page with three H2s and thirty H3s is not a page with too many H3s, it is a page whose top level is too coarse.",
+    "读法与 H2 数量相同，只是低一层：H3 是小节内部的步骤，所以偏少意味着这个小节读者没法扫读，偏多意味着这个小节本该拆成两个。这一项要和 H2 数量放在一起看，别单独看——三个 H2 配三十个 H3 的页面，问题不是 H3 太多，而是顶层划得太粗。",
+  ),
+  "4.2": l(
+    "Published, not judged. Keyword density is not a documented ranking signal, and this check says so in its own threshold — the number is here because the run already computed it and a reader asking for it should not be told no detector exists. If you are going to act on anything in this area, act on whether the page answers the query, which is what checks 2.3 and 3.2 measure. Writing to hit a density figure is the failure mode this check refuses to encourage.",
+    "只公布，不判定。关键词密度不是有据可查的排名信号，这项检查在自己的阈值里就是这么写的——数字放在这里，是因为本次运行本来就算出来了，而一个想看它的读者不该被告知「没有检测器」。如果你要在这个方向上动手，那就去看页面是否真的回答了这个查询，也就是 2.3 和 3.2 在测的东西。为了凑到某个密度数值去写作，正是这项检查拒绝鼓励的那种做法。",
+  ),
+  "7.2": l(
+    "The page declares structured data, but not a type from the reviewed set for the page type you confirmed — and both the set and what was found are printed with the finding, so you can decide which one is wrong. Often it is the confirmation: a page can legitimately be more than one thing, and this is a Tip precisely because the mapping is a judgement rather than a rule. When the markup really is the mismatch, change the @type rather than adding a second block; two types competing to describe one page is how a rich result stops appearing at all. Site-furniture types are ignored here, so declaring only a breadcrumb does not pass.",
+    "页面声明了结构化数据，但不是你所确认的页面类型对应审阅集合里的任何一个——审阅集合和实际发现的内容都会与结论一起印出来，你可以自己判断哪一边错了。很多时候错的是确认本身：一个页面完全可能同时是好几种东西，而这一项之所以是提示，正因为这个对照关系是判断而不是规则。如果确实是标记不对，那就改 @type，而不是再加一个块；两个类型争着描述同一个页面，正是富媒体结果彻底不再出现的成因。站点通用类型在这里不计入，所以只声明一个面包屑是不能通过的。",
+  ),
+  "8.6": l(
+    "Each of these stops the parser where it sits, so the reader waits for it before seeing anything. Stylesheets come first: inline what the first screen needs and load the rest with a non-blocking pattern, because a single blocking sheet in the head delays every pixel. Then the synchronous scripts — most of them want `defer`, which keeps execution order and stops blocking; `async` only suits scripts that touch nothing else on the page. This is read from your markup, not from a lab run, so it tells you what will block rather than how long it blocked on one sample.",
+    "这些资源都会在它所在的位置把解析器停住，读者要等它加载完才能看见任何东西。先处理样式表：首屏需要的内联进去，其余用非阻塞方式加载，因为 head 里哪怕只有一张阻塞样式表，也会推迟每一个像素。然后是同步脚本——它们大多数需要的是 `defer`，它保留执行顺序又不阻塞；`async` 只适合完全不碰页面上其他东西的脚本。这一项依据你的标记判定，不是依据某次实验室运行，所以它告诉你的是「什么会阻塞」，而不是「某一次采样阻塞了多久」。",
+  ),
+  "5.4": l(
+    "The first image on this page defers its own load, which is almost always the one a reader sees first — and the browser will not even start fetching it until layout says it is needed. That delays the exact paint the loading metrics measure, so lazy-loading here costs more than it saves. Take `loading=\"lazy\"` off the first image and add `fetchpriority=\"high\"` instead; keep lazy for everything below it, where it does what it is for. This run has no viewport, so it reads document order as a stand-in for the fold — check that the first image really is the prominent one before acting.",
+    "这个页面上的第一张图片给自己加了延迟加载，而它几乎总是读者最先看到的那张——浏览器要等布局判定需要它时才会开始下载。这恰好推迟了加载类指标所衡量的那次绘制，所以在这里做 lazy-load 是得不偿失的。把第一张图上的 `loading=\"lazy\"` 去掉，改成 `fetchpriority=\"high\"`；它下面的图片保持 lazy，那才是这个属性该用的地方。本次运行没有视口，因此用文档顺序代替首屏折线——动手前请确认第一张图确实就是那张主图。",
+  ),
+  "3.6": l(
+    "The sections under these H3s are thinner than the range reviewed for this page type. Read it as a structure signal, not a word quota: a very short section usually means the heading promised something the text did not deliver, and the fix is to either answer the question the heading asks or fold the section into its neighbour. Adding words to reach a number is the failure mode. Counted in whitespace words between headings, so a page written in a script without word gaps is not measured here at all.",
+    "这些 H3 下面的小节，内容量低于该页面类型的审阅区间。把它当作结构信号，不是字数配额：一个非常短的小节，通常意味着标题承诺了正文没有兑现的东西，修法要么是把标题提出的问题真正回答掉，要么把这个小节并进相邻的小节。为了凑数字而加字才是失败模式。按标题之间的空白分词计数，所以不使用词间空格的文字所写的页面，在这里根本不参与判定。",
+  ),
+  "7.3": l(
+    "A type is declared without the properties that type needs, so a search system can read the markup and still cannot use it — which is the same outcome as having no markup, after the work of adding some. Fill the named properties from data the visible page already shows; a required property invented to satisfy a validator is worse than the gap, because it makes the page claim something it does not say. Only the types in the reviewed table are judged: a type outside it is left alone rather than assumed complete, so a clean result here is not a statement about every block on the page.",
+    "声明了某个类型，却没带这个类型必需的字段，于是搜索系统读得到标记却用不了它——效果和完全没有标记一样，只是白做了加标记的工。用可见页面上已经展示的数据去补上点名的那些字段；为了让校验器通过而编造出来的必填字段比缺字段更糟，因为那会让页面声称它并没有说过的事情。只有审阅表里的类型会被判定：表外的类型不作处理，也不假定其完整，所以这一项通过并不代表页面上每一个块都没问题。",
+  ),
+  "4.3": l(
+    "Published, not judged: where a term sits in the text is not a documented ranking signal, and this reports slots rather than character offsets because slots are what the run captured. What it is useful for is the coarse question — does the page name what it is about anywhere a reader meets early, or only far down. If the answer is \"none\", that is checks 2.3 and 3.2 speaking, and those are the ones worth acting on.",
+    "只公布，不判定：一个词在文本中的位置不是有据可查的排名信号；这里报的是「槽位」而不是字符偏移，因为槽位才是本次运行真正采集到的东西。它有用的地方在于那个粗粒度的问题——页面有没有在读者早期就会读到的位置点明自己讲什么，还是只在很靠后的地方才出现。如果答案是「都没有」，那说话的其实是 2.3 和 3.2，值得动手的是那两项。",
+  ),
+  E4: l(
+    "Published, not judged: a healthy split depends on how well known the brand already is, so the level says little and the trend says a lot — compare this run against your own earlier ones rather than against anyone else. A very high non-brand share on a site with a known name usually means the brand queries are being lost rather than that the rest is winning; a very low one means the site is being found by people who already knew it, which is a marketing result rather than a search one. Brand terms are derived from the property you authorised and matched as substrings, so \"acme pricing\" counts as brand.",
+    "只公布，不判定：健康的占比取决于品牌本身已经多为人知，所以绝对值说明不了什么，趋势才说明问题——拿这次运行和你自己以前的比，别和别人比。一个已有知名度的站点如果非品牌占比极高，通常意味着品牌词的流量正在流失，而不是其余部分打赢了；占比极低则意味着找到这个站点的人本来就认识它，那是市场结果不是搜索结果。品牌词由你授权的那个资源派生并按子串匹配，所以「acme pricing」算作品牌词。",
+  ),
+  D6: l(
+    "An alternate that answers 4xx or 5xx breaks the cluster for every language in it, not only the one that points at the dead URL: search systems treat the set as a set, and one unreachable member is enough to stop them swapping any of the others in. Fix the URL rather than deleting the tag — deleting it makes the cluster smaller and quietly correct, which loses the page the alternate was pointing at. Alternates outside this crawl are not classified either way, so a cross-domain cluster shows only the part that was reached.",
+    "任何一个返回 4xx 或 5xx 的备用地址，破坏的是整个簇里所有语言，而不只是指向死链的那一个：搜索系统把这一组当作一组看，只要有一个成员不可达，其余成员的互换也会停下来。要修那个 URL，而不是删掉那个标签——删掉只会让簇变小然后「安静地正确」，代价是丢掉那个备用地址本来指向的页面。抓取范围之外的备用地址两个方向都不判定，所以跨域的簇在这里只显示被抓到的那部分。",
+  ),
+  "1.7": l(
+    "This page declares an alternate that does not resolve. Check the direction of the error first: a 404 usually means the alternate was never published or its path changed, while a 5xx means it exists and is failing, and only the second is worth a retry before editing anything. Then check reciprocity — every page in a cluster must point back at every other, including itself. A one-way declaration is the most common way a cluster looks complete on one page and is invisible from the others.",
+    "这个页面声明了一个解析不了的备用地址。先看错误方向：404 通常意味着这个备用地址从未发布或路径变了，而 5xx 意味着它存在但正在出错，只有后者值得先重试再动手改。然后检查互指——簇里每个页面都必须指回其余每一个，也包括它自己。单向声明是最常见的一种情况：在这一页看起来簇是完整的，从其他页面看却根本不存在。",
+  ),
+  "4.4": l(
+    "This is the share of the delivered HTML that is text a reader can see. There is no threshold worth publishing for it, so nothing here fails — read it as a weight hint. A low ratio on a page that renders fine usually means inline data or a large framework payload shipped with the document; that costs transfer and parse time on every visit, and it is the same bytes the performance checks measure from the other side. A high ratio is not automatically good either: it is what a page with almost no markup looks like.",
+    "这是交付的 HTML 里读者能看见的文字所占的比例。没有值得公布的阈值，所以这里不会判任何页面不通过——把它当作体积提示来读。一个渲染正常的页面比例偏低，通常意味着随文档一起发出的内联数据或较大的框架负载；这会在每次访问上消耗传输和解析时间，也正是性能检查从另一侧测到的同一批字节。比例高也不自动等于好：一个几乎没有标记的页面就长这样。",
+  ),
+  "6.5": l(
+    "Counted by destination rather than by anchor, so one partner linked from the nav, the body and the footer counts once. There is no ratio worth publishing — nofollow on outbound links is a choice about what you vouch for, not a score — so read it as a description of what this page currently vouches for. The one entry worth acting on is links that open in a new tab without rel=\"noopener\": that is a security property, not an SEO one, and it is listed here because this is where the outbound links already are.",
+    "按目标地址统计，不按锚点统计，所以一个合作方即使在导航、正文、页脚各链一次也只算一个。没有值得公布的比例——出站链接加 nofollow 是「你愿意为什么背书」的选择，不是分数——所以把它当作「这个页面目前为什么背书」的描述来读。这里唯一值得动手的一项是：在新标签打开却没有 rel=\"noopener\" 的链接。那是安全属性不是 SEO 属性，列在这里只是因为出站链接本来就在这。",
+  ),
   D1: l(
     "Two pages with the same title are two pages asking to be shown for the same thing, and a search system picks one. Group the duplicates before editing: an exact repeat across a paginated archive or a filtered listing is a template that never varies its title, and the fix is to give the template a variable — the page number, the filter, the section — not to hand-write forty titles. If the pages really are the same page, the duplicate title is the symptom and the canonical is the fix. Variants that already converge on a canonical are excluded from this count, so what is left is genuinely competing.",
     "两个页面用同一个 title，就是两个页面在为同一件事争取展示，而搜索系统只会选一个。改之前先给重复项分组：分页归档或筛选列表上的完全重复，说明模板的标题从不随内容变化，修法是给模板加一个变量——页码、筛选条件、栏目——而不是手写四十个标题。如果这些页面本来就是同一个页面，那重复标题只是症状，Canonical 才是修法。已经收敛到 Canonical 的变体不计入这里，所以剩下的都是真的在互相竞争。",
@@ -867,7 +1043,10 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     howToFix: fix(id, scope, groupId),
     threshold: l(thresholdEn, thresholdZh),
     thresholdAuthority: authority(id),
-    dataSource: l(
+    dataSource:
+      EXTERNALLY_MEASURED[id] !== undefined && ready
+      ? EXTERNALLY_MEASURED[id]
+      : l(
       UNMEASURABLE_HERE[id] !== undefined
         ? "Outside what a bounded anonymous crawl can observe"
         : engine(id, ready) === "access-required"
@@ -891,7 +1070,13 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     scored,
     blocking,
     blockerEvidenceRecordIds,
-    failureResult: ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4"].includes(id)
+    // A check that publishes "not judged" must not then render a Warning.
+    // The severity is read off the same sentence the reader sees, rather than
+    // from a second list beside it — 4.2 says density "is not used to judge a
+    // page" and was still resolving to Warning because nobody added it.
+    failureResult:
+      DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

@@ -1,4 +1,5 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
+import { measurePageSimilarity } from "./page-similarity.ts";
 import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
@@ -14,6 +15,8 @@ import {
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 import { createPublicToolResult } from "../contract.ts";
+import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
+
 import type {
   SeoAuditCategory,
   SeoAuditEvidenceValueEntry,
@@ -294,6 +297,49 @@ function isOriginRoot(url: string): boolean {
   }
 }
 
+/**
+ * Properties a declared type needs to be usable, by lowercase `@type`.
+ *
+ * Short on purpose: only what Google's rich-result documentation lists as
+ * required, and only for types a marketing site actually ships. A type absent
+ * from this table is not judged — assuming a type is complete because we have
+ * no opinion about it would report every unlisted type as correct.
+ */
+const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
+  product: ["name"],
+  offer: ["price", "priceCurrency"],
+  article: ["headline"],
+  blogposting: ["headline"],
+  newsarticle: ["headline"],
+  faqpage: ["mainEntity"],
+  question: ["name", "acceptedAnswer"],
+  howto: ["name", "step"],
+  recipe: ["name", "recipeIngredient", "recipeInstructions"],
+  event: ["name", "startDate", "location"],
+  jobposting: ["title", "datePosted", "hiringOrganization"],
+  breadcrumblist: ["itemListElement"],
+  softwareapplication: ["name"],
+  organization: ["name"],
+  localbusiness: ["name", "address"],
+};
+
+/**
+ * Smallest declared edge that could plausibly be the image a reader came for.
+ *
+ * A 32-pixel logo mark is the first `<img>` on a very large share of sites.
+ */
+const LEAD_IMAGE_MIN_EDGE = 200;
+
+/** Whether the first image declares a size big enough to be worth judging. */
+function leadImageIsJudgeable(facts: ParsedOnPageFacts | null): boolean {
+  const first = facts?.firstImage;
+  if (first === undefined || first === null) return false;
+  const width = first.width ?? 0;
+  const height = first.height ?? 0;
+  if (first.width === null && first.height === null) return false;
+  return Math.max(width, height) >= LEAD_IMAGE_MIN_EDGE;
+}
+
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
@@ -314,6 +360,58 @@ function buildRecords(
   );
   const onPageOf = (page: SeoAuditPage): ParsedOnPageFacts | null =>
     onPageByUrl.get(page.url) ?? null;
+  const hreflangTargetsOf = (page: SeoAuditPage) =>
+    onPageOf(page)?.hreflangAlternates ?? [];
+  /** JSON-LD nodes whose type this run has a reviewed opinion about. */
+  const judgedJsonLdNodes = (page: SeoAuditPage) =>
+    (onPageOf(page)?.jsonLdProperties ?? []).filter(
+      (node) =>
+        REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !== undefined,
+    ).map((node) => ({ type: node.type.trim().toLowerCase(), keys: node.keys }));
+  /**
+   * Lowercased, punctuation-free, whitespace-collapsed.
+   *
+   * A FAQPage routinely writes the question with a different apostrophe or a
+   * trailing question mark than the heading does. Matching the raw strings
+   * would report a page whose FAQ is right there on screen.
+   */
+  const normalizeForMatch = (text: string): string =>
+    text
+      .toLowerCase()
+      .replace(/[\p{P}\p{S}]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const visibleTextIndexOf = (page: SeoAuditPage): string => {
+    const raw = rawByUrl.get(page.url);
+    if (raw === undefined) return "";
+    return normalizeForMatch(
+      [...raw.projection.headings, ...raw.projection.paragraphs].join(" "),
+    );
+  };
+
+  /**
+   * Whether a missing question would mean the site broke its promise.
+   *
+   * The crawl keeps the first 50 paragraphs of a page. A long FAQ page puts
+   * its later answers past that line, so a question absent from what we kept
+   * is not a question absent from the page. Only judge when the paragraph
+   * list came back under the cap and there is a promise to judge.
+   */
+  const faqPromiseIsCheckable = (page: SeoAuditPage): boolean => {
+    const raw = rawByUrl.get(page.url);
+    if (raw === undefined) return false;
+    return (
+      (onPageOf(page)?.faqQuestions ?? []).length > 0 &&
+      raw.projection.paragraphs.length <
+        CRAWL_PROJECTION_LIMITS.maxParagraphs &&
+      raw.projection.headings.length < CRAWL_PROJECTION_LIMITS.maxHeadings
+    );
+  };
+
+  /** The published bar: at or above this, two pages compete with each other. */
+  const NEAR_DUPLICATE_THRESHOLD = 0.7;
+
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -321,6 +419,37 @@ function buildRecords(
       page.finalStatus < 300 &&
       isHtml(page.contentType),
   );
+
+  /**
+   * Computed once for the whole run: every page needs every other page.
+   *
+   * Keyed by `page.url` to match `onPageByUrl` and `rawByUrl` beside it.
+   */
+  const similarityByUrl = new Map(
+    measurePageSimilarity(
+      htmlPages.map((page) => ({
+        url: page.url,
+        paragraphs: rawByUrl.get(page.url)?.projection.paragraphs ?? [],
+        partOfASequence: onPageOf(page)?.partOfASequence ?? false,
+      })),
+    ).map((entry) => [entry.url, entry] as const),
+  );
+
+  const entrySubjectUrl = subjectUrlOf(`${raw.origin}/`);
+  /**
+   * Whether "nothing links here" means the site, or only means this crawl.
+   *
+   * An inbound count is a claim about every page that exists, built from the
+   * pages this run happened to fetch and the links it happened to keep. Both
+   * of those are bounded, and when either bound was reached the count stops
+   * being evidence about the site.
+   */
+  const outlinkListTruncated = raw.pages.some(
+    (page) =>
+      page.projection.internalOutlinks.length >=
+      CRAWL_PROJECTION_LIMITS.maxInternalOutlinks,
+  );
+  const discoveryJudgeable = raw.stopReason === null && !outlinkListTruncated;
   // Duplicate detection runs only over self-canonical pages: a page whose
   // canonical resolves to another subject is excluded from grouping AND from
   // `tested`, so `tested` counts exactly the population the check ran over.
@@ -739,6 +868,46 @@ function buildRecords(
         .map((page) => pageObservation(page, { h1_count: page.h1Count })),
     }),
     record({
+      id: "page_without_any_discovery_path",
+      // Tested population: collected HTML pages other than the entry URL.
+      //
+      // Distinct from `sitemap_page_without_observed_inlink`, which asks the
+      // narrower question "is this sitemap member linked to?". This one asks
+      // whether the page has ANY route in: no inbound internal link and no
+      // sitemap entry means the only way this run reached it was a redirect
+      // hop, and a search engine starting from the homepage has no path at all.
+      population: "conditional_subset",
+      category: "links",
+      tested: discoveryJudgeable
+        ? htmlPages.filter((page) => page.subjectUrl !== entrySubjectUrl)
+        : [],
+      observations: discoveryJudgeable
+        ? htmlPages
+            .filter(
+              (page) =>
+                page.subjectUrl !== entrySubjectUrl &&
+                page.inboundLinks === 0 &&
+                !page.sitemapMember,
+            )
+            .map((page) =>
+              pageObservation(page, {
+                observed_inbound_links: 0,
+                sitemap_member: false,
+                redirect_hops: page.redirectHops,
+              }),
+            )
+        : [],
+      // Two ways this run could invent an orphan that does not exist, both of
+      // them about what the crawl did not see rather than what the site did:
+      // a page linked only from beyond another page's 500-link cap, and a
+      // crawl that stopped before fetching the page that links here. Neither
+      // is distinguishable from a real orphan after the fact, so the rule
+      // declines to judge the whole site rather than name innocent pages.
+      limitation: discoveryJudgeable
+        ? "bounded_static_html_crawl_inlinks_only"
+        : "crawl_incomplete_inlinks_unreliable",
+    }),
+    record({
       id: "sitemap_page_without_observed_inlink",
       // Tested population: sitemap members other than the root.
       population: "conditional_subset",
@@ -1152,6 +1321,235 @@ function buildRecords(
         "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
     }),
     record({
+      // D6 and 1.7. Only alternates this crawl also fetched are classified —
+      // the same posture the broken-link check takes, and for the same reason:
+      // an international cluster routinely points at another domain, and a
+      // target we never requested is not a target we can call broken.
+      id: "hreflang_target_http_error",
+      category: "indexability",
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => hreflangTargetsOf(page).length > 0,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const broken = hreflangTargetsOf(page).filter((alternate) => {
+          const target = collectedBySubject.get(
+            subjectUrlOf(alternate.href) ?? alternate.href,
+          );
+          return (
+            target !== undefined &&
+            target.finalStatus !== null &&
+            target.finalStatus >= 400
+          );
+        });
+        return broken.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                broken_hreflang_targets: broken.length,
+                declared_hreflang_alternates: hreflangTargetsOf(page).length,
+                // The URLs, not just the count: "two alternates are broken" is
+                // not something a reader can act on.
+                broken_hreflang_sample: broken
+                  .slice(0, MAX_LISTED_SOURCE_PAGES)
+                  .map((alternate) => `${alternate.lang}=${alternate.href}`)
+                  .join(" "),
+              }),
+            ];
+      }),
+      limitation: "hreflang_targets_outside_this_crawl_were_not_classified",
+    }),
+    record({
+      // 4.4. Published as a rendering-weight hint with no threshold, so this
+      // never fails a page — but "no detector reads it yet" was false, and a
+      // reader planning work can use the number.
+      id: "content_to_code_ratio",
+      category: "structure",
+      population: "every_collected_page",
+      tested: htmlPages,
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        if (facts === null || facts.htmlBytes <= 0) return [];
+        return [
+          pageObservation(page, {
+            visible_text_bytes: facts.visibleTextBytes,
+            html_bytes: facts.htmlBytes,
+            script_bytes: facts.scriptBytes,
+            content_to_code_ratio: Number(
+              (facts.visibleTextBytes / facts.htmlBytes).toFixed(4),
+            ),
+          }),
+        ];
+      }),
+      limitation: "utf8_bytes_of_the_delivered_html_no_rendering_performed",
+    }),
+    record({
+      // 6.5. Display only, and the parser now keeps external links — this was
+      // listed as permanently unmeasurable because they used to be dropped.
+      id: "external_link_follow_mix",
+      category: "links",
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => (onPageOf(page)?.externalLinks.total ?? 0) > 0,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const links = onPageOf(page)?.externalLinks;
+        if (links === undefined || links.total === 0) return [];
+        return [
+          pageObservation(page, {
+            external_links: links.total,
+            external_links_nofollow: links.nofollow,
+            external_links_blank_without_noopener: links.blankWithoutNoopener,
+          }),
+        ];
+      }),
+      limitation: "external_links_counted_by_destination_not_by_anchor",
+    }),
+    record({
+      // 8.6. The published threshold said "in a separate Lighthouse lab run",
+      // which is not what happens — this reads the markup. Render-blocking is
+      // a property of where a resource sits and what it declares, so it is
+      // readable without running anything.
+      id: "render_blocking_head_resource",
+      category: "structure",
+      population: "every_collected_page",
+      tested: htmlPages,
+      observations: htmlPages.flatMap((page) => {
+        const blocking = onPageOf(page)?.renderBlocking;
+        if (blocking === undefined) return [];
+        const total = blocking.stylesheets + blocking.scripts;
+        return total === 0
+          ? []
+          : [
+              pageObservation(page, {
+                render_blocking_stylesheets: blocking.stylesheets,
+                render_blocking_scripts: blocking.scripts,
+              }),
+            ];
+      }),
+      limitation:
+        "declared_in_the_head_markup_no_lab_run_and_no_network_timing",
+    }),
+    record({
+      // 5.4. A static crawl has no viewport, so it cannot know the fold. What
+      // it can know is which image comes first and how big the markup says it
+      // is — and the first image is very often a 32-pixel logo mark, where
+      // lazy loading is harmless. Firing on one of those is noise, so this
+      // needs a declared size large enough to be the image the reader came
+      // for. An image that declares no size at all is not judged: guessing
+      // would put the logo back in.
+      id: "first_image_lazy_loaded",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => leadImageIsJudgeable(onPageOf(page))),
+      observations: htmlPages
+        .filter((page) => {
+          const first = onPageOf(page)?.firstImage;
+          return (
+            leadImageIsJudgeable(onPageOf(page)) && first?.lazyLoaded === true
+          );
+        })
+        .map((page) => {
+          const first = onPageOf(page)?.firstImage;
+          return pageObservation(page, {
+            first_image_lazy_loaded: true,
+            first_image_width: first?.width ?? null,
+            first_image_height: first?.height ?? null,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
+          });
+        }),
+      limitation:
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available",
+    }),
+    record({
+      // 7.3. The required-property table is a judgement, so it is written down
+      // where it can be argued with. It is deliberately short: only properties
+      // Google's own rich-result documentation lists as required, and only for
+      // types a marketing site actually ships. A type not in the table is not
+      // judged rather than assumed complete.
+      id: "json_ld_missing_required_property",
+      category: "structured_data",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => judgedJsonLdNodes(page).length > 0),
+      observations: htmlPages.flatMap((page) => {
+        const missing = judgedJsonLdNodes(page).flatMap((node) => {
+          const required = REQUIRED_JSON_LD_PROPERTIES[node.type] ?? [];
+          const absent = required.filter((key) => !node.keys.includes(key));
+          return absent.length === 0
+            ? []
+            : [`${node.type}:${absent.join(",")}`];
+        });
+        return missing.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                missing_required_properties: missing
+                  .slice(0, MAX_LISTED_SOURCE_PAGES)
+                  .join(" "),
+                judged_json_ld_types: judgedJsonLdNodes(page)
+                  .map((node) => node.type)
+                  .join(" "),
+              }),
+            ];
+      }),
+      limitation:
+        "only_types_in_the_reviewed_required_property_table_are_judged",
+    }),
+    record({
+      id: "page_near_duplicate_of_another_page",
+      // Same category as the other whole-body measurements beside it; there is
+      // no separate content category and inventing one moves every consumer.
+      category: "structure",
+      // Tested population: pages with enough distinctive text left to score.
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => similarityByUrl.get(page.url)?.similarity !== null &&
+          similarityByUrl.get(page.url) !== undefined,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const measured = similarityByUrl.get(page.url);
+        const score = measured?.similarity ?? null;
+        if (score === null || score < NEAR_DUPLICATE_THRESHOLD) return [];
+        return [
+          pageObservation(page, {
+            similarity_to_nearest_page: Math.round(score * 100) / 100,
+            // Named, not just scored. "This page is 84% similar to something"
+            // is not actionable without knowing what it is similar to.
+            nearest_page: measured?.nearest ?? "",
+            distinctive_blocks_compared: measured?.distinctiveShingles ?? 0,
+          }),
+        ];
+      }),
+      limitation: "similarity_measured_on_collected_paragraphs_after_chrome",
+    }),
+    record({
+      id: "faq_schema_question_not_on_page",
+      category: "structured_data",
+      // Tested population: pages that declare a FAQPage with questions.
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => faqPromiseIsCheckable(page)),
+      observations: htmlPages.flatMap((page) => {
+        if (!faqPromiseIsCheckable(page)) return [];
+        const visible = visibleTextIndexOf(page);
+        const absent = (onPageOf(page)?.faqQuestions ?? []).filter(
+          (question) => !visible.includes(normalizeForMatch(question)),
+        );
+        return absent.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                declared_faq_questions: (onPageOf(page)?.faqQuestions ?? [])
+                  .length,
+                questions_not_found_in_visible_text: absent.length,
+                // Named, not just counted: "3 of 8 questions are missing" is
+                // not something the reader can act on without knowing which.
+                first_missing_question: absent[0] ?? "",
+              }),
+            ];
+      }),
+      limitation: "faq_match_against_collected_paragraphs_only",
+    }),
+    record({
       id: "json_ld_parse_error",
       category: "structured_data",
       tested: htmlPages,
@@ -1263,6 +1661,12 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       robotsGroupsObserved: raw.robots.groups.length,
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
+      sitemapUrls: raw.sitemap.subjectUrls.slice(
+        0,
+        SITEMAP_URLS_PUBLISHED_CAP,
+      ),
+      sitemapUrlsComplete:
+        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
     records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
     pages,
@@ -1273,7 +1677,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v17",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

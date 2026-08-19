@@ -4,6 +4,10 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createDataForSeoKeywordMetricsClient } from "@sf/sources";
+import {
+  bulkTrafficEstimation,
+  labsLanguageForMarket,
+} from "@sf/sources/dataforseo/labs-traffic";
 import type { SerpShapeRaw } from "@sf/public-tools/seo-audit/serp-shape";
 
 import {
@@ -38,11 +42,17 @@ export interface SerpShapeReadInput {
   readonly languageCode?: string | undefined;
 }
 
-export function createSerpShapeReader(options: {
+export interface SerpShapeReaderDependencies {
   readonly login: string;
   readonly password: string;
   readonly fetchImpl?: typeof fetch;
-}): (input: SerpShapeReadInput) => Promise<SerpShapeReadResult> {
+  /** Injected in tests so no suite ever reaches a paid endpoint. */
+  readonly estimateTraffic?: typeof bulkTrafficEstimation;
+}
+
+export function createSerpShapeReader(
+  options: SerpShapeReaderDependencies,
+): (input: SerpShapeReadInput) => Promise<SerpShapeReadResult> {
   const client = createDataForSeoKeywordMetricsClient({
     login: options.login,
     password: options.password,
@@ -75,6 +85,16 @@ export function createSerpShapeReader(options: {
         languageCode: language,
         depth: SAMPLE_DEPTH,
       });
+      // One extra call for every domain on page one, not one per domain: the
+      // endpoint takes up to a thousand targets per task. The domains
+      // themselves cost nothing — the SERP sample above already carries them.
+      const domainTraffic = await sizePageOne(
+        response.rows.map((row) => row.domain),
+        market,
+        locationCode,
+        options,
+      );
+
       return {
         status: "ok",
         sample: {
@@ -82,6 +102,7 @@ export function createSerpShapeReader(options: {
           itemTypes: response.itemTypes,
           unresolvedItemCount: response.unresolvedItemCount,
           organicCount: response.rows.length,
+          domainTraffic,
           marketCode: market,
           languageCode: language,
         },
@@ -92,6 +113,49 @@ export function createSerpShapeReader(options: {
       return { status: "unavailable", reason: "provider_unavailable" };
     }
   };
+}
+
+/**
+ * Estimated monthly organic traffic for each domain on page one, or null.
+ *
+ * Null in every way there is no answer — an unserved market, missing
+ * credentials, a provider that did not respond. Never an empty list: an empty
+ * list reads downstream as "nobody on page one is small", which is a finding,
+ * and inventing it out of a provider gap would tell a visitor a query is hard
+ * when nobody ever looked.
+ *
+ * The language is Labs' own, never the SERP call's. That call normalises to a
+ * bare primary subtag on purpose, and Labs serves Norway only as `nb` and
+ * Taiwan only as `zh-TW` — sending the SERP pair here buys a paid error.
+ */
+async function sizePageOne(
+  domains: readonly string[],
+  market: string,
+  locationCode: number,
+  dependencies: SerpShapeReaderDependencies,
+): Promise<
+  readonly { readonly domain: string; readonly organicEtv: number | null }[] | null
+> {
+  const languageCode = labsLanguageForMarket(market);
+  if (languageCode === null) return null;
+  const login = dependencies.login ?? process.env["DATAFORSEO_LOGIN"] ?? "";
+  const password =
+    dependencies.password ?? process.env["DATAFORSEO_PASSWORD"] ?? "";
+  if (login === "" || password === "") return null;
+
+  const estimated = await (dependencies.estimateTraffic ??
+    bulkTrafficEstimation)({
+    login,
+    password,
+    targets: domains,
+    locationCode,
+    languageCode,
+  });
+  if (estimated === null) return null;
+  return estimated.rows.map((row) => ({
+    domain: row.target,
+    organicEtv: row.organicEtv,
+  }));
 }
 
 /**

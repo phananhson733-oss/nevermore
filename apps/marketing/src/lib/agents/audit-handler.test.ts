@@ -5,7 +5,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
 import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
-import { buildPagePerformanceRecords } from "@sf/public-tools/seo-audit/page-performance";
+import {
+  buildPagePerformanceRecords,
+  buildPageWeightRecords,
+  buildImageWeightRecords,
+} from "@sf/public-tools/seo-audit/page-performance";
 import {
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -58,7 +62,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v7",
+    schemaVersion: "seo_audit.sitewide.v17",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -87,6 +91,8 @@ const upstreamPayload = {
       robotsGroupsObserved: 1,
       sitemapReferencesObserved: 1,
       sitemapFetched: false,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: RECORD_SPECS.map(([id, category], index) =>
       record(id, category, index),
@@ -147,6 +153,8 @@ function successWithExtract(
             staticBodyUnits: null,
             termFrequencies: null,
             truncatedLists: false,
+            headingLevels: null,
+            wordsUnderEachH3: null,
             response: {
               status: 200,
               finalStatus: 200,
@@ -181,6 +189,8 @@ function successWithExtract(
       withoutAlt: 0,
       withDimensions: 0,
       lazyLoaded: 0,
+      first: null,
+      sources: [],
     },
               externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
               htmlBytes: 24_576,
@@ -360,9 +370,74 @@ describe("handleAgentAuditRequest", () => {
     expect(seen[0]?.url).toBe(landed);
   });
 
+  it("asks PageSpeed about the URL the crawl landed on, not the one it requested", async () => {
+    // The sibling above has had this guard since the day 9.5 published "no
+    // impressions" about a page that ranks. The PageSpeed call twenty lines
+    // below it kept passing `inspectedTargetUrl` — the pre-redirect form — so
+    // on any site that redirects, CrUX found no url-level sample and 8.1-8.4
+    // silently fell back to the whole origin's p75. That is the fast page
+    // inheriting the slow site's verdict the producer explicitly warns about.
+    const requested = "http://acme.test/page";
+    const landed = "https://acme.test/page/";
+    const seen: string[] = [];
+    const collected = {
+      url: requested,
+      subjectUrl: requested,
+      finalUrl: landed,
+      depth: 0,
+      initialStatus: 301,
+      finalStatus: 200,
+      redirectHops: 1,
+      contentType: "text/html; charset=utf-8",
+      robotsDirectiveState: "noindex_not_observed",
+      canonicalTarget: landed,
+      title: "T",
+      metaDescription: "D",
+      h1Count: 1,
+      headingsCount: 1,
+      wordCount: 300,
+      inboundLinks: 0,
+      outboundLinks: 0,
+      sitemapMember: true,
+      jsonLdTypes: [],
+      jsonLdErrorCount: 0,
+    };
+
+    await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetInspected: true,
+                inspectedTargetUrl: requested,
+                pages: [collected],
+              },
+            },
+          }),
+        readPagePerformance: async (input) => {
+          seen.push(input.url);
+          return {
+            status: "unavailable" as const,
+            reason: "no_field_data" as const,
+            weight: null,
+          };
+        },
+      }),
+    );
+
+    expect(seen[0]).toBe(landed);
+  });
+
   it("says no source was configured, not that CrUX has nothing for the page", async () => {
-    // This is production today: PAGESPEED_API_KEY is set in no environment of
-    // the marketing project. The first version substituted a fabricated
+    // PAGESPEED_API_KEY now exists on the marketing project for Preview and
+    // Production, so this is no longer the production path — but it is still
+    // the path taken by any deployment without the key, and by every run whose
+    // key is rejected. The first version substituted a fabricated
     // `no_field_data` result here, which publishes a claim about the visitor's
     // own real-user traffic that the run never went and looked for.
     const response = await handleAgentAuditRequest(
@@ -381,12 +456,26 @@ describe("handleAgentAuditRequest", () => {
     };
 
     const records = body.data.result.pagePerformance?.records ?? [];
-    expect(records).toHaveLength(4);
-    for (const record of records) {
+    // Six: the four Core Web Vitals, the page-weight record behind 8.5, and
+    // the image-weight record behind 5.2. All three sources are per-visitor
+    // measurements of one page, which is what the region is for.
+    expect(records).toHaveLength(6);
+    // The five PageSpeed-sourced records say the source was not configured.
+    // The image record does NOT: its bytes come from our own fetches, not from
+    // PageSpeed, and borrowing PageSpeed's reason for it would state something
+    // about a provider that has nothing to do with why there are no weights.
+    const [psiSourced, imageSourced] = [records.slice(0, 5), records[5]];
+    for (const record of psiSourced) {
       expect(record.limitation).toBe(
         "no_field_data_source_was_configured_for_this_run",
       );
     }
+    // This fixture wires no image reader at all, and that is its own fact —
+    // distinct from "the page declares no images" and from "every fetch
+    // failed", both of which this run would be lying about if it claimed them.
+    expect(imageSourced?.limitation).toBe(
+      "no_image_weights_were_measured_for_this_run",
+    );
   });
 
   it.each([
@@ -412,7 +501,7 @@ describe("handleAgentAuditRequest", () => {
     };
 
     const records = body.data.result.serpShape?.records ?? [];
-    expect(records).toHaveLength(2);
+    expect(records).toHaveLength(3);
     for (const record of records) expect(record.limitation).toBe(code);
   });
 
@@ -452,6 +541,7 @@ describe("handleAgentAuditRequest", () => {
         readSearchPerformance: async () => searchRegion,
         readPagePerformance: async () => ({
           status: "ok" as const,
+          weight: null,
           field: {
             url: "https://acme.test/",
             sourceLevel: "url" as const,
@@ -477,7 +567,7 @@ describe("handleAgentAuditRequest", () => {
     // Every region present, and the guard accepting the whole envelope with
     // all of them attached at once.
     expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
-    expect(body.data.result.pagePerformance?.records).toHaveLength(4);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(6);
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
@@ -495,7 +585,7 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.searchPerformance).toEqual(searchRegion);
     // Beside, not inside: the crawl ledger is what gets cached by host, and
     // these numbers belong to one visitor's verified property.
-    expect(body.data.result.records).toHaveLength(38);
+    expect(body.data.result.records).toHaveLength(47);
   });
 
   it("omits the region entirely when nothing covers the host", async () => {
@@ -623,7 +713,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v7",
+            schemaVersion: "seo_audit.sitewide.v17",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -645,7 +735,11 @@ describe("handleAgentAuditRequest", () => {
           // drift from what the handler attaches.
           pagePerformance: {
             version: AGENT_PAGE_PERFORMANCE_VERSION,
-            records: buildPagePerformanceRecords(null),
+            records: [
+              ...buildPagePerformanceRecords(null),
+              ...buildPageWeightRecords(null),
+              ...buildImageWeightRecords(null, undefined, true),
+            ],
           },
         },
       },
@@ -710,7 +804,11 @@ describe("handleAgentAuditRequest", () => {
       records: upstreamPayload.result.records,
       pagePerformance: {
         version: AGENT_PAGE_PERFORMANCE_VERSION,
-        records: buildPagePerformanceRecords(null),
+        records: [
+          ...buildPagePerformanceRecords(null),
+          ...buildPageWeightRecords(null),
+          ...buildImageWeightRecords(null, undefined, true),
+        ],
       },
     });
     expect(JSON.stringify(body)).not.toContain("private");
@@ -726,7 +824,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(38);
+    expect(body.data.result.records).toHaveLength(47);
   });
 
   it.each([
@@ -1250,6 +1348,8 @@ describe("handleAgentAuditRequest", () => {
                   staticBodyUnits: null,
                   termFrequencies: null,
                   truncatedLists: false,
+                  headingLevels: null,
+                  wordsUnderEachH3: null,
                   rawHtml: "<html>everything the crawler held</html>",
                 },
               },
@@ -1290,6 +1390,8 @@ describe("handleAgentAuditRequest", () => {
                   staticBodyUnits: null,
                   termFrequencies: null,
                   truncatedLists: false,
+                  headingLevels: null,
+                  wordsUnderEachH3: null,
                 },
               },
             },
@@ -1382,6 +1484,7 @@ describe("the results-page region", () => {
           market: "GB",
           language: "en",
           resultsObserved: 2,
+          domainTraffic: null,
           withSitelinks: 1,
           features: ["organic"],
           targetPosition: 2,

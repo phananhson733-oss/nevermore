@@ -27,7 +27,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v17",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -55,6 +55,8 @@ const data: AgentAuditSuccessData = {
       robotsGroupsObserved: 0,
       sitemapReferencesObserved: 0,
       sitemapFetched: false,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: [],
   },
@@ -103,6 +105,8 @@ const evidencedData: AgentAuditSuccessData = {
       robotsGroupsObserved: 1,
       sitemapReferencesObserved: 1,
       sitemapFetched: true,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: [
       observedRecord("noindex_directive", [TARGET_URL]),

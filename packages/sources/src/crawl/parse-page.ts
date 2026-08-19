@@ -171,6 +171,19 @@ export interface ParsedOnPageFacts {
   readonly charset: string | null;
   readonly faviconDeclared: boolean;
   readonly hreflang: readonly string[];
+  /**
+   * The `hreflang` alternates as declared: language and target together.
+   *
+   * `hreflang` above keeps only the language codes, which answers "what does
+   * this page claim" but not "does the claim resolve" — and the checks that
+   * matter are about the target. Cross-origin targets are kept: an
+   * international cluster routinely points at another domain, and dropping
+   * those would report a correct cluster as incomplete.
+   */
+  readonly hreflangAlternates: readonly {
+    readonly lang: string;
+    readonly href: string;
+  }[];
   readonly images: ParsedImageFacts;
   /**
    * The file extension of each image reference, in document order.
@@ -191,6 +204,63 @@ export interface ParsedOnPageFacts {
    * that the document does not contain.
    */
   readonly headingLevels: readonly number[];
+  /**
+   * Resources in `<head>` that block the first paint.
+   *
+   * A stylesheet without a non-screen `media`, and a `<script src>` carrying
+   * neither `async` nor `defer`. Both stop the parser where they sit, which is
+   * what "render-blocking" means — it is a property of the markup, readable
+   * without running anything.
+   */
+  readonly renderBlocking: {
+    readonly stylesheets: number;
+    readonly scripts: number;
+  };
+  /**
+   * The first image in document order, and what it declares about itself.
+   *
+   * Null when the page carries no image. Document order stands in for "the one
+   * the reader sees first" — a static crawl has no viewport, so it cannot know
+   * the fold. The declared size travels with it because the first image is very
+   * often a 32-pixel logo mark, and lazy-loading one of those is harmless: a
+   * check that fires on it is noise, which is worse than a check that misses.
+   */
+  readonly firstImage: {
+    readonly lazyLoaded: boolean;
+    /** Declared width and height, or null when the markup states neither. */
+    readonly width: number | null;
+    readonly height: number | null;
+  } | null;
+  /**
+   * Words of body text under each H3, in document order.
+   *
+   * Segmented at heading boundaries: everything after one H3 and before the
+   * next heading of any level belongs to that H3. Empty when the page has no
+   * H3, which is a different fact from every H3 being empty.
+   */
+  readonly wordsUnderEachH3: readonly number[];
+  /**
+   * Property keys declared by each JSON-LD node, keyed by its `@type`.
+   *
+   * Keys only, never values: the question is whether a type carries the
+   * properties it needs, and the values are the site's content.
+   */
+  readonly jsonLdProperties: readonly {
+    readonly type: string;
+    readonly keys: readonly string[];
+  }[];
+  /**
+   * The `name` of each `Question` node this page declares.
+   *
+   * A FAQPage promises the reader will find these on the page. Without the
+   * text there is nothing to compare the promise against, so this is the one
+   * JSON-LD value collected rather than only its key.
+   */
+  readonly faqQuestions: readonly string[];
+  /** Absolute, de-duplicated `src` of each `<img>`, in document order. */
+  readonly imageSources: readonly string[];
+  /** The page declares `rel="next"` or `rel="prev"`: it is one of a series. */
+  readonly partOfASequence: boolean;
   readonly externalLinks: ParsedExternalLinkFacts;
   /**
    * UTF-8 byte counts, not character counts.
@@ -481,6 +551,87 @@ function collectTypes(value: unknown, types: Set<string>): void {
   }
 }
 
+/**
+ * Property keys per JSON-LD node, keyed by its `@type`.
+ *
+ * Keys only. The question these feed is whether a declared type carries the
+ * properties it needs; the values are the site's content and none of our
+ * business. Nested nodes are walked so a `Product` inside a `@graph` counts.
+ */
+function collectJsonLdProperties(html: string): {
+  readonly properties: readonly {
+    readonly type: string;
+    readonly keys: readonly string[];
+  }[];
+  readonly faqQuestions: readonly string[];
+} {
+  const out: { type: string; keys: string[] }[] = [];
+  const questions: string[] = [];
+  const blocks = html.matchAll(
+    /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi,
+  );
+  let blockCount = 0;
+  for (const block of blocks) {
+    if (++blockCount > CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks) break;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(decodeHtml(block[1] ?? ""));
+    } catch {
+      continue;
+    }
+    // Iterative, like the type walk beside it: a hostile document must not be
+    // able to recurse this parser off its stack.
+    const queue: unknown[] = [parsed];
+    let visited = 0;
+    while (queue.length > 0 && visited < CRAWL_PROJECTION_LIMITS.maxJsonLdNodes) {
+      const node = queue.shift();
+      visited += 1;
+      if (Array.isArray(node)) {
+        queue.push(...node);
+        continue;
+      }
+      if (typeof node !== "object" || node === null) continue;
+      const record = node as Record<string, unknown>;
+      for (const value of Object.values(record)) {
+        if (typeof value === "object" && value !== null) queue.push(value);
+      }
+      const declared = record["@type"];
+      const types = Array.isArray(declared) ? declared : [declared];
+      // The one place a value is read rather than a key. A FAQPage makes a
+      // claim about what the reader will see, and the only way to check that
+      // claim is to hold the question it promises.
+      if (
+        types.some(
+          (type) =>
+            typeof type === "string" && type.trim().toLowerCase() === "question",
+        )
+      ) {
+        const name = record["name"];
+        if (
+          typeof name === "string" &&
+          name.trim() !== "" &&
+          questions.length < CRAWL_PROJECTION_LIMITS.maxFaqQuestions
+        ) {
+          questions.push(
+            truncate(name.trim(), CRAWL_PROJECTION_LIMITS.maxFaqQuestionChars),
+          );
+        }
+      }
+      for (const type of types) {
+        if (typeof type !== "string" || type.trim() === "") continue;
+        if (out.length >= CRAWL_PROJECTION_LIMITS.maxJsonLdTypes) break;
+        out.push({
+          type: truncate(type.trim(), CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
+          keys: Object.keys(record)
+            .filter((key) => !key.startsWith("@"))
+            .slice(0, CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
+        });
+      }
+    }
+  }
+  return { properties: out, faqQuestions: questions };
+}
+
 function collectJsonLd(html: string): CrawlJsonLdProjection {
   const types = new Set<string>();
   let errorCount = 0;
@@ -695,6 +846,115 @@ function collectImageFormats(html: string): readonly string[] {
   return out;
 }
 
+/**
+ * Absolute URLs of the images a reader would see, in document order.
+ *
+ * Separate from `imageFormats`, which only needs the extension. This carries
+ * the whole address because measuring an image's weight means fetching it, and
+ * a relative `src` cannot be fetched from anywhere but the page it sat on.
+ *
+ * `srcset` candidates are deliberately not collected. The browser picks one by
+ * viewport and pixel density, so there is no single "the image" among them, and
+ * measuring every candidate would report a page as heavy for offering a small
+ * one to small screens — the opposite of what it did right.
+ */
+function collectImageSources(html: string, pageUrl: string): readonly string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const match of html.matchAll(openingTagPattern("img", "gi"))) {
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxImages) break;
+    const src = attr(match[0], "src")?.trim();
+    if (!src || src.startsWith("data:")) continue;
+    let resolved: string;
+    try {
+      resolved = new URL(decodeHtml(src), pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
+    // One fetch per address, not per placement: a spacer or an icon repeated
+    // down the page is one image and one download.
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
+
+/** Stylesheets and scripts in `<head>` that stop the parser where they sit. */
+/** Comments removed; the elements a reader never sees are left in place. */
+function withoutComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, " ");
+}
+
+function collectRenderBlocking(html: string): {
+  readonly stylesheets: number;
+  readonly scripts: number;
+} {
+  const head = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(html)?.[1] ?? "";
+  let stylesheets = 0;
+  for (const match of head.matchAll(openingTagPattern("link", "gi"))) {
+    const tag = match[0];
+    if (!(attr(tag, "rel") ?? "").toLowerCase().split(/\s+/).includes("stylesheet")) {
+      continue;
+    }
+    // `media="print"` and the like do not block the first paint.
+    const media = (attr(tag, "media") ?? "").trim().toLowerCase();
+    if (media !== "" && media !== "all" && media !== "screen") continue;
+    stylesheets += 1;
+  }
+  let scripts = 0;
+  for (const match of head.matchAll(openingTagPattern("script", "gi"))) {
+    const tag = match[0];
+    if (attr(tag, "src") === null) continue;
+    if (/\basync\b/i.test(tag) || /\bdefer\b/i.test(tag)) continue;
+    // A module script defers by definition.
+    if ((attr(tag, "type") ?? "").trim().toLowerCase() === "module") continue;
+    scripts += 1;
+  }
+  return { stylesheets, scripts };
+}
+
+/** The first image in document order, and what it declares about itself. */
+function collectFirstImage(html: string): {
+  readonly lazyLoaded: boolean;
+  readonly width: number | null;
+  readonly height: number | null;
+} | null {
+  const first = html.match(openingTagPattern("img", "i"));
+  if (first === null) return null;
+  const dimension = (name: string): number | null => {
+    const raw = (attr(first[0], name) ?? "").trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  };
+  return {
+    lazyLoaded: (attr(first[0], "loading") ?? "").trim().toLowerCase() === "lazy",
+    width: dimension("width"),
+    height: dimension("height"),
+  };
+}
+
+/** Words of body text under each H3, segmented at heading boundaries. */
+function collectWordsUnderEachH3(html: string): readonly number[] {
+  const parts = html.split(/(<h[1-6]\b[^>]*>)/i);
+  const out: number[] = [];
+  let underH3 = false;
+  for (const part of parts) {
+    const opening = /^<h([1-6])\b/i.exec(part);
+    if (opening !== null) {
+      underH3 = opening[1] === "3";
+      continue;
+    }
+    if (!underH3) continue;
+    const text = extractNormalisedBody(part);
+    out.push(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadings) break;
+  }
+  return out;
+}
+
 /** Heading levels in document order; see `headingLevels` for why it is separate. */
 function collectHeadingLevels(html: string): readonly number[] {
   const out: number[] = [];
@@ -857,6 +1117,52 @@ function collectExternalLinkFacts(
   };
 }
 
+/** The same alternates, with the target each one points at. */
+function collectHreflangAlternates(
+  html: string,
+  pageUrl: string,
+): readonly { readonly lang: string; readonly href: string }[] {
+  const out: { lang: string; href: string }[] = [];
+  for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
+    const tag = match[0];
+    if (attr(tag, "rel")?.toLowerCase() !== "alternate") continue;
+    const lang = attr(tag, "hreflang")?.trim();
+    const href = attr(tag, "href")?.trim();
+    if (!lang || !href) continue;
+    // Resolved against the page so a relative alternate is comparable with the
+    // collected pages, and decoded first for the same reason every other href
+    // on this page is: `&amp;` is a separator, not a literal.
+    let resolved: string;
+    try {
+      resolved = new URL(decodeHtml(href), pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
+    out.push({
+      lang: boundChars(lang, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+      href: resolved,
+    });
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxRobotsDirectives) break;
+  }
+  return out;
+}
+
+/**
+ * Whether the page declares itself part of a sequence.
+ *
+ * A `rel="next"` or `rel="prev"` is a page saying "I am one of several like
+ * me". Pages in a sequence resemble each other by design, and a check that
+ * reports that as duplication reports every paginated archive on the web.
+ */
+function collectSequenceMembership(html: string): boolean {
+  for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
+    const rel = attr(match[0], "rel")?.trim().toLowerCase();
+    if (rel === "next" || rel === "prev") return true;
+  }
+  return false;
+}
+
 function collectHreflang(html: string): readonly string[] {
   const tags = [...html.matchAll(openingTagPattern("link", "gi"))].map(
     (match) => match[0],
@@ -935,6 +1241,7 @@ function collectOnPageFacts(
   /** The document as transferred, comments included: this is what weighs. */
   rawHtml: string,
 ): ParsedOnPageFacts {
+  const jsonLd = collectJsonLdProperties(withoutComments(rawHtml));
   return {
     lang: normalisedAttributeText(
       attr(htmlTag, "lang"),
@@ -949,10 +1256,20 @@ function collectOnPageFacts(
     viewport: metaContent(metaTags, "viewport", "name"),
     charset: collectCharset(metaTags),
     faviconDeclared: collectFaviconDeclared(markup),
+    partOfASequence: collectSequenceMembership(markup),
     hreflang: collectHreflang(markup),
+    hreflangAlternates: collectHreflangAlternates(markup, pageUrl),
     images: collectImageFacts(markup),
     imageFormats: collectImageFormats(markup),
+    imageSources: collectImageSources(markup, pageUrl),
     headingLevels: collectHeadingLevels(markup),
+    // Comment-stripped but script-preserved: both of these read <script> tags,
+    // which `markup` removes.
+    renderBlocking: collectRenderBlocking(withoutComments(rawHtml)),
+    firstImage: collectFirstImage(markup),
+    wordsUnderEachH3: collectWordsUnderEachH3(markup),
+    jsonLdProperties: jsonLd.properties,
+    faqQuestions: jsonLd.faqQuestions,
     externalLinks: collectExternalLinkFacts(markup, pageUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,

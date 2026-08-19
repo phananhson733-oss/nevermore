@@ -67,6 +67,18 @@ export interface SearchPerformanceRaw {
   readonly targetPageQueriesTruncated: boolean;
 }
 
+/**
+ * How much of the property's reported impressions must land on crawled pages
+ * before A2 will publish a share.
+ *
+ * A2 passes below 5% and blocks above 20%, so the unresolved remainder has to
+ * be small next to those marks for a clean verdict to mean anything: at a half
+ * resolved, the half we never saw could be entirely retired URLs and the
+ * published share would still read near zero. Four fifths keeps the blind spot
+ * roughly at the failing threshold rather than four times past it.
+ */
+const MIN_RESOLVED_IMPRESSION_SHARE = 0.8;
+
 /** Highest average position still counted in the top band. */
 const TOP_BAND_MAX = 6;
 /** Highest average position still counted in the low-click band. */
@@ -173,6 +185,119 @@ function bandRecord(
  * returns them, and treating a row's presence as coverage would report a page
  * nobody ever saw as a page that performs.
  */
+/**
+ * Impressions still landing on URLs the site no longer serves.
+ *
+ * The join is deliberately narrow: only URLs this crawl actually fetched AND
+ * found gone count. A URL with impressions that the crawl never visited is not
+ * evidence of anything — "the site dropped it" and "our bounded crawl did not
+ * reach it" produce the identical row, and the crawl skips deep pagination and
+ * facets by design. Those URLs are left out of the numerator AND the
+ * denominator, so the published share is a statement about the population we
+ * actually resolved rather than a guess spread over one we did not.
+ *
+ * A redirect counts as abandoned on purpose. The rule is about impressions
+ * spent on a URL that is no longer the page, and a 301 is exactly that: the
+ * result Google still shows costs the visitor a hop before they arrive.
+ */
+function abandonedImpressionRecord(
+  raw: SearchPerformanceRaw,
+  pages: readonly SeoAuditPage[],
+): SeoAuditRecord {
+  const statusBySubject = new Map(
+    pages.map((page) => [page.subjectUrl, page] as const),
+  );
+  const resolved = raw.pages.flatMap((row) => {
+    const subject = subjectUrlOf(row.key);
+    if (subject === null) return [];
+    const page = statusBySubject.get(subject);
+    if (page === undefined) return [];
+    return [{ row, page }];
+  });
+
+  const isGone = ({ page }: { readonly page: SeoAuditPage }): boolean => {
+    const status = page.finalStatus;
+    if (status === null) return false;
+    return status >= 400 || page.redirectHops > 0;
+  };
+
+  const totalImpressions = resolved.reduce(
+    (sum, entry) => sum + entry.row.impressions,
+    0,
+  );
+  const gone = resolved.filter(isGone);
+  const goneImpressions = gone.reduce(
+    (sum, entry) => sum + entry.row.impressions,
+    0,
+  );
+
+  /**
+   * Impressions on URLs with a row but no crawled page.
+   *
+   * These are the ones this check cannot speak for, and they are not a random
+   * remainder: a retired URL is by definition not linked from the current
+   * site, so it is exactly the kind the bounded crawl never reaches. Dropping
+   * them from both halves and publishing the rest would compute the share over
+   * the surviving pages and report ~0% on a site whose retired URLs hold most
+   * of its impressions — the failure this check exists to find, rendered as a
+   * pass. So the run has to resolve most of the property's impressions before
+   * a share means anything.
+   */
+  const unresolvedImpressions = raw.pages.reduce((sum, row) => {
+    const subject = subjectUrlOf(row.key);
+    return subject !== null && statusBySubject.has(subject)
+      ? sum
+      : sum + row.impressions;
+  }, 0);
+  const reportedImpressions = totalImpressions + unresolvedImpressions;
+
+  // A capped page list drops the long tail, and the tail is where retired URLs
+  // live — so a truncated read would compute this share over the healthy head
+  // and report a site as cleaner than it is.
+  const measurable =
+    !raw.pagesTruncated &&
+    totalImpressions > 0 &&
+    reportedImpressions > 0 &&
+    totalImpressions / reportedImpressions >= MIN_RESOLVED_IMPRESSION_SHARE;
+
+  return {
+    id: "abandoned_url_impression_share",
+    category: "search_performance",
+    state: measurable ? "observed" : "unverified",
+    unit: "pages",
+    population: "every_collected_page",
+    targetTested: null,
+    tested: measurable ? resolved.length : 0,
+    affected: measurable ? gone.length : 0,
+    observations: measurable
+      ? [
+          {
+            url: raw.property,
+            values: values({
+              abandoned_url_impression_share:
+                goneImpressions / totalImpressions,
+              impressions_in_band: goneImpressions,
+              impressions_total: totalImpressions,
+              property: raw.property,
+            }),
+          },
+          ...gone.map((entry) => ({
+            url: entry.page.url,
+            values: values({
+              impressions: entry.row.impressions,
+              final_status: entry.page.finalStatus,
+            }),
+          })),
+        ]
+      : [],
+    limitation: raw.pagesTruncated
+      ? "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing"
+      : measurable
+        ? "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved"
+        : "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge",
+  };
+}
+
 function coverageRecord(
   raw: SearchPerformanceRaw,
   pages: readonly SeoAuditPage[],
@@ -358,6 +483,80 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
 }
 
 /**
+ * Share of clicks that did not come from the site's own name (E4).
+ *
+ * Published, never judged: the check's own threshold says a healthy split
+ * depends on brand maturity and asks the reader to look at the trend, not the
+ * level. The brand terms are derived from the property rather than typed in by
+ * the visitor — a tool that needs an answer before it can say anything is the
+ * empty form this whole layer exists to remove.
+ *
+ * A query merely CONTAINING the brand counts as brand: "acme pricing" is
+ * someone who already knows the name.
+ */
+function nonBrandClickShareRecord(
+  raw: SearchPerformanceRaw,
+  brandTerms: readonly string[],
+): SeoAuditRecord {
+  const terms = brandTerms
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length >= 3);
+  const measurable = !raw.queriesTruncated && terms.length > 0;
+  let brandClicks = 0;
+  let totalClicks = 0;
+  if (measurable) {
+    for (const row of raw.queries) {
+      if (row.clicks <= 0) continue;
+      totalClicks += row.clicks;
+      const query = row.key.toLowerCase();
+      if (terms.some((term) => query.includes(term))) brandClicks += row.clicks;
+    }
+  }
+  if (!measurable || totalClicks === 0) {
+    return {
+      id: "non_brand_click_share",
+      category: "search_performance",
+      state: "unverified",
+      unit: "pages",
+      population: "conditional_subset",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation: raw.queriesTruncated
+        ? "query_rows_hit_the_row_cap_so_the_reported_total_is_short"
+        : "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+    };
+  }
+  return {
+    id: "non_brand_click_share",
+    category: "search_performance",
+    state: "observed",
+    unit: "pages",
+    population: "conditional_subset",
+    targetTested: null,
+    tested: 1,
+    affected: 1,
+    observations: [
+      {
+        url: null,
+        values: values({
+          non_brand_click_share: Number(
+            ((totalClicks - brandClicks) / totalClicks).toFixed(4),
+          ),
+          brand_clicks: brandClicks,
+          clicks_total: totalClicks,
+          brand_terms_used: terms.join(" "),
+          property: raw.property,
+        }),
+      },
+    ],
+    limitation:
+      "brand_terms_derived_from_the_property_and_matched_as_substrings",
+  };
+}
+
+/**
  * Records for the checks that need an authorized Search Console property.
  *
  * Returns nothing at all when no grant covered this run, so the checks stay
@@ -366,10 +565,13 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
 export function buildSearchPerformanceRecords(
   raw: SearchPerformanceRaw | null | undefined,
   htmlPages: readonly SeoAuditPage[],
+  /** Derived from the property by the caller; never typed in by the visitor. */
+  brandTerms: readonly string[] = [],
 ): readonly SeoAuditRecord[] {
   if (!raw) return [];
   return [
     coverageRecord(raw, htmlPages),
+    abandonedImpressionRecord(raw, htmlPages),
     bandRecord(
       "impression_share_top_positions",
       raw,
@@ -385,6 +587,7 @@ export function buildSearchPerformanceRecords(
       "low_click_position_impression_share",
     ),
     targetQueryBandRecord(raw),
+    nonBrandClickShareRecord(raw, brandTerms),
   ];
 }
 
@@ -413,12 +616,19 @@ export const SEARCH_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   "worst_query",
   "queries_confirmed",
   "clicks_total",
+  "non_brand_click_share",
+  "brand_clicks",
+  "brand_terms_used",
+  "abandoned_url_impression_share",
+  "final_status",
 ];
 
 /** Record ids this module emits, in the order it emits them. */
 export const SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
   "page_without_search_impressions",
+  "abandoned_url_impression_share",
   "impression_share_top_positions",
   "impression_share_low_click_positions",
   "target_query_ranking_band",
+  "non_brand_click_share",
 ];

@@ -1,3 +1,11 @@
+// The narrow subpath, never the `@sf/sources` barrel. This module is reachable
+// from the client bundle, and the barrel drags the crawler in with it — which
+// puts `node:net` in a browser chunk and fails `pnpm build` with an error that
+// names a different file. Unit tests and typecheck both stay green.
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources/crawl-limits";
+
+import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
+
 import type {
   SeoAuditCoverage,
   SeoAuditPage,
@@ -194,7 +202,13 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
     typeof value.robotsFetched === "boolean" &&
     isNonNegativeInteger(value.robotsGroupsObserved) &&
     isNonNegativeInteger(value.sitemapReferencesObserved) &&
-    typeof value.sitemapFetched === "boolean"
+    typeof value.sitemapFetched === "boolean" &&
+    isBoundedStringList(
+      value.sitemapUrls,
+      SITEMAP_URLS_PUBLISHED_CAP,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    ) &&
+    typeof value.sitemapUrlsComplete === "boolean"
   );
 }
 
@@ -248,7 +262,9 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "truncatedLists",
   "response",
   "declared",
-];
+
+  "headingLevels",
+  "wordsUnderEachH3",];
 
 /**
  * Characters, counted the way the producer counts them.
@@ -365,7 +381,8 @@ function isResponseFacts(value: unknown): boolean {
   );
 }
 
-const IMAGE_FACTS_KEYS: readonly string[] = [
+/** The counted facts. `first` is not one of them — it is not a number. */
+const IMAGE_COUNT_KEYS: readonly string[] = [
   "total",
   "withAlt",
   "withEmptyAlt",
@@ -374,11 +391,39 @@ const IMAGE_FACTS_KEYS: readonly string[] = [
   "lazyLoaded",
 ];
 
+const IMAGE_FACTS_KEYS: readonly string[] = [
+  ...IMAGE_COUNT_KEYS,
+  "first",
+  "sources",
+];
+
+const FIRST_IMAGE_KEYS: readonly string[] = ["lazyLoaded", "width", "height"];
+
+function isFirstImage(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isObject(value) &&
+    hasExactly(value, FIRST_IMAGE_KEYS) &&
+    typeof value["lazyLoaded"] === "boolean" &&
+    (value["width"] === null || isNonNegativeInteger(value["width"])) &&
+    (value["height"] === null || isNonNegativeInteger(value["height"]))
+  );
+}
+
 function isImageFacts(value: unknown): boolean {
   return (
     isObject(value) &&
     hasExactly(value, IMAGE_FACTS_KEYS) &&
-    IMAGE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+    IMAGE_COUNT_KEYS.every((key) => isNonNegativeInteger(value[key])) &&
+    isFirstImage(value["first"]) &&
+    // The parser's own caps, not a second copy of them: a guard that hard-codes
+    // the numbers passes a payload the parser can no longer produce, and fails
+    // one it can, the moment either cap moves.
+    isBoundedStringList(
+      value["sources"],
+      CRAWL_PROJECTION_LIMITS.maxImages,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    )
   );
 }
 
@@ -542,6 +587,22 @@ export function isSeoAuditTargetPageExtract(
         : null,
     ) &&
     typeof value.truncatedLists === "boolean" &&
+    (value.wordsUnderEachH3 === null ||
+      (Array.isArray(value.wordsUnderEachH3) &&
+        value.wordsUnderEachH3.length <= 200 &&
+        value.wordsUnderEachH3.every(
+          (words) => typeof words === "number" && Number.isInteger(words) && words >= 0,
+        ))) &&
+    (value.headingLevels === null ||
+      (Array.isArray(value.headingLevels) &&
+        value.headingLevels.length <= 100 &&
+        value.headingLevels.every(
+          (level) =>
+            typeof level === "number" &&
+            Number.isInteger(level) &&
+            level >= 1 &&
+            level <= 6,
+        ))) &&
     isResponseFacts(value.response) &&
     (value.declared === null || isDeclaredFacts(value.declared))
   );
@@ -557,7 +618,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v7" &&
+    run.schemaVersion === "seo_audit.sitewide.v17" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

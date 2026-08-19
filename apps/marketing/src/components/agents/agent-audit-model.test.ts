@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v17",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -57,6 +57,8 @@ const data: AgentAuditSuccessData = {
       robotsGroupsObserved: 0,
       sitemapReferencesObserved: 0,
       sitemapFetched: false,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: [],
   },
@@ -67,7 +69,7 @@ describe("buildAgentAuditViewModel", () => {
     ["seo" as const, "D", "2"],
     ["tech" as const, "C", "1"],
   ])(
-    "keeps all 81 checks and applies the %s Agent defaults",
+    "keeps all 80 checks and applies the %s Agent defaults",
     (agent, siteDefault, pageDefault) => {
       const model = buildAgentAuditViewModel({
         agent,
@@ -82,10 +84,10 @@ describe("buildAgentAuditViewModel", () => {
       });
       expect(model.scopes.site.groups).toHaveLength(5);
       expect(model.scopes.site.total).toBe(31);
-      expect(model.scopes.site.inventoryReady).toBe(22);
+      expect(model.scopes.site.inventoryReady).toBe(27);
       expect(model.scopes.page.groups).toHaveLength(9);
       expect(model.scopes.page.total).toBe(49);
-      expect(model.scopes.page.inventoryReady).toBe(31);
+      expect(model.scopes.page.inventoryReady).toBe(48);
       expect(
         model.scopes.site.total + model.scopes.page.total,
       ).toBe(80);
@@ -198,7 +200,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v17",
       persistence: "none",
     });
   });
