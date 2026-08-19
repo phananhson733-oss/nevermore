@@ -36,7 +36,7 @@ import {
 } from "./context-page.ts";
 import {
   pageValueBreakdown,
-  pageValueIsCrawlable,
+  pageValueIsContextCandidate,
   pageValueIsProductPage,
   type PageValueBreakdown,
 } from "./page-value.ts";
@@ -775,7 +775,7 @@ function rankCandidates(
     });
     if (value.depth === 0) continue;
     if (value.depth > CONTEXT_PROFILE_CRAWL_BUDGET.maxDepth) continue;
-    if (!pageValueIsCrawlable(value)) continue;
+    if (!pageValueIsContextCandidate(value)) continue;
     if (!context.allowed(parsed.pathname)) continue;
     candidates.push({ url: fetchUrl, path: parsed.pathname, value });
   }

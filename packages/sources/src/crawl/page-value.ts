@@ -216,8 +216,11 @@ export const PAGE_VALUE_FOREIGN_LOCALE_PENALTY = -8;
 /** Charged once at depth 2 and once more at depth 3+; deeper is not charged again. */
 export const PAGE_VALUE_DEPTH_PENALTY_STEP = -2;
 
-/** The lowest score produced by depth alone; lower scores carry another penalty. */
-export const PAGE_VALUE_MIN_CRAWLABLE_SCORE =
+/** Scores below this are not worth a request under the public score predicate. */
+export const PAGE_VALUE_MIN_CRAWLABLE_SCORE = 0;
+
+/** The lowest context-candidate score produced by depth alone. */
+export const PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE =
   PAGE_VALUE_DEPTH_PENALTY_STEP * 2;
 
 /**
@@ -357,11 +360,18 @@ export function pageValueIsProductPage(score: number): boolean {
   return score >= PAGE_VALUE_PRODUCT_SCORE_THRESHOLD;
 }
 
-/** Whether a candidate is relevant enough and in the requested language. */
-export function pageValueIsCrawlable(value: PageValueBreakdown): boolean {
+/** Whether a score meets the public crawlable-score floor. */
+export function pageValueIsCrawlable(score: number): boolean {
+  return score >= PAGE_VALUE_MIN_CRAWLABLE_SCORE;
+}
+
+/** Whether a context candidate is relevant and in the requested language. */
+export function pageValueIsContextCandidate(
+  value: PageValueBreakdown,
+): boolean {
   return (
     value.offTopicPenalty === 0 &&
     value.foreignLocalePenalty === 0 &&
-    value.score >= PAGE_VALUE_MIN_CRAWLABLE_SCORE
+    value.score >= PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE
   );
 }
