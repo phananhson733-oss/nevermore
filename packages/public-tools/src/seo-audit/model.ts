@@ -1669,7 +1669,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v12",
+      schemaVersion: "seo_audit.sitewide.v13",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

@@ -173,6 +173,93 @@ function bandRecord(
  * returns them, and treating a row's presence as coverage would report a page
  * nobody ever saw as a page that performs.
  */
+/**
+ * Impressions still landing on URLs the site no longer serves.
+ *
+ * The join is deliberately narrow: only URLs this crawl actually fetched AND
+ * found gone count. A URL with impressions that the crawl never visited is not
+ * evidence of anything — "the site dropped it" and "our bounded crawl did not
+ * reach it" produce the identical row, and the crawl skips deep pagination and
+ * facets by design. Those URLs are left out of the numerator AND the
+ * denominator, so the published share is a statement about the population we
+ * actually resolved rather than a guess spread over one we did not.
+ *
+ * A redirect counts as abandoned on purpose. The rule is about impressions
+ * spent on a URL that is no longer the page, and a 301 is exactly that: the
+ * result Google still shows costs the visitor a hop before they arrive.
+ */
+function abandonedImpressionRecord(
+  raw: SearchPerformanceRaw,
+  pages: readonly SeoAuditPage[],
+): SeoAuditRecord {
+  const statusBySubject = new Map(
+    pages.map((page) => [page.subjectUrl, page] as const),
+  );
+  const resolved = raw.pages.flatMap((row) => {
+    const subject = subjectUrlOf(row.key);
+    if (subject === null) return [];
+    const page = statusBySubject.get(subject);
+    if (page === undefined) return [];
+    return [{ row, page }];
+  });
+
+  const isGone = ({ page }: { readonly page: SeoAuditPage }): boolean => {
+    const status = page.finalStatus;
+    if (status === null) return false;
+    return status >= 400 || page.redirectHops > 0;
+  };
+
+  const totalImpressions = resolved.reduce(
+    (sum, entry) => sum + entry.row.impressions,
+    0,
+  );
+  const gone = resolved.filter(isGone);
+  const goneImpressions = gone.reduce(
+    (sum, entry) => sum + entry.row.impressions,
+    0,
+  );
+
+  // A capped page list drops the long tail, and the tail is where retired URLs
+  // live — so a truncated read would compute this share over the healthy head
+  // and report a site as cleaner than it is.
+  const measurable = !raw.pagesTruncated && totalImpressions > 0;
+
+  return {
+    id: "abandoned_url_impression_share",
+    category: "search_performance",
+    state: measurable ? "observed" : "unverified",
+    unit: "pages",
+    population: "every_collected_page",
+    targetTested: null,
+    tested: measurable ? resolved.length : 0,
+    affected: measurable ? gone.length : 0,
+    observations: measurable
+      ? [
+          {
+            url: raw.property,
+            values: values({
+              abandoned_url_impression_share:
+                goneImpressions / totalImpressions,
+              impressions_in_band: goneImpressions,
+              impressions_total: totalImpressions,
+              property: raw.property,
+            }),
+          },
+          ...gone.map((entry) => ({
+            url: entry.page.url,
+            values: values({
+              impressions: entry.row.impressions,
+              final_status: entry.page.finalStatus,
+            }),
+          })),
+        ]
+      : [],
+    limitation: raw.pagesTruncated
+      ? "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing"
+      : "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved",
+  };
+}
+
 function coverageRecord(
   raw: SearchPerformanceRaw,
   pages: readonly SeoAuditPage[],
@@ -446,6 +533,7 @@ export function buildSearchPerformanceRecords(
   if (!raw) return [];
   return [
     coverageRecord(raw, htmlPages),
+    abandonedImpressionRecord(raw, htmlPages),
     bandRecord(
       "impression_share_top_positions",
       raw,
@@ -493,11 +581,14 @@ export const SEARCH_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   "non_brand_click_share",
   "brand_clicks",
   "brand_terms_used",
+  "abandoned_url_impression_share",
+  "final_status",
 ];
 
 /** Record ids this module emits, in the order it emits them. */
 export const SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
   "page_without_search_impressions",
+  "abandoned_url_impression_share",
   "impression_share_top_positions",
   "impression_share_low_click_positions",
   "target_query_ranking_band",

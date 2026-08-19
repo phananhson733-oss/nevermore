@@ -79,6 +79,7 @@ describe("readAgentSearchPerformance", () => {
     expect(result?.startDate).toBe("2026-07-19");
     expect(result?.records.map((record) => record.id)).toEqual([
       "page_without_search_impressions",
+      "abandoned_url_impression_share",
       "impression_share_top_positions",
       "impression_share_low_click_positions",
       "target_query_ranking_band",

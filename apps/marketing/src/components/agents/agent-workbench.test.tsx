@@ -90,7 +90,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         persistence: "none",
         source: {
           tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v12",
+          schemaVersion: "seo_audit.sitewide.v13",
           completedAt: "2026-08-13T00:00:00.000Z",
           cache: { status: "miss", capturedAt: null },
         },

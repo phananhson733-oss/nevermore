@@ -237,6 +237,7 @@ const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "1.6": ["non_2xx_final_status"],
   "1.2": ["page_disallowed_for_search_crawler"],
   A5: ["sitemap_url_disallowed_by_robots"],
+  A2: ["abandoned_url_impression_share"],
 };
 
 const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
@@ -245,6 +246,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "7.4": ["faq_schema_question_not_on_page"],
   "4.5": ["page_near_duplicate_of_another_page"],
   "8.5": ["page_total_transfer_bytes"],
+  A2: ["abandoned_url_impression_share"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
   D3: ["title_missing", "h1_missing"],
@@ -438,6 +440,15 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   // Without this rule the evaluator reads any record with `affected > 0` as a
   // full failure, and 8.5's record is always affected:1 when it measured
   // anything — so a 40 KB page would publish the same verdict as a 40 MB one.
+  A2: [
+    {
+      recordId: "abandoned_url_impression_share",
+      kind: "aggregate-max",
+      label: "abandoned_url_impression_share",
+      passAtOrBelow: 0.05,
+      failAbove: 0.2,
+    },
+  ],
   "8.5": [
     {
       recordId: "page_total_transfer_bytes",
@@ -662,6 +673,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "4.5": l(
     "This page and the one named beside it say close to the same thing, so search engines have to pick one and you do not get to choose which. Per pair, pick one: merge them into the stronger URL and 301 the other, or make each genuinely about a different question — different intent, different examples, not a reworded intro. Adding a canonical without merging keeps the weaker page alive and still spends crawl on it.",
     "这个页面和旁边点名的那一页说的几乎是同一件事，搜索引擎只会挑一个，而挑哪个不由你决定。逐对二选一：合并到更强的那个 URL 并把另一个 301 过去；或者让两页真的各答一个问题——不同意图、不同例子，而不是改写开头。只加 canonical 不合并，等于留着弱的那页继续消耗抓取预算。",
+  ),
+  A2: l(
+    "These URLs no longer serve the page they rank for, and search results are still sending people to them. Per URL, pick one: 301 it to the page that replaced it if one exists, or restore it if it should never have gone. If neither, let it return 410 rather than 404 — 410 tells Google the removal was deliberate and retires the result faster. A redirect chain counts here too: point the link at the destination, not at the hop.",
+    "这些 URL 已经不再提供它们排名所对应的页面，而搜索结果还在往那里送人。逐个二选一：有替代页就 301 过去；本不该下线就恢复。两者都不是的话，让它返回 410 而不是 404——410 告诉 Google 这是有意移除，结果会更快退出。跳转链也算在内：链接要直接指向终点，不要指向中间跳。",
   ),
   C2: l(
     "Each broken target is a link a reader clicks and lands on nothing. Per target, pick one: repoint the link if the content moved, restore the URL if it should exist, or remove the link if it should not. Fix it in the template or content source that emits it, not on one rendered page — a broken link in a nav or footer repeats site-wide.",
