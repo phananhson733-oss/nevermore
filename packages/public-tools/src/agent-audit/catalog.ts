@@ -8,6 +8,19 @@ import type {
   AgentAuditScope,
   AgentAuditThresholdAuthority,
 } from "./types.ts";
+/*
+  The numbers the engine actually judges by, not a second copy of them.
+
+  These rows used to spell out "15–70 characters" and "50–165 characters" while
+  the evaluator had already moved to display width at 15–60 and 50–160 — so the
+  rule a reader was shown contradicted the rule that produced their result, on
+  the one measure this catalogue exists to state. Interpolating the constants
+  means the sentence cannot drift from the threshold again.
+*/
+import {
+  SNIPPET_DESCRIPTION_WIDTH,
+  SNIPPET_TITLE_WIDTH,
+} from "../seo-audit/text-width.ts";
 
 const l = (en: string, zh: string): AgentAuditLocalizedText => ({ en, zh });
 
@@ -62,10 +75,10 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
   ["1.7", "hreflang target validity", "hreflang 目标有效性", "Every target returns 200; a 404 target is Blocker", "所有目标均返回 200；指向 404 为阻断"],
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
-  ["2.1", "Title length", "Title 长度", "Reviewed working range 15–70 characters; Google truncates by rendered width, not character count", "已审阅工作区间 15–70 个字符；Google 按渲染宽度截断，而非字符数"],
+  ["2.1", "Title length", "Title 长度", `Reviewed working range ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_TITLE_WIDTH.min}–${SNIPPET_TITLE_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.3", "Title contains the target query", "Title 含目标词", "Contains the confirmed target query as a token sequence; otherwise Warning; 2× check weight. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为警告；检查权重 2 倍。不做同义词或词形还原。"],
-  ["2.4", "Meta description length", "Meta description 长度", "Reviewed working range 50–165 characters; Google truncates by rendered width, not character count", "已审阅工作区间 50–165 个字符；Google 按渲染宽度截断，而非字符数"],
+  ["2.4", "Meta description length", "Meta description 长度", `Reviewed working range ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max} in display width, counting a CJK character as two; Google truncates by rendered width, not character count`, `已审阅工作区间为显示宽度 ${SNIPPET_DESCRIPTION_WIDTH.min}–${SNIPPET_DESCRIPTION_WIDTH.max}，中日韩字符按 2 计；Google 按渲染宽度截断，而非字符数`],
   ["2.5", "Meta description uniqueness", "Meta description 唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
   ["2.6", "Open Graph title, description, and image", "Open Graph 标题、描述与图片", "All three properties present; otherwise Tip", "三项属性均存在；否则为提示"],
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
