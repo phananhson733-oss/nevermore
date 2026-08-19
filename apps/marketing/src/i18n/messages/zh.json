@@ -1022,7 +1022,9 @@
         "the_propertys_url_inspection_quota_was_already_spent": "该资源的网址检查配额已经用完。这是按站点计的上限，与指向同一资源的其他所有工具共享。",
         "this_grant_does_not_cover_url_inspection_for_this_property": "当前授权不包含该资源的网址检查权限。",
         "the_index_status_source_did_not_finish_this_run": "索引状态读取没能在本次运行的时间预算内完成，因此不发布比例。",
-        "index_status_is_googles_own_verdict_per_declared_url": "每一条判定都来自 Google 本身，逐个 URL 读取。比例的分子分母都只统计 sitemap 声明过的 URL。"
+        "index_status_is_googles_own_verdict_per_declared_url": "每一条判定都来自 Google 本身，逐个 URL 读取。比例的分子分母都只统计 sitemap 声明过的 URL。",
+        "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized": "这个市场没有流量估算来源，因此没有测量页面一的规模。没有发送请求，而不是花钱换来同一个答案。",
+        "traffic_estimates_are_modelled_not_measured_visits": "流量数字是供应商对月度自然访问的建模值，不是实测值。供应商没有给出数据的域名会被完全排除，而不是算作小站。"
       },
       "records": {
         "robots_resource": {
@@ -1304,6 +1306,10 @@
         "sitemap_url_not_indexed": {
           "title": "已声明但 Google 未展示的 URL",
           "description": "sitemap 声明的 URL 中，网址检查判定不是「已编入索引」的那些。"
+        },
+        "page_one_without_a_low_traffic_site": {
+          "title": "页面一没有低流量站点",
+          "description": "抽样结果页上是否存在小到有可能被一个更好的页面取代的域名。"
         }
       },
       "evidence": {
@@ -1435,7 +1441,9 @@
         "image_size_is_exact": "体积为精确值",
         "index_coverage_rate": "索引覆盖率",
         "sitemap_urls_inspected": "已检查的声明 URL 数",
-        "index_status_verdict": "索引状态判定"
+        "index_status_verdict": "索引状态判定",
+        "page_one_domains_sized": "已测规模的页面一域名数",
+        "smallest_page_one_traffic": "页面一最小流量"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

@@ -796,6 +796,7 @@ export async function handleAgentAuditRequest(
                       itemTypes: landscape.features,
                       unresolvedItemCount: 0,
                       organicCount: landscape.resultsObserved,
+                      domainTraffic: landscape.domainTraffic,
                       marketCode: landscape.market,
                       languageCode: landscape.language,
                     }

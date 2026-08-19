@@ -786,4 +786,3 @@ function rankCandidates(
       (a.url < b.url ? -1 : a.url > b.url ? 1 : 0),
   );
 }
-

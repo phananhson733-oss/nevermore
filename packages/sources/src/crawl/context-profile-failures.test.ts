@@ -288,4 +288,3 @@ describe("budget exhaustion", () => {
     expect(site.requested).toHaveLength(0);
   });
 });
-

@@ -59,6 +59,17 @@ export interface SerpShapeRaw {
   readonly unresolvedItemCount: number;
   /** How many organic results the sample actually contains. */
   readonly organicCount: number;
+  /**
+   * Estimated monthly organic traffic per page-one domain, when measured.
+   *
+   * Null means the market has no legal Labs pair, or the lookup did not
+   * answer. Never an empty list in that case: an empty list reads as "page one
+   * has no low-traffic site", which is a finding, and manufacturing it from a
+   * provider gap is the opposite of what 9.3 is for.
+   */
+  readonly domainTraffic:
+    | readonly { readonly domain: string; readonly organicEtv: number | null }[]
+    | null;
   readonly marketCode: string;
   readonly languageCode: string;
 }
@@ -193,13 +204,92 @@ export function buildSerpShapeRecords(
       "community_item_types",
       "absent",
     ),
+    lowTrafficRecord(raw, gap),
   ];
+}
+
+/**
+ * Whether anyone on page one is small enough to be displaceable.
+ *
+ * The published rule reads "at least 1; otherwise lower the opportunity health
+ * score", so a page one made entirely of large sites is reported as a Tip —
+ * the state this product uses for "worth knowing, not a defect". It is not a
+ * Warning: a hard query is not something the site did wrong.
+ */
+function lowTrafficRecord(
+  raw: SerpShapeRaw | null | undefined,
+  gap: SerpShapeGap,
+): SeoAuditRecord {
+  const measured = raw?.domainTraffic ?? null;
+  // A domain the provider said nothing about is not a small domain. Counting
+  // an unknown as low-traffic manufactures the very opening this check looks
+  // for, so only domains with a number participate.
+  const known = (measured ?? []).filter(
+    (entry): entry is { domain: string; organicEtv: number } =>
+      entry.organicEtv !== null,
+  );
+  if (measured === null || known.length === 0) {
+    return {
+      id: "page_one_without_a_low_traffic_site",
+      category: "serp_shape",
+      state: "unverified",
+      unit: "pages",
+      population: "target_page",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation:
+        measured === null && raw !== null && raw !== undefined
+          ? "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized"
+          : GAP_LIMITATION[gap],
+    };
+  }
+  const small = known.filter(
+    (entry) => entry.organicEtv < LOW_TRAFFIC_ETV_CEILING,
+  );
+  return {
+    id: "page_one_without_a_low_traffic_site",
+    category: "serp_shape",
+    state: "observed",
+    unit: "pages",
+    population: "target_page",
+    targetTested: true,
+    tested: 1,
+    // Affected when NOBODY on page one is small: that is the finding, and the
+    // record has to carry an observation for the rule to reach it at all.
+    affected: small.length === 0 ? 1 : 0,
+    observations:
+      small.length === 0
+        ? [
+            {
+              url: null,
+              values: [
+                { label: "sampled_query", value: raw?.keyword ?? "" },
+                { label: "page_one_domains_sized", value: known.length },
+                {
+                  label: "smallest_page_one_traffic",
+                  value: Math.min(...known.map((entry) => entry.organicEtv)),
+                },
+              ],
+            },
+          ]
+        : [],
+    limitation: "traffic_estimates_are_modelled_not_measured_visits",
+  };
 }
 
 export const SERP_SHAPE_RECORD_IDS: readonly string[] = [
   "ai_answer_block_present",
   "no_community_result_present",
+  "page_one_without_a_low_traffic_site",
 ];
+
+/**
+ * Below this many estimated monthly organic visits, a domain reads as small
+ * enough that a well-made page could displace it.
+ */
+export const LOW_TRAFFIC_ETV_CEILING = 1_000;
 
 export const SERP_SHAPE_EVIDENCE_LABELS: readonly string[] = [
   "sampled_query",
@@ -210,6 +300,8 @@ export const SERP_SHAPE_EVIDENCE_LABELS: readonly string[] = [
   "unresolved_serp_items",
   "sampled_market",
   "sampled_language",
+  "page_one_domains_sized",
+  "smallest_page_one_traffic",
 ];
 
 export const SERP_SHAPE_LIMITATION_CODES: readonly string[] = [
@@ -217,4 +309,6 @@ export const SERP_SHAPE_LIMITATION_CODES: readonly string[] = [
   "the_provider_reported_no_item_type_list_for_this_results_page",
   "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one",
   "one_live_sample_of_one_results_page_which_changes_between_requests",
+  "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized",
+  "traffic_estimates_are_modelled_not_measured_visits",
 ];

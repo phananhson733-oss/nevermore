@@ -320,6 +320,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   // "is there any JSON-LD" check, read as a share instead of a verdict, so it
   // reuses the record rather than crawling for it twice.
   D5: ["json_ld_missing"],
+  "9.3": ["page_one_without_a_low_traffic_site"],
 };
 
 /**
@@ -610,10 +611,9 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   // request's transferred bytes — the exact number, sitting in the half of the
   // response the reader used to parse and throw away.
   //
-  // 9.3 stays: it needs a traffic estimate per page-one domain, which is a
-  // second paid call against a different endpoint, and the sample this one
-  // takes carries domains without any measure of what they receive.
-  if (id === "9.3") return "not-integrated";
+  // 9.3 came off it too, once the traffic lookup landed: the ten domains were
+  // always free — the SERP sample already carries them — and sizing all ten is
+  // a single bulk call, not one per domain.
   return ready ? "ready" : "needs-integration";
 }
 
@@ -681,6 +681,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "4.5": l(
     "This page and the one named beside it say close to the same thing, so search engines have to pick one and you do not get to choose which. Per pair, pick one: merge them into the stronger URL and 301 the other, or make each genuinely about a different question — different intent, different examples, not a reworded intro. Adding a canonical without merging keeps the weaker page alive and still spends crawl on it.",
     "这个页面和旁边点名的那一页说的几乎是同一件事，搜索引擎只会挑一个，而挑哪个不由你决定。逐对二选一：合并到更强的那个 URL 并把另一个 301 过去；或者让两页真的各答一个问题——不同意图、不同例子，而不是改写开头。只加 canonical 不合并，等于留着弱的那页继续消耗抓取预算。",
+  ),
+  "9.3": l(
+    "Nobody on page one is small enough to look displaceable, which usually means this query is held by established sites rather than by better pages. Two honest moves: go after a more specific version of the query where the field is weaker, or accept that ranking here is a long project and budget for it rather than expecting a page edit to do it. Do not read this as a defect in your page.",
+    "页面一上没有任何一个站点小到看起来可以取代，这通常意味着这个词被老牌站点把持，而不是被更好的页面把持。两个诚实的选择：改打这个词更具体的长尾版本，那里的对手更弱；或者承认在这里排名是个长期工程并按长期投入，而不是指望改一版页面就能上去。不要把这条读成你页面的缺陷。",
   ),
   A1: l(
     "Google is not showing these pages, and your sitemap says you want them shown. Work down the list rather than across it: open each URL in Search Console's URL Inspection and read the reason it gives — a noindex, a canonical pointing elsewhere, a redirect, a 404, or simply not crawled yet. Those are five different fixes and only the report can tell you which one you have. If a page should not be indexed, the fix is to remove it from the sitemap, not to leave a declaration you do not mean.",
@@ -1056,7 +1060,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     // page" and was still resolving to Warning because nobody added it.
     failureResult:
       DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
-      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6"].includes(id)
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6", "9.3"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

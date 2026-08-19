@@ -1022,7 +1022,9 @@
         "the_propertys_url_inspection_quota_was_already_spent": "The property's URL Inspection quota was already spent. It is a per-site ceiling shared with every other tool pointed at this property.",
         "this_grant_does_not_cover_url_inspection_for_this_property": "This grant does not cover URL Inspection for this property.",
         "the_index_status_source_did_not_finish_this_run": "The index-status read did not finish within this run's budget, so no rate is published.",
-        "index_status_is_googles_own_verdict_per_declared_url": "Each verdict is Google's own, read one URL at a time. Only URLs the sitemap declares are counted, on either side of the rate."
+        "index_status_is_googles_own_verdict_per_declared_url": "Each verdict is Google's own, read one URL at a time. Only URLs the sitemap declares are counted, on either side of the rate.",
+        "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized": "This market has no traffic-estimate source, so page one was not sized. No request was sent rather than paying to be told the same thing.",
+        "traffic_estimates_are_modelled_not_measured_visits": "Traffic figures are a provider's model of monthly organic visits, not measured ones. A domain the provider said nothing about is left out entirely rather than counted as small."
       },
       "records": {
         "robots_resource": {
@@ -1304,6 +1306,10 @@
         "sitemap_url_not_indexed": {
           "title": "Declared URL Google is not showing",
           "description": "URLs the sitemap declares whose URL Inspection verdict is anything other than indexed."
+        },
+        "page_one_without_a_low_traffic_site": {
+          "title": "Page one holds no low-traffic site",
+          "description": "Whether any domain on the sampled results page is small enough that a better page could plausibly displace it."
         }
       },
       "evidence": {
@@ -1435,7 +1441,9 @@
         "image_size_is_exact": "Size is exact",
         "index_coverage_rate": "Index coverage rate",
         "sitemap_urls_inspected": "Declared URLs inspected",
-        "index_status_verdict": "Index status verdict"
+        "index_status_verdict": "Index status verdict",
+        "page_one_domains_sized": "Page-one domains sized",
+        "smallest_page_one_traffic": "Smallest page-one traffic"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

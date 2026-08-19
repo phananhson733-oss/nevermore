@@ -62,7 +62,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v15",
+    schemaVersion: "seo_audit.sitewide.v16",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -501,7 +501,7 @@ describe("handleAgentAuditRequest", () => {
     };
 
     const records = body.data.result.serpShape?.records ?? [];
-    expect(records).toHaveLength(2);
+    expect(records).toHaveLength(3);
     for (const record of records) expect(record.limitation).toBe(code);
   });
 
@@ -713,7 +713,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v15",
+            schemaVersion: "seo_audit.sitewide.v16",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -1484,6 +1484,7 @@ describe("the results-page region", () => {
           market: "GB",
           language: "en",
           resultsObserved: 2,
+          domainTraffic: null,
           withSitelinks: 1,
           features: ["organic"],
           targetPosition: 2,

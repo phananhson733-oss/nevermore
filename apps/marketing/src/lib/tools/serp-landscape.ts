@@ -4,6 +4,10 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
+  bulkTrafficEstimation,
+  labsLanguageForMarket,
+} from "@sf/sources/dataforseo/labs-traffic";
+import {
   createDataForSeoKeywordMetricsClient,
   type DataForSeoKeywordMetricsClient,
 } from "@sf/sources";
@@ -97,6 +101,8 @@ export interface SerpLandscapeDependencies {
    * would put provider cost in a table whose subject is user credits.
    */
   readonly onCost?: (usd: number, market: string, query: string) => void;
+  /** Injected in tests so no suite ever reaches a paid endpoint. */
+  readonly estimateTraffic?: typeof bulkTrafficEstimation;
 }
 
 /**
@@ -156,6 +162,31 @@ export async function readSerpLandscape(
     });
     (dependencies.onCost ?? logProviderCost)(response.costUsd, market, query);
 
+    // One more call, for every domain on page one at once. The domains are
+    // already in hand from the sample above, so this buys only the sizes.
+    // Reported through the same cost seam: a second uninstrumented paid call
+    // would make the invoice unattributable.
+    const labsLanguage = labsLanguageForMarket(market);
+    const sized =
+      labsLanguage === null
+        ? null
+        : await (dependencies.estimateTraffic ?? bulkTrafficEstimation)({
+            login: dependencies.login ?? process.env["DATAFORSEO_LOGIN"] ?? "",
+            password:
+              dependencies.password ?? process.env["DATAFORSEO_PASSWORD"] ?? "",
+            targets: response.rows.map((row) => row.domain),
+            locationCode,
+            languageCode: labsLanguage,
+          });
+    if (sized !== null) {
+      (dependencies.onCost ?? logProviderCost)(sized.costUsd, market, query);
+    }
+    const trafficByDomain = new Map(
+      (sized?.rows ?? []).map(
+        (row) => [row.target.toLowerCase(), row.organicEtv] as const,
+      ),
+    );
+
     const target = hostKey(input.targetUrl);
     const targetPath = pathKey(input.targetUrl);
     const rows = response.rows.map((row) => {
@@ -183,6 +214,16 @@ export async function readSerpLandscape(
       market,
       language,
       resultsObserved: rows.length,
+      // Null when this market has no Labs pair or the lookup did not answer.
+      // Never an empty list: downstream, empty reads as "nobody on page one is
+      // small", which is a finding, and a provider gap must not become one.
+      domainTraffic:
+        sized === null
+          ? null
+          : rows.map((row) => ({
+              domain: row.domain,
+              organicEtv: trafficByDomain.get(row.domain.toLowerCase()) ?? null,
+            })),
       withSitelinks: rows.filter((row) => row.sitelinkCount > 0).length,
       // Bounded here rather than only where it is validated. The provider
       // decides how many feature names a results page has; a guard that
