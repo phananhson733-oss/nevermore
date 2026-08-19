@@ -153,10 +153,47 @@ describe("thresholds", () => {
     expect(pageValueIsProductPage(pageValueScore("/faq", EN))).toBe(false);
   });
 
-  it("admits an unrecognised shallow path but not a negative one", () => {
-    expect(PAGE_VALUE_MIN_CRAWLABLE_SCORE).toBe(0);
-    expect(pageValueIsCrawlable(0)).toBe(true);
-    expect(pageValueIsCrawlable(-1)).toBe(false);
+  it("admits paths whose only penalty is their depth", () => {
+    const depthTwo = pageValueBreakdown("/story-generators/fantasy", EN);
+    const depthThree = pageValueBreakdown(
+      "/rpg-tools/npc-generator/free",
+      EN,
+    );
+
+    expect(depthTwo).toMatchObject({
+      sectionScore: 0,
+      offTopicPenalty: 0,
+      foreignLocalePenalty: 0,
+      depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP,
+      score: PAGE_VALUE_DEPTH_PENALTY_STEP,
+    });
+    expect(pageValueIsCrawlable(depthTwo.score)).toBe(true);
+    expect(depthThree).toMatchObject({
+      sectionScore: 0,
+      offTopicPenalty: 0,
+      foreignLocalePenalty: 0,
+      depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+      score: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+    });
+    expect(pageValueIsCrawlable(depthThree.score)).toBe(true);
+  });
+
+  it.each([
+    ["blog", "/blog/post"],
+    ["legal", "/privacy"],
+    ["foreign locale", "/fr/story-generators/fantasy"],
+  ])("keeps %s paths below the crawlable floor", (_label, path) => {
+    expect(pageValueIsCrawlable(pageValueScore(path, EN))).toBe(false);
+  });
+
+  it("sets the crawlable floor to the maximum depth-only penalty", () => {
+    expect(PAGE_VALUE_MIN_CRAWLABLE_SCORE).toBe(
+      PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+    );
+    expect(pageValueIsCrawlable(PAGE_VALUE_MIN_CRAWLABLE_SCORE)).toBe(true);
+    expect(pageValueIsCrawlable(PAGE_VALUE_MIN_CRAWLABLE_SCORE - 1)).toBe(
+      false,
+    );
   });
 
   it("sums exactly the four reported terms", () => {

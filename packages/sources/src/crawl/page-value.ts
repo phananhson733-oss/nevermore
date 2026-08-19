@@ -18,8 +18,9 @@
  * Why a signed score and not an allow-list: an allow-list of known section
  * names cannot rank two admitted candidates against each other, and it silently
  * drops every site that names its sections something else. A score lets an
- * unrecognised shallow path (0) still be crawled after the recognised ones, and
- * lets a recognised-but-buried path lose to a shallow unknown one.
+ * unrecognised path carrying only the capped depth penalty still be crawled
+ * after the recognised ones, and lets a recognised-but-buried path lose to a
+ * shallow unknown one.
  *
  * Everything here is a path heuristic. A high score is a claim about where the
  * product is *usually* described, never a claim about what the page contains.
@@ -215,8 +216,9 @@ export const PAGE_VALUE_FOREIGN_LOCALE_PENALTY = -8;
 /** Charged once at depth 2 and once more at depth 3+; deeper is not charged again. */
 export const PAGE_VALUE_DEPTH_PENALTY_STEP = -2;
 
-/** Scores below this are not worth a request; the caller must not fetch them. */
-export const PAGE_VALUE_MIN_CRAWLABLE_SCORE = 0;
+/** The lowest score produced by depth alone; lower scores carry another penalty. */
+export const PAGE_VALUE_MIN_CRAWLABLE_SCORE =
+  PAGE_VALUE_DEPTH_PENALTY_STEP * 2;
 
 /**
  * At or above this, a page is counted as a product page in the crawl summary.
