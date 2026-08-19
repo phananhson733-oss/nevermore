@@ -203,7 +203,8 @@ describe("buildTargetPageExtract on-page facts", () => {
     charset: "utf-8",
     faviconDeclared: true,
     hreflangAlternates: [],
-    renderBlocking: { stylesheets: 0, scripts: 0 },
+    hreflangAlternatesTruncated: false,
+    renderBlocking: { stylesheets: 0, scripts: 0, measured: true },
     firstImage: null,
     wordsUnderEachH3: [],
     jsonLdProperties: [],
@@ -260,6 +261,9 @@ describe("buildTargetPageExtract on-page facts", () => {
       // Also a measurement, not a declaration: whether an alternate resolves is
       // something this run went and checked, not something the markup said.
       hreflangAlternates: _alternates,
+      // And whether that measurement was cut short by the crawl's own cap,
+      // which is a fact about the run and not about the markup.
+      hreflangAlternatesTruncated: _alternatesTruncated,
       renderBlocking: _blocking,
       firstImage: _lazy,
       wordsUnderEachH3: _sections2,

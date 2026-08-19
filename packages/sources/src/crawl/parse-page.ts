@@ -223,6 +223,14 @@ export interface ParsedOnPageFacts {
   readonly renderBlocking: {
     readonly stylesheets: number;
     readonly scripts: number;
+    /**
+     * A head region was found to count them in.
+     *
+     * False for a document with no `<head>` and no `<body>` — both tags are
+     * optional in HTML5 and minifiers strip them — where zero counted
+     * resources means nobody looked, not nothing blocking.
+     */
+    readonly measured: boolean;
   };
   /**
    * The first image in document order, and what it declares about itself.
