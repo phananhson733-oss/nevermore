@@ -527,36 +527,61 @@ export async function crawlSiteContextProfile(
     { origin, homepageUrl, targetLanguage, allowed },
   );
   const slots = Math.max(0, CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls - 1);
-  const selected = candidates.slice(0, slots);
-  if (candidates.length > slots) state.stopReason ??= "max_urls";
 
   // --- 6. Fetch ------------------------------------------------------------
-  const fetched = await runPool(
-    selected,
-    CONTEXT_PROFILE_CRAWL_BUDGET.perHostConcurrency,
-    async (candidate): Promise<ContextProfilePage | null> => {
-      const response = await request(
-        candidate.url,
-        CONTEXT_PROFILE_CRAWL_BUDGET.maxBodyBytes,
-      );
-      if (response === null || response.kind !== "ok") return null;
-      if (response.finalStatus === 403) {
-        state.botProtectionResponses += 1;
-        return null;
-      }
-      if (response.finalStatus === 429) {
-        state.rateLimitedResponses += 1;
-        return null;
-      }
-      if (response.finalStatus < 200 || response.finalStatus >= 300)
-        return null;
-      return contextProfilePage(
-        response.finalUrl,
-        response.body,
-        candidate.value.score,
-      );
-    },
-  );
+  const fetchCandidate = async (
+    candidate: Candidate,
+  ): Promise<ContextProfilePage | null> => {
+    const response = await request(
+      candidate.url,
+      CONTEXT_PROFILE_CRAWL_BUDGET.maxBodyBytes,
+    );
+    if (response === null || response.kind !== "ok") return null;
+    if (response.finalStatus === 403) {
+      state.botProtectionResponses += 1;
+      return null;
+    }
+    if (response.finalStatus === 429) {
+      state.rateLimitedResponses += 1;
+      return null;
+    }
+    if (response.finalStatus < 200 || response.finalStatus >= 300) return null;
+    return contextProfilePage(
+      response.finalUrl,
+      response.body,
+      candidate.value.score,
+    );
+  };
+  const fetched: ContextProfilePage[] = [];
+  let candidateOffset = 0;
+  while (
+    fetched.length < slots &&
+    candidateOffset < candidates.length &&
+    state.stopReason === null
+  ) {
+    const batchSize = Math.min(
+      slots - fetched.length,
+      candidates.length - candidateOffset,
+    );
+    const batch = candidates.slice(
+      candidateOffset,
+      candidateOffset + batchSize,
+    );
+    candidateOffset += batch.length;
+    const batchFetched = await runPool(
+      batch,
+      CONTEXT_PROFILE_CRAWL_BUDGET.perHostConcurrency,
+      fetchCandidate,
+    );
+    fetched.push(...batchFetched);
+  }
+  if (
+    state.stopReason === null &&
+    fetched.length === slots &&
+    candidateOffset < candidates.length
+  ) {
+    state.stopReason = "max_urls";
+  }
 
   const pages = [homepage, ...fetched];
   return {

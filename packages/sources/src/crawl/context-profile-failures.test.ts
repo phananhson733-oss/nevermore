@@ -188,6 +188,35 @@ describe("budget exhaustion", () => {
     expect(result.pages[1]?.path).toBe("/pricing");
   });
 
+  it("preserves a real budget stop reached while replenishing failed candidates", async () => {
+    const links = Array.from(
+      { length: 20 },
+      (_unused, index) => `/tools/t${index.toString().padStart(2, "0")}`,
+    );
+    const routes: Record<string, Route> = {
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { status: 404 },
+      "/": { body: page("Acme", links) },
+    };
+    for (const path of links) routes[path] = { body: page(path) };
+    routes["/tools/t00"] = { status: 404 };
+    routes["/tools/t01"] = { status: 500 };
+    routes["/tools/t02"] = { error: { kind: "error", code: "timeout" } };
+    routes["/tools/t13"] = { error: { kind: "error", code: "timeout" } };
+    const site = fakeSite(routes, {
+      onRequest: (url, self) => {
+        if (url === `${ORIGIN}/tools/t13`) self.advance(60_000);
+      },
+    });
+    const result = await run(site);
+
+    expect(site.requested).toContain(`${ORIGIN}/tools/t13`);
+    expect(result.pagesFetched).toBeLessThan(
+      CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls,
+    );
+    expect(result.stopReason).toBe("max_wall_clock");
+  });
+
   it("stops at the wall clock and says so", async () => {
     const site = fakeSite(marketingSite(), {
       onRequest: (url, self) => {
