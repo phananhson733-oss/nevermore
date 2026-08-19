@@ -41,8 +41,18 @@ export type GeoActionReason =
  */
 export type GeoActionKind = "do" | "external_data" | "avoid";
 
-/** One kind per reason, so the label can never disagree with the evidence. */
-const REASON_KIND: Readonly<Record<GeoActionReason, GeoActionKind>> = {
+/**
+ * One kind per reason, so the label can never disagree with the evidence.
+ *
+ * Exported because the presentation layer keys a candidate's wording off it: an
+ * item that is work to do is described by the asset it proposes, and an item
+ * that is a lookup or a prohibition is described by the finding itself. Reading
+ * that split from this table rather than restating it is what stops a card from
+ * telling a reader to build the entry that says not to build.
+ */
+export const GEO_ACTION_REASON_KIND: Readonly<
+  Record<GeoActionReason, GeoActionKind>
+> = {
   needs_page_inventory: "external_data",
   needs_more_evidence: "external_data",
   avoid_new_page_as_first_step: "avoid",
@@ -81,8 +91,10 @@ export interface GeoActionCandidateV1 {
  * writing it at each of the four construction sites would be four chances for a
  * label to drift away from the evidence it names. It is stamped once, at the end.
  */
-interface GeoActionCandidateWithModeV1
-  extends Omit<GeoActionCandidateV1, "kind"> {
+interface GeoActionCandidateWithModeV1 extends Omit<
+  GeoActionCandidateV1,
+  "kind"
+> {
   readonly mode: GeoQuestionObservationV3["mode"];
 }
 
@@ -90,7 +102,7 @@ interface GeoActionCandidateWithModeV1
 function withKind(
   candidate: Omit<GeoActionCandidateV1, "kind">,
 ): GeoActionCandidateV1 {
-  return { ...candidate, kind: REASON_KIND[candidate.reason] };
+  return { ...candidate, kind: GEO_ACTION_REASON_KIND[candidate.reason] };
 }
 
 export interface GeoActionPlanV1 {
@@ -269,24 +281,39 @@ function mergeByAsset(
     const keepExisting =
       REASON_RANK[existing.reason] <= REASON_RANK[candidate.reason];
     const winner = keepExisting ? existing : candidate;
+    const reasonCounts =
+      existing.reasonCounts === null || candidate.reasonCounts === null
+        ? (winner.reasonCounts ?? null)
+        : {
+            observed:
+              existing.reasonCounts.observed + candidate.reasonCounts.observed,
+            evaluable:
+              existing.reasonCounts.evaluable +
+              candidate.reasonCounts.evaluable,
+          };
+    // The reason has to survive the merge as a true statement about the merged
+    // counts, not as whichever of the two ranked higher. Two questions asking
+    // for the same pricing page — one that never cited the site, one that cited
+    // it once — merged to "target_not_observed_in_samples" with an observed of
+    // 1, so the card said the site "did not appear once" directly above its own
+    // "1 of 6". Ranking decides which asset wins; the counts decide what may be
+    // claimed about them. Found by cross-model review, 2026-08-19.
+    const reason: GeoActionReason =
+      reasonCounts !== null &&
+      reasonCounts.observed > 0 &&
+      winner.reason !== "target_observed_in_minority_of_samples"
+        ? "target_observed_in_minority_of_samples"
+        : winner.reason;
     byAsset.set(key, {
       ...winner,
+      reason,
+      title: reason,
       queryIds: [...new Set([...existing.queryIds, ...candidate.queryIds])],
       sampleIds: [...new Set([...existing.sampleIds, ...candidate.sampleIds])],
       evidenceIds: [
         ...new Set([...existing.evidenceIds, ...candidate.evidenceIds]),
       ],
-      reasonCounts:
-        existing.reasonCounts === null || candidate.reasonCounts === null
-          ? (winner.reasonCounts ?? null)
-          : {
-              observed:
-                existing.reasonCounts.observed +
-                candidate.reasonCounts.observed,
-              evaluable:
-                existing.reasonCounts.evaluable +
-                candidate.reasonCounts.evaluable,
-            },
+      reasonCounts,
     });
   }
   return [...byAsset.values()].map(
@@ -304,23 +331,34 @@ function mergeByAsset(
  * the countable answers went to somebody else, so that is what is counted and
  * what is printed beside it.
  *
- * Established only when all of these hold: the customer's host was cited in none
- * of the countable answers, and at least two of them cited someone else. That
- * says a new page is not the pattern these answers draw from. It does not say
+ * Judged inside one mode, never across both. The first version walked every
+ * question and produced "18 of 18", which is three one-shot natural-demand
+ * answers added to fifteen repeats of five calibrated probes — the shared
+ * denominator this whole report exists to refuse, printed on the row a reader is
+ * most likely to act on. Worse, it let the modes decide each other: one
+ * natural-demand answer that cited the customer suppressed the finding even when
+ * all fifteen retrieval samples had gone elsewhere. Found by cross-model review
+ * on 2026-08-19.
+ *
+ * Established only when, within that mode, the customer's host was cited in none
+ * of the countable answers and at least two of them cited someone else. That
+ * says a new page is not the pattern those answers draw from. It does not say
  * what is, and this candidate does not pretend to.
  *
  * Attributed only to the questions that actually produced those citations. An
  * action that claimed every question in the report would put unrelated and
  * unevaluable questions in its own basis line.
  */
-function avoidNewPageFirst(
+function avoidNewPageFirstIn(
   report: GeoReportDataV3,
+  mode: GeoQuestionObservationV3["mode"],
 ): Omit<GeoActionCandidateV1, "kind"> | null {
   let evaluable = 0;
   let othersCited = 0;
   const fromQueries: string[] = [];
 
   for (const question of report.questions) {
+    if (question.mode !== mode) continue;
     let contributed = false;
     for (const sample of question.samples) {
       if (!isGeoSampleCitationEvaluable(sample, question.mode)) continue;
@@ -337,7 +375,9 @@ function avoidNewPageFirst(
   if (evaluable === 0 || othersCited < 2) return null;
 
   return {
-    actionId: "act-avoid-new-page-first",
+    // The mode is part of the identity, so a reader of the exported brief can
+    // see which denominator the ratio below was counted against.
+    actionId: `act-avoid-new-page-first-${mode}`,
     assetType: "existing_page_enhancement",
     title: "avoid_new_page_as_first_step",
     reason: "avoid_new_page_as_first_step",
@@ -353,6 +393,24 @@ function avoidNewPageFirst(
     limitations: ["observed_sources_only"],
     requiresHumanReview: true,
   };
+}
+
+/**
+ * At most one avoid row, from the mode whose evidence is strongest.
+ *
+ * Retrieval probes first: they are asked three times each against calibrated
+ * wording, so a pattern there rests on more observations than the same pattern
+ * in three one-shot questions. Emitting both would spend two of five slots on
+ * one sentence; the mode that did not produce this row still has its own
+ * numbers in the coverage block and the source table.
+ */
+function avoidNewPageFirst(
+  report: GeoReportDataV3,
+): Omit<GeoActionCandidateV1, "kind"> | null {
+  return (
+    avoidNewPageFirstIn(report, "retrieval_probe") ??
+    avoidNewPageFirstIn(report, "natural_demand")
+  );
 }
 
 /**
@@ -424,7 +482,11 @@ export function deriveGeoActionPlan(
     (candidate) => candidate.assetType !== "existing_page_enhancement",
   );
   const avoid = avoidNewPageFirst(report);
-  const ordered = [inventory, ...(avoid === null ? [] : [avoid]), ...merged].sort(
+  const ordered = [
+    inventory,
+    ...(avoid === null ? [] : [avoid]),
+    ...merged,
+  ].sort(
     (a, b) =>
       REASON_RANK[a.reason] - REASON_RANK[b.reason] ||
       a.actionId.localeCompare(b.actionId),
