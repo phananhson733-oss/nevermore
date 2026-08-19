@@ -15,6 +15,7 @@ import type {
 import type {
   GeoCitationCounts,
   GeoMentionCounts,
+  GeoRunCoverageV3,
   GeoRunTotals,
   GeoSearchCounts,
 } from "../../../lib/agents/geo-report-derive";
@@ -99,6 +100,43 @@ function MetricTable({
       </dl>
     </div>
   );
+}
+
+/**
+ * The four numbers the approved report opens with.
+ *
+ * Three of them are mode-agnostic facts about the whole run — attempted,
+ * observed, unavailable — and are safe to total because they count calls, not
+ * citations. The fourth is not: a run-level "never searched" would count three
+ * natural-demand questions that were never expected to search and report them
+ * as an instrument failure. It is counted over retrieval probes alone and
+ * labelled that way, which is the only reading that is true.
+ */
+function overviewCounts(coverage: GeoRunCoverageV3) {
+  const probes = coverage.search.retrieval_probe;
+  return {
+    attempted: coverage.totals.scheduledSamples,
+    observed: coverage.totals.answeredSamples,
+    neverSearched: probes.searchEvaluableSamples - probes.searchPerformedSamples,
+    unavailable: coverage.totals.unavailableSamples,
+  };
+}
+
+/**
+ * One word for how far the run got, before any of its numbers are read.
+ *
+ * Not a grade and not a score. It says whether the instrument worked, which is
+ * the first thing a reader needs in order to know how much weight the rest of
+ * the page can carry.
+ */
+function availabilityOf(coverage: GeoRunCoverageV3): "Full" | "Partial" | "None" {
+  if (coverage.totals.answeredSamples === 0) return "None";
+  const degraded =
+    coverage.triggerFailedProbes > 0 ||
+    coverage.degradedProbes > 0 ||
+    coverage.failedProbes > 0 ||
+    coverage.totals.unavailableSamples > 0;
+  return degraded ? "Partial" : "Full";
 }
 
 function searchRows(counts: GeoSearchCounts): readonly MetricRow[] {
@@ -556,6 +594,8 @@ export function GeoReportView({
   const degraded =
     coverage.triggerFailedProbes > 0 || coverage.degradedProbes > 0;
   const totalsRows = totalsRowsOf(coverage.totals);
+  const overview = overviewCounts(coverage);
+  const availability = availabilityOf(coverage);
 
   const identity = [
     ["collector", provenance.collector],
@@ -616,13 +656,95 @@ export function GeoReportView({
       </div>
 
       <div className={CARD_CLASS}>
-        <h3 className="text-[12.5px] font-semibold text-text-dark-primary">
-          {t("results.coverageTitle")}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/*
+            One platform, said before the numbers rather than in a limitation at
+            the foot of the page. Everything below is ChatGPT at one moment.
+          */}
+          <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
+            {t("results.snapshotEyebrow")}
+          </p>
+          <Tag tone={availability === "Full" ? "accent" : "warn"}>
+            {t(`results.availability${availability}`)}
+          </Tag>
+        </div>
+        <h3 className="mt-1 text-[12.5px] font-semibold text-text-dark-primary">
+          {t("results.overviewTitle")}
         </h3>
         <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-          {t("results.coverageNote")}
+          {t("results.overviewNote")}
         </p>
-        <div className="mt-3 grid gap-4">
+
+        {/*
+          Four numbers, then the four things they do not mean.
+          Seventeen numbers in seven tables is the whole truth and nobody's
+          first read; the reader needs to know how far the instrument got
+          before any ratio below is worth anything. The tables are still here,
+          one disclosure down, because the two modes' denominators are the
+          reason this report exists and hiding them entirely would be the
+          opposite fix.
+        */}
+        <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card sm:grid-cols-4">
+          {(
+            [
+              ["attempted", overview.attempted, null],
+              ["observed", overview.observed, null],
+              ["noSearch", overview.neverSearched, "results.noSearchScope"],
+              ["unavailableSamples", overview.unavailable, null],
+            ] as const
+          ).map(([key, value, scope]) => (
+            <div key={key} className="bg-brand-panel p-3">
+              <dt className="text-[10.5px] leading-[1.4] text-text-dark-secondary">
+                {t(`results.${key}`)}
+              </dt>
+              <dd className="mt-0.5 font-mono text-[20px] text-text-dark-primary tabular-nums">
+                {value}
+              </dd>
+              {/*
+                The one number that is not about the whole run says so on its
+                own line. A "never searched" total that silently included three
+                one-shot questions nobody expected to search would report a
+                working instrument as a broken one.
+              */}
+              {scope !== null && (
+                <p className="mt-0.5 text-[10px] leading-[1.35] text-text-dark-tertiary">
+                  {t(scope)}
+                </p>
+              )}
+            </div>
+          ))}
+        </dl>
+
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {[
+            "boundaryUnavailable",
+            "boundaryNoSearch",
+            "boundaryCitation",
+            "boundaryNoScore",
+          ].map((key) => (
+            <Tag key={key} tone="faint">
+              {t(`results.${key}`)}
+            </Tag>
+          ))}
+        </div>
+
+        <p className="mt-3 font-mono text-[11px] text-text-dark-secondary">
+          {t("results.probeSummary", {
+            valid: coverage.validProbes,
+            failed: coverage.triggerFailedProbes,
+            mixed: coverage.degradedProbes,
+            unavailable: coverage.failedProbes,
+          })}
+        </p>
+
+        <details className="mt-3 min-w-0">
+          <summary className="cursor-pointer text-[12px] text-text-dark-secondary">
+            {t("results.coverageDetails")}
+          </summary>
+          <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+            {t("results.coverageNote")}
+          </p>
+          <div className="mt-3 grid gap-4">
           {/* Only the three mode-agnostic facts are stated about the whole run.
               A run-level "named in 4 of 18" would blend three prompted
               repetitions with one unprompted discovery, and a run-level
@@ -653,15 +775,8 @@ export function GeoReportView({
             label={t("coverage.mentionPrompted")}
             rows={mentionRows(coverage.mention.prompted)}
           />
-        </div>
-        <p className="mt-3 font-mono text-[11px] text-text-dark-secondary">
-          {t("results.probeSummary", {
-            valid: coverage.validProbes,
-            failed: coverage.triggerFailedProbes,
-            mixed: coverage.degradedProbes,
-            unavailable: coverage.failedProbes,
-          })}
-        </p>
+          </div>
+        </details>
       </div>
 
       <SourceLandscape
@@ -670,7 +785,10 @@ export function GeoReportView({
       />
 
       <div>
-        <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
+          {t("results.questionsEyebrow")}
+        </p>
+        <h3 className="mt-1 text-[14px] font-semibold text-text-dark-primary">
           {t("results.questionsTitle")}
         </h3>
         {questions.length === 0 ? (

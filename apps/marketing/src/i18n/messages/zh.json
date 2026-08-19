@@ -3454,7 +3454,24 @@
         "notSearched": "未联网搜索",
         "recommendationNotEvaluated": "推荐关系未评估",
         "degradedBanner": "降级运行：{failed} 个检索探针完全没有触发联网搜索，{mixed} 个只是有时触发。这是仪器故障，不是关于你站点的结论；这些样本已从引用统计中剔除。",
-        "probeSummary": "探针：{valid} 有效 · {failed} 未搜索 · {mixed} 时有时无 · {unavailable} 无回答"
+        "probeSummary": "探针：{valid} 有效 · {failed} 未搜索 · {mixed} 时有时无 · {unavailable} 无回答",
+        "snapshotEyebrow": "当前 ChatGPT 快照",
+        "overviewTitle": "检测概览",
+        "overviewNote": "本轮只问了 ChatGPT 一个平台。下面四个数说明这轮实际够到了多少，不是关于你站点的结论。",
+        "availabilityFull": "完全可用",
+        "availabilityPartial": "部分可用",
+        "availabilityNone": "不可用",
+        "attempted": "已尝试",
+        "observed": "已观测",
+        "noSearch": "未联网检索",
+        "noSearchScope": "仅统计检索探针",
+        "unavailableSamples": "不可用",
+        "boundaryUnavailable": "不可用不等于 0",
+        "boundaryNoSearch": "未联网检索不等于未被引用",
+        "boundaryCitation": "引用不等于推荐",
+        "boundaryNoScore": "不给总分",
+        "coverageDetails": "查看分模式明细",
+        "questionsEyebrow": "逐个问题"
       },
       "identity": {
         "collector": "采集方",
@@ -3749,7 +3766,9 @@
         "unknown": {
           "page_inventory_not_collected": "没有盘点你已有哪些页面。",
           "source_pattern_not_explained": "本轮只能说这些答案引了谁，说不了为什么是它们。"
-        }
+        },
+        "problemsEyebrow": "从观测到诊断",
+        "solutionsEyebrow": "报告的一部分"
       }
     },
     "seo": {

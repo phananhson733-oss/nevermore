@@ -3454,7 +3454,24 @@
         "notSearched": "No web search",
         "recommendationNotEvaluated": "Recommendation not evaluated",
         "degradedBanner": "Degraded run: {failed} retrieval probes never triggered a web search and {mixed} triggered it only sometimes. That is an instrumentation failure, not a finding about your site, and those samples are excluded from the citation counts.",
-        "probeSummary": "Probes: {valid} valid · {failed} never searched · {mixed} mixed · {unavailable} no answer"
+        "probeSummary": "Probes: {valid} valid · {failed} never searched · {mixed} mixed · {unavailable} no answer",
+        "snapshotEyebrow": "Current ChatGPT snapshot",
+        "overviewTitle": "What this run reached",
+        "overviewNote": "This run asked one platform, ChatGPT. The four numbers below say how far it got; none of them is a conclusion about your site.",
+        "availabilityFull": "Fully available",
+        "availabilityPartial": "Partially available",
+        "availabilityNone": "Unavailable",
+        "attempted": "Attempted",
+        "observed": "Observed",
+        "noSearch": "Never searched",
+        "noSearchScope": "Retrieval probes only",
+        "unavailableSamples": "Unavailable",
+        "boundaryUnavailable": "Unavailable is not zero",
+        "boundaryNoSearch": "Never searched is not the same as not cited",
+        "boundaryCitation": "Citation is not recommendation",
+        "boundaryNoScore": "No overall number",
+        "coverageDetails": "See the per-mode detail",
+        "questionsEyebrow": "Question by question"
       },
       "identity": {
         "collector": "Collector",
@@ -3749,7 +3766,9 @@
         "unknown": {
           "page_inventory_not_collected": "No inventory of your existing pages was collected.",
           "source_pattern_not_explained": "This run can say who these answers cited; it cannot say why those."
-        }
+        },
+        "problemsEyebrow": "From what was observed",
+        "solutionsEyebrow": "Part of the report"
       }
     },
     "seo": {
