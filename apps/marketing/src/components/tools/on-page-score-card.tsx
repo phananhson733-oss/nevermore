@@ -5,7 +5,10 @@
 // @pos    -- the top of the evidence stage, above the per-check detail
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
+
+import { pageVitals } from "../../lib/on-page-checker/vitals.ts";
 import type { SeoAuditTargetPageExtract } from "@sf/public-tools/seo-audit/types";
 import type { OnPageScore } from "../../lib/on-page-checker/scoring.ts";
 
@@ -36,51 +39,27 @@ function Vital({ label, value }: { readonly label: string; readonly value: strin
 export function OnPageScoreCard({
   score,
   extract,
+  action,
 }: {
   readonly score: OnPageScore;
   readonly extract: SeoAuditTargetPageExtract;
+  /**
+   * Rendered beside the score.
+   *
+   * The copy-for-an-assistant control used to sit at the very bottom, past the
+   * whole report — which is a long way from the number that makes someone want
+   * to hand it to an assistant in the first place.
+   */
+  readonly action?: ReactNode;
 }) {
   const t = useTranslations("tools.onPageChecker");
   const tc = useTranslations("tools.onPageChecker.scoreCategories");
-  const declared = extract.declared;
-  const response = extract.response;
-
-  const vitals: readonly { readonly label: string; readonly value: string }[] = [
-    response.finalStatus === null
-      ? null
-      : { label: t("vitals.status"), value: String(response.finalStatus) },
-    response.responseMs === null
-      ? null
-      : { label: t("vitals.responseMs"), value: `${response.responseMs}ms` },
-    declared === null
-      ? null
-      : {
-          label: t("vitals.htmlSize"),
-          value: `${Math.round(declared.htmlBytes / 1024)}KB`,
-        },
-    extract.staticBodyWords === null
-      ? null
-      : { label: t("vitals.words"), value: String(extract.staticBodyWords) },
-    {
-      label: t("vitals.internalLinks"),
-      value: String(response.internalOutlinks),
-    },
-    declared === null
-      ? null
-      : {
-          label: t("vitals.externalLinks"),
-          value: String(declared.externalLinks.total),
-        },
-    declared === null
-      ? null
-      : { label: t("vitals.images"), value: String(declared.images.total) },
-    declared?.lang == null
-      ? null
-      : { label: t("vitals.lang"), value: declared.lang },
-  ].filter(
-    (entry): entry is { readonly label: string; readonly value: string } =>
-      entry !== null,
-  );
+  // One definition, shared with the report the visitor copies: two lists drift
+  // the moment one learns a new field, and neither looks wrong on its own.
+  const vitals = pageVitals(extract).map((vital) => ({
+    label: t(`vitals.${vital.labelKey}`),
+    value: vital.value,
+  }));
 
   return (
     <div className="grid gap-5">
@@ -110,6 +89,7 @@ export function OnPageScoreCard({
             })}
           </span>
         )}
+        {action}
       </div>
 
       {/*

@@ -1,9 +1,49 @@
-// @input  -- one finished run: its metadata, keyword evidence, and localized limitation text
-// @output -- a Markdown report the visitor can paste into an assistant
+// @input  -- one finished run: metadata, score, resolved check sentences, keyword evidence
+// @output -- a Markdown report the visitor can paste into a coding assistant
 // @pos    -- the only place page-sourced text is rendered as document markup
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
+import type { CheckState } from "./check-types.ts";
+
+/**
+ * One check, with its wording already resolved.
+ *
+ * The check itself carries a message key and its values, not a sentence, so
+ * that the same check reads in either language. Resolving it here would mean
+ * this file owning the interface's wording; the caller resolves it and passes
+ * the sentence, exactly as it already does for the limitations.
+ */
+export interface CopyReportCheck {
+  readonly id: string;
+  readonly state: CheckState;
+  readonly score: number;
+  /** Zero marks an observation that was shown but never graded. */
+  readonly max: number;
+  readonly label: string;
+  readonly detail: string;
+  readonly categoryLabel: string;
+}
+
+export interface CopyReportResult {
+  readonly score: number;
+  readonly grade: string;
+  readonly counts: {
+    readonly pass: number;
+    readonly warn: number;
+    readonly fail: number;
+  };
+  /** 0-1, or null when no keyword evidence was derived. */
+  readonly topicFocus: number | null;
+  readonly categories: readonly {
+    readonly label: string;
+    readonly earned: number;
+    readonly available: number;
+  }[];
+  /** Resolved sentences, already naming their ceiling. */
+  readonly caps: readonly string[];
+  readonly checks: readonly CopyReportCheck[];
+}
 
 /** Everything past the limitations is detail; the report never exceeds this. */
 export const COPY_REPORT_MAX_CHARS = 16 * 1024;
@@ -22,6 +62,17 @@ export interface CopyReportInput {
    * worse than both.
    */
   readonly limitationText: Readonly<Record<string, string>>;
+  /**
+   * The graded result, when the run produced one.
+   *
+   * Null for a run that could not read the page: there is nothing to score, and
+   * a zero would read as a verdict rather than as an absence.
+   */
+  readonly result?: CopyReportResult | null;
+  /** Status, size, word count and the rest of the strip under the score. */
+  readonly vitals?: readonly { readonly label: string; readonly value: string }[];
+  /** The page-role guidance shown under the report, already resolved. */
+  readonly fixes?: string | null;
 }
 
 /**
@@ -86,6 +137,117 @@ function slotRow(
   ].join(" | ");
 }
 
+
+/**
+ * What the paste is for, said to whoever reads it next.
+ *
+ * The button hands this text to an assistant that will be asked to implement
+ * the fixes, and an assistant given a table of numbers with no frame will
+ * cheerfully invent the rest — predict rankings, or treat a page as empty
+ * because a crawler that runs no JavaScript saw no body. Naming the boundaries
+ * costs a few hundred characters and is the difference between evidence and a
+ * prompt to guess.
+ */
+const BRIEFING = [
+  "",
+  "## How to read this",
+  "",
+  "A static-HTML audit of one page. Everything below was measured, not",
+  "predicted. If you are an assistant asked to act on it:",
+  "",
+  "- Fix what the findings name, and nothing they do not. None of this is a",
+  "  ranking prediction, and the thresholds are this tool's opinion.",
+  "- JavaScript was not executed. Anything a client script renders was invisible",
+  "  to this run, so absence here is not proof of absence on the page.",
+  "- Ask for the page source before editing it. It is not included.",
+];
+
+/** One check as a bullet: what it is, what it scored, what it observed. */
+function checkLine(entry: CopyReportCheck): string {
+  const points = entry.max === 0 ? "not graded" : `${entry.score}/${entry.max}`;
+  return `- ${inlineCode(entry.categoryLabel)} ${entry.label} (${points}) — ${entry.detail}`;
+}
+
+/**
+ * The part an assistant is being handed the report for.
+ *
+ * Failing and warning checks first and in full: they are the work. A passing
+ * check is worth listing so the reader can see it was tested rather than
+ * skipped, but it needs no detail sentence and is the first thing dropped when
+ * the budget bites.
+ */
+function gradedSections(result: CopyReportResult): readonly string[] {
+  const actionable = result.checks.filter(
+    (entry) => entry.state === "fail" || entry.state === "warn",
+  );
+  return [
+    "",
+    "## Score",
+    "",
+    `${result.score}/100 (${inlineCode(result.grade)}). ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`,
+    ...(result.topicFocus === null
+      ? []
+      : [
+          `Topic focus for the primary query: ${Math.round(result.topicFocus * 100)}%.`,
+        ]),
+    // A capped score is not the sum of its parts, and an assistant told only
+    // the number would optimise the wrong thing.
+    ...(result.caps.length === 0
+      ? []
+      : ["", "The total is held down, which no amount of structure undoes:", "",
+         ...result.caps.map((cap) => `- ${cap}`)]),
+    "",
+    "| Category | Score |",
+    "| --- | --- |",
+    ...result.categories.map(
+      (category) =>
+        `| ${tableCell(category.label)} | ${category.earned}/${category.available} |`,
+    ),
+    "",
+    "## Not passing",
+    "",
+    ...(actionable.length === 0
+      ? ["Nothing failed or warned in what could be graded."]
+      : actionable.map(checkLine)),
+  ];
+}
+
+/** Context worth having and first to go: what passed, the page facts, the role guidance. */
+function supportingSections(
+  result: CopyReportResult,
+  vitals: readonly { readonly label: string; readonly value: string }[],
+  fixes: string | null,
+): readonly string[] {
+  const passed = result.checks.filter((entry) => entry.state === "pass");
+  const observed = result.checks.filter((entry) => entry.state === "info");
+  return [
+    ...(passed.length === 0
+      ? []
+      : [
+          "",
+          "## Passing",
+          "",
+          // Named without their sentences: an assistant needs to know these
+          // were tested, not what each one said.
+          passed.map((entry) => entry.label).join(", ") + ".",
+        ]),
+    ...(observed.length === 0
+      ? []
+      : ["", "## Observed, not graded", "", ...observed.map(checkLine)]),
+    ...(vitals.length === 0
+      ? []
+      : [
+          "",
+          "## Page facts",
+          "",
+          ...vitals.map((vital) => `- ${vital.label}: ${inlineCode(vital.value)}`),
+        ]),
+    ...(fixes === null || fixes === ""
+      ? []
+      : ["", "## For this page's declared role", "", fixes]),
+  ];
+}
+
 /**
  * Render the report.
  *
@@ -109,7 +271,7 @@ function slotRow(
  */
 export function buildCopyReport(input: CopyReportInput): string {
   const header = [
-    "# On-page keyword check",
+    "# On-page SEO check",
     "",
     `- Page: ${inlineCode(input.targetUrl)}`,
     `- Collected at: ${inlineCode(input.scannedAt)}`,
@@ -132,6 +294,7 @@ export function buildCopyReport(input: CopyReportInput): string {
           ];
     return [
       ...header,
+      ...BRIEFING,
       "",
       "## Result",
       "",
@@ -202,19 +365,54 @@ export function buildCopyReport(input: CopyReportInput): string {
 
   const rows = evidence.queries.map(slotRow);
 
-  for (let kept = rows.length; kept >= 0; kept -= 1) {
-    const truncated = kept < rows.length;
-    const table = [
-      ...tableHead,
-      ...rows.slice(0, kept).map((row) => `| ${row} |`),
-      ...(truncated
-        ? ["", `_${rows.length - kept} more rows omitted to fit._`]
-        : []),
-    ];
-    const report = [...header, ...basis, ...table, ...numbers, ...limitations]
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n");
-    if (report.length <= COPY_REPORT_MAX_CHARS) return report;
+  const result = input.result ?? null;
+  const graded = result === null ? [] : gradedSections(result);
+  const supporting =
+    result === null
+      ? []
+      : supportingSections(result, input.vitals ?? [], input.fixes ?? null);
+
+  /**
+   * Three shapes, richest first.
+   *
+   * The graded region is new alongside a truncation order that was reasoned
+   * about carefully — limitations outlive everything, because a caveat that
+   * silently vanishes turns every number above it into a claim nobody qualified.
+   * Rather than thread the new sections through that order, they are dropped
+   * ahead of it: first the supporting detail, then the score and its findings,
+   * and only then does the original cascade begin, unchanged. In practice a
+   * full report lands near half the budget and none of this runs.
+   */
+  const shapes: readonly (readonly [readonly string[], readonly string[]])[] = [
+    [graded, supporting],
+    [graded, []],
+    [[], []],
+  ];
+
+  for (const [gradedPart, supportingPart] of shapes) {
+    for (let kept = rows.length; kept >= 0; kept -= 1) {
+      const truncated = kept < rows.length;
+      const table = [
+        ...tableHead,
+        ...rows.slice(0, kept).map((row) => `| ${row} |`),
+        ...(truncated
+          ? ["", `_${rows.length - kept} more rows omitted to fit._`]
+          : []),
+      ];
+      const report = [
+        ...header,
+        ...BRIEFING,
+        ...gradedPart,
+        ...basis,
+        ...table,
+        ...numbers,
+        ...supportingPart,
+        ...limitations,
+      ]
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n");
+      if (report.length <= COPY_REPORT_MAX_CHARS) return report;
+    }
   }
 
   // Even with no rows the fixed sections can exceed the budget once their
@@ -225,6 +423,7 @@ export function buildCopyReport(input: CopyReportInput): string {
   // report about.
   const droppedTable = [
     ...header,
+    ...BRIEFING,
     ...basis,
     "",
     "## Coverage",
@@ -340,7 +539,7 @@ export function buildCopyReport(input: CopyReportInput): string {
    * not fit" without it hides exactly what this ordering exists to keep.
    */
   return [
-    "# On-page keyword check",
+    "# On-page SEO check",
     "",
     `_This report did not fit its size limit. ${codes.length} limitations omitted,`,
     "and so is everything that was measured._",

@@ -96,7 +96,7 @@ describe("buildCopyReport", () => {
   it("puts the sections in the order the reader needs them", () => {
     const text = report();
     const order = [
-      "# On-page keyword check",
+      "# On-page SEO check",
       "## What was measured",
       "## Coverage",
       "## Focus",
@@ -401,7 +401,7 @@ describe("buildCopyReport", () => {
     expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
     // Even here, what survives is the metadata and the limitation that caused
     // the overflow — not the explanatory prose, and not a silent stop.
-    expect(text).toContain("# On-page keyword check");
+    expect(text).toContain("# On-page SEO check");
     expect(text).toContain("## Limitations");
     expect(text).toContain("x".repeat(200));
     expect(text).not.toContain("## Coverage");
@@ -504,3 +504,186 @@ describe("buildCopyReport", () => {
     expect(report()).toContain("`product`");
   });
 });
+
+/**
+ * The paste exists to be handed to an assistant that will implement the fixes.
+ *
+ * For a long time it carried the coverage table and nothing else — no score, no
+ * caps, and none of the per-check findings that say what to change. It read
+ * like a report while missing the part worth acting on, and every test here
+ * passed the whole time because none of them asked for that part.
+ */
+const RESULT = {
+  score: 62,
+  grade: "C · fair",
+  counts: { pass: 30, warn: 2, fail: 3 },
+  topicFocus: 0.42,
+  categories: [
+    { label: "Meta", earned: 20, available: 25 },
+    { label: "Keyword placement", earned: 9, available: 28 },
+  ],
+  caps: ["Held to 45: the page is not about the query you gave."],
+  checks: [
+    {
+      id: "meta.description.length",
+      state: "warn" as const,
+      score: 3,
+      max: 5,
+      label: "Meta description length",
+      detail: "Width 164, outside 50-160; the tail may be cut.",
+      categoryLabel: "Meta",
+    },
+    {
+      id: "keyword.title",
+      state: "fail" as const,
+      score: 0,
+      max: 8,
+      label: "Query in the title",
+      detail: "`pricing` does not appear in the title.",
+      categoryLabel: "Keyword placement",
+    },
+    {
+      id: "meta.canonical",
+      state: "pass" as const,
+      score: 3,
+      max: 3,
+      label: "Canonical",
+      detail: "Self-referencing.",
+      categoryLabel: "Meta",
+    },
+    {
+      id: "content.interactive",
+      state: "info" as const,
+      score: 0,
+      max: 0,
+      label: "Does the page answer the need",
+      detail: "12 interactive elements in the static HTML.",
+      categoryLabel: "Content",
+    },
+  ],
+};
+
+function fullReport() {
+  return buildCopyReport({
+    targetUrl: extract.url,
+    scannedAt: "2026-08-17T12:00:00.000Z",
+    cacheStatus: "miss",
+    evidence: evidenceFor(["pricing"]),
+    limitationText,
+    result: RESULT,
+    vitals: [
+      { label: "Status", value: "200" },
+      { label: "Words", value: "800" },
+    ],
+    fixes: "A product page is judged on whether it names what it sells.",
+  });
+}
+
+describe("the report an assistant is handed", () => {
+  it("carries the findings worth acting on, in full", () => {
+    const text = fullReport();
+    // The two that did not pass, each with the sentence naming the number.
+    expect(text).toContain("Width 164, outside 50-160");
+    expect(text).toContain("does not appear in the title");
+    expect(text).toContain("(3/5)");
+    expect(text).toContain("(0/8)");
+  });
+
+  it("leads with the score and never hides a cap", () => {
+    const text = fullReport();
+    expect(text).toContain("62/100");
+    // A capped total is not the sum of its parts. An assistant told only the
+    // number would spend its effort on the categories that cannot move it.
+    expect(text).toContain("Held to 45");
+    expect(text).toContain("Topic focus for the primary query: 42%");
+  });
+
+  it("puts the score and its findings before the keyword detail", () => {
+    const text = fullReport();
+    expect(text.indexOf("## Score")).toBeLessThan(text.indexOf("## Not passing"));
+    expect(text.indexOf("## Not passing")).toBeLessThan(text.indexOf("## Coverage"));
+  });
+
+  it("names what passed without repeating every sentence", () => {
+    const text = fullReport();
+    expect(text).toContain("Canonical");
+    // Listed so the reader can see it was tested, not skipped — but its detail
+    // is not what the assistant was handed this for.
+    expect(text).not.toContain("Self-referencing.");
+  });
+
+  it("keeps an ungraded observation out of the pass and fail counts", () => {
+    const text = fullReport();
+    const observed = text.slice(text.indexOf("## Observed, not graded"));
+    expect(observed).toContain("Does the page answer the need");
+    expect(observed).toContain("not graded");
+  });
+
+  it("tells the assistant what this evidence cannot support", () => {
+    const text = fullReport();
+    // Handed a table of numbers with no frame, an assistant will predict
+    // rankings and read an empty crawl as an empty page.
+    expect(text).toContain("not");
+    expect(text).toContain("JavaScript was not executed");
+    expect(text).toContain("ranking prediction");
+    expect(text).toContain("Ask for the page source");
+  });
+
+  it("frames the paste even when the page could not be read", () => {
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: {
+        availability: "unavailable",
+        reason: "target_page_not_captured",
+      } as never,
+      limitationText,
+    });
+    expect(text).toContain("JavaScript was not executed");
+    expect(text).toContain("This is not a score of zero.");
+  });
+
+  it("stays inside the budget with the whole result attached", () => {
+    expect(fullReport().length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
+  });
+
+  it("drops the supporting detail before the findings when space runs out", () => {
+    // The order matters under pressure: what failed is the work, what passed is
+    // context, and the limitations outlive both.
+    const huge = {
+      ...RESULT,
+      checks: [
+        ...RESULT.checks,
+        ...Array.from({ length: 400 }, (_, index) => ({
+          id: `filler.${index}`,
+          state: "pass" as const,
+          score: 1,
+          max: 1,
+          label: `Filler check number ${index} with a long enough name`,
+          detail: "x".repeat(200),
+          categoryLabel: "Meta",
+        })),
+      ],
+    };
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: evidenceFor(["pricing"]),
+      limitationText,
+      result: huge,
+      vitals: [{ label: "Status", value: "200" }],
+      fixes: "Guidance.",
+    });
+
+    expect(text.length).toBeLessThanOrEqual(COPY_REPORT_MAX_CHARS);
+    expect(text).toContain("does not appear in the title");
+    expect(text).not.toContain("## Passing");
+    // Every limitation survives whatever else went.
+    for (const sentence of Object.values(limitationText)) {
+      expect(text).toContain(sentence);
+    }
+  });
+});
+

@@ -5,6 +5,7 @@
 // @pos    -- everything derived from the crawl, before the visitor's own words
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
 import type { KeywordEvidence } from "@sf/public-tools/seo-audit/keyword-evidence/types";
@@ -22,11 +23,14 @@ export function OnPageReportSections({
   score,
   landscape,
   evidence,
+  scoreAction,
 }: {
   readonly extract: SeoAuditTargetPageExtract | null;
   readonly score: OnPageScore | null;
   readonly landscape: SerpLandscape | null;
   readonly evidence: KeywordEvidence;
+  /** Rendered beside the score, where someone decides to hand this on. */
+  readonly scoreAction?: ReactNode;
 }) {
   const t = useTranslations("tools.onPageChecker");
   const tTerms = useTranslations("tools.onPageChecker.terms");
@@ -41,7 +45,7 @@ export function OnPageReportSections({
       */}
       {score !== null && extract !== null && (
         <div className="grid gap-5">
-          <OnPageScoreCard extract={extract} score={score} />
+          <OnPageScoreCard action={scoreAction} extract={extract} score={score} />
         </div>
       )}
 
