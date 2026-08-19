@@ -46,6 +46,17 @@ describe("signing out", () => {
     expect(window.location.reload).toHaveBeenCalled();
   });
 
+  it("takes the GEO report with it, because that report restores itself", async () => {
+    // GeoWorkbench reads this key in a mount effect. Sign-out reloads the page,
+    // so a report left behind is a report handed to the next person in the tab.
+    endpointReturning(200);
+    sessionStorage.setItem("geo_report_session.v1", '{"schemaVersion":"x"}');
+
+    await signOut();
+
+    expect(sessionStorage.getItem("geo_report_session.v1")).toBeNull();
+  });
+
   it("leaves local data alone when the sign-out itself failed", async () => {
     endpointReturning(500);
     localStorage.setItem("gengrowth:onpage-history:v1", "[]");

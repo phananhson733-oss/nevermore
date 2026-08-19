@@ -30,6 +30,12 @@ import {
   isGeoReportSuccessEnvelope,
   type GeoReportDataV3,
 } from "../../../lib/agents/geo-report-contract";
+import {
+  clearGeoReportSession,
+  geoSessionStorage,
+  restoreGeoReportSession,
+  saveGeoReportSession,
+} from "../../../lib/agents/geo-session-state";
 import { GeoQueryReview, GeoRunPlan } from "./geo-query-review";
 import { GeoReportView } from "./geo-report-view";
 
@@ -171,6 +177,50 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   useEffect(() => {
     querySetRef.current = querySet;
   }, [querySet]);
+
+  /**
+   * Put a finished report back after a same-tab navigation.
+   *
+   * The language switcher calls `router.push`, which remounts this route and
+   * loses every piece of component state — including a report that cost
+   * eighteen provider calls. Without this, switching to English after a run
+   * dropped the visitor back on an empty form with no way to reach what they
+   * had just paid for, and the obvious next move is to run it again.
+   *
+   * Restoration is a read. It issues no request, reserves no budget and calls
+   * no provider; a stored payload that fails any part of the guard is deleted
+   * instead of rendered.
+   */
+  useEffect(() => {
+    const restored = restoreGeoReportSession(geoSessionStorage(), new Date());
+    if (restored === null) return;
+    setContext(restored.context);
+    setQuerySet(restored.querySet);
+    querySetRef.current = restored.querySet;
+    setReport(restored.report);
+    setStage("report");
+
+    // The form fields too, not only the confirmed snapshot. Restoring the
+    // report alone left "Back" pointing at a review step built from empty
+    // inputs: a category confirmation checkbox with no category, no alias to
+    // tick, and a Confirm button that could never enable — a dead end reachable
+    // in two clicks from a working report. Found by cross-model review,
+    // 2026-08-19.
+    const snapshot = restored.context;
+    setUrl(snapshot.targetUrl);
+    setProductName(snapshot.productName);
+    setCategory(snapshot.category);
+    setBuyer(snapshot.buyer);
+    setJtbd(snapshot.jtbd);
+    setRivals(snapshot.directCompetitors.join(", "));
+    setMarketCode(snapshot.marketCode);
+    // Every alias in a confirmed snapshot is one the visitor ticked; the
+    // snapshot cannot hold an unconfirmed one.
+    setAliases(
+      snapshot.brandAliases.map((alias) => ({ ...alias, confirmed: true })),
+    );
+    setCategoryConfirmed(true);
+  }, []);
 
   const errorMessage = useCallback(
     (code: string | null): string | null => {
@@ -385,6 +435,14 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         return;
       }
 
+      // Stored before it is rendered, so a language switch a second later still
+      // finds it. Only what the report itself contains: no auth state, no
+      // credentials, no account identity, and nothing that outlives the tab.
+      saveGeoReportSession(
+        geoSessionStorage(),
+        { context, querySet: confirmedSet, report: envelope.data },
+        new Date(),
+      );
       setReport(envelope.data);
       setStage("report");
     } catch {
@@ -719,17 +777,24 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
           </section>
         )}
 
-      {stage === "report" && report !== null && context !== null && (
-        <GeoReportView
-          report={report}
-          context={context}
-          locale={locale}
-          onRestart={() => {
-            setReport(null);
-            setStage("queries");
-          }}
-        />
-      )}
+      {stage === "report" &&
+        report !== null &&
+        context !== null &&
+        querySet !== null && (
+          <GeoReportView
+            report={report}
+            capture={{ context, querySet }}
+            locale={locale}
+            onRestart={() => {
+              // Starting over forgets the stored report as well as the rendered
+              // one. A restore that outlived the visitor's own "back" would put
+              // the report they just dismissed back on screen.
+              clearGeoReportSession(geoSessionStorage());
+              setReport(null);
+              setStage("queries");
+            }}
+          />
+        )}
 
       <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
     </div>

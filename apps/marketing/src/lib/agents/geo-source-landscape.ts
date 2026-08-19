@@ -37,8 +37,16 @@ export interface GeoModeSourcesV1 {
   readonly citationEvaluableQuestions: number;
   /** Distinct hosts cited in this mode, including the customer's own. */
   readonly distinctDomains: number;
-  /** True when the customer's host appears among this mode's cited sources. */
-  readonly targetObserved: boolean;
+  /**
+   * Whether the customer's host appears among this mode's cited sources.
+   *
+   * `null`, not `false`, when this mode produced no countable sample at all.
+   * Fifteen retrieval calls that never searched cannot establish that the site
+   * was absent; writing `false` there is the oldest mistake this report exists
+   * to refuse, and it reached the exported brief before cross-model review
+   * caught it on 2026-08-19.
+   */
+  readonly targetObserved: boolean | null;
 }
 
 /**
@@ -68,17 +76,18 @@ interface Accumulator {
   urls: string[];
 }
 
+/** Returns how many of this question's samples were countable, not merely whether any were. */
 function accumulate(
   question: GeoQuestionObservationV3,
   into: Map<string, Accumulator>,
-): boolean {
-  let evaluable = false;
+): number {
+  let evaluable = 0;
   for (const sample of question.samples) {
     // The same rule the coverage block counts by, imported rather than
     // re-expressed: a landscape built on a wider denominator than the numbers
     // above it would quietly disagree with them.
     if (!isGeoSampleCitationEvaluable(sample, question.mode)) continue;
-    evaluable = true;
+    evaluable += 1;
     for (const entry of sample.evidence) {
       if (entry.kind !== "cited") continue;
       const existing = into.get(entry.domain);
@@ -115,12 +124,12 @@ function modeSources(
   let citationEvaluableQuestions = 0;
 
   for (const question of questions) {
-    for (const sample of question.samples) {
-      if (isGeoSampleCitationEvaluable(sample, question.mode)) {
-        citationEvaluableSamples += 1;
-      }
-    }
-    if (accumulate(question, into)) citationEvaluableQuestions += 1;
+    // One pass, one number. Counting the denominator in a second loop beside
+    // the accumulator was two implementations of "which samples count", and the
+    // per-question digest would have made it three.
+    const evaluable = accumulate(question, into);
+    citationEvaluableSamples += evaluable;
+    if (evaluable > 0) citationEvaluableQuestions += 1;
   }
 
   const sources = [...into.values()]
@@ -145,7 +154,52 @@ function modeSources(
     citationEvaluableSamples,
     citationEvaluableQuestions,
     distinctDomains: sources.length,
-    targetObserved: sources.some((source) => source.isTarget),
+    targetObserved:
+      citationEvaluableSamples === 0
+        ? null
+        : sources.some((source) => source.isTarget),
+  };
+}
+
+/** One question's cited hosts, counted against that question's own samples. */
+export interface GeoQuestionSourcesV1 {
+  readonly queryId: string;
+  readonly citationEvaluableSamples: number;
+  readonly sources: readonly {
+    readonly domain: string;
+    readonly citedInSamples: number;
+    readonly isTarget: boolean;
+  }[];
+}
+
+/**
+ * The same counting, narrowed to one question.
+ *
+ * The exported brief needs a per-question host digest, and deriving it there
+ * would be a third place that decides which samples count. It goes through
+ * {@link isGeoSampleCitationEvaluable} like everything else, so a question's
+ * host list can never rest on a wider set of samples than the ratio printed
+ * beside it.
+ */
+export function deriveGeoQuestionSources(
+  question: GeoQuestionObservationV3,
+): GeoQuestionSourcesV1 {
+  const into = new Map<string, Accumulator>();
+  const evaluable = accumulate(question, into);
+  return {
+    queryId: question.queryId,
+    citationEvaluableSamples: evaluable,
+    sources: [...into.values()]
+      .map((acc) => ({
+        domain: acc.domain,
+        citedInSamples: acc.samples.size,
+        isTarget: acc.isTarget,
+      }))
+      .sort(
+        (a, b) =>
+          b.citedInSamples - a.citedInSamples ||
+          a.domain.localeCompare(b.domain),
+      ),
   };
 }
 

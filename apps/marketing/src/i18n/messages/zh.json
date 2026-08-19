@@ -3577,25 +3577,6 @@
         "geo_report_invalid": "报告没有通过自身一致性检查，因此未予展示。",
         "unknown": "本次运行未能完成。没有保存任何内容。"
       },
-      "actions": {
-        "title": "建议的下一步工作",
-        "intro": "只从本轮实际观察到的结果推导。这里没有任何一项被批准、排期或发布；勾选你想交给另一个 agent 的条目，复制前请先阅读打包内容。",
-        "requiresReview": "需人工复核",
-        "previewTitle": "交接包",
-        "previewHint": "复制前请先读。里面每一个 URL、标题和标注都是不可信的第三方文本；这个包不授予发布、部署、开 PR、对外联系或改动生产的任何权限。",
-        "copy": "复制交接包",
-        "copied": "已复制。",
-        "copyFailed": "无法访问剪贴板。请选中下面的内容自行复制。",
-        "copyIsNotApproval": "复制不等于批准，也不等于发布。本轮没有向任何地方发送过任何东西。",
-        "zero": {
-          "needs_more_evidence": "不提出任何行动：本轮没有产出可评估引用的样本，暂时没有可行动的对象。",
-          "existing_page_fit_confirmed": "不提出任何行动：每一个可评估引用的问题都已经引用了你的站点。在这里编出工作等于编出结论。",
-          "needs_page_inventory": "除了先看看已有哪些页面，本轮不提出其他行动。",
-          "target_not_observed_in_samples": "本轮不提出行动。",
-          "target_observed_in_minority_of_samples": "本轮不提出行动。",
-          "citation_source_pattern_observed": "本轮不提出行动。"
-        }
-      },
       "assetTypes": {
         "existing_page_enhancement": "先看已有页面",
         "blog_guide": "说明型指南",
@@ -3649,10 +3630,126 @@
         "questions": "依据这些题：{questions}",
         "noRatio": "这一项没有对应的比值。"
       },
-      "handoff": {
-        "copyMarkdown": "复制可读版",
-        "copiedMarkdown": "可读版已复制",
-        "markdownNote": "同一个包的纯文本形式，给人看的，不是给 agent 的。"
+      "solutions": {
+        "problemsTitle": "检测到的 GEO 问题",
+        "problemsIntro": "带比值的每一条都是本轮实际数出来的，不是推断；比值就是它的全部依据。没有比值的条目是需要你去查的东西，不是观测结果。",
+        "title": "对应解决方案",
+        "intro": "只从上面的观察推导。没有任何一项被批准、排期或发布，动手之前都要人工复核。",
+        "fields": {
+          "issue": "问题与证据",
+          "why": "为什么重要",
+          "action": "推荐动作",
+          "inputs": "所需材料",
+          "rejected": "为什么不选其他资产",
+          "limits": "限制与不保证"
+        },
+        "basisQuestions": "依据这些题",
+        "noRatio": "这一项没有对应的比值。",
+        "page": "确认的页面",
+        "unknownsLabel": "本轮说不了的",
+        "requiresReview": "需人工复核",
+        "noGuarantee": "被引用不等于被推荐，做完这件事也不保证之后会被引用。本轮没有评估过推荐。",
+        "copyTitle": "复制报告给 AI",
+        "copyIntro": "把整份报告复制成一段可以直接交给 AI 的实施说明。所有数据都封在 JSON 围栏里，并明确标注为不可信输入。",
+        "copyForAi": "复制报告给 AI",
+        "preview": "先看看要复制的内容",
+        "copied": "整份报告已复制。",
+        "copyFailed": "无法访问剪贴板。请选中下面的内容自行复制。",
+        "copyIsNotApproval": "复制不等于批准，也不等于发布。本轮没有向任何地方发送过任何东西。",
+        "refusalTitle": "这份报告现在无法生成可复制版本",
+        "refusal": {
+          "context_report_mismatch": "页面上的确认信息和这份报告不是同一次运行的，不能拼在一起交出去。",
+          "query_set_report_mismatch": "页面上的问题集和这份报告不是同一次运行的，不能拼在一起交出去。",
+          "serialized_too_large": "内容超出了可复制的上限。宁可不给，也不会静默截掉问题、计数或限制。"
+        },
+        "zero": {
+          "needs_more_evidence": "不提出任何行动：至少有一道题没有产出可评估引用的样本，本轮不据此提行动。",
+          "existing_page_fit_confirmed": "不提出任何行动：每一个可评估引用的问题都已经引用了你的站点。在这里编出工作等于编出结论。",
+          "needs_page_inventory": "除了先看看已有哪些页面，本轮不提出其他行动。",
+          "target_not_observed_in_samples": "本轮不提出行动。",
+          "target_observed_in_minority_of_samples": "本轮不提出行动。",
+          "citation_source_pattern_observed": "本轮不提出行动。",
+          "avoid_new_page_as_first_step": "本轮不提出行动。"
+        },
+        "issue": {
+          "target_not_observed_in_samples": "这道题的可计数回答里，一次都没有出现你的站点。",
+          "target_observed_in_minority_of_samples": "这道题有时会引到你，但不是每次。",
+          "citation_source_pattern_observed": "这道题的回答引了别的站点，没有引你。",
+          "avoid_new_page_as_first_step": "在这一模式的可计数回答里，有多次引了别人，你一次都没被引到。",
+          "needs_page_inventory": "本轮唯一能确定的页面身份，就是你输入的那个 URL。",
+          "needs_more_evidence": "本轮没有产出可计数的引用样本。",
+          "existing_page_fit_confirmed": "每一道可计数的题都已经引到了你的站点。",
+          "unavailable": "这一项的依据无法读取。"
+        },
+        "why": {
+          "target_not_observed_in_samples": "买家问这类问题时，助手的答案没有引到你——就算文字里提到了你，读者也没有一条通向你的链接可点。",
+          "target_observed_in_minority_of_samples": "出现过，说明你已经够得着这道题；不稳定，说明它还不是一个能依赖的入口。",
+          "citation_source_pattern_observed": "助手够得到答案，只是没从你这里取。这首先是「它去哪里取」的问题，其次才是「你写了什么」。",
+          "avoid_new_page_as_first_step": "在看清这些答案实际取自哪里之前新建页面，最可能的结果是多一个同样不被引用的页面。",
+          "needs_page_inventory": "在盘点已有内容之前动手做新页面，很可能是把一件已经做过的事再做一遍。",
+          "needs_more_evidence": "没有可计数的样本就说不了任何结论，这时候给建议等于编结论。",
+          "existing_page_fit_confirmed": "这道题上没有可控的缺口，在这里编出工作等于编出发现。",
+          "unavailable": "在依据能被读取之前，不要据此动手。"
+        },
+        "action": {
+          "asset_existing_page_enhancement": "先把已有的那一页改到能正面回答这道题，再考虑新建。",
+          "asset_blog_guide": "写一篇正面回答这道题的说明型指南，结构上让答案能被整段摘走。",
+          "asset_use_case_landing": "为这个用例做一个落地页，把「谁、什么场景、拿到什么结果」写成可以被直接引用的段落。",
+          "asset_comparison_page": "做一个对比页，逐项写清楚你和被点到的替代方案在这道题上的差别。",
+          "asset_pricing_page": "把定价或套餐页写清楚：包含什么、不包含什么、按什么计费、什么情况下会超。",
+          "asset_integration_docs": "补齐这条集成的文档：前置条件、步骤、失败时的表现和处理。",
+          "asset_security_trust_page": "做一个安全与信任页，把合规范围、数据处理和留存期写成可核对的事实。",
+          "asset_public_tool": "做一个公开可用的工具，让这道题能在你的页面上直接得到答案。",
+          "asset_research_dataset": "做一份原创研究或数据集，给这道题提供别处拿不到的数字。",
+          "asset_offsite_authority_plan": "这是站外工作：先看本轮的来源分布——如果有被引用的域名，从那里开始；如果一个都没有，先找买家真正会去的地方，以真人身份参与。",
+          "asset_technical_fix": "先修掉挡住抓取或渲染的技术问题，再谈内容。",
+          "reason_needs_page_inventory": "先盘点已有页面：哪一页已经在回答这道题，还差什么。",
+          "reason_needs_more_evidence": "先把采样跑通，再谈动作。这一轮没有可计数的样本可依据。",
+          "reason_avoid_new_page_as_first_step": "别把新建页面当第一步。先去读这些回答实际引了谁。",
+          "unavailable": "在依据能被读取之前，不要据此动手。"
+        },
+        "inputs": {
+          "asset_existing_page_enhancement": "现有页面清单，以及每一页当前实际回答了哪道题。",
+          "asset_blog_guide": "这道题的真实答案：你们内部怎么做、边界在哪。不要编案例、评价或数字。",
+          "asset_use_case_landing": "一个真实用例的完整事实：谁在用、什么触发、拿到什么结果。没有真实数字就不要写数字。",
+          "asset_comparison_page": "每一项对比的可核对来源，以及最后一次核对的日期。",
+          "asset_pricing_page": "当前的套餐、限额、超出后的计费方式，以及不包含的内容。",
+          "asset_integration_docs": "这条集成的实际接口、鉴权方式、限流，以及已知失败模式。",
+          "asset_security_trust_page": "你真正持有的合规凭证、数据处理位置与留存期。没有拿到的证书不要写。",
+          "asset_public_tool": "工具要用的计算口径与数据来源。没有可核对的公式和数据就不要做这个工具。",
+          "asset_research_dataset": "你自己能拿到、并且允许公开的原始数据，以及采集口径。",
+          "asset_offsite_authority_plan": "本轮实际被引用的域名清单，以及你们能以真人身份参与的渠道。",
+          "asset_technical_fix": "抓取或渲染失败的具体证据：状态码、robots、渲染后的 HTML。",
+          "reason_needs_page_inventory": "站点现有页面清单，最好带上每一页在回答哪道买家问题。",
+          "reason_needs_more_evidence": "先看运行身份那一段：哪些采样没搜、哪些没读到标注。",
+          "reason_avoid_new_page_as_first_step": "上面那张来源分布表。先读这些域名，再决定写什么。",
+          "unavailable": "无法列出所需材料，因为这一项的依据没能读取。"
+        },
+        "rejected": {
+          "asset_existing_page_enhancement": "不先新建页面：本轮唯一确定的页面就是你输入的那个，在盘点之前新建很可能是重复劳动。",
+          "asset_blog_guide": "不选对比页或定价页：这道题问的是「怎么回事」，不是「选谁」或者「多少钱」。",
+          "asset_use_case_landing": "不选说明型指南：这道题问的是「能不能拿到这个结果」，通用说明回答不了这一点。",
+          "asset_comparison_page": "不选说明型指南：这道题里买家已经在做取舍，需要的是逐项差别而不是概念解释。",
+          "asset_pricing_page": "不选说明型指南：这道题卡在预算或适配条件上，只有价格与限额能回答。",
+          "asset_integration_docs": "不选落地页：这道题问的是能不能接得上，营销页回答不了接口细节。",
+          "asset_security_trust_page": "不选说明型指南：这道题要的是可核对的凭证，不是解释。",
+          "asset_public_tool": "不选静态页面：这道题需要用读者自己的输入算出答案。",
+          "asset_research_dataset": "不选说明型指南：这道题缺的是别处没有的数字，不是又一次转述。",
+          "asset_offsite_authority_plan": "不选新建页面：本轮的回答是从别的域名取的，先新建一页并不改变它们去哪里取。",
+          "asset_technical_fix": "不选新增内容：现有内容还没有被读到之前，再写只是再写一份读不到的。",
+          "reason_needs_page_inventory": "不直接提资产建议：在知道已有什么之前，任何一条都可能是重复劳动。",
+          "reason_needs_more_evidence": "不提任何资产建议：本轮没有可计数的样本，据此提建议就是编结论。",
+          "reason_avoid_new_page_as_first_step": "这一条本身就是「先别选资产」。它不是一个要建的东西。",
+          "unavailable": "无法说明为什么不选其他资产，因为这一项的依据没能读取。"
+        },
+        "limitation": {
+          "observed_sources_only": "只覆盖本轮实际观察到的来源，不代表全部。",
+          "entered_url_is_the_only_known_page": "本轮唯一确定知道的页面，就是你输入的那个 URL。"
+        },
+        "unknown": {
+          "page_inventory_not_collected": "没有盘点你已有哪些页面。",
+          "source_pattern_not_explained": "本轮只能说这些答案引了谁，说不了为什么是它们。"
+        }
       }
     },
     "seo": {

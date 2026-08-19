@@ -32,13 +32,16 @@ const CONTEXT: GeoSamplingContext = {
   aliasScope: "supported",
 };
 
-function query(slot: GeoQuerySlot): GeoQueryUnitV1 {
+function query(
+  slot: GeoQuerySlot,
+  mode: "retrieval_probe" | "natural_demand" = "retrieval_probe",
+): GeoQueryUnitV1 {
   return {
     queryId: `core-${slot}`,
     slot,
     text: "What are the top seo tools right now?",
     cohort: "core",
-    mode: "retrieval_probe",
+    mode,
     brandStance: "unbranded",
     buyerStage: "awareness",
     marketCode: "US",
@@ -51,7 +54,7 @@ function query(slot: GeoQuerySlot): GeoQueryUnitV1 {
     templateId: "geo.retrieval.category_top",
     templateVersion: "1",
     retrievalTriggerClause: null,
-    samplesPlanned: 3,
+    samplesPlanned: mode === "retrieval_probe" ? 3 : 1,
   };
 }
 
@@ -78,8 +81,9 @@ function citation(url: string): GeoProviderCitationAnnotation {
 function question(
   slot: GeoQuerySlot,
   samples: readonly (readonly string[] | "unanswered" | "unsearched")[],
+  mode: "retrieval_probe" | "natural_demand" = "retrieval_probe",
 ): GeoQuestionObservationV3 {
-  const unit = query(slot);
+  const unit = query(slot, mode);
   const built = samples.map((entry, index) => {
     const slotRef = {
       queryIndex: 0,
@@ -268,6 +272,103 @@ describe("deriveGeoActionPlan", () => {
     );
 
     expect(plan.candidates.some((c) => c.kind === "avoid")).toBe(false);
+  });
+
+  // Regression: the first version of this rule walked every question regardless
+  // of mode and printed "18 of 18" on an ordinary run — fifteen repeats of five
+  // calibrated probes added to three one-shot answers, which is precisely the
+  // shared denominator the report refuses everywhere else. Found by cross-model
+  // review, 2026-08-19.
+  it("never adds a one-shot answer to a repeated probe's denominator", () => {
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a"],
+          ["https://rival.test/a"],
+          ["https://rival.test/a"],
+        ]),
+        question(
+          "jtbd_outcome",
+          [["https://rival.test/a"]],
+          "natural_demand",
+        ),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
+    expect(avoid?.actionId).toBe("act-avoid-new-page-first-retrieval_probe");
+    // Only the questions inside that mode.
+    expect(avoid?.queryIds).toEqual(["core-category_discovery"]);
+  });
+
+  it("lets one mode's citation decide nothing about the other's finding", () => {
+    // A single natural-demand answer that happened to cite the customer used to
+    // suppress the whole avoid row, discarding a pattern that fifteen retrieval
+    // samples agreed on.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", [
+          ["https://rival.test/a"],
+          ["https://rival.test/a"],
+          ["https://rival.test/a"],
+        ]),
+        question(
+          "jtbd_outcome",
+          [["https://acme.test/pricing"]],
+          "natural_demand",
+        ),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid).toBeDefined();
+    expect(avoid?.reasonCounts).toEqual({ observed: 3, evaluable: 3 });
+  });
+
+  it("falls back to natural demand when only that mode shows the pattern", () => {
+    const plan = deriveGeoActionPlan(
+      report([
+        question("category_discovery", ["unanswered", "unanswered", "unanswered"]),
+        question("jtbd_outcome", [["https://rival.test/a"]], "natural_demand"),
+        question("pain_how_to", [["https://other.test/b"]], "natural_demand"),
+      ]),
+    );
+    const avoid = plan.candidates.find((c) => c.kind === "avoid");
+
+    expect(avoid?.actionId).toBe("act-avoid-new-page-first-natural_demand");
+    expect(avoid?.reasonCounts).toEqual({ observed: 2, evaluable: 2 });
+  });
+
+  it("does not claim a site was never observed while its own ratio says once", () => {
+    // Two questions that both want a pricing page merge into one card. Ranking
+    // decides which asset wins; it must not decide what may be claimed about
+    // the merged counts. "target_not_observed_in_samples" always outranks the
+    // minority reason, so the merged card said the site "did not appear once"
+    // directly above its own "Observed in 1 of 6". Found by cross-model review,
+    // 2026-08-19.
+    const plan = deriveGeoActionPlan(
+      report([
+        question("constraint_fit", [
+          ["https://rival.test/a"],
+          [],
+          [],
+        ]),
+        question("negative_fit_objection", [
+          ["https://acme.test/pricing"],
+          [],
+          [],
+        ]),
+      ]),
+    );
+    const pricing = plan.candidates.find(
+      (c) => c.assetType === "pricing_page",
+    );
+
+    expect(pricing?.reasonCounts).toEqual({ observed: 1, evaluable: 6 });
+    expect(pricing?.reason).toBe("target_observed_in_minority_of_samples");
+    // The stable key the UI renders through must agree with the reason.
+    expect(pricing?.title).toBe("target_observed_in_minority_of_samples");
   });
 
   it("derives kind from the reason, never separately", () => {
