@@ -138,6 +138,7 @@ function isRecordOfCategory(
     ) ||
     !isRecordPopulation(value.population) ||
     !isNonNegativeInteger(value.tested) ||
+    !(value.targetTested === null || typeof value.targetTested === "boolean") ||
     !isNonNegativeInteger(value.affected) ||
     !Array.isArray(value.observations) ||
     !isNullableString(value.limitation)
@@ -242,8 +243,31 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "subHeadings",
   "openingText",
   "staticBodyWords",
+  "staticBodyUnits",
+  "termFrequencies",
   "truncatedLists",
+  "response",
+  "declared",
 ];
+
+/**
+ * Characters, counted the way the producer counts them.
+ *
+ * The crawl projection bounds its strings with `boundChars`, which slices by
+ * Unicode code point so a cut never orphans a surrogate half. These guards used
+ * `.length`, which counts UTF-16 code units. One astral character — any emoji —
+ * is 1 to the producer and 2 to the checker, and `boundChars` returns a string
+ * untouched once its code points fit, so an emoji-dense value ships at up to
+ * twice the bound and is then refused here.
+ *
+ * That is not a dead cache. `isSeoAuditPayload` also gates the Agent response,
+ * so a rocket emoji in a hero headline turned the whole tool into a 502 for
+ * that page. Same seam, same shape as the timestamp disagreement before it:
+ * both sides individually right, no test between them.
+ */
+function characterLength(value: string): number {
+  return [...value].length;
+}
 
 function isBoundedStringList(
   value: unknown,
@@ -253,7 +277,9 @@ function isBoundedStringList(
   return (
     Array.isArray(value) &&
     value.length <= maxEntries &&
-    value.every((entry) => typeof entry === "string" && entry.length <= maxChars)
+    value.every(
+      (entry) => typeof entry === "string" && characterLength(entry) <= maxChars,
+    )
   );
 }
 
@@ -262,7 +288,8 @@ function isBoundedNullableString(
   maxChars: number,
 ): value is string | null {
   return (
-    value === null || (typeof value === "string" && value.length <= maxChars)
+    value === null ||
+    (typeof value === "string" && characterLength(value) <= maxChars)
   );
 }
 
@@ -275,7 +302,219 @@ function isBoundedNullableString(
  * projection to the browser, and would let one enormous heading become the
  * whole response.
  */
-function isTargetPageExtract(
+
+const RESPONSE_FACTS_KEYS: readonly string[] = [
+  "status",
+  "finalStatus",
+  "redirectHops",
+  "responseMs",
+  "contentType",
+  "canonicalTarget",
+  "robotsIndexable",
+  "robotsDirectives",
+  "sitemapMember",
+  "jsonLdTypes",
+  "jsonLdErrorCount",
+  "internalOutlinks",
+  "internalOutlinksWithoutAnchorText",
+];
+
+const DECLARED_FACTS_KEYS: readonly string[] = [
+  "lang",
+  "openGraph",
+  "twitterCard",
+  "viewport",
+  "charset",
+  "faviconDeclared",
+  "hreflang",
+  "images",
+  "externalLinks",
+  "htmlBytes",
+  "visibleTextBytes",
+  "scriptBytes",
+  "interactive",
+];
+
+function hasExactly(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value);
+  return (
+    own.length === keys.length && own.every((key) => keys.includes(key))
+  );
+}
+
+function isNullableStatus(value: unknown): boolean {
+  return value === null || isNonNegativeInteger(value);
+}
+
+function isResponseFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, RESPONSE_FACTS_KEYS)) return false;
+  return (
+    isNullableStatus(value.status) &&
+    isNullableStatus(value.finalStatus) &&
+    isNonNegativeInteger(value.redirectHops) &&
+    isNullableStatus(value.responseMs) &&
+    isBoundedNullableString(value.contentType, 256) &&
+    isBoundedNullableString(value.canonicalTarget, 2_048) &&
+    typeof value.robotsIndexable === "boolean" &&
+    isBoundedStringList(value.robotsDirectives, 32, 128) &&
+    typeof value.sitemapMember === "boolean" &&
+    isBoundedStringList(value.jsonLdTypes, 100, 256) &&
+    isNonNegativeInteger(value.jsonLdErrorCount) &&
+    isNonNegativeInteger(value.internalOutlinks) &&
+    isNonNegativeInteger(value.internalOutlinksWithoutAnchorText)
+  );
+}
+
+const IMAGE_FACTS_KEYS: readonly string[] = [
+  "total",
+  "withAlt",
+  "withEmptyAlt",
+  "withoutAlt",
+  "withDimensions",
+  "lazyLoaded",
+];
+
+function isImageFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, IMAGE_FACTS_KEYS) &&
+    IMAGE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+  );
+}
+
+const INTERACTIVE_FACTS_KEYS: readonly string[] = [
+  "forms",
+  "inputs",
+  "buttons",
+  "selects",
+  "textareas",
+  "canvases",
+  "media",
+  "iframes",
+];
+
+function isInteractiveFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, INTERACTIVE_FACTS_KEYS) &&
+    INTERACTIVE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+  );
+}
+
+/**
+ * The repeated-phrase tables, bounded exactly as the builder bounds them.
+ *
+ * Five tables at most, fifteen rows each, and a phrase no longer than the
+ * builder's own cap. Everything the target extract carries is bounded, because
+ * this guard is what stands between a cached payload and a browser.
+ */
+function isTermTables(value: unknown, totalUnits: number | null): boolean {
+  if (value === null) return true;
+  if (!Array.isArray(value) || value.length > 5) return false;
+  const sizes: number[] = [];
+  for (const table of value) {
+    if (!isObject(table) || !hasExactly(table, ["size", "rows"])) return false;
+    if (
+      typeof table.size !== "number" ||
+      !Number.isSafeInteger(table.size) ||
+      table.size < 1 ||
+      table.size > 5 ||
+      // One table per length, in order. Two tables claiming the same size are
+      // not a shape this builder can produce, and they render as duplicate
+      // React keys on the way out.
+      sizes.includes(table.size) ||
+      (sizes.length > 0 && table.size <= (sizes.at(-1) ?? 0))
+    ) {
+      return false;
+    }
+    sizes.push(table.size);
+    // A phrase of `size` units cannot occur more times than there are windows
+    // of that length in the body. Without this a cached row could carry a count
+    // of a million against a ten-unit body and the browser would print
+    // 10,000,000%.
+    const ceiling =
+      totalUnits === null ? null : Math.max(0, totalUnits - table.size + 1);
+    if (
+      !Array.isArray(table.rows) ||
+      table.rows.length > 15 ||
+      !table.rows.every(
+        (row) =>
+          isObject(row) &&
+          hasExactly(row, ["phrase", "count"]) &&
+          typeof row.phrase === "string" &&
+          row.phrase.length > 0 &&
+          characterLength(row.phrase) <= 120 &&
+          isNonNegativeInteger(row.count) &&
+          row.count > 0 &&
+          (ceiling === null || row.count <= ceiling),
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** `text_units.v1`, as published beside the whitespace word count. */
+function isNullableTextUnits(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isObject(value) &&
+    hasExactly(value, ["units", "basis"]) &&
+    isNonNegativeInteger(value.units) &&
+    ["words", "cjk_chars", "mixed"].includes(value.basis as string)
+  );
+}
+
+function isExternalLinkFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["total", "nofollow", "blankWithoutNoopener"]) &&
+    isNonNegativeInteger(value.total) &&
+    isNonNegativeInteger(value.nofollow) &&
+    isNonNegativeInteger(value.blankWithoutNoopener)
+  );
+}
+
+function isOpenGraphFacts(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    hasExactly(value, ["title", "description", "image"]) &&
+    isBoundedNullableString(value.title, 2_048) &&
+    isBoundedNullableString(value.description, 2_048) &&
+    isBoundedNullableString(value.image, 2_048)
+  );
+}
+
+function isDeclaredFacts(value: unknown): boolean {
+  if (!isObject(value) || !hasExactly(value, DECLARED_FACTS_KEYS)) return false;
+  return (
+    isBoundedNullableString(value.lang, 128) &&
+    isOpenGraphFacts(value.openGraph) &&
+    isBoundedNullableString(value.twitterCard, 2_048) &&
+    isBoundedNullableString(value.viewport, 2_048) &&
+    isBoundedNullableString(value.charset, 2_048) &&
+    typeof value.faviconDeclared === "boolean" &&
+    isBoundedStringList(value.hreflang, 32, 128) &&
+    isImageFacts(value.images) &&
+    isExternalLinkFacts(value.externalLinks) &&
+    isNonNegativeInteger(value.htmlBytes) &&
+    isNonNegativeInteger(value.visibleTextBytes) &&
+    isNonNegativeInteger(value.scriptBytes) &&
+    isInteractiveFacts(value.interactive)
+  );
+}
+
+/**
+ * Exported so the Agent projection can reuse it rather than restate it.
+ *
+ * The projection used to carry its own copy of the key list and check nothing
+ * else — not types, not bounds, and never inside `response` or `declared`.
+ * Measured: `url: 12345` and `response: "not an object"` both passed. Two lists
+ * of the same keys also drift, and v7's new fields landed in exactly the region
+ * the shallow copy could not see.
+ */
+export function isSeoAuditTargetPageExtract(
   value: unknown,
 ): value is SeoAuditTargetPageExtract {
   if (!isObject(value)) return false;
@@ -285,7 +524,7 @@ function isTargetPageExtract(
 
   return (
     typeof value.url === "string" &&
-    value.url.length <= 2_048 &&
+    characterLength(value.url) <= 2_048 &&
     isBoundedNullableString(value.title, 512) &&
     isBoundedNullableString(value.metaDescription, 2_048) &&
     isBoundedStringList(value.h1, 10, 200) &&
@@ -294,9 +533,20 @@ function isTargetPageExtract(
     isBoundedNullableString(value.openingText, 500) &&
     (value.staticBodyWords === null ||
       isNonNegativeInteger(value.staticBodyWords)) &&
-    typeof value.truncatedLists === "boolean"
+    isNullableTextUnits(value.staticBodyUnits) &&
+    isTermTables(
+      value.termFrequencies,
+      isObject(value.staticBodyUnits) &&
+        typeof value.staticBodyUnits.units === "number"
+        ? value.staticBodyUnits.units
+        : null,
+    ) &&
+    typeof value.truncatedLists === "boolean" &&
+    isResponseFacts(value.response) &&
+    (value.declared === null || isDeclaredFacts(value.declared))
   );
 }
+
 
 /** Runtime authority for the current buffered site-wide SEO audit payload. */
 export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
@@ -307,7 +557,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v6" &&
+    run.schemaVersion === "seo_audit.sitewide.v7" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&
@@ -318,7 +568,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
     (result.inspectedTargetUrl === null ||
       typeof result.inspectedTargetUrl === "string") &&
     (result.targetPageExtract === null ||
-      isTargetPageExtract(result.targetPageExtract)) &&
+      isSeoAuditTargetPageExtract(result.targetPageExtract)) &&
     // The keyword region is derived per request from one visitor's queries.
     // This shape is the one that gets cached under a key shared by every
     // visitor to the same host, so a payload carrying that region is not a

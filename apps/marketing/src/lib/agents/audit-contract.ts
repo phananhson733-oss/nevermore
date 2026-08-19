@@ -1,4 +1,4 @@
-// @input  -- existing seo_audit.sitewide.v6 envelopes and projected Agent data
+// @input  -- existing seo_audit.sitewide.v7 envelopes and projected Agent data
 // @output -- frozen authenticated Agent API types plus strict client/upstream guards
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
@@ -29,6 +29,7 @@ import {
   isKeywordEvidenceRecord,
   isPagePerformanceRecord,
   isSearchPerformanceRecord,
+  isSeoAuditTargetPageExtract,
   isSerpShapeRecord,
 } from "@sf/public-tools/seo-audit/contract";
 import {
@@ -40,25 +41,76 @@ import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
+
 export { isCanonicalIsoTimestamp };
+
+export interface SerpLandscapeRow {
+  readonly position: number;
+  /** Sitelinks shown under this result; zero also covers "not described". */
+  readonly sitelinkCount: number;
+  readonly domain: string;
+  /** The checked site holds this result. Says nothing about which page. */
+  readonly isTarget: boolean;
+  /**
+   * Whether this result is the submitted page itself.
+   *
+   * Null when the site does not hold the result, or when the provider gave no
+   * URL to compare — which is a different fact from "a different page".
+   */
+  readonly isTargetPage: boolean | null;
+}
+
+/**
+ * Page one for one query, in one market.
+ *
+ * Declared here rather than beside the lookup that fills it: this module is the
+ * wire contract both the route and the browser read, and the lookup builds a
+ * provider client whose graph reaches `node:net`. Keeping the shape on this
+ * side means the client never has a reason to name that module at all.
+ */
+export type SerpLandscape =
+  | {
+      readonly availability: "available";
+      readonly query: string;
+      readonly market: string;
+      readonly language: string;
+      readonly resultsObserved: number;
+      /** Results showing sitelinks, the strength signal the reference tool uses. */
+      readonly withSitelinks: number;
+      /** Feature blocks on the page, or null when the provider named none. */
+      readonly features: readonly string[] | null;
+      /** Where this page's own host sits, or null when it is not on page one. */
+      readonly targetPosition: number | null;
+      /** True only when one of those results is the submitted page itself. */
+      readonly targetPageOnPage: boolean;
+      readonly rows: readonly SerpLandscapeRow[];
+    }
+  | {
+      readonly availability: "unavailable";
+      readonly reason:
+        | "no_target_query"
+        | "market_not_supported"
+        | "provider_not_configured"
+        | "provider_unavailable";
+    };
 
 export type AgentKind = "seo" | "tech";
 export type AgentAuditCacheStatus = "hit" | "miss";
 export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
-  "seo_audit.sitewide.v6" as const;
+  "seo_audit.sitewide.v7" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
 
-/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v6. */
 /**
  * Re-exported, not re-declared.
  *
- * This used to be a second hand-written copy of the producer's ledger, and the
- * guard below refuses any upstream payload whose records differ from it at all.
- * The tests in this app build their fixtures from the copy, so a detector added
- * to the crawl never met the guard here: five landed, a real run published
- * twenty-nine records against a list of twenty-four, and the Agent audit
- * answered 502 while every unit test stayed green.
+ * This was a second hand-written copy of the producer's ledger, and the guard
+ * below refuses any upstream payload whose records differ from it at all. The
+ * tests here build their fixtures from the copy, so a detector added to the
+ * crawl never met the guard: five landed, a real run published twenty-nine
+ * records against a list of twenty-four, and the Agent audit answered 502 while
+ * every unit test stayed green. Verified against main's copy at merge time —
+ * it holds nothing the shared ledger lacks.
  */
 export { SEO_AUDIT_RECORD_CATEGORIES as AGENT_AUDIT_RECORD_CATEGORIES } from "@sf/public-tools/seo-audit/record-ledger";
 
@@ -122,14 +174,6 @@ export type AgentAuditResult = Pick<
    */
   readonly pagePerformance?: AgentPagePerformance;
   /**
-   * One live sample of the results page for the confirmed query.
-   *
-   * The only paid provider call in a run, and only when there is a confirmed
-   * query and credentials to make it with. Absent is a settled state the
-   * records explain.
-   */
-  readonly serpShape?: AgentSerpShape;
-  /**
    * Present only when the visitor holds a Search Console grant covering the
    * audited host.
    *
@@ -150,6 +194,24 @@ export type AgentAuditResult = Pick<
    * who is already connected back through OAuth to fix something OAuth cannot.
    */
   readonly searchPerformanceUnavailable?: true;
+  /**
+   * Page one for the primary query, when this boundary looked it up.
+   *
+   * Absent from the cached payload for the same reason the keyword region is:
+   * a results page is a fact about one query in one market, and the cache row
+   * is shared by every visitor to the host.
+   */
+  readonly serpLandscape?: SerpLandscape;
+  /**
+   * 9.1 and 9.4, read off the landscape above.
+   *
+   * A separate region because the checks need their own versioned ledger and
+   * guard, not because they need their own lookup: a second paid call for the
+   * same query in the same run would double the cost of every audit to learn a
+   * fact already in hand.
+   */
+  readonly serpShape?: AgentSerpShape;
+
 };
 
 /**
@@ -467,31 +529,18 @@ function isKeywordEvidenceShape(value: unknown): value is KeywordEvidence {
 }
 
 /**
- * The extract as the Agent publishes it: exactly these keys, nothing else.
+ * The extract as the Agent publishes it, checked all the way down.
  *
- * The upstream guard already bounds the values; this one exists because the
- * projection is what decides what reaches a browser, and "whatever the payload
- * had" is not a decision.
+ * The projection is what decides what reaches a browser, and "whatever the
+ * payload had" is not a decision. It used to restate the key list here and
+ * check only that — no types, no bounds, and never inside `response` or
+ * `declared`, which is where every field added since then went. The upstream
+ * guard is the one definition of this shape, so the projection defers to it
+ * instead of keeping a second list that can fall behind.
  */
 function isAgentTargetPageExtract(value: unknown): boolean {
-  if (!isObject(value)) return false;
-  const keys = Object.keys(value);
-  return (
-    keys.length === AGENT_EXTRACT_KEYS.length &&
-    keys.every((key) => AGENT_EXTRACT_KEYS.includes(key))
-  );
+  return isSeoAuditTargetPageExtract(value);
 }
-
-const AGENT_EXTRACT_KEYS: readonly string[] = [
-  "url",
-  "title",
-  "metaDescription",
-  "h1",
-  "subHeadings",
-  "openingText",
-  "staticBodyWords",
-  "truncatedLists",
-];
 
 const SLOT_STATES: readonly string[] = [
   "covered",
@@ -556,6 +605,84 @@ function isDensity(value: unknown): boolean {
   );
 }
 
+/**
+ * Exported so the wording guard walks the same list the validator does.
+ *
+ * A reason with no sentence renders as its own key path in the one section
+ * that exists to explain why a lookup produced nothing.
+ */
+export const SERP_UNAVAILABLE_REASONS: readonly string[] = [
+  "no_target_query",
+  "market_not_supported",
+  "provider_not_configured",
+  "provider_unavailable",
+];
+
+/**
+ * The results-page region, checked all the way down.
+ *
+ * Its rows carry a domain that the report prints, so they are bounded here the
+ * way every other printed string is. Ten results at most, because one page is
+ * what was asked for.
+ */
+export function isSerpLandscape(value: unknown): value is SerpLandscape {
+  return isSerpLandscapeShape(value);
+}
+
+function isSerpLandscapeShape(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  if (value.availability === "unavailable") {
+    return (
+      Object.keys(value).length === 2 &&
+      typeof value.reason === "string" &&
+      SERP_UNAVAILABLE_REASONS.includes(value.reason)
+    );
+  }
+  if (value.availability !== "available") return false;
+  if (
+    typeof value.query !== "string" ||
+    value.query.length > 200 ||
+    typeof value.market !== "string" ||
+    !/^[A-Z]{2}$/.test(value.market) ||
+    typeof value.language !== "string" ||
+    !/^[a-z]{2,3}$/.test(value.language) ||
+    typeof value.targetPageOnPage !== "boolean" ||
+    !isNonNegativeInteger(value.resultsObserved) ||
+    !isNonNegativeInteger(value.withSitelinks) ||
+    value.withSitelinks > value.resultsObserved ||
+    !(
+      value.targetPosition === null ||
+      (isNonNegativeInteger(value.targetPosition) && value.targetPosition > 0)
+    ) ||
+    !(
+      value.features === null ||
+      (Array.isArray(value.features) &&
+        value.features.length <= 40 &&
+        value.features.every(
+          (entry) => typeof entry === "string" && entry.length <= 64,
+        ))
+    ) ||
+    !Array.isArray(value.rows) ||
+    value.rows.length > 10 ||
+    value.rows.length !== value.resultsObserved
+  ) {
+    return false;
+  }
+  return value.rows.every(
+    (row) =>
+      isObject(row) &&
+      Object.keys(row).length === 5 &&
+      isNonNegativeInteger(row.position) &&
+      row.position > 0 &&
+      typeof row.domain === "string" &&
+      row.domain.length > 0 &&
+      row.domain.length <= 253 &&
+      isNonNegativeInteger(row.sitelinkCount) &&
+      typeof row.isTarget === "boolean" &&
+      (row.isTargetPage === null || typeof row.isTargetPage === "boolean"),
+  );
+}
+
 function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
@@ -585,15 +712,16 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
       isAgentPagePerformance(value.pagePerformance)
     ) ||
     !(
-      value.serpShape === undefined || isAgentSerpShape(value.serpShape)
-    ) ||
-    !(
       value.searchPerformance === undefined ||
       isAgentSearchPerformance(value.searchPerformance)
     ) ||
     !(
       value.searchPerformanceUnavailable === undefined ||
       value.searchPerformanceUnavailable === true
+    ) ||
+    !(
+      value.serpLandscape === undefined ||
+      isSerpLandscapeShape(value.serpLandscape)
     )
   ) {
     return false;

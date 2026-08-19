@@ -38,6 +38,7 @@ function slotRecord(
     state: "unverified",
     unit: "pages",
     population: "target_page",
+    targetTested: null,
     tested: 0,
     affected: 0,
     observations: [],
@@ -83,6 +84,7 @@ function slotRecord(
     state: covered ? "not_observed" : "observed",
     unit: "pages",
     population: "target_page",
+    targetTested: true,
     tested: 1,
     affected: covered ? 0 : 1,
     observations: covered

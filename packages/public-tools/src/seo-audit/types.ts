@@ -1,4 +1,5 @@
 import type { PublicToolResultEnvelope } from "../contract.ts";
+import type { TextUnitsBasis } from "./keyword-evidence/text-units.ts";
 
 export type SeoAuditAvailability = "available" | "partial" | "unavailable";
 export type SeoAuditRecordState = "observed" | "not_observed" | "unverified";
@@ -84,6 +85,17 @@ export interface SeoAuditRecord {
   readonly unit: SeoAuditRecordUnit;
   readonly population: SeoAuditRecordPopulation;
   readonly tested: number;
+  /**
+   * Whether one named page was inside this rule's tested population.
+   *
+   * Null when the question does not arise: no page was named, or the rule
+   * counts something other than pages. Published because `population` alone
+   * cannot answer it — a rule that tested a qualifying subset says nothing
+   * about a page that never qualified, and says a great deal about one that
+   * did. Without this, every conditional rule had to report "not covered" for
+   * both, which is false for the common case and reads as a hole in the audit.
+   */
+  readonly targetTested: boolean | null;
   readonly affected: number;
   readonly observations: readonly SeoAuditObservation[];
   readonly limitation: string | null;
@@ -147,6 +159,87 @@ export interface SeoAuditSiteResources {
  * visibility: paired `nav`/`footer`/`aside`/`script` blocks are removed, but
  * CSS, `hidden` and client rendering are not evaluated.
  */
+/**
+ * What the target page's HTML declared, as declared.
+ *
+ * Mirrors the crawler's side-car facts one-for-one. Absent stays null or zero
+ * *as observed* — this whole object is null when the crawl did not carry the
+ * side-car at all, which is a different fact from a page that declared nothing.
+ */
+export interface SeoAuditTargetDeclaredFacts {
+  readonly lang: string | null;
+  readonly openGraph: {
+    readonly title: string | null;
+    readonly description: string | null;
+    readonly image: string | null;
+  };
+  readonly twitterCard: string | null;
+  readonly viewport: string | null;
+  readonly charset: string | null;
+  readonly faviconDeclared: boolean;
+  readonly hreflang: readonly string[];
+  readonly images: {
+    readonly total: number;
+    readonly withAlt: number;
+    /** `alt=""`, a correct decorative declaration — not a missing alt. */
+    readonly withEmptyAlt: number;
+    readonly withoutAlt: number;
+    /** Both `width` and `height` declared, which is what reserves the box. */
+    readonly withDimensions: number;
+    readonly lazyLoaded: number;
+  };
+  readonly externalLinks: {
+    readonly total: number;
+    readonly nofollow: number;
+    readonly blankWithoutNoopener: number;
+  };
+  /** UTF-8 bytes, not characters: a CJK page would read a third of its size. */
+  readonly htmlBytes: number;
+  readonly visibleTextBytes: number;
+  /** UTF-8 bytes inside `<script>`, which is what a document ships instead. */
+  readonly scriptBytes: number;
+  /** Elements a visitor can act through, as far as static HTML can see them. */
+  readonly interactive: {
+    readonly forms: number;
+    readonly inputs: number;
+    readonly buttons: number;
+    readonly selects: number;
+    readonly textareas: number;
+    readonly canvases: number;
+    readonly media: number;
+    readonly iframes: number;
+  };
+}
+
+/** The crawl's own HTTP journey to the target page. Known once it was collected. */
+export interface SeoAuditTargetResponseFacts {
+  readonly status: number | null;
+  readonly finalStatus: number | null;
+  /** Redirect hops taken, not the URLs — those are the site's, not this page's. */
+  readonly redirectHops: number;
+  readonly responseMs: number | null;
+  readonly contentType: string | null;
+  readonly canonicalTarget: string | null;
+  readonly robotsIndexable: boolean;
+  readonly robotsDirectives: readonly string[];
+  readonly sitemapMember: boolean;
+  readonly jsonLdTypes: readonly string[];
+  readonly jsonLdErrorCount: number;
+  readonly internalOutlinks: number;
+  readonly internalOutlinksWithoutAnchorText: number;
+}
+
+export interface SeoAuditTermRow {
+  readonly phrase: string;
+  readonly count: number;
+}
+
+export interface SeoAuditTermTable {
+  /** Phrase length in text units: 1 through 5. */
+  readonly size: number;
+  readonly rows: readonly SeoAuditTermRow[];
+}
+
 export interface SeoAuditTargetPageExtract {
   readonly url: string;
   readonly title: string | null;
@@ -168,11 +261,39 @@ export interface SeoAuditTargetPageExtract {
    *
    * Null for pages written mostly in a script with no word gaps, where the
    * count would be off by an order of magnitude. A known-wrong number does not
-   * get published just because a number is expected.
+   * get published just because a number is expected. Prefer `staticBodyUnits`
+   * for anything that has to hold across scripts; this stays because "words"
+   * is what a reader of an English page expects to see.
    */
   readonly staticBodyWords: number | null;
+  /**
+   * The same body in `text_units.v1`, which every script can be counted in.
+   *
+   * CJK code points count one unit each and the rest counts in whitespace
+   * runs, so a Chinese page finally has a length rather than an absence. Null
+   * only when the crawl did not carry the side-car that measured it.
+   */
+  readonly staticBodyUnits: {
+    readonly units: number;
+    readonly basis: TextUnitsBasis;
+  } | null;
+  /**
+   * What the page repeats, one table per phrase length from one unit to five.
+   *
+   * Counted over the same body `staticBodyUnits` measures, so a row's share is
+   * that count over that total and there is only one denominator on the page.
+   * Visitor-neutral, so it travels with the cached crawl; whether a row covers
+   * anyone's target keyword is decided per request, where the queries are.
+   *
+   * Null when the crawl carried no side-car to count with.
+   */
+  readonly termFrequencies: readonly SeoAuditTermTable[] | null;
   /** True when a list field was cut to its own budget before publication. */
   readonly truncatedLists: boolean;
+  /** The crawl's HTTP journey to this page. */
+  readonly response: SeoAuditTargetResponseFacts;
+  /** What the markup declared, or null when the crawl did not carry it. */
+  readonly declared: SeoAuditTargetDeclaredFacts | null;
 }
 
 export interface SeoAuditReport {

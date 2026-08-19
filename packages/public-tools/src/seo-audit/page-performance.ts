@@ -88,6 +88,8 @@ export function buildPagePerformanceRecords(
         state: "unverified",
         unit: "pages",
         population: "target_page",
+        // The named page was not tested: nothing was measured for it.
+        targetTested: null,
         tested: 0,
         affected: 0,
         observations: [],
@@ -105,6 +107,8 @@ export function buildPagePerformanceRecords(
       state: "observed",
       unit: "pages",
       population: "target_page",
+      // This record is about the named page and it was measured.
+      targetTested: true,
       tested: 1,
       // One affected observation, which is what lets the rule run at all: the
       // evaluator reads `affected === 0` as a clean pass before it reaches an

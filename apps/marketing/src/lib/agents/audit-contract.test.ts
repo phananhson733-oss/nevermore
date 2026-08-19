@@ -27,7 +27,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v6",
+        schemaVersion: "seo_audit.sitewide.v7",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -62,6 +62,7 @@ const success = {
         state: index === 0 ? ("observed" as const) : ("not_observed" as const),
         unit: "pages" as const,
         population: "every_collected_page" as const,
+        targetTested: null,
         tested: 1,
         affected: index === 0 ? 1 : 0,
         observations:
@@ -294,7 +295,59 @@ describe("isAgentAuditSuccessEnvelope", () => {
       subHeadings: ["How the chart is drawn"],
       openingText: "A birth chart maps the sky at a moment in time.",
       staticBodyWords: 900,
+      staticBodyUnits: null,
+      termFrequencies: null,
       truncatedLists: false,
+          response: {
+            status: 200,
+            finalStatus: 200,
+            redirectHops: 0,
+            responseMs: 42,
+            contentType: "text/html; charset=utf-8",
+            canonicalTarget: "https://acme.test/",
+            robotsIndexable: true,
+            robotsDirectives: [],
+            sitemapMember: true,
+            jsonLdTypes: ["WebPage"],
+            jsonLdErrorCount: 0,
+            internalOutlinks: 3,
+            internalOutlinksWithoutAnchorText: 0,
+          },
+          declared: {
+            lang: "en",
+            openGraph: {
+              title: "Acme birth chart calculator",
+              description: "Calculate a birth chart.",
+              image: "https://acme.test/card.png",
+            },
+            twitterCard: "summary_large_image",
+            viewport: "width=device-width, initial-scale=1",
+            charset: "utf-8",
+            faviconDeclared: true,
+            hreflang: ["en"],
+            images: {
+      total: 2,
+      withAlt: 2,
+      withEmptyAlt: 0,
+      withoutAlt: 0,
+      withDimensions: 0,
+      lazyLoaded: 0,
+    },
+            externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
+            htmlBytes: 24_576,
+            visibleTextBytes: 8_192,
+            scriptBytes: 0,
+            interactive: {
+              forms: 0,
+              inputs: 0,
+              buttons: 0,
+              selects: 0,
+              textareas: 0,
+              canvases: 0,
+              media: 0,
+              iframes: 0,
+            },
+          },
     };
 
     function withEvidence(overrides: Record<string, unknown> = {}): unknown {
@@ -450,7 +503,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
     // An older schema, which is what a cache entry written before a bump holds.
     // A version this reader was not built for must be refused, not read on the
     // assumption that the fields it knows are still there.
-    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v4";
+    malformed.data.run.source.schemaVersion = "seo_audit.sitewide.v5";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });

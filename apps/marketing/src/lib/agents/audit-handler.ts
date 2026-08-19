@@ -37,11 +37,9 @@ import {
   type SerpShapeGap,
   type SerpShapeRaw,
 } from "@sf/public-tools/seo-audit/serp-shape";
-import {
-  defaultSerpShapeReader,
-  type SerpShapeReadResult,
-} from "./serp-shape-reader.ts";
+
 import { buildKeywordEvidence } from "@sf/public-tools";
+import { readSerpLandscape } from "../tools/serp-landscape.ts";
 import {
   AGENT_SERP_SHAPE_VERSION,
   AGENT_PAGE_PERFORMANCE_VERSION,
@@ -52,6 +50,7 @@ import {
   type AgentAuditSuccessData,
   type AgentSearchPerformance,
   type AgentKind,
+  type SerpLandscape,
 } from "./audit-contract.ts";
 
 export interface AgentAuditHandlerDependencies {
@@ -101,16 +100,6 @@ export interface AgentAuditHandlerDependencies {
   readonly readPagePerformance?: (input: {
     readonly url: string;
   }) => Promise<PagePerformanceReadResult> | undefined;
-  /**
-   * One live results-page sample for the confirmed query, or null.
-   *
-   * The only paid call in a run. Optional and best-effort like the others: no
-   * credentials, no confirmed query, an unmapped market or a provider that did
-   * not answer are all the same settled outcome, and none is a failed audit.
-   */
-  readonly readSerpShape?: (input: {
-    readonly keyword: string;
-  }) => Promise<SerpShapeReadResult> | undefined;
   readonly readSearchPerformance?: (input: {
     readonly siteOrigin: string;
     readonly pages: SeoAuditReport["pages"];
@@ -130,6 +119,25 @@ export interface AgentAuditHandlerDependencies {
    * thing that changes here.
    */
   readonly reportAs: QualifyingTool;
+  /**
+   * Reads page one for the primary query, when this boundary wants it.
+   *
+   * Absent on the SEO Agent's own route: the Agent's cost profile is its own
+   * decision, and a seam attached to the shared handler would have spent a
+   * provider call on every Agent run without anyone asking for one. The
+   * On-Page Checker attaches it, because "who is already on page one, and are
+   * you" is the context its report was missing.
+   *
+   * It must resolve rather than throw: the crawl has already finished by the
+   * time this runs, and losing it to a provider timeout would trade the thing
+   * the visitor asked for against the thing they did not.
+   */
+  readonly readSerpLandscape?: (input: {
+    readonly query: string | null;
+    readonly market: string | null;
+    readonly language: string | null;
+    readonly targetUrl: string;
+  }) => Promise<SerpLandscape>;
 }
 
 /**
@@ -154,7 +162,6 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   // visitor's own traffic that this run never went and looked for. Leaving it
   // undefined lets the handler's `source_not_configured` initial value stand.
   readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
-  readSerpShape: (input) => defaultSerpShapeReader()?.(input),
 };
 
 /**
@@ -167,6 +174,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
 export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   ...DEFAULT_DEPENDENCIES,
   reportAs: "on-page-seo-check",
+  readSerpLandscape: (input) => readSerpLandscape(input),
 };
 
 /**
@@ -378,6 +386,10 @@ function projectRecord(record: SeoAuditRecord): SeoAuditRecord {
     // downgrade every page-level check to unverified.
     population: record.population,
     tested: record.tested,
+    // Whether the submitted page was inside that population. Without it a
+    // conditional rule can only say "not covered", which is false for a page
+    // that did qualify and was clean.
+    targetTested: record.targetTested,
     affected: record.affected,
     observations: record.observations.map((observation) => ({
       url: observation.url,
@@ -434,7 +446,83 @@ function projectTargetPageExtract(
     subHeadings: extract.subHeadings === null ? null : [...extract.subHeadings],
     openingText: extract.openingText,
     staticBodyWords: extract.staticBodyWords,
+    staticBodyUnits:
+      extract.staticBodyUnits === null
+        ? null
+        : {
+            units: extract.staticBodyUnits.units,
+            basis: extract.staticBodyUnits.basis,
+          },
+    termFrequencies:
+      extract.termFrequencies === null
+        ? null
+        : extract.termFrequencies.map((table) => ({
+            size: table.size,
+            rows: table.rows.map((row) => ({
+              phrase: row.phrase,
+              count: row.count,
+            })),
+          })),
     truncatedLists: extract.truncatedLists,
+    response: {
+      status: extract.response.status,
+      finalStatus: extract.response.finalStatus,
+      redirectHops: extract.response.redirectHops,
+      responseMs: extract.response.responseMs,
+      contentType: extract.response.contentType,
+      canonicalTarget: extract.response.canonicalTarget,
+      robotsIndexable: extract.response.robotsIndexable,
+      robotsDirectives: [...extract.response.robotsDirectives],
+      sitemapMember: extract.response.sitemapMember,
+      jsonLdTypes: [...extract.response.jsonLdTypes],
+      jsonLdErrorCount: extract.response.jsonLdErrorCount,
+      internalOutlinks: extract.response.internalOutlinks,
+      internalOutlinksWithoutAnchorText:
+        extract.response.internalOutlinksWithoutAnchorText,
+    },
+    declared:
+      extract.declared === null
+        ? null
+        : {
+            lang: extract.declared.lang,
+            openGraph: {
+              title: extract.declared.openGraph.title,
+              description: extract.declared.openGraph.description,
+              image: extract.declared.openGraph.image,
+            },
+            twitterCard: extract.declared.twitterCard,
+            viewport: extract.declared.viewport,
+            charset: extract.declared.charset,
+            faviconDeclared: extract.declared.faviconDeclared,
+            hreflang: [...extract.declared.hreflang],
+            images: {
+              total: extract.declared.images.total,
+              withAlt: extract.declared.images.withAlt,
+              withEmptyAlt: extract.declared.images.withEmptyAlt,
+              withoutAlt: extract.declared.images.withoutAlt,
+              withDimensions: extract.declared.images.withDimensions,
+              lazyLoaded: extract.declared.images.lazyLoaded,
+            },
+            externalLinks: {
+              total: extract.declared.externalLinks.total,
+              nofollow: extract.declared.externalLinks.nofollow,
+              blankWithoutNoopener:
+                extract.declared.externalLinks.blankWithoutNoopener,
+            },
+            htmlBytes: extract.declared.htmlBytes,
+            visibleTextBytes: extract.declared.visibleTextBytes,
+            scriptBytes: extract.declared.scriptBytes,
+            interactive: {
+              forms: extract.declared.interactive.forms,
+              inputs: extract.declared.interactive.inputs,
+              buttons: extract.declared.interactive.buttons,
+              selects: extract.declared.interactive.selects,
+              textareas: extract.declared.interactive.textareas,
+              canvases: extract.declared.interactive.canvases,
+              media: extract.declared.interactive.media,
+              iframes: extract.declared.interactive.iframes,
+            },
+          },
   };
 }
 
@@ -549,28 +637,8 @@ export async function handleAgentAuditRequest(
     }
   }
 
-  const primaryQueryText =
-    input.value.targetQueries?.[0]?.displayQuery ?? null;
-  let serpShape: SerpShapeRaw | null = null;
-  let serpShapeGap: SerpShapeGap = "no_confirmed_query";
-  if (primaryQueryText !== null) {
-    // A query WAS confirmed by the time we get here, so "no query was
-    // confirmed" is false in every state this branch can produce. The reader
-    // now names which of the real causes it hit.
-    serpShapeGap = "provider_unavailable";
-    try {
-      const read = await dependencies.readSerpShape?.({
-        keyword: primaryQueryText,
-      });
-      if (read?.status === "ok") serpShape = read.sample;
-      else if (read !== undefined) serpShapeGap = read.reason;
-      else serpShapeGap = "source_not_configured";
-    } catch {
-      serpShapeGap = "provider_unavailable";
-    }
-  }
 
-  const keywordEvidence =
+  const evidence =
     input.value.targetQueries === null
       ? null
       : buildKeywordEvidence(
@@ -579,6 +647,36 @@ export async function handleAgentAuditRequest(
           input.value.pageRole,
           result.targetInspected,
         );
+
+  // One paid call, for the query the evidence layer already chose as primary.
+  // Choosing again here would let the results page and the coverage table
+  // disagree about which word this page is being judged on.
+  const primaryQuery =
+    evidence !== null && evidence.availability === "available"
+      ? (evidence.queries.find((query) => query.isPrimary) ??
+          evidence.queries[0])?.displayQuery ?? null
+      : null;
+  // Wrapped even though the seam's own contract is that it resolves. The crawl
+  // has already succeeded and the credit is already spent by the time this
+  // runs, so the cost of a throw here is the whole check — and this is the
+  // frame that would return the 500. A seam that breaks its contract should
+  // cost its own section, not the report.
+  let landscape: SerpLandscape | null = null;
+  if (dependencies.readSerpLandscape !== undefined) {
+    try {
+      landscape = await dependencies.readSerpLandscape({
+        query: primaryQuery,
+        market: input.value.market,
+        language: input.value.language,
+        targetUrl: result.inspectedTargetUrl ?? result.targetUrl,
+      });
+    } catch {
+      landscape = {
+        availability: "unavailable",
+        reason: "provider_unavailable",
+      };
+    }
+  }
 
   const projected: AgentAuditSuccessData = {
     run: {
@@ -610,36 +708,55 @@ export async function handleAgentAuditRequest(
       records: result.records.map(projectRecord),
       // Derived here, never cached: a cache row is shared by host, so a stored
       // region would answer the next visitor with this one's queries.
-      ...(input.value.targetQueries === null || keywordEvidence === null
+      ...(evidence === null
         ? {}
         : {
-            keywordEvidence,
+            keywordEvidence: evidence,
             // The same region restated as records, so the checks about the
-            // confirmed query read evidence rather than an empty form. Derived
-            // here for the same reason the region above is: a cache row is
-            // shared by host and would answer the next visitor with this one's
-            // question.
+            // confirmed query read evidence rather than an empty form.
             keywordChecks: {
               version: AGENT_KEYWORD_CHECKS_VERSION,
               records: buildKeywordEvidenceRecords(
                 result.inspectedTargetUrl ?? result.targetUrl,
-                keywordEvidence,
+                evidence,
+              ),
+            },
+          }),
+      ...(landscape === null ? {} : { serpLandscape: landscape }),
+      // 9.1 and 9.4 read the landscape the checker already paid for. They add
+      // no provider call of their own: a second lookup for the same query in
+      // the same run doubles the cost of every audit to learn the same fact.
+      ...(landscape === null
+        ? {}
+        : {
+            serpShape: {
+              version: AGENT_SERP_SHAPE_VERSION,
+              records: buildSerpShapeRecords(
+                landscape.availability === "available"
+                  ? {
+                      keyword: landscape.query,
+                      itemTypes: landscape.features,
+                      unresolvedItemCount: 0,
+                      organicCount: landscape.resultsObserved,
+                      marketCode: landscape.market,
+                      languageCode: landscape.language,
+                    }
+                  : null,
+                landscape.availability === "available"
+                  ? "no_confirmed_query"
+                  : landscape.reason === "no_target_query"
+                    ? "no_confirmed_query"
+                    : landscape.reason === "market_not_supported"
+                      ? "market_not_supported"
+                      : landscape.reason === "provider_not_configured"
+                        ? "source_not_configured"
+                        : "provider_unavailable",
               ),
             },
           }),
       // Same reason, one step further: a cache row is shared by host and these
       // numbers belong to one visitor's verified property.
       ...(searchPerformance === null ? {} : { searchPerformance }),
-      // Same boundary again: fetched per run against one URL, so it never
-      // enters the payload cached by host.
-      ...(primaryQueryText === null
-        ? {}
-        : {
-            serpShape: {
-              version: AGENT_SERP_SHAPE_VERSION,
-              records: buildSerpShapeRecords(serpShape, serpShapeGap),
-            },
-          }),
       ...(result.targetInspected
         ? {
             pagePerformance: {

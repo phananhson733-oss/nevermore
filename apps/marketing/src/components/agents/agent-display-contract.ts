@@ -58,13 +58,18 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
 };
 
 /**
- * Derived too, and for the same reason the other two are.
+ * Derived, and why that matters.
  *
- * This was a hand-written transcription of the crawl ledger sitting beside two
- * derived lists. Three detectors landed with two new labels between them and it
- * silently did not grow, which fails the panel closed on a record the producer
- * is entitled to emit — the same shape of bug, in the one place still typing it
- * out by hand.
+ * `supportsAgentDisplayVocabulary` fails closed on an unknown label, so this
+ * set falling behind the producer is not cosmetic — the Agent answers
+ * `audit_response_invalid` for any site that emits the missing label. It has
+ * happened: renaming `title_characters` to `title_display_width` upstream broke
+ * every site whose title sits outside the reviewed range, which is most of them.
+ *
+ * It was a hand-written transcription sitting beside two derived lists, and it
+ * silently did not grow when detectors landed. Deriving it from the producer's
+ * own ledger is what stops both failures; the contract test that drives the
+ * real model over real HTML still crosses from the model to this set.
  */
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_EVIDENCE_LABELS,
@@ -72,6 +77,7 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
   ...SERP_SHAPE_EVIDENCE_LABELS,
+
 ]);
 
 /**
@@ -87,7 +93,17 @@ export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   ...SEARCH_PERFORMANCE_LIMITATION_CODES,
   ...KEYWORD_EVIDENCE_LIMITATION_CODES,
   ...PAGE_PERFORMANCE_LIMITATION_CODES,
-  ...SERP_SHAPE_LIMITATION_CODES,
+  ...SERP_SHAPE_LIMITATION_CODES,  "resource_not_observed_does_not_prove_absence",
+  "static_response_directives_only",
+  "normalised_text_match_within_inspected_pages",
+  "bounded_static_html_crawl_inlinks_only",
+  "uncollected_link_targets_not_classified",
+  "static_html_json_ld_only",
+  "no_sitemap_collected_membership_not_testable",
+  "display_width_approximation_rendered_pixel_width_not_measured",
+  "bounded_static_html_crawl_outlinks_only",
+  "depth_from_bounded_crawl_entry_point_only",
+
 ]);
 
 /**

@@ -46,10 +46,30 @@ export interface CrawlCacheDependencies {
 }
 
 /**
- * A large site's payload can run to megabytes. Past this, the round trip costs
- * more than the crawl saves, so the result is returned uncached.
+ * The ceiling above which a payload is returned uncached.
+ *
+ * It was 1.5 million and measured with `String#length`, which counts UTF-16
+ * code units and is not bytes. Measured: a 600-page site serialised to 708 KB,
+ * 1,000 pages to 1.18 MB and 1,400 pages to 1.65 MB — so every site past
+ * roughly 1,250 pages fell over the line and was never cached at all. Those are
+ * exactly the sites whose crawl takes the full four minutes, so the cache
+ * stopped working for the visitors it was built for and did so silently.
+ *
+ * Four megabytes, because the binding limit is not the database — it is the
+ * platform's function response body, capped at 4.5 MB. A payload above that
+ * caches fine, reads back fine, and then cannot be delivered: the route that
+ * would return it fails instead. Caching something the response cannot carry
+ * is worse than not caching it, so the ceiling sits under the wall rather than
+ * over it, with room for the projection wrapped around the payload.
  */
-const MAX_CACHED_PAYLOAD_BYTES = 1_500_000;
+const MAX_CACHED_PAYLOAD_BYTES = 4_000_000;
+
+const PAYLOAD_ENCODER = new TextEncoder();
+
+/** Actual UTF-8 bytes. A CJK payload is about three per character. */
+export function cachedPayloadBytes(payload: unknown): number {
+  return PAYLOAD_ENCODER.encode(JSON.stringify(payload)).length;
+}
 
 async function readViaSupabase(
   tool: string,
@@ -91,6 +111,27 @@ export const DEFAULT_CRAWL_CACHE_DEPENDENCIES: CrawlCacheDependencies = {
   write: writeViaSupabase,
 };
 
+/**
+ * Restate a store's timestamp in the one spelling this cache's readers accept.
+ *
+ * PostgreSQL renders `timestamptz` with microsecond precision and a numeric UTC
+ * offset — `2026-08-18T06:50:55.033741+00:00`. Every reader downstream checks a
+ * captured-at against `new Date(value).toISOString()`, which is millisecond
+ * precision and `Z`, and rejects anything else. Handing the store's own
+ * spelling onward therefore made a successfully written row unrecognisable on
+ * the way back: the table filled up, every lookup was refused, and each caller
+ * still paid for a full crawl of a site that had just been crawled. Nothing
+ * reported it, because both halves of this cache fail silently on purpose.
+ *
+ * Sub-millisecond precision is dropped, which is what the readers were already
+ * comparing against — this value exists to tell a visitor when the crawl behind
+ * their answer happened.
+ */
+function canonicalCapturedAt(value: string): string | null {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 export async function readCrawlCache(
   tool: string,
   targetHost: string,
@@ -98,7 +139,13 @@ export async function readCrawlCache(
   maxAgeSeconds: number = CRAWL_CACHE_MAX_AGE_SECONDS,
 ): Promise<CachedCrawl | null> {
   try {
-    return await dependencies.read(tool, targetHost, maxAgeSeconds);
+    const cached = await dependencies.read(tool, targetHost, maxAgeSeconds);
+    if (cached === null) return null;
+    const capturedAt = canonicalCapturedAt(cached.capturedAt);
+    // A row we cannot date is a row we cannot honestly label, and the answer it
+    // holds is served as "captured at" that timestamp. Crawl instead.
+    if (capturedAt === null) return null;
+    return { payload: cached.payload, capturedAt };
   } catch {
     // Fail soft: a missing cache means we crawl.
     return null;
@@ -113,7 +160,7 @@ export async function writeCrawlCache(
 ): Promise<void> {
   try {
     // Only bound payloads are stored; an oversized one is simply not cached.
-    if (JSON.stringify(payload).length > MAX_CACHED_PAYLOAD_BYTES) return;
+    if (cachedPayloadBytes(payload) > MAX_CACHED_PAYLOAD_BYTES) return;
     await dependencies.write(tool, targetHost, payload);
   } catch {
     // A write failure must never turn a successful crawl into an error.

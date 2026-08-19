@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
         "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured.",
         "no_sitemap_collected_membership_not_testable": "No sitemap was collected, so sitemap membership was not testable.",
-        "character_count_only_rendered_pixel_width_not_measured": "Character count only. Rendered pixel width, which is what Google truncates on, was not measured.",
+        "display_width_approximation_rendered_pixel_width_not_measured": "Approximated by display width, counting CJK characters as two. The rendered pixel width Google actually truncates by is not measured.",
         "bounded_static_html_crawl_outlinks_only": "Outbound links observed in the bounded static-HTML crawl only.",
         "depth_from_bounded_crawl_entry_point_only": "Depth measured from this crawl's entry point only, not from every real entry point.",
         "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "No target query was confirmed for this page, so there is no query to report a position for.",
@@ -1214,8 +1214,8 @@
         "malformed_blocks": "Malformed JSON-LD blocks",
         "types_observed": "JSON-LD types observed",
         "broken_link_targets": "Broken link targets",
-        "title_characters": "Title characters",
-        "description_characters": "Description characters",
+        "title_display_width": "Title display width",
+        "description_display_width": "Description display width",
         "reviewed_range": "Reviewed range",
         "observed_outbound_internal_links": "Observed outbound internal links",
         "observed_click_depth": "Observed click depth",
@@ -2224,11 +2224,12 @@
       },
       "fields": {
         "url": "Page URL",
-        "queries": "Target queries (up to {max})",
+        "queries": "Target queries (up to {max}, comma-separated)",
         "market": "Market",
         "language": "Language",
         "pageRole": "Page role",
-        "marketScope": "Market and language are not part of this check: the request carries the page URL, the queries and the page role. They are carried over when you open the SEO Agent from here."
+        "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent.",
+        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart"
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -2237,8 +2238,6 @@
         "guide": "Guide or article"
       },
       "actions": {
-        "addQuery": "Add",
-        "removeQuery": "Remove this query",
         "run": "Check this page",
         "running": "Checking…",
         "copyReport": "Copy report for an assistant",
@@ -2253,7 +2252,7 @@
       "waiting": {
         "headline": "Collecting the site, then reading your page out of it.",
         "elapsed": "{seconds}s elapsed",
-        "body": "The crawl paces itself to at least 250 ms between requests and stops at four minutes, which is about 950 pages at most; the whole request takes longer than the crawl alone.",
+        "body": "The crawl paces itself to at least 250 ms between requests, so collecting a site of a few hundred pages alone takes tens of seconds; it stops at four minutes, which is about 950 pages at most. The whole request takes longer than the crawl alone.",
         "noEstimate": "No progress estimate: the browser is not told how many pages remain, so it does not guess."
       },
       "focus": {
@@ -2290,7 +2289,7 @@
         "sub_headings_h2_h6_merged_no_levels": "Sub-headings are H2 to H6 in one list: the crawl does not retain heading levels, so this cannot tell an H2 from an H4.",
         "sub_headings_underivable_h1_cap_reached": "Sub-headings could not be separated on this page, because its H1 list hit the collector's own limit. Reported as unavailable rather than guessed.",
         "opening_text_first_500_chars_static_extraction": "Opening text is the first 500 characters of the statically extracted body, after nav, footer and aside blocks are removed. It is not what a browser paints.",
-        "density_basis_captured_text_only": "Density is measured inside the collected text — title, description, headings and that opening text — not across the whole page body, which is not collected.",
+        "density_basis_captured_text_only": "Density is measured over the captured text — title, description, headings and the opening — not the whole body. The whole-page leaderboard below is counted against the body's own unit total, so the two percentages are not comparable.",
         "static_body_words_unavailable_for_cjk": "The page word count is withheld: this page is written mostly without word gaps, where splitting on spaces is off by an order of magnitude.",
         "extract_lists_truncated": "A heading list was cut to its own limit before publication, so a keyword further down the page may not be counted."
       },
@@ -2308,10 +2307,9 @@
       "errors": {
         "urlRequired": "Add the page URL you want checked.",
         "queryRequired": "Add at least one target query.",
-        "queryEmpty": "Type a query before adding it.",
-        "queryDuplicate": "That query is already in the list.",
-        "queryLimit": "Up to {max} queries. Remove one to add another.",
-        "queryTooLong": "Up to {max} characters per query.",
+        "queryDuplicate": "Folded {folded} repeat(s) so the same question is asked once.",
+        "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
+        "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
         "retryAfter": "Retry in {seconds} seconds."
       },
@@ -2319,8 +2317,8 @@
         "title": "What this does and does not tell you",
         "items": [
           {
-            "q": "Is this a score?",
-            "a": "No. You get a count of which positions carry each query and how often, plus what could not be measured. There is no single number, because one number cannot say which part of a page is wrong."
+            "q": "Where does the score come from?",
+            "a": "Each check on this page is worth a set number of points; the score is their sum, restated out of 100. The weights are ours, not Google's — the number measures how well this page does the part it controls, not whether it will rank. A few conditions hold the score down on their own: a page that declares noindex, returns an error status, carries almost no copy, or is not about the keyword you gave. In those cases no amount of other work reaches a search result."
           },
           {
             "q": "Why does the first check take minutes?",
@@ -2329,6 +2327,46 @@
           {
             "q": "Will a high count rank the page?",
             "a": "No. Where a keyword sits on a page is one input among site authority, page experience, competition and behaviour. This measures the input it can actually see."
+          },
+          {
+            "q": "How many queries can I check at once, and how do I type them?",
+            "a": "Up to five, all in the one field, separated by commas — both the ASCII comma and the full-width one, and a newline counts too. Repeats are folded into one, anything past five is not submitted, and the field says how many it dropped. One query is marked primary: most fields covered wins, then the longer query, then the order you typed them. Topic focus in the score reads that one query only, so adding exploratory words alongside your real target cannot lower the page's score."
+          },
+          {
+            "q": "Are brand terms treated differently?",
+            "a": "They are labelled, and that is all — no points either way. The test is mechanical: the hostname is split into labels and compared against what you typed. The result is published as an observation, never as score, because a brand term sits at a density that would read as thin for a topic term and judging the same number twice is not honest. A single CJK word has no Latin label to compare against, so it is marked not applicable rather than not matched."
+          },
+          {
+            "q": "Why is keyword density not scored?",
+            "a": "Because two different denominators appear on this page and mixing them produces opposite conclusions. The per-query density is measured inside the captured text — title, description, the heading set and the opening passage — where a normally optimised page already sits near 20%, so the familiar 0.5%–3% band would call a well-built page keyword stuffing. The whole-page term tables use the page body's counting units instead. Both numbers name their own denominator, but they cannot be compared, so we report them and grade neither."
+          },
+          {
+            "q": "How do I read the whole-page term tables?",
+            "a": "The page body is cut into one- to five-word combinations, with the top 15 kept for each length. Term density is occurrences divided by total units. Occupancy density is occurrences times phrase length divided by total units, so phrases of different lengths can be compared — overlapping occurrences are counted each time, which is why a long phrase on a page that repeats one word can exceed 100%. Function words are removed from the single-word table only; phrase tables keep them, because \"the astrology of\" is how people actually write."
+          },
+          {
+            "q": "Why is JavaScript not executed?",
+            "a": "The crawl reads the HTML the server returned, so body copy, components and links mounted by front-end script are invisible to this tool. It does not pretend otherwise: one check reports whether the body text is in the static HTML at all. When it is not, the word count and the coverage on this page were both measured under that condition — do not read them as what a browser finishes rendering."
+          },
+          {
+            "q": "Where does the search-results section get its data?",
+            "a": "From a third-party search-results source, for the market and language you picked above, as one desktop sample of page one: who holds the top positions, whether you are among them, and how many carry sitelinks. Results move daily, so this is a snapshot rather than a ranking history or a difficulty score. It is also the one paid call this tool makes, which is why market and language are lists — an unsupported pair never leaves a request at all."
+          },
+          {
+            "q": "Does it work on Chinese pages?",
+            "a": "Yes. Body length counts one unit per CJK character. Title and description length is measured in display width, with CJK characters counted as two, which lands closer to where a search result actually truncates. The term tables split on the same basis."
+          },
+          {
+            "q": "Where are my past checks stored?",
+            "a": "In this browser only. It is not an account archive: clearing storage, switching browsers or signing out loses it. When one page has been checked more than once, the list shows how its score and coverage moved."
+          },
+          {
+            "q": "How is this different from the SEO Agent?",
+            "a": "They run the same site-wide crawl. This tool reads the one page you named out of that crawl and answers around the queries you gave; the Agent reads the whole site. That is why the first check waits for the crawl, and why the same site checked again within the hour comes back in seconds. The report hands this page and its queries straight to the Agent."
+          },
+          {
+            "q": "Does it cost credits?",
+            "a": "No. The tool is free while it is being tested."
           }
         ]
       },
@@ -2346,6 +2384,448 @@
         "miss": "Read out of a crawl this check started, collected at {time}.",
         "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
         "queriesMerged": "Measured {measured} of the {submitted} queries you submitted: two spellings of the same query are counted once."
+      },
+      "scoreCategories": {
+        "meta": "Meta",
+        "content": "Content",
+        "keyword": "Keyword placement",
+        "links": "Links",
+        "media": "Images",
+        "social": "Social & structured data",
+        "technical": "Technical & crawl",
+        "site": "Site context"
+      },
+      "checks": {
+        "declaredUnavailable": "This crawl did not carry the page's markup details, so nothing is judged here — not knowing is not the same as the page having none.",
+        "title": {
+          "_label": "Title",
+          "missing": "No title. Google will compose one for the result page itself.",
+          "ok": "“{title}” — width {width} (a workable range is {min}–{max}; CJK counts as two).",
+          "outsideRange": "Width {width}, outside {min}–{max}, so it may be truncated or read as thin."
+        },
+        "description": {
+          "_label": "Meta description",
+          "missing": "No meta description. Google will lift a passage from the body instead.",
+          "ok": "Width {width}, inside {min}–{max}.",
+          "outsideRange": "Width {width}, outside {min}–{max}, so the tail may be cut."
+        },
+        "canonical": {
+          "_label": "Canonical",
+          "missing": "No canonical declared. Where one page has several URLs, Google picks.",
+          "selfReferencing": "Self-referencing.",
+          "pointsElsewhere": "Points at {canonical} — this page defers to that one. Fine if deliberate on a duplicate; if not, you are excluding the page you are trying to rank."
+        },
+        "robots": {
+          "_label": "Robots directives",
+          "indexable": "Indexable ({directives}).",
+          "noindex": "Declares noindex ({directives}). This page will not be indexed, and no other check changes that."
+        },
+        "viewport": {
+          "_label": "Viewport",
+          "missing": "No viewport declared, so phones render it at desktop width.",
+          "declared": "Declared: {viewport}"
+        },
+        "charset": {
+          "_label": "Character encoding",
+          "missing": "No charset declared, so non-ASCII text can be read under the wrong encoding.",
+          "declared": "Declared {charset}.",
+          "fromHeader": "The HTTP response header declares {charset}, which is the value the browser actually decodes with.",
+          "conflict": "The response header says {header} and the meta tag says {meta}. The browser decodes by the header, so one of the two declarations is wrong."
+        },
+        "lang": {
+          "_label": "HTML lang",
+          "missing": "The html tag carries no lang, leaving search engines and screen readers to guess.",
+          "declared": "lang={lang}"
+        },
+        "favicon": {
+          "_label": "Favicon",
+          "missing": "No site icon declared.",
+          "declared": "Site icon declared."
+        },
+        "h1": {
+          "_label": "H1",
+          "missing": "No H1.",
+          "single": "One H1, “{h1}”, width {width}, inside the common {min}–{max} range.",
+          "multiple": "{count} H1s (first is “{first}”). Several H1s say the page is about several things.",
+          "tooShort": "The H1 “{h1}” is only {width} wide, under the common {min} — a heading is this page's promise to a searcher, and this one does not say much.",
+          "tooLong": "The H1 “{h1}” is {width} wide, over the common {max} — long headings get cut in results and in listings alike.",
+          "tooLongClipped": "The H1 is at least {width} wide (shown here cut to 200 characters), far past the common {max}."
+        },
+        "bodyWords": {
+          "_label": "Body words",
+          "unavailable": "This page's body cannot be counted by whitespace, so no number is published and none is scored.",
+          "thin": "Only {words} words. At this length the rest of the sheet has little to stand on.",
+          "low": "{words} words, on the thin side.",
+          "fair": "{words} words.",
+          "good": "{words} words.",
+          "thinUnits": "The body runs about {words} characters — under 300 rarely carries a topic.",
+          "lowUnits": "The body runs about {words} characters, on the short side.",
+          "fairUnits": "The body runs about {words} characters, enough to cover one thing properly.",
+          "goodUnits": "The body runs about {words} characters, a full-length piece."
+        },
+        "subHeadings": {
+          "_label": "Sub-headings",
+          "unavailable": "The H1 collector hit its cap, so sub-headings cannot be separated out reliably and are not judged.",
+          "none": "No sub-headings, so long copy has no scannable structure.",
+          "present": "{count} sub-headings."
+        },
+        "textRatio": {
+          "_label": "Text-to-code",
+          "unavailable": "No HTML size was collected, so this cannot be computed.",
+          "healthy": "Visible text is {percent}% of the HTML.",
+          "low": "Visible text is only {percent}% of the HTML — this page is mostly markup."
+        },
+        "keyword": {
+          "_label": "Keyword placement",
+          "unavailable": "No keyword evidence was measured on this run.",
+          "title": {
+            "_label": "Keyword in title",
+            "covered": "“{query}” appears in full in the title ({occurrences}×).",
+            "absent": "“{query}” does not appear in full in the title.",
+            "notApplicable": "This page has no title to check."
+          },
+          "description": {
+            "_label": "Keyword in description",
+            "covered": "“{query}” appears in full in the description ({occurrences}×).",
+            "absent": "“{query}” does not appear in the description.",
+            "notApplicable": "This page has no description to check."
+          },
+          "h1": {
+            "_label": "Keyword in H1",
+            "covered": "“{query}” appears in full in the H1 ({occurrences}×).",
+            "absent": "“{query}” does not appear in the H1.",
+            "notApplicable": "This page has no H1 to check."
+          },
+          "subHeadings": {
+            "_label": "Keyword in sub-headings",
+            "covered": "“{query}” appears in the sub-headings ({occurrences}×).",
+            "absent": "“{query}” appears in none of the sub-headings.",
+            "notApplicable": "There were no sub-headings to check."
+          },
+          "openingText": {
+            "_label": "Keyword in opening text",
+            "covered": "“{query}” appears in the captured opening text ({occurrences}×).",
+            "absent": "“{query}” does not appear in the opening text.",
+            "notApplicable": "No opening text was captured to check."
+          },
+          "url": {
+            "_label": "Keyword in URL",
+            "covered": "The URL contains “{query}”.",
+            "absent": "The URL does not contain “{query}”.",
+            "notApplicable": "Nothing to check."
+          },
+          "density": {
+            "_label": "Keyword density",
+            "unavailable": "No usable denominator, so no density figure is published.",
+            "observed": "“{query}” appears {occurrences} times in the captured text, a density of {percent}% (over {units} units: title, description, headings and the opening of the body — not the whole page). Not graded: that denominator is exactly where a keyword is meant to be concentrated, and we have not measured what a good range over it looks like. A threshold we cannot defend is worse than none."
+          },
+          "brand": {
+            "_label": "Brand term",
+            "matched": "“{query}” matches the site's own domain, so it looks like a brand term. Brand terms sit at lower densities than topic terms by nature; this is noted, not scored."
+          }
+        },
+        "internalLinks": {
+          "_label": "Internal links",
+          "none": "This page links to no other page on the site.",
+          "few": "Only {count} internal links.",
+          "ok": "{count} internal links."
+        },
+        "anchorText": {
+          "_label": "Anchor text",
+          "notApplicable": "No internal links to check anchor text on.",
+          "allDescribed": "All {count} internal links carry anchor text. This checks only that text exists; it does not judge generic anchors like “click here” or “read more”.",
+          "someEmpty": "{empty} of {count} internal links carry no anchor text."
+        },
+        "externalLinks": {
+          "_label": "Outbound links",
+          "none": "No outbound links. Linking out to authoritative sources is a normal signal; not scored either way.",
+          "present": "{count} outbound links ({nofollow} nofollow). Not scored."
+        },
+        "linkSafety": {
+          "_label": "New-window link safety",
+          "ok": "New-window outbound links carry noopener (or there are none).",
+          "unsafe": "{count} target=_blank links carry neither noopener nor noreferrer. Modern browsers isolate by default, but declaring it is still the safe habit."
+        },
+        "images": {
+          "_label": "Image alt",
+          "none": "This page carries no img elements.",
+          "allDescribed": "All {total} images carry alt ({decorative} declared decorative with an empty alt).",
+          "someMissingAlt": "{missing} of {total} images carry no alt attribute."
+        },
+        "openGraph": {
+          "_label": "Open Graph",
+          "complete": "og:title / og:description / og:image are all present, so shares get a complete card.",
+          "partial": "Missing {missing}, so the share card is incomplete.",
+          "missing": "No Open Graph tags, so social platforms compose the card themselves."
+        },
+        "twitterCard": {
+          "_label": "Twitter/X card",
+          "missing": "No twitter:card declared.",
+          "declared": "twitter:card={card}"
+        },
+        "https": {
+          "_label": "HTTPS",
+          "enabled": "HTTPS is in use.",
+          "absent": "This page is not served over HTTPS."
+        },
+        "status": {
+          "_label": "HTTP status",
+          "unavailable": "No final status was captured.",
+          "direct": "Returned {status} directly, no redirect.",
+          "redirected": "Returned {status} after {hops} redirect(s).",
+          "error": "Final status {status}."
+        },
+        "responseTime": {
+          "_label": "Response time",
+          "unavailable": "No response time was captured.",
+          "fast": "HTML download completed in {ms}ms.",
+          "fair": "HTML download completed in {ms}ms.",
+          "slow": "HTML download completed in {ms}ms, which is slow."
+        },
+        "jsonLd": {
+          "_label": "JSON-LD",
+          "none": "No JSON-LD structured data found.",
+          "valid": "{count} JSON-LD type(s): {types}",
+          "malformed": "Found {types}, with {errors} block(s) that failed to parse.",
+          "allMalformed": "{errors} JSON-LD block(s), all of which failed to parse — not absent structured data, but broken structured data."
+        },
+        "robotsTxt": {
+          "_label": "robots.txt",
+          "reachable": "robots.txt is reachable, with {groups} rule group(s) observed.",
+          "unreachable": "No robots.txt was fetched. The site may not have one — which is legal and reads as allow-all — or the fetch may have failed. This cannot tell those apart."
+        },
+        "sitemap": {
+          "_label": "Sitemap",
+          "reachable": "A sitemap was fetched ({references} declared in robots.txt; zero means it was found at the conventional /sitemap.xml).",
+          "unreachable": "No sitemap was fetched."
+        },
+        "sitemapMember": {
+          "_label": "Listed in the sitemap",
+          "listed": "This page appears in the sitemap.",
+          "absent": "The site has a sitemap and this page is not in it.",
+          "noSitemap": "No sitemap was fetched, so this cannot be confirmed."
+        },
+        "htmlSize": {
+          "_label": "HTML size",
+          "ok": "HTML is {kb} KB.",
+          "large": "HTML is {kb} KB, on the large side.",
+          "huge": "HTML is {kb} KB, which is very large."
+        },
+        "hreflang": {
+          "_label": "hreflang",
+          "none": "No hreflang declared. A single-language site does not need it; not scored.",
+          "declared": "{count} hreflang tag(s): {tags}. Not scored."
+        },
+        "site": {
+          "title_duplicate": {
+            "_label": "Title unique across the site",
+            "flagged": "This page's title is duplicated elsewhere on the site ({affected} of {tested} pages affected).",
+            "clear": "Across the {tested} pages collected, this title is unique.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "meta_description_duplicate": {
+            "_label": "Description unique across the site",
+            "flagged": "This page's description is duplicated elsewhere on the site ({affected} of {tested} pages affected).",
+            "clear": "Across the {tested} pages collected, this description is unique.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "sitemap_page_without_observed_inlink": {
+            "_label": "Orphan page",
+            "flagged": "This page is in the sitemap, but the crawl observed no internal link pointing at it.",
+            "clear": "The crawl observed internal links pointing at this page.",
+            "notTested": "That rule only tests pages in the sitemap and did not cover this page."
+          },
+          "page_outbound_broken_link": {
+            "_label": "Broken links on this page",
+            "flagged": "This page links to a page that returned an error status.",
+            "clear": "None of this page's outbound links returned an error status.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          },
+          "click_depth_beyond_reviewed_limit": {
+            "_label": "Click depth",
+            "flagged": "Reaching this page from the homepage takes more than four clicks.",
+            "clear": "This page is within four clicks of the homepage.",
+            "notTested": "That rule tested a qualifying subset and did not cover this page."
+          }
+        },
+        "imageDimensions": {
+          "_label": "Declared image dimensions",
+          "all": "All {total} images declare width and height, so the browser can reserve the space before they load.",
+          "some": "{missing} of {total} images do not declare both width and height. This reads markup only — a CSS aspect-ratio reserves the same box and no stylesheet is visible here."
+        },
+        "imageLoading": {
+          "_label": "Image lazy loading",
+          "none": "None of the {total} images declare loading=\"lazy\".",
+          "some": "{lazy} of {total} images declare loading=\"lazy\". Not graded: deferring the image at the top of the page delays the very thing a visitor is waiting for, and we cannot tell which image is where."
+        },
+        "urlShape": {
+          "_label": "URL shape",
+          "unavailable": "This page's URL could not be parsed, so it is not judged.",
+          "clean": "The path is {characters} characters over {segments} levels — readable and repeatable.",
+          "parameters": "The URL carries {parameters} query parameters, which is hard to remember or share{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "uppercase": "The path contains upper-case letters, which is how one page ends up with two URLs{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "deep": "The path is {segments} levels deep, past the common depth{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "long": "The path runs {characters} characters, on the long side{others, plural, =0 {} other {, and # other thing could read better}}.",
+          "underscores": "The path separates words with underscores; search engines read hyphens more reliably{others, plural, =0 {} other {, and # other thing could read better}}."
+        },
+        "rendering": {
+          "_label": "Content in the static HTML",
+          "serverSide": "The static HTML already carries {textBytes} bytes of body text (scripts {scriptKb} KB), so nothing waits on JavaScript.",
+          "clientSide": "The static HTML carries almost no body text ({textBytes} bytes) against {scriptKb} KB of script — the copy is probably rendered by JavaScript. Search engines do run it, so this is a dependency rather than a fault, but it costs a render queue a server-rendered page never pays."
+        },
+        "demandCapture": {
+          "_label": "Whether this page can act",
+          "none": "The static HTML contains no form, input, button or canvas. A component mounted by client JavaScript is not in the transferred HTML and cannot be seen here, so this describes the static document and is not a claim that the page does nothing.",
+          "present": "The static HTML carries {controls} interactive elements (forms {forms}, inputs {inputs}, buttons {buttons}) — a visitor can act right here."
+        }
+      },
+      "grades": {
+        "A": "A · Excellent",
+        "B": "B · Good",
+        "C": "C · Passable",
+        "D": "D · Work through the list"
+      },
+      "score": {
+        "counts": "{pass} passed of {graded} graded, {warn} warnings, {fail} failed",
+        "topicFocus": "Topic focus {percent}%",
+        "notGraded": "not scored",
+        "disclaimer": "This score covers only what this page itself controls. Ranking also depends on site authority, page experience, how strong the competition is, and what visitors do — none of which this tool measures. The weights behind the number are ours, not Google's.",
+        "caps": {
+          "topic_focus": "Held at {ceiling}: this page is not sufficiently about the target keyword, and structure alone will not earn that term.",
+          "body_words": "Held at {ceiling}: the body is too short for the rest of the sheet to stand on.",
+          "not_indexable": "Held at {ceiling}: this page declares noindex and will not be indexed. However well it is built, it does not reach a search result.",
+          "not_reachable": "Held at {ceiling}: this page returned an error status. Right now it does not exist.",
+          "body_bytes": "Held at {ceiling}: too little visible text by byte count (this page's language cannot be counted in words, so bytes stand in).",
+          "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
+        }
+      },
+      "vitals": {
+        "status": "status",
+        "responseMs": "time",
+        "htmlSize": "size",
+        "words": "words",
+        "internalLinks": "internal",
+        "externalLinks": "outbound",
+        "images": "images",
+        "lang": "lang"
+      },
+      "preview": {
+        "serpEyebrow": "GOOGLE RESULT PREVIEW (APPROXIMATE)",
+        "socialEyebrow": "SHARE CARD (APPROXIMATE)",
+        "titleMissing": "(this page has no title)",
+        "descriptionMissing": "(no description; Google will lift one from the body)",
+        "serpNote": "Cut at common widths for illustration. Google truncates by rendered pixel width, which moves with the device and the query.",
+        "socialUnavailable": "This crawl did not carry the page's markup details, so the share card cannot be previewed.",
+        "socialNoImage": "(no og:image)",
+        "socialNoCard": "not declared",
+        "socialNote": "twitter:card = {card}. The image is listed, not loaded — loading it would make this page fetch from the audited site on your behalf."
+      },
+      "sections": {
+        "scoreHeading": "How this page checks out",
+        "checksHeading": "Every check",
+        "previewHeading": "How it looks elsewhere",
+        "keywordHeading": "Where the keywords land"
+      },
+      "terms": {
+        "heading": "Whole-page term frequency",
+        "sizeLabel": "{size} words",
+        "phrase": "Phrase",
+        "count": "Occurrences",
+        "frequencyDensity": "Frequency density",
+        "occupancyDensity": "Occupancy density",
+        "basis": "Divided by the {total} text units in this page's body — one per CJK character, and whitespace-separated runs for everything else. Frequency density is occurrences over that total; occupancy density multiplies by the phrase length so phrases of different lengths can be compared. Overlapping occurrences are each counted, so on a page that repeats one term heavily a long phrase can read over 100%.",
+        "legend": "Green means the row contains one of your target queries in full; amber means it shares part of one.",
+        "stopWords": "The one-word table leaves out function words like “the” and “and”. Phrase tables keep them — “the astrology of” is how people actually write.",
+        "unavailable": "This crawl did not capture body text, so there is no term leaderboard."
+      },
+      "landscape": {
+        "heading": "The results page",
+        "position": "Position",
+        "domain": "Domain",
+        "sitelinkColumn": "Sitelinks",
+        "you": "(your domain)",
+        "summary": {
+          "present": "On page one for “{query}” ({market}), this page's domain sits at position {position}.",
+          "absent": "This page's domain is not among the top {results} results for “{query}” ({market}). That means it is not on the page we read, not that it does not rank.",
+          "otherPage": "On page one for “{query}” ({market}) your domain sits at position {position}, but the result holding it is another page on your site, not the one you checked."
+        },
+        "sitelinks": "{withSitelinks} of the top {results} results show sitelinks. Sitelinks follow brand and navigational demand, so the number says who Google already treats as a destination — a different sentence from “this query is hard”.",
+        "features": "Also on that page: {features}.",
+        "basis": "Query “{query}”, market {market}, language {language}, desktop page one, sampled once. Results move daily; this is how it looked at that moment.",
+        "unavailable": {
+          "no_target_query": "No target query was submitted, so no results page was looked up.",
+          "market_not_supported": "This market or language is outside what we look up, so no call was made and nothing was spent.",
+          "provider_not_configured": "This deployment has no credential for the results-page lookup, so this section has no data. Every other check is unaffected.",
+          "provider_unavailable": "The results page could not be read this time. Every other check is unaffected."
+        },
+        "youThisPage": "(this page)",
+        "youOtherPage": "(your domain, a different page)"
+      },
+      "coverage": {
+        "title": "What this checks, and what it does not",
+        "intro": "What follows is everything it can actually read. Anything not listed gets no verdict — stating the edge here beats leaving you to infer it from a report that never mentions it.",
+        "checks": {
+          "meta": "Title, description, canonical, robots directives, viewport, encoding, language, favicon. Lengths are measured by display width, with CJK characters counting double.",
+          "content": "Body length (characters for CJK), H1 count and length, H2–H6 sub-heading count, text-to-markup ratio, and whether the page carries anything a visitor can act through.",
+          "keyword": "Where your submitted queries land in the title, description, H1, sub-headings, opening text and URL, plus a whole-page leaderboard of one- to five-word phrases.",
+          "links": "Internal outlinks, empty anchor text, external destinations and their rel safety.",
+          "media": "Image alt coverage, declared width and height, and lazy loading.",
+          "social": "Open Graph title/description/image, Twitter card, and JSON-LD types and parse errors.",
+          "technical": "HTTPS, status and redirects, response time, URL shape, HTML weight, hreflang, robots.txt and sitemap reachability, sitemap membership, and whether the body is in the static HTML.",
+          "site": "The ones only a full-site crawl can answer: duplicate titles and descriptions, sitemap pages nothing links to, broken outbound links, and click depth.",
+          "serp": "Page one for your primary query in the market you chose: who holds the top ten, whether you are among them, and how many results show sitelinks."
+        },
+        "notTitle": "What it does not do",
+        "not": {
+          "rendering": "It does not run JavaScript. Content, components and links mounted by client script are invisible to it — it will tell you whether the body is in the static HTML, but not what the page looks like after the script runs.",
+          "css": "It does not read stylesheets. Text hidden with CSS and boxes reserved with aspect-ratio are both outside what it can judge.",
+          "ranking": "It does not predict rankings or score difficulty. The results-page section is one sample taken now, not a trend.",
+          "backlinks": "It does not look at backlinks, domain authority or traffic. What this page cannot change about itself is outside its scope.",
+          "headings": "It does not give a heading outline. The crawl does not retain H2–H6 levels, so sub-headings can only be one merged list.",
+          "density": "It does not grade keyword density. The denominator is the captured text, where a correctly optimised page already reads around 20% — a band borrowed from whole-body density would call that page stuffed."
+        },
+        "labels": {
+          "meta": "Meta",
+          "content": "Content",
+          "keyword": "Keywords",
+          "links": "Links",
+          "media": "Images",
+          "social": "Sharing and structured data",
+          "technical": "Technical",
+          "site": "Site context",
+          "serp": "The results page"
+        }
+      },
+      "related": {
+        "title": "Where to go next",
+        "intro": "This page answers how far one page gets on its own. The rest of the questions live in the other tools.",
+        "items": [
+          {
+            "href": "/agents/seo",
+            "name": "Site-wide SEO Audit",
+            "blurb": "The same crawl, read across the whole site: duplicate titles, broken links, click depth."
+          },
+          {
+            "href": "/agents/tech",
+            "name": "Internal Link Audit",
+            "blurb": "Which pages nobody links to, where the links come from, and how deep they sit."
+          },
+          {
+            "href": "/tools/low-competition-keywords",
+            "name": "Keyword Opportunity Map",
+            "blurb": "Search terms with measured demand and a weak site already on page one."
+          },
+          {
+            "href": "/tools/seo-quick-wins",
+            "name": "GSC Opportunity Finder",
+            "blurb": "High-impression, low-click queries from your own Search Console data."
+          },
+          {
+            "href": "/tools/traffic-drop-diagnosis",
+            "name": "Traffic Drop Diagnosis",
+            "blurb": "Compare two periods before deciding why organic traffic changed."
+          }
+        ]
       }
     }
   },
@@ -2801,120 +3281,378 @@
     "geo": {
       "name": "GEO Agent",
       "metaTitle": "GEO Agent for AI Answer Visibility",
-      "metaDescription": "Ask a real AI assistant your buyers' questions three times each and see which sources it cited, with the full denominator and no visibility score.",
+      "metaDescription": "Ask a real AI assistant your buyers' questions and see which sources it cited, with every denominator shown and no visibility score.",
       "eyebrow": "GEO Agent · AI answers",
       "title": "See whether AI answers cite your site",
-      "subtitle": "Eight buyer questions, each asked three times against a real ChatGPT answer. You confirm every question before anything runs, and the report separates the answers that searched the web from the ones the assistant wrote from memory.",
+      "subtitle": "Eight buyer questions against real ChatGPT answers: five retrieval probes asked three times each, three natural buyer questions asked once. You confirm every fact and every question before anything runs, and the report keeps the retrieval numbers and the natural-demand numbers apart.",
       "heroCta": "Run GEO Agent",
       "accountBoundaryTitle": "Account access gate",
-      "accountBoundaryBody": "A verified Supabase session is required to run. Each run makes 24 billed provider calls, so it is not available anonymously.",
-      "dataBoundaryTitle": "Nothing is stored",
-      "dataBoundaryBody": "The report is returned to this page and never written down: no account history, no server copy of the assistant's answer. Leaving the page ends it, so copy anything you need before you go.",
+      "accountBoundaryBody": "A verified Supabase session is required to run. Each run makes 18 billed provider calls, so it is not available anonymously.",
+      "dataBoundaryTitle": "Report contents are not stored",
+      "dataBoundaryBody": "The report is returned to this page and never written down: no account history, no server copy of the assistant's answer. Minimal billing and quota metadata is kept by the existing credits system. Leaving the page ends the report, so copy anything you need before you go.",
       "howEyebrow": "How it works",
       "howTitle": "From buyer questions to observed citations",
-      "howBody": "Every number in the report is recomputed from the samples underneath it, and the two states that observe nothing are reported separately instead of counting as a zero.",
-      "step1Title": "Describe the buyer",
-      "step1Body": "Tell the Agent what the site sells and who buys it. Eight questions are generated from that, spanning discovery through decision.",
+      "howBody": "Every number in the report is recomputed from the samples underneath it, and a sample that observed nothing is reported as exactly that rather than counted as a zero.",
+      "step1Title": "Confirm the facts",
+      "step1Body": "Tell the Agent what the site sells, who buys it and which market to ask in. Brand names and the category are proposals until you tick them; nothing is inferred on your behalf.",
       "step2Title": "Confirm the questions",
-      "step2Body": "Edit anything that does not sound like your buyer. Nothing is billed until you confirm, and the set you confirm is exactly the set that runs.",
-      "step3Title": "Sample each question three times",
-      "step3Body": "One sample cannot tell a site that is not cited apart from a run that happened not to cite it. Three can, and the report says which of the three it was.",
+      "step2Body": "Eight questions are generated from calibrated wording. Edit anything that does not sound like your buyer — an edited retrieval probe is visibly demoted, because its citation counts only meant something for the exact string that was measured.",
+      "step3Title": "Sample by mode, not uniformly",
+      "step3Body": "Retrieval probes are asked three times, because one sample cannot tell a site that is not cited apart from a run that happened not to cite it. Natural buyer questions are asked once: repeating a question the assistant answers from memory mostly repeats the same non-observation.",
       "step4Title": "Read it with its denominator",
-      "step4Body": "Every verdict says how many of the three samples it rests on. A question all three samples answered without searching is reported as exactly that, not as a gap — all three, because one failed call leaves it unknown whether that call would have searched. Copy what you need before you leave — the report is not saved.",
+      "step4Body": "Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a probe that failed to trigger a search is excluded as an instrumentation failure rather than counted against you. Copy what you need before you leave — the report is not saved.",
       "finalBoundary": "This report observes what one assistant answered at one moment. It is not a ranking, not a forecast, and not a measure of traffic.",
       "workbench": {
-        "contextTitle": "Describe what the site sells",
-        "contextHint": "These words go into the questions, so use your buyer's vocabulary rather than your internal naming.",
+        "contextTitle": "Confirm what this site is",
+        "contextHint": "These words go into the questions, so use your buyer's vocabulary rather than your internal naming. Nothing is billed until you confirm the run.",
         "urlLabel": "Site URL",
         "urlPlaceholder": "acme.com",
+        "productLabel": "Product name",
+        "productPlaceholder": "Acme Analytics",
         "categoryLabel": "What the site sells",
         "categoryPlaceholder": "AI visibility tracking",
+        "categoryHint": "A short noun phrase. It is substituted into calibrated wording, so an instruction or a sentence here will be refused rather than trimmed.",
         "buyerLabel": "Who buys it",
         "buyerPlaceholder": "SaaS marketing teams",
+        "jtbdLabel": "What they are trying to get done",
+        "jtbdPlaceholder": "Know whether assistants cite us when buyers ask",
         "rivalsLabel": "Competitors your buyer would name",
-        "rivalsHint": "Optional, comma separated. Used to word the two comparison questions and to label who else got cited.",
-        "rivalDomainsLabel": "Competitor domains",
-        "rivalDomainsHint": "Optional, comma separated. Only used to label citations that are already in the answer.",
-        "generate": "Generate buyer questions",
-        "questionsTitle": "Confirm the questions",
-        "questionsHint": "Each confirmed question is asked three times. Editing is expected, but the wording strongly affects whether the assistant searches the web at all: these were measured to ask for something current, or to name a competitor. Every rewrite measured ending in “for <your buyer>” got answered from memory instead, and an answer with no search cites nobody.",
-        "questionCount": "{count} questions · {samples} samples · nothing is billed until you run",
-        "stageDiscovery": "Discovery",
-        "stageComparison": "Comparison",
-        "stageEvaluation": "Evaluation",
-        "stageDecision": "Decision",
-        "back": "Change the description",
-        "run": "Run {samples} samples",
+        "rivalsHint": "Optional, comma separated. The first one or two are used in the measured alternatives question; without any, that question falls back to its measured rival-free wording.",
+        "marketLabel": "Market to ask in",
+        "marketPlaceholder": "Choose a market",
+        "marketHint": "Passed to the provider as the search country. There is no default: an unset market stops the run rather than quietly becoming US. EU and UK are not country codes and are not offered.",
+        "queryLanguageLabel": "Language the questions are asked in",
+        "queryLanguageHint": "English only in this version. The wording was calibrated in English, and a translated calibration-locked question is a different, unmeasured question.",
+        "review": "Review the facts",
+        "back": "Back",
+        "run": "Run {calls} provider calls",
         "running": "Asking the assistant…",
-        "runningHint": "This takes about two minutes. Each question is asked three times, and the samples run concurrently.",
+        "runningHint": "This takes about two minutes. The calls run concurrently and the plan does not change once it has started.",
         "signInRequired": "Sign in to run"
       },
-      "results": {
-        "title": "What this snapshot observed",
-        "coverageTitle": "Coverage",
-        "coverageAttempted": "Samples attempted",
-        "coverageObserved": "Observed",
-        "coverageNotSearched": "No web search",
-        "coverageUnavailable": "Unavailable",
-        "coverageNote": "Samples without a web search, and samples that failed, are excluded from every count below rather than read as a zero.",
-        "sampledAt": "Sampled {date}",
-        "notStored": "This report is not saved. Leaving the page ends it.",
-        "model": "Model",
+      "review": {
+        "title": "Confirm the facts this run will use",
+        "hint": "Each line below says where the value came from and what that does not prove.",
+        "aliasesTitle": "Brand names to look for in the answer",
+        "aliasesHint": "Tick the names a reader would recognise as you. Nothing is ticked for you: an unticked proposal is a guess, and a guess used as a brand name turns ordinary sentences into mentions.",
+        "aliasesEmpty": "No usable name could be proposed. Add a product name above that is at least three characters and not a generic word.",
+        "aliasSource": {
+          "profile_product_name": "from the product name you entered",
+          "host_label": "inferred from the hostname",
+          "user_edit": "you added it"
+        },
+        "categoryTitle": "Category",
+        "categoryConfirm": "Yes, buyers would call this a {category} product.",
+        "provenanceTitle": "Where each fact came from",
+        "field": {
+          "target_url": "Site URL",
+          "product_name": "Product name",
+          "category": "Category",
+          "buyer": "Buyer",
+          "brand_aliases": "Brand names",
+          "direct_competitors": "Competitors",
+          "jtbd": "Job to be done",
+          "market_code": "Market",
+          "target_query_language": "Query language"
+        },
+        "source": {
+          "visitor_url": "you entered it",
+          "visitor_declared": "you declared it",
+          "visitor_confirmed": "you confirmed it",
+          "visitor_confirmed_with_inference": "you confirmed it, one name inferred",
+          "not_supplied": "not supplied",
+          "product_constraint": "fixed by this version"
+        },
+        "limitation": {
+          "not_independently_checked": "not checked against the page",
+          "no_profile_source_exists": "no automatic source for this exists",
+          "hostname_label_inferred": "the hostname label is a guess you accepted",
+          "not_supplied": "the run proceeds without it",
+          "calibrated_for_us_only": "wording was calibrated with US settings",
+          "english_only_in_p0": "English only in this version"
+        },
+        "notVerified": "These are facts you confirmed in this browser. Nothing here has been verified against your site by a server.",
+        "confirm": "Confirm and generate the questions"
+      },
+      "rejections": {
+        "target_url_invalid": "The site URL must be a public http or https address without credentials.",
+        "product_name_invalid": "Enter the product name.",
+        "category_unconfirmed": "Confirm the category before continuing.",
+        "category_invalid": "The category must be a short noun phrase.",
+        "buyer_invalid": "Enter who buys it.",
+        "aliases_none_confirmed": "Confirm at least one brand name.",
+        "alias_invalid": "One of the brand names is not usable.",
+        "alias_generic": "A single generic word cannot identify you; it would turn ordinary sentences into mentions.",
+        "alias_duplicate": "Two brand names are the same name.",
+        "alias_too_many": "Too many brand names; keep the ones a reader would use.",
+        "market_missing": "Choose the market to ask in.",
+        "market_not_a_country": "That is not an ISO country code the provider accepts.",
+        "query_language_unsupported": "This version asks in English only.",
+        "list_value_invalid": "One of the list values is too long.",
+        "source_summary_invalid": "The provenance record is not valid.",
+        "profile_version_invalid": "The context version is missing.",
+        "unknown_query": "That question is no longer part of the set.",
+        "template_unavailable": "No calibrated wording is available for one of the slots.",
+        "placeholder_rejected": "One of your values does not fit the calibrated wording. Shorten it to a plain noun phrase.",
+        "question_not_payable": "A question is longer than the provider accepts. Shorten it."
+      },
+      "slots": {
+        "category_discovery": "Category discovery",
+        "jtbd_outcome": "Job to be done",
+        "pain_how_to": "Pain and how-to",
+        "constraint_fit": "Constraint fit",
+        "alternative_status_quo": "Alternatives",
+        "brand_comparison": "Brand comparison",
+        "due_diligence": "Due diligence",
+        "negative_fit_objection": "Objection"
+      },
+      "modes": {
+        "retrieval_probe": "Retrieval probe",
+        "natural_demand": "Natural demand"
+      },
+      "stances": {
+        "unbranded": "No names",
+        "brand": "Your name",
+        "mixed": "Competitor named"
+      },
+      "queries": {
+        "title": "Confirm the questions",
+        "cohortNote": "These eight are a reproducible sentinel cohort, not the complete question space. One question per buyer decision gives structural breadth, not empirical coverage.",
+        "editNote": "Editing is expected. A retrieval probe you edit becomes a custom natural-demand question asked once, because its citation counts only meant something for the exact wording that was measured.",
+        "sampleCount": "{count, plural, one {# sample} other {# samples}}",
+        "promptedBrand": "Contains your brand",
+        "measured": "Measured wording",
+        "demoted": "Edited · not measured",
+        "triggerClause": "Registered current-evidence clause: “{clause}”."
+      },
+      "plan": {
+        "title": "What this run will do",
+        "calls": "{calls} provider calls",
+        "retrievalLine": "{questions} retrieval probes × {samples} samples = {calls} calls",
+        "naturalLine": "{questions} natural-demand questions × {samples} sample = {calls} calls",
+        "surface": "Surface",
+        "surfaceValue": "DataForSEO ChatGPT LLM Responses API",
         "market": "Market",
-        "citedHosts": "Cited",
-        "noCitedHosts": "No sources cited in this answer",
-        "competitorTag": "competitor",
-        "sampleLabel": "Sample {index}",
+        "queryLanguage": "Query language",
+        "querySet": "Question set",
+        "searchPermission": "Web search is permitted, not forced. The assistant decides whether to search, and an answer written without searching cites nobody.",
+        "outsideCalibration": "English retrieval wording was calibrated with US market settings. Search-trigger behaviour for {market} has not been independently calibrated."
+      },
+      "results": {
+        "title": "What this run observed",
+        "sampledAt": "Sampled {date}",
+        "identityTitle": "Run identity",
+        "coverageTitle": "Coverage",
+        "coverageNote": "Each block below is counted against its own denominator, and only the first states anything about the run as a whole. Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a sample that observed nothing is excluded rather than counted as a zero.",
+        "notStored": "Report contents, provider answers and evidence are not stored server-side. Minimal billing, quota and abuse-prevention metadata is retained by the existing credits system. There is no paired recheck in this version.",
         "questionsTitle": "Question by question",
-        "citedInCount": "Cited in {cited} of {total} usable samples",
-        "empty": "No question produced a usable sample in this run."
+        "empty": "No question produced a usable sample in this run.",
+        "sampleLabel": "Sample {index}",
+        "citedInCount": "{host} cited in {cited} of {total} citation-evaluable samples",
+        "mentionedInCount": "{host} named in {mentioned} of {total} mention-evaluable samples",
+        "searched": "Searched",
+        "notSearched": "No web search",
+        "recommendationNotEvaluated": "Recommendation not evaluated",
+        "degradedBanner": "Degraded run: {failed} retrieval probes never triggered a web search and {mixed} triggered it only sometimes. That is an instrumentation failure, not a finding about your site, and those samples are excluded from the citation counts.",
+        "probeSummary": "Probes: {valid} valid · {failed} never searched · {mixed} mixed · {unavailable} no answer"
       },
-      "verdicts": {
-        "stable_cited": "Cited every time",
-        "intermittent": "Cited sometimes",
-        "not_observed": "Not cited",
-        "answered_from_memory": "Answered from memory",
-        "inconclusive": "No usable sample",
-        "stable_citedHint": "Your site was cited in every usable sample of this question.",
-        "intermittentHint": "Your site was cited in some samples and not others. This is the most common real result.",
-        "not_observedHint": "No usable sample of this question cited your site.",
-        "answered_from_memoryHint": "ChatGPT answered this without searching the web, so it cited nobody — not you, and not your competitors. There is no citation to win here unless the question becomes one it looks up.",
-        "inconclusiveHint": "Nothing was observed for this question, which is not the same as not being cited."
+      "identity": {
+        "collector": "Collector",
+        "upstream": "Upstream",
+        "surface": "API surface",
+        "modelRequested": "Model requested",
+        "modelObserved": "Model observed",
+        "maxOutputTokens": "Output ceiling",
+        "market": "Market",
+        "queryLanguage": "Query language",
+        "querySet": "Question set",
+        "runId": "Run",
+        "calibrated_market": "The retrieval wording was calibrated with these market settings.",
+        "outside_calibrated_market": "The retrieval wording was calibrated with US market settings; trigger behaviour for this country has not been independently calibrated."
       },
-      "states": {
-        "cited": "Your site cited",
-        "mentioned": "Named, not cited",
-        "cited_others_only": "Others cited",
-        "answer_had_no_citations": "No citations at all",
-        "search_not_performed": "No web search",
-        "unavailable": "Unavailable"
+      "coverage": {
+        "totals": "Every planned call",
+        "searchRetrieval": "Search execution · retrieval probes",
+        "searchNatural": "Search execution · natural demand",
+        "citationRetrieval": "Citations · retrieval probes",
+        "citationNatural": "Citations · natural demand",
+        "mentionUnprompted": "Mentions · unprompted questions",
+        "mentionPrompted": "Mentions · prompted questions",
+        "scheduled": "Scheduled",
+        "answered": "Answered",
+        "unavailable": "No usable answer",
+        "searchEvaluable": "Search-evaluable",
+        "searchPerformed": "Searched",
+        "citationEvaluable": "Citation-evaluable",
+        "targetCited": "Cited your site",
+        "mentionEvaluable": "Mention-evaluable",
+        "targetMentioned": "Named your site"
+      },
+      "answerStatus": {
+        "answered": "Answered",
+        "no_usable_answer": "No usable answer"
+      },
+      "probeStatus": {
+        "valid": "Probe valid",
+        "trigger_failed": "Never searched",
+        "degraded_mixed_trigger": "Searched sometimes",
+        "provider_failed": "Probe unavailable"
+      },
+      "citationStatus": {
+        "observed_target": "Your site cited",
+        "observed_others_only": "Others cited",
+        "observed_none": "No citations in this answer",
+        "unavailable": "Citations unreadable"
+      },
+      "mentionStatus": {
+        "observed": "Named",
+        "not_observed": "Not named",
+        "unavailable": "Mention not evaluable"
+      },
+      "mentionEligibility": {
+        "unprompted": "Unprompted",
+        "prompted": "Prompted"
+      },
+      "ownership": {
+        "target": "Your site",
+        "unknown": "Ownership unknown"
+      },
+      "sourceType": {
+        "owned_page": "Your page",
+        "unknown": "Type unknown"
+      },
+      "evidence": {
+        "annotationLabel": "Answer annotation",
+        "location": "item {item} · section {section}",
+        "span": "characters {start}–{end}",
+        "spanUnavailable": "no usable position",
+        "mentionLabel": "Generated-answer excerpt",
+        "mentionAlias": "Matched name: {alias}",
+        "mentionDisclaimer": "This is text the assistant generated. It is not a citation and not an excerpt of any source page."
       },
       "sampleLimitations": {
         "time_budget": "The run reached its time budget before this sample was taken.",
         "cost_ceiling": "The run reached its cost ceiling before this sample was taken.",
-        "provider_not_configured": "The answer provider is not configured for this site.",
-        "provider_timeout": "The provider did not answer within the time budget.",
-        "provider_rate_limited": "The provider rate limit made this sample unavailable.",
-        "provider_auth_failed": "The answer provider rejected this site's credentials.",
-        "provider_no_answer": "The provider returned no usable answer for this sample.",
-        "provider_failed": "The provider could not answer this sample."
+        "provider_not_configured": "The answer provider is not configured.",
+        "provider_no_answer": "The call succeeded but returned no usable answer.",
+        "provider_error": "The provider refused this call.",
+        "transport_error": "The request to the provider failed.",
+        "transport_outcome_unknown": "The request timed out, so it is unknown whether the provider answered or billed it. It was deliberately not retried.",
+        "citation_extraction_incomplete": "The annotation list could not be read in full, so this sample's citations are reported as unavailable rather than as none.",
+        "alias_matcher_out_of_scope": "The confirmed brand names are outside what the whole-word matcher can evaluate, so a mention cannot be observed either way.",
+        "retrieval_trigger_failed": "This retrieval probe did not trigger a web search, so it is excluded from the citation counts."
+      },
+      "runLimitations": {
+        "report_contents_not_persisted": "Report contents and provider answers are not stored server-side.",
+        "no_paired_recheck": "There is no stored baseline, so no before-and-after recheck is available.",
+        "single_surface_chat_gpt_via_dataforseo": "One surface only: ChatGPT answers collected through the DataForSEO API. Not a consumer ChatGPT session, and not Google, Perplexity, Claude or Gemini.",
+        "sentinel_cohort_not_full_coverage": "Eight questions are a reproducible sentinel cohort, not the complete question space.",
+        "degraded_retrieval_trigger": "At least one retrieval probe did not reach the live web, so this run is degraded.",
+        "partial_run": "Some planned calls produced no usable answer; they are excluded rather than counted as zero.",
+        "cost_incomplete": "The provider did not price every call, so the run total is incomplete rather than understated.",
+        "outside_calibrated_market": "The market asked in was not the market the wording was calibrated in.",
+        "recommendation_not_evaluated": "Whether the assistant recommended you was not evaluated. Not evaluated is not the same as not recommended."
       },
       "limitations": {
         "title": "What this cannot tell you",
-        "sampling": "Three samples of one moment. Asking again can return different sources: in calibration, four samples of one question cited 25 hosts between them and not one host appeared in all four.",
-        "platform": "ChatGPT only. It says nothing about Google AI Overviews, Perplexity, Claude or Gemini.",
-        "citation": "A citation is not a recommendation, and being cited is not a ranking or a traffic estimate.",
-        "denominator": "Unavailable is not zero. A sample that failed, or that the assistant answered without searching, is excluded rather than counted against you."
+        "sampling": "Samples of one moment. Asking again can return different sources: in calibration, four samples of one question cited 25 hosts between them and not one host appeared in all four.",
+        "platform": "A citation is a citation, not a recommendation, a ranking or a traffic estimate.",
+        "citation": "A cited page is a page the answer linked to. It is not proof that the page was read, retrieved internally, or found persuasive.",
+        "denominator": "Unavailable is not zero. A failed call, an unreadable annotation list and a probe that never searched are excluded rather than counted against you."
       },
       "errors": {
         "auth_required": "Sign in to run the GEO Agent.",
         "auth_unavailable": "Sign-in is temporarily unavailable. Try again shortly.",
-        "invalid_request": "Check the site URL and the questions, then try again.",
+        "invalid_request": "Check the confirmed facts and questions, then try again.",
         "geo_client_outdated": "This page and the Agent are running different versions. Reload the page and run again — nothing was billed.",
+        "geo_context_invalid": "The confirmed facts did not pass the server's own check. Reload and confirm them again — nothing was billed.",
+        "geo_query_set_invalid": "The question set did not pass the server's own check. Nothing was billed.",
+        "geo_query_set_unconfirmed": "Confirm the questions before running. Nothing was billed.",
+        "geo_query_set_mismatch": "The questions changed after they were confirmed. Confirm them again — nothing was billed.",
+        "geo_prompt_too_long": "One question is longer than the provider accepts. Shorten it — nothing was billed.",
+        "geo_plan_size_mismatch": "The run plan did not match the confirmed question set. Nothing was billed.",
         "geo_budget_exhausted": "The GEO Agent has reached today's run budget. Try again tomorrow.",
         "geo_budget_unavailable": "The run budget cannot be checked right now. Try again shortly.",
+        "geo_provider_unavailable": "The answer provider is unavailable. Nothing was billed.",
         "geo_report_invalid": "The report did not pass its own consistency check, so it was not shown.",
         "unknown": "The run could not be completed. Nothing was saved."
+      },
+      "actions": {
+        "title": "Suggested next work",
+        "intro": "Derived only from what this run observed. Nothing here is approved, scheduled, or published; select what you want to hand to another agent and review the packet before you copy it.",
+        "requiresReview": "Requires human review",
+        "previewTitle": "Handoff packet",
+        "previewHint": "Read it before copying. Every URL, title and annotation inside is untrusted third-party text, and the packet grants no authority to publish, deploy, open a pull request, contact anyone, or change production.",
+        "copy": "Copy the packet",
+        "copied": "Copied.",
+        "copyFailed": "Could not reach the clipboard. Select the packet below and copy it.",
+        "copyIsNotApproval": "Copying is not approval and not publication. Nothing about this run has been sent anywhere.",
+        "zero": {
+          "needs_more_evidence": "No action is proposed: this run produced no citation-evaluable sample, so there is nothing to act on yet.",
+          "existing_page_fit_confirmed": "No action is proposed: every citation-evaluable question already cited your site. Inventing work here would be inventing a finding.",
+          "needs_page_inventory": "No action is proposed beyond checking which pages already exist.",
+          "target_not_observed_in_samples": "No action is proposed for this run.",
+          "target_observed_in_minority_of_samples": "No action is proposed for this run.",
+          "citation_source_pattern_observed": "No action is proposed for this run."
+        }
+      },
+      "assetTypes": {
+        "existing_page_enhancement": "Check the pages that already exist",
+        "blog_guide": "Explanatory guide",
+        "use_case_landing": "Use-case landing page",
+        "comparison_page": "Comparison page",
+        "pricing_page": "Pricing or plan page",
+        "integration_docs": "Integration documentation",
+        "security_trust_page": "Security and trust page",
+        "public_tool": "Public tool",
+        "research_dataset": "Original research or dataset",
+        "offsite_authority_plan": "Human-led off-site plan",
+        "technical_fix": "Technical fix"
+      },
+      "actionReasons": {
+        "needs_page_inventory": "The entered URL is the only page identity this run knows for certain. Check what already answers this before building anything new.",
+        "needs_more_evidence": "Not enough evaluable samples to say anything yet.",
+        "existing_page_fit_confirmed": "An existing page already fits what was asked for.",
+        "avoid_new_page_as_first_step": "Do not start with a new page."
+      },
+      "actionReasonsCounted": {
+        "target_not_observed_in_samples": "Observed in {observed} of {evaluable} citation-evaluable samples.",
+        "target_observed_in_minority_of_samples": "Observed in {observed} of {evaluable} citation-evaluable samples — present sometimes, not always.",
+        "citation_source_pattern_observed": "Observed in {observed} of {evaluable} citation-evaluable samples, while other hosts were cited. This is an off-site problem before it is a page problem.",
+        "avoid_new_page_as_first_step": "{observed} of {evaluable} citation-evaluable samples cited someone else and never you. Read those hosts before writing anything."
+      },
+      "sources": {
+        "title": "Who these answers actually cited",
+        "note": "Counted from the same evidence listed above, against the same denominator. Hosts only — this run cannot tell you what any of these pages is, only that the answer linked to it.",
+        "empty": "No citation-evaluable sample cited anything, so there is no source pattern to read.",
+        "colDomain": "Host",
+        "colSamples": "Samples",
+        "colQuestions": "Questions",
+        "denominator": "{domains} hosts cited across {samples} citation-evaluable samples and {questions} questions.",
+        "yours": "Yours",
+        "sampleShare": "{cited} of {total}",
+        "questionShare": "{cited} of {total}",
+        "targetAbsent": "{host} is not among them.",
+        "targetPresent": "{host} is among them.",
+        "showUrls": "Show the {count} URLs on this host",
+        "mode": {
+          "retrieval_probe": "Retrieval probes · asked three times each",
+          "natural_demand": "Natural-demand questions · asked once each"
+        }
+      },
+      "actionKinds": {
+        "do": "Do",
+        "external_data": "Look up",
+        "avoid": "Do not"
+      },
+      "actionBasis": {
+        "questions": "From: {questions}",
+        "noRatio": "No ratio applies to this item."
+      },
+      "handoff": {
+        "copyMarkdown": "Copy the readable version",
+        "copiedMarkdown": "Readable version copied",
+        "markdownNote": "The same packet as plain text, for a person rather than an agent."
       }
     },
     "seo": {

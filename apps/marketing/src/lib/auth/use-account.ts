@@ -25,6 +25,8 @@ export type AccountState =
   | {
       readonly status: "signed-in";
       readonly email: string | null;
+      /** Google's photo, a sign-in-time snapshot; null for accounts without one. */
+      readonly avatarUrl: string | null;
       readonly balance: AccountBalance | null;
     };
 
@@ -59,12 +61,12 @@ function readBalance(body: unknown): AccountBalance | null {
   };
 }
 
-function readEmail(body: unknown): string | null {
+function readString(body: unknown, key: "email" | "avatarUrl"): string | null {
   if (body === null || typeof body !== "object") return null;
   const data = (body as { data?: unknown }).data;
   if (data === null || typeof data !== "object") return null;
-  const email = (data as { email?: unknown }).email;
-  return typeof email === "string" && email !== "" ? email : null;
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 /**
@@ -99,9 +101,11 @@ export function useAccount(): AccountState {
         return;
       }
 
-      const email = readEmail(await answer.json().catch(() => null));
+      const profile = await answer.json().catch(() => null);
       if (controller.signal.aborted) return;
-      setState({ status: "signed-in", email, balance: null });
+      const email = readString(profile, "email");
+      const avatarUrl = readString(profile, "avatarUrl");
+      setState({ status: "signed-in", email, avatarUrl, balance: null });
 
       const credits = await fetch("/api/credits/balance", {
         signal: controller.signal,
@@ -109,7 +113,7 @@ export function useAccount(): AccountState {
       if (controller.signal.aborted || credits === null || !credits.ok) return;
       const balance = readBalance(await credits.json().catch(() => null));
       if (controller.signal.aborted) return;
-      setState({ status: "signed-in", email, balance });
+      setState({ status: "signed-in", email, avatarUrl, balance });
     }
 
     void load();

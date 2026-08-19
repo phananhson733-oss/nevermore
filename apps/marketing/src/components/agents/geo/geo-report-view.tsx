@@ -1,5 +1,5 @@
-// @input  -- one contract-valid GEO report and the active locale
-// @output -- coverage with its real denominator, per-question verdicts, and limits
+// @input  -- one contract-valid v3 report and the active locale
+// @output -- every denominator beside its own numerator, and every link exactly as cited
 // @pos    -- the only rendering of GEO evidence; every number here comes from the payload
 
 "use client";
@@ -7,20 +7,24 @@
 import { useTranslations } from "next-intl";
 
 import type {
-  GeoQuestionObservation,
-  GeoReportData,
-  GeoSample,
+  GeoCitationEvidenceRefV1,
+  GeoQuestionObservationV3,
+  GeoReportDataV3,
+  GeoSampleV3,
 } from "../../../lib/agents/geo-report-contract";
-
-const VERDICT_TONE: Readonly<Record<string, string>> = {
-  stable_cited: "border-brand-accent/50 text-brand-accent-text",
-  intermittent: "border-brand-accent-2/50 text-brand-accent-2",
-  not_observed: "border-brand-border-strong text-text-dark-secondary",
-  // A real finding about the question, not a gap in the data, so it keeps
-  // readable secondary text; only `inconclusive` drops to the faintest tier.
-  answered_from_memory: "border-brand-border-dashed text-text-dark-secondary",
-  inconclusive: "border-brand-border-dashed text-text-dark-tertiary",
-};
+import type {
+  GeoCitationCounts,
+  GeoMentionCounts,
+  GeoRunTotals,
+  GeoSearchCounts,
+} from "../../../lib/agents/geo-report-derive";
+import type { GeoContextSnapshotV1 } from "../../../lib/agents/geo-context";
+import {
+  deriveGeoSourceLandscape,
+  type GeoModeSourcesV1,
+  type GeoSourceLandscapeV1,
+} from "../../../lib/agents/geo-source-landscape";
+import { GeoActionPanel } from "./geo-action-panel";
 
 function formatDate(value: string, locale: string): string {
   const parsed = new Date(value);
@@ -33,113 +37,477 @@ function formatDate(value: string, locale: string): string {
     : value;
 }
 
-function SampleRow({
-  sample,
-  competitorLabel,
-  stateLabel,
-  sampleLabel,
-  noCitations,
-  limitationLabel,
+const CARD_CLASS =
+  "rounded-card border border-brand-border-card bg-brand-panel-sunken p-5 md:p-6";
+const TAG_CLASS =
+  "inline-flex items-center rounded-row border px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] uppercase";
+
+function Tag({
+  tone = "neutral",
+  children,
 }: {
-  readonly sample: GeoSample;
-  readonly competitorLabel: string;
-  readonly stateLabel: string;
-  readonly sampleLabel: string;
-  readonly noCitations: string;
-  readonly limitationLabel: string | null;
+  readonly tone?: "neutral" | "accent" | "warn" | "faint";
+  readonly children: React.ReactNode;
 }) {
-  const competitors = new Set(sample.competitorHosts);
+  const toneClass =
+    tone === "accent"
+      ? "border-brand-accent/50 text-brand-accent-text"
+      : tone === "warn"
+        ? "border-brand-accent-2/50 text-brand-accent-2"
+        : tone === "faint"
+          ? "border-brand-border-dashed text-text-dark-tertiary"
+          : "border-brand-border-strong text-text-dark-secondary";
+  return <span className={`${TAG_CLASS} ${toneClass}`}>{children}</span>;
+}
+
+/**
+ * One counted set, always shown with the denominator it was counted against.
+ *
+ * Raw counts, never a percentage. Three samples support "cited in one of three
+ * observed answers" and support nothing about probability: the same question
+ * asked four times in calibration produced four citation sets whose
+ * intersection was empty.
+ */
+type MetricRow = readonly [string, number];
+
+function MetricTable({
+  label,
+  rows,
+}: {
+  readonly label: string;
+  readonly rows: readonly MetricRow[];
+}) {
+  const t = useTranslations("agents.geo");
+
   return (
-    <li className="grid gap-1.5 border-t border-brand-border-card py-2.5 first:border-t-0 sm:grid-cols-[7.5rem_1fr] sm:gap-3">
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-[10.5px] text-text-dark-tertiary">
-          {sampleLabel}
-        </span>
-        <span className="text-[11.5px] text-text-dark-secondary">
-          {stateLabel}
-        </span>
-      </div>
-      <div className="min-w-0">
-        {sample.citedHosts.length === 0 ? (
-          <p className="text-[11.5px] text-text-dark-tertiary">
-            {/* A sample that never searched observed nothing, so it must not
-                read as "no sources were cited" — that is the report's own rule
-                about never rendering an absence of observation as a finding. */}
-            {limitationLabel ?? (sample.webSearchPerformed ? noCitations : "")}
+    <div>
+      <h4 className="text-[11.5px] font-semibold text-text-dark-primary">
+        {label}
+      </h4>
+      <dl className="mt-1.5 grid grid-cols-3 gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card">
+        {rows.map(([key, value]) => (
+          <div key={key} className="bg-brand-panel p-2.5">
+            <dt className="text-[10.5px] leading-[1.4] text-text-dark-secondary">
+              {t(`coverage.${key}`)}
+            </dt>
+            <dd className="mt-0.5 font-mono text-[16px] text-text-dark-primary tabular-nums">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function searchRows(counts: GeoSearchCounts): readonly MetricRow[] {
+  return [
+    ["searchEvaluable", counts.searchEvaluableSamples],
+    ["searchPerformed", counts.searchPerformedSamples],
+  ];
+}
+
+function citationRows(counts: GeoCitationCounts): readonly MetricRow[] {
+  return [
+    ["citationEvaluable", counts.citationEvaluableSamples],
+    ["targetCited", counts.targetCitedIn],
+  ];
+}
+
+function mentionRows(counts: GeoMentionCounts): readonly MetricRow[] {
+  return [
+    ["mentionEvaluable", counts.mentionEvaluableSamples],
+    ["targetMentioned", counts.targetMentionedIn],
+  ];
+}
+
+function totalsRowsOf(totals: GeoRunTotals): readonly MetricRow[] {
+  return [
+    ["scheduled", totals.scheduledSamples],
+    ["answered", totals.answeredSamples],
+    ["unavailable", totals.unavailableSamples],
+  ];
+}
+
+/**
+ * Whether an annotation is nothing but the link the row already shows.
+ *
+ * The provider's annotation for a citation is normally `([host](url))` and
+ * carries no wording of its own, so printing it under a label put the same
+ * address on screen twice for every row. Anything that is not exactly that
+ * shape is text the answer wrote, and worth reading.
+ */
+function isBareMarkdownLink(text: string): boolean {
+  return /^\(?\[[^\]]*\]\([^()\s]*\)\)?$/u.test(text.trim());
+}
+
+/**
+ * One citation, exactly as the answer carried it.
+ *
+ * The link is the observed URL, not a cleaned-up version of it, and the
+ * annotation text is labelled as what it is: the anchor inside the answer, not
+ * an excerpt of the page it points at. `rel` is set because these are third
+ * party links the visitor did not choose.
+ */
+function CitationRow({
+  evidence,
+}: {
+  readonly evidence: GeoCitationEvidenceRefV1;
+}) {
+  const t = useTranslations("agents.geo");
+  const hasSpan = evidence.startIndex !== null && evidence.endIndex !== null;
+
+  return (
+    <li className="grid gap-1 border-t border-brand-border-card py-2 first:border-t-0">
+      {/*
+        Only when there is something to say. Ownership can only be "target" or
+        "unknown" and source type can only be "owned_page" or "unknown", so on a
+        run that never cited the customer every row carried the same two grey
+        labels — the first thing the eye hits, and never once a fact about the
+        row it sits on.
+      */}
+      {evidence.ownership === "target" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Tag tone="accent">{t(`ownership.${evidence.ownership}`)}</Tag>
+          {evidence.sourceType !== "unknown" && (
+            <Tag tone="faint">{t(`sourceType.${evidence.sourceType}`)}</Tag>
+          )}
+        </div>
+      )}
+      <a
+        href={evidence.exactUrl}
+        target="_blank"
+        rel="noreferrer noopener nofollow ugc"
+        className="break-all text-[12px] leading-[1.5] text-brand-accent-text underline underline-offset-2"
+      >
+        {evidence.exactUrl}
+      </a>
+      {evidence.title !== null && (
+        <p className="text-[11.5px] leading-[1.5] text-text-dark-secondary">
+          {evidence.title}
+        </p>
+      )}
+      {/*
+        Suppressed when it only restates the link above it. The provider's
+        annotation is usually the markdown link itself, so printing it under a
+        label showed every reader the same URL twice and buried the one case
+        worth reading: an annotation that carries wording of its own.
+
+        Matched on shape rather than on the URL: the annotation links the
+        canonical address while `exactUrl` keeps the tracking query the answer
+        actually carried, so comparing the two strings never fires.
+      */}
+      {evidence.annotationText !== null &&
+        !isBareMarkdownLink(evidence.annotationText) && (
+          <p className="text-[11px] leading-[1.5] text-text-dark-tertiary">
+            <span className="font-mono text-[10px] uppercase">
+              {t("evidence.annotationLabel")}
+            </span>{" "}
+            {evidence.annotationText}
           </p>
-        ) : (
-          <ul className="flex flex-wrap gap-1.5">
-            {sample.citedHosts.map((host) => (
-              <li
-                key={host}
-                className="inline-flex items-center gap-1 rounded-row border border-brand-border-strong bg-brand-panel px-2 py-0.5 font-mono text-[10.5px] text-text-dark-secondary"
-              >
-                {host}
-                {competitors.has(host) && (
-                  <span className="text-brand-accent-2">{competitorLabel}</span>
-                )}
-              </li>
-            ))}
-          </ul>
         )}
-      </div>
+      <p className="font-mono text-[10.5px] text-text-dark-tertiary">
+        {t("evidence.location", {
+          item: evidence.providerOutputItemIndex,
+          section: evidence.sectionIndex,
+        })}
+        {hasSpan
+          ? ` · ${t("evidence.span", {
+              start: evidence.startIndex ?? 0,
+              end: evidence.endIndex ?? 0,
+            })}`
+          : ` · ${t("evidence.spanUnavailable")}`}
+      </p>
     </li>
+  );
+}
+
+function SampleRow({ sample }: { readonly sample: GeoSampleV3 }) {
+  const t = useTranslations("agents.geo");
+  const citations = sample.evidence.filter(
+    (entry): entry is GeoCitationEvidenceRefV1 => entry.kind === "cited",
+  );
+  const mention = sample.evidence.find((entry) => entry.kind === "mention");
+
+  return (
+    <li className="grid gap-2 border-t border-brand-border-card py-3 first:border-t-0">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-mono text-[10.5px] text-text-dark-tertiary">
+          {t("results.sampleLabel", { index: sample.sampleIndex })}
+        </span>
+        <Tag>{t(`answerStatus.${sample.answerStatus}`)}</Tag>
+        {sample.webSearchPerformed !== null && (
+          <Tag tone={sample.webSearchPerformed ? "accent" : "faint"}>
+            {t(
+              sample.webSearchPerformed
+                ? "results.searched"
+                : "results.notSearched",
+            )}
+          </Tag>
+        )}
+        {/*
+          Probe status is deliberately absent here. It is derived from every
+          sample of the question at once, so stamping it on one sample put a
+          verdict about the question next to facts about the answer — "searched"
+          and "searched only sometimes" side by side, reading as a
+          contradiction. It renders on the question instead.
+        */}
+        <Tag>{t(`citationStatus.${sample.citationStatus}`)}</Tag>
+        <Tag>{t(`mentionStatus.${sample.mentionStatus}`)}</Tag>
+        <Tag tone={sample.mentionEligibility === "prompted" ? "warn" : "faint"}>
+          {t(`mentionEligibility.${sample.mentionEligibility}`)}
+        </Tag>
+        <Tag tone="faint">{t("results.recommendationNotEvaluated")}</Tag>
+      </div>
+
+      {sample.limitations.length > 0 && (
+        <ul className="grid gap-0.5">
+          {sample.limitations.map((code) => (
+            <li
+              key={code}
+              className="text-[11px] leading-[1.5] text-text-dark-tertiary"
+            >
+              {t(`sampleLimitations.${code}`)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {citations.length > 0 && (
+        <ul className="rounded-row border border-brand-border-card bg-brand-panel px-3">
+          {citations.map((evidence) => (
+            <CitationRow key={evidence.evidenceId} evidence={evidence} />
+          ))}
+        </ul>
+      )}
+
+      {mention !== undefined && mention.kind === "mention" && (
+        <div className="rounded-row border border-brand-border-dashed bg-brand-panel px-3 py-2">
+          <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
+            {t("evidence.mentionLabel")}
+          </p>
+          <p className="mt-1 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+            {t("evidence.mentionAlias", { alias: mention.matchedAlias })}
+          </p>
+          {mention.mentionSnippet !== null && (
+            <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary italic">
+              {mention.mentionSnippet}
+            </p>
+          )}
+          <p className="mt-1 text-[10.5px] leading-[1.5] text-text-dark-tertiary">
+            {t("evidence.mentionDisclaimer")}
+          </p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The aggregate the per-question list cannot show.
+ *
+ * Everything here is a count of records already rendered above it, so the two
+ * views can be read side by side without a second denominator to reconcile.
+ * One table per mode and never a total: a retrieval probe is asked three times
+ * and a natural-demand question once, so a blended row would treat one repeat
+ * of a calibrated probe as interchangeable with a whole one-shot question.
+ *
+ * Deliberately no classification of what any host *is* — the sampler refuses to
+ * guess that from a URL, and a table that guessed would put a made-up label on
+ * the most-read line of the report.
+ */
+function ModeSourceTable({
+  mode,
+  sources,
+  targetHost,
+}: {
+  readonly mode: "retrieval_probe" | "natural_demand";
+  readonly sources: GeoModeSourcesV1;
+  readonly targetHost: string;
+}) {
+  const t = useTranslations("agents.geo");
+
+  return (
+    <div data-testid={`geo-sources-${mode}`} className="mt-3">
+      <h4 className="text-[11.5px] font-semibold text-text-dark-primary">
+        {t(`sources.mode.${mode}`)}
+      </h4>
+      {sources.sources.length === 0 ? (
+        <p className="mt-1 text-[12px] text-text-dark-secondary">
+          {t("sources.empty")}
+        </p>
+      ) : (
+        <>
+          <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
+            {t("sources.denominator", {
+              domains: sources.distinctDomains,
+              samples: sources.citationEvaluableSamples,
+              questions: sources.citationEvaluableQuestions,
+            })}{" "}
+            {t(
+              sources.targetObserved
+                ? "sources.targetPresent"
+                : "sources.targetAbsent",
+              { host: targetHost },
+            )}
+          </p>
+          <div className="mt-1.5 overflow-x-auto rounded-card border border-brand-border-card">
+            <table className="w-full border-collapse bg-brand-panel text-[12px]">
+              <thead>
+                <tr className="border-b border-brand-border-card">
+                  <th className="px-3 py-2 text-left font-medium text-text-dark-secondary">
+                    {t("sources.colDomain")}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-text-dark-secondary">
+                    {t("sources.colSamples")}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-text-dark-secondary">
+                    {t("sources.colQuestions")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.sources.map((source) => (
+                  <tr
+                    key={source.domain}
+                    className="border-t border-brand-border-card"
+                  >
+                    <td className="px-3 py-1.5 break-all">
+                      <span
+                        className={
+                          source.isTarget
+                            ? "text-brand-accent-text"
+                            : "text-text-dark-primary"
+                        }
+                      >
+                        {source.domain}
+                      </span>
+                      {source.isTarget && (
+                        <span className="ml-2">
+                          <Tag tone="accent">{t("sources.yours")}</Tag>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
+                      {t("sources.sampleShare", {
+                        cited: source.citedInSamples,
+                        total: sources.citationEvaluableSamples,
+                      })}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
+                      {t("sources.questionShare", {
+                        cited: source.citedInQuestions,
+                        total: sources.citationEvaluableQuestions,
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SourceLandscape({
+  landscape,
+  targetHost,
+}: {
+  readonly landscape: GeoSourceLandscapeV1;
+  readonly targetHost: string;
+}) {
+  const t = useTranslations("agents.geo");
+
+  return (
+    <div>
+      <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        {t("sources.title")}
+      </h3>
+      <p className="mt-1 text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("sources.note")}
+      </p>
+      <ModeSourceTable
+        mode="retrieval_probe"
+        sources={landscape.byMode.retrieval_probe}
+        targetHost={targetHost}
+      />
+      <ModeSourceTable
+        mode="natural_demand"
+        sources={landscape.byMode.natural_demand}
+        targetHost={targetHost}
+      />
+    </div>
   );
 }
 
 function QuestionCard({
   question,
+  targetHost,
 }: {
-  readonly question: GeoQuestionObservation;
+  readonly question: GeoQuestionObservationV3;
+  readonly targetHost: string;
 }) {
   const t = useTranslations("agents.geo");
-  const { aggregate } = question;
-  const tone =
-    VERDICT_TONE[aggregate.verdict] ?? VERDICT_TONE["inconclusive"] ?? "";
+  const { counts } = question;
+  // One value per question, not per sample: every sample of a retrieval probe
+  // carries the same verdict, and the report guard refuses a payload where they
+  // disagree. Reading the first is reading the question's.
+  const probeStatus = question.samples[0]?.probeStatus ?? null;
 
   return (
-    <li className="rounded-card border border-brand-border-card bg-brand-panel-sunken p-4 md:p-5">
+    <li className={CARD_CLASS}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-[46rem] text-[13.5px] leading-[1.6] text-text-dark-primary">
-          {question.question}
+          {question.text}
         </p>
-        <span
-          className={`shrink-0 rounded-row border px-2.5 py-1 font-mono text-[10.5px] ${tone}`}
-        >
-          {t(`verdicts.${aggregate.verdict}`)}
-        </span>
+        <div className="flex shrink-0 flex-wrap gap-1.5">
+          <Tag
+            tone={question.mode === "retrieval_probe" ? "accent" : "neutral"}
+          >
+            {t(`modes.${question.mode}`)}
+          </Tag>
+          <Tag>{t(`stances.${question.brandStance}`)}</Tag>
+          {probeStatus !== null && (
+            <Tag
+              tone={
+                probeStatus === "valid"
+                  ? "accent"
+                  : probeStatus === "provider_failed"
+                    ? "faint"
+                    : "warn"
+              }
+            >
+              {t(`probeStatus.${probeStatus}`)}
+            </Tag>
+          )}
+        </div>
       </div>
 
-      <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-        {t(`verdicts.${aggregate.verdict}Hint`)}
+      {/*
+        Named, because these two lines sit directly above a list of everyone
+        else's citations. Without the host in the sentence, "cited 0 times" next
+        to twenty links reads as a broken report rather than as the finding.
+      */}
+      <p className="mt-2 font-mono text-[11px] text-brand-accent-text">
+        {t("results.citedInCount", {
+          host: targetHost,
+          cited: counts.targetCitedIn,
+          total: counts.citationEvaluableSamples,
+        })}
+      </p>
+      <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
+        {t("results.mentionedInCount", {
+          host: targetHost,
+          mentioned: counts.targetMentionedIn,
+          total: counts.mentionEvaluableSamples,
+        })}
       </p>
 
-      {aggregate.admissibleSamples > 0 && (
-        <p className="mt-1.5 font-mono text-[11px] text-brand-accent-text">
-          {t("results.citedInCount", {
-            cited: aggregate.targetCitedIn,
-            total: aggregate.admissibleSamples,
-          })}
-        </p>
-      )}
-
-      <ul className="mt-3">
+      <ul className="mt-2">
         {question.samples.map((sample) => (
-          <SampleRow
-            key={sample.sampleIndex}
-            sample={sample}
-            competitorLabel={t("results.competitorTag")}
-            stateLabel={t(`states.${sample.state}`)}
-            sampleLabel={t("results.sampleLabel", {
-              index: sample.sampleIndex,
-            })}
-            noCitations={t("results.noCitedHosts")}
-            limitationLabel={
-              sample.limitation === null
-                ? null
-                : t(`sampleLimitations.${sample.limitation}`)
-            }
-          />
+          <SampleRow key={sample.sampleId} sample={sample} />
         ))}
       </ul>
     </li>
@@ -148,59 +516,134 @@ function QuestionCard({
 
 export function GeoReportView({
   report,
+  context,
   locale,
   onRestart,
 }: {
-  readonly report: GeoReportData;
+  readonly report: GeoReportDataV3;
+  /** Omitted only where the report is rendered without its confirmed context. */
+  readonly context?: GeoContextSnapshotV1;
   readonly locale: string;
   readonly onRestart: () => void;
 }) {
   const t = useTranslations("agents.geo");
-  const { run, coverage, questions } = report;
+  const { run, coverage, questions, limitations } = report;
+  const { provenance } = run;
+  const degraded =
+    coverage.triggerFailedProbes > 0 || coverage.degradedProbes > 0;
+  const totalsRows = totalsRowsOf(coverage.totals);
 
-  const counters = [
-    ["coverageAttempted", coverage.samplesAttempted],
-    ["coverageObserved", coverage.samplesObserved],
-    ["coverageNotSearched", coverage.samplesSearchNotPerformed],
-    ["coverageUnavailable", coverage.samplesUnavailable],
+  const identity = [
+    ["collector", provenance.collector],
+    ["upstream", provenance.upstream],
+    ["surface", provenance.surface],
+    ["modelRequested", provenance.modelRequested],
+    ["modelObserved", provenance.modelObserved.join(", ")],
+    ["maxOutputTokens", String(provenance.maxOutputTokensRequested)],
+    ["market", provenance.webSearchCountryIsoCodeRequested],
+    ["queryLanguage", provenance.queryLanguageTag],
+    ["querySet", run.querySetContentHash.slice(7, 19)],
+    ["runId", run.runId],
   ] as const;
 
   return (
     <section className="grid gap-5">
-      <div className="rounded-card border border-brand-border-card bg-brand-panel-sunken p-5 md:p-6">
+      {degraded && (
+        <p
+          role="alert"
+          className="rounded-card border border-brand-accent-2/50 bg-brand-panel-sunken px-4 py-3 text-[12.5px] leading-[1.6] text-brand-accent-2"
+        >
+          {t("results.degradedBanner", {
+            failed: coverage.triggerFailedProbes,
+            mixed: coverage.degradedProbes,
+          })}
+        </p>
+      )}
+
+      <div className={CARD_CLASS}>
         <h2 className="text-[16px] font-semibold text-text-dark-primary">
           {t("results.title")}
         </h2>
         <p className="mt-1 font-mono text-[11px] text-text-dark-tertiary">
           {t("results.sampledAt", { date: formatDate(run.sampledAt, locale) })}
-          {" · "}
-          {t("results.model")}: {run.provider.model}
-          {" · "}
-          {t("results.market")}: {run.provider.marketCode}
         </p>
 
-        <h3 className="mt-5 text-[12.5px] font-semibold text-text-dark-primary">
-          {t("results.coverageTitle")}
+        <h3 className="mt-4 text-[12.5px] font-semibold text-text-dark-primary">
+          {t("results.identityTitle")}
         </h3>
-        <dl className="mt-2 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card sm:grid-cols-4">
-          {counters.map(([key, value]) => (
-            <div key={key} className="bg-brand-panel p-3.5">
-              <dt className="text-[11px] text-text-dark-secondary">
-                {t(`results.${key}`)}
+        <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
+          {identity.map(([key, value]) => (
+            <div key={key} className="text-[11.5px] leading-[1.5]">
+              <dt className="inline text-text-dark-tertiary">
+                {t(`identity.${key}`)}:{" "}
               </dt>
-              <dd className="mt-1 font-mono text-[20px] text-text-dark-primary tabular-nums">
+              <dd className="inline font-mono text-[11px] text-text-dark-secondary">
                 {value}
               </dd>
             </div>
           ))}
         </dl>
-        <p className="mt-2.5 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-          {t("results.coverageNote")}
+        <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          {t(`identity.${provenance.triggerCalibrationScope}`)}
         </p>
         <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-tertiary">
           {t("results.notStored")}
         </p>
       </div>
+
+      <div className={CARD_CLASS}>
+        <h3 className="text-[12.5px] font-semibold text-text-dark-primary">
+          {t("results.coverageTitle")}
+        </h3>
+        <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          {t("results.coverageNote")}
+        </p>
+        <div className="mt-3 grid gap-4">
+          {/* Only the three mode-agnostic facts are stated about the whole run.
+              A run-level "named in 4 of 18" would blend three prompted
+              repetitions with one unprompted discovery, and a run-level
+              "searched 15 of 18" would count three natural-demand questions
+              that were never expected to search. */}
+          <MetricTable label={t("coverage.totals")} rows={totalsRows} />
+          <MetricTable
+            label={t("coverage.searchRetrieval")}
+            rows={searchRows(coverage.search.retrieval_probe)}
+          />
+          <MetricTable
+            label={t("coverage.searchNatural")}
+            rows={searchRows(coverage.search.natural_demand)}
+          />
+          <MetricTable
+            label={t("coverage.citationRetrieval")}
+            rows={citationRows(coverage.citation.retrieval_probe)}
+          />
+          <MetricTable
+            label={t("coverage.citationNatural")}
+            rows={citationRows(coverage.citation.natural_demand)}
+          />
+          <MetricTable
+            label={t("coverage.mentionUnprompted")}
+            rows={mentionRows(coverage.mention.unprompted)}
+          />
+          <MetricTable
+            label={t("coverage.mentionPrompted")}
+            rows={mentionRows(coverage.mention.prompted)}
+          />
+        </div>
+        <p className="mt-3 font-mono text-[11px] text-text-dark-secondary">
+          {t("results.probeSummary", {
+            valid: coverage.validProbes,
+            failed: coverage.triggerFailedProbes,
+            mixed: coverage.degradedProbes,
+            unavailable: coverage.failedProbes,
+          })}
+        </p>
+      </div>
+
+      <SourceLandscape
+        landscape={deriveGeoSourceLandscape(report)}
+        targetHost={report.run.targetHost}
+      />
 
       <div>
         <h3 className="text-[14px] font-semibold text-text-dark-primary">
@@ -213,17 +656,33 @@ export function GeoReportView({
         ) : (
           <ul className="mt-3 grid gap-3">
             {questions.map((question) => (
-              <QuestionCard key={question.questionId} question={question} />
+              <QuestionCard
+                key={question.queryId}
+                question={question}
+                targetHost={report.run.targetHost}
+              />
             ))}
           </ul>
         )}
       </div>
+
+      {context !== undefined && (
+        <GeoActionPanel report={report} context={context} />
+      )}
 
       <div className="rounded-card border border-brand-border-dashed bg-brand-panel-sunken p-5">
         <h3 className="text-[12.5px] font-semibold text-text-dark-primary">
           {t("limitations.title")}
         </h3>
         <ul className="mt-2 grid gap-1.5">
+          {limitations.map((code) => (
+            <li
+              key={code}
+              className="text-[11.5px] leading-[1.6] text-text-dark-secondary"
+            >
+              {t(`runLimitations.${code}`)}
+            </li>
+          ))}
           {["sampling", "platform", "citation", "denominator"].map((key) => (
             <li
               key={key}

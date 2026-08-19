@@ -153,7 +153,8 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v6",
+      schemaVersion: "seo_audit.sitewide.v7",
+
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
@@ -825,6 +826,66 @@ describe("seo audit record invariants", () => {
     expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
   });
 
+  it("matches the target the entry redirect moved to the site's other host variant", () => {
+    // The visitor submits the www host; the site 301s to the apex, so the
+    // crawler resolved the origin to the apex and every collected page carries
+    // the apex subject URL. Comparing the submitted string against those pages
+    // finds nothing, and the run reports a fully crawled site whose one
+    // requested page was supposedly never collected.
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://www.acme.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
+  });
+
+  it("matches the target when the site redirects the apex to www", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/about",
+        origin: "https://www.acme.test",
+        host: "www.acme.test",
+        pages: [
+          page("https://www.acme.test/", {}, 0),
+          page("https://www.acme.test/about"),
+        ],
+      }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://www.acme.test/about");
+  });
+
+  it("matches the target when the entry redirect only upgraded the scheme", () => {
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "http://acme.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(true);
+    expect(report.inspectedTargetUrl).toBe("https://acme.test/about");
+  });
+
+  it("never rebases a submitted host the entry redirect could not have reached", () => {
+    // Rebasing on the origin alone would report this crawl's /about page as the
+    // inspected target for a URL on a different site entirely.
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://other.test/about" }),
+    );
+
+    expect(report.targetInspected).toBe(false);
+    expect(report.inspectedTargetUrl).toBeNull();
+  });
+
+  it("does not let the host rebase invent a page the crawl never collected", () => {
+    const report = buildSeoAuditReport(
+      raw({ requestedUrl: "https://www.acme.test/never-crawled" }),
+    );
+
+    expect(report.targetInspected).toBe(false);
+    expect(report.inspectedTargetUrl).toBeNull();
+  });
+
   it("does not claim a target that was never collected as inspected", () => {
     const report = buildSeoAuditReport(
       raw({ requestedUrl: "https://acme.test/never-crawled" }),
@@ -914,7 +975,28 @@ describe("target page extract", () => {
       subHeadings: ["Pricing section"],
       openingText: "Pricing opening text",
       staticBodyWords: 300,
+      staticBodyUnits: null,
+      termFrequencies: null,
       truncatedLists: false,
+      // The crawl's own journey to this page, always known once collected.
+      response: {
+        status: 200,
+        finalStatus: 200,
+        redirectHops: 0,
+        responseMs: 42,
+        contentType: "text/html; charset=utf-8",
+        canonicalTarget: "https://acme.test/pricing",
+        robotsIndexable: true,
+        robotsDirectives: [],
+        sitemapMember: true,
+        jsonLdTypes: ["WebPage"],
+        jsonLdErrorCount: 0,
+        internalOutlinks: 0,
+        internalOutlinksWithoutAnchorText: 0,
+      },
+      // This fixture builds page records without the crawler's side-car, and
+      // unknown must not render as a page that declared nothing.
+      declared: null,
     });
     expect(report.targetPageExtract?.url).toBe(report.inspectedTargetUrl);
   });
@@ -1014,7 +1096,8 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v6");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v7");
+
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);
   });

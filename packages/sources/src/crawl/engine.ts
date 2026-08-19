@@ -1344,10 +1344,7 @@ export async function crawlSite(
         subjectUrl: requestSubjectUrl,
         depth: entry.depth,
         projection,
-        // Beside the projection, never inside it: crawl.page.v1 is read back
-        // by a strict schema in the product app, so a field added there fails
-        // validation on every row already stored.
-        assets: parsed.assets,
+        onPage: parsed.onPage,
       },
       journeySubjectUrl: requestSubjectUrl,
       journeyFetchUrl: requestFetchUrl,

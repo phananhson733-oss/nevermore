@@ -14,6 +14,7 @@ import {
   resetPublicToolSlots,
 } from "./public-tool-request.ts";
 import { openCrawlGate } from "./crawl-gate.ts";
+import { readCrawlCache } from "./crawl-cache.ts";
 import type { SharedQuotaDependencies } from "./shared-rate-limit.ts";
 
 /** An always-allowing quota store, so slot behaviour can be tested in isolation. */
@@ -81,7 +82,7 @@ const raw = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v6",
+    schemaVersion: "seo_audit.sitewide.v7",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -393,6 +394,56 @@ describe("handleSeoAuditRequest", () => {
       expect(release).toHaveBeenCalledOnce();
     },
   );
+
+  /**
+   * The seam this pair of modules failed at in production.
+   *
+   * Every capture-provenance check here is `new Date(x).toISOString() === x`,
+   * and PostgreSQL renders `timestamptz` with microsecond precision and a
+   * numeric offset. Each half was independently right and every test on both
+   * sides passed, because both sides hand-spelled the provenance in the
+   * canonical form. Rows were written and never once read back: the tools
+   * re-crawled every caller's site while a fresh answer sat in the table.
+   *
+   * So this reads the provenance through the real store path rather than
+   * writing the expected string, which is the only version of this test that
+   * could have failed.
+   */
+  it("serves a cache hit for provenance read back through the store", async () => {
+    const scan = vi.fn(async () => raw);
+    const release = vi.fn();
+    const cached = await readCrawlCache("seo_audit", "acme.test", {
+      read: async () => ({
+        payload,
+        capturedAt: "2026-07-30T08:00:00.033741+00:00",
+      }),
+      write: async () => {},
+    });
+    expect(cached).not.toBeNull();
+    const deps = dependencies({
+      scan,
+      openGate: async () => ({
+        ok: true,
+        kind: "cached",
+        payload: cached?.payload,
+        capturedAt: cached?.capturedAt ?? "",
+        release,
+      }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBe("hit");
+    expect(response.headers.get("x-crawl-captured-at")).toBe(
+      "2026-07-30T08:00:00.033Z",
+    );
+    expect(scan).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  });
 
   it("treats a cache hit with non-canonical capture provenance as a miss", async () => {
     const scan = vi.fn(async () => raw);

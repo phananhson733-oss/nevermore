@@ -1,11 +1,36 @@
-// @input  -- a confirmed product category, buyer description, and optional rivals
-// @output -- eight editable buyer questions, each measured to reach a live web search
+// @input  -- a confirmed context snapshot, or a bare category/buyer/rival seed
+// @output -- the versioned core_8 query set, and the legacy eight-question list
 // @pos    -- the deterministic question generator the visitor confirms before paying
 
+import { canonicalGeoAssetTypes, type GeoAssetType } from "./geo-asset-type.ts";
+import { normalizeGeoText } from "./geo-canonical.ts";
 import {
-  GEO_MAX_QUESTION_LENGTH,
-  GEO_QUESTIONS_PER_RUN,
-} from "./geo-report-contract.ts";
+  deriveGeoBrandStance,
+  type GeoContextSnapshotV1,
+} from "./geo-context.ts";
+import {
+  geoQuerySetContentHash,
+  geoSamplesForMode,
+  GEO_CORE_QUERY_COUNT,
+  GEO_MAX_QUERY_TEXT_LENGTH,
+  GEO_CORE_SLOTS,
+  isPayableGeoQueryText,
+  GEO_QUERY_SET_SCHEMA_VERSION,
+  type GeoQuerySetV1,
+  type GeoQuerySlot,
+  type GeoQueryUnitV1,
+} from "./geo-query-contract.ts";
+import {
+  findGeoTemplate,
+  isGeoTemplateShippable,
+  renderGeoTemplate,
+  validateGeoPlaceholderValue,
+  GEO_TEMPLATE_REGISTRY_VERSION,
+  type GeoPlaceholderRejection,
+  type GeoTemplateEntry,
+  type GeoTemplatePlaceholderName,
+} from "./geo-template-registry.ts";
+
 
 /**
  * Why these are templates rather than a model call.
@@ -207,8 +232,8 @@ function bounded(value: string): string {
   // Whitespace-only normalization, deliberately: a finished question ends in
   // its own question mark, and the ingredient normalizer would cut it there.
   const text = collapse(value);
-  if (text.length <= GEO_MAX_QUESTION_LENGTH) return text;
-  const cut = text.slice(0, GEO_MAX_QUESTION_LENGTH);
+  if (text.length <= GEO_MAX_QUERY_TEXT_LENGTH) return text;
+  const cut = text.slice(0, GEO_MAX_QUERY_TEXT_LENGTH);
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trim();
 }
@@ -293,9 +318,349 @@ export function generateGeoQuestions(
     },
   ];
 
-  return drafts.slice(0, GEO_QUESTIONS_PER_RUN).map((draft, index) => ({
+  return drafts.slice(0, GEO_CORE_QUERY_COUNT).map((draft, index) => ({
     questionId: `q-${index + 1}`,
     question: bounded(draft.question),
     stage: draft.stage,
   }));
 }
+
+/**
+ * The core_8 cohort: which template fills each slot, and what could answer it.
+ *
+ * Data rather than control flow, so the whole cohort can be read in one place
+ * and asserted against in one test. Slot 5 is the only one with a choice, and
+ * the choice is not a preference: "Best alternatives to X" needs a competitor
+ * name to be a question at all, so without one the slot falls back to the other
+ * measured phrasing for the same decision rather than to a placeholder like
+ * "the established options", which names nothing and gives the model nothing to
+ * look up.
+ */
+interface GeoCoreSlotPlan {
+  readonly slot: GeoQuerySlot;
+  readonly templateId: string;
+  /** Used when no confirmed competitor name fits the placeholder bound. */
+  readonly rivalFreeTemplateId: string | null;
+  readonly expectedAssetTypes: readonly GeoAssetType[];
+}
+
+export const GEO_CORE_SLOT_PLAN: readonly GeoCoreSlotPlan[] = [
+  {
+    slot: "category_discovery",
+    templateId: "geo.retrieval.category_top",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: [
+      "blog_guide",
+      "comparison_page",
+      "offsite_authority_plan",
+    ],
+  },
+  {
+    slot: "jtbd_outcome",
+    templateId: "geo.natural.jtbd_best_for_buyer",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["use_case_landing", "blog_guide"],
+  },
+  {
+    slot: "pain_how_to",
+    templateId: "geo.natural.pain_current_workflow",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["existing_page_enhancement", "blog_guide"],
+  },
+  {
+    slot: "constraint_fit",
+    templateId: "geo.retrieval.free_plan",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["existing_page_enhancement", "pricing_page"],
+  },
+  {
+    slot: "alternative_status_quo",
+    templateId: "geo.retrieval.alternatives",
+    rivalFreeTemplateId: "geo.retrieval.leading_differ",
+    expectedAssetTypes: ["comparison_page", "offsite_authority_plan"],
+  },
+  {
+    slot: "brand_comparison",
+    templateId: "geo.natural.brand_comparison",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["existing_page_enhancement", "comparison_page"],
+  },
+  {
+    slot: "due_diligence",
+    templateId: "geo.retrieval.best_reviews",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["security_trust_page", "offsite_authority_plan"],
+  },
+  {
+    slot: "negative_fit_objection",
+    templateId: "geo.retrieval.worth_paying",
+    rivalFreeTemplateId: null,
+    expectedAssetTypes: ["pricing_page", "research_dataset"],
+  },
+];
+
+export type GeoQuerySetRejection =
+  | { readonly code: "query_language_unsupported" }
+  | { readonly code: "unknown_query"; readonly queryId: string }
+  | { readonly code: "template_unavailable"; readonly slot: GeoQuerySlot }
+  | {
+      readonly code: "placeholder_rejected";
+      readonly slot: GeoQuerySlot;
+      readonly placeholder: GeoTemplatePlaceholderName;
+      readonly reason: GeoPlaceholderRejection | "missing";
+    }
+  | { readonly code: "question_not_payable"; readonly slot: GeoQuerySlot };
+
+export type GeoQuerySetBuildResult =
+  | { readonly ok: true; readonly querySet: GeoQuerySetV1 }
+  | {
+      readonly ok: false;
+      readonly rejections: readonly GeoQuerySetRejection[];
+    };
+
+/**
+ * Join at most two confirmed competitor names into the measured wording.
+ *
+ * Two, because both the one-name and the two-name forms were measured 3/3 and
+ * nothing beyond two was. Names are never trimmed to fit: a shortened
+ * competitor name is a different competitor, and asking about the wrong company
+ * is a worse failure than falling back to the rival-free phrasing.
+ */
+function rivalListFor(competitors: readonly string[]): string | null {
+  const cleaned = competitors
+    .map((name) => normalizeGeoText(name))
+    .filter((name) => name.length > 0);
+
+  for (const candidate of [
+    cleaned.length >= 2 ? `${cleaned[0]} and ${cleaned[1]}` : null,
+    cleaned[0] ?? null,
+  ]) {
+    if (candidate === null) continue;
+    if (validateGeoPlaceholderValue("rivalList", candidate) === null) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function substitutionsFor(
+  context: GeoContextSnapshotV1,
+  rivalList: string | null,
+): Partial<Record<GeoTemplatePlaceholderName, string>> {
+  const phrases = categoryPhrases(context.category);
+  const values: Partial<Record<GeoTemplatePlaceholderName, string>> = {
+    categoryStem: phrases.stem || phrases.plural,
+    categoryPlural: phrases.plural,
+    categorySingular: phrases.singular,
+    categorySoftware: phrases.software,
+    buyer: context.buyer,
+    productName: context.productName,
+  };
+  return rivalList === null ? values : { ...values, rivalList };
+}
+
+function templateForSlot(
+  plan: GeoCoreSlotPlan,
+  rivalList: string | null,
+): GeoTemplateEntry | null {
+  const wanted =
+    rivalList === null && plan.rivalFreeTemplateId !== null
+      ? plan.rivalFreeTemplateId
+      : plan.templateId;
+  const entry = findGeoTemplate(wanted, "1");
+  if (entry === null) return null;
+  return isGeoTemplateShippable(
+    entry.templateId,
+    entry.templateVersion,
+    entry.mode,
+  )
+    ? entry
+    : null;
+}
+
+/**
+ * Build the versioned core_8 query set from a confirmed context.
+ *
+ * Deterministic and offline: no model call, no crawl, no network. The visitor
+ * has already confirmed every ingredient, so the generator's job is to put them
+ * into calibrated sentences and to refuse rather than improvise when one of them
+ * does not fit. A generator that quietly trimmed a value to make a template fit
+ * is how a run once spent twenty-four calls on four distinct prompts, none of
+ * which had ever been measured.
+ *
+ * The clock is injected and read once, for the `asOf` anchor of the
+ * time-sensitive questions. Two builds from the same context and the same clock
+ * produce the same ids, the same text and the same fingerprint.
+ */
+export async function buildGeoCoreQuerySet(
+  context: GeoContextSnapshotV1,
+  clock: () => Date,
+): Promise<GeoQuerySetBuildResult> {
+  if (context.targetQueryLanguage !== "en") {
+    return { ok: false, rejections: [{ code: "query_language_unsupported" }] };
+  }
+
+  const rejections: GeoQuerySetRejection[] = [];
+  const rivalList = rivalListFor(context.directCompetitors);
+  const values = substitutionsFor(context, rivalList);
+  const asOf = clock().toISOString();
+  const queries: GeoQueryUnitV1[] = [];
+
+  for (const plan of GEO_CORE_SLOT_PLAN) {
+    const entry = templateForSlot(plan, rivalList);
+    if (entry === null) {
+      rejections.push({ code: "template_unavailable", slot: plan.slot });
+      continue;
+    }
+
+    const rendered = renderGeoTemplate(entry, values);
+    if (!rendered.ok) {
+      rejections.push({
+        code: "placeholder_rejected",
+        slot: plan.slot,
+        placeholder: rendered.placeholder,
+        reason: rendered.reason,
+      });
+      continue;
+    }
+    if (!isPayableGeoQueryText(rendered.text)) {
+      rejections.push({ code: "question_not_payable", slot: plan.slot });
+      continue;
+    }
+
+    queries.push({
+      queryId: `core-${plan.slot}`,
+      slot: plan.slot,
+      text: rendered.text,
+      cohort: "core",
+      mode: entry.mode,
+      // Derived from the rendered text against the confirmed names, never
+      // asserted: a question labelled unbranded that in fact contains the
+      // customer's own name would make every mention in its answer
+      // tautological, and the report would present that as discovery.
+      brandStance: deriveGeoBrandStance(
+        rendered.text,
+        context.brandAliases,
+        context.directCompetitors,
+      ),
+      buyerStage: entry.buyerStage,
+      marketCode: context.marketCode,
+      queryLanguageTag: "en",
+      timeSensitive: entry.timeSensitive,
+      asOf: entry.timeSensitive ? asOf : null,
+      expectedAssetTypes: canonicalGeoAssetTypes(plan.expectedAssetTypes),
+      source: "profile",
+      userConfirmed: false,
+      templateId: entry.templateId,
+      templateVersion: entry.templateVersion,
+      retrievalTriggerClause:
+        entry.mode === "retrieval_probe" ? entry.retrievalTriggerClause : null,
+      samplesPlanned: geoSamplesForMode(entry.mode),
+    });
+  }
+
+  if (rejections.length > 0) return { ok: false, rejections };
+
+  const draft: GeoQuerySetV1 = {
+    schemaVersion: GEO_QUERY_SET_SCHEMA_VERSION,
+    querySetId: `qs-${context.contextHash.slice("sha256:".length, "sha256:".length + 16)}`,
+    version: 1,
+    templateVersion: GEO_TEMPLATE_REGISTRY_VERSION,
+    contextHash: context.contextHash,
+    marketCode: context.marketCode,
+    queryLanguageTag: "en",
+    queries,
+    querySetContentHash: "",
+    confirmedAt: null,
+  };
+  return {
+    ok: true,
+    querySet: {
+      ...draft,
+      querySetContentHash: await geoQuerySetContentHash(draft),
+    },
+  };
+}
+
+/**
+ * Apply the visitor's edit to one question.
+ *
+ * Editing is allowed and expected — that is what the confirm step is for — but
+ * it has consequences the contract makes visible rather than hiding. The text
+ * becomes `user_edit`, which voids the template link, and a retrieval probe
+ * therefore cannot stay a retrieval probe: its citation counts were only
+ * meaningful because somebody paid to measure that exact string. It becomes a
+ * custom natural-demand question instead, sampled once, and the UI says so.
+ */
+export async function editGeoQueryText(
+  set: GeoQuerySetV1,
+  queryId: string,
+  text: string,
+): Promise<GeoQuerySetBuildResult> {
+  const normalized = normalizeGeoText(text);
+  const target = set.queries.find((query) => query.queryId === queryId);
+  if (target === undefined) {
+    return { ok: false, rejections: [{ code: "unknown_query", queryId }] };
+  }
+  if (normalized.length === 0 || !isPayableGeoQueryText(normalized)) {
+    return {
+      ok: false,
+      rejections: [{ code: "question_not_payable", slot: target.slot }],
+    };
+  }
+
+  const queries = set.queries.map((query) =>
+    query.queryId === queryId
+      ? {
+          ...query,
+          text: normalized,
+          mode: "natural_demand" as const,
+          samplesPlanned: geoSamplesForMode("natural_demand"),
+          source: "user_edit" as const,
+          templateId: null,
+          templateVersion: null,
+          retrievalTriggerClause: null,
+          userConfirmed: false,
+        }
+      : query,
+  );
+
+  const draft: GeoQuerySetV1 = {
+    ...set,
+    version: set.version + 1,
+    queries,
+    querySetContentHash: "",
+    confirmedAt: null,
+  };
+  return {
+    ok: true,
+    querySet: {
+      ...draft,
+      querySetContentHash: await geoQuerySetContentHash(draft),
+    },
+  };
+}
+
+/**
+ * Record the visitor's confirmation of the whole set.
+ *
+ * `confirmedAt` and `userConfirmed` sit outside the content fingerprint on
+ * purpose: ticking a box is not a change of content, and a fingerprint that
+ * moved when it was ticked could not be used to prove that the confirmed set
+ * and the reported set are the same eight questions. The flags remain workflow
+ * assertions made in a browser — the server checks that they are set, and never
+ * claims to have witnessed the confirmation.
+ */
+export async function confirmGeoQuerySet(
+  set: GeoQuerySetV1,
+  clock: () => Date,
+): Promise<GeoQuerySetV1> {
+  return {
+    ...set,
+    queries: set.queries.map((query) => ({ ...query, userConfirmed: true })),
+    confirmedAt: clock().toISOString(),
+  };
+}
+
+/** The slots a core cohort must cover, exported for the confirm UI. */
+export { GEO_CORE_SLOTS };

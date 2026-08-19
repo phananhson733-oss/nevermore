@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 /**
  * The platform ceiling, matching every other long-running marketing route.
  *
- * One run issues 24 provider calls at concurrency 8; calibration put the
+ * One run issues 18 provider calls at concurrency 8; calibration put the
  * slowest single answer at 44s, so three batches plus assembly fit here with
  * room to spare. The handler holds its own tighter budget and degrades to a
  * partial report before this limit can discard the finished envelope.

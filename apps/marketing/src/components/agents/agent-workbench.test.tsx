@@ -90,7 +90,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
         persistence: "none",
         source: {
           tool: "seo_audit",
-          schemaVersion: "seo_audit.sitewide.v6",
+          schemaVersion: "seo_audit.sitewide.v7",
           completedAt: "2026-08-13T00:00:00.000Z",
           cache: { status: "miss", capturedAt: null },
         },
@@ -126,6 +126,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
             state: "not_observed" as const,
             unit: "pages" as const,
             population: "every_collected_page" as const,
+            targetTested: null,
             tested: 1,
             affected: 0,
             observations: [],

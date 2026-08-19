@@ -32,7 +32,17 @@ export interface TextUnits {
  * way the reader can predict and we can state, rather than wrong in a way that
  * looks like a real word count.
  */
-const CJK_PATTERN = /[㐀-鿿豈-﫿぀-ゟ゠-ヿ가-힯]/gu;
+/**
+ * Written as escapes, not as the characters themselves.
+ *
+ * The literal form was copied into three other modules and one of them arrived
+ * carrying U+8C48 in place of U+F900 — two characters that render identically
+ * and differ by twenty-seven thousand code points, which silently classified
+ * Yi, private-use and Latin Extended-D as CJK. Escapes cannot be swapped by a
+ * homoglyph. The set is unchanged: U+3400-U+9FFF, U+F900-U+FAFF, U+3040-U+309F,
+ * U+30A0-U+30FF, U+AC00-U+D7AF.
+ */
+const CJK_PATTERN = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/gu;
 
 /**
  * Count text in `text_units.v1`.
@@ -57,6 +67,34 @@ export function countTextUnits(text: string): TextUnits {
   if (cjkUnits > 0 && wordUnits > 0) return { units, basis: "mixed" };
   if (cjkUnits > 0) return { units, basis: "cjk_chars" };
   return { units, basis: "words" };
+}
+
+/**
+ * The same units, assembled from counts someone else already took.
+ *
+ * The crawler measures the full body once, while it still has it, and publishes
+ * three numbers instead of the text. This is where those numbers become the
+ * same `text_units.v1` value `countTextUnits` would have returned from the text
+ * itself — one definition of the unit, two ways in. `parse-page`'s counter and
+ * this one are held to that by a test that drives both over a real corpus.
+ */
+export function textUnitsFromCounts(counts: {
+  readonly cjkChars: number;
+  readonly nonCjkWords: number;
+}): TextUnits {
+  const units = counts.cjkChars + counts.nonCjkWords;
+  if (counts.cjkChars > 0 && counts.nonCjkWords > 0)
+    return { units, basis: "mixed" };
+  if (counts.cjkChars > 0) return { units, basis: "cjk_chars" };
+  return { units, basis: "words" };
+}
+
+/** `cjkShare` for text that was counted elsewhere. Zero denominator reads 0. */
+export function cjkShareFromCounts(counts: {
+  readonly cjkChars: number;
+  readonly denseChars: number;
+}): number {
+  return counts.denseChars === 0 ? 0 : counts.cjkChars / counts.denseChars;
 }
 
 /** Whether the string contains any code point counted as a CJK unit. */

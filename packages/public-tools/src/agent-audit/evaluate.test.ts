@@ -16,6 +16,7 @@ function record(
     state,
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 4,
     affected,
     observations:
@@ -37,6 +38,7 @@ function ratioRecord(
       tested === 0 ? "unverified" : affected > 0 ? "observed" : "not_observed",
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested,
     affected,
     observations: Array.from({ length: affected }, (_, index) => ({
@@ -55,6 +57,7 @@ describe("v2 Agent audit evaluator", () => {
       state: "observed" as const,
       unit: "pages" as const,
       population: "every_collected_page" as const,
+      targetTested: null,
       tested: 40,
       affected: 1,
       observations: [
@@ -319,6 +322,7 @@ describe("v2 Agent audit target identity", () => {
       state: "observed",
       unit: "pages",
       population: "every_collected_page",
+      targetTested: null,
       tested: 4,
       affected: 1,
       observations: [{ url, values: [] }],
@@ -369,6 +373,7 @@ describe("v2 Agent audit target identity", () => {
         {
           ...record("title_duplicate", "observed", 1),
           population: "conditional_subset",
+          targetTested: null,
         },
       ],
     });
@@ -387,6 +392,7 @@ describe("v2 Agent audit unmeasurable rules", () => {
       state: "observed" as const,
       unit: "pages" as const,
       population: "every_collected_page" as const,
+      targetTested: null,
       tested: 10,
       affected: 1,
       observations: [
@@ -521,8 +527,9 @@ describe("v2 Agent audit published thresholds", () => {
             state: "observed",
             unit: "pages",
             population: "every_collected_page" as const,
-            tested: 10,
-            affected: 1,
+            targetTested: null,
+                  tested: 10,
+                  affected: 1,
             observations: [
               {
                 url: "https://example.com/",
@@ -550,8 +557,9 @@ describe("v2 Agent audit published thresholds", () => {
           state: "observed",
           unit: "pages",
           population: "every_collected_page" as const,
-          tested: 10,
-          affected: 1,
+          targetTested: null,
+              tested: 10,
+              affected: 1,
           observations: [
             {
               url: "https://example.com/",

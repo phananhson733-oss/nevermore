@@ -55,4 +55,15 @@ describe("POST /api/tools/on-page-seo-check", () => {
     );
     expect(ON_PAGE_CHECK_DEPENDENCIES.reportAs).toBe("on-page-seo-check");
   });
+
+  it("is the boundary that pays for a results-page lookup", async () => {
+    // Attached here and deliberately not on the shared default: the SEO Agent
+    // runs through the same handler, and a seam on the default object would
+    // have spent a provider call on every Agent run without anyone asking.
+    const { DEFAULT_DEPENDENCIES } = await import(
+      "../../../../lib/agents/audit-handler.ts"
+    );
+    expect(ON_PAGE_CHECK_DEPENDENCIES.readSerpLandscape).toBeTypeOf("function");
+    expect(DEFAULT_DEPENDENCIES.readSerpLandscape).toBeUndefined();
+  });
 });

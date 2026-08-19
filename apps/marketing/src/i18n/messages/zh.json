@@ -943,7 +943,7 @@
         "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
         "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。",
         "no_sitemap_collected_membership_not_testable": "未采集到 sitemap，因此无法判定 sitemap 成员关系。",
-        "character_count_only_rendered_pixel_width_not_measured": "仅统计字符数。未测量 Google 实际据以截断的渲染像素宽度。",
+        "display_width_approximation_rendered_pixel_width_not_measured": "按显示宽度近似（中日韩字符计两格）。未测量 Google 实际据以截断的渲染像素宽度。",
         "bounded_static_html_crawl_outlinks_only": "仅统计有界静态 HTML 抓取中观察到的出站链接。",
         "depth_from_bounded_crawl_entry_point_only": "深度仅从本次抓取入口计算，不代表所有真实入口。",
         "no_target_query_was_confirmed_for_this_page_so_there_is_no_band_to_report": "这个页面没有确认任何目标词，因此没有可以报告排名的查询。",
@@ -1214,8 +1214,8 @@
         "malformed_blocks": "格式错误的 JSON-LD 块",
         "types_observed": "已观测 JSON-LD 类型",
         "broken_link_targets": "断链目标数",
-        "title_characters": "Title 字符数",
-        "description_characters": "Description 字符数",
+        "title_display_width": "Title 显示宽度",
+        "description_display_width": "Description 显示宽度",
         "reviewed_range": "审阅区间",
         "observed_outbound_internal_links": "观察到的出站内链数",
         "observed_click_depth": "观察到的点击深度",
@@ -2224,11 +2224,12 @@
       },
       "fields": {
         "url": "页面 URL",
-        "queries": "目标关键词（最多 {max} 个）",
+        "queries": "目标关键词（最多 {max} 个，用逗号分隔）",
         "market": "市场",
         "language": "语言",
         "pageRole": "页面角色",
-        "marketScope": "市场与语言不参与这次检查：请求只带页面 URL、关键词和页面角色。它们会在你从这里打开 SEO Agent 时一并带过去。"
+        "marketScope": "市场和语言只用于查询搜索结果页（下方「搜索结果页」一节），抓取与其余检查项在任何市场下都一样。它们也会随「打开 SEO Agent」一起带过去。",
+        "queriesPlaceholder": "例如：占星, 星盘, 本命盘"
       },
       "pageRoles": {
         "homepage": "首页",
@@ -2237,8 +2238,6 @@
         "guide": "指南或文章"
       },
       "actions": {
-        "addQuery": "添加",
-        "removeQuery": "移除这个关键词",
         "run": "检查这个页面",
         "running": "检查中…",
         "copyReport": "复制报告给 AI",
@@ -2253,7 +2252,7 @@
       "waiting": {
         "headline": "正在采集站点，然后从里面读出你这一页。",
         "elapsed": "已用 {seconds} 秒",
-        "body": "采集在两次请求之间至少间隔 250 毫秒，并在四分钟处停止，因此最多约 950 个页面；整个请求会比采集本身更久。",
+        "body": "采集在两次请求之间至少间隔 250 毫秒，所以上百个页面的站点光采集就要几十秒；四分钟处停止，因此最多约 950 个页面。整个请求会比采集本身更久。",
         "noEstimate": "不显示进度估计：浏览器拿不到还剩多少页，所以不猜。"
       },
       "focus": {
@@ -2290,7 +2289,7 @@
         "sub_headings_h2_h6_merged_no_levels": "副标题是 H2 到 H6 合并成一份清单：采集不保留标题层级，因此无法区分 H2 和 H4。",
         "sub_headings_underivable_h1_cap_reached": "这一页的副标题无法分离，因为它的 H1 数量触到了采集器自身上限。这里报为不可用，而不是猜一个。",
         "opening_text_first_500_chars_static_extraction": "正文开头取静态提取正文的前 500 个字符，已剔除 nav、footer、aside 等区块。它不等于浏览器实际渲染出来的内容。",
-        "density_basis_captured_text_only": "密度是在已采文本内测的——标题、描述、标题组和那段正文开头——不是整页正文，整页正文并未被采集。",
+        "density_basis_captured_text_only": "密度是在已采文本内测的——标题、描述、标题组和那段正文开头——不是整页正文。整页的词频另有一份榜单，分母是整页正文的计数单位，两者不能直接比。",
         "static_body_words_unavailable_for_cjk": "本页词数不予给出：这一页主要以不写词间空格的文字写成，按空格切分会差一个量级。",
         "extract_lists_truncated": "某个标题清单在发布前被截到了自身上限，因此页面更下方的关键词可能没有被计入。"
       },
@@ -2308,10 +2307,9 @@
       "errors": {
         "urlRequired": "填上你要检查的页面 URL。",
         "queryRequired": "至少填一个目标关键词。",
-        "queryEmpty": "先输入一个关键词再添加。",
-        "queryDuplicate": "这个关键词已经在列表里了。",
-        "queryLimit": "最多 {max} 个关键词。要加新的先移除一个。",
-        "queryTooLong": "每个关键词最多 {max} 个字符。",
+        "queryDuplicate": "重复的词已合并 {folded} 个，只问一次。",
+        "queryLimit": "最多 {max} 个关键词；多出的 {dropped} 个没有提交。",
+        "queryTooLong": "每个关键词最多 {max} 个字符；有 {dropped} 个太长，没有提交。",
         "auth_required": "登录后才能检查。你填的内容会保留，并且不会自动开跑。",
         "retryAfter": "{seconds} 秒后可重试。"
       },
@@ -2319,8 +2317,8 @@
         "title": "它能告诉你什么、不能告诉你什么",
         "items": [
           {
-            "q": "这是一个评分吗？",
-            "a": "不是。你拿到的是每个关键词落在哪些位置、出现多少次，以及哪些量不出来。这里没有单一总分，因为一个数字说不出页面哪一部分不对。"
+            "q": "这个分数是怎么来的？",
+            "a": "把这一页的每一项检查按各自的分值加起来，再折算成 0-100。权重是我们定的，不是谷歌的口径——它衡量的是「这一页自己能改的部分做到什么程度」，不是「能不能排上去」。另外有几种情况会直接压低总分：页面声明了 noindex、返回错误状态码、正文太短、或者内容根本不围绕你给的关键词——这几种情况下其余各项做得再好也换不来搜索结果。"
           },
           {
             "q": "为什么第一次检查要几分钟？",
@@ -2329,6 +2327,46 @@
           {
             "q": "覆盖数高就能排上去吗？",
             "a": "不能。关键词在页面上的位置只是众多输入之一，还有站点权重、页面体验、竞争强弱和用户行为。本工具只量它真正看得见的那一项。"
+          },
+          {
+            "q": "一次能填几个关键词？怎么填？",
+            "a": "最多 5 个，全部写在同一个输入框里用逗号分隔，半角「,」和全角「，」都认，换行也算分隔。重复的词会合并成一个，超过 5 个的不会提交，框下面会写明丢掉了几个。其中一个会被标成主词：先取覆盖位置最多的那个，打平取更长的那个，再打平按你填写的先后。总分里的「主题聚焦」只按主词算，所以多填几个探索性的词不会把这一页的分数拉低。"
+          },
+          {
+            "q": "品牌词会被特殊对待吗？",
+            "a": "会被标出来，但不会因此加分或减分。判断很机械：把域名拆成标签，和你填的词逐一比对，一致就标成品牌词。它只作为一条观察出现，不参与判分——品牌词的密度天然低于话题词，把同一个数字判两次并不诚实。纯中文的单个词没有可比的拉丁标签，这一项会标成「不适用」，而不是「不匹配」。"
+          },
+          {
+            "q": "为什么不给关键词密度打分？",
+            "a": "因为这一页上有两个分母，混用会得出相反的结论。关键词那几行的密度，分母是「已采文本」——标题、描述、标题组和正文开头那一段；正常优化过的页面在这个口径下就有 20% 左右，套用常见的 0.5%~3% 区间会把做对的页面判成堆砌。全页词频榜的分母才是整页正文的计数单位。两个数字都标了各自的分母，但它们不能直接比，所以我们只报数，不给密度打分。"
+          },
+          {
+            "q": "全页词频榜该怎么看？",
+            "a": "把整页正文切成 1 到 5 个词的组合，每种长度各取前 15 名。「词频密度」是出现次数除以总单位数；「占位密度」是次数乘以词数再除以总数，用来比较长短不同的短语——重叠出现会被重复计入，所以在同一个词高频重复的页面上，长短语的占位密度可能超过 100%。单个词的榜单去掉了「的、是、the、and」这类功能词，短语榜单不去，因为「the astrology of」这种写法本身就是真实的表达。"
+          },
+          {
+            "q": "为什么不执行 JavaScript？",
+            "a": "抓取只读服务器返回的那份 HTML，所以由前端脚本挂载的正文、组件和链接，这个工具看不到。它不会假装看到了：报告里有一项专门告诉你正文是不是在静态 HTML 里。如果不在，这一页的词数和覆盖都是在这个前提下量出来的，不要当成浏览器渲染完之后的样子。"
+          },
+          {
+            "q": "「搜索结果页」那一节的数据是哪来的？",
+            "a": "来自第三方搜索结果数据源，按你在上面选的市场和语言，取桌面端第一页的一次采样：前十位是谁、你在不在里面、有几条带站内链接。搜索结果每天都在变，这是这一刻的样子，不是排名历史，也不是难度分。这也是这个工具唯一一次对外付费调用，所以市场和语言都做成了下拉——不在支持范围内的组合根本不会发出请求。"
+          },
+          {
+            "q": "中文页面能查吗？",
+            "a": "能。正文长度按字数算，一个中日韩字符算一个单位；标题和描述的长度按显示宽度算，中日韩字符按两格，这和搜索结果里被截断的位置更接近。全页词频榜也按同一口径切分。"
+          },
+          {
+            "q": "检查记录存在哪里？",
+            "a": "只存在你这个浏览器里。它不是账号存档：清缓存、换浏览器或者退出登录都会丢。同一个页面查过多次时，列表里能看到分数和覆盖数的变化。"
+          },
+          {
+            "q": "这个工具和 SEO Agent 有什么区别？",
+            "a": "底层是同一次全站采集。这个工具从那次采集里把你指定的那一页读出来，围绕你给的关键词回答；SEO Agent 读的是整个站。所以第一次检查要等那次采集跑完，之后一小时内再查同一个站就是几秒。报告底部可以把这一页和它的关键词直接带进 SEO Agent。"
+          },
+          {
+            "q": "要花积分吗？",
+            "a": "工具测试期间免费，不扣积分。"
           }
         ]
       },
@@ -2346,6 +2384,448 @@
         "miss": "读自这次检查发起的采集，采集于 {time}。",
         "unknown": "采集于 {time}。这次采集是新发起的还是复用已有的，响应没有说明。",
         "queriesMerged": "你提交了 {submitted} 个关键词，下面量到 {measured} 个：同一个关键词的两种写法只算一次。"
+      },
+      "scoreCategories": {
+        "meta": "Meta 元信息",
+        "content": "内容质量",
+        "keyword": "关键词布局",
+        "links": "链接",
+        "media": "图片与媒体",
+        "social": "社交与结构化数据",
+        "technical": "技术与抓取",
+        "site": "整站上下文"
+      },
+      "checks": {
+        "declaredUnavailable": "这次采集没有取到这一页的标记细节，因此不作判定——不知道和「页面没有」不是一回事。",
+        "title": {
+          "_label": "Title 标题",
+          "missing": "没有 title。搜索结果里的标题会由谷歌自行拼凑。",
+          "ok": "「{title}」宽度 {width}（{min}~{max} 为合理区间，中日韩字符按 2 计）。",
+          "outsideRange": "宽度 {width}，在 {min}~{max} 之外，结果页尾部可能被截断或显得过短。"
+        },
+        "description": {
+          "_label": "Meta Description 描述",
+          "missing": "没有 meta description。谷歌会从正文里自己摘一段。",
+          "ok": "宽度 {width}，落在 {min}~{max} 区间内。",
+          "outsideRange": "宽度 {width}，在 {min}~{max} 之外，尾部可能被截断。"
+        },
+        "canonical": {
+          "_label": "Canonical 规范链接",
+          "missing": "没有声明 canonical。同一内容有多个 URL 时，由谷歌自己挑一个。",
+          "selfReferencing": "已自引用声明。",
+          "pointsElsewhere": "指向 {canonical}——这一页把权重让给了那一页。如果这是有意的（比如它确实是重复页），没问题；如果不是，你正在把想排名的这一页排除掉。"
+        },
+        "robots": {
+          "_label": "Robots 收录指令",
+          "indexable": "允许收录（{directives}）。",
+          "noindex": "声明了 noindex（{directives}）。这一页不会进入索引，其余各项都不改变这个结果。"
+        },
+        "viewport": {
+          "_label": "Viewport 移动适配",
+          "missing": "没有声明 viewport，移动端会按桌面宽度缩放渲染。",
+          "declared": "已声明：{viewport}"
+        },
+        "charset": {
+          "_label": "字符编码声明",
+          "missing": "没有声明 charset，非 ASCII 文本可能被按错误编码解读。",
+          "declared": "已声明 {charset}。",
+          "fromHeader": "HTTP 响应头声明了 {charset}，这就是浏览器实际用来解码的那个值。",
+          "conflict": "响应头说 {header}，标记里的 meta 说 {meta}。浏览器按响应头解码，两个声明不一致，其中一个是错的。"
+        },
+        "lang": {
+          "_label": "HTML lang 语言声明",
+          "missing": "html 标签没有 lang，搜索引擎和读屏软件得自己猜这一页是什么语言。",
+          "declared": "lang={lang}"
+        },
+        "favicon": {
+          "_label": "Favicon 站点图标",
+          "missing": "没有声明站点图标。",
+          "declared": "已声明站点图标。"
+        },
+        "h1": {
+          "_label": "H1 主标题",
+          "missing": "没有 H1。",
+          "single": "只有一个 H1「{h1}」，宽度 {width}，落在 {min}–{max} 的常见区间内。",
+          "multiple": "有 {count} 个 H1（首个为「{first}」）。多个 H1 会把「这一页是关于什么的」说成好几件事。",
+          "tooShort": "H1「{h1}」宽度只有 {width}，短于常见的 {min}——标题是这一页对搜索者的承诺，太短说不清是什么。",
+          "tooLong": "H1「{h1}」宽度 {width}，超过常见的 {max}——太长的标题在结果页和目录里都会被截断。",
+          "tooLongClipped": "H1 宽度至少 {width}（这里显示的是截断到 200 字符后的值），远超常见的 {max}。"
+        },
+        "bodyWords": {
+          "_label": "正文词数",
+          "unavailable": "这一页的正文按空格数不出词数（多为无词间空格的语言），因此不给数字，也不据此判分。",
+          "thin": "只有 {words} 个词。内容这么少，其余各项做得再好也难以支撑排名。",
+          "low": "{words} 个词，偏少。",
+          "fair": "{words} 个词。",
+          "good": "{words} 个词，篇幅充分。",
+          "thinUnits": "正文只有约 {words} 个字——低于 300 的页面通常撑不起一个主题。",
+          "lowUnits": "正文约 {words} 个字，偏短。",
+          "fairUnits": "正文约 {words} 个字，够写清楚一件事。",
+          "goodUnits": "正文约 {words} 个字，篇幅充足。"
+        },
+        "subHeadings": {
+          "_label": "小标题",
+          "unavailable": "H1 采集已达上限，无法可靠地把小标题从标题列表里分出来，因此不作判定。",
+          "none": "正文没有小标题，长内容会缺少可扫读的骨架。",
+          "present": "有 {count} 个小标题。"
+        },
+        "textRatio": {
+          "_label": "文本/代码比",
+          "unavailable": "没有取到 HTML 体积，无法计算。",
+          "healthy": "可见文本占 HTML 的 {percent}%。",
+          "low": "可见文本只占 HTML 的 {percent}%，这一页大部分是标记而不是内容。"
+        },
+        "keyword": {
+          "_label": "关键词布局",
+          "unavailable": "这次没有量到关键词证据。",
+          "title": {
+            "_label": "关键词出现在 Title",
+            "covered": "「{query}」完整出现在 title 中（{occurrences} 次）。",
+            "absent": "「{query}」没有完整出现在 title 中。",
+            "notApplicable": "这一页没有 title，无从检查。"
+          },
+          "description": {
+            "_label": "关键词出现在 Description",
+            "covered": "「{query}」完整出现在描述中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在描述中。",
+            "notApplicable": "这一页没有描述，无从检查。"
+          },
+          "h1": {
+            "_label": "关键词出现在 H1",
+            "covered": "「{query}」完整出现在 H1 中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在 H1 中。",
+            "notApplicable": "这一页没有 H1，无从检查。"
+          },
+          "subHeadings": {
+            "_label": "关键词出现在小标题",
+            "covered": "「{query}」出现在小标题中（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在任何小标题中。",
+            "notApplicable": "没有可检查的小标题。"
+          },
+          "openingText": {
+            "_label": "关键词出现在正文开头",
+            "covered": "「{query}」出现在采集到的正文开头（{occurrences} 次）。",
+            "absent": "「{query}」没有出现在正文开头。",
+            "notApplicable": "没有取到正文开头，无从检查。"
+          },
+          "url": {
+            "_label": "关键词出现在 URL",
+            "covered": "URL 里包含「{query}」。",
+            "absent": "URL 里没有「{query}」。",
+            "notApplicable": "无从检查。"
+          },
+          "density": {
+            "_label": "关键词密度",
+            "unavailable": "没有可用的分母，因此不给密度数字。",
+            "observed": "「{query}」在已采文本中出现 {occurrences} 次，密度 {percent}%（分母是 {units} 个单位：标题、描述、标题组和正文开头，不是整页正文）。这里不判分——这个分母正是关键词本该密集的地方，我们没有实测过它的合理区间，就不拿一个说不清的阈值去判你的页面。"
+          },
+          "brand": {
+            "_label": "品牌词",
+            "matched": "「{query}」与站点域名一致，看起来是品牌词。品牌词的密度天然低于话题词，这里只作说明，不影响任何判分。"
+          }
+        },
+        "internalLinks": {
+          "_label": "站内链接",
+          "none": "这一页没有指向站内其他页面的链接。",
+          "few": "只有 {count} 条站内链接。",
+          "ok": "{count} 条站内链接。"
+        },
+        "anchorText": {
+          "_label": "锚文本",
+          "notApplicable": "没有站内链接，无从检查锚文本。",
+          "allDescribed": "{count} 条站内链接都带了锚文本。这里只查了「有没有」，没有判断「点击这里」「阅读更多」这类泛用锚文本。",
+          "someEmpty": "{count} 条站内链接里有 {empty} 条没有锚文本。"
+        },
+        "externalLinks": {
+          "_label": "站外链接",
+          "none": "这一页没有站外链接。适量导出到权威来源是正常信号，这里不判分。",
+          "present": "{count} 条站外链接（其中 {nofollow} 条 nofollow）。不判分。"
+        },
+        "linkSafety": {
+          "_label": "新窗口外链安全",
+          "ok": "新窗口外链都带了 noopener（或没有这类链接）。",
+          "unsafe": "有 {count} 条 target=_blank 的外链既没有 noopener 也没有 noreferrer。现代浏览器已默认隔离，但显式声明仍是稳妥做法。"
+        },
+        "images": {
+          "_label": "图片 Alt",
+          "none": "这一页没有 img 图片。",
+          "allDescribed": "{total} 张图片都有 alt（其中 {decorative} 张声明为装饰性空 alt）。",
+          "someMissingAlt": "{total} 张图片里有 {missing} 张没有 alt 属性。"
+        },
+        "openGraph": {
+          "_label": "Open Graph",
+          "complete": "og:title / og:description / og:image 齐全，分享出去有完整卡片。",
+          "partial": "缺少 {missing}，分享卡片会不完整。",
+          "missing": "没有任何 Open Graph 标签，分享到社交平台时由对方自行拼凑。"
+        },
+        "twitterCard": {
+          "_label": "Twitter/X 卡片",
+          "missing": "没有声明 twitter:card。",
+          "declared": "twitter:card={card}"
+        },
+        "https": {
+          "_label": "HTTPS 加密",
+          "enabled": "已启用 HTTPS。",
+          "absent": "这一页不是 HTTPS。"
+        },
+        "status": {
+          "_label": "HTTP 状态与跳转",
+          "unavailable": "没有取到最终状态码。",
+          "direct": "直接返回 {status}，无跳转。",
+          "redirected": "经过 {hops} 次跳转后返回 {status}。",
+          "error": "最终状态码 {status}。"
+        },
+        "responseTime": {
+          "_label": "响应速度",
+          "unavailable": "没有取到响应耗时。",
+          "fast": "HTML 下载完成耗时 {ms}ms。",
+          "fair": "HTML 下载完成耗时 {ms}ms。",
+          "slow": "HTML 下载完成耗时 {ms}ms，明显偏慢。"
+        },
+        "jsonLd": {
+          "_label": "结构化数据 JSON-LD",
+          "none": "没有检测到 JSON-LD 结构化数据。",
+          "valid": "{count} 类 JSON-LD：{types}",
+          "malformed": "检测到 {types}，其中 {errors} 个块解析失败。",
+          "allMalformed": "有 {errors} 个 JSON-LD 块，但全部解析失败——不是没有结构化数据，是有但坏了。"
+        },
+        "robotsTxt": {
+          "_label": "robots.txt",
+          "reachable": "robots.txt 可访问，观测到 {groups} 组规则。",
+          "unreachable": "没有取到 robots.txt。可能是站点没有这个文件（合法，等同于全部允许），也可能是取的时候失败了——这两种情况这里区分不了。"
+        },
+        "sitemap": {
+          "_label": "Sitemap 站点地图",
+          "reachable": "取到了 sitemap（robots.txt 中声明了 {references} 个；为 0 时是按 /sitemap.xml 的惯例位置找到的）。",
+          "unreachable": "没有取到 sitemap。"
+        },
+        "sitemapMember": {
+          "_label": "这一页是否在 sitemap 里",
+          "listed": "这一页出现在 sitemap 中。",
+          "absent": "站点有 sitemap，但这一页不在里面。",
+          "noSitemap": "没有取到 sitemap，无法确认这一页是否被列出。"
+        },
+        "htmlSize": {
+          "_label": "HTML 体积",
+          "ok": "HTML 体积 {kb} KB。",
+          "large": "HTML 体积 {kb} KB，偏大。",
+          "huge": "HTML 体积 {kb} KB，过大。"
+        },
+        "hreflang": {
+          "_label": "hreflang",
+          "none": "没有声明 hreflang。单语言站点本就不需要，这里不判分。",
+          "declared": "声明了 {count} 个 hreflang：{tags}。不判分。"
+        },
+        "site": {
+          "title_duplicate": {
+            "_label": "标题是否与其他页重复",
+            "flagged": "这一页的 title 与站内其他页面重复（全站 {affected}/{tested} 页涉及）。",
+            "clear": "在采集到的 {tested} 个页面里，这一页的 title 是唯一的。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "meta_description_duplicate": {
+            "_label": "描述是否与其他页重复",
+            "flagged": "这一页的描述与站内其他页面重复（全站 {affected}/{tested} 页涉及）。",
+            "clear": "在采集到的 {tested} 个页面里，这一页的描述是唯一的。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "sitemap_page_without_observed_inlink": {
+            "_label": "是否为孤岛页",
+            "flagged": "这一页在 sitemap 里，但整轮采集没有观察到任何站内链接指向它。",
+            "clear": "采集中观察到有站内链接指向这一页。",
+            "notTested": "这条规则只测 sitemap 中的页面，没有覆盖这一页。"
+          },
+          "page_outbound_broken_link": {
+            "_label": "本页是否有坏链",
+            "flagged": "这一页有指向错误状态页面的链接。",
+            "clear": "这一页导出的链接都没有返回错误状态。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          },
+          "click_depth_beyond_reviewed_limit": {
+            "_label": "点击深度",
+            "flagged": "从首页出发要点 4 次以上才能到这一页。",
+            "clear": "从首页出发 4 次点击以内可以到这一页。",
+            "notTested": "这条规则只测了符合条件的一部分页面，没有覆盖这一页。"
+          }
+        },
+        "imageDimensions": {
+          "_label": "图片尺寸声明",
+          "all": "{total} 张图片全部在标记里写了 width 和 height，浏览器可以先占好位置。",
+          "some": "{total} 张图片里有 {missing} 张没同时写 width 和 height。这项只看标记——CSS 的 aspect-ratio 同样能占位，我们看不到样式表。"
+        },
+        "imageLoading": {
+          "_label": "图片懒加载",
+          "none": "{total} 张图片都没有声明 loading=\"lazy\"。",
+          "some": "{total} 张图片里有 {lazy} 张声明了 loading=\"lazy\"。这里不判分：首屏那张图懒加载反而会拖慢访客等的东西，而我们看不出哪张在首屏。"
+        },
+        "urlShape": {
+          "_label": "URL 形态",
+          "unavailable": "这一页的 URL 无法解析，因此不作判定。",
+          "clean": "路径 {characters} 个字符、{segments} 层，读得出也记得住。",
+          "parameters": "URL 带了 {parameters} 个查询参数，不容易被记住或分享{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "uppercase": "路径里有大写字母，同一页面容易因此出现两个 URL{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "deep": "路径有 {segments} 层，比常见的层级深{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "long": "路径有 {characters} 个字符，偏长{others, plural, =0 {} other {，另有 # 处可以更好读}}。",
+          "underscores": "路径用下划线分词，搜索引擎更认连字符{others, plural, =0 {} other {，另有 # 处可以更好读}}。"
+        },
+        "rendering": {
+          "_label": "内容是否在静态 HTML 里",
+          "serverSide": "静态 HTML 里就有 {textBytes} 字节的正文（脚本 {scriptKb} KB），抓取时不必等 JavaScript。",
+          "clientSide": "静态 HTML 里几乎没有正文（{textBytes} 字节），脚本却有 {scriptKb} KB——正文很可能由 JavaScript 渲染。搜索引擎会执行 JavaScript，所以这不是错误，但要多花一次渲染排队。"
+        },
+        "demandCapture": {
+          "_label": "本页能否承接需求",
+          "none": "静态 HTML 里没有表单、输入框、按钮或画布。注意：由前端脚本挂载的组件不在传输的 HTML 里，我们看不到，所以这条只描述静态文档，不代表这一页没有功能。",
+          "present": "静态 HTML 里有 {controls} 个可交互元素（表单 {forms}、输入 {inputs}、按钮 {buttons}）——访客可以在本页直接动手。"
+        }
+      },
+      "grades": {
+        "A": "A · 优秀",
+        "B": "B · 良好",
+        "C": "C · 及格",
+        "D": "D · 建议逐项整改"
+      },
+      "score": {
+        "counts": "{graded} 项判分中通过 {pass} 项，警告 {warn} 项，未通过 {fail} 项",
+        "topicFocus": "主题聚焦 {percent}%",
+        "notGraded": "不判分",
+        "disclaimer": "分数只覆盖这一页自己能改的部分。排名还取决于站点权重、页面体验、竞争强弱和用户行为，这些都不在本工具的量程里。每项的权重是我们定的，不是谷歌的口径。",
+        "caps": {
+          "topic_focus": "总分已被压到 {ceiling}：这一页围绕目标关键词的程度不够，结构分再高也换不来这个词的排名。",
+          "body_words": "总分已被压到 {ceiling}：正文太短，其余各项没有足够的内容可依附。",
+          "not_indexable": "总分已被压到 {ceiling}：这一页声明了 noindex，不会进入索引。页面本身做得再好，也到不了搜索结果里。",
+          "not_reachable": "总分已被压到 {ceiling}：这一页返回的是错误状态码，它现在根本不存在。",
+          "body_bytes": "总分已被压到 {ceiling}：这一页的正文按可见文本字节算太少了（这一页的语言数不出词数，所以改用字节）。",
+          "keyword_unmeasured": "总分已被压到 {ceiling}：这一轮没能量到关键词落在哪里，而那是这个工具最大的一块。其余各项仍然判了分，但它们判的是一个主题未被确认的页面。"
+        }
+      },
+      "vitals": {
+        "status": "状态",
+        "responseMs": "耗时",
+        "htmlSize": "体积",
+        "words": "词数",
+        "internalLinks": "内链",
+        "externalLinks": "外链",
+        "images": "图片",
+        "lang": "语言"
+      },
+      "preview": {
+        "serpEyebrow": "GOOGLE 结果预览（近似）",
+        "socialEyebrow": "社交分享卡片（近似）",
+        "titleMissing": "（这一页没有 title）",
+        "descriptionMissing": "（这一页没有描述，谷歌会自行摘取正文）",
+        "serpNote": "按常见宽度截断示意。谷歌实际按渲染像素宽度截断，且随设备与查询变化。",
+        "socialUnavailable": "这次采集没有取到这一页的标记细节，无法预览分享卡片。",
+        "socialNoImage": "（没有 og:image）",
+        "socialNoCard": "未声明",
+        "socialNote": "twitter:card = {card}。图片只列出地址，不在这里加载——那会让本页替你去请求被检查的站点。"
+      },
+      "sections": {
+        "scoreHeading": "这一页的体检结果",
+        "checksHeading": "逐项结论",
+        "previewHeading": "它在别处长什么样",
+        "keywordHeading": "关键词落点"
+      },
+      "terms": {
+        "heading": "全页词频与密度",
+        "sizeLabel": "{size} 词",
+        "phrase": "短语",
+        "count": "出现次数",
+        "frequencyDensity": "词频密度",
+        "occupancyDensity": "占位密度",
+        "basis": "分母是这一页正文的 {total} 个计数单位——中日韩字符一个字算一个，其余按空格切分。词频密度 = 次数 ÷ 总数；占位密度 = 次数 × 词数 ÷ 总数，用来比较长短不同的短语。重叠出现会被重复计入，所以在同一个词高频重复的页面上，长短语的占位密度可能超过 100%。",
+        "legend": "绿色表示这一行完整包含了你提交的某个目标词，黄色表示只共用了其中一部分。",
+        "stopWords": "单个词的榜单里去掉了「的、是、the、and」这类功能词，短语榜单不去——「the astrology of」这种写法本身就是真实的表达。",
+        "unavailable": "这次采集没有取到正文，因此没有词频榜。"
+      },
+      "landscape": {
+        "heading": "搜索结果页",
+        "position": "位次",
+        "domain": "域名",
+        "sitelinkColumn": "站内链接",
+        "you": "（你的域名）",
+        "summary": {
+          "present": "在「{query}」（{market}）的第一页上，这一页的域名排在第 {position} 位。",
+          "absent": "在「{query}」（{market}）的前 {results} 条结果里没有这一页的域名。这只说明它不在我们读到的这一页上，不代表没有排名。",
+          "otherPage": "在「{query}」（{market}）的第一页上，你的域名排在第 {position} 位，但占住这个位置的是站内另一页，不是你检查的这一页。"
+        },
+        "sitelinks": "前 {results} 条里有 {withSitelinks} 条带站内链接。站内链接跟着品牌和导航型需求走，所以这个数字说的是 Google 已经把谁当成目的地，而不是「这个词有多难」。",
+        "features": "这一页还出现了：{features}。",
+        "basis": "查询「{query}」，市场 {market}，语言 {language}，桌面端第一页，一次采样。搜索结果每天都在变，这是这一刻的样子。",
+        "unavailable": {
+          "no_target_query": "没有提交目标关键词，因此没有查询搜索结果页。",
+          "market_not_supported": "这个市场或语言不在我们能查询的范围内，因此没有发起查询（也没有产生费用）。",
+          "provider_not_configured": "这个环境里没有配置搜索结果查询所需的凭据，因此这一节没有数据。其余检查项不受影响。",
+          "provider_unavailable": "搜索结果页这次没查到。其余检查项不受影响。"
+        },
+        "youThisPage": "（就是这一页）",
+        "youOtherPage": "（你的域名，但是另一页）"
+      },
+      "coverage": {
+        "title": "这个工具检测什么、不检测什么",
+        "intro": "下面是它真正读得到的东西。凡是没列进来的，它就不会给结论——把边界写在这里，好过让你从一份没提到的报告里自己猜。",
+        "checks": {
+          "meta": "标题、描述、canonical、robots 指令、viewport、编码、语言、favicon。长度按显示宽度算，中日韩字符按两格。",
+          "content": "正文长度（中文按字数）、H1 数量与长度、H2–H6 副标题数量、正文与代码的比例、本页有没有可交互元素。",
+          "keyword": "你提交的词在标题、描述、H1、副标题、正文开头和 URL 里的落点，以及一份全页 1–5 词的词频榜。",
+          "links": "站内出链数量、锚文本是否为空、站外出链数量与 rel 安全性。",
+          "media": "图片 alt 覆盖、是否声明 width/height、是否懒加载。",
+          "social": "Open Graph 三件套、Twitter 卡片、JSON-LD 结构化数据类型与解析错误。",
+          "technical": "HTTPS、状态码与跳转、响应时间、URL 形态、HTML 体积、hreflang、robots.txt 与 sitemap 可达性、本页是否在 sitemap 里、正文是否在静态 HTML 里。",
+          "site": "只有全站采集才能回答的：标题/描述是否与别的页面重复、sitemap 里有没有页面没人链、出链有没有断、点击深度。",
+          "serp": "你的主关键词在指定市场的搜索结果第一页：谁在前十、你在不在、有几条带站内链接。"
+        },
+        "notTitle": "它不做这些",
+        "not": {
+          "rendering": "不执行 JavaScript。由前端脚本挂载的内容、组件和链接，这个工具看不到——它会告诉你正文是不是在静态 HTML 里，但看不到脚本跑完之后的样子。",
+          "css": "不读样式表。用 CSS 隐藏的文字、用 aspect-ratio 占位的图片，它都判断不了。",
+          "ranking": "不预测排名，也不打「难度分」。搜索结果那一节是当下的一次采样，不是趋势。",
+          "backlinks": "不看外链、域名权重或流量。这一页自己改不了的部分，不在这个工具的范围里。",
+          "headings": "不给标题层级大纲。采集不保留 H2–H6 的层级，所以副标题只能给一份合并清单。",
+          "density": "不对关键词密度打分。密度的分母是已采文本，正常优化过的页面在这个口径下就有 20% 左右，套用整页密度的常见区间会把做对的页面判成堆砌。"
+        },
+        "labels": {
+          "meta": "元信息",
+          "content": "内容",
+          "keyword": "关键词",
+          "links": "链接",
+          "media": "图片",
+          "social": "分享与结构化数据",
+          "technical": "技术",
+          "site": "全站上下文",
+          "serp": "搜索结果页"
+        }
+      },
+      "related": {
+        "title": "接下来可以用的工具",
+        "intro": "这一页只回答「这个页面自己做到什么程度」。剩下的问题在别的工具里。",
+        "items": [
+          {
+            "href": "/agents/seo",
+            "name": "全站 SEO 审计",
+            "blurb": "同一次采集，读的是整个站：重复标题、断链、点击深度。"
+          },
+          {
+            "href": "/agents/tech",
+            "name": "内链审计",
+            "blurb": "哪些页面没人链、链接从哪来、深度有多深。"
+          },
+          {
+            "href": "/tools/low-competition-keywords",
+            "name": "关键词机会地图",
+            "blurb": "有实测搜索量、且第一页已经有弱站的词。"
+          },
+          {
+            "href": "/tools/seo-quick-wins",
+            "name": "GSC 机会发现",
+            "blurb": "用自己的 Search Console 数据找曝光高但点击少的查询词。"
+          },
+          {
+            "href": "/tools/traffic-drop-diagnosis",
+            "name": "流量下降诊断",
+            "blurb": "先比较两个时间段，再判断自然流量为何变化。"
+          }
+        ]
       }
     }
   },
@@ -2800,121 +3280,379 @@
     },
     "geo": {
       "name": "GEO Agent",
-      "metaTitle": "GEO Agent：AI 回答引用观测",
-      "metaDescription": "把买家真正会问的问题各问三遍，看 AI 回答引用了谁。给出完整分母，不给可见度总分。",
+      "metaTitle": "GEO Agent：AI 回答可见性",
+      "metaDescription": "把买家会问的问题真实地问一次 AI 助手，看它引用了哪些来源；每个分母都写清楚，不给可见性总分。",
       "eyebrow": "GEO Agent · AI 回答",
-      "title": "看 AI 的回答会不会引用你的站点",
-      "subtitle": "八个买家问题，每个问三遍，对真实的 ChatGPT 回答。问题由你确认之后才会开始运行；报告会把「联网检索后作答」和「凭记忆作答」分开列出。",
+      "title": "看 AI 回答会不会引用你的站点",
+      "subtitle": "八个买家问题对真实 ChatGPT 回答：五个检索探针各问三次，三个自然买家问题各问一次。运行前每一项事实和每一句问题都由你确认，报告把检索数据和自然需求数据分开呈现。",
       "heroCta": "运行 GEO Agent",
       "accountBoundaryTitle": "账号访问门",
-      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每次运行会产生 24 次计费的服务商调用，因此不提供匿名使用。",
-      "dataBoundaryTitle": "不做任何存储",
-      "dataBoundaryBody": "报告只返回到当前页面，不写入任何地方：没有账号历史，也不在服务端保存助手的回答正文。离开页面即结束，需要的内容请先自行复制。",
+      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每轮发起 18 次计费的 provider 调用，因此不对匿名访客开放。",
+      "dataBoundaryTitle": "报告内容不落库",
+      "dataBoundaryBody": "报告只回到本页，不写入任何地方：没有账号历史，服务端也不保留助手的回答。既有积分系统仍保留最少量的计费与配额元数据。离开页面报告即结束，走之前请先复制需要的内容。",
       "howEyebrow": "工作方式",
-      "howTitle": "从买家问题到可核对的引用",
-      "howBody": "报告里的每个数字都由它下面的采样重新算出；两种「什么都没观察到」的状态单独列出，不会被当成 0 计入。",
-      "step1Title": "描述你的买家",
-      "step1Body": "告诉 Agent 这个站点卖什么、谁来买。系统据此生成八个问题，覆盖从认知到决策的各个阶段。",
-      "step2Title": "确认问题集",
-      "step2Body": "凡是不像你买家说话的地方都可以改。确认之前不产生任何费用，确认的是哪一组，跑的就是哪一组。",
-      "step3Title": "每个问题采样三次",
-      "step3Body": "一次采样分不清「站点没被引用」和「这一次碰巧没引用」。三次可以，而且报告会告诉你是三次里的第几次。",
-      "step4Title": "带着分母去读",
-      "step4Body": "每个结论都写明它依据三次采样中的几次。三次采样全都没有联网检索的问题，会如实标成「凭记忆作答」而不是记成缺口——必须三次全是，因为只要有一次调用失败，就无从判断那一次会不会去检索。离开前先复制你需要的内容——这份报告不会被保存。",
-      "finalBoundary": "这份报告观测的是某一个助手在某一个时刻的回答。它不是排名，不是预测，也不是流量的度量。",
+      "howTitle": "从买家问题到观察到的引用",
+      "howBody": "报告里的每个数字都由其下方的样本重新推导；什么都没观察到的样本会如实记为「没观察到」，不会当作 0 计入。",
+      "step1Title": "确认事实",
+      "step1Body": "告诉 Agent 这个站点卖什么、谁在买、问哪个市场。品牌名与品类在你勾选之前都只是候选；不会替你推断。",
+      "step2Title": "确认问题",
+      "step2Body": "八个问题由已标定的措辞生成。不像你买家说话的地方可以直接改——被编辑过的检索探针会显式降级，因为它的引用计数只对被实测过的那串字符成立。",
+      "step3Title": "按模式采样，而不是一刀切",
+      "step3Body": "检索探针问三次：一次样本无法区分「站点没被引用」和「这一轮恰好没引用」。自然买家问题只问一次：助手凭记忆回答的问题重复问，多半只是重复同一个「没观察到」。",
+      "step4Title": "连着分母一起读",
+      "step4Body": "检索与自然需求绝不共用一个数字，入题品牌与未入题品牌的提及也绝不共用一个数字；没能触发联网搜索的探针按仪器故障剔除，而不是记在你头上。走之前先复制——报告不会保存。",
+      "finalBoundary": "这份报告只观察了某一个助手在某一刻的回答。它不是排名、不是预测，也不衡量流量。",
       "workbench": {
-        "contextTitle": "描述这个站点卖什么",
-        "contextHint": "这些措辞会直接进入问题，所以请用你买家的说法，而不是内部命名。",
-        "urlLabel": "站点网址",
+        "contextTitle": "确认这个站点是什么",
+        "contextHint": "这些词会进入问题本身，所以请用你买家的说法，而不是内部命名。在你确认运行之前不会产生任何计费。",
+        "urlLabel": "站点 URL",
         "urlPlaceholder": "acme.com",
-        "categoryLabel": "站点卖什么",
-        "categoryPlaceholder": "AI 可见度追踪",
-        "buyerLabel": "谁会购买",
+        "productLabel": "产品名",
+        "productPlaceholder": "Acme Analytics",
+        "categoryLabel": "这个站点卖什么",
+        "categoryPlaceholder": "AI 可见性追踪",
+        "categoryHint": "一个简短的名词短语。它会被代入已标定的措辞，所以指令或整句会被拒绝，而不是被截断。",
+        "buyerLabel": "谁在买",
         "buyerPlaceholder": "SaaS 市场团队",
-        "rivalsLabel": "买家会提到的竞品",
-        "rivalsHint": "选填，用逗号分隔。用于措辞两个对比类问题，以及标注还有谁被引用。",
-        "rivalDomainsLabel": "竞品域名",
-        "rivalDomainsHint": "选填，用逗号分隔。仅用于给回答中已经存在的引用打标签。",
-        "generate": "生成买家问题",
-        "questionsTitle": "确认问题集",
-        "questionsHint": "每个确认的问题会被问三遍。可以改写，但措辞会显著影响模型会不会真的去联网检索：这些问法经过实测，要么问“当下”，要么点名竞品。实测中凡是以“for〈你的买家〉”结尾的改写，模型都是凭记忆作答，而没有检索的回答不会引用任何人。",
-        "questionCount": "{count} 个问题 · {samples} 次采样 · 运行前不产生任何费用",
-        "stageDiscovery": "认知",
-        "stageComparison": "对比",
-        "stageEvaluation": "评估",
-        "stageDecision": "决策",
-        "back": "修改描述",
-        "run": "运行 {samples} 次采样",
-        "running": "正在向助手提问……",
-        "runningHint": "大约需要两分钟。每个问题问三遍，多次采样并发进行。",
+        "jtbdLabel": "他们想完成什么",
+        "jtbdPlaceholder": "知道买家提问时助手会不会引用我们",
+        "rivalsLabel": "买家叫得出名字的竞品",
+        "rivalsHint": "可选，逗号分隔。前一到两个会用在已实测的「替代品」问题里；一个都不填时，那一题回退到同样实测过的无竞品措辞。",
+        "marketLabel": "问哪个市场",
+        "marketPlaceholder": "选择市场",
+        "marketHint": "作为搜索国家传给 provider。没有默认值：市场未选会直接停止运行，而不是悄悄变成美国。EU 和 UK 不是国家代码，因此不在列表里。",
+        "queryLanguageLabel": "提问语言",
+        "queryLanguageHint": "本版本只支持英文。措辞是用英文标定的，把一句标定锁定的问题翻译过去就是另一句没被实测过的问题。",
+        "review": "复核这些事实",
+        "back": "返回",
+        "run": "运行 {calls} 次 provider 调用",
+        "running": "正在提问…",
+        "runningHint": "大约需要两分钟。调用并发执行，计划一旦开始就不再变化。",
         "signInRequired": "登录后运行"
       },
-      "results": {
-        "title": "这次快照观察到了什么",
-        "coverageTitle": "覆盖情况",
-        "coverageAttempted": "尝试采样",
-        "coverageObserved": "有效观测",
-        "coverageNotSearched": "未联网搜索",
-        "coverageUnavailable": "不可用",
-        "coverageNote": "未执行联网搜索的采样和失败的采样，都被排除在下面所有计数之外，不会被读作 0。",
-        "sampledAt": "采样于 {date}",
-        "notStored": "本报告不会被保存，离开页面即结束。",
-        "model": "模型",
+      "review": {
+        "title": "确认本轮将使用的事实",
+        "hint": "下面每一行都写明了这个值从哪来，以及它并不能证明什么。",
+        "aliasesTitle": "在回答里要找的品牌名",
+        "aliasesHint": "勾选读者会认作你的名字。系统不会替你勾：没勾的候选只是猜测，把猜测当品牌名会把普通句子变成「提及」。",
+        "aliasesEmpty": "没有可用的候选名。请在上面填一个至少三个字符、且不是通用词的产品名。",
+        "aliasSource": {
+          "profile_product_name": "来自你填写的产品名",
+          "host_label": "由主机名推断",
+          "user_edit": "你自己添加的"
+        },
+        "categoryTitle": "品类",
+        "categoryConfirm": "是的，买家会把这个产品称作「{category}」。",
+        "provenanceTitle": "每项事实的来源",
+        "field": {
+          "target_url": "站点 URL",
+          "product_name": "产品名",
+          "category": "品类",
+          "buyer": "买家",
+          "brand_aliases": "品牌名",
+          "direct_competitors": "竞品",
+          "jtbd": "要完成的任务",
+          "market_code": "市场",
+          "target_query_language": "提问语言"
+        },
+        "source": {
+          "visitor_url": "你输入的",
+          "visitor_declared": "你声明的",
+          "visitor_confirmed": "你确认的",
+          "visitor_confirmed_with_inference": "你确认的，其中一个名字为推断",
+          "not_supplied": "未提供",
+          "product_constraint": "本版本固定"
+        },
+        "limitation": {
+          "not_independently_checked": "未与页面核对",
+          "no_profile_source_exists": "没有可自动获取的来源",
+          "hostname_label_inferred": "主机名标签是你接受的一个猜测",
+          "not_supplied": "本轮在缺少它的情况下继续",
+          "calibrated_for_us_only": "措辞是按美国市场设置标定的",
+          "english_only_in_p0": "本版本只支持英文"
+        },
+        "notVerified": "以上是你在这个浏览器里确认的事实。没有任何一项由服务端对你的站点做过核验。",
+        "confirm": "确认并生成问题"
+      },
+      "rejections": {
+        "target_url_invalid": "站点 URL 必须是不带凭据的公开 http 或 https 地址。",
+        "product_name_invalid": "请填写产品名。",
+        "category_unconfirmed": "请先确认品类。",
+        "category_invalid": "品类必须是一个简短的名词短语。",
+        "buyer_invalid": "请填写谁在买。",
+        "aliases_none_confirmed": "至少确认一个品牌名。",
+        "alias_invalid": "其中一个品牌名不可用。",
+        "alias_generic": "单个通用词无法指向你，它会把普通句子变成「提及」。",
+        "alias_duplicate": "有两个品牌名其实是同一个名字。",
+        "alias_too_many": "品牌名过多，只保留读者会用的那些。",
+        "market_missing": "请选择要提问的市场。",
+        "market_not_a_country": "这不是 provider 接受的 ISO 国家代码。",
+        "query_language_unsupported": "本版本只用英文提问。",
+        "list_value_invalid": "列表里有一项过长。",
+        "source_summary_invalid": "来源记录不合法。",
+        "profile_version_invalid": "缺少上下文版本。",
+        "unknown_query": "该问题已不在本组问题里。",
+        "template_unavailable": "其中一个槽位没有可用的已标定措辞。",
+        "placeholder_rejected": "你填的某个值放不进已标定的措辞。请缩短成一个普通名词短语。",
+        "question_not_payable": "有一句问题超过 provider 接受的长度，请缩短。"
+      },
+      "slots": {
+        "category_discovery": "品类发现",
+        "jtbd_outcome": "要完成的任务",
+        "pain_how_to": "痛点与做法",
+        "constraint_fit": "约束匹配",
+        "alternative_status_quo": "替代方案",
+        "brand_comparison": "品牌对比",
+        "due_diligence": "尽调",
+        "negative_fit_objection": "异议"
+      },
+      "modes": {
+        "retrieval_probe": "检索探针",
+        "natural_demand": "自然需求"
+      },
+      "stances": {
+        "unbranded": "不含名字",
+        "brand": "含你的名字",
+        "mixed": "含竞品名"
+      },
+      "queries": {
+        "title": "确认这些问题",
+        "cohortNote": "这八题是一组可复现的哨兵问题，不是完整的问题空间。每个买家决策一题带来的是结构广度，不是经验覆盖。",
+        "editNote": "编辑是预期内的。被你编辑过的检索探针会变成只问一次的自定义自然需求问题，因为它的引用计数只对被实测过的那串措辞成立。",
+        "sampleCount": "{count} 次采样",
+        "promptedBrand": "含你的品牌名",
+        "measured": "已实测措辞",
+        "demoted": "已编辑 · 非实测",
+        "triggerClause": "已登记的时效性证据子句：「{clause}」。"
+      },
+      "plan": {
+        "title": "本轮会做什么",
+        "calls": "{calls} 次 provider 调用",
+        "retrievalLine": "{questions} 个检索探针 × {samples} 次采样 = {calls} 次调用",
+        "naturalLine": "{questions} 个自然需求问题 × {samples} 次采样 = {calls} 次调用",
+        "surface": "采集面",
+        "surfaceValue": "DataForSEO ChatGPT LLM Responses API",
         "market": "市场",
-        "citedHosts": "被引用",
-        "noCitedHosts": "这次回答没有引用任何来源",
-        "competitorTag": "竞品",
-        "sampleLabel": "第 {index} 次",
-        "questionsTitle": "逐个问题",
-        "citedInCount": "在 {total} 次有效采样中被引用 {cited} 次",
-        "empty": "本次运行没有任何问题产出有效采样。"
+        "queryLanguage": "提问语言",
+        "querySet": "问题集",
+        "searchPermission": "联网搜索是被允许，不是被强制。是否搜索由助手决定；没有搜索的回答不会引用任何人。",
+        "outsideCalibration": "英文检索措辞是按美国市场设置标定的。{market} 的搜索触发行为尚未独立标定。"
       },
-      "verdicts": {
-        "stable_cited": "每次都被引用",
-        "intermittent": "有时被引用",
-        "not_observed": "未被引用",
-        "answered_from_memory": "凭记忆作答",
-        "inconclusive": "没有有效采样",
-        "stable_citedHint": "这个问题的每一次有效采样都引用了你的站点。",
-        "intermittentHint": "有的采样引用了你的站点，有的没有。这是最常见的真实结果。",
-        "not_observedHint": "这个问题的有效采样都没有引用你的站点。",
-        "answered_from_memoryHint": "ChatGPT 回答这个问题时没有联网检索，因此没有引用任何人——你没有，竞品也没有。除非换成会触发检索的问法，这里没有可争取的引用位。",
-        "inconclusiveHint": "这个问题什么都没观察到——这和「没有被引用」不是一回事。"
+      "results": {
+        "title": "本轮观察到什么",
+        "sampledAt": "采样于 {date}",
+        "identityTitle": "运行身份",
+        "coverageTitle": "覆盖度",
+        "coverageNote": "下面每一块都按各自的分母计数，只有第一块是关于整轮的陈述。检索与自然需求绝不共用一个数字，入题与未入题的提及也绝不共用一个数字；什么都没观察到的样本被剔除，而不是记作 0。",
+        "notStored": "报告内容、provider 回答与证据都不在服务端留存。既有积分系统仍保留最少量的计费、配额与防滥用元数据。本版本没有配对复检。",
+        "questionsTitle": "逐题结果",
+        "empty": "本轮没有任何一题产出可用样本。",
+        "sampleLabel": "样本 {index}",
+        "citedInCount": "{host} 在 {total} 个可评估引用样本中被引用 {cited} 次",
+        "mentionedInCount": "{host} 在 {total} 个可评估提及样本中被提及 {mentioned} 次",
+        "searched": "已搜索",
+        "notSearched": "未联网搜索",
+        "recommendationNotEvaluated": "推荐关系未评估",
+        "degradedBanner": "降级运行：{failed} 个检索探针完全没有触发联网搜索，{mixed} 个只是有时触发。这是仪器故障，不是关于你站点的结论；这些样本已从引用统计中剔除。",
+        "probeSummary": "探针：{valid} 有效 · {failed} 未搜索 · {mixed} 时有时无 · {unavailable} 无回答"
       },
-      "states": {
-        "cited": "引用了你的站点",
-        "mentioned": "提到但未引用",
-        "cited_others_only": "引用了别人",
-        "answer_had_no_citations": "完全没有引用",
-        "search_not_performed": "未联网搜索",
-        "unavailable": "不可用"
+      "identity": {
+        "collector": "采集方",
+        "upstream": "上游",
+        "surface": "API 面",
+        "modelRequested": "请求的模型",
+        "modelObserved": "观察到的模型",
+        "maxOutputTokens": "输出上限",
+        "market": "市场",
+        "queryLanguage": "提问语言",
+        "querySet": "问题集",
+        "runId": "运行",
+        "calibrated_market": "检索措辞正是按这套市场设置标定的。",
+        "outside_calibrated_market": "检索措辞是按美国市场设置标定的；本国家的触发行为尚未独立标定。"
+      },
+      "coverage": {
+        "totals": "全部计划内调用",
+        "searchRetrieval": "搜索执行 · 检索探针",
+        "searchNatural": "搜索执行 · 自然需求",
+        "citationRetrieval": "引用 · 检索探针",
+        "citationNatural": "引用 · 自然需求",
+        "mentionUnprompted": "提及 · 未入题品牌的问题",
+        "mentionPrompted": "提及 · 入题品牌的问题",
+        "scheduled": "计划",
+        "answered": "已回答",
+        "unavailable": "无可用回答",
+        "searchEvaluable": "可判断是否搜索",
+        "searchPerformed": "已搜索",
+        "citationEvaluable": "可评估引用",
+        "targetCited": "引用了你的站点",
+        "mentionEvaluable": "可评估提及",
+        "targetMentioned": "提到了你的站点"
+      },
+      "answerStatus": {
+        "answered": "已回答",
+        "no_usable_answer": "无可用回答"
+      },
+      "probeStatus": {
+        "valid": "探针有效",
+        "trigger_failed": "从未搜索",
+        "degraded_mixed_trigger": "有时才搜索",
+        "provider_failed": "探针不可用"
+      },
+      "citationStatus": {
+        "observed_target": "引用了你的站点",
+        "observed_others_only": "只引用了别人",
+        "observed_none": "这条回答里没有引用",
+        "unavailable": "引用无法读取"
+      },
+      "mentionStatus": {
+        "observed": "被提到",
+        "not_observed": "未被提到",
+        "unavailable": "提及无法评估"
+      },
+      "mentionEligibility": {
+        "unprompted": "未入题",
+        "prompted": "已入题"
+      },
+      "ownership": {
+        "target": "你的站点",
+        "unknown": "归属未知"
+      },
+      "sourceType": {
+        "owned_page": "你的页面",
+        "unknown": "类型未知"
+      },
+      "evidence": {
+        "annotationLabel": "回答标注",
+        "location": "第 {item} 项 · 第 {section} 段",
+        "span": "字符 {start}–{end}",
+        "spanUnavailable": "无可用位置",
+        "mentionLabel": "生成回答摘录",
+        "mentionAlias": "命中的名字：{alias}",
+        "mentionDisclaimer": "这是助手生成的文本。它不是引用，也不是任何来源页面的摘录。"
       },
       "sampleLimitations": {
-        "time_budget": "本次运行在采集这次采样前已用完时间预算。",
-        "cost_ceiling": "本次运行在采集这次采样前已达到成本上限。",
-        "provider_not_configured": "本站点尚未配置回答服务商。",
-        "provider_timeout": "服务商未在时间预算内作答。",
-        "provider_rate_limited": "服务商的速率限制导致这次采样不可用。",
-        "provider_auth_failed": "回答服务商拒绝了本站点的凭据。",
-        "provider_no_answer": "服务商没有为这次采样返回可用的答案。",
-        "provider_failed": "服务商无法回答这次采样。"
+        "time_budget": "本轮在取到这个样本前已达时间预算。",
+        "cost_ceiling": "本轮在取到这个样本前已达成本上限。",
+        "provider_not_configured": "回答 provider 未配置。",
+        "provider_no_answer": "调用成功，但没有返回可用回答。",
+        "provider_error": "provider 拒绝了这次调用。",
+        "transport_error": "对 provider 的请求失败。",
+        "transport_outcome_unknown": "请求超时，因此无法确定 provider 是否已回答并计费。本轮刻意没有重试。",
+        "citation_extraction_incomplete": "标注列表无法完整读取，因此这个样本的引用记为「不可用」，而不是「没有」。",
+        "alias_matcher_out_of_scope": "已确认的品牌名超出全词匹配器可评估的范围，因此提及无法给出任何一侧的结论。",
+        "retrieval_trigger_failed": "该检索探针没有触发联网搜索，因此不计入引用统计。"
+      },
+      "runLimitations": {
+        "report_contents_not_persisted": "报告内容与 provider 回答不在服务端留存。",
+        "no_paired_recheck": "没有留存基线，因此无法做前后配对复检。",
+        "single_surface_chat_gpt_via_dataforseo": "只有一个面：通过 DataForSEO API 采集的 ChatGPT 回答。不是消费者版 ChatGPT 会话，也不是 Google、Perplexity、Claude 或 Gemini。",
+        "sentinel_cohort_not_full_coverage": "八个问题是一组可复现的哨兵问题，不是完整的问题空间。",
+        "degraded_retrieval_trigger": "至少有一个检索探针没有触达实时网页，因此本轮为降级运行。",
+        "partial_run": "部分计划内调用没有产出可用回答；它们被剔除而不是记作 0。",
+        "cost_incomplete": "provider 没有给出每一次调用的价格，因此总额不完整，而不是被低估。",
+        "outside_calibrated_market": "提问所用的市场不是措辞被标定的市场。",
+        "recommendation_not_evaluated": "本轮未评估助手是否推荐了你。「未评估」不等于「未推荐」。"
       },
       "limitations": {
         "title": "这份报告不能告诉你什么",
-        "sampling": "这是某一个时刻的三次采样。再问一遍可能得到不同的来源：实测中同一个问题的四次采样合计引用了 25 个域名，而没有任何一个域名在四次里都出现。",
-        "platform": "只覆盖 ChatGPT。它不能说明 Google AI Overviews、Perplexity、Claude 或 Gemini 的情况。",
-        "citation": "被引用不等于被推荐，也不是排名或流量的度量。",
-        "denominator": "不可用不等于 0。失败的采样、以及助手没有联网就作答的采样，都会被排除，而不是算作对你不利。"
+        "sampling": "只是某一刻的若干样本。再问一次可能返回不同的来源：标定中同一个问题的四次采样一共引用了 25 个站点，没有任何一个出现在全部四次里。",
+        "platform": "引用就是引用，不是推荐、不是排名，也不是流量估算。",
+        "citation": "被引用的页面只是回答链接到的页面。这不证明该页被读过、被内部检索过，或被认为有说服力。",
+        "denominator": "不可用不是 0。失败的调用、读不出的标注列表、以及从未搜索的探针都会被剔除，而不是记在你头上。"
       },
       "errors": {
-        "auth_required": "请登录后运行 GEO Agent。",
-        "auth_unavailable": "登录服务暂时不可用，请稍后再试。",
-        "invalid_request": "请检查站点网址和问题，然后重试。",
-        "geo_client_outdated": "当前页面与 Agent 的版本不一致。请刷新页面后重新运行——本次没有产生任何计费。",
-        "geo_budget_exhausted": "GEO Agent 今天的运行额度已用完，请明天再来。",
-        "geo_budget_unavailable": "当前无法核对运行额度，请稍后再试。",
-        "geo_report_invalid": "报告没有通过自身的一致性校验，因此没有展示。",
-        "unknown": "本次运行没能完成，没有保存任何内容。"
+        "auth_required": "登录后才能运行 GEO Agent。",
+        "auth_unavailable": "登录暂时不可用，请稍后再试。",
+        "invalid_request": "请检查已确认的事实与问题后重试。",
+        "geo_client_outdated": "本页面与 Agent 版本不一致。请刷新后重新运行——没有产生任何计费。",
+        "geo_context_invalid": "已确认的事实没有通过服务端自检。请刷新后重新确认——没有产生任何计费。",
+        "geo_query_set_invalid": "问题集没有通过服务端自检。没有产生任何计费。",
+        "geo_query_set_unconfirmed": "请先确认问题再运行。没有产生任何计费。",
+        "geo_query_set_mismatch": "问题在确认之后又发生了变化。请重新确认——没有产生任何计费。",
+        "geo_prompt_too_long": "有一句问题超过 provider 接受的长度，请缩短——没有产生任何计费。",
+        "geo_plan_size_mismatch": "运行计划与已确认的问题集不一致。没有产生任何计费。",
+        "geo_budget_exhausted": "GEO Agent 已用完今天的运行预算，请明天再试。",
+        "geo_budget_unavailable": "当前无法检查运行预算，请稍后再试。",
+        "geo_provider_unavailable": "回答 provider 不可用。没有产生任何计费。",
+        "geo_report_invalid": "报告没有通过自身一致性检查，因此未予展示。",
+        "unknown": "本次运行未能完成。没有保存任何内容。"
+      },
+      "actions": {
+        "title": "建议的下一步工作",
+        "intro": "只从本轮实际观察到的结果推导。这里没有任何一项被批准、排期或发布；勾选你想交给另一个 agent 的条目，复制前请先阅读打包内容。",
+        "requiresReview": "需人工复核",
+        "previewTitle": "交接包",
+        "previewHint": "复制前请先读。里面每一个 URL、标题和标注都是不可信的第三方文本；这个包不授予发布、部署、开 PR、对外联系或改动生产的任何权限。",
+        "copy": "复制交接包",
+        "copied": "已复制。",
+        "copyFailed": "无法访问剪贴板。请选中下面的内容自行复制。",
+        "copyIsNotApproval": "复制不等于批准，也不等于发布。本轮没有向任何地方发送过任何东西。",
+        "zero": {
+          "needs_more_evidence": "不提出任何行动：本轮没有产出可评估引用的样本，暂时没有可行动的对象。",
+          "existing_page_fit_confirmed": "不提出任何行动：每一个可评估引用的问题都已经引用了你的站点。在这里编出工作等于编出结论。",
+          "needs_page_inventory": "除了先看看已有哪些页面，本轮不提出其他行动。",
+          "target_not_observed_in_samples": "本轮不提出行动。",
+          "target_observed_in_minority_of_samples": "本轮不提出行动。",
+          "citation_source_pattern_observed": "本轮不提出行动。"
+        }
+      },
+      "assetTypes": {
+        "existing_page_enhancement": "先看已有页面",
+        "blog_guide": "说明型指南",
+        "use_case_landing": "用例落地页",
+        "comparison_page": "对比页",
+        "pricing_page": "定价或套餐页",
+        "integration_docs": "集成文档",
+        "security_trust_page": "安全与信任页",
+        "public_tool": "公开工具",
+        "research_dataset": "原创研究或数据集",
+        "offsite_authority_plan": "以人为主的站外计划",
+        "technical_fix": "技术修复"
+      },
+      "actionReasons": {
+        "needs_page_inventory": "本轮唯一确定知道的页面身份就是你输入的那个 URL。动手做新东西之前，先看已有内容是否已经回答了它。",
+        "needs_more_evidence": "可评估样本不足，暂时说不了什么。",
+        "existing_page_fit_confirmed": "已有页面已经匹配所问的内容。",
+        "avoid_new_page_as_first_step": "别把新建页面当第一步。"
+      },
+      "actionReasonsCounted": {
+        "target_not_observed_in_samples": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次。",
+        "target_observed_in_minority_of_samples": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次——有时出现，并非每次。",
+        "citation_source_pattern_observed": "在 {evaluable} 个可评估引用样本中观察到 {observed} 次，同时其他站点被引用了。这首先是站外问题，其次才是页面问题。",
+        "avoid_new_page_as_first_step": "{evaluable} 个可评估引用样本里有 {observed} 个引用了别人、一次都没引用你。先把这些域名看一遍，再决定写什么。"
+      },
+      "sources": {
+        "title": "这些回答实际在引谁",
+        "note": "按上面同一批证据、同一个分母统计。只到域名——本轮无法判断这些页面各自是什么，只知道回答链接到了它。",
+        "empty": "没有任何可评估引用样本引用了内容，因此没有来源模式可读。",
+        "colDomain": "域名",
+        "colSamples": "样本",
+        "colQuestions": "题",
+        "denominator": "在 {samples} 个可评估引用样本、{questions} 道题里，一共出现了 {domains} 个域名。",
+        "yours": "你的",
+        "sampleShare": "{total} 中 {cited}",
+        "questionShare": "{total} 中 {cited}",
+        "targetAbsent": "{host} 不在其中。",
+        "targetPresent": "{host} 在其中。",
+        "showUrls": "展开这个域名下的 {count} 个 URL",
+        "mode": {
+          "retrieval_probe": "检索探针 · 各问三次",
+          "natural_demand": "自然需求问题 · 各问一次"
+        }
+      },
+      "actionKinds": {
+        "do": "去做",
+        "external_data": "去查",
+        "avoid": "别做"
+      },
+      "actionBasis": {
+        "questions": "依据这些题：{questions}",
+        "noRatio": "这一项没有对应的比值。"
+      },
+      "handoff": {
+        "copyMarkdown": "复制可读版",
+        "copiedMarkdown": "可读版已复制",
+        "markdownNote": "同一个包的纯文本形式，给人看的，不是给 agent 的。"
       }
     },
     "seo": {

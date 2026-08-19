@@ -4,6 +4,7 @@ import {
   readCrawlCache,
   targetHostOf,
   writeCrawlCache,
+  cachedPayloadBytes,
   type CrawlCacheDependencies,
 } from "./crawl-cache.ts";
 import { openCrawlGate } from "./crawl-gate.ts";
@@ -38,7 +39,51 @@ describe("readCrawlCache", () => {
       "acme.com",
       cacheDeps({ read: async () => entry }),
     );
-    expect(result).toEqual(entry);
+    expect(result).toEqual({
+      payload: { hello: "world" },
+      // Canonicalised on the way out — see the PostgreSQL case below for why
+      // this boundary cannot pass a store's own spelling through.
+      capturedAt: "2026-08-03T10:00:00.000Z",
+    });
+  });
+
+  /**
+   * PostgreSQL renders `timestamptz` with microsecond precision and a numeric
+   * UTC offset — `2026-08-18T06:50:55.033741+00:00` — while every reader here
+   * checks the value against `new Date(x).toISOString()`, which is
+   * millisecond precision and `Z`. Passing the store's spelling through means
+   * a row that was written successfully can never be recognised on the way
+   * back, so the cache fills up and every caller still pays for a full crawl.
+   * Both stores fail silently, so nothing says so.
+   */
+  it("canonicalises a PostgreSQL timestamptz into the form its readers check", async () => {
+    const result = await readCrawlCache(
+      "seo_audit",
+      "acme.com",
+      cacheDeps({
+        read: async () => ({
+          payload: { hello: "world" },
+          capturedAt: "2026-08-18T06:50:55.033741+00:00",
+        }),
+      }),
+    );
+
+    expect(result?.capturedAt).toBe("2026-08-18T06:50:55.033Z");
+    expect(
+      new Date(Date.parse(result?.capturedAt ?? "")).toISOString(),
+    ).toBe(result?.capturedAt);
+  });
+
+  it("treats a row whose timestamp cannot be read as no cache at all", async () => {
+    const result = await readCrawlCache(
+      "seo_audit",
+      "acme.com",
+      cacheDeps({
+        read: async () => ({ payload: { hello: "world" }, capturedAt: "later" }),
+      }),
+    );
+
+    expect(result).toBeNull();
   });
 
   /**
@@ -75,15 +120,76 @@ describe("writeCrawlCache", () => {
 
   it("skips a payload too large to be worth storing", async () => {
     const write = vi.fn(async () => {});
-    // Comfortably past the 1.5 MB ceiling.
     const huge = {
       pages: Array.from(
-        { length: 20_000 },
+        { length: 100_000 },
         (_, i) => `${"x".repeat(120)}-${i}`,
       ),
     };
+    expect(cachedPayloadBytes(huge)).toBeGreaterThan(4_000_000);
     await writeCrawlCache("seo_audit", "acme.com", huge, cacheDeps({ write }));
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("refuses a payload the function response could not carry", async () => {
+    // The platform caps a function response body at 4.5 MB. A cached payload
+    // above that reads back fine and then cannot be returned, which is worse
+    // than never caching it.
+    const write = vi.fn(async () => {});
+    const overWall = {
+      pages: Array.from({ length: 40_000 }, (_, i) => `${"x".repeat(120)}-${i}`),
+    };
+    expect(cachedPayloadBytes(overWall)).toBeGreaterThan(4_000_000);
+    expect(cachedPayloadBytes(overWall)).toBeLessThan(8_000_000);
+    await writeCrawlCache("seo_audit", "acme.com", overWall, cacheDeps({ write }));
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("stores the large sites the cache exists for", async () => {
+    // A 1,400-page report serialises to about 1.65 MB, which the old 1.5 MB
+    // ceiling refused — so every site past roughly 1,250 pages was re-crawled
+    // in full every time, and those are the crawls that take four minutes.
+    const write = vi.fn(async () => {});
+    const bigSite = {
+      pages: Array.from({ length: 1_400 }, (_, i) => ({
+        url: `https://acme.com/some/reasonably-long/path/page-${i}`,
+        title: "x".repeat(70),
+        metaDescription: "y".repeat(160),
+        canonicalTarget: `https://acme.com/some/reasonably-long/path/page-${i}`,
+        finalUrl: `https://acme.com/some/reasonably-long/path/page-${i}`,
+        subjectUrl: `https://acme.com/some/reasonably-long/path/page-${i}`,
+        jsonLdTypes: ["WebPage", "BreadcrumbList"],
+        h1Count: 1,
+        headingsCount: 12,
+        wordCount: 900,
+        inboundLinks: 8,
+        outboundLinks: 40,
+      })),
+      // A real report is pages *and* the observation rows the rules produced,
+      // which is what pushed the measured payload past the old ceiling.
+      records: Array.from({ length: 10 }, (_, rule) => ({
+        id: `rule_${rule}`,
+        observations: Array.from({ length: 700 }, (_, i) => ({
+          url: `https://acme.com/some/reasonably-long/path/page-${i}`,
+          values: [
+            { label: "title_display_width", value: 71 },
+            { label: "reviewed_range", value: "15-60" },
+          ],
+        })),
+      })),
+    };
+    expect(cachedPayloadBytes(bigSite)).toBeGreaterThan(1_500_000);
+
+    await writeCrawlCache("seo_audit", "acme.com", bigSite, cacheDeps({ write }));
+    expect(write).toHaveBeenCalledOnce();
+  });
+
+  it("measures bytes rather than code units", () => {
+    // `String#length` counts UTF-16 units, so a Chinese payload was measured at
+    // about a third of what it actually weighs on the wire.
+    const chinese = { text: "星".repeat(1_000) };
+    expect(JSON.stringify(chinese).length).toBeLessThan(1_100);
+    expect(cachedPayloadBytes(chinese)).toBeGreaterThan(3_000);
   });
 
   /** A cache write must never turn a crawl that succeeded into an error. */

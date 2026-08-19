@@ -53,6 +53,11 @@ vi.mock("next-intl", async () => {
   };
 });
 
+import {
+  SERP_LANGUAGES,
+  SERP_LOCATIONS,
+} from "../../lib/tools/serp-markets.ts";
+
 const { OnPageChecker } = await import("./on-page-checker");
 
 const extract: SeoAuditTargetPageExtract = {
@@ -63,8 +68,33 @@ const extract: SeoAuditTargetPageExtract = {
   subHeadings: ["What each plan includes"],
   openingText: "Every Acme plan includes the pricing calculator.",
   staticBodyWords: 900,
+  staticBodyUnits: null,
+  termFrequencies: null,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 42,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: null,
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 0,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
+
+/** Narrowed once: the result union does not carry `queries` until it is ok. */
+function normalizedQueries(raw: readonly string[]) {
+  const normalized = normalizeTargetQueries(raw);
+  if (!normalized.ok) throw new Error(normalized.reason);
+  return normalized.queries;
+}
 
 function evidenceFor(
   raw: readonly string[],
@@ -214,19 +244,14 @@ async function fillAndRun(
   queries: readonly string[] = ["pricing"],
 ): Promise<void> {
   await type(field(host, "onpage-url"), "acme.test/pricing");
-  for (const query of queries) {
-    await type(field(host, "onpage-query"), query);
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
-  }
+  await type(field(host, "onpage-query"), queries.join(", "));
   await act(async () => {
     buttonWith(host, "Check this page").click();
   });
 }
 
 describe("On-Page checker request", () => {
-  it("sends the page, the queries and the page role", async () => {
+  it("sends the page, the queries, the role and the market to look up", async () => {
     const fetchMock = vi.fn(async () => auditResponse(["pricing", "plans"]));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -243,6 +268,10 @@ describe("On-Page checker request", () => {
       url: "acme.test/pricing",
       targetQueries: ["pricing", "plans"],
       pageRole: "homepage",
+      // Read by the results-page lookup and by nothing else. They used to stop
+      // at the form, which is why the copy beside them had to apologise.
+      market: "US",
+      language: "en",
     });
   });
 
@@ -268,44 +297,79 @@ describe("On-Page checker request", () => {
     expect(host.textContent).toContain("Add at least one target query.");
   });
 
-  it.each([
-    ["nothing typed", "", "Type a query before adding it."],
-    ["a query already in the list", "pricing", "That query is already in the list."],
-  ])("refuses %s", async (_name, second, message) => {
+  it("submits exactly the queries the comma-separated line spells out", async () => {
+    const fetchMock = vi.fn(async () =>
+      auditResponse(["astrology", "birth chart"]),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
     const host = await render();
-    await type(field(host, "onpage-query"), "pricing");
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await type(field(host, "onpage-query"), " astrology ,  birth chart ");
     await act(async () => {
-      buttonWith(host, "Add").click();
-    });
-    await type(field(host, "onpage-query"), second);
-    await act(async () => {
-      buttonWith(host, "Add").click();
+      buttonWith(host, "Check this page").click();
     });
 
-    expect(host.textContent).toContain(message);
-    // The one query that was accepted is still the only one.
-    expect(
-      host.querySelectorAll("ul li button").length,
-    ).toBe(1);
-    const notice = host.querySelector("#onpage-query-notice");
-    expect(notice?.textContent).toContain(message);
-    expect(field(host, "onpage-query").getAttribute("aria-invalid")).toBe("true");
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      readonly targetQueries: readonly string[];
+    };
+    // The separator is a parser the visitor cannot watch run, so what it
+    // produced has to be what the request carries.
+    expect(body.targetQueries).toEqual(["astrology", "birth chart"]);
   });
 
-  it("refuses a sixth query in the browser as well as on the wire", async () => {
+  it("shows the parsed list, because a separator can be read wrong", async () => {
     const host = await render();
-    for (const query of ["a", "b", "c", "d", "e"]) {
-      await type(field(host, "onpage-query"), query);
-      await act(async () => {
-        buttonWith(host, "Add").click();
-      });
-    }
-    await type(field(host, "onpage-query"), "f");
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
+    await type(field(host, "onpage-query"), "占星，星盘");
 
-    expect(host.textContent).toContain("Up to 5 queries.");
+    // The full-width comma is what this audience's keyboard produces. Taking
+    // the pair as one query reported it absent from a page covering both.
+    const parsed = [
+      ...(host.querySelector("#onpage-query-parsed")?.children ?? []),
+    ].map((node) => node.textContent);
+    expect(parsed).toEqual(["占星", "星盘"]);
+  });
+
+  it("names what it dropped past the cap rather than dropping it quietly", async () => {
+    const host = await render();
+    await type(field(host, "onpage-query"), "a, b, c, d, e, f, g");
+
+    expect(host.textContent).toContain(
+      "Up to 5 queries; the 2 past that were not submitted.",
+    );
+    expect(
+      host.querySelector("#onpage-query-parsed")?.children,
+    ).toHaveLength(5);
+  });
+
+  it("says a repeat was folded instead of asking the same thing twice", async () => {
+    const host = await render();
+    await type(field(host, "onpage-query"), "pricing, Pricing");
+
+    expect(host.textContent).toContain("Folded 1 repeat(s)");
+    expect(
+      host.querySelector("#onpage-query-parsed")?.children,
+    ).toHaveLength(1);
+  });
+
+  it("offers markets and languages the paid lookup already accepts", async () => {
+    const host = await render();
+    const market = host.querySelector("#onpage-country") as HTMLSelectElement;
+    const language = host.querySelector("#onpage-language") as HTMLSelectElement;
+
+    // Both were free-text boxes. The lookup is billed per call and its provider
+    // rejects an unknown code only after billing, so a typo bought an error.
+    expect(market.tagName).toBe("SELECT");
+    expect(language.tagName).toBe("SELECT");
+    expect(market.value).toBe("US");
+    expect(language.value).toBe("en");
+
+    const offered = [...market.options].map((option) => option.value);
+    expect(offered).toEqual(Object.keys(SERP_LOCATIONS));
+    for (const option of language.options) {
+      expect(SERP_LANGUAGES.has(option.value), option.value).toBe(true);
+    }
   });
 });
 
@@ -503,9 +567,6 @@ describe("On-Page checker local state", () => {
     const host = await render();
     await type(field(host, "onpage-url"), "acme.test/pricing");
     await type(field(host, "onpage-query"), "pricing");
-    await act(async () => {
-      buttonWith(host, "Add").click();
-    });
     await select(host, "onpage-role", "guide");
     await act(async () => {
       buttonWith(host, "Check this page").click();
@@ -684,11 +745,11 @@ describe("On-Page checker local state", () => {
     expect(host.textContent).toContain("Measured 1 of the 2 queries you submitted");
   });
 
-  it("says that market and language are not part of the check", async () => {
+  it("says what market and language are actually used for", async () => {
     const host = await render();
 
     expect(host.textContent).toContain(
-      "Market and language are not part of this check",
+      "Market and language are used for one thing",
     );
     const market = field(host, "onpage-country");
     expect(market.getAttribute("aria-describedby")).toBe("onpage-market-scope");
@@ -751,5 +812,188 @@ describe("On-Page checker local state", () => {
       "This site has been crawled several times in the last hour",
     );
     expect(host.textContent).not.toContain("Retry in");
+  });
+});
+
+/**
+ * What the visitor actually gets on screen.
+ *
+ * The tool shipped reporting keyword placement and nothing else. These hold the
+ * rest of the sheet in place, and — because the mock resolves the real English
+ * catalogue — a message key that does not exist renders as its dotted path and
+ * fails here rather than shipping as literal `tools.onPageChecker.something`.
+ */
+describe("On-Page checker report depth", () => {
+  function richResponse(): Response {
+    const rich: SeoAuditTargetPageExtract = {
+      ...extract,
+      response: {
+        ...extract.response,
+        canonicalTarget: extract.url,
+        jsonLdTypes: ["WebPage", "FAQPage"],
+        internalOutlinks: 14,
+        internalOutlinksWithoutAnchorText: 1,
+      },
+      declared: {
+        lang: "en",
+        openGraph: {
+          title: "Acme pricing",
+          description: "Compare Acme pricing.",
+          image: "https://acme.test/card.png",
+        },
+        twitterCard: "summary_large_image",
+        viewport: "width=device-width, initial-scale=1",
+        charset: "utf-8",
+        faviconDeclared: true,
+        hreflang: ["en", "zh-CN"],
+        images: {
+      total: 5,
+      withAlt: 4,
+      withEmptyAlt: 0,
+      withoutAlt: 1,
+      withDimensions: 0,
+      lazyLoaded: 0,
+    },
+        externalLinks: { total: 3, nofollow: 1, blankWithoutNoopener: 1 },
+        htmlBytes: 51_200,
+        visibleTextBytes: 15_000,
+        scriptBytes: 0,
+        interactive: {
+          forms: 0,
+          inputs: 0,
+          buttons: 0,
+          selects: 0,
+          textareas: 0,
+          canvases: 0,
+          media: 0,
+          iframes: 0,
+        },
+      },
+    };
+    return Response.json(
+      {
+        data: {
+          run: { source: { cache: { status: "miss" } } },
+          result: {
+            targetUrl: rich.url,
+            scannedAt: "2026-08-17T12:00:00.000Z",
+            targetInspected: true,
+            inspectedTargetUrl: rich.url,
+            coverage: { availability: "available", pagesInspected: 120 },
+            siteResources: {
+              robotsFetched: true,
+              robotsGroupsObserved: 4,
+              sitemapReferencesObserved: 1,
+              sitemapFetched: true,
+            },
+            records: [
+              {
+                id: "title_duplicate",
+                category: "indexability",
+                state: "observed",
+                unit: "page",
+                population: "every_collected_page",
+                targetTested: null,
+                tested: 120,
+                affected: 0,
+                observations: [],
+                limitation: null,
+              },
+            ],
+            targetPageExtract: rich,
+            keywordEvidence: buildKeywordEvidence(
+              rich,
+              normalizedQueries(["pricing"]),
+              "product",
+              true,
+            ),
+          },
+        },
+      },
+      { status: 200 },
+    );
+  }
+
+  it("renders a score, its categories, and the checks behind it", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    // The headline the tool did not have.
+    expect(text).toMatch(/Topic focus \d+%/);
+    expect(text).toMatch(/passed of \d+ graded/);
+    // Every category that carries points is named.
+    for (const category of [
+      "Meta",
+      "Content",
+      "Keyword placement",
+      "Links",
+      "Images",
+      "Social & structured data",
+      "Technical & crawl",
+      "Site context",
+    ]) {
+      expect(text).toContain(category);
+    }
+  });
+
+  it("states each check's own conclusion rather than a bare tick", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("lang=en");
+    expect(text).toContain("twitter:card=summary_large_image");
+    expect(text).toContain("Self-referencing");
+    // Counted, not merely ticked: one image without alt out of five.
+    expect(text).toContain("1 of 5 images carry no alt attribute");
+    // The unsafe-window finding a single-page tool would also catch. Worded
+    // without the 2021-era claim that the opened page gets a window handle:
+    // browsers have isolated `target=_blank` by default since then.
+    expect(text).toMatch(/1 target=_blank links? carry neither noopener nor noreferrer/);
+    // The site-wide finding a single-page tool cannot reach at all.
+    expect(text).toContain("this title is unique");
+  });
+
+  it("previews the page where its fields get read", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("GOOGLE RESULT PREVIEW");
+    expect(text).toContain("acme.test › pricing");
+    expect(text).toContain("SHARE CARD");
+    // Listed, never fetched: rendering it would make this page request the
+    // audited site on the visitor's behalf.
+    expect(text).toContain("https://acme.test/card.png");
+    expect(host.querySelector('img[src*="acme.test"]')).toBeNull();
+  });
+
+  it("leaves no message key unresolved anywhere in the report", async () => {
+    globalThis.fetch = vi.fn(
+      async () => richResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+
+    // next-intl renders a missing key as its dotted path and throws nothing, so
+    // a whole section can ship as literal `tools.onPageChecker.checks.x.y`.
+    const unresolved = (host.textContent ?? "").match(
+      /tools\.onPageChecker[\w.]*/g,
+    );
+    expect(unresolved).toBeNull();
   });
 });

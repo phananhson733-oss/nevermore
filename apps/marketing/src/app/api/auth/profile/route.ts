@@ -36,7 +36,15 @@ export async function GET(): Promise<Response> {
     return json({ error: { code: "auth_required" } }, 401);
   }
 
-  return json({ data: { email: authentication.email } }, 200);
+  return json(
+    {
+      data: {
+        email: authentication.email,
+        avatarUrl: authentication.avatarUrl,
+      },
+    },
+    200,
+  );
 }
 
 function json(body: unknown, status: number): Response {

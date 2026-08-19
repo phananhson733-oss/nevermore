@@ -1,0 +1,239 @@
+// @input  -- hostile URLs, doubled www, root dots, credentials, and long links
+// @output -- proof one host rule and one citation-URL rule are used everywhere
+// @pos    -- focused tests for the shared GEO URL normalization
+
+import { describe, expect, it } from "vitest";
+
+import {
+  GEO_MAX_URL_LENGTH,
+  geoCitationDomain,
+  isGeoTargetCitation,
+  isNormalizedGeoCitationUrl,
+  isNormalizedGeoHost,
+  normalizeGeoCitationUrl,
+  normalizeGeoHost,
+  normalizeGeoTargetUrl,
+} from "./geo-url.ts";
+
+describe("normalizeGeoHost", () => {
+  it.each([
+    ["acme.test", "acme.test"],
+    ["ACME.test", "acme.test"],
+    ["www.acme.test", "acme.test"],
+    ["www.www.acme.test", "acme.test"],
+    ["acme.test.", "acme.test"],
+    ["https://www.acme.test/pricing?a=1#b", "acme.test"],
+    ["http://ACME.test:8080/x", "acme.test"],
+  ] as const)("reduces %s to %s", (input, expected) => {
+    expect(normalizeGeoHost(input)).toBe(expected);
+  });
+
+  it.each([
+    "",
+    "localhost",
+    "acme",
+    "acme test.com",
+    "acme.test/path",
+    "ftp://acme.test",
+    "javascript:alert(1)",
+    `${"a".repeat(250)}.example.test`,
+  ])("refuses %s", (input) => {
+    expect(normalizeGeoHost(input)).toBeNull();
+  });
+
+  it("accepts only its own output shape", () => {
+    expect(isNormalizedGeoHost("acme.test")).toBe(true);
+    for (const other of ["www.acme.test", "ACME.test", "acme.test.", "", 1]) {
+      expect(isNormalizedGeoHost(other)).toBe(false);
+    }
+  });
+});
+
+describe("normalizeGeoCitationUrl", () => {
+  it("canonicalizes only the parts that preserve identity", () => {
+    expect(normalizeGeoCitationUrl("HTTP://Example.COM:80/a/../b?x=1#f")).toBe(
+      "http://example.com/b?x=1#f",
+    );
+  });
+
+  it("keeps the query string, which is part of what was cited", () => {
+    expect(
+      normalizeGeoCitationUrl("https://acme.test/post?utm_source=chatgpt"),
+    ).toBe("https://acme.test/post?utm_source=chatgpt");
+  });
+
+  it("keeps the fragment, which the export packet strips separately", () => {
+    expect(normalizeGeoCitationUrl("https://acme.test/guide#pricing")).toBe(
+      "https://acme.test/guide#pricing",
+    );
+  });
+
+  it("punycodes an internationalized host", () => {
+    expect(normalizeGeoCitationUrl("https://exämple.test/a")).toBe(
+      "https://xn--exmple-cua.test/a",
+    );
+  });
+
+  it.each([
+    ["a non-string", 42],
+    ["an empty string", ""],
+    ["a bare host", "acme.test"],
+    ["a non-http scheme", "ftp://acme.test/x"],
+    ["a javascript URL", "javascript:alert(1)"],
+    ["a data URL", "data:text/html,hi"],
+    ["credentials", "https://user:pw@acme.test/x"],
+    ["a username alone", "https://user@acme.test/x"],
+    ["a host with no dot", "https://localhost/x"],
+  ] as const)("refuses %s", (_label, input) => {
+    expect(normalizeGeoCitationUrl(input)).toBeNull();
+  });
+
+  it("refuses a URL longer than the report can carry", () => {
+    const long = `https://acme.test/${"a".repeat(GEO_MAX_URL_LENGTH)}`;
+
+    expect(long.length).toBeGreaterThan(GEO_MAX_URL_LENGTH);
+    expect(normalizeGeoCitationUrl(long)).toBeNull();
+  });
+
+  it("accepts only its own output shape", () => {
+    expect(isNormalizedGeoCitationUrl("https://acme.test/b?x=1")).toBe(true);
+    for (const other of [
+      "HTTPS://ACME.test/b?x=1",
+      "https://acme.test/a/../b",
+      "acme.test",
+      42,
+    ]) {
+      expect(isNormalizedGeoCitationUrl(other)).toBe(false);
+    }
+  });
+});
+
+describe("geoCitationDomain and ownership", () => {
+  it("recomputes the domain from the URL", () => {
+    expect(geoCitationDomain("https://www.acme.test/pricing")).toBe(
+      "acme.test",
+    );
+  });
+
+  it("treats www and bare host as the same site", () => {
+    expect(isGeoTargetCitation("https://www.acme.test/x", "acme.test")).toBe(
+      true,
+    );
+  });
+
+  it("does not treat a subdomain as owned", () => {
+    // `blog.acme.test` may be a hosted platform and `status.acme.test` a
+    // vendor's page; counting either as the customer's own citation would
+    // manufacture evidence the run does not have.
+    expect(isGeoTargetCitation("https://blog.acme.test/x", "acme.test")).toBe(
+      false,
+    );
+    expect(
+      isGeoTargetCitation("https://acme.test.evil.test/x", "acme.test"),
+    ).toBe(false);
+  });
+
+  it("distinguishes two paths on the same host", () => {
+    const first = normalizeGeoCitationUrl("https://acme.test/a");
+    const second = normalizeGeoCitationUrl("https://acme.test/b");
+
+    expect(first).not.toBe(second);
+    expect(geoCitationDomain(first!)).toBe(geoCitationDomain(second!));
+  });
+});
+
+describe("normalizeGeoTargetUrl", () => {
+  // Regression: the site field's own placeholder is a bare hostname, and the
+  // citation rule rejected it — two steps after it was typed, with the reason
+  // rendered off-screen. Found by /qa on 2026-08-18.
+  it.each(["acme.com", "www.acme.com", "acme.com/pricing", "  acme.com  "])(
+    "accepts the scheme-less host a visitor types: %s",
+    (typed) => {
+      expect(normalizeGeoTargetUrl(typed)).not.toBeNull();
+    },
+  );
+
+  it("supplies https only when no scheme was declared", () => {
+    expect(normalizeGeoTargetUrl("acme.com")).toBe("https://acme.com/");
+    expect(normalizeGeoTargetUrl("http://acme.com")).toBe("http://acme.com/");
+  });
+
+  // Prefixing must never rescue a value the citation rule would refuse: a
+  // declared scheme is kept, so these still fail the http/https check.
+  it.each([
+    "javascript:alert(1)",
+    "ftp://acme.com",
+    "data:text/html,x",
+    "https://user:pw@acme.com",
+    "",
+    "   ",
+  ])("still refuses %s", (hostile) => {
+    expect(normalizeGeoTargetUrl(hostile)).toBeNull();
+  });
+
+  // Supplying a scheme is not enough on its own: the URL parser accepts hosts
+  // no one can publish, drops a control character out of the middle of one, and
+  // rewrites backslashes into slashes. Each of these reached the eighteen-call
+  // run before the shape check existed. Found by cross-model review on
+  // 2026-08-18.
+  it.each([
+    [".com", "no first label"],
+    ["foo..bar", "empty label"],
+    ["-foo.com", "label starts with a hyphen"],
+    ["foo-.com", "label ends with a hyphen"],
+    ["acme.\ncom", "control character the parser would silently drop"],
+    ["\\\\evil.com/path", "backslashes the parser would rewrite"],
+    ["acme .com", "internal space"],
+    ["acme\u2060.com", "word joiner the parser would silently drop"],
+    ["acme\u200b.com", "zero-width space, as pasted out of a document"],
+    ["acme\ufeff.com", "byte-order mark"],
+    ["acme\u200e.com", "left-to-right mark"],
+    ["acme\u034f.com", "combining grapheme joiner"],
+    ["acme\u180e.com", "Mongolian vowel separator"],
+    ["acme", "no dot"],
+    ["acme.1", "numeric TLD"],
+  ])("refuses %s (%s)", (typed) => {
+    expect(normalizeGeoTargetUrl(typed)).toBeNull();
+  });
+
+  // Refused here rather than by the run endpoint, so the visitor is not sent
+  // through confirmation and eight generated questions before being told no.
+  // An internationalized TLD arrives here already punycoded, so an
+  // alphabetic-only rule would refuse every `.公司` and `.中国` customer while
+  // the run endpoint accepted them. Found by cross-model review on 2026-08-18.
+  it.each([
+    ["例子.公司", "https://xn--fsqu00a.xn--55qx5d/"],
+    ["品牌.公司", "https://xn--jvr800e.xn--55qx5d/"],
+    ["xn--fsqu00a.xn--55qx5d", "https://xn--fsqu00a.xn--55qx5d/"],
+    ["münich.com", "https://xn--mnich-kva.com/"],
+  ])("accepts the internationalized domain %s", (typed, expected) => {
+    expect(normalizeGeoTargetUrl(typed)).toBe(expected);
+  });
+
+  // A space in a path or query is a link a visitor can paste; the parser
+  // percent-encodes it. Only a space inside the host is a problem, and the
+  // label check catches that one.
+  it("accepts a pasted link whose path or query carries a space", () => {
+    expect(normalizeGeoTargetUrl("https://acme.com/about us")).toBe(
+      "https://acme.com/about%20us",
+    );
+    expect(normalizeGeoTargetUrl("https://acme.com/?q=a b")).toBe(
+      "https://acme.com/?q=a%20b",
+    );
+    expect(normalizeGeoTargetUrl("acme .com")).toBeNull();
+  });
+
+  it.each([
+    "example.com",
+    "example.net",
+    "test.org",
+    "metadata.google.internal",
+    "localhost",
+    "service.local",
+    "127.0.0.1",
+    "0x7f000001",
+    "https://acme.com:8080",
+  ])("refuses %s for the same reason the run endpoint would", (typed) => {
+    expect(normalizeGeoTargetUrl(typed)).toBeNull();
+  });
+});

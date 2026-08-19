@@ -39,6 +39,7 @@ function record(
     state,
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 2,
     affected: state === "observed" ? 1 : 0,
     observations:
@@ -57,7 +58,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v6",
+    schemaVersion: "seo_audit.sitewide.v7",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -143,7 +144,59 @@ function successWithExtract(
             subHeadings: ["How the chart is drawn"],
             openingText: "A birth chart maps the sky at a moment in time.",
             staticBodyWords: 900,
+            staticBodyUnits: null,
+            termFrequencies: null,
             truncatedLists: false,
+            response: {
+              status: 200,
+              finalStatus: 200,
+              redirectHops: 0,
+              responseMs: 42,
+              contentType: "text/html; charset=utf-8",
+              canonicalTarget: "https://acme.test/",
+              robotsIndexable: true,
+              robotsDirectives: [],
+              sitemapMember: true,
+              jsonLdTypes: ["WebPage"],
+              jsonLdErrorCount: 0,
+              internalOutlinks: 3,
+              internalOutlinksWithoutAnchorText: 0,
+            },
+            declared: {
+              lang: "en",
+              openGraph: {
+                title: "Acme birth chart calculator",
+                description: "Calculate a birth chart.",
+                image: "https://acme.test/card.png",
+              },
+              twitterCard: "summary_large_image",
+              viewport: "width=device-width, initial-scale=1",
+              charset: "utf-8",
+              faviconDeclared: true,
+              hreflang: ["en"],
+              images: {
+      total: 2,
+      withAlt: 2,
+      withEmptyAlt: 0,
+      withoutAlt: 0,
+      withDimensions: 0,
+      lazyLoaded: 0,
+    },
+              externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
+              htmlBytes: 24_576,
+              visibleTextBytes: 8_192,
+              scriptBytes: 0,
+              interactive: {
+                forms: 0,
+                inputs: 0,
+                buttons: 0,
+                selects: 0,
+                textareas: 0,
+                canvases: 0,
+                media: 0,
+                iframes: 0,
+              },
+            },
           },
         },
       },
@@ -346,8 +399,8 @@ describe("handleAgentAuditRequest", () => {
       keywordRequest(["acme"]),
       "seo",
       dependencies({
-        readSerpShape: async () =>
-          ({ status: "unavailable", reason }) as never,
+        readSerpLandscape: async () =>
+          ({ availability: "unavailable", reason }) as never,
       }),
     );
     const body = (await response.json()) as {
@@ -367,7 +420,12 @@ describe("handleAgentAuditRequest", () => {
     const response = await handleAgentAuditRequest(
       keywordRequest(["acme"]),
       "seo",
-      dependencies({ readSerpShape: () => undefined }),
+      dependencies({
+        readSerpLandscape: async () => ({
+          availability: "unavailable" as const,
+          reason: "provider_not_configured" as const,
+        }),
+      }),
     );
     const body = (await response.json()) as {
       data: {
@@ -536,6 +594,8 @@ describe("handleAgentAuditRequest", () => {
             url: "acme.test",
             targetQueries: null,
             pageRole: null,
+            market: null,
+            language: null,
           });
           return success();
         },
@@ -563,7 +623,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v6",
+            schemaVersion: "seo_audit.sitewide.v7",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -954,7 +1014,7 @@ describe("handleAgentAuditRequest", () => {
             // An older schema: what a cache entry written before a bump holds.
             // A reader must refuse a version it was not built for rather than
             // assume the fields it knows are still there.
-            schemaVersion: "seo_audit.sitewide.v4",
+            schemaVersion: "seo_audit.sitewide.v5",
           },
         },
       }),
@@ -1187,6 +1247,8 @@ describe("handleAgentAuditRequest", () => {
                   subHeadings: null,
                   openingText: null,
                   staticBodyWords: null,
+                  staticBodyUnits: null,
+                  termFrequencies: null,
                   truncatedLists: false,
                   rawHtml: "<html>everything the crawler held</html>",
                 },
@@ -1225,6 +1287,8 @@ describe("handleAgentAuditRequest", () => {
                   subHeadings: null,
                   openingText: null,
                   staticBodyWords: null,
+                  staticBodyUnits: null,
+                  termFrequencies: null,
                   truncatedLists: false,
                 },
               },
@@ -1235,5 +1299,130 @@ describe("handleAgentAuditRequest", () => {
     );
 
     expect(response.status).toBe(502);
+  });
+});
+
+/**
+ * The results-page lookup, which only one of the two routes pays for.
+ *
+ * It runs after the crawl has already succeeded, so every one of its outcomes
+ * has to leave the check intact — including the one where the provider is down.
+ */
+describe("the results-page region", () => {
+  function landscapeRequest(): Request {
+    return new Request("https://gengrowth.ai/api/tools/on-page-seo-check", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-real-ip": "203.0.113.9",
+      },
+      body: JSON.stringify({
+        url: "acme.test",
+        targetQueries: ["acme pricing", "pricing plans"],
+        market: "GB",
+        language: "en",
+      }),
+    });
+  }
+
+  it("looks up the query the evidence layer already called primary", async () => {
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "provider_unavailable" as const,
+    }));
+
+    await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({ readSerpLandscape, delegate: async () => successWithExtract() }),
+    );
+
+    expect(readSerpLandscape).toHaveBeenCalledOnce();
+    const [input] = readSerpLandscape.mock.calls[0] as unknown as [
+      { query: string; market: string; language: string; targetUrl: string },
+    ];
+    // The evidence layer's own primary, not a second choice made here: two
+    // choosers would let the results page and the coverage table disagree
+    // about which word the page is being judged on.
+    expect(input.query).toBe("acme pricing");
+    expect(input.market).toBe("GB");
+    expect(input.language).toBe("en");
+  });
+
+  it("looks nothing up when the page was never read", async () => {
+    // The default fixture has no extract, so there is no evidence and no
+    // primary query. A lookup here would be a paid call about a page we could
+    // not open.
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "no_target_query" as const,
+    }));
+
+    await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({ readSerpLandscape }),
+    );
+
+    const [input] = readSerpLandscape.mock.calls[0] as unknown as [
+      { query: string | null },
+    ];
+    expect(input.query).toBeNull();
+  });
+
+  it("publishes what it found", async () => {
+    const response = await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies({
+        readSerpLandscape: async () => ({
+          availability: "available" as const,
+          query: "acme pricing",
+          market: "GB",
+          language: "en",
+          resultsObserved: 2,
+          withSitelinks: 1,
+          features: ["organic"],
+          targetPosition: 2,
+          targetPageOnPage: true,
+          rows: [
+            {
+              position: 1,
+              domain: "big.com",
+              sitelinkCount: 3,
+              isTarget: false,
+              isTargetPage: null,
+            },
+            {
+              position: 2,
+              domain: "acme.test",
+              sitelinkCount: 0,
+              isTarget: true,
+              isTargetPage: true,
+            },
+          ],
+        }),
+      }),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: { serpLandscape?: { targetPosition: number } } };
+    };
+    expect(body.data.result.serpLandscape?.targetPosition).toBe(2);
+  });
+
+  it("leaves the check whole when the lookup is not attached", async () => {
+    const response = await handleAgentAuditRequest(
+      landscapeRequest(),
+      "seo",
+      dependencies(),
+    );
+
+    const body = (await response.json()) as {
+      data: { result: Record<string, unknown> };
+    };
+    expect(response.status).toBe(200);
+    expect(Object.hasOwn(body.data.result, "serpLandscape")).toBe(false);
   });
 });

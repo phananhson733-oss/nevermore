@@ -73,7 +73,7 @@ function provider(): AgentProfileSearchProvider {
     })),
     serpOrganic: vi.fn(async () => ({
       keyword: "seo platform",
-      rows: [{ rankGroup: 1, domain: "rival.com" }],
+      rows: [{ rankGroup: 1, domain: "rival.com", sitelinkCount: 0, url: null }],
       itemTypes: [],
       unresolvedItemCount: 0,
       costUsd: 0.002,
@@ -1221,10 +1221,10 @@ describe("handleAgentProfileSearchRequest", () => {
     vi.mocked(upstream.serpOrganic).mockResolvedValue({
       keyword: "免费星盘计算",
       rows: [
-        { rankGroup: 1, domain: "www.acme.cn" },
-        { rankGroup: 2, domain: "rival.cn" },
-        { rankGroup: 3, domain: "www.rival.cn" },
-        { rankGroup: 4, domain: "second.cn" },
+        { rankGroup: 1, domain: "www.acme.cn", sitelinkCount: 0, url: null },
+        { rankGroup: 2, domain: "rival.cn", sitelinkCount: 0, url: null },
+        { rankGroup: 3, domain: "www.rival.cn", sitelinkCount: 0, url: null },
+        { rankGroup: 4, domain: "second.cn", sitelinkCount: 0, url: null },
       ],
       itemTypes: ["organic"],
       unresolvedItemCount: 0,

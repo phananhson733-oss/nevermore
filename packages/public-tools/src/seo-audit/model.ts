@@ -3,12 +3,13 @@ import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
 } from "./soft-404.ts";
-import { CRAWL_PROJECTION_LIMITS, type CrawlPageAssets } from "@sf/sources";
+import { CRAWL_PROJECTION_LIMITS, type ParsedOnPageFacts } from "@sf/sources";
 import {
   searchCrawlerMayFetch,
   SEARCH_CRAWLER_USER_AGENT,
 } from "./robots-allowance.ts";
 import {
+  isAllowedPublicToolEntryRedirect,
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
@@ -26,17 +27,25 @@ import type {
   SeoAuditReport,
 } from "./types.ts";
 import type { SeoAuditRaw } from "./scan.ts";
+import {
+  displayWidth,
+  SNIPPET_DESCRIPTION_WIDTH,
+  SNIPPET_TITLE_WIDTH,
+} from "./text-width.ts";
 import { buildTargetPageExtract } from "./keyword-evidence/extract.ts";
 
 const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
 
 /**
- * Reviewed working ranges, not official limits. Google truncates titles and
- * descriptions by rendered pixel width, not character count, so these bounds
- * only flag lengths far enough outside common practice to be worth a look.
+ * The same bounds the On-Page Checker judges by, read from one definition.
+ *
+ * They used to be 15–70 / 50–165 on raw `.length` here and 15–60 / 50–160 on
+ * display width there, so one title was flagged by one tool and cleared by the
+ * other. Width is the closer proxy for the pixel budget that actually
+ * truncates, so the audit moved to it rather than the checker moving back.
  */
-const TITLE_LENGTH = { min: 15, max: 70 } as const;
-const DESCRIPTION_LENGTH = { min: 50, max: 165 } as const;
+const TITLE_LENGTH = SNIPPET_TITLE_WIDTH;
+const DESCRIPTION_LENGTH = SNIPPET_DESCRIPTION_WIDTH;
 const CLICK_DEPTH_LIMIT = 4;
 
 function usage(raw: CrawlRaw, key: string): number {
@@ -71,30 +80,56 @@ interface RecordInput {
   readonly unit?: SeoAuditRecordUnit;
   /** Defaults to the whole collected population; say so when it is narrower. */
   readonly population?: SeoAuditRecordPopulation;
-  readonly tested: number;
+  /**
+   * The pages the rule ran over, or a count when the unit is not pages.
+   *
+   * Given the pages themselves, the record can also say whether one named page
+   * was among them — which is the difference between "this page is clean" and
+   * "this rule never looked at this page", and those are not the same sentence.
+   */
+  readonly tested: number | readonly SeoAuditPage[];
   readonly observations: readonly SeoAuditObservation[];
   readonly limitation?: string | null;
   readonly state?: SeoAuditRecordState;
 }
 
-function record(input: RecordInput): SeoAuditRecord {
-  const observations = input.observations.slice(0, MAX_OBSERVATIONS_PER_RECORD);
-  return {
-    id: input.id,
-    category: input.category,
-    state:
-      input.state ??
-      (input.tested === 0
-        ? "unverified"
-        : observations.length > 0
-          ? "observed"
-          : "not_observed"),
-    unit: input.unit ?? "pages",
-    population: input.population ?? "every_collected_page",
-    tested: input.tested,
-    affected: observations.length,
-    observations,
-    limitation: input.limitation ?? null,
+/**
+ * A record builder that knows which page the visitor asked about.
+ *
+ * Membership is answered from the rule's own tested list rather than re-derived
+ * from the rule's precondition, so the count and the membership cannot disagree
+ * about the same population.
+ */
+function recorderFor(targetSubjectUrl: string | null) {
+  return function record(input: RecordInput): SeoAuditRecord {
+    const observations = input.observations.slice(
+      0,
+      MAX_OBSERVATIONS_PER_RECORD,
+    );
+    const tested =
+      typeof input.tested === "number" ? input.tested : input.tested.length;
+    const targetTested =
+      typeof input.tested === "number" || targetSubjectUrl === null
+        ? null
+        : input.tested.some((page) => page.subjectUrl === targetSubjectUrl);
+    return {
+      id: input.id,
+      category: input.category,
+      state:
+        input.state ??
+        (tested === 0
+          ? "unverified"
+          : observations.length > 0
+            ? "observed"
+            : "not_observed"),
+      unit: input.unit ?? "pages",
+      population: input.population ?? "every_collected_page",
+      tested,
+      targetTested,
+      affected: observations.length,
+      observations,
+      limitation: input.limitation ?? null,
+    };
   };
 }
 
@@ -199,15 +234,13 @@ function imageExtension(src: string | null): string | null {
 }
 
 function readableFormats(
-  assets: CrawlPageAssets | null,
+  assets: ParsedOnPageFacts | null,
 ): readonly string[] {
-  return (assets?.images ?? [])
-    .map((image) => imageExtension(image.src))
-    .filter((extension): extension is string => extension !== null);
+  return assets?.imageFormats ?? [];
 }
 
 /** Share of format-readable images that are not WebP or AVIF. */
-function legacyFormatShare(assets: CrawlPageAssets | null): number {
+function legacyFormatShare(assets: ParsedOnPageFacts | null): number {
   const formats = readableFormats(assets);
   if (formats.length === 0) return 0;
   const legacy = formats.filter(
@@ -226,7 +259,7 @@ function legacyFormatShare(assets: CrawlPageAssets | null): number {
  * its own level scan in the first place.
  */
 function firstSkippedLevel(
-  assets: CrawlPageAssets | null,
+  assets: ParsedOnPageFacts | null,
 ): { readonly from: number; readonly to: number } | null {
   const levels = assets?.headingLevels ?? [];
   let previous: number | null = null;
@@ -264,20 +297,23 @@ function isOriginRoot(url: string): boolean {
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
+  targetSubjectUrl: string | null,
 ): readonly SeoAuditRecord[] {
-  // Read from the raw crawl, never from the projected page.
-  //
-  // `assets` carries every page's full body text and up to three hundred image
-  // references. Hanging it on SeoAuditPage put it inside `result.pages`, which
-  // IS the cached payload — a real run of this site came to 1,907,879 bytes
-  // against a 1,500,000 cap, so `writeCrawlCache` silently discarded every
-  // write and each visitor paid for a fresh sixty-second crawl. It is 88.7% of
-  // the payload and none of it is published.
-  const assetsByUrl = new Map(
-    raw.pages.map((record) => [record.projection.fetchUrl, record.assets] as const),
+  const record = recorderFor(targetSubjectUrl);
+  // Read from the raw crawl, never from the projected page. `onPage` carries
+  // per-page counts and the whole body's text metrics; hanging anything that
+  // size on SeoAuditPage would put it inside `result.pages`, which IS the
+  // cached payload.
+  const rawByUrl = new Map(
+    raw.pages.map((entry) => [entry.projection.fetchUrl, entry] as const),
   );
-  const assetsOf = (page: SeoAuditPage): CrawlPageAssets | null =>
-    assetsByUrl.get(page.url) ?? null;
+  const onPageByUrl = new Map(
+    raw.pages.map(
+      (entry) => [entry.projection.fetchUrl, entry.onPage] as const,
+    ),
+  );
+  const onPageOf = (page: SeoAuditPage): ParsedOnPageFacts | null =>
+    onPageByUrl.get(page.url) ?? null;
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -330,10 +366,10 @@ function buildRecords(
   // applicable.
   // Counted from the true image total, not the stored sample.
   const pagesWithImages = htmlPages.filter(
-    (page) => (assetsOf(page)?.imageCount ?? 0) > 0,
+    (page) => (onPageOf(page)?.images.total ?? 0) > 0,
   );
   const uncoveredImagePages = pagesWithImages.filter(
-    (page) => (assetsOf(page)?.imagesWithoutAltAttribute ?? 0) > 0,
+    (page) => (onPageOf(page)?.images.withoutAlt ?? 0) > 0,
   );
   const linkTargetErrors = new Map<
     string,
@@ -424,7 +460,7 @@ function buildRecords(
     record({
       id: "non_2xx_final_status",
       category: "crawl",
-      tested: pages.filter((page) => page.finalStatus !== null).length,
+      tested: pages.filter((page) => page.finalStatus !== null),
       observations: pages
         .filter(
           (page) =>
@@ -441,7 +477,7 @@ function buildRecords(
     record({
       id: "redirect_chain",
       category: "crawl",
-      tested: pages.length,
+      tested: pages,
       observations: pages
         .filter((page) => page.redirectHops > 0)
         .map((page) =>
@@ -599,7 +635,7 @@ function buildRecords(
     record({
       id: "http_url",
       category: "crawl",
-      tested: pages.length,
+      tested: pages,
       observations: pages
         .filter((page) => new URL(page.finalUrl).protocol !== "https:")
         .map((page) =>
@@ -611,7 +647,7 @@ function buildRecords(
     record({
       id: "noindex_directive",
       category: "indexability",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.robotsDirectiveState === "noindex_observed")
         .map((page) => pageObservation(page, { robots_directive: "noindex" })),
@@ -620,7 +656,7 @@ function buildRecords(
     record({
       id: "canonical_missing",
       category: "indexability",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.canonicalTarget === null)
         .map((page) => pageObservation(page, { canonical_target: null })),
@@ -628,7 +664,7 @@ function buildRecords(
     record({
       id: "canonical_differs",
       category: "indexability",
-      tested: htmlPages.filter((page) => page.canonicalTarget !== null).length,
+      tested: htmlPages.filter((page) => page.canonicalTarget !== null),
       observations: htmlPages
         .filter(
           (page) =>
@@ -645,7 +681,7 @@ function buildRecords(
     record({
       id: "title_missing",
       category: "metadata",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.title === null)
         .map((page) => pageObservation(page, { title: null })),
@@ -655,8 +691,7 @@ function buildRecords(
       // Tested population: self-canonical pages that have a title.
       population: "conditional_subset",
       category: "metadata",
-      tested: selfCanonicalHtmlPages.filter((page) => page.title !== null)
-        .length,
+      tested: selfCanonicalHtmlPages.filter((page) => page.title !== null),
       observations: duplicateObservations(
         selfCanonicalHtmlPages,
         (page) => page.title,
@@ -667,7 +702,7 @@ function buildRecords(
     record({
       id: "meta_description_missing",
       category: "metadata",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.metaDescription === null)
         .map((page) => pageObservation(page, { meta_description: null })),
@@ -679,7 +714,7 @@ function buildRecords(
       category: "metadata",
       tested: selfCanonicalHtmlPages.filter(
         (page) => page.metaDescription !== null,
-      ).length,
+      ),
       observations: duplicateObservations(
         selfCanonicalHtmlPages,
         (page) => page.metaDescription,
@@ -690,7 +725,7 @@ function buildRecords(
     record({
       id: "h1_missing",
       category: "structure",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.h1Count === 0)
         .map((page) => pageObservation(page, { h1_count: 0 })),
@@ -698,7 +733,7 @@ function buildRecords(
     record({
       id: "multiple_h1",
       category: "structure",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.h1Count > 1)
         .map((page) => pageObservation(page, { h1_count: page.h1Count })),
@@ -708,7 +743,15 @@ function buildRecords(
       // Tested population: sitemap members other than the root.
       population: "conditional_subset",
       category: "links",
-      tested: pages.filter((page) => page.sitemapMember).length,
+      // The root carries the same exclusion as the observations below. It was
+      // only excluded there, so a homepage listed in the sitemap with no
+      // inbound links counted as tested and — never being emitted as affected
+      // — rendered a clean pass for a rule that deliberately never looks at it.
+      tested: pages.filter(
+        (page) =>
+          page.sitemapMember &&
+          page.subjectUrl !== subjectUrlOf(`${raw.origin}/`),
+      ),
       observations: pages
         .filter(
           (page) =>
@@ -757,7 +800,7 @@ function buildRecords(
     record({
       id: "page_outbound_broken_link",
       category: "links",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: [...brokenLinkSources.entries()].map(
         ([sourceUrl, brokenTargets]) => ({
           url: sourceUrl,
@@ -775,7 +818,7 @@ function buildRecords(
       // With no sitemap the record is already unverified via tested === 0.
       population: "every_collected_page",
       category: "crawl",
-      tested: sitemapWasFetched ? htmlPages.length : 0,
+      tested: sitemapWasFetched ? htmlPages : [],
       observations: sitemapWasFetched
         ? htmlPages
             .filter((page) => !page.sitemapMember)
@@ -790,47 +833,51 @@ function buildRecords(
       // Tested population: pages that have a title.
       population: "conditional_subset",
       category: "metadata",
-      tested: htmlPages.filter((page) => page.title !== null).length,
+      tested: htmlPages.filter((page) => page.title !== null),
       observations: htmlPages
         .filter(
           (page) =>
             page.title !== null &&
-            (page.title.trim().length < TITLE_LENGTH.min ||
-              page.title.trim().length > TITLE_LENGTH.max),
+            (displayWidth(page.title.trim()) < TITLE_LENGTH.min ||
+              displayWidth(page.title.trim()) > TITLE_LENGTH.max),
         )
         .map((page) =>
           pageObservation(page, {
-            title_characters: page.title!.trim().length,
+            title_display_width: displayWidth(page.title!.trim()),
             reviewed_range: `${TITLE_LENGTH.min}-${TITLE_LENGTH.max}`,
           }),
         ),
-      limitation: "character_count_only_rendered_pixel_width_not_measured",
+      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "meta_description_length_outside_range",
       // Tested population: pages that have a description.
       population: "conditional_subset",
       category: "metadata",
-      tested: htmlPages.filter((page) => page.metaDescription !== null).length,
+      tested: htmlPages.filter((page) => page.metaDescription !== null),
       observations: htmlPages
         .filter(
           (page) =>
             page.metaDescription !== null &&
-            (page.metaDescription.trim().length < DESCRIPTION_LENGTH.min ||
-              page.metaDescription.trim().length > DESCRIPTION_LENGTH.max),
+            (displayWidth(page.metaDescription.trim()) <
+              DESCRIPTION_LENGTH.min ||
+              displayWidth(page.metaDescription.trim()) >
+                DESCRIPTION_LENGTH.max),
         )
         .map((page) =>
           pageObservation(page, {
-            description_characters: page.metaDescription!.trim().length,
+            description_display_width: displayWidth(
+              page.metaDescription!.trim(),
+            ),
             reviewed_range: `${DESCRIPTION_LENGTH.min}-${DESCRIPTION_LENGTH.max}`,
           }),
         ),
-      limitation: "character_count_only_rendered_pixel_width_not_measured",
+      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "page_without_outbound_internal_link",
       category: "links",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.outboundLinks === 0)
         .map((page) =>
@@ -841,7 +888,7 @@ function buildRecords(
     record({
       id: "click_depth_beyond_reviewed_limit",
       category: "links",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.depth > CLICK_DEPTH_LIMIT)
         .map((page) =>
@@ -855,7 +902,7 @@ function buildRecords(
     record({
       id: "json_ld_missing",
       category: "structured_data",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.jsonLdTypes.length === 0)
         .map((page) => pageObservation(page, { json_ld_blocks: 0 })),
@@ -969,12 +1016,12 @@ function buildRecords(
       observations: htmlPages
         // The uncapped count. The stored list stops at 300, so filtering on it
         // published a page whose last fifty images have no alt as covered.
-        .filter((page) => (assetsOf(page)?.imagesWithoutAltAttribute ?? 0) > 0)
+        .filter((page) => (onPageOf(page)?.images.withoutAlt ?? 0) > 0)
         .map((page) =>
           pageObservation(page, {
-            images_without_alt: assetsOf(page)?.imagesWithoutAltAttribute ?? 0,
-            images_observed: assetsOf(page)?.images.length ?? 0,
-            images_on_page: assetsOf(page)?.imageCount ?? 0,
+            images_without_alt: onPageOf(page)?.images.withoutAlt ?? 0,
+            images_observed: onPageOf(page)?.images.total ?? 0,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
           }),
         ),
       limitation:
@@ -1022,16 +1069,16 @@ function buildRecords(
       category: "structure",
       tested: htmlPages.length,
       observations: htmlPages
-        .filter((page) => legacyFormatShare(assetsOf(page)) > 0)
+        .filter((page) => legacyFormatShare(onPageOf(page)) > 0)
         .map((page) => {
-          const readable = readableFormats(assetsOf(page));
+          const readable = readableFormats(onPageOf(page));
           return pageObservation(page, {
             modern_format_share: Number(
-              (1 - legacyFormatShare(assetsOf(page))).toFixed(4),
+              (1 - legacyFormatShare(onPageOf(page))).toFixed(4),
             ),
-            legacy_format_share: Number(legacyFormatShare(assetsOf(page)).toFixed(4)),
+            legacy_format_share: Number(legacyFormatShare(onPageOf(page)).toFixed(4)),
             images_with_readable_format: readable.length,
-            images_on_page: assetsOf(page)?.imageCount ?? 0,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
           });
         }),
       limitation:
@@ -1046,14 +1093,17 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => {
-          const og = assetsOf(page)?.openGraph;
-          return og !== undefined && !(og.title && og.description && og.image);
+          const og = onPageOf(page)?.openGraph;
+          return (
+            og !== undefined &&
+            !(og.title !== null && og.description !== null && og.image !== null)
+          );
         })
         .map((page) =>
           pageObservation(page, {
-            open_graph_title: assetsOf(page)?.openGraph.title ?? false,
-            open_graph_description: assetsOf(page)?.openGraph.description ?? false,
-            open_graph_image: assetsOf(page)?.openGraph.image ?? false,
+            open_graph_title: (onPageOf(page)?.openGraph.title ?? null) !== null,
+            open_graph_description: (onPageOf(page)?.openGraph.description ?? null) !== null,
+            open_graph_image: (onPageOf(page)?.openGraph.image ?? null) !== null,
           }),
         ),
       limitation: "static_html_meta_tags_only",
@@ -1066,12 +1116,12 @@ function buildRecords(
       category: "structure",
       tested: htmlPages.length,
       observations: htmlPages
-        .filter((page) => firstSkippedLevel(assetsOf(page)) !== null)
+        .filter((page) => firstSkippedLevel(onPageOf(page)) !== null)
         .map((page) =>
           pageObservation(page, {
-            skipped_from_level: firstSkippedLevel(assetsOf(page))?.from ?? null,
-            skipped_to_level: firstSkippedLevel(assetsOf(page))?.to ?? null,
-            heading_levels_observed: assetsOf(page)?.headingLevels.length ?? 0,
+            skipped_from_level: firstSkippedLevel(onPageOf(page))?.from ?? null,
+            skipped_to_level: firstSkippedLevel(onPageOf(page))?.to ?? null,
+            heading_levels_observed: onPageOf(page)?.headingLevels.length ?? 0,
           }),
         ),
       limitation: "heading_levels_read_from_static_html_in_document_order",
@@ -1085,7 +1135,7 @@ function buildRecords(
       category: "indexability",
       tested: htmlPages.length,
       observations: htmlPages.flatMap((page) => {
-        const verdict = softNotFoundVerdict(page, assetsOf(page)?.bodyText);
+        const verdict = softNotFoundVerdict(page, onPageOf(page)?.textMetrics ?? null, rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null);
         return verdict === null
           ? []
           : [
@@ -1104,7 +1154,7 @@ function buildRecords(
     record({
       id: "json_ld_parse_error",
       category: "structured_data",
-      tested: htmlPages.length,
+      tested: htmlPages,
       observations: htmlPages
         .filter((page) => page.jsonLdErrorCount > 0)
         .map((page) =>
@@ -1120,6 +1170,43 @@ function buildRecords(
   return records;
 }
 
+/**
+ * The subject URLs that could be the submitted target, in the order to try.
+ *
+ * The crawler resolves the entry redirect before it crawls anything: a
+ * submitted `www.` host that 301s to the apex yields an origin — and therefore
+ * a whole set of collected pages — on the apex, while `requestedUrl` keeps the
+ * string the visitor typed. Comparing only that string against those pages
+ * finds nothing, so a site crawled end to end reports its one requested page as
+ * never collected.
+ *
+ * The second candidate re-bases the submitted path onto the crawled origin, and
+ * only when the entry resolver would have been allowed to move between those
+ * two hosts in the first place. Re-basing on the origin unconditionally would
+ * answer a URL on an unrelated site with whatever this crawl collected at the
+ * same path.
+ */
+function targetSubjectCandidates(
+  raw: SeoAuditRaw,
+  requestedSubject: string | null,
+): readonly string[] {
+  if (requestedSubject === null) return [];
+  let rebased: string | null = null;
+  try {
+    const submitted = new URL(raw.requestedUrl);
+    const origin = new URL(raw.origin);
+    const onOrigin = `${origin.protocol}//${origin.host}${submitted.pathname}${submitted.search}`;
+    rebased = isAllowedPublicToolEntryRedirect(raw.requestedUrl, onOrigin)
+      ? subjectUrlOf(onOrigin)
+      : null;
+  } catch {
+    rebased = null;
+  }
+  return rebased === null || rebased === requestedSubject
+    ? [requestedSubject]
+    : [requestedSubject, rebased];
+}
+
 export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   const requestedSubject = subjectUrlOf(raw.requestedUrl);
@@ -1127,14 +1214,20 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   // target in both. Selecting the raw record by a second predicate could pick
   // a different journey for the same subject URL and report one page's text
   // beside another page's observations.
-  const inspectedIndex = pages.findIndex(
-    (page) =>
-      page.subjectUrl === requestedSubject &&
-      page.finalStatus !== null &&
-      page.finalStatus >= 200 &&
-      page.finalStatus < 300 &&
-      isHtml(page.contentType),
-  );
+  const inspectedIndex = (() => {
+    for (const subject of targetSubjectCandidates(raw, requestedSubject)) {
+      const at = pages.findIndex(
+        (page) =>
+          page.subjectUrl === subject &&
+          page.finalStatus !== null &&
+          page.finalStatus >= 200 &&
+          page.finalStatus < 300 &&
+          isHtml(page.contentType),
+      );
+      if (at !== -1) return at;
+    }
+    return -1;
+  })();
   const inspectedTarget = inspectedIndex === -1 ? null : pages[inspectedIndex];
   const inspectedProjection =
     inspectedIndex === -1 ? null : raw.pages[inspectedIndex]?.projection;
@@ -1145,7 +1238,10 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
     targetPageExtract:
       inspectedProjection === null || inspectedProjection === undefined
         ? null
-        : buildTargetPageExtract(inspectedProjection),
+        : buildTargetPageExtract(
+            inspectedProjection,
+            raw.pages[inspectedIndex]?.onPage,
+          ),
     siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
@@ -1168,7 +1264,7 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
     },
-    records: buildRecords(raw, pages),
+    records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
     pages,
   };
 }
@@ -1177,7 +1273,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v6",
+      schemaVersion: "seo_audit.sitewide.v7",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

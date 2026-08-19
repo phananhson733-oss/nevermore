@@ -24,7 +24,7 @@ function pageFrom(html: string, url = TARGET, depth = 1): CrawlPageRecord {
   return {
     subjectUrl: url,
     depth,
-    assets: parsed.assets,
+    onPage: parsed.onPage,
     projection: {
       fetchUrl: url,
       status: 200,

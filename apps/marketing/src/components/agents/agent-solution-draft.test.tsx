@@ -34,7 +34,25 @@ const EXTRACT: SeoAuditTargetPageExtract = {
   subHeadings: ["How to read it"],
   openingText: "Enter a birth date.",
   staticBodyWords: 120,
+  staticBodyUnits: { units: 120, basis: "words" },
+  termFrequencies: null,
   truncatedLists: false,
+  response: {
+    status: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    responseMs: 40,
+    contentType: "text/html; charset=utf-8",
+    canonicalTarget: "https://acme.test/chart",
+    robotsIndexable: true,
+    robotsDirectives: [],
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+    internalOutlinks: 3,
+    internalOutlinksWithoutAnchorText: 0,
+  },
+  declared: null,
 };
 
 let root: Root | null = null;

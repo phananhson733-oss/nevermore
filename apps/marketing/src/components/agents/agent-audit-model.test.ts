@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v6",
+      schemaVersion: "seo_audit.sitewide.v7",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -137,6 +137,7 @@ describe("buildAgentAuditViewModel", () => {
               state: "not_observed",
               unit: "pages",
               population: "every_collected_page" as const,
+              targetTested: null,
               tested: 4,
               affected: 0,
               observations: [],
@@ -197,7 +198,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v6",
+      schemaVersion: "seo_audit.sitewide.v7",
       persistence: "none",
     });
   });

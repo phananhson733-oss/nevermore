@@ -36,6 +36,14 @@ const COMMUNITY_ITEM_TYPES: readonly string[] = [
   "twitter",
 ];
 
+/**
+ * The landscape region this projects, narrowed to what these checks read.
+ *
+ * Structural rather than an import: this package must not depend on the app's
+ * wire contract, and the two fields below are the whole of what 9.1 and 9.4
+ * need from it. The sample itself is taken once by the On-Page Checker's paid
+ * lookup — these checks add no call of their own.
+ */
 export interface SerpShapeRaw {
   /** The query the page was sampled for, as the visitor confirmed it. */
   readonly keyword: string;
@@ -99,6 +107,9 @@ function shapeRecord(
     // narrow here; under any other population its site-level observation is
     // dropped and both checks come back "not tested" on every run.
     population: "target_page",
+    // Counts a results page rather than the site's pages, so membership of the
+    // crawled population is not a question this record answers.
+    targetTested: null,
     tested: 0,
     affected: 0,
     observations: [],
@@ -127,6 +138,7 @@ function shapeRecord(
     // narrow here; under any other population its site-level observation is
     // dropped and both checks come back "not tested" on every run.
     population: "target_page",
+    targetTested: null,
     tested: 1,
     affected: affected ? 1 : 0,
     observations: affected

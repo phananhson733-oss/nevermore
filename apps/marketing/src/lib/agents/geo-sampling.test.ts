@@ -1,475 +1,748 @@
 // @input  -- scripted provider answers, transport failures, and a controlled budget
-// @output -- proof that classification, aggregation and the fan-out stay honest
+// @output -- proof the five observation dimensions stay independent and honest
 // @pos    -- focused tests for the step that turns answers into reportable evidence
 
 import { describe, expect, it, vi } from "vitest";
+
+import type { GeoConfirmedAliasV1 } from "./geo-context.ts";
 import {
-  isGeoReportSuccessEnvelope,
-  AGENT_GEO_REPORT_SCHEMA_VERSION,
-  GEO_SAMPLES_PER_QUESTION,
-  type GeoReportSuccessEnvelope,
-} from "./geo-report-contract.ts";
-import { GeoProviderError, type GeoProviderClient } from "./geo-provider.ts";
+  GeoProviderError,
+  type GeoProviderCitationAnnotation,
+  type GeoProviderClient,
+  type GeoProviderObservation,
+} from "./geo-provider.ts";
+import type { GeoQueryUnitV1 } from "./geo-query-contract.ts";
+import { deriveGeoSampleCounts } from "./geo-report-derive.ts";
+import type { GeoCitationEvidenceRefV1 } from "./geo-report-contract.ts";
 import {
-  aggregateSamples,
-  classifyObservation,
+  assembleQuestion,
+  buildGeoExecutionPlan,
   collectGeoSamples,
-  GEO_MAX_CONCURRENCY,
-  GEO_MIN_BUDGET_FOR_CALL_MS,
-  mentionsBrand,
-  normalizeCitedHost,
+  deriveProbeStatus,
+  observeToSample,
   unavailableSample,
+  GEO_MIN_BUDGET_FOR_CALL_MS,
+  type GeoExecutionSlot,
   type GeoSamplingContext,
 } from "./geo-sampling.ts";
 
+const ALIASES: readonly GeoConfirmedAliasV1[] = [
+  { alias: "Acme Analytics", source: "profile_product_name" },
+  { alias: "Acme", source: "host_label" },
+];
+
 const CONTEXT: GeoSamplingContext = {
   targetHost: "acme.test",
-  brandTokens: ["acme", "acme analytics"],
-  competitorHosts: ["rival.test", "other.test"],
+  brandAliases: ALIASES,
+  aliasScope: "supported",
 };
 
+function probe(overrides: Partial<GeoQueryUnitV1> = {}): GeoQueryUnitV1 {
+  return {
+    queryId: "core-category_discovery",
+    slot: "category_discovery",
+    text: "What are the top seo tools right now?",
+    cohort: "core",
+    mode: "retrieval_probe",
+    brandStance: "unbranded",
+    buyerStage: "awareness",
+    marketCode: "US",
+    queryLanguageTag: "en",
+    timeSensitive: true,
+    asOf: "2026-08-18T09:00:00.000Z",
+    expectedAssetTypes: ["blog_guide"],
+    source: "profile",
+    userConfirmed: true,
+    templateId: "geo.retrieval.category_top",
+    templateVersion: "1",
+    retrievalTriggerClause: null,
+    samplesPlanned: 3,
+    ...overrides,
+  };
+}
+
+function natural(overrides: Partial<GeoQueryUnitV1> = {}): GeoQueryUnitV1 {
+  return probe({
+    queryId: "core-brand_comparison",
+    slot: "brand_comparison",
+    text: "How does Acme Analytics compare to other seo tools?",
+    mode: "natural_demand",
+    brandStance: "brand",
+    buyerStage: "decision",
+    timeSensitive: false,
+    asOf: null,
+    templateId: "geo.natural.brand_comparison",
+    samplesPlanned: 1,
+    ...overrides,
+  });
+}
+
+function slot(index = 1, queryId = "core-category_discovery"): GeoExecutionSlot {
+  return { queryIndex: 0, sampleIndex: index, sampleId: `${queryId}-s${index}` };
+}
+
+function annotation(
+  overrides: Partial<GeoProviderCitationAnnotation> = {},
+): GeoProviderCitationAnnotation {
+  return {
+    url: "https://acme.test/pricing",
+    title: "Acme pricing",
+    annotationText: "([acme.test](https://acme.test/pricing))",
+    providerOutputItemIndex: 1,
+    sectionIndex: 0,
+    annotationOrdinal: 0,
+    startIndex: 12,
+    endIndex: 40,
+    spanBasis: "provider_message_section_text",
+    ...overrides,
+  };
+}
+
 function observation(
-  overrides: {
-    readonly citedUrls?: readonly string[];
-    readonly answerText?: string;
-    readonly webSearchPerformed?: boolean;
-  } = {},
-) {
+  overrides: Partial<GeoProviderObservation> = {},
+): GeoProviderObservation {
   return {
     observedAt: "2026-08-17T09:21:39.000Z",
-    webSearchPerformed: overrides.webSearchPerformed ?? true,
-    answerText: overrides.answerText ?? "Several tools cover this.",
-    citedUrls: overrides.citedUrls ?? [],
+    webSearchPerformed: true,
+    answerText: "Several tools cover this.",
+    citations: [],
+    citationsComplete: true,
     costUsd: 0.0457,
     model: "gpt-5-2025-08-07",
+    ...overrides,
   };
 }
 
-describe("normalizeCitedHost", () => {
-  it.each([
-    ["https://acme.test/pricing?utm_source=openai", "acme.test"],
-    ["https://www.acme.test/", "acme.test"],
-    ["https://ACME.test/x", "acme.test"],
-    ["https://acme.test:8443/x", "acme.test"],
-    ["http://docs.acme.test/guide#a", "docs.acme.test"],
-  ] as const)("reduces %s to %s", (url, expected) => {
-    expect(normalizeCitedHost(url)).toBe(expected);
-  });
+function citations(
+  sample: ReturnType<typeof observeToSample>,
+): readonly GeoCitationEvidenceRefV1[] {
+  return sample.evidence.filter(
+    (entry): entry is GeoCitationEvidenceRefV1 => entry.kind === "cited",
+  );
+}
 
-  it.each([
-    "not a url",
-    "ftp://acme.test/x",
-    "mailto:a@acme.test",
-    "https://localhost/",
-  ])("rejects %s", (url) => {
-    expect(normalizeCitedHost(url)).toBeNull();
-  });
-});
-
-describe("mentionsBrand", () => {
-  it.each([
-    ["Acme is one option.", true],
-    ["We recommend ACME today.", true],
-    ["Acme's dashboard helps.", true],
-    ["Try Acme Analytics for this.", true],
-    ["AcmeCorp is unrelated.", false],
-    ["The pinnacle of tooling.", false],
-    ["", false],
-  ] as const)("reads %j as %s", (text, expected) => {
-    expect(mentionsBrand(text, CONTEXT.brandTokens)).toBe(expected);
-  });
-
-  it("ignores a brand token too short to be distinctive", () => {
-    expect(mentionsBrand("We use AI daily.", ["ai"])).toBe(false);
-  });
-});
-
-describe("classifyObservation", () => {
-  it("calls it cited when the target host is among the citations", () => {
-    const sample = classifyObservation(
-      1,
-      observation({
-        citedUrls: [
-          "https://www.acme.test/pricing?utm_source=openai",
-          "https://rival.test/x",
-        ],
-      }),
-      CONTEXT,
-    );
-
-    expect(sample.state).toBe("cited");
-    expect(sample.citedHosts).toEqual(["acme.test", "rival.test"]);
-    expect(sample.competitorHosts).toEqual(["rival.test"]);
-  });
-
-  it("prefers cited over mentioned when the answer does both", () => {
-    const sample = classifyObservation(
-      1,
-      observation({
-        citedUrls: ["https://acme.test/"],
-        answerText: "Acme is the one to use.",
-      }),
-      CONTEXT,
-    );
-
-    expect(sample.state).toBe("cited");
-  });
-
-  it("calls it mentioned when the prose names the brand but cites others", () => {
-    const sample = classifyObservation(
-      1,
-      observation({
-        citedUrls: ["https://rival.test/x"],
-        answerText: "Acme is an option, though this list covers others.",
-      }),
-      CONTEXT,
-    );
-
-    expect(sample.state).toBe("mentioned");
-    expect(sample.citedHosts).not.toContain("acme.test");
-  });
-
-  it("calls it cited_others_only when neither the host nor the name appears", () => {
-    const sample = classifyObservation(
-      1,
-      observation({
-        citedUrls: ["https://rival.test/x", "https://other.test/y"],
-        answerText: "Two established vendors lead here.",
-      }),
-      CONTEXT,
-    );
-
-    expect(sample.state).toBe("cited_others_only");
-    expect(sample.competitorHosts).toEqual(["rival.test", "other.test"]);
-  });
-
-  it("separates an answer that cited nobody from one that cited rivals", () => {
-    const sample = classifyObservation(
-      1,
-      observation({ citedUrls: [], answerText: "Here is a general overview." }),
-      CONTEXT,
-    );
-
-    expect(sample.state).toBe("answer_had_no_citations");
-  });
-
-  it("drops the host lists when the provider never searched", () => {
-    const sample = classifyObservation(
-      1,
+describe("observeToSample", () => {
+  it("records a mention on an answer that never searched", () => {
+    // The old classifier returned early here and threw the mention away, which
+    // is precisely the observation this Agent exists to make: the assistant
+    // answered from its own weights and still named the brand.
+    const sample = observeToSample(
+      slot(),
+      probe(),
       observation({
         webSearchPerformed: false,
-        citedUrls: ["https://acme.test/"],
+        answerText: "Acme Analytics is a common choice.",
       }),
       CONTEXT,
     );
 
-    expect(sample.state).toBe("search_not_performed");
-    expect(sample.citedHosts).toEqual([]);
-    expect(sample.competitorHosts).toEqual([]);
+    expect(sample.answerStatus).toBe("answered");
+    expect(sample.webSearchPerformed).toBe(false);
+    // Annotations were inspected and there were none. That is a fact about this
+    // answer, not an inapplicable question.
+    expect(sample.citationStatus).toBe("observed_none");
+    expect(sample.mentionStatus).toBe("observed");
+    expect(sample.mentionEligibility).toBe("unprompted");
+    expect(sample.recommendationStatus).toBe("not_evaluated");
   });
 
-  it("deduplicates hosts cited more than once", () => {
-    const sample = classifyObservation(
-      1,
+  it("marks a mention prompted when the question itself named the brand", () => {
+    const sample = observeToSample(
+      slot(1, "core-brand_comparison"),
+      natural(),
+      observation({ answerText: "Acme Analytics compares well." }),
+      CONTEXT,
+    );
+
+    // The answer repeated a word the question supplied. That is tautology, not
+    // discovery, and the eligibility field is what keeps it out of the
+    // discovery denominator.
+    expect(sample.mentionEligibility).toBe("prompted");
+    expect(sample.mentionStatus).toBe("observed");
+  });
+
+  it("reports observed_target when the target host is cited", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
       observation({
-        citedUrls: [
-          "https://acme.test/a",
-          "https://www.acme.test/b?utm_source=openai",
+        citations: [
+          annotation(),
+          annotation({
+            url: "https://rival.test/overview",
+            title: "Rival",
+            annotationOrdinal: 1,
+            startIndex: 41,
+            endIndex: 60,
+          }),
         ],
       }),
       CONTEXT,
     );
 
-    expect(sample.citedHosts).toEqual(["acme.test"]);
-  });
-});
-
-describe("aggregateSamples", () => {
-  it("counts only admissible samples in the denominator", () => {
-    const samples = [
-      classifyObservation(
-        1,
-        observation({ citedUrls: ["https://acme.test/"] }),
-        CONTEXT,
-      ),
-      classifyObservation(
-        2,
-        observation({ webSearchPerformed: false }),
-        CONTEXT,
-      ),
-      classifyObservation(3, observation({ citedUrls: [] }), CONTEXT),
-    ];
-
-    const question = aggregateSamples("q-1", "A question?", samples);
-
-    expect(question.aggregate.admissibleSamples).toBe(2);
-    expect(question.aggregate.targetCitedIn).toBe(1);
-    expect(question.aggregate.verdict).toBe("intermittent");
+    expect(sample.citationStatus).toBe("observed_target");
+    expect(citations(sample).map((entry) => entry.ownership)).toEqual([
+      "target",
+      "unknown",
+    ]);
+    // No URL-only classifier can honestly say whether rival.test is a
+    // competitor, a marketplace or a blog.
+    expect(citations(sample).map((entry) => entry.sourceType)).toEqual([
+      "owned_page",
+      "unknown",
+    ]);
   });
 
-  it("reports a wholly search-free question as answered from memory", () => {
-    // Not `inconclusive`. The run learned something definite here: the model
-    // answers this question out of its own weights and cites nobody, so there
-    // is no citation for this site or any competitor to win.
-    const samples = [1, 2, 3].map((index) =>
-      classifyObservation(
-        index,
-        observation({ webSearchPerformed: false }),
-        CONTEXT,
-      ),
+  it("keeps multiple target paths as separate evidence", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({
+        citations: [
+          annotation({ url: "https://acme.test/pricing" }),
+          annotation({
+            url: "https://acme.test/docs",
+            annotationOrdinal: 1,
+            startIndex: null,
+            endIndex: null,
+          }),
+        ],
+      }),
+      CONTEXT,
+    );
+
+    expect(citations(sample).map((entry) => entry.exactUrl)).toEqual([
+      "https://acme.test/pricing",
+      "https://acme.test/docs",
+    ]);
+    expect(sample.citationStatus).toBe("observed_target");
+  });
+
+  it("reports observed_others_only when nobody cited the target", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({
+        citations: [annotation({ url: "https://rival.test/x", title: "Rival" })],
+      }),
+      CONTEXT,
+    );
+
+    expect(sample.citationStatus).toBe("observed_others_only");
+  });
+
+  it("reports observed_none when a searched answer cited nobody", () => {
+    const sample = observeToSample(slot(), probe(), observation(), CONTEXT);
+
+    expect(sample.citationStatus).toBe("observed_none");
+    expect(sample.evidence).toEqual([]);
+  });
+
+  it("preserves the exact URL, title, annotation text and span", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ citations: [annotation()] }),
+      CONTEXT,
+    );
+
+    expect(citations(sample)[0]).toEqual({
+      kind: "cited",
+      evidenceId: "core-category_discovery-s1-c1",
+      exactUrl: "https://acme.test/pricing",
+      domain: "acme.test",
+      title: "Acme pricing",
+      annotationText: "([acme.test](https://acme.test/pricing))",
+      providerOutputItemIndex: 1,
+      sectionIndex: 0,
+      startIndex: 12,
+      endIndex: 40,
+      ownership: "target",
+      sourceType: "owned_page",
+    });
+  });
+
+  it("recomputes the domain rather than trusting one beside the URL", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({
+        citations: [annotation({ url: "https://www.acme.test/pricing" })],
+      }),
+      CONTEXT,
+    );
+
+    expect(citations(sample)[0]!.domain).toBe("acme.test");
+    expect(citations(sample)[0]!.ownership).toBe("target");
+  });
+
+  it("makes citation evaluation unavailable when the list could not be read", () => {
+    // All-or-nothing. A partly-read list would let `observed_none` describe an
+    // answer whose citations the parser simply failed on.
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ citations: [annotation()], citationsComplete: false }),
+      CONTEXT,
+    );
+
+    expect(sample.citationStatus).toBe("unavailable");
+    expect(citations(sample)).toEqual([]);
+    expect(sample.limitations).toContain("citation_extraction_incomplete");
+  });
+
+  // Regression: the snippet is cut from the NFC answer, which still carries the
+  // paragraph breaks the assistant wrote. Un-normalized it failed the report
+  // guard after all eighteen calls had been billed. Found by cross-model review
+  // of /qa's fix on 2026-08-18.
+  it("normalizes the mention snippet it cuts from the answer", () => {
+    const answer = `${"padding ".repeat(40)}\nAcme Analytics\tis  named here.\n${"tail ".repeat(40)}`;
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: answer }),
+      CONTEXT,
+    );
+    const mention = sample.evidence.find((entry) => entry.kind === "mention");
+
+    expect(mention).toBeDefined();
+    if (mention?.kind !== "mention") return;
+    expect(mention.mentionSnippet).not.toBeNull();
+    // No newline, tab, or doubled space survives into the report.
+    expect(mention.mentionSnippet).not.toMatch(/[\n\t]|\s{2}/u);
+    expect(mention.mentionSnippet).toContain("Acme Analytics is named here.");
+  });
+
+  it("keeps mention evidence free of anything that looks like a citation", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: `${"padding ".repeat(60)}Acme is named here.` }),
+      CONTEXT,
+    );
+    const mention = sample.evidence.find((entry) => entry.kind === "mention");
+
+    expect(mention).toBeDefined();
+    expect(Object.keys(mention!)).toEqual([
+      "kind",
+      "evidenceId",
+      "matchedAlias",
+      "mentionSnippet",
+      "snippetBasis",
+    ]);
+    expect(JSON.stringify(mention)).not.toContain("http");
+  });
+
+  it("keeps at most one mention record per sample", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: "Acme and Acme Analytics and Acme again." }),
+      CONTEXT,
     );
 
     expect(
-      aggregateSamples("q-1", "A question?", samples).aggregate,
-    ).toMatchObject({
-      admissibleSamples: 0,
-      verdict: "answered_from_memory",
-    });
+      sample.evidence.filter((entry) => entry.kind === "mention"),
+    ).toHaveLength(1);
   });
 
-  it("stays inconclusive when a failed call sits among the search-free ones", () => {
-    const samples = [
-      classifyObservation(
-        1,
-        observation({ webSearchPerformed: false }),
-        CONTEXT,
-      ),
-      classifyObservation(
-        2,
-        observation({ webSearchPerformed: false }),
-        CONTEXT,
-      ),
-      unavailableSample(3, "provider_timeout"),
-    ];
+  it("omits the snippet when it would reproduce a short whole answer", () => {
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: "Acme is a good option." }),
+      CONTEXT,
+    );
+    const mention = sample.evidence.find((entry) => entry.kind === "mention");
 
-    // The call that never returned might have searched, so "it never searches"
-    // is not something these three samples can support.
-    expect(
-      aggregateSamples("q-1", "A question?", samples).aggregate,
-    ).toMatchObject({
-      admissibleSamples: 0,
-      verdict: "inconclusive",
-    });
+    expect(mention).toMatchObject({ mentionSnippet: null, matchedAlias: "Acme" });
   });
 
-  it("orders samples by index regardless of completion order", () => {
-    const samples = [
-      classifyObservation(3, observation(), CONTEXT),
-      classifyObservation(1, observation(), CONTEXT),
-      classifyObservation(2, observation(), CONTEXT),
-    ];
+  it("reports mention unavailable when the alias set is outside the matcher", () => {
+    // "The matcher cannot answer" and "the answer did not name you" are
+    // different facts, and only one of them is about the customer.
+    const sample = observeToSample(
+      slot(),
+      probe(),
+      observation({ answerText: "Some answer." }),
+      { ...CONTEXT, aliasScope: "out_of_scope" },
+    );
 
-    expect(
-      aggregateSamples("q-1", "A question?", samples).samples.map(
-        (s) => s.sampleIndex,
-      ),
-    ).toEqual([1, 2, 3]);
+    expect(sample.mentionStatus).toBe("unavailable");
+    expect(sample.mentionStatus).not.toBe("not_observed");
+    expect(sample.limitations).toContain("alias_matcher_out_of_scope");
+    expect(sample.evidence.some((entry) => entry.kind === "mention")).toBe(false);
   });
 });
 
-function questions(count: number) {
-  return Array.from({ length: count }, (_value, index) => ({
-    questionId: `q-${index + 1}`,
-    question: `Question number ${index + 1}?`,
-  }));
-}
+describe("unavailableSample", () => {
+  it.each([
+    "provider_no_answer",
+    "provider_error",
+    "transport_error",
+    "transport_outcome_unknown",
+  ] as const)("records %s without inventing an observation", (limitation) => {
+    const sample = unavailableSample(slot(), probe(), CONTEXT, limitation);
 
-function dependencies(
-  provider: GeoProviderClient,
-  overrides: {
-    readonly remainingMs?: () => number;
-    readonly admitCall?: () => boolean;
-  } = {},
-) {
-  const costs: Array<number | null> = [];
-  return {
-    deps: {
-      provider,
-      model: "gpt-5-2025-08-07",
-      marketCode: "US",
-      remainingMs: overrides.remainingMs ?? ((): number => 300_000),
-      admitCall: overrides.admitCall ?? ((): boolean => true),
-      settleCall: (cost: number | null): void => {
-        costs.push(cost);
-      },
-    },
-    costs,
-  };
-}
+    expect(sample.answerStatus).toBe("no_usable_answer");
+    expect(sample.citationStatus).toBe("unavailable");
+    expect(sample.mentionStatus).toBe("unavailable");
+    expect(sample.evidence).toEqual([]);
+    expect(sample.limitations).toEqual([limitation]);
+    expect(sample.observedAt).toBeNull();
+    // Not `false`: a call that produced no answer produced no evidence that a
+    // search did not run either.
+    expect(sample.webSearchPerformed).toBeNull();
+  });
+});
+
+describe("deriveProbeStatus", () => {
+  const answered = (searched: boolean) =>
+    observeToSample(slot(), probe(), observation({ webSearchPerformed: searched }), CONTEXT);
+
+  it("calls a probe valid when every answered sample searched", () => {
+    expect(deriveProbeStatus([answered(true), answered(true)])).toBe("valid");
+  });
+
+  it("calls a probe trigger_failed when no answered sample searched", () => {
+    expect(deriveProbeStatus([answered(false), answered(false)])).toBe(
+      "trigger_failed",
+    );
+  });
+
+  it("keeps a mixed probe as its own verdict rather than rounding it", () => {
+    expect(deriveProbeStatus([answered(true), answered(false)])).toBe(
+      "degraded_mixed_trigger",
+    );
+  });
+
+  it("calls a probe provider_failed when nothing answered", () => {
+    expect(
+      deriveProbeStatus([
+        unavailableSample(slot(), probe(), CONTEXT, "provider_error"),
+      ]),
+    ).toBe("provider_failed");
+  });
+});
+
+describe("assembleQuestion", () => {
+  const searched = (index: number, on: boolean) =>
+    observeToSample(
+      slot(index),
+      probe(),
+      observation({ webSearchPerformed: on }),
+      CONTEXT,
+    );
+
+  it("stamps one probe verdict onto every sample of the question", () => {
+    const question = assembleQuestion(probe(), [
+      searched(1, false),
+      searched(2, false),
+      searched(3, false),
+    ]);
+
+    expect(question.samples.map((sample) => sample.probeStatus)).toEqual([
+      "trigger_failed",
+      "trigger_failed",
+      "trigger_failed",
+    ]);
+    expect(question.samples[0]!.limitations).toContain(
+      "retrieval_trigger_failed",
+    );
+  });
+
+  it("keeps a failed trigger out of the citation denominator", () => {
+    // The wording was measured to reach the live web. When a live run shows it
+    // did not, that is an instrumentation failure, not "the customer was not
+    // cited".
+    const question = assembleQuestion(probe(), [
+      searched(1, false),
+      searched(2, false),
+      searched(3, false),
+    ]);
+
+    expect(question.counts.scheduledSamples).toBe(3);
+    expect(question.counts.answeredSamples).toBe(3);
+    expect(question.counts.citationEvaluableSamples).toBe(0);
+    expect(question.counts.targetCitedIn).toBe(0);
+  });
+
+  it("leaves a natural-demand question with no probe status at all", () => {
+    const question = assembleQuestion(natural(), [
+      observeToSample(
+        slot(1, "core-brand_comparison"),
+        natural(),
+        observation({ webSearchPerformed: false }),
+        CONTEXT,
+      ),
+    ]);
+
+    expect(question.samples[0]!.probeStatus).toBeNull();
+    expect(question.counts.citationEvaluableSamples).toBe(1);
+  });
+
+  it("orders samples by index rather than by completion", () => {
+    const question = assembleQuestion(probe(), [
+      searched(3, true),
+      searched(1, true),
+      searched(2, true),
+    ]);
+
+    expect(question.samples.map((sample) => sample.sampleIndex)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("derives its counts with the same function the guard uses", () => {
+    const question = assembleQuestion(probe(), [
+      searched(1, true),
+      searched(2, true),
+      searched(3, true),
+    ]);
+
+    expect(question.counts).toEqual(deriveGeoSampleCounts(question.samples));
+  });
+});
+
+describe("deriveGeoSampleCounts", () => {
+  it("keeps a failed call out of every positive denominator", () => {
+    const counts = deriveGeoSampleCounts([
+      unavailableSample(slot(1), probe(), CONTEXT, "transport_outcome_unknown"),
+      observeToSample(slot(2), probe(), observation(), CONTEXT),
+    ]);
+
+    expect(counts).toMatchObject({
+      scheduledSamples: 2,
+      answeredSamples: 1,
+      unavailableSamples: 1,
+      // The failed call could not say whether a search ran, so it is not in the
+      // search denominator either.
+      searchEvaluableSamples: 1,
+      searchPerformedSamples: 1,
+      citationEvaluableSamples: 1,
+      mentionEvaluableSamples: 1,
+    });
+  });
+
+  it("gives searchPerformedSamples an honest denominator", () => {
+    const counts = deriveGeoSampleCounts([
+      observeToSample(
+        slot(1),
+        probe(),
+        observation({ webSearchPerformed: false }),
+        CONTEXT,
+      ),
+      unavailableSample(slot(2), probe(), CONTEXT, "provider_error"),
+    ]);
+
+    expect(counts.searchEvaluableSamples).toBe(1);
+    expect(counts.searchPerformedSamples).toBe(0);
+  });
+});
+
+describe("buildGeoExecutionPlan", () => {
+  it("allocates every sample index before any work begins", () => {
+    const plan = buildGeoExecutionPlan([probe(), natural()]);
+
+    expect(plan).toHaveLength(4);
+    expect(plan.map((entry) => entry.sampleId)).toEqual([
+      "core-category_discovery-s1",
+      "core-category_discovery-s2",
+      "core-category_discovery-s3",
+      "core-brand_comparison-s1",
+    ]);
+  });
+
+  it("sums to eighteen for the shipped core_8 mix", () => {
+    const queries = [
+      ...Array.from({ length: 5 }, (_unused, index) =>
+        probe({ queryId: `p${index}` }),
+      ),
+      ...Array.from({ length: 3 }, (_unused, index) =>
+        natural({ queryId: `n${index}` }),
+      ),
+    ];
+
+    expect(buildGeoExecutionPlan(queries)).toHaveLength(18);
+  });
+});
 
 describe("collectGeoSamples", () => {
-  it("takes three samples of every question", async () => {
+  function provider(
+    observe: GeoProviderClient["observe"],
+  ): GeoProviderClient {
+    return { observe };
+  }
+
+  function dependencies(overrides: Record<string, unknown> = {}) {
+    return {
+      provider: provider(vi.fn(async () => Promise.resolve(observation()))),
+      model: "gpt-5-2025-08-07",
+      marketCode: "US",
+      remainingMs: () => 240_000,
+      admitCall: () => true,
+      settleCall: vi.fn(),
+      noteModel: vi.fn(),
+      ...overrides,
+    } as Parameters<typeof collectGeoSamples>[2];
+  }
+
+  it("dispatches exactly the planned number of calls", async () => {
     const observe = vi.fn(async () => Promise.resolve(observation()));
-    const { deps } = dependencies({ observe });
-
-    const result = await collectGeoSamples(questions(8), CONTEXT, deps);
-
-    expect(observe).toHaveBeenCalledTimes(24);
-    expect(result).toHaveLength(8);
-    for (const question of result) {
-      expect(question.samples).toHaveLength(GEO_SAMPLES_PER_QUESTION);
-      expect(question.samples.map((s) => s.sampleIndex)).toEqual([1, 2, 3]);
-    }
-  });
-
-  it("never exceeds the measured concurrency ceiling", async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const observe = vi.fn(async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      inFlight -= 1;
-      return observation();
-    });
-    const { deps } = dependencies({ observe });
-
-    await collectGeoSamples(questions(8), CONTEXT, deps);
-
-    expect(peak).toBeLessThanOrEqual(GEO_MAX_CONCURRENCY);
-    expect(peak).toBeGreaterThan(1);
-  });
-
-  it("books the cost of a failed call and records the sample as unavailable", async () => {
-    const observe = vi.fn(async () => {
-      throw new GeoProviderError("rate_limited", "internal detail", 0.0121);
-    });
-    const { deps, costs } = dependencies({ observe });
-
-    const result = await collectGeoSamples(questions(1), CONTEXT, deps);
-
-    expect(costs).toEqual([0.0121, 0.0121, 0.0121]);
-    expect(result[0]!.aggregate.admissibleSamples).toBe(0);
-    expect(result[0]!.aggregate.verdict).toBe("inconclusive");
-    for (const sample of result[0]!.samples) {
-      expect(sample.state).toBe("unavailable");
-      expect(sample.limitation).toBe("provider_rate_limited");
-    }
-  });
-
-  it("never leaks the provider's own message into the report", async () => {
-    const observe = vi.fn(async () => {
-      throw new GeoProviderError(
-        "server_error",
-        "upstream said something quotable",
-        0,
-      );
-    });
-    const { deps } = dependencies({ observe });
-
-    const result = await collectGeoSamples(questions(1), CONTEXT, deps);
-
-    for (const sample of result[0]!.samples) {
-      // A code, never the provider's own words.
-      expect(sample.limitation).toBe("provider_failed");
-    }
-  });
-
-  it("stops sampling once the cost ceiling refuses another call", async () => {
-    const observe = vi.fn(async () => Promise.resolve(observation()));
-    let admitted = 0;
-    const { deps } = dependencies(
-      { observe },
-      {
-        admitCall: () => {
-          admitted += 1;
-          return admitted <= 4;
-        },
-      },
+    const questions = await collectGeoSamples(
+      [probe(), natural()],
+      CONTEXT,
+      dependencies({ provider: provider(observe) }),
     );
-
-    const result = await collectGeoSamples(questions(4), CONTEXT, deps);
 
     expect(observe).toHaveBeenCalledTimes(4);
-    const unavailable = result
-      .flatMap((q) => q.samples)
-      .filter((s) => s.state === "unavailable");
-    expect(unavailable).toHaveLength(8);
-    expect(unavailable[0]!.limitation).toBe("cost_ceiling");
+    expect(questions.map((question) => question.samples.length)).toEqual([3, 1]);
   });
 
-  it("stops paying for samples once the budget cannot fit another call", async () => {
-    const observe = vi.fn(async () => Promise.resolve(observation()));
-    let remaining = GEO_MIN_BUDGET_FOR_CALL_MS + 1;
-    const { deps } = dependencies(
-      { observe },
-      {
-        remainingMs: () => {
-          remaining -= GEO_MIN_BUDGET_FOR_CALL_MS;
-          return remaining;
-        },
-      },
-    );
-
-    const result = await collectGeoSamples(questions(4), CONTEXT, deps);
-
-    expect(observe.mock.calls.length).toBeLessThan(12);
-    const states = result.flatMap((q) => q.samples.map((s) => s.state));
-    expect(states).toContain("unavailable");
-    expect(result.flatMap((q) => q.samples)).toHaveLength(12);
-  });
-
-  it("produces a payload the frozen report guard accepts", async () => {
-    // The end-to-end check: sampling and the contract must agree, or the run
-    // pays for evidence the client refuses to render.
-    const answers = [
-      observation({ citedUrls: ["https://www.acme.test/a?utm_source=openai"] }),
-      observation({
-        citedUrls: ["https://rival.test/x"],
-        answerText: "Acme is worth a look.",
-      }),
-      observation({ citedUrls: [], answerText: "A general overview." }),
-    ];
+  it("keeps paid results when one call fails", async () => {
     let call = 0;
     const observe = vi.fn(async () => {
-      const next = answers[call % answers.length]!;
       call += 1;
-      return next;
+      if (call === 2) {
+        throw new GeoProviderError("server_error", "boom", 0.01);
+      }
+      return Promise.resolve(observation());
     });
-    const { deps, costs } = dependencies({ observe });
+    const questions = await collectGeoSamples(
+      [probe()],
+      CONTEXT,
+      dependencies({ provider: provider(observe) }),
+    );
 
-    const collected = await collectGeoSamples(questions(8), CONTEXT, deps);
-    const samples = collected.flatMap((q) => q.samples);
-    const observed = samples.filter(
-      (s) => s.state !== "search_not_performed" && s.state !== "unavailable",
-    ).length;
+    expect(questions[0]!.counts.answeredSamples).toBe(2);
+    expect(questions[0]!.counts.unavailableSamples).toBe(1);
+  });
 
-    const envelope: GeoReportSuccessEnvelope = {
-      data: {
-        run: {
-          agent: "geo",
-          mode: "authenticated_agent",
-          persistence: "none",
-          schemaVersion: AGENT_GEO_REPORT_SCHEMA_VERSION,
-          sampledAt: "2026-08-17T09:00:00.000Z",
-          targetHost: CONTEXT.targetHost,
-          provider: {
-            tool: "dataforseo_chat_gpt_llm_responses",
-            model: "gpt-5-2025-08-07",
-            marketCode: "US",
-            languageCode: "en",
-            samplesPerQuestion: GEO_SAMPLES_PER_QUESTION,
-            costUsd: costs.reduce<number>(
-              (total, cost) => total + (cost ?? 0),
-              0,
-            ),
-          },
-        },
-        coverage: {
-          questionsRequested: collected.length,
-          samplesAttempted: samples.length,
-          samplesObserved: observed,
-          samplesSearchNotPerformed: samples.filter(
-            (s) => s.state === "search_not_performed",
-          ).length,
-          samplesUnavailable: samples.filter((s) => s.state === "unavailable")
-            .length,
-          availability: "available",
-        },
-        questions: collected,
-      },
-    };
+  it("never retries a request whose outcome is unknown", async () => {
+    // An aborted call may still have reached the provider, been answered and
+    // been billed. Retrying it would be a nineteenth charge.
+    const observe = vi.fn(async () => {
+      throw new GeoProviderError("timeout", "gone", null);
+    });
+    const questions = await collectGeoSamples(
+      [probe()],
+      CONTEXT,
+      dependencies({ provider: provider(observe) }),
+    );
 
-    expect(isGeoReportSuccessEnvelope(envelope)).toBe(true);
+    expect(observe).toHaveBeenCalledTimes(3);
+    expect(
+      questions[0]!.samples.every((sample) =>
+        sample.limitations.includes("transport_outcome_unknown"),
+      ),
+    ).toBe(true);
+  });
+
+  it("stops issuing calls when the time budget runs out", async () => {
+    const observe = vi.fn(async () => Promise.resolve(observation()));
+    const questions = await collectGeoSamples(
+      [probe()],
+      CONTEXT,
+      dependencies({
+        provider: provider(observe),
+        remainingMs: () => GEO_MIN_BUDGET_FOR_CALL_MS - 1,
+      }),
+    );
+
+    expect(observe).not.toHaveBeenCalled();
+    expect(
+      questions[0]!.samples.every((sample) =>
+        sample.limitations.includes("time_budget"),
+      ),
+    ).toBe(true);
+  });
+
+  it("records the cost ceiling rather than silently dropping the sample", async () => {
+    const questions = await collectGeoSamples(
+      [probe()],
+      CONTEXT,
+      dependencies({ admitCall: () => false }),
+    );
+
+    expect(questions[0]!.samples).toHaveLength(3);
+    expect(questions[0]!.counts.unavailableSamples).toBe(3);
+  });
+
+  it("reports every observed model label to the caller", async () => {
+    const noteModel = vi.fn();
+    await collectGeoSamples(
+      [natural()],
+      CONTEXT,
+      dependencies({ noteModel }),
+    );
+
+    expect(noteModel).toHaveBeenCalledWith("gpt-5-2025-08-07");
+  });
+
+  it("orders samples by plan position, not by completion order", async () => {
+    let call = 0;
+    const observe = vi.fn(async () => {
+      call += 1;
+      const delay = call === 1 ? 5 : 0;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return observation();
+    });
+    const questions = await collectGeoSamples(
+      [probe()],
+      CONTEXT,
+      dependencies({ provider: provider(observe) }),
+    );
+
+    expect(questions[0]!.samples.map((sample) => sample.sampleIndex)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+});
+
+describe("probe verdict and per-sample trigger marking", () => {
+  const answered = (index: number, searched: boolean) =>
+    observeToSample(
+      slot(index),
+      probe(),
+      observation({ webSearchPerformed: searched }),
+      CONTEXT,
+    );
+
+  it("marks only the calls that actually failed to trigger", () => {
+    // Citation evaluability is judged per sample, so a mixed probe's unsearched
+    // call leaves the denominator — and a sample that leaves without saying why
+    // is a number the report cannot explain.
+    const question = assembleQuestion(probe(), [
+      answered(1, true),
+      answered(2, false),
+      answered(3, true),
+    ]);
+
+    expect(question.samples.map((sample) => sample.probeStatus)).toEqual([
+      "degraded_mixed_trigger",
+      "degraded_mixed_trigger",
+      "degraded_mixed_trigger",
+    ]);
+    expect(
+      question.samples.map((sample) =>
+        sample.limitations.includes("retrieval_trigger_failed"),
+      ),
+    ).toEqual([false, true, false]);
+    // Two searched calls counted, the unsearched one excluded.
+    expect(question.counts.citationEvaluableSamples).toBe(2);
+  });
+
+  it("judges the verdict only over samples that could say whether a search ran", () => {
+    const failed = unavailableSample(
+      slot(1),
+      probe(),
+      CONTEXT,
+      "transport_outcome_unknown",
+    );
+
+    // The failed call carries no search evidence either way, so it cannot drag
+    // the verdict toward "never searched".
+    expect(deriveProbeStatus([failed, answered(2, true)])).toBe("valid");
+    expect(deriveProbeStatus([failed])).toBe("provider_failed");
   });
 });

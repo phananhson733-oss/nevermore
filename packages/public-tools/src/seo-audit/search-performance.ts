@@ -147,6 +147,9 @@ function bandRecord(
     state: measured === null ? "unverified" : "observed",
     unit: "pages",
     population: "conditional_subset",
+    // Property-level numbers; whether the named page sat in this
+    // population is answered by the coverage record, not by each share.
+    targetTested: null,
     tested: measured === null ? 0 : 1,
     affected: observations.length,
     observations,
@@ -193,6 +196,9 @@ function coverageRecord(
     state: measurable ? "observed" : "unverified",
     unit: "pages",
     population: "every_collected_page",
+    // Property-level numbers; whether the named page sat in this
+    // population is answered by the coverage record, not by each share.
+    targetTested: null,
     tested: measurable ? pages.length : 0,
     affected: measurable ? uncovered.length : 0,
     observations: (measurable ? uncovered : []).map((page) => ({
@@ -242,6 +248,9 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
     state: "unverified",
     unit: "pages",
     population: "conditional_subset",
+    // Property-level numbers; whether the named page sat in this
+    // population is answered by the coverage record, not by each share.
+    targetTested: null,
     tested: 0,
     affected: 0,
     observations: [],
@@ -308,6 +317,9 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
     state: "observed",
     unit: "pages",
     population: "conditional_subset",
+    // Property-level numbers; whether the named page sat in this
+    // population is answered by the coverage record, not by each share.
+    targetTested: null,
     tested: 1,
     // One affected observation, which is what makes the rule run at all:
     // `issueSeverity` reads `affected === 0` as a clean pass before it ever

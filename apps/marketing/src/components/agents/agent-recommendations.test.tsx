@@ -31,6 +31,7 @@ function record(
     state: "observed",
     unit: "pages",
     population: "every_collected_page" as const,
+    targetTested: null,
     tested: 12,
     affected,
     observations: [

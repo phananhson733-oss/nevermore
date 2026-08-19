@@ -15,6 +15,9 @@
  * `keyword-llm-client.ts` uses for the same reason.
  */
 
+import { codePointLength } from "./geo-canonical.ts";
+import { normalizeGeoCitationUrl } from "./geo-url.ts";
+
 /** Minimal `fetch` shape so a test can inject a fixture without touching DOM types. */
 export type GeoProviderFetch = (
   input: string,
@@ -86,17 +89,55 @@ export class GeoProviderError extends Error {
 }
 
 /**
+ * One visible citation attached to the answer.
+ *
+ * A citation, and nothing more. These are the annotations the provider hangs on
+ * the answer prose; they are not OpenAI's `sources` list, not a retrieval trace,
+ * and not the text of the page they point at. `annotationText` in particular is
+ * the anchor the answer itself carries — typically a markdown link — and calling
+ * it a source-page excerpt would be inventing a fact the payload never had.
+ */
+export interface GeoProviderCitationAnnotation {
+  readonly url: string;
+  readonly title: string | null;
+  /** Text attached to the answer annotation, not a source-page excerpt. */
+  readonly annotationText: string | null;
+  /** Raw provider output-item index, not an ordinal among message items. */
+  readonly providerOutputItemIndex: number;
+  readonly sectionIndex: number;
+  /** Position of this annotation within its section's annotation array. */
+  readonly annotationOrdinal: number;
+  readonly startIndex: number | null;
+  readonly endIndex: number | null;
+  readonly spanBasis: "provider_message_section_text";
+}
+
+/** Most citations one sample may carry; calibration saw one answer cite 14. */
+export const GEO_MAX_CITATIONS_PER_SAMPLE = 40;
+
+/** Longest annotation values kept verbatim; longer ones are dropped, never cut. */
+export const GEO_MAX_ANNOTATION_TITLE_CODE_POINTS = 200;
+export const GEO_MAX_ANNOTATION_TEXT_CODE_POINTS = 240;
+
+/**
  * One observed answer.
  *
  * `answerText` is the message prose only. It exists so the caller can decide
  * whether the brand was named, and is never persisted into the report — the
- * report keeps hosts, counts and a bounded excerpt, not a third party's text.
+ * report keeps bounded evidence, not a third party's text.
+ *
+ * `citationsComplete` is the honest half of the citation list. Extraction is
+ * all-or-nothing per sample: if the annotation collection could not be safely
+ * enumerated, a partial list would let the report say "cited nobody" or "cited
+ * only others" about an answer whose citations it failed to read. The flag lets
+ * the sampler record `unavailable` instead of a confident wrong answer.
  */
 export interface GeoProviderObservation {
   readonly observedAt: string;
   readonly webSearchPerformed: boolean;
   readonly answerText: string;
-  readonly citedUrls: readonly string[];
+  readonly citations: readonly GeoProviderCitationAnnotation[];
+  readonly citationsComplete: boolean;
   readonly costUsd: number | null;
   readonly model: string;
 }
@@ -274,27 +315,114 @@ function readAnswerText(items: readonly unknown[]): string {
 }
 
 /**
- * Collect citation URLs from a result.
+ * Keep the provider's whole value, or nothing. Never a shortened version of it.
+ *
+ * This transport layer does not normalize: the caller decides what the record
+ * it is building requires. `observeToSample` folds whitespace and applies NFC
+ * before these strings enter the report, because the report contract accepts
+ * only normalized text. Do not read "verbatim" here as a promise the reader
+ * sees byte-for-byte what the provider sent — it promises only that nothing was
+ * truncated or paraphrased.
+ */
+function boundedVerbatim(value: unknown, limit: number): string | null {
+  if (typeof value !== "string") return null;
+  // Dropped rather than truncated. The report says these strings are complete,
+  // and a silently shortened one would make that sentence false for the record
+  // that carries it.
+  return value.length > 0 && codePointLength(value) <= limit ? value : null;
+}
+
+/**
+ * Read the annotation's answer span, or decide it does not have a usable one.
+ *
+ * Zero-based, end-exclusive UTF-16 offsets into this section's own text — the
+ * provider numbers them per section, not into the newline-joined answer, which
+ * is why the section location travels with every citation. An out-of-range or
+ * reversed pair makes both ends null rather than being clamped: a repaired span
+ * points somewhere the provider never pointed.
+ */
+function readSpan(
+  annotation: Readonly<Record<string, unknown>>,
+  sectionTextLength: number,
+): { readonly startIndex: number | null; readonly endIndex: number | null } {
+  const start = annotation.start_index;
+  const end = annotation.end_index;
+  if (
+    Number.isSafeInteger(start) &&
+    Number.isSafeInteger(end) &&
+    (start as number) >= 0 &&
+    (start as number) <= (end as number) &&
+    (end as number) <= sectionTextLength
+  ) {
+    return { startIndex: start as number, endIndex: end as number };
+  }
+  return { startIndex: null, endIndex: null };
+}
+
+interface CitationExtraction {
+  readonly citations: readonly GeoProviderCitationAnnotation[];
+  readonly complete: boolean;
+}
+
+/**
+ * Collect citation annotations from a result, and say whether the list is whole.
  *
  * An annotation counts when it has no `type` key at all or when that key is
  * `url_citation`. Every annotation the provider actually returned in
  * calibration was of the first kind — `{title, url, start_index, end_index,
  * text}` with no `type` — so a parser that requires `type === "url_citation"`
- * silently finds nothing. Restricted to `message` items for the same reason as
- * the prose above.
+ * silently finds nothing. Restricted to `message` items, because the sibling
+ * `reasoning` items are the model's scratchpad: a source it merely considered
+ * is not a source it cited.
+ *
+ * Two failure modes are deliberately different. A bare `{url}` with no title and
+ * no anchor text is a shape the provider has never emitted, and it is REJECTED
+ * without making the list incomplete — otherwise an injected object could push
+ * every sample to `unavailable`. Anything the parser cannot read at all — a
+ * non-array annotation collection, an annotation that is not an object, a
+ * citation-shaped entry whose URL will not normalize — makes the list
+ * INCOMPLETE, because the alternative is reporting "cited nobody" about an
+ * answer whose citations were unreadable.
  */
-function readCitationUrls(items: readonly unknown[]): readonly string[] {
-  const urls = new Set<string>();
-  for (const item of items) {
+function readCitations(items: readonly unknown[]): CitationExtraction {
+  const citations: GeoProviderCitationAnnotation[] = [];
+  const seen = new Set<string>();
+  let complete = true;
+
+  for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+    const item = items[itemIndex];
     if (!isObject(item) || item.type !== "message") continue;
     const sections = item.sections;
-    if (!Array.isArray(sections)) continue;
-    for (const section of sections) {
-      if (!isObject(section)) continue;
+    if (!Array.isArray(sections)) {
+      complete = false;
+      continue;
+    }
+
+    for (
+      let sectionIndex = 0;
+      sectionIndex < sections.length;
+      sectionIndex += 1
+    ) {
+      const section = sections[sectionIndex];
+      if (!isObject(section)) {
+        complete = false;
+        continue;
+      }
       const annotations = section.annotations;
-      if (!Array.isArray(annotations)) continue;
-      for (const annotation of annotations) {
-        if (!isObject(annotation)) continue;
+      if (annotations === undefined || annotations === null) continue;
+      if (!Array.isArray(annotations)) {
+        complete = false;
+        continue;
+      }
+      const sectionTextLength =
+        typeof section.text === "string" ? section.text.length : 0;
+
+      for (let ordinal = 0; ordinal < annotations.length; ordinal += 1) {
+        const annotation = annotations[ordinal];
+        if (!isObject(annotation)) {
+          complete = false;
+          continue;
+        }
         if (
           annotation.type !== undefined &&
           annotation.type !== "url_citation"
@@ -307,28 +435,57 @@ function readCitationUrls(items: readonly unknown[]): readonly string[] {
         // cites; requiring one of those keeps a bare `{url}` object, which the
         // provider has never emitted, from being counted as a citation the
         // answer never made.
-        if (
-          typeof annotation.title !== "string" &&
-          typeof annotation.text !== "string"
-        ) {
+        const looksLikeCitation =
+          typeof annotation.title === "string" ||
+          typeof annotation.text === "string";
+        if (!looksLikeCitation) continue;
+
+        const url = normalizeGeoCitationUrl(annotation.url);
+        if (url === null) {
+          complete = false;
           continue;
         }
-        const url = annotation.url;
-        if (typeof url !== "string") continue;
-        let parsed: URL;
-        try {
-          parsed = new URL(url);
-        } catch {
+        if (citations.length >= GEO_MAX_CITATIONS_PER_SAMPLE) {
+          complete = false;
           continue;
         }
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          continue;
-        }
-        urls.add(parsed.href);
+
+        const span = readSpan(annotation, sectionTextLength);
+        // Never host alone, and never URL alone: the same page cited at two
+        // places in one answer is two observations, and two same-URL
+        // annotations with no span in one section are still two annotations —
+        // which is why the ordinal joins the key exactly when the span is null.
+        const key = [
+          url,
+          itemIndex,
+          sectionIndex,
+          span.startIndex ?? `o${ordinal}`,
+          span.endIndex ?? "",
+        ].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        citations.push({
+          url,
+          title: boundedVerbatim(
+            annotation.title,
+            GEO_MAX_ANNOTATION_TITLE_CODE_POINTS,
+          ),
+          annotationText: boundedVerbatim(
+            annotation.text,
+            GEO_MAX_ANNOTATION_TEXT_CODE_POINTS,
+          ),
+          providerOutputItemIndex: itemIndex,
+          sectionIndex,
+          annotationOrdinal: ordinal,
+          ...span,
+          spanBasis: "provider_message_section_text",
+        });
       }
     }
   }
-  return [...urls];
+
+  return { citations, complete };
 }
 
 /**
@@ -523,11 +680,26 @@ class HttpGeoProviderClient implements GeoProviderClient {
       );
     }
 
+    // Coercing a missing flag to `false` would manufacture "did not search" out
+    // of "could not tell", and that fabricated observation would then be
+    // reported as an instrumentation failure or, on a natural-demand question,
+    // as a fact about the answer. Fail closed instead: the sample becomes an
+    // honest no-usable-answer.
+    if (typeof result.web_search !== "boolean") {
+      throw new GeoProviderError(
+        "invalid_response",
+        "The provider result did not say whether a web search ran.",
+        cost,
+      );
+    }
+
+    const extraction = readCitations(items);
     return {
       observedAt,
-      webSearchPerformed: result.web_search === true,
+      webSearchPerformed: result.web_search,
       answerText,
-      citedUrls: readCitationUrls(items),
+      citations: extraction.citations,
+      citationsComplete: extraction.complete,
       costUsd: cost,
       model:
         typeof result.model_name === "string" && result.model_name !== ""

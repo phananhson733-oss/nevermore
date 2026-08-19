@@ -180,3 +180,140 @@ describe("buildTargetPageExtract", () => {
     expect(extract.openingText).toBeNull();
   });
 });
+
+/**
+ * The on-page facts the checker reports beyond keyword placement.
+ *
+ * Split in two on purpose. `response` comes from the crawl's own HTTP journey
+ * and is always known once a page was collected. `declared` comes from markup
+ * the crawler parses beside the frozen projection, and is optional on the page
+ * record — so a crawl that did not carry it reports null rather than a page
+ * that declared nothing.
+ */
+describe("buildTargetPageExtract on-page facts", () => {
+  const onPage = {
+    lang: "en",
+    openGraph: {
+      title: "Free Birth Chart Calculator",
+      description: "What the card says.",
+      image: "https://www.astrologywiki.com/card.png",
+    },
+    twitterCard: "summary_large_image",
+    viewport: "width=device-width, initial-scale=1",
+    charset: "utf-8",
+    faviconDeclared: true,
+    hreflang: ["en"],
+    images: {
+      total: 4,
+      withAlt: 3,
+      withEmptyAlt: 1,
+      withoutAlt: 0,
+      withDimensions: 2,
+      lazyLoaded: 1,
+    },
+    externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
+    htmlBytes: 31_744,
+    visibleTextBytes: 10_729,
+    scriptBytes: 4_096,
+    interactive: {
+      forms: 1,
+      inputs: 3,
+      buttons: 1,
+      selects: 0,
+      textareas: 0,
+      canvases: 0,
+      media: 0,
+      iframes: 0,
+    },
+    textMetrics: { cjkChars: 0, nonCjkWords: 1_800, denseChars: 9_000 },
+    imageFormats: [],
+    headingLevels: [1],
+    termFrequencies: [
+      { size: 1, rows: [{ phrase: "astrology", count: 42 }] },
+    ],
+  } as const;
+
+  it("reports what the page declared", () => {
+    const extract = buildTargetPageExtract(projection(), onPage);
+
+    // `textMetrics` is deliberately not among them: it is how the body was
+    // measured, not something the markup declared, and it leaves through
+    // `staticBodyUnits` instead.
+    const {
+      textMetrics: _measured,
+      termFrequencies: _terms,
+      // Measurements too, for the same reason: how the body and its images were
+      // counted, not something the markup declared.
+      imageFormats: _formats,
+      headingLevels: _levels,
+      ...declared
+    } = onPage;
+    expect(extract.declared).toEqual(declared);
+  });
+
+  it("publishes the body length in units every script can be counted in", () => {
+    const latin = buildTargetPageExtract(projection(), onPage);
+    expect(latin.staticBodyUnits).toEqual({ units: 1_800, basis: "words" });
+
+    const chinese = buildTargetPageExtract(projection(), {
+      ...onPage,
+      textMetrics: { cjkChars: 4_200, nonCjkWords: 40, denseChars: 4_300 },
+    });
+    // A Chinese page used to have no length at all here, which the score read
+    // as a page too thin to rank.
+    expect(chinese.staticBodyUnits).toEqual({ units: 4_240, basis: "mixed" });
+    expect(chinese.staticBodyWords).toBeNull();
+  });
+
+  it("decides the withheld word count on the body, not on its opening", () => {
+    // English opening, Chinese body. Measured on the 500-character excerpt this
+    // page passed the threshold and published a whitespace count of about 40
+    // for five thousand characters of Chinese — read downstream as thin.
+    const extract = buildTargetPageExtract(
+      projection({ bodyExcerpt: "An English opening sentence, and then more." }),
+      { ...onPage, textMetrics: { cjkChars: 5_000, nonCjkWords: 40, denseChars: 5_200 } },
+    );
+
+    expect(extract.staticBodyWords).toBeNull();
+    expect(extract.staticBodyUnits?.units).toBe(5_040);
+  });
+
+  it("reports the crawl's own HTTP journey", () => {
+    const extract = buildTargetPageExtract(
+      projection({
+        redirectChain: ["https://astrologywiki.com/"],
+        jsonLd: { types: ["Organization", "WebSite"], errorCount: 1 },
+        internalOutlinks: [
+          { targetSubjectUrl: "https://x.test/a", rel: null, anchorText: "A" },
+          { targetSubjectUrl: "https://x.test/b", rel: null, anchorText: null },
+        ],
+      }),
+      onPage,
+    );
+
+    expect(extract.response).toEqual({
+      status: 200,
+      finalStatus: 200,
+      redirectHops: 1,
+      responseMs: 98,
+      contentType: "text/html; charset=utf-8",
+      canonicalTarget: "https://www.astrologywiki.com/",
+      robotsIndexable: true,
+      robotsDirectives: [],
+      sitemapMember: true,
+      jsonLdTypes: ["Organization", "WebSite"],
+      jsonLdErrorCount: 1,
+      internalOutlinks: 2,
+      internalOutlinksWithoutAnchorText: 1,
+    });
+  });
+
+  it("says null rather than inventing a page that declared nothing", () => {
+    // A crawl record without the side-car: unknown, which is not the same fact
+    // as a page carrying no Open Graph tags.
+    const extract = buildTargetPageExtract(projection());
+
+    expect(extract.declared).toBeNull();
+    expect(extract.response.status).toBe(200);
+  });
+})

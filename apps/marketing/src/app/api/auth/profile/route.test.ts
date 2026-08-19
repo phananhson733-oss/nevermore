@@ -32,7 +32,7 @@ describe("GET /api/auth/profile", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      data: { email: "ada@example.test" },
+      data: { email: "ada@example.test", avatarUrl: null },
     });
   });
 
@@ -46,7 +46,7 @@ describe("GET /api/auth/profile", () => {
       withUser({ id: "abc", email });
 
       await expect((await GET()).json()).resolves.toEqual({
-        data: { email: null },
+        data: { email: null, avatarUrl: null },
       });
     }
   });

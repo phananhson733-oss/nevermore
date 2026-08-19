@@ -95,6 +95,7 @@ describe("useAccount", () => {
     expect(seen).toEqual({
       status: "signed-in",
       email: "ada@example.test",
+      avatarUrl: null,
       balance: { total: 140, welfareRemaining: 560 },
     });
   });
@@ -113,6 +114,7 @@ describe("useAccount", () => {
     expect(seen).toEqual({
       status: "signed-in",
       email: "ada@example.test",
+      avatarUrl: null,
       balance: null,
     });
   });

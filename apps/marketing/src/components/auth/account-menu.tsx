@@ -12,6 +12,24 @@ import { localePath } from "../../lib/locale-path";
 import type { AccountState } from "../../lib/auth/use-account.ts";
 import { signOut } from "./sign-out-action.ts";
 
+/** The avatar is 36px (`size-9`); ask for it at 2x, cropped, in WebP. */
+const AVATAR_SIZE_SUFFIX = "=s72-c-rw";
+
+/**
+ * Ask Google for the size we actually draw, instead of its default.
+ *
+ * The options go after the FIRST `=`, replacing whatever is already there.
+ * Google ships these URLs ending in `=s96-c`, and appending rather than
+ * replacing produces `=s96-c=s72-c-rw`, which is a hard 400 — a broken image
+ * for every signed-in visitor rather than a merely oversized one.
+ */
+function sizedAvatar(url: string): string {
+  const options = url.indexOf("=");
+  return options === -1
+    ? `${url}${AVATAR_SIZE_SUFFIX}`
+    : `${url.slice(0, options)}${AVATAR_SIZE_SUFFIX}`;
+}
+
 /** The one glyph on the avatar. Falls back to a dot rather than an empty circle. */
 function initial(email: string | null): string {
   const first = email?.trim().charAt(0) ?? "";
@@ -44,6 +62,8 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
   const locale = useLocale();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  // A hotlinked Google photo can 400 for reasons we cannot see from here.
+  const [photoFailed, setPhotoFailed] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -84,7 +104,10 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
   }, []);
 
   if (account.status !== "signed-in") return null;
-  const { email, balance } = account;
+  const { email, balance, avatarUrl } = account;
+  // One production account signed in without Google and has no photo at all,
+  // so the monogram is the normal path, not just the error path.
+  const photo = avatarUrl !== null && !photoFailed ? avatarUrl : null;
 
   return (
     <div
@@ -111,9 +134,28 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={email ?? t("label")}
-        className="flex size-9 items-center justify-center rounded-full border border-brand-border-card bg-brand-panel-raised text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50"
+        className="flex size-9 items-center justify-center overflow-hidden rounded-full border border-brand-border-card bg-brand-panel-raised text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50"
       >
-        {initial(email)}
+        {photo === null ? (
+          initial(email)
+        ) : (
+          /* Plain <img>, not next/image: this matches how the rest of the site
+             loads remote pictures, needs no remotePatterns entry, and keeps the
+             fetch on the visitor's own connection rather than routing every
+             avatar through one datacentre IP.
+
+             The alt is empty because the button already carries the account as
+             its accessible name; naming the image too would say it twice. */
+          <img
+            src={sizedAvatar(photo)}
+            alt=""
+            width={36}
+            height={36}
+            referrerPolicy="no-referrer"
+            onError={() => setPhotoFailed(true)}
+            className="size-full object-cover"
+          />
+        )}
       </button>
 
       {open ? (

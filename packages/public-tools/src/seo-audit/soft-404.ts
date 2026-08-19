@@ -3,7 +3,7 @@
 // @pos    -- pure; the detection behind A4 and 1.8, and the reason both are safe
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { countTextUnits, type TextUnits } from "./keyword-evidence/text-units.ts";
+import type { TextUnits } from "./keyword-evidence/text-units.ts";
 import type { SeoAuditPage } from "./types.ts";
 
 /**
@@ -73,20 +73,45 @@ export interface SoftNotFoundVerdict {
  */
 export function softNotFoundVerdict(
   page: SeoAuditPage,
-  /** Read from the raw crawl: the published page carries no body text. */
-  bodyText: string | null | undefined,
+  /**
+   * The whole body's text measure, from the raw crawl.
+   *
+   * `main` already counts CJK code points one unit each and the remaining
+   * whitespace runs separately, which is exactly the measure this needs and the
+   * reason a whitespace word count cannot be used: a Chinese page has no spaces
+   * and splits into one or two "words", so a published word floor would mark
+   * EVERY page of a Chinese site as a soft 404 — at Blocker severity, on a
+   * product whose own site is Chinese first.
+   */
+  textMetrics: {
+    readonly cjkChars: number;
+    readonly nonCjkWords: number;
+  } | null,
+  /** Opening text, for the phrase match. Null when the crawl captured none. */
+  openingText: string | null,
 ): SoftNotFoundVerdict | null {
   if (page.finalStatus !== 200) return null;
-  if (bodyText === undefined || bodyText === null) return null;
+  if (textMetrics === null) return null;
 
-  const bodyUnits = countTextUnits(bodyText);
-  if (bodyUnits.units >= SOFT_404_BODY_FLOOR_UNITS) return null;
+  const units = textMetrics.cjkChars + textMetrics.nonCjkWords;
+  if (units >= SOFT_404_BODY_FLOOR_UNITS) return null;
 
-  const searched = `${page.title ?? ""} ${bodyText.slice(0, OPENING_CHARS)}`;
+  const searched = `${page.title ?? ""} ${(openingText ?? "").slice(0, OPENING_CHARS)}`;
   for (const phrase of NOT_FOUND_PHRASES) {
     const match = phrase.exec(searched);
     if (match !== null) {
-      return { matchedPhrase: match[0], bodyUnits };
+      return {
+        matchedPhrase: match[0],
+        bodyUnits: {
+          units,
+          basis:
+            textMetrics.cjkChars > 0 && textMetrics.nonCjkWords > 0
+              ? "mixed"
+              : textMetrics.cjkChars > 0
+                ? "cjk_chars"
+                : "words",
+        },
+      };
     }
   }
   return null;

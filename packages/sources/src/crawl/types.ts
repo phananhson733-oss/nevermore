@@ -1,3 +1,4 @@
+import type { ParsedOnPageFacts } from "./parse-page.ts";
 /**
  * Crawl adapter types (spec §7.3). The crawl ENGINE (`engine.ts`) performs the
  * SSRF-safe BFS fetch and produces a `CrawlRaw` site graph; the crawl ADAPTER
@@ -137,64 +138,18 @@ export interface CrawlParams {
  * Evidence/PageSnapshot lineage; projection status/finalStatus describe that
  * journey's initial/terminal responses and redirectChain retains its targets.
  */
-/**
- * What one `<img>` contributes to the image checks.
- *
- * `src` is kept verbatim rather than resolved: the only thing read from it is
- * the file extension, and resolving it against the page would turn a broken or
- * templated reference into a URL that looks measured.
- */
-export interface CrawlImageObservation {
-  readonly src: string | null;
-  /** Whether an alt attribute was present at all, empty or not. */
-  readonly hasAltAttribute: boolean;
-  /** Whether that attribute carried text. An empty alt is a deliberate mark. */
-  readonly altHasText: boolean;
-}
-
-/**
- * Page facts the audit reads that `crawl.page.v1` does not carry.
- *
- * Deliberately on the record and not on the projection. The projection is a
- * persisted, versioned contract read back by a `.strict()` Zod schema in the
- * product app, so one added field would fail validation on every row already
- * stored. These live beside it, in memory, for the length of one run — the same
- * place `htmlLanguage` and the frontier targets already live.
- */
-export interface CrawlPageAssets {
-  readonly images: readonly CrawlImageObservation[];
-  /** True count, so a page past `maxImages` still reports its real total. */
-  readonly imageCount: number;
-  /**
-   * Images with no alt attribute at all, counted over every one of them.
-   *
-   * Separate from `images` because that list is capped: a page with 350 images
-   * whose last fifty have no alt produced no observation and was published as
-   * fully covered. The verdict must not depend on where the cap fell.
-   */
-  readonly imagesWithoutAltAttribute: number;
-  readonly openGraph: {
-    readonly title: boolean;
-    readonly description: boolean;
-    readonly image: boolean;
-  };
-  /**
-   * Heading levels in document order, collected independently of the text
-   * filter and of the closing-tag requirement the text collector applies.
-   * An icon-only `<h2>` still occupies a level, and dropping it would
-   * fabricate a skip that the document does not contain.
-   */
-  readonly headingLevels: readonly number[];
-  /** Normalised body text, for measures the frozen `wordCount` cannot express. */
-  readonly bodyText: string | null;
-}
-
 export interface CrawlPageRecord {
   readonly subjectUrl: string;
   readonly depth: number;
   readonly projection: CrawlPageProjection;
-  /** Absent for a record built before this existed, or by a fixture. */
-  readonly assets?: CrawlPageAssets;
+  /**
+   * On-page facts the public checker reads, beside the frozen projection.
+   *
+   * Optional because `crawl.page.v1` is what the product persists and what its
+   * OpenAPI and Zod contracts pin: every existing producer and consumer of a
+   * page record stays correct without knowing this field exists.
+   */
+  readonly onPage?: ParsedOnPageFacts;
 }
 
 /**

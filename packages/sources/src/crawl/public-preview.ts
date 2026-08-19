@@ -27,6 +27,34 @@ export type { CrawlRaw } from "./types.ts";
  */
 export { CRAWL_PROJECTION_LIMITS } from "./types.ts";
 export type { CrawlPageProjection } from "../observations.ts";
+/**
+ * On-page facts collected beside the frozen `crawl.page.v1` projection. The
+ * public tools read them; nothing persists them.
+ */
+export type { ParsedOnPageFacts } from "./parse-page.ts";
+/**
+ * The parser itself, so a test can drive the real collectors over real HTML.
+ * Every payload guard in the public tools is written against what this emits.
+ */
+export { parsePage } from "./parse-page.ts";
+/**
+ * The ordered form of the same counting, plus the tables built from it.
+ *
+ * Exported so the audit's own unit counter can be held to it over a real
+ * corpus: the leaderboard's rows are divided by a total the other counter
+ * publishes, and two implementations that drift put one page's length beside
+ * another page's percentages.
+ */
+export {
+  buildTermFrequencyTables,
+  isCjkUnit,
+  TERM_TABLE_LIMITS,
+  unitStream,
+} from "./term-frequency.ts";
+export type {
+  TermFrequencyRow,
+  TermFrequencyTable,
+} from "./term-frequency.ts";
 
 export const PUBLIC_PREVIEW_CRAWL_USER_AGENT =
   "GenGrowth-Public-Tools-Crawler/1.0 (+https://gengrowth.ai/tools)";
