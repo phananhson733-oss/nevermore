@@ -25,9 +25,13 @@ import { readAgentSearchPerformance } from "./search-performance.ts";
 import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import {
   buildPagePerformanceRecords,
+  type PagePerformanceGap,
   type PagePerformanceRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
-import { defaultPagePerformanceReader } from "./page-performance-reader.ts";
+import {
+  defaultPagePerformanceReader,
+  type PagePerformanceReadResult,
+} from "./page-performance-reader.ts";
 import {
   buildSerpShapeRecords,
   type SerpShapeRaw,
@@ -92,7 +96,7 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readPagePerformance?: (input: {
     readonly url: string;
-  }) => Promise<PagePerformanceRaw | null>;
+  }) => Promise<PagePerformanceReadResult>;
   /**
    * One live results-page sample for the confirmed query, or null.
    *
@@ -140,7 +144,11 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   reportAs: "agent-audit",
   readSearchPerformance: (input) => readAgentSearchPerformance(input),
   readPagePerformance: (input) =>
-    defaultPagePerformanceReader()?.(input) ?? Promise.resolve(null),
+    defaultPagePerformanceReader()?.(input) ??
+    Promise.resolve({
+      status: "unavailable" as const,
+      reason: "no_field_data" as const,
+    }),
   readSerpShape: (input) =>
     defaultSerpShapeReader()?.(input) ?? Promise.resolve(null),
 };
@@ -499,14 +507,19 @@ export async function handleAgentAuditRequest(
   // produce nothing — no key, no field data, a slow answer, a shared-quota 429
   // — is the same settled outcome, and the records name which one.
   let pagePerformance: PagePerformanceRaw | null = null;
+  let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   if (result.targetInspected) {
     try {
-      pagePerformance =
-        (await dependencies.readPagePerformance?.({
-          url: result.inspectedTargetUrl ?? result.targetUrl,
-        })) ?? null;
+      const read = await dependencies.readPagePerformance?.({
+        url: result.inspectedTargetUrl ?? result.targetUrl,
+      });
+      if (read?.status === "ok") {
+        pagePerformance = read.field;
+      } else if (read !== undefined) {
+        pagePerformanceGap = read.reason;
+      }
     } catch {
-      pagePerformance = null;
+      pagePerformanceGap = "provider_unavailable";
     }
   }
 
@@ -597,7 +610,10 @@ export async function handleAgentAuditRequest(
         ? {
             pagePerformance: {
               version: AGENT_PAGE_PERFORMANCE_VERSION,
-              records: buildPagePerformanceRecords(pagePerformance),
+              records: buildPagePerformanceRecords(
+                pagePerformance,
+                pagePerformanceGap,
+              ),
             },
           }
         : {}),

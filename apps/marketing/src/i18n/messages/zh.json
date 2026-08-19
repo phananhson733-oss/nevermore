@@ -979,7 +979,10 @@
         "no_target_query_was_confirmed_so_no_results_page_was_sampled": "没有确认目标词，因此没有采样任何结果页，也没有产生付费调用。",
         "the_provider_reported_no_item_type_list_for_this_results_page": "供应商没有返回该结果页的条目类型清单。这是响应中的缺口，不等于该页面上没有任何区块。",
         "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one": "采样中部分自然结果条目不可用，因此这是一个比完整首页更薄的样本。",
-        "one_live_sample_of_one_results_page_which_changes_between_requests": "对单个结果页的一次实时采样。同一个查询再采一次，返回的区块组合可能不同。"
+        "one_live_sample_of_one_results_page_which_changes_between_requests": "对单个结果页的一次实时采样。同一个查询再采一次，返回的区块组合可能不同。",
+        "the_field_data_provider_rejected_this_deployments_credentials": "实况数据供应商拒绝了本次部署的凭据，因此没有取到任何实测值。这是我们这边的配置问题，不是对你页面的判断。",
+        "the_field_data_providers_quota_for_this_deployment_was_already_spent": "本次部署在实况数据供应商处的配额已经用完，因此没有取到任何实测值。这里的一切都不是对你页面的判断。",
+        "the_field_data_provider_did_not_answer_this_run": "实况数据供应商没有在本次运行的时限内应答，因此没有取到任何实测值。值得再试一次。"
       },
       "records": {
         "robots_resource": {

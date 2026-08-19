@@ -979,7 +979,10 @@
         "no_target_query_was_confirmed_so_no_results_page_was_sampled": "No target query was confirmed, so no results page was sampled and no paid call was made.",
         "the_provider_reported_no_item_type_list_for_this_results_page": "The provider returned no item-type list for this results page. That is a gap in the response, not a page with no blocks on it.",
         "some_organic_items_were_unusable_so_this_is_a_thinner_sample_than_page_one": "Some organic items in the sample were unusable, so this is a thinner sample than a full page one.",
-        "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks."
+        "one_live_sample_of_one_results_page_which_changes_between_requests": "One live sample of one results page. The same query sampled again can come back with a different set of blocks.",
+        "the_field_data_provider_rejected_this_deployments_credentials": "The field-data provider rejected this deployment's credentials, so no measurement was taken. This is a configuration problem on our side, not a statement about your page.",
+        "the_field_data_providers_quota_for_this_deployment_was_already_spent": "The field-data provider's quota for this deployment was already spent, so no measurement was taken. Nothing here is a statement about your page.",
+        "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again."
       },
       "records": {
         "robots_resource": {

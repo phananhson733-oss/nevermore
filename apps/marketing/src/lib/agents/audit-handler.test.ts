@@ -262,13 +262,16 @@ describe("handleAgentAuditRequest", () => {
       dependencies({
         readSearchPerformance: async () => searchRegion,
         readPagePerformance: async () => ({
-          url: "https://acme.test/",
-          sourceLevel: "url" as const,
-          lcp: 2_100,
-          inp: 150,
-          cls: 0.04,
-          ttfb: 600,
-          formFactor: "mobile" as const,
+          status: "ok" as const,
+          field: {
+            url: "https://acme.test/",
+            sourceLevel: "url" as const,
+            lcp: 2_100,
+            inp: 150,
+            cls: 0.04,
+            ttfb: 600,
+            formFactor: "mobile" as const,
+          },
         }),
       }),
     );

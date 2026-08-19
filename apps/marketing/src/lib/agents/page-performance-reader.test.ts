@@ -44,20 +44,21 @@ describe("createPagePerformanceReader", () => {
     const result = await read({ url: TARGET });
 
     const requested = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(result.status).toBe("ok");
     expect(requested.searchParams.get("url")).toBe(TARGET);
     // Mobile, because that is the experience Google reports a site's Core Web
     // Vitals from — a desktop reading would pass sites that fail the
     // assessment that actually matters.
     expect(requested.searchParams.get("strategy")).toBe("mobile");
-    expect(result?.formFactor).toBe("mobile");
+    expect(result.status === "ok" && result.field.formFactor).toBe("mobile");
   });
 
   it("rescales the CLS percentile CrUX reports times one hundred", async () => {
     const { read } = reader(() => fieldBody());
     const result = await read({ url: TARGET });
 
-    expect(result?.cls).toBeCloseTo(0.05, 5);
-    expect(result?.lcp).toBe(2_100);
+    expect(result.status === "ok" && result.field.cls).toBeCloseTo(0.05, 5);
+    expect(result.status === "ok" && result.field.lcp).toBe(2_100);
   });
 
   it("falls back to origin data and says that is what it did", async () => {
@@ -71,22 +72,44 @@ describe("createPagePerformanceReader", () => {
     );
     const result = await read({ url: TARGET });
 
-    expect(result?.sourceLevel).toBe("origin");
-    expect(result?.lcp).toBe(3_000);
+    expect(result.status === "ok" && result.field.sourceLevel).toBe("origin");
+    expect(result.status === "ok" && result.field.lcp).toBe(3_000);
   });
 
   it.each([
-    ["a shared-quota 429", () => new Response("", { status: 429 })],
-    ["a 5xx", () => new Response("", { status: 503 })],
-    ["a body it cannot read", () => new Response("not json", { status: 200 })],
-    ["no field data at all", () => Response.json({})],
-  ])("answers %s with no data rather than a number", async (_label, respond) => {
+    // Only the last of these is a fact about the audited page. A live call on
+    // 2026-08-19 proved the configured key was invalid, and the first version
+    // of this reader answered that with the same null it uses for "CrUX has no
+    // data" — so the product told visitors something about their site's
+    // traffic that it had never observed.
+    [
+      "a rejected key",
+      () => new Response("", { status: 400 }),
+      "provider_rejected_credentials",
+    ],
+    [
+      "a forbidden key",
+      () => new Response("", { status: 403 }),
+      "provider_rejected_credentials",
+    ],
+    [
+      "a spent quota",
+      () => new Response("", { status: 429 }),
+      "provider_quota_exhausted",
+    ],
+    ["a 5xx", () => new Response("", { status: 503 }), "provider_unavailable"],
+    [
+      "a body it cannot read",
+      () => new Response("not json", { status: 200 }),
+      "provider_unavailable",
+    ],
+    ["CrUX publishing nothing", () => Response.json({}), "no_field_data"],
+  ])("tells %s apart from the others", async (_label, respond, reason) => {
     const { read } = reader(respond);
+    const result = await read({ url: TARGET });
 
-    // None of these is a fact about the audited page. A 429 is our shared
-    // quota, and reporting it as the site's performance would attribute our
-    // budget to them — the thing the crawl-waste checks already refuse to do.
-    await expect(read({ url: TARGET })).resolves.toBeNull();
+    expect(result.status).toBe("unavailable");
+    expect(result.status === "unavailable" && result.reason).toBe(reason);
   });
 
   it("keeps the key out of anything but the query it must ride in", async () => {

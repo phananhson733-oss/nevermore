@@ -37,6 +37,30 @@ export interface PagePerformanceReadInput {
   readonly url: string;
 }
 
+/**
+ * Why there is no field data, when there is none.
+ *
+ * Kept apart because collapsing them is a lie about the audited site. A run
+ * with a rejected key or an exhausted quota that reports "CrUX has no data for
+ * this page" is stating a fact about someone else's traffic that it never
+ * observed — and it was doing exactly that until a live call proved the key in
+ * use was invalid. Mirrors the reason vocabulary the vendored PSI source
+ * already carried, which had this distinction and which the first version of
+ * this reader threw away.
+ */
+export type PagePerformanceUnavailableReason =
+  | "no_field_data"
+  | "provider_rejected_credentials"
+  | "provider_quota_exhausted"
+  | "provider_unavailable";
+
+export type PagePerformanceReadResult =
+  | { readonly status: "ok"; readonly field: PagePerformanceRaw }
+  | {
+      readonly status: "unavailable";
+      readonly reason: PagePerformanceUnavailableReason;
+    };
+
 interface PsiFieldResponse {
   readonly loadingExperience?: PsiLoadingExperience;
   readonly originLoadingExperience?: PsiLoadingExperience;
@@ -46,7 +70,7 @@ export function createPagePerformanceReader(options: {
   /** Resolved at the deploy boundary; this module never reads process.env. */
   readonly apiKey: string;
   readonly fetchImpl?: typeof fetch;
-}): (input: PagePerformanceReadInput) => Promise<PagePerformanceRaw | null> {
+}): (input: PagePerformanceReadInput) => Promise<PagePerformanceReadResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
 
   return async ({ url }) => {
@@ -62,28 +86,41 @@ export function createPagePerformanceReader(options: {
       const response = await fetchImpl(`${PSI_ENDPOINT}?${query.toString()}`, {
         signal: controller.signal,
       });
-      // Every failure is the same answer here: no field data. PSI answers 429
-      // on a shared quota and 5xx under load, and neither is a fact about the
-      // audited page — reporting them as one would attribute our budget to the
-      // site, which is what the crawl-waste checks already refuse to do.
-      if (!response.ok) return null;
+      if (!response.ok) {
+        // Named, not collapsed. A rejected key and an exhausted quota are our
+        // problems; reporting either as "CrUX has no data for this page" states
+        // something about the site's traffic that was never observed.
+        if (response.status === 400 || response.status === 401 ||
+            response.status === 403) {
+          return { status: "unavailable", reason: "provider_rejected_credentials" };
+        }
+        if (response.status === 429) {
+          return { status: "unavailable", reason: "provider_quota_exhausted" };
+        }
+        return { status: "unavailable", reason: "provider_unavailable" };
+      }
       const body = (await response.json()) as PsiFieldResponse;
       const field = shapeCruxField(
         body.loadingExperience,
         body.originLoadingExperience,
       );
-      if (field === null) return null;
+      // The one case that IS about the page: PSI answered, and CrUX published
+      // no p75 for this URL or its origin.
+      if (field === null) return { status: "unavailable", reason: "no_field_data" };
       return {
-        url,
-        sourceLevel: field.source,
-        lcp: field.lcp,
-        inp: field.inp,
-        cls: field.cls,
-        ttfb: field.ttfb,
-        formFactor: FORM_FACTOR,
+        status: "ok",
+        field: {
+          url,
+          sourceLevel: field.source,
+          lcp: field.lcp,
+          inp: field.inp,
+          cls: field.cls,
+          ttfb: field.ttfb,
+          formFactor: FORM_FACTOR,
+        },
       };
     } catch {
-      return null;
+      return { status: "unavailable", reason: "provider_unavailable" };
     } finally {
       clearTimeout(timer);
     }
@@ -99,7 +136,7 @@ export function createPagePerformanceReader(options: {
  * never asked.
  */
 export function defaultPagePerformanceReader():
-  | ((input: PagePerformanceReadInput) => Promise<PagePerformanceRaw | null>)
+  | ((input: PagePerformanceReadInput) => Promise<PagePerformanceReadResult>)
   | null {
   const apiKey = process.env.PAGESPEED_API_KEY;
   if (apiKey === undefined || apiKey.trim() === "") return null;

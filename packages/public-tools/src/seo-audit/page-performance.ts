@@ -47,8 +47,37 @@ const METRICS = [
  * a conditional subset a page that passes produces no observation to match and
  * comes back indistinguishable from one that was never measured.
  */
+/**
+ * Why a run has no field values, in the caller's own words.
+ *
+ * Every entry is a different sentence on purpose. A rejected key and an
+ * exhausted quota are our problems, and reporting either as "CrUX has no data
+ * for this page" states something about the site's traffic that was never
+ * observed. The first version of this collapsed all of them into the last one,
+ * and a live call then proved the key in use was invalid — so the product was
+ * telling visitors their site had no field data while never having asked.
+ */
+export type PagePerformanceGap =
+  | "source_not_configured"
+  | "no_field_data"
+  | "provider_rejected_credentials"
+  | "provider_quota_exhausted"
+  | "provider_unavailable";
+
+const GAP_LIMITATION: Readonly<Record<PagePerformanceGap, string>> = {
+  source_not_configured: "no_field_data_source_was_configured_for_this_run",
+  no_field_data: "crux_reported_no_field_data_for_this_metric_on_this_url",
+  provider_rejected_credentials:
+    "the_field_data_provider_rejected_this_deployments_credentials",
+  provider_quota_exhausted:
+    "the_field_data_providers_quota_for_this_deployment_was_already_spent",
+  provider_unavailable: "the_field_data_provider_did_not_answer_this_run",
+};
+
 export function buildPagePerformanceRecords(
   raw: PagePerformanceRaw | null | undefined,
+  /** Why there is nothing, when `raw` is absent. */
+  gap: PagePerformanceGap = "source_not_configured",
 ): readonly SeoAuditRecord[] {
   return METRICS.map(({ id, label, read }) => {
     const value = raw === null || raw === undefined ? null : read(raw);
@@ -62,10 +91,12 @@ export function buildPagePerformanceRecords(
         tested: 0,
         affected: 0,
         observations: [],
+        // A metric missing from an answered response IS about the page; the
+        // caller's reason only applies when nothing was read at all.
         limitation:
           raw === null || raw === undefined
-            ? "no_field_data_source_was_configured_for_this_run"
-            : "crux_reported_no_field_data_for_this_metric_on_this_url",
+            ? GAP_LIMITATION[gap]
+            : GAP_LIMITATION.no_field_data,
       } satisfies SeoAuditRecord;
     }
     return {
@@ -108,8 +139,7 @@ export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
 ];
 
 export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
-  "no_field_data_source_was_configured_for_this_run",
-  "crux_reported_no_field_data_for_this_metric_on_this_url",
+  ...Object.values(GAP_LIMITATION),
   "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values",
   "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped",
 ];
