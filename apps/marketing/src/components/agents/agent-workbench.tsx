@@ -24,7 +24,9 @@ import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
 import {
   applyAgentProfileRefresh,
+  checkerHandoffEdits,
   createAgentProfileDraft,
+  updateAgentProfile,
   type AgentProfileDraft,
 } from "./agent-profile";
 import {
@@ -850,18 +852,26 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         pending.purpose === "page_focused_launch" && storage
           ? readOnPageDraft(storage)
           : null;
-      setProfile({
-        ...base,
-        ...(pending.scope === "page" ? { auditScope: "page-only" as const } : {}),
-        ...(checkerDraft
-          ? {
-              country: checkerDraft.country,
-              locale: checkerDraft.locale,
-              pageType: checkerDraft.pageType,
-              targetQuery: checkerDraft.targetQueries[0] ?? base.targetQuery,
-            }
-          : {}),
-      });
+      const scoped =
+        pending.scope === "page"
+          ? { ...base, auditScope: "page-only" as const }
+          : base;
+      /*
+        Applied as an edit, not spread over the draft.
+        
+        Spreading set the values and left `fieldProvenance` saying `missing`,
+        and readiness reads the provenance rather than the value — so the run
+        button stayed disabled under a message naming market and language while
+        both sat filled in and correct on screen. The only way out was to retype
+        a value that was already right, which nobody would guess. The visitor
+        did supply these, in the checker's own form, so the draft should say a
+        person supplied them.
+      */
+      setProfile(
+        checkerDraft
+          ? updateAgentProfile(scoped, checkerHandoffEdits(checkerDraft))
+          : scoped,
+      );
       setHandoffQueries(checkerDraft ? checkerDraft.targetQueries : null);
       // Both slots are consumed: a draft that outlives its use is a stale URL
       // waiting to prefill someone else's form.

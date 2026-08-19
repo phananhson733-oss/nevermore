@@ -803,6 +803,32 @@ export function redraftAgentProfileForUrl(
 }
 
 /** Apply only declared editable fields and return the run context to draft state. */
+/**
+ * The edits a checker handoff is allowed to claim the visitor made.
+ *
+ * `targetQuery` is present only when the checker actually carried one. Passing
+ * the key with an inherited value would stamp `user_edit` on a query nobody
+ * supplied, which is the same laundering the market fix exists to stop, pointed
+ * the other way — and `updateAgentProfile` treats every key present as a
+ * deliberate edit, so "leave it alone" has to be expressed by omission.
+ */
+export function checkerHandoffEdits(draft: {
+  readonly country: string;
+  readonly locale: string;
+  readonly pageType: AgentProfileDraft["pageType"];
+  readonly targetQueries: readonly string[];
+}): AgentProfileEdits {
+  const handedQuery = draft.targetQueries[0];
+  return {
+    country: draft.country,
+    locale: draft.locale,
+    pageType: draft.pageType,
+    ...(handedQuery !== undefined && handedQuery.trim() !== ""
+      ? { targetQuery: handedQuery }
+      : {}),
+  };
+}
+
 export function updateAgentProfile(
   profile: AgentProfileDraft,
   edits: AgentProfileEdits,

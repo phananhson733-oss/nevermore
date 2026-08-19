@@ -13,6 +13,7 @@ import {
 import {
   acceptAgentProfileRefreshFields,
   applyAgentProfileRefresh,
+  checkerHandoffEdits,
   confirmAgentProfile,
   createAgentProfileDraft,
   isAgentProfileDraft,
@@ -1232,6 +1233,67 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(isAgentProfileReady(missingAuditLocale)).toBe(false);
     expect(confirmAgentProfile(missingAuditLocale).reviewState).toBe(
       "needs_confirmation",
+    );
+  });
+});
+
+describe("checkerHandoffEdits", () => {
+  const base = {
+    country: "GB",
+    locale: "en-GB",
+    pageType: "guide" as const,
+  };
+
+  it("claims the market, language and role the checker carried", () => {
+    expect(
+      checkerHandoffEdits({ ...base, targetQueries: ["natal chart"] }),
+    ).toEqual({
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+      targetQuery: "natal chart",
+    });
+  });
+
+  it("omits the query key entirely when the checker carried none", () => {
+    // Not `targetQuery: undefined`, and not the inherited value: every key
+    // present is treated as a deliberate edit and stamped `user_edit`, so a
+    // query nobody supplied would be signed with the visitor's name.
+    const edits = checkerHandoffEdits({ ...base, targetQueries: [] });
+    expect("targetQuery" in edits).toBe(false);
+  });
+
+  it("treats a blank query as no query", () => {
+    expect(
+      "targetQuery" in checkerHandoffEdits({ ...base, targetQueries: ["   "] }),
+    ).toBe(false);
+  });
+
+  it("leaves an inherited query untouched when nothing was handed over", () => {
+    // The end-to-end shape of the defect: applying the edits to a draft that
+    // already had a query must neither change it nor mark it edited.
+    // Set directly, not through `updateAgentProfile`: routing the fixture
+    // through it would mark the field edited before the helper ran and the
+    // assertion below would be about the fixture.
+    const inherited = {
+      ...createAgentProfileDraft("seo", "https://acme.test/", "en"),
+      targetQuery: "inferred earlier",
+    };
+    const applied = updateAgentProfile(
+      inherited,
+      checkerHandoffEdits({ ...base, targetQueries: [] }),
+    );
+
+    expect(applied.targetQuery).toBe("inferred earlier");
+    expect(applied.editedFields).not.toContain("targetQuery");
+    expect(
+      applied.fieldProvenance.find((entry) => entry.path === "/targetQuery")
+        ?.source,
+    ).not.toBe("user_edit");
+    // The three it did carry are claimed, so the omission is not the helper
+    // simply doing nothing.
+    expect(applied.editedFields).toEqual(
+      expect.arrayContaining(["country", "locale", "pageType"]),
     );
   });
 });

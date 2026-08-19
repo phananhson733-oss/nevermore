@@ -1786,6 +1786,28 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         document.querySelector("#seo-profile-language") as HTMLInputElement
       ).value,
     ).toBe("en-GB");
+    /*
+      And the gate in front of the run is open.
+
+      Readiness reads `fieldProvenance`, not the value, and the handoff used to
+      spread market and language onto the draft without touching it — so both
+      fields sat filled and correct while the confirm button stayed disabled
+      under a message naming those exact two fields. The only way out was to
+      retype a value that was already right. Every assertion above passed
+      throughout, because they all stop at the restored input.
+
+      Scoped deliberately: this says the confirmation control is enabled and no
+      readiness message is shown, which is the symptom a visitor hit. It does
+      not click confirm, so it is not evidence that the confirmed handoff is
+      accepted downstream — `isConfirmedAgentProfile` has its own tests.
+    */
+    const confirm = document.querySelector(
+      'button[data-profile-action="confirm"]',
+    ) as HTMLButtonElement | null;
+    expect(confirm).not.toBeNull();
+    expect(confirm?.disabled).toBe(false);
+    expect(document.querySelector("#seo-profile-readiness")).toBeNull();
+
     // Restored, never started: the visitor asked about a page, not for a crawl.
     expect(fetchMock).not.toHaveBeenCalled();
     // Both slots consumed, so neither can prefill someone else's form later.
