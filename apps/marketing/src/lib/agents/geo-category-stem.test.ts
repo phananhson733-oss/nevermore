@@ -73,6 +73,25 @@ describe("the confirm gate", () => {
     // Eighteen paid calls used to go out on "What are the top tools right
     // now?" — a question with no subject, and one no seed in the registry ever
     // measured. Found on 2026-08-19 while investigating a degraded run.
+    //
+    // Measured against the live provider the same day, same endpoint, model,
+    // token ceiling and market the product sends, eight calls in total:
+    //
+    //   What are the top seo tools right now?          searched, 10 citations
+    //   What are the top tools right now?              NOT searched, 0   (x3)
+    //   Which tools are worth paying for right now?    NOT searched, 0
+    //   Which tool has the best free plan right now?   NOT searched, 0
+    //   What are the leading tools right now, ...      NOT searched, 0
+    //
+    // Five of five subject-less probes answered from memory. Every retrieval
+    // sample then falls out of the citation denominator, the report shows a
+    // degraded run, and the bill is still real — a call that does not search
+    // costs about a fifth of one that does, not nothing.
+    //
+    // The same round refuted a second hypothesis: "Best alternatives to
+    // Zyntherio for seo" — an unknown name in the one retrieval probe with no
+    // currency cue — searched, and returned seven citations. An unfamiliar name
+    // makes the model search more, not less.
     for (const noun of ["tools", "software", "platform"]) {
       const result = await confirm(noun);
       expect(result.ok, noun).toBe(false);
