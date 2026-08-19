@@ -324,11 +324,18 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
-  // C5 stays unwired on purpose. A link-following crawl reaches a page either
-  // by an internal link or from the sitemap, so any collected page that is in
-  // neither was discovered from a page the budget dropped. The filter would
-  // report a budget artefact as a lost page, and a check that fires only when
-  // it is wrong is worse than one that says it is not integrated.
+  // C5 is wired — see the entry fifty lines above. This comment used to say it
+  // stayed unwired on purpose and was left behind when that changed, which is
+  // the more dangerous half of a stale comment: it explains, convincingly, why
+  // the code does something the code no longer does.
+  //
+  // The concern it recorded was real. A link-following crawl reaches a page by
+  // an internal link or from the sitemap, so a collected page in neither was
+  // discovered from a page the budget dropped, and reporting that as a lost
+  // page reports a budget artefact. It is handled inside the detector rather
+  // than by refusing to run: `discoveryJudgeable` requires `stopReason` to be
+  // null and the outlink lists to be untruncated, so the check produces
+  // nothing at all on any run that could have manufactured the artefact.
   // Site-wide Schema coverage is the same measurement as the page-level
   // "is there any JSON-LD" check, read as a share instead of a verdict, so it
   // reuses the record rather than crawling for it twice.
