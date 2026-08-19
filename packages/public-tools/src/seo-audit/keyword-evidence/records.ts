@@ -125,8 +125,16 @@ export interface HeadingShapeInput {
   readonly h3: { readonly min: number; readonly max: number };
   /** Words a section under an H3 should carry for this page type. */
   readonly substanceWords: number;
-  /** Words under each H3, in document order. */
-  readonly wordsUnderEachH3: readonly number[];
+  /**
+   * Words under each H3, in document order, or null when the crawl did not
+   * carry the measurement.
+   *
+   * Null and `[]` are different facts and were being collapsed at the seam
+   * that builds this: a missing `targetPageExtract` became an empty array,
+   * which this record then published as "this page has no H3 at all" — an
+   * assertion about the page, made because the projection was absent.
+   */
+  readonly wordsUnderEachH3: readonly number[] | null;
 }
 
 function headingCountRecord(
@@ -429,8 +437,8 @@ function sectionSubstanceRecord(
     unit: "pages" as const,
     population: "target_page" as const,
   };
-  const sections = shape?.wordsUnderEachH3 ?? [];
-  if (!shape || sections.length === 0) {
+  const sections = shape?.wordsUnderEachH3 ?? null;
+  if (!shape || sections === null || sections.length === 0) {
     return {
       ...base,
       state: "unverified",
@@ -440,7 +448,9 @@ function sectionSubstanceRecord(
       observations: [],
       limitation: !shape
         ? "no_page_type_was_confirmed_so_there_is_no_reviewed_range_to_compare_against"
-        : "this_page_has_no_h3_so_there_is_no_section_to_measure",
+        : sections === null
+          ? "this_run_did_not_carry_the_per_section_word_counts_for_this_page"
+          : "this_page_has_no_h3_so_there_is_no_section_to_measure",
     };
   }
   const average = Math.round(
@@ -537,5 +547,6 @@ export const KEYWORD_EVIDENCE_LIMITATION_CODES: readonly string[] = [
   "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule",
   "slot_order_not_a_character_offset_and_never_judged",
   "this_page_has_no_h3_so_there_is_no_section_to_measure",
+  "this_run_did_not_carry_the_per_section_word_counts_for_this_page",
   "whitespace_words_between_headings_not_a_cjk_safe_measure",
 ];

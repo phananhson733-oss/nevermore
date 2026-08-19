@@ -349,6 +349,7 @@ export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "image_weights_are_the_bytes_this_run_transferred",
   "no_image_weights_were_measured_for_this_run",
   "the_page_declared_no_images_to_weigh",
+  "this_run_did_not_carry_the_target_pages_declared_images",
   "no_declared_image_could_be_fetched_this_run",
   "not_every_declared_image_could_be_weighed_this_run",
 ];

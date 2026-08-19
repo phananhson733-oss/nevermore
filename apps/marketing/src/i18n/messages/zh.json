@@ -1030,7 +1030,10 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。",
         "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "部分页面的相似兄弟页过多，无法逐一精确比对，因此这些页面报告为未评分，而不是报告为「不重复」。已经找到的重复页仍会照常报告。",
         "this_sitemap_declares_more_urls_than_one_run_can_ask_google_about": "本站 sitemap 声明的 URL 数量超出单次运行能向 Google 询问的上限，因此不发布索引覆盖率。本次未消耗该资源的检查配额。",
-        "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps": "某个页面声明的 hreflang 备用地址数量超过本次抓取保留的上限，超出部分未被读取，因此不对其发布完整结论。"
+        "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps": "某个页面声明的 hreflang 备用地址数量超过本次抓取保留的上限，超出部分未被读取，因此不对其发布完整结论。",
+        "no_brand_term_long_enough_to_match_on_could_be_derived_from_this_property": "无法从该资源名称中得出足够长的品牌词，因此无法区分品牌词点击与非品牌词点击。这与站点获得多少搜索流量无关。",
+        "this_run_did_not_carry_the_per_section_word_counts_for_this_page": "本次运行未携带该页面的分节字数，因此未测量分节长度。这不表示该页面没有分节。",
+        "this_run_did_not_carry_the_target_pages_declared_images": "本次运行未携带目标页面声明的图片，因此未称重任何图片。这不表示该页面没有声明图片。"
       },
       "records": {
         "robots_resource": {

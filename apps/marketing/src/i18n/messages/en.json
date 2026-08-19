@@ -1030,7 +1030,10 @@
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned.",
         "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "Some pages had so many similar siblings that they could not all be compared exactly, so those pages are reported as not scored rather than as distinct. A duplicate that was found is still reported.",
         "this_sitemap_declares_more_urls_than_one_run_can_ask_google_about": "This site's sitemap declares more URLs than one audit run can ask Google about within its time budget, so no index coverage rate is published. Nothing was spent against the property's inspection quota.",
-        "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps": "One page declares more hreflang alternates than this crawl keeps, so the alternates past that point were not read and no complete verdict is published for them."
+        "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps": "One page declares more hreflang alternates than this crawl keeps, so the alternates past that point were not read and no complete verdict is published for them.",
+        "no_brand_term_long_enough_to_match_on_could_be_derived_from_this_property": "No brand term long enough to match on could be derived from this property's name, so branded and non-branded clicks cannot be told apart. This says nothing about how much search traffic the site receives.",
+        "this_run_did_not_carry_the_per_section_word_counts_for_this_page": "This run did not carry the per-section word counts for this page, so section length was not measured. It does not mean the page has no sections.",
+        "this_run_did_not_carry_the_target_pages_declared_images": "This run did not carry the target page's declared images, so none were weighed. It does not mean the page declares no images."
       },
       "records": {
         "robots_resource": {

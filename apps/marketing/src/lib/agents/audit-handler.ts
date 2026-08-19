@@ -249,7 +249,10 @@ function headingShapeFor(
     h2: preset.h2,
     h3: preset.h3,
     substanceWords: preset.substanceWords,
-    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
+    // Null, not `[]`. An absent extract is a measurement this run did not
+    // carry; an empty array is a page with no H3 on it. Collapsing them
+    // published the second sentence whenever the first was true.
+    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? null,
   };
 }
 
@@ -691,8 +694,22 @@ export async function handleAgentAuditRequest(
       pagePerformanceGap = "provider_unavailable";
     }
     try {
-      const sources = result.targetPageExtract?.declared?.images.sources ?? [];
-      const weighed = await dependencies.readImageWeights?.({ sources });
+      // Undefined when the run carried no extract at all, which is a different
+      // fact from a page that declared no images — and `?? []` was turning the
+      // first into the second, so a missing projection published "the page
+      // declared no images to weigh", an assertion about the page.
+      const sources = result.targetPageExtract?.declared?.images.sources;
+      // Only when a reader exists to have been stopped. With none configured
+      // the honest sentence is still the one about no reader, and saying the
+      // run did not carry the images would blame the crawl for a wiring gap.
+      if (sources === undefined && dependencies.readImageWeights !== undefined) {
+        imageWeightLimitation =
+          "this_run_did_not_carry_the_target_pages_declared_images";
+      }
+      const weighed =
+        sources === undefined
+          ? undefined
+          : await dependencies.readImageWeights?.({ sources });
       if (weighed?.status === "ok") {
         imageWeights = weighed.images;
         imageWeightsComplete = weighed.complete;

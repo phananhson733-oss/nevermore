@@ -224,5 +224,6 @@ export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "one_impression_weighted_average_per_query_over_the_reported_window_only",
   "search_console_returned_a_position_this_run_cannot_band_for_this_url",
   "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+  "no_brand_term_long_enough_to_match_on_could_be_derived_from_this_property",
   "brand_terms_derived_from_the_property_and_matched_as_substrings",
 ];
