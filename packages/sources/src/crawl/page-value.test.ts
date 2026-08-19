@@ -55,7 +55,7 @@ describe("off-topic sections", () => {
     const blog = pageValueBreakdown("/blog", EN);
     expect(blog.offTopicPenalty).toBe(PAGE_VALUE_OFF_TOPIC_PENALTY);
     expect(blog.score).toBe(-6);
-    expect(pageValueIsCrawlable(blog.score)).toBe(false);
+    expect(pageValueIsCrawlable(blog)).toBe(false);
   });
 
   it("charges the penalty once, however many segments hit it", () => {
@@ -167,7 +167,7 @@ describe("thresholds", () => {
       depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP,
       score: PAGE_VALUE_DEPTH_PENALTY_STEP,
     });
-    expect(pageValueIsCrawlable(depthTwo.score)).toBe(true);
+    expect(pageValueIsCrawlable(depthTwo)).toBe(true);
     expect(depthThree).toMatchObject({
       sectionScore: 0,
       offTopicPenalty: 0,
@@ -175,7 +175,7 @@ describe("thresholds", () => {
       depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
       score: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
     });
-    expect(pageValueIsCrawlable(depthThree.score)).toBe(true);
+    expect(pageValueIsCrawlable(depthThree)).toBe(true);
   });
 
   it.each([
@@ -183,16 +183,30 @@ describe("thresholds", () => {
     ["legal", "/privacy"],
     ["foreign locale", "/fr/story-generators/fantasy"],
   ])("keeps %s paths below the crawlable floor", (_label, path) => {
-    expect(pageValueIsCrawlable(pageValueScore(path, EN))).toBe(false);
+    expect(pageValueIsCrawlable(pageValueBreakdown(path, EN))).toBe(false);
   });
+
+  it.each([
+    ["an off-topic section under about", "/about/careers", "offTopicPenalty"],
+    ["an off-topic section under faq", "/faq/news", "offTopicPenalty"],
+    ["a foreign-locale about page", "/fr/about", "foreignLocalePenalty"],
+    ["a foreign-locale pricing page", "/fr/pricing", "foreignLocalePenalty"],
+  ] as const)(
+    "rejects %s even when its total score reaches the crawlable floor",
+    (_label, path, penalty) => {
+      const scored = pageValueBreakdown(path, EN);
+
+      expect(scored.score).toBeGreaterThanOrEqual(
+        PAGE_VALUE_MIN_CRAWLABLE_SCORE,
+      );
+      expect(scored[penalty]).toBeLessThan(0);
+      expect(pageValueIsCrawlable(scored)).toBe(false);
+    },
+  );
 
   it("sets the crawlable floor to the maximum depth-only penalty", () => {
     expect(PAGE_VALUE_MIN_CRAWLABLE_SCORE).toBe(
       PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
-    );
-    expect(pageValueIsCrawlable(PAGE_VALUE_MIN_CRAWLABLE_SCORE)).toBe(true);
-    expect(pageValueIsCrawlable(PAGE_VALUE_MIN_CRAWLABLE_SCORE - 1)).toBe(
-      false,
     );
   });
 

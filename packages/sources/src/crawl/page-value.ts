@@ -305,7 +305,7 @@ function depthPenaltyFor(depth: number): number {
  * Score one path and show the work.
  *
  * Pure by construction: no clock, no network, no module state. The caller sorts
- * by `score` and refuses anything under `PAGE_VALUE_MIN_CRAWLABLE_SCORE`.
+ * by `score` and uses the full breakdown to enforce crawl eligibility.
  */
 export function pageValueBreakdown(
   path: string,
@@ -357,7 +357,11 @@ export function pageValueIsProductPage(score: number): boolean {
   return score >= PAGE_VALUE_PRODUCT_SCORE_THRESHOLD;
 }
 
-/** Whether a candidate is worth a request at all. */
-export function pageValueIsCrawlable(score: number): boolean {
-  return score >= PAGE_VALUE_MIN_CRAWLABLE_SCORE;
+/** Whether a candidate is relevant enough and in the requested language. */
+export function pageValueIsCrawlable(value: PageValueBreakdown): boolean {
+  return (
+    value.offTopicPenalty === 0 &&
+    value.foreignLocalePenalty === 0 &&
+    value.score >= PAGE_VALUE_MIN_CRAWLABLE_SCORE
+  );
 }

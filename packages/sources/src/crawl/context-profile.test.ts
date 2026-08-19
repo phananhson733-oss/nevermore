@@ -128,7 +128,7 @@ describe("page-value ordering", () => {
     expect(site.requested).not.toContain(`${ORIGIN}/a/b/c/d`);
   });
 
-  it("prefers the target market's locale pages", async () => {
+  it("excludes pages from a non-target locale", async () => {
     const site = fakeSite(
       marketingSite({
         "/": { body: page("Acme", ["/en/pricing", "/de/preise"]) },
@@ -141,8 +141,8 @@ describe("page-value ordering", () => {
     expect(result.pages.map((entry) => entry.path)).toEqual([
       "/",
       "/de/preise",
-      "/en/pricing",
     ]);
+    expect(site.requested).not.toContain(`${ORIGIN}/en/pricing`);
   });
 });
 

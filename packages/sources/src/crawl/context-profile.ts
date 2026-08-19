@@ -775,7 +775,7 @@ function rankCandidates(
     });
     if (value.depth === 0) continue;
     if (value.depth > CONTEXT_PROFILE_CRAWL_BUDGET.maxDepth) continue;
-    if (!pageValueIsCrawlable(value.score)) continue;
+    if (!pageValueIsCrawlable(value)) continue;
     if (!context.allowed(parsed.pathname)) continue;
     candidates.push({ url: fetchUrl, path: parsed.pathname, value });
   }
@@ -786,4 +786,3 @@ function rankCandidates(
       (a.url < b.url ? -1 : a.url > b.url ? 1 : 0),
   );
 }
-
