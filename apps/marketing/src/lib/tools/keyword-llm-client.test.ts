@@ -435,6 +435,47 @@ describe("createKeywordLlmClient", () => {
     }
   });
 
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["NaN", Number.NaN],
+    ["fractional", 90.5],
+    ["over the safety ceiling", 240_001],
+  ])(
+    "rejects a %s request deadline before calling fetch",
+    async (_label, timeoutMs) => {
+      const capture = capturing(() => completion("{}"));
+      const client = createKeywordLlmClient({
+        env: DIRECT_ENV,
+        timeoutMs: 90,
+        fetchImpl: capture.fetchImpl,
+      });
+
+      await expect(
+        client.complete({ ...REQUEST, timeoutMs }),
+      ).rejects.toMatchObject({
+        code: "keyword_generation_unavailable",
+        reason: "not_configured",
+      });
+      expect(capture.calls).toHaveLength(0);
+    },
+  );
+
+  it("validates an injected deadline when the request has no override", async () => {
+    const capture = capturing(() => completion("{}"));
+    const client = createKeywordLlmClient({
+      env: DIRECT_ENV,
+      timeoutMs: 0,
+      fetchImpl: capture.fetchImpl,
+    });
+
+    await expect(client.complete(REQUEST)).rejects.toMatchObject({
+      code: "keyword_generation_unavailable",
+      reason: "not_configured",
+    });
+    expect(capture.calls).toHaveLength(0);
+  });
+
   it("discards a response that only arrives after the deadline", async () => {
     const client = createKeywordLlmClient({
       env: DIRECT_ENV,

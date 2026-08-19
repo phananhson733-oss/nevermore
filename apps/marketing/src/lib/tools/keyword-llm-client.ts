@@ -1,4 +1,4 @@
-// @input  -- OPENAI_* / AZURE_OPENAI_* env, an injected fetch, one chat request
+// @input  -- provider env/options, an injected fetch, one task-deadlined request
 // @output -- a request-deadlined JSON completion with usage, or KeywordLlmError
 // @pos    -- the marketing site's only LLM transport; consumed by keyword-prompts.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -117,6 +117,36 @@ const OPENAI_CHAT_COMPLETIONS_URL =
 export const KEYWORD_LLM_TIMEOUT_MS = 45_000;
 
 /**
+ * Absolute deadline ceiling below the route's 300-second execution budget.
+ *
+ * Sixty seconds remain for response decoding and a controlled error envelope;
+ * the shipped expansion deadline is intentionally much lower at 90 seconds.
+ */
+const MAX_KEYWORD_LLM_TIMEOUT_MS = 240_000;
+
+function resolveKeywordLlmTimeoutMs(
+  requestTimeoutMs: number | undefined,
+  clientTimeoutMs: number | undefined,
+): number {
+  const timeoutMs =
+    requestTimeoutMs ?? clientTimeoutMs ?? KEYWORD_LLM_TIMEOUT_MS;
+  // `setTimeout` coerces negative, fractional, NaN, infinite, and oversized
+  // values. Reject them instead of silently turning a configured deadline into
+  // an immediate abort or a duration that can outlive the route.
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0 ||
+    timeoutMs > MAX_KEYWORD_LLM_TIMEOUT_MS
+  ) {
+    throw new KeywordLlmError(
+      "not_configured",
+      "LLM request deadline is outside the supported range.",
+    );
+  }
+  return timeoutMs;
+}
+
+/**
  * Decoded response bytes retained before parsing.
  *
  * The largest legitimate reply is the expansion lane: ~150 short candidate
@@ -133,7 +163,7 @@ export interface KeywordLlmRequest {
   readonly user: string;
   readonly temperature: number;
   readonly maxOutputTokens: number;
-  /** Optional task-specific deadline; otherwise the client/default wins. */
+  /** Positive safe-integer task deadline up to the guarded route ceiling. */
   readonly timeoutMs?: number;
 }
 
@@ -469,7 +499,7 @@ export interface KeywordLlmClientOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Offline test seam. Defaults to the global `fetch`. */
   readonly fetchImpl?: KeywordLlmFetch;
-  /** Offline fallback seam; requests may override it per task. */
+  /** Positive safe-integer fallback seam; requests may override it per task. */
   readonly timeoutMs?: number;
 }
 
@@ -498,10 +528,12 @@ class ChatCompletionsClient implements KeywordLlmClient {
   }
 
   async complete(request: KeywordLlmRequest): Promise<KeywordLlmCompletion> {
+    const timeoutMs = resolveKeywordLlmTimeoutMs(
+      request.timeoutMs,
+      this.options.timeoutMs,
+    );
     const config = this.resolveConfig();
     const fetchImpl = this.options.fetchImpl ?? globalThis.fetch;
-    const timeoutMs =
-      request.timeoutMs ?? this.options.timeoutMs ?? KEYWORD_LLM_TIMEOUT_MS;
 
     const body = JSON.stringify({
       model: config.model,

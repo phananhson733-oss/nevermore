@@ -1,5 +1,5 @@
 // @input  -- crawled pages, propositions, seed terms and a KeywordLlmClient
-// @output -- validated stage-bounded drafts plus this run's token usage
+// @output -- validated drafts/usage; transport failures are never replayed
 // @pos    -- the two LLM seams of the Keyword Opportunity Map, prompt + strict parse
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -661,9 +661,10 @@ function parseCandidates(
  *
  * Transport failures are NOT retried: the client already distinguishes them
  * and a second identical request to a rate-limited or unreachable provider
- * spends the visitor's latency budget to learn nothing. A timeout is included
- * in that — 45s twice on the one call, inside a stage that already runs 90 to
- * 120, buys a second wait for a model that was already stuck.
+ * spends the visitor's latency budget to learn nothing. A timeout is included:
+ * after either the default 45-second extraction deadline or the explicit
+ * 90-second expansion deadline, the provider outcome is unknown and replaying
+ * the request can duplicate both cost and latency.
  *
  * An empty reply is not a transport failure. The provider answered; the model
  * simply produced no content, which is the same class of event as a reply that
