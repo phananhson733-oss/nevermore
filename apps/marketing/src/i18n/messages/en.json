@@ -1027,7 +1027,8 @@
         "traffic_estimates_are_modelled_not_measured_visits": "Traffic figures are a provider's model of monthly organic visits, not measured ones. A domain the provider said nothing about is left out entirely rather than counted as small.",
         "not_every_declared_image_could_be_weighed_this_run": "Some images this page declares were not weighed - off-origin, unreachable, or past the per-run cap - so no clean verdict is given. A page can still fail here: one oversized image is proof.",
         "not_every_page_one_domain_could_be_sized_this_run": "The traffic provider returned nothing for at least one page-one domain, so 'nobody here is small' cannot be stated. Finding a small site would still have been decisive.",
-        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned."
+        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned.",
+        "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "Some pages had so many similar siblings that they could not all be compared exactly, so those pages are reported as not scored rather than as distinct. A duplicate that was found is still reported."
       },
       "records": {
         "robots_resource": {

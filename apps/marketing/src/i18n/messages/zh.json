@@ -1027,7 +1027,8 @@
         "traffic_estimates_are_modelled_not_measured_visits": "流量数字是供应商对月度自然访问的建模值，不是实测值。供应商没有给出数据的域名会被完全排除，而不是算作小站。",
         "not_every_declared_image_could_be_weighed_this_run": "这个页面声明的图片有一部分没有被称量——跨域、抓不到，或超出单次上限——因此不给出「全部合格」的结论。但仍可能判不合格：发现一张超标的图就足以证明。",
         "not_every_page_one_domain_could_be_sized_this_run": "流量数据源对页面一上至少一个域名没有返回结果，因此无法断言「这里没有小站」。反过来，发现小站本来是可以直接下结论的。",
-        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。"
+        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "该资源上报的曝光大部分落在本次抓取从未到达的 URL 上，比例只会在「仍然被链接的页面」上算出来——而那恰恰是没有被废弃的那些。",
+        "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "部分页面的相似兄弟页过多，无法逐一精确比对，因此这些页面报告为未评分，而不是报告为「不重复」。已经找到的重复页仍会照常报告。"
       },
       "records": {
         "robots_resource": {

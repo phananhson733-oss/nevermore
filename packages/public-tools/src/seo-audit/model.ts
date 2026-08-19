@@ -1,9 +1,9 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
-import { measurePageSimilarity } from "./page-similarity.ts";
 import {
-  SOFT_404_BODY_FLOOR_UNITS,
-  softNotFoundVerdict,
-} from "./soft-404.ts";
+  measurePageSimilarity,
+  NEAR_DUPLICATE_SIMILARITY,
+} from "./page-similarity.ts";
+import { SOFT_404_BODY_FLOOR_UNITS, softNotFoundVerdict } from "./soft-404.ts";
 import { CRAWL_PROJECTION_LIMITS, type ParsedOnPageFacts } from "@sf/sources";
 import {
   searchCrawlerMayFetch,
@@ -236,9 +236,7 @@ function imageExtension(src: string | null): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-function readableFormats(
-  assets: ParsedOnPageFacts | null,
-): readonly string[] {
+function readableFormats(assets: ParsedOnPageFacts | null): readonly string[] {
   return assets?.imageFormats ?? [];
 }
 
@@ -305,23 +303,24 @@ function isOriginRoot(url: string): boolean {
  * from this table is not judged — assuming a type is complete because we have
  * no opinion about it would report every unlisted type as correct.
  */
-const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
-  product: ["name"],
-  offer: ["price", "priceCurrency"],
-  article: ["headline"],
-  blogposting: ["headline"],
-  newsarticle: ["headline"],
-  faqpage: ["mainEntity"],
-  question: ["name", "acceptedAnswer"],
-  howto: ["name", "step"],
-  recipe: ["name", "recipeIngredient", "recipeInstructions"],
-  event: ["name", "startDate", "location"],
-  jobposting: ["title", "datePosted", "hiringOrganization"],
-  breadcrumblist: ["itemListElement"],
-  softwareapplication: ["name"],
-  organization: ["name"],
-  localbusiness: ["name", "address"],
-};
+const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> =
+  {
+    product: ["name"],
+    offer: ["price", "priceCurrency"],
+    article: ["headline"],
+    blogposting: ["headline"],
+    newsarticle: ["headline"],
+    faqpage: ["mainEntity"],
+    question: ["name", "acceptedAnswer"],
+    howto: ["name", "step"],
+    recipe: ["name", "recipeIngredient", "recipeInstructions"],
+    event: ["name", "startDate", "location"],
+    jobposting: ["title", "datePosted", "hiringOrganization"],
+    breadcrumblist: ["itemListElement"],
+    softwareapplication: ["name"],
+    organization: ["name"],
+    localbusiness: ["name", "address"],
+  };
 
 /**
  * Smallest declared edge that could plausibly be the image a reader came for.
@@ -364,10 +363,16 @@ function buildRecords(
     onPageOf(page)?.hreflangAlternates ?? [];
   /** JSON-LD nodes whose type this run has a reviewed opinion about. */
   const judgedJsonLdNodes = (page: SeoAuditPage) =>
-    (onPageOf(page)?.jsonLdProperties ?? []).filter(
-      (node) =>
-        REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !== undefined,
-    ).map((node) => ({ type: node.type.trim().toLowerCase(), keys: node.keys }));
+    (onPageOf(page)?.jsonLdProperties ?? [])
+      .filter(
+        (node) =>
+          REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !==
+          undefined,
+      )
+      .map((node) => ({
+        type: node.type.trim().toLowerCase(),
+        keys: node.keys,
+      }));
   /**
    * Lowercased, punctuation-free, whitespace-collapsed.
    *
@@ -408,9 +413,6 @@ function buildRecords(
       raw.projection.headings.length < CRAWL_PROJECTION_LIMITS.maxHeadings
     );
   };
-
-  /** The published bar: at or above this, two pages compete with each other. */
-  const NEAR_DUPLICATE_THRESHOLD = 0.7;
 
   const htmlPages = pages.filter(
     (page) =>
@@ -473,7 +475,8 @@ function buildRecords(
     raw.robots.groups.length >= CRAWL_PROJECTION_LIMITS.maxRobotsGroups ||
     raw.robots.groups.some(
       (group) =>
-        group.disallow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
+        group.disallow.length >=
+          CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
         group.allow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup,
     );
   const robotsReadable = raw.robots.fetched && !robotsTruncated;
@@ -489,7 +492,9 @@ function buildRecords(
   // enqueues the seed at depth 0 and never lowers it, so the ONE page the
   // page-scope check is about could never fail — and any page reached first
   // from the seed was judged while the seed itself was not.
-  const belowRootHtmlPages = htmlPages.filter((page) => !isOriginRoot(page.url));
+  const belowRootHtmlPages = htmlPages.filter(
+    (page) => !isOriginRoot(page.url),
+  );
   // A page with no images cannot fail an image check, and counting it as
   // tested would report a text-only site as fully covered rather than as not
   // applicable.
@@ -1016,7 +1021,8 @@ function buildRecords(
             reviewed_range: `${TITLE_LENGTH.min}-${TITLE_LENGTH.max}`,
           }),
         ),
-      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
+      limitation:
+        "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "meta_description_length_outside_range",
@@ -1041,7 +1047,8 @@ function buildRecords(
             reviewed_range: `${DESCRIPTION_LENGTH.min}-${DESCRIPTION_LENGTH.max}`,
           }),
         ),
-      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
+      limitation:
+        "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "page_without_outbound_internal_link",
@@ -1168,7 +1175,8 @@ function buildRecords(
             observed_click_depth: page.depth,
           }),
         ),
-      limitation: "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
+      limitation:
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
     }),
     record({
       // D4 and 5.1 read the same condition at two scales. `alt=""` counts as
@@ -1206,9 +1214,7 @@ function buildRecords(
       unit: "site_resource",
       population: "site_resource",
       tested: pagesWithImages.length,
-      ...(pagesWithImages.length === 0
-        ? { state: "unverified" as const }
-        : {}),
+      ...(pagesWithImages.length === 0 ? { state: "unverified" as const } : {}),
       observations:
         pagesWithImages.length === 0
           ? []
@@ -1245,7 +1251,9 @@ function buildRecords(
             modern_format_share: Number(
               (1 - legacyFormatShare(onPageOf(page))).toFixed(4),
             ),
-            legacy_format_share: Number(legacyFormatShare(onPageOf(page)).toFixed(4)),
+            legacy_format_share: Number(
+              legacyFormatShare(onPageOf(page)).toFixed(4),
+            ),
             images_with_readable_format: readable.length,
             images_on_page: onPageOf(page)?.images.total ?? 0,
           });
@@ -1270,9 +1278,12 @@ function buildRecords(
         })
         .map((page) =>
           pageObservation(page, {
-            open_graph_title: (onPageOf(page)?.openGraph.title ?? null) !== null,
-            open_graph_description: (onPageOf(page)?.openGraph.description ?? null) !== null,
-            open_graph_image: (onPageOf(page)?.openGraph.image ?? null) !== null,
+            open_graph_title:
+              (onPageOf(page)?.openGraph.title ?? null) !== null,
+            open_graph_description:
+              (onPageOf(page)?.openGraph.description ?? null) !== null,
+            open_graph_image:
+              (onPageOf(page)?.openGraph.image ?? null) !== null,
           }),
         ),
       limitation: "static_html_meta_tags_only",
@@ -1304,7 +1315,11 @@ function buildRecords(
       category: "indexability",
       tested: htmlPages.length,
       observations: htmlPages.flatMap((page) => {
-        const verdict = softNotFoundVerdict(page, onPageOf(page)?.textMetrics ?? null, rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null);
+        const verdict = softNotFoundVerdict(
+          page,
+          onPageOf(page)?.textMetrics ?? null,
+          rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null,
+        );
         return verdict === null
           ? []
           : [
@@ -1328,9 +1343,7 @@ function buildRecords(
       id: "hreflang_target_http_error",
       category: "indexability",
       population: "conditional_subset",
-      tested: htmlPages.filter(
-        (page) => hreflangTargetsOf(page).length > 0,
-      ),
+      tested: htmlPages.filter((page) => hreflangTargetsOf(page).length > 0),
       observations: htmlPages.flatMap((page) => {
         const broken = hreflangTargetsOf(page).filter((alternate) => {
           const target = collectedBySubject.get(
@@ -1503,13 +1516,14 @@ function buildRecords(
       // Tested population: pages with enough distinctive text left to score.
       population: "conditional_subset",
       tested: htmlPages.filter(
-        (page) => similarityByUrl.get(page.url)?.similarity !== null &&
+        (page) =>
+          similarityByUrl.get(page.url)?.similarity !== null &&
           similarityByUrl.get(page.url) !== undefined,
       ),
       observations: htmlPages.flatMap((page) => {
         const measured = similarityByUrl.get(page.url);
         const score = measured?.similarity ?? null;
-        if (score === null || score < NEAR_DUPLICATE_THRESHOLD) return [];
+        if (score === null || score < NEAR_DUPLICATE_SIMILARITY) return [];
         return [
           pageObservation(page, {
             similarity_to_nearest_page: Math.round(score * 100) / 100,
@@ -1520,7 +1534,18 @@ function buildRecords(
           }),
         ];
       }),
-      limitation: "similarity_measured_on_collected_paragraphs_after_chrome",
+      // Names the gap when there is one, rather than always describing the
+      // method. A page dropped because the exact pass ran out of comparisons
+      // is a different fact from a page with too little text, and both are
+      // different from "everything was measured" — reporting one sentence for
+      // all three told a reader the run was complete when it was not.
+      limitation: htmlPages.some(
+        (page) =>
+          similarityByUrl.get(page.url)?.unscored ===
+          "too_many_similar_pages_to_compare_them_all_exactly",
+      )
+        ? "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly"
+        : "similarity_measured_on_collected_paragraphs_after_chrome",
     }),
     record({
       id: "faq_schema_question_not_on_page",
@@ -1661,10 +1686,7 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       robotsGroupsObserved: raw.robots.groups.length,
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
-      sitemapUrls: raw.sitemap.subjectUrls.slice(
-        0,
-        SITEMAP_URLS_PUBLISHED_CAP,
-      ),
+      sitemapUrls: raw.sitemap.subjectUrls.slice(0, SITEMAP_URLS_PUBLISHED_CAP),
       sitemapUrlsComplete:
         raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
