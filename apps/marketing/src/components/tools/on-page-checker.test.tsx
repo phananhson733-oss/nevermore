@@ -889,6 +889,8 @@ describe("On-Page checker report depth", () => {
               robotsGroupsObserved: 4,
               sitemapReferencesObserved: 1,
               sitemapFetched: true,
+              sitemapUrls: [],
+              sitemapUrlsComplete: true,
             },
             records: [
               {

@@ -140,11 +140,39 @@ export interface SeoAuditCoverage {
   readonly stopReason: string | null;
 }
 
+/**
+ * How many sitemap URLs the shared crawl row carries.
+ *
+ * Bounded because this list rides in the cached payload, and an unbounded one
+ * on a large site would push the row past the cache ceiling — at which point
+ * the write is silently dropped and every visitor pays for a fresh crawl.
+ * Above the cap `sitemapUrlsComplete` goes false and no coverage rate is
+ * published: a census over part of a population is a sample again, and this
+ * sample's bias runs toward reporting a failing site as healthy.
+ */
+export const SITEMAP_URLS_PUBLISHED_CAP = 500;
+
 export interface SeoAuditSiteResources {
   readonly robotsFetched: boolean;
   readonly robotsGroupsObserved: number;
   readonly sitemapReferencesObserved: number;
   readonly sitemapFetched: boolean;
+  /**
+   * The URLs the sitemap declares, bounded.
+   *
+   * Published because "the pages this site says it wants indexed" is the one
+   * complete, self-declared population an index-coverage rate can honestly
+   * divide by. The alternative — the pages our crawl reached — is a sample
+   * ordered by page value and cut at depth six, so what it drops is deep
+   * pagination, facets and thin archives: precisely the pages that tend not to
+   * be indexed. A rate over that sample is biased upward, and a site genuinely
+   * failing would measure as passing.
+   *
+   * Host-level and visitor-neutral, so the shared crawl row is the right home.
+   */
+  readonly sitemapUrls: readonly string[];
+  /** False when the cap cut the list short, so no rate may be published. */
+  readonly sitemapUrlsComplete: boolean;
 }
 
 /**

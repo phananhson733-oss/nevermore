@@ -62,7 +62,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v14",
+    schemaVersion: "seo_audit.sitewide.v15",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -91,6 +91,8 @@ const upstreamPayload = {
       robotsGroupsObserved: 1,
       sitemapReferencesObserved: 1,
       sitemapFetched: false,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: RECORD_SPECS.map(([id, category], index) =>
       record(id, category, index),
@@ -711,7 +713,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v14",
+            schemaVersion: "seo_audit.sitewide.v15",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },

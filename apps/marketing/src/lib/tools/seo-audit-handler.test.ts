@@ -82,7 +82,7 @@ const raw = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v14",
+    schemaVersion: "seo_audit.sitewide.v15",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -111,6 +111,8 @@ const payload = {
       robotsGroupsObserved: 0,
       sitemapReferencesObserved: 0,
       sitemapFetched: true,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: [],
     pages: [],

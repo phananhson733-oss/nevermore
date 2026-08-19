@@ -153,7 +153,7 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v14",
+      schemaVersion: "seo_audit.sitewide.v15",
 
       mode: "public_preview",
       scope: "discoverable_same_origin_static_html_audit",
@@ -1098,7 +1098,7 @@ describe("target page extract", () => {
   it("pins the schema version the extract ships under", () => {
     const payload = buildSeoAuditPayload(positionalFixture());
 
-    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v14");
+    expect(payload.run.schemaVersion).toBe("seo_audit.sitewide.v15");
 
     expect(payload.result.targetPageExtract).not.toBeNull();
     expect(isSeoAuditPayload(payload)).toBe(true);

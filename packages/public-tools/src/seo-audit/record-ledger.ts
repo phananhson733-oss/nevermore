@@ -3,6 +3,8 @@
 // @pos    -- single authority shared by the producer and every consumer guard
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import { INDEX_COVERAGE_LIMITATION_CODES } from "./index-coverage.ts";
+
 import type { SeoAuditCategory } from "./types.ts";
 
 /**
@@ -205,6 +207,7 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
 
 /** Limitation codes the per-visitor search region publishes. */
 export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
+  ...INDEX_COVERAGE_LIMITATION_CODES,
   "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved",
   "query_rows_hit_the_row_cap_so_the_reported_total_is_short",
   "share_of_reported_queries_only_banded_by_one_average_position_each",

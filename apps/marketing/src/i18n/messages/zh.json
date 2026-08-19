@@ -1015,7 +1015,14 @@
         "image_weights_are_the_bytes_this_run_transferred": "这是本次运行实际传输的字节，上限就是预算——读满上限的文件可以确定超标，但没有下载它的真实总量。CDN 可能给不同浏览器发送不同字节。",
         "no_image_weights_were_measured_for_this_run": "本次运行没有称量任何图片体积。",
         "the_page_declared_no_images_to_weigh": "目标页没有声明任何图片，无从称量。",
-        "no_declared_image_could_be_fetched_this_run": "这个页面声明的图片全部抓取失败，因此不对它们的体积作任何断言。"
+        "no_declared_image_could_be_fetched_this_run": "这个页面声明的图片全部抓取失败，因此不对它们的体积作任何断言。",
+        "no_index_status_source_was_configured_for_this_run": "本次运行未配置索引状态来源，没有向 Google 询问过。",
+        "the_sitemap_declares_more_urls_than_this_run_can_census_so_no_rate_is_published": "这个 sitemap 声明的 URL 超出了一次运行能普查的数量。对部分清单算出的比例又变回抽样，而这种抽样的误差方向是把不合格的站点报成健康——所以不发布比例。",
+        "this_site_declares_no_sitemap_urls_to_measure": "这个站点没有声明任何 sitemap URL，没有可供衡量覆盖率的已声明总体。",
+        "the_propertys_url_inspection_quota_was_already_spent": "该资源的网址检查配额已经用完。这是按站点计的上限，与指向同一资源的其他所有工具共享。",
+        "this_grant_does_not_cover_url_inspection_for_this_property": "当前授权不包含该资源的网址检查权限。",
+        "the_index_status_source_did_not_finish_this_run": "索引状态读取没能在本次运行的时间预算内完成，因此不发布比例。",
+        "index_status_is_googles_own_verdict_per_declared_url": "每一条判定都来自 Google 本身，逐个 URL 读取。比例的分子分母都只统计 sitemap 声明过的 URL。"
       },
       "records": {
         "robots_resource": {
@@ -1293,6 +1300,10 @@
         "image_over_transfer_budget": {
           "title": "超出传输预算的图片",
           "description": "目标页上传输字节数达到或超过审阅的单图预算的图片。"
+        },
+        "sitemap_url_not_indexed": {
+          "title": "已声明但 Google 未展示的 URL",
+          "description": "sitemap 声明的 URL 中，网址检查判定不是「已编入索引」的那些。"
         }
       },
       "evidence": {
@@ -1421,7 +1432,10 @@
         "total_transfer_bytes": "传输字节总数",
         "abandoned_url_impression_share": "废弃 URL 曝光占比",
         "image_transfer_bytes": "传输字节数",
-        "image_size_is_exact": "体积为精确值"
+        "image_size_is_exact": "体积为精确值",
+        "index_coverage_rate": "索引覆盖率",
+        "sitemap_urls_inspected": "已检查的声明 URL 数",
+        "index_status_verdict": "索引状态判定"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

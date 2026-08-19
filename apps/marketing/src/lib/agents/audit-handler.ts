@@ -128,6 +128,8 @@ export interface AgentAuditHandlerDependencies {
     readonly pages: SeoAuditReport["pages"];
     readonly targetPageUrl: string | null;
     readonly targetQueries: readonly string[];
+    readonly sitemapUrls: readonly string[];
+    readonly sitemapUrlsComplete: boolean;
   }) => Promise<AgentSearchPerformance | null>;
   /**
    * Which tool the visitor actually ran.
@@ -423,6 +425,11 @@ function projectSiteResources(
     robotsGroupsObserved: siteResources.robotsGroupsObserved,
     sitemapReferencesObserved: siteResources.sitemapReferencesObserved,
     sitemapFetched: siteResources.sitemapFetched,
+    // Carried, not blanked. This is the population A1 divides by, and an empty
+    // list here does not read as "we could not measure" — it reads as "this
+    // site declares no sitemap URLs", which is a statement about the site.
+    sitemapUrls: [...siteResources.sitemapUrls],
+    sitemapUrlsComplete: siteResources.sitemapUrlsComplete,
   };
 }
 
@@ -625,6 +632,9 @@ export async function handleAgentAuditRequest(
         // that ranks. This comment described that failure while the line below
         // it caused it.
         targetPageUrl: landedTargetUrl(result),
+        // A1's denominator: the pages this site declares it wants indexed.
+        sitemapUrls: result.siteResources.sitemapUrls,
+        sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
         // The visitor's own spelling, not the lowercase identity: it is echoed
         // back in the evidence, and the match lowercases both sides anyway.
         targetQueries: (input.value.targetQueries ?? []).map(

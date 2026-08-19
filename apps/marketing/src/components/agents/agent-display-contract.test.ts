@@ -46,7 +46,7 @@ function data(): AgentAuditSuccessData {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v14",
+        schemaVersion: "seo_audit.sitewide.v15",
         completedAt: "2026-08-12T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -74,6 +74,8 @@ function data(): AgentAuditSuccessData {
         robotsGroupsObserved: 1,
         sitemapReferencesObserved: 0,
         sitemapFetched: false,
+        sitemapUrls: [],
+        sitemapUrlsComplete: true,
       },
       records: [
         {

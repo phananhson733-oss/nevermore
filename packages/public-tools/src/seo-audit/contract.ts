@@ -1,5 +1,7 @@
 import { CRAWL_PROJECTION_LIMITS } from "@sf/sources";
 
+import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
+
 import type {
   SeoAuditCoverage,
   SeoAuditPage,
@@ -196,7 +198,13 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
     typeof value.robotsFetched === "boolean" &&
     isNonNegativeInteger(value.robotsGroupsObserved) &&
     isNonNegativeInteger(value.sitemapReferencesObserved) &&
-    typeof value.sitemapFetched === "boolean"
+    typeof value.sitemapFetched === "boolean" &&
+    isBoundedStringList(
+      value.sitemapUrls,
+      SITEMAP_URLS_PUBLISHED_CAP,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    ) &&
+    typeof value.sitemapUrlsComplete === "boolean"
   );
 }
 
@@ -606,7 +614,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v14" &&
+    run.schemaVersion === "seo_audit.sitewide.v15" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

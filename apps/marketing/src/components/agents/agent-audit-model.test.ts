@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v14",
+      schemaVersion: "seo_audit.sitewide.v15",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -57,6 +57,8 @@ const data: AgentAuditSuccessData = {
       robotsGroupsObserved: 0,
       sitemapReferencesObserved: 0,
       sitemapFetched: false,
+      sitemapUrls: [],
+      sitemapUrlsComplete: true,
     },
     records: [],
   },
@@ -82,7 +84,7 @@ describe("buildAgentAuditViewModel", () => {
       });
       expect(model.scopes.site.groups).toHaveLength(5);
       expect(model.scopes.site.total).toBe(31);
-      expect(model.scopes.site.inventoryReady).toBe(26);
+      expect(model.scopes.site.inventoryReady).toBe(27);
       expect(model.scopes.page.groups).toHaveLength(9);
       expect(model.scopes.page.total).toBe(49);
       expect(model.scopes.page.inventoryReady).toBe(47);
@@ -198,7 +200,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v14",
+      schemaVersion: "seo_audit.sitewide.v15",
       persistence: "none",
     });
   });

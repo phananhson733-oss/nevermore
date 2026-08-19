@@ -234,6 +234,7 @@ const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "1.2": ["page_disallowed_for_search_crawler"],
   A5: ["sitemap_url_disallowed_by_robots"],
   A2: ["abandoned_url_impression_share"],
+  A1: ["sitemap_url_not_indexed"],
 };
 
 const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
@@ -243,6 +244,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "4.5": ["page_near_duplicate_of_another_page"],
   "8.5": ["page_total_transfer_bytes"],
   "5.2": ["image_over_transfer_budget"],
+  A1: ["sitemap_url_not_indexed"],
   A2: ["abandoned_url_impression_share"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
@@ -437,6 +439,15 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   // Without this rule the evaluator reads any record with `affected > 0` as a
   // full failure, and 8.5's record is always affected:1 when it measured
   // anything — so a 40 KB page would publish the same verdict as a 40 MB one.
+  A1: [
+    {
+      recordId: "sitemap_url_not_indexed",
+      kind: "aggregate-min",
+      label: "index_coverage_rate",
+      passAtOrAbove: 0.9,
+      failBelow: 0.7,
+    },
+  ],
   A2: [
     {
       recordId: "abandoned_url_impression_share",
@@ -670,6 +681,10 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "4.5": l(
     "This page and the one named beside it say close to the same thing, so search engines have to pick one and you do not get to choose which. Per pair, pick one: merge them into the stronger URL and 301 the other, or make each genuinely about a different question — different intent, different examples, not a reworded intro. Adding a canonical without merging keeps the weaker page alive and still spends crawl on it.",
     "这个页面和旁边点名的那一页说的几乎是同一件事，搜索引擎只会挑一个，而挑哪个不由你决定。逐对二选一：合并到更强的那个 URL 并把另一个 301 过去；或者让两页真的各答一个问题——不同意图、不同例子，而不是改写开头。只加 canonical 不合并，等于留着弱的那页继续消耗抓取预算。",
+  ),
+  A1: l(
+    "Google is not showing these pages, and your sitemap says you want them shown. Work down the list rather than across it: open each URL in Search Console's URL Inspection and read the reason it gives — a noindex, a canonical pointing elsewhere, a redirect, a 404, or simply not crawled yet. Those are five different fixes and only the report can tell you which one you have. If a page should not be indexed, the fix is to remove it from the sitemap, not to leave a declaration you do not mean.",
+    "Google 没有展示这些页面，而你的 sitemap 说你希望它们被展示。逐条往下查，不要横向猜：在 Search Console 的网址检查里打开每个 URL，读它给出的原因——noindex、canonical 指向别处、跳转、404，或者只是还没被抓。这是五种不同的修法，只有那份报告能告诉你是哪一种。如果某个页面本来就不该被索引，正确的做法是把它从 sitemap 里删掉，而不是留着一句你并不想兑现的声明。",
   ),
   A2: l(
     "These URLs no longer serve the page they rank for, and search results are still sending people to them. Per URL, pick one: 301 it to the page that replaced it if one exists, or restore it if it should never have gone. If neither, let it return 410 rather than 404 — 410 tells Google the removal was deliberate and retires the result faster. A redirect chain counts here too: point the link at the destination, not at the hop.",

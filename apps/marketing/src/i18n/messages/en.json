@@ -1015,7 +1015,14 @@
         "image_weights_are_the_bytes_this_run_transferred": "These are the bytes this run actually transferred, capped at the budget — a file that reached the cap is known to be over it, but its true total was not downloaded. A CDN may serve different bytes to a different browser.",
         "no_image_weights_were_measured_for_this_run": "No image weights were measured on this run.",
         "the_page_declared_no_images_to_weigh": "The target page declares no images, so there was nothing to weigh.",
-        "no_declared_image_could_be_fetched_this_run": "Every image this page declares failed to fetch, so nothing about their size is claimed."
+        "no_declared_image_could_be_fetched_this_run": "Every image this page declares failed to fetch, so nothing about their size is claimed.",
+        "no_index_status_source_was_configured_for_this_run": "No index-status source was configured for this run, so nothing was asked of Google.",
+        "the_sitemap_declares_more_urls_than_this_run_can_census_so_no_rate_is_published": "This sitemap declares more URLs than one run can inspect. A rate over part of the list would be a sample again, and this one's error runs toward reporting a failing site as healthy — so no rate is published.",
+        "this_site_declares_no_sitemap_urls_to_measure": "This site declares no sitemap URLs, so there is no declared population to measure coverage against.",
+        "the_propertys_url_inspection_quota_was_already_spent": "The property's URL Inspection quota was already spent. It is a per-site ceiling shared with every other tool pointed at this property.",
+        "this_grant_does_not_cover_url_inspection_for_this_property": "This grant does not cover URL Inspection for this property.",
+        "the_index_status_source_did_not_finish_this_run": "The index-status read did not finish within this run's budget, so no rate is published.",
+        "index_status_is_googles_own_verdict_per_declared_url": "Each verdict is Google's own, read one URL at a time. Only URLs the sitemap declares are counted, on either side of the rate."
       },
       "records": {
         "robots_resource": {
@@ -1293,6 +1300,10 @@
         "image_over_transfer_budget": {
           "title": "Image over the transfer budget",
           "description": "Images on the target page whose transferred bytes reached or passed the reviewed per-image budget."
+        },
+        "sitemap_url_not_indexed": {
+          "title": "Declared URL Google is not showing",
+          "description": "URLs the sitemap declares whose URL Inspection verdict is anything other than indexed."
         }
       },
       "evidence": {
@@ -1421,7 +1432,10 @@
         "total_transfer_bytes": "Total transferred bytes",
         "abandoned_url_impression_share": "Abandoned URL impression share",
         "image_transfer_bytes": "Transferred bytes",
-        "image_size_is_exact": "Size is exact"
+        "image_size_is_exact": "Size is exact",
+        "index_coverage_rate": "Index coverage rate",
+        "sitemap_urls_inspected": "Declared URLs inspected",
+        "index_status_verdict": "Index status verdict"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

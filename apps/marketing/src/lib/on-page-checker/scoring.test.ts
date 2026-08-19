@@ -136,6 +136,8 @@ const SITE_RESOURCES = {
   robotsGroupsObserved: 3,
   sitemapReferencesObserved: 1,
   sitemapFetched: true,
+  sitemapUrls: [],
+  sitemapUrlsComplete: true,
 } as const;
 
 function record(

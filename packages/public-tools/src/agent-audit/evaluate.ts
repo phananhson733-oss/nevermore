@@ -1,8 +1,5 @@
 import type { SeoAuditRecord } from "../seo-audit/types.ts";
-import {
-  PAGE_AUDIT_GROUPS,
-  SITE_AUDIT_GROUPS,
-} from "./catalog.ts";
+import { PAGE_AUDIT_GROUPS, SITE_AUDIT_GROUPS } from "./catalog.ts";
 import type {
   AgentAuditCheckDefinition,
   AgentAuditEvaluatedCheck,
@@ -133,7 +130,8 @@ function formatAggregate(label: string, value: number): [string, string] {
     const pct = `${(value * 100).toFixed(1)}%`;
     return [pct, pct];
   }
-  if (label.endsWith("_ms")) return [`${Math.round(value)} ms`, `${Math.round(value)} 毫秒`];
+  if (label.endsWith("_ms"))
+    return [`${Math.round(value)} ms`, `${Math.round(value)} 毫秒`];
   // A unitless score needs its own precision. One decimal renders a CLS of
   // 0.05 as "0.1" — the pass boundary itself — so a page comfortably inside
   // the good band displays as sitting exactly on the line.
@@ -213,7 +211,10 @@ function issueSeverity(
   const rule = check.issueRules.find((entry) => entry.recordId === record.id);
   if (rule === undefined) return "full";
 
-  if (rule.kind === "affected-ratio" || rule.kind === "affected-ratio-at-most") {
+  if (
+    rule.kind === "affected-ratio" ||
+    rule.kind === "affected-ratio-at-most"
+  ) {
     if (record.tested <= 0) return "full";
     const share = record.affected / record.tested;
     const passes =
@@ -263,10 +264,21 @@ function issueSeverity(
   return comparable === record.observations.length ? "none" : "unmeasured";
 }
 
-/** The softer state for a measurement past the pass mark but under the fail mark. */
+/**
+ * The softer state for a measurement past the pass mark but under the fail mark.
+ *
+ * One step below whatever this check's failure is, rather than a fixed Tip.
+ * The fixed version was right only for checks that fail at Warning: on a check
+ * that fails at Blocker it rendered the middle band as a Tip, so A1 — whose
+ * published sentence reads "at least 90%; below 70% is Blocker, 70-90% is
+ * Warning" — reported a site sitting at 80% index coverage as a Tip. The
+ * threshold the reader is shown and the severity the product executes have to
+ * be the same sentence.
+ */
 function degradedResult(
   check: AgentAuditCheckDefinition,
 ): AgentAuditResultState {
+  if (check.blockerEvidenceRecordIds.length > 0) return "warning";
   return check.failureResult === "warning" ? "tip" : check.failureResult;
 }
 
@@ -299,7 +311,10 @@ function evaluateCheck(
       scoreContribution: null,
     };
   }
-  if (records.length === 0 || records.every((record) => record.state === "unverified")) {
+  if (
+    records.length === 0 ||
+    records.every((record) => record.state === "unverified")
+  ) {
     return {
       check,
       result: "excluded",
@@ -379,12 +394,17 @@ function evaluateCheck(
   };
 }
 
-function groupHealth(checks: readonly AgentAuditEvaluatedCheck[]): number | null {
+function groupHealth(
+  checks: readonly AgentAuditEvaluatedCheck[],
+): number | null {
   const scored = checks.filter(
     (check) => check.check.scored && check.scoreValue !== null,
   );
   if (scored.length === 0) return null;
-  const weight = scored.reduce((total, check) => total + check.check.scoreWeight, 0);
+  const weight = scored.reduce(
+    (total, check) => total + check.check.scoreWeight,
+    0,
+  );
   const earned = scored.reduce(
     (total, check) => total + (check.scoreContribution ?? 0),
     0,

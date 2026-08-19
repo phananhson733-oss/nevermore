@@ -15,6 +15,8 @@ import {
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 import { createPublicToolResult } from "../contract.ts";
+import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
+
 import type {
   SeoAuditCategory,
   SeoAuditEvidenceValueEntry,
@@ -1659,6 +1661,12 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       robotsGroupsObserved: raw.robots.groups.length,
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
+      sitemapUrls: raw.sitemap.subjectUrls.slice(
+        0,
+        SITEMAP_URLS_PUBLISHED_CAP,
+      ),
+      sitemapUrlsComplete:
+        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
     records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
     pages,
@@ -1669,7 +1677,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v14",
+      schemaVersion: "seo_audit.sitewide.v15",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },
