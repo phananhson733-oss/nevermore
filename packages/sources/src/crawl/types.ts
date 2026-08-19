@@ -165,6 +165,14 @@ export interface CrawlPageAssets {
   readonly images: readonly CrawlImageObservation[];
   /** True count, so a page past `maxImages` still reports its real total. */
   readonly imageCount: number;
+  /**
+   * Images with no alt attribute at all, counted over every one of them.
+   *
+   * Separate from `images` because that list is capped: a page with 350 images
+   * whose last fifty have no alt produced no observation and was published as
+   * fully covered. The verdict must not depend on where the cap fell.
+   */
+  readonly imagesWithoutAltAttribute: number;
   readonly openGraph: {
     readonly title: boolean;
     readonly description: boolean;

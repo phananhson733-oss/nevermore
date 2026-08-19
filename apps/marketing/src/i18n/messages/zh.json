@@ -985,7 +985,9 @@
         "the_field_data_provider_did_not_answer_this_run": "实况数据供应商没有在本次运行的时限内应答，因此没有取到任何实测值。值得再试一次。",
         "no_results_page_provider_was_configured_for_this_run": "本次运行没有配置结果页数据供应商，因此没有采样任何结果页。这里的一切都不是对这个查询的判断。",
         "this_runs_market_is_not_one_the_results_page_provider_covers": "本次运行的市场不在结果页供应商覆盖范围内，因此没有采样，也没有产生付费调用。",
-        "the_results_page_provider_did_not_answer_this_run": "结果页数据供应商本次未应答，因此没有采样。值得再试一次。"
+        "the_results_page_provider_did_not_answer_this_run": "结果页数据供应商本次未应答，因此没有采样。值得再试一次。",
+        "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "本次运行的 robots.txt 规则触到了自身上限，某条 Disallow 可能在被读到之前就被丢掉了。相关放行检查按「未验证」报告，而不是按「已放行」。",
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。"
       },
       "records": {
         "robots_resource": {

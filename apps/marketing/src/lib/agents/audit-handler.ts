@@ -169,6 +169,25 @@ export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   reportAs: "on-page-seo-check",
 };
 
+/**
+ * The URL the crawl actually landed on for the submitted page, or null.
+ *
+ * Search Console keys its rows by the URL it indexed, which is the end of the
+ * redirect journey. The report carries both: `inspectedTargetUrl` is what was
+ * requested and each page's `finalUrl` is where it arrived.
+ */
+function landedTargetUrl(result: {
+  readonly targetInspected: boolean;
+  readonly inspectedTargetUrl: string | null;
+  readonly targetUrl: string;
+  readonly pages: SeoAuditReport["pages"];
+}): string | null {
+  if (!result.targetInspected) return null;
+  const requested = result.inspectedTargetUrl ?? result.targetUrl;
+  const page = result.pages.find((entry) => entry.url === requested);
+  return page?.finalUrl ?? requested;
+}
+
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
 
 const UPSTREAM_ERROR_STATUS = {
@@ -490,12 +509,15 @@ export async function handleAgentAuditRequest(
       (await dependencies.readSearchPerformance?.({
         siteOrigin: result.siteOrigin,
         pages: result.pages,
-        // The URL the crawl landed on, and only when it landed: Search Console
-        // keys rows by the URL it indexed, so a submitted form that redirected
-        // matches nothing and would report a ranking page as never shown.
-        targetPageUrl: result.targetInspected
-          ? (result.inspectedTargetUrl ?? result.targetUrl)
-          : null,
+        // The URL the crawl LANDED on — `finalUrl`, not `inspectedTargetUrl`.
+        //
+        // `inspectedTargetUrl` is the URL the crawl requested, so on any site
+        // that redirects (trailing slash, http to https) the equality filter
+        // was sent the pre-redirect form, matched nothing, and 9.5 published
+        // "Search Console reported no impressions for this URL" about a page
+        // that ranks. This comment described that failure while the line below
+        // it caused it.
+        targetPageUrl: landedTargetUrl(result),
         // The visitor's own spelling, not the lowercase identity: it is echoed
         // back in the evidence, and the match lowercases both sides anyway.
         targetQueries: (input.value.targetQueries ?? []).map(

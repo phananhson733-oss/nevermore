@@ -140,6 +140,28 @@ function decodeHtml(value: string): string {
  * remaining tags, decode common entities, collapse whitespace. Conservative and
  * dependency-free (vendor-copied from extract.ts, minus the SHA hash).
  */
+/**
+ * Markup a reader never sees, removed before anything is counted.
+ *
+ * Comments and `<noscript>`/`<script type="text/template">` blocks carry real
+ * tags that are not part of the document: a Facebook Pixel noscript contains an
+ * `<img>` with no alt, and a Handlebars template contains headings at arbitrary
+ * levels. Counting them failed the alt checks on a large share of commercial
+ * sites and fabricated outline skips on any page shipping a client template.
+ *
+ * `extractNormalisedBody` has always stripped these before measuring text; the
+ * image and heading-level collectors were added later and read the raw
+ * document, which is how they disagreed with it.
+ */
+function withoutInvisibleMarkup(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(
+      /<\s*(script|noscript|template|style)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi,
+      " ",
+    );
+}
+
 function extractNormalisedBody(html: string): string {
   const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i)?.[1] ?? html;
   const withoutNonContent = body
@@ -208,7 +230,7 @@ function collectHeadings(html: string): readonly string[] {
  */
 function collectHeadingLevels(html: string): readonly number[] {
   const out: number[] = [];
-  for (const match of html.matchAll(/<h([1-6])\b[^>]*>/gi)) {
+  for (const match of withoutInvisibleMarkup(html).matchAll(/<h([1-6])\b[^>]*>/gi)) {
     const level = Number(match[1]);
     if (Number.isInteger(level)) out.push(level);
     if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadingLevels) break;
@@ -219,11 +241,17 @@ function collectHeadingLevels(html: string): readonly number[] {
 function collectImages(html: string): {
   readonly images: readonly CrawlImageObservation[];
   readonly imageCount: number;
+  readonly withoutAltAttribute: number;
 } {
   const images: CrawlImageObservation[] = [];
   let imageCount = 0;
-  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+  // Counted over EVERY image, not only the retained ones. The cap exists to
+  // bound what is stored; capping the count too meant a category page with 350
+  // images whose last 50 have no alt was published as fully covered.
+  let withoutAltAttribute = 0;
+  for (const match of withoutInvisibleMarkup(html).matchAll(/<img\b[^>]*>/gi)) {
     imageCount += 1;
+    if (attr(match[0], "alt") === null) withoutAltAttribute += 1;
     if (images.length >= CRAWL_PROJECTION_LIMITS.maxImages) continue;
     const tag = match[0];
     const alt = attr(tag, "alt");
@@ -240,7 +268,7 @@ function collectImages(html: string): {
       altHasText: (alt ?? "").trim().length > 0,
     });
   }
-  return { images, imageCount };
+  return { images, imageCount, withoutAltAttribute };
 }
 
 /** Whether a `<meta>` tag declares the given Open Graph property with content. */
@@ -523,6 +551,7 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
     assets: {
       images: collectedImages.images,
       imageCount: collectedImages.imageCount,
+      imagesWithoutAltAttribute: collectedImages.withoutAltAttribute,
       openGraph: {
         title: hasOpenGraph(metaTags, "og:title"),
         description: hasOpenGraph(metaTags, "og:description"),

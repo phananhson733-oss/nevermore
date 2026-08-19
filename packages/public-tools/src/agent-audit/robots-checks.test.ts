@@ -168,6 +168,52 @@ describe("A5 — sitemap URLs robots.txt blocks", () => {
   });
 });
 
+describe("1.5 — included in sitemap", () => {
+  it("passes a page that IS in the sitemap", () => {
+    // The record declared a conditional subset while iterating every collected
+    // page, so the projection refused to read the target's absence from the
+    // observations as evidence and answered "not tested" for a page that is
+    // correctly listed.
+    expect(pageCheck(raw({}), "1.5")?.result).toBe("pass");
+  });
+
+  it("is excluded, not failed, when no sitemap was collected", () => {
+    expect(
+      pageCheck(raw({ sitemapFetched: false }), "1.5")?.result,
+    ).toBe("excluded");
+  });
+});
+
+describe("truncation is not permission", () => {
+  it("refuses to judge when a group's rules hit this run's cap", () => {
+    // The crawl projection slices each group at 128 rules. A Disallow that
+    // fell off the end is indistinguishable from one never written, so the
+    // page it forbids came back allowed and two Blocker-capable checks passed.
+    const disallow = Array.from({ length: 128 }, (_, i) => `/x${i}`);
+    const result = pageCheck(
+      raw({ groups: [{ userAgent: "*", disallow, allow: [] }] }),
+      "1.2",
+    );
+
+    expect(result?.result).toBe("excluded");
+  });
+
+  it("refuses to judge A5 when the sitemap hit this run's cap", () => {
+    // Members are read in order, so what falls off is a whole late-alphabet
+    // branch — exactly the kind of section a site disallows.
+    const urls = Array.from(
+      { length: 2_000 },
+      (_, i) => `https://acme.test/p${i}`,
+    );
+    const result = siteCheck(
+      raw({ groups: BLOCKS_GOOGLE, sitemapUrls: urls }),
+      "A5",
+    );
+
+    expect(result?.result).toBe("excluded");
+  });
+});
+
 describe("1.2 — robots.txt allowance for search", () => {
   it("fails the target page when a search-crawler group forbids it", () => {
     expect(
@@ -212,6 +258,41 @@ describe("7.5 — BreadcrumbList below the root", () => {
 
   it("passes a page that declares one", () => {
     expect(pageCheck(raw({}), "7.5")?.result).toBe("pass");
+  });
+
+  it("judges the submitted page even though the crawl seeds it at depth 0", () => {
+    // "Below the root" is a fact about the URL. Reading it as crawl depth
+    // exempted the ONE page the page-scope check is about: the engine enqueues
+    // the seed at depth 0 and never lowers it, so a submitted /blog/post with
+    // no BreadcrumbList could never fail.
+    const seeded = page("https://acme.test/blog/post", {
+      jsonLd: { types: ["WebPage"], errorCount: 0 },
+    });
+    const result = pageCheck(
+      raw({
+        pages: [
+          { ...seeded, depth: 0 },
+          page("https://acme.test/", {}, 0),
+        ],
+      }),
+      "7.5",
+    );
+
+    expect(result?.result).toBe("tip");
+  });
+
+  it("still exempts the origin root at any depth", () => {
+    const result = pageCheck(
+      raw({
+        pages: [
+          page("https://acme.test/", { jsonLd: { types: [], errorCount: 0 } }, 3),
+          page("https://acme.test/blog/post"),
+        ],
+      }),
+      "7.5",
+    );
+
+    expect(result?.result).toBe("pass");
   });
 
   it("does not judge the homepage", () => {

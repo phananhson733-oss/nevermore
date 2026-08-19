@@ -116,6 +116,51 @@ describe("5.1 / D4 — image alt", () => {
   });
 });
 
+describe("markup a reader never sees", () => {
+  it("does not count an image inside a comment or noscript", () => {
+    // The Facebook Pixel noscript snippet ships an alt-less tracking pixel and
+    // is on a large share of commercial sites. Counting it failed the alt
+    // checks on pages whose only visible image is correctly labelled.
+    const html = doc(
+      `<!-- <img src="/old-hero.jpg"> -->` +
+        `<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=1"/></noscript>` +
+        `<img src="/real.webp" alt="A real photo">`,
+    );
+
+    expect(check(html, "page", "5.1")?.result).toBe("pass");
+    expect(check(html, "site", "D4")?.result).toBe("pass");
+  });
+
+  it("does not read a heading out of a client template or a comment", () => {
+    // Handlebars/Underscore <script type="text/template"> blocks and
+    // commented-out markup are ordinary in shipped HTML, and both fabricated
+    // an outline skip on a document whose visible outline is h1 -> h2.
+    for (const body of [
+      `<script>var t = "<h4>x</h4>";</script><h2>S</h2>`,
+      `<!-- <h5>legacy</h5> --><h2>S</h2>`,
+    ]) {
+      expect(
+        check(`<html><body><h1>T</h1>${body}</body></html>`, "page", "3.3")
+          ?.result,
+      ).toBe("pass");
+    }
+  });
+
+  it("counts a missing alt past the stored-image cap", () => {
+    // The stored list stops at 300 while the true total keeps counting. A
+    // category page whose last images are unlabelled was published as covered
+    // because the filter read the capped list.
+    const covered = Array.from(
+      { length: 300 },
+      (_, i) => `<img src="/${i}.webp" alt="x">`,
+    ).join("");
+    const html = doc(`${covered}<img src="/late.png">`);
+
+    expect(check(html, "page", "5.1")?.result).toBe("warning");
+    expect(check(html, "site", "D4")?.result).toBe("warning");
+  });
+});
+
 describe("5.3 — modern image format", () => {
   it("passes a page already on modern formats", () => {
     expect(

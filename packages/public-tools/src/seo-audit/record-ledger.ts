@@ -159,6 +159,8 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "redirect_destination_status_not_observed_for_every_redirect",
   "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
   "robots_rules_read_for_one_search_crawler_token_only",
+  "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped",
+  "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing",
   "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
   "static_html_img_tags_only_css_and_script_rendered_images_not_seen",
   "format_read_from_the_url_extension_only_not_from_the_response",

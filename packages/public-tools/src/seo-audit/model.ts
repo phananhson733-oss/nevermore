@@ -3,7 +3,7 @@ import {
   SOFT_404_BODY_FLOOR_UNITS,
   softNotFoundVerdict,
 } from "./soft-404.ts";
-import type { CrawlPageAssets } from "@sf/sources";
+import { CRAWL_PROJECTION_LIMITS, type CrawlPageAssets } from "@sf/sources";
 import {
   searchCrawlerMayFetch,
   SEARCH_CRAWLER_USER_AGENT,
@@ -251,6 +251,16 @@ function firstSkippedLevel(
  */
 const MAX_LISTED_SOURCE_PAGES = 5;
 
+/** Whether a URL is the origin's own root, which has nothing above it. */
+function isOriginRoot(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname === "/" && parsed.search === "";
+  } catch {
+    return false;
+  }
+}
+
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
@@ -288,15 +298,42 @@ function buildRecords(
   );
   // An unfetched robots.txt is not permission. Reading it as permission is how
   // a check that could not run turns into a clean pass.
-  const robotsReadable = raw.robots.fetched;
-  // A homepage has nothing above it to put in a breadcrumb, so including the
-  // root would make every correctly-built site fail 7.5 by exactly one page.
-  const belowRootHtmlPages = htmlPages.filter((page) => page.depth > 0);
+  //
+  // Neither is a TRUNCATED one. The crawl projection slices each group's rules
+  // at 128 and the group list at 64, and a Disallow that fell off the end is
+  // indistinguishable from one that was never written — so a page it forbids
+  // comes back allowed and two Blocker-capable checks pass. A file at either
+  // cap is read as unreadable rather than as permissive.
+  const robotsTruncated =
+    raw.robots.groups.length >= CRAWL_PROJECTION_LIMITS.maxRobotsGroups ||
+    raw.robots.groups.some(
+      (group) =>
+        group.disallow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
+        group.allow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup,
+    );
+  const robotsReadable = raw.robots.fetched && !robotsTruncated;
+  // Same shape for the sitemap: the projection slices at 2,000 and then reports
+  // the SLICED length as the count, so the cut leaves no trace. Members are
+  // sorted, so what falls off is a whole late-alphabet branch — exactly the
+  // kind of section a site disallows.
+  const sitemapTruncated =
+    raw.sitemap.subjectUrls.length >= CRAWL_PROJECTION_LIMITS.maxSitemapUrls;
+  const sitemapReadable = raw.sitemap.fetched && !sitemapTruncated;
+  // "Below the root" is a fact about the URL, not about crawl order. Reading it
+  // as depth > 0 exempted the submitted page from 7.5 entirely: the engine
+  // enqueues the seed at depth 0 and never lowers it, so the ONE page the
+  // page-scope check is about could never fail — and any page reached first
+  // from the seed was judged while the seed itself was not.
+  const belowRootHtmlPages = htmlPages.filter((page) => !isOriginRoot(page.url));
   // A page with no images cannot fail an image check, and counting it as
   // tested would report a text-only site as fully covered rather than as not
   // applicable.
+  // Counted from the true image total, not the stored sample.
   const pagesWithImages = htmlPages.filter(
-    (page) => (assetsOf(page)?.images.length ?? 0) > 0,
+    (page) => (assetsOf(page)?.imageCount ?? 0) > 0,
+  );
+  const uncoveredImagePages = pagesWithImages.filter(
+    (page) => (assetsOf(page)?.imagesWithoutAltAttribute ?? 0) > 0,
   );
   const linkTargetErrors = new Map<
     string,
@@ -732,7 +769,11 @@ function buildRecords(
     record({
       id: "page_not_in_sitemap",
       // Tested population: collected pages, only when a sitemap was retrieved.
-      population: "conditional_subset",
+      // Every collected page, whenever a sitemap was collected at all. Declaring a
+      // subset made the page projection refuse to read absence as evidence, so a
+      // page that IS in the sitemap came back "not tested" instead of passing.
+      // With no sitemap the record is already unverified via tested === 0.
+      population: "every_collected_page",
       category: "crawl",
       tested: sitemapWasFetched ? htmlPages.length : 0,
       observations: sitemapWasFetched
@@ -837,9 +878,11 @@ function buildRecords(
             sitemap_member: page.sitemapMember,
           }),
         ),
-      limitation: robotsReadable
-        ? "robots_rules_read_for_one_search_crawler_token_only"
-        : "resource_not_observed_does_not_prove_absence",
+      limitation: robotsTruncated
+        ? "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped"
+        : robotsReadable
+          ? "robots_rules_read_for_one_search_crawler_token_only"
+          : "resource_not_observed_does_not_prove_absence",
     }),
     record({
       // A5. Read against the sitemap rather than the collected pages on
@@ -853,13 +896,11 @@ function buildRecords(
       unit: "site_resource",
       population: "site_resource",
       tested:
-        robotsReadable && raw.sitemap.fetched
-          ? raw.sitemap.subjectUrls.length
-          : 0,
-      ...(robotsReadable && raw.sitemap.fetched
+        robotsReadable && sitemapReadable ? raw.sitemap.subjectUrls.length : 0,
+      ...(robotsReadable && sitemapReadable
         ? {}
         : { state: "unverified" as const }),
-      observations: (robotsReadable && raw.sitemap.fetched
+      observations: (robotsReadable && sitemapReadable
         ? raw.sitemap.subjectUrls
         : []
       )
@@ -872,11 +913,15 @@ function buildRecords(
             sitemap_member: true,
           }),
         })),
-      limitation: !robotsReadable
-        ? "resource_not_observed_does_not_prove_absence"
-        : raw.sitemap.fetched
-          ? "robots_rules_read_for_one_search_crawler_token_only"
-          : "no_sitemap_collected_membership_not_testable",
+      limitation: robotsTruncated
+        ? "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped"
+        : !robotsReadable
+          ? "resource_not_observed_does_not_prove_absence"
+          : sitemapTruncated
+            ? "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing"
+            : raw.sitemap.fetched
+              ? "robots_rules_read_for_one_search_crawler_token_only"
+              : "no_sitemap_collected_membership_not_testable",
     }),
     record({
       // 7.5, presence only. Whether the markup matches the breadcrumb a reader
@@ -921,15 +966,13 @@ function buildRecords(
       // cannot tell a clean page from one that never qualified, so every
       // correctly-marked-up page came back "excluded".
       tested: htmlPages.length,
-      observations: pagesWithImages
-        .filter((page) =>
-          (assetsOf(page)?.images ?? []).some((image) => !image.hasAltAttribute),
-        )
+      observations: htmlPages
+        // The uncapped count. The stored list stops at 300, so filtering on it
+        // published a page whose last fifty images have no alt as covered.
+        .filter((page) => (assetsOf(page)?.imagesWithoutAltAttribute ?? 0) > 0)
         .map((page) =>
           pageObservation(page, {
-            images_without_alt: (assetsOf(page)?.images ?? []).filter(
-              (image) => !image.hasAltAttribute,
-            ).length,
+            images_without_alt: assetsOf(page)?.imagesWithoutAltAttribute ?? 0,
             images_observed: assetsOf(page)?.images.length ?? 0,
             images_on_page: assetsOf(page)?.imageCount ?? 0,
           }),
@@ -960,20 +1003,11 @@ function buildRecords(
                   alt_coverage_share: Number(
                     (
                       1 -
-                      pagesWithImages.filter((page) =>
-                        (assetsOf(page)?.images ?? []).some(
-                          (image) => !image.hasAltAttribute,
-                        ),
-                      ).length /
-                        pagesWithImages.length
+                      uncoveredImagePages.length / pagesWithImages.length
                     ).toFixed(4),
                   ),
                   pages_with_images: pagesWithImages.length,
-                  pages_with_uncovered_images: pagesWithImages.filter((page) =>
-                    (assetsOf(page)?.images ?? []).some(
-                      (image) => !image.hasAltAttribute,
-                    ),
-                  ).length,
+                  pages_with_uncovered_images: uncoveredImagePages.length,
                 }),
               },
             ],

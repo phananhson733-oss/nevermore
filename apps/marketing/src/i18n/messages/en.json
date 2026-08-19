@@ -985,7 +985,9 @@
         "the_field_data_provider_did_not_answer_this_run": "The field-data provider did not answer within this run's budget, so no measurement was taken. Worth trying again.",
         "no_results_page_provider_was_configured_for_this_run": "No results-page provider was configured for this run, so no results page was sampled. Nothing here is a statement about the query.",
         "this_runs_market_is_not_one_the_results_page_provider_covers": "This run's market is not one the results-page provider covers, so no sample was taken and no paid call was made.",
-        "the_results_page_provider_did_not_answer_this_run": "The results-page provider did not answer this run, so no sample was taken. Worth trying again."
+        "the_results_page_provider_did_not_answer_this_run": "The results-page provider did not answer this run, so no sample was taken. Worth trying again.",
+        "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "This run's robots.txt rules hit its own cap, so a Disallow may have been dropped before it could be read. The allowance checks are reported as unverified rather than as permission.",
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "The sitemap hit this run's URL cap, so a declared URL may be missing from what was checked. Members are read in order, so what falls off is a whole late-alphabet section."
       },
       "records": {
         "robots_resource": {

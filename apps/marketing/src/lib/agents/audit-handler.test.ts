@@ -251,6 +251,62 @@ describe("handleAgentAuditRequest", () => {
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
+  it("asks Search Console about the URL the crawl landed on, not the one it requested", async () => {
+    // On any site that redirects — trailing slash, http to https — the
+    // requested form matches no Search Console row, so 9.5 published "no
+    // impressions for this URL" about a page that ranks.
+    const seen: { url: string | null }[] = [];
+    const requested = "https://acme.test/pricing";
+    const landed = "https://acme.test/pricing/";
+    const collected = {
+      url: requested,
+      subjectUrl: requested,
+      // Where the journey ended. Search Console keys its rows by this one.
+      finalUrl: landed,
+      depth: 1,
+      initialStatus: 301,
+      finalStatus: 200,
+      redirectHops: 1,
+      contentType: "text/html",
+      robotsDirectiveState: "noindex_not_observed" as const,
+      canonicalTarget: landed,
+      title: "Pricing",
+      metaDescription: "D",
+      h1Count: 1,
+      headingsCount: 1,
+      wordCount: 100,
+      inboundLinks: 1,
+      outboundLinks: 1,
+      sitemapMember: true,
+      jsonLdTypes: [],
+      jsonLdErrorCount: 0,
+    };
+    await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetInspected: true,
+                inspectedTargetUrl: requested,
+                pages: [collected],
+              },
+            },
+          }),
+        readSearchPerformance: async (input) => {
+          seen.push({ url: input.targetPageUrl });
+          return null;
+        },
+      }),
+    );
+
+    expect(seen[0]?.url).toBe(landed);
+  });
+
   it("says no source was configured, not that CrUX has nothing for the page", async () => {
     // This is production today: PAGESPEED_API_KEY is set in no environment of
     // the marketing project. The first version substituted a fabricated
