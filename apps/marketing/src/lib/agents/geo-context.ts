@@ -2,6 +2,7 @@
 // @output -- one immutable context snapshot with a reproducible content fingerprint
 // @pos    -- the Marketing-owned context contract every GEO query and report binds to
 
+import { hasGeoCategorySubject } from "./geo-category-stem.ts";
 import {
   findGeoAliasMatch,
   normalizeAliasForMatch,
@@ -109,6 +110,7 @@ export type GeoContextRejection =
   | "product_name_invalid"
   | "category_unconfirmed"
   | "category_invalid"
+  | "category_has_no_subject"
   | "buyer_invalid"
   | "aliases_none_confirmed"
   | "alias_invalid"
@@ -535,6 +537,15 @@ export async function confirmGeoContext(
   if (input.categoryConfirmed !== true) rejections.push("category_unconfirmed");
   const category = bounded(input.category, MAX_CATEGORY);
   if (category === null) rejections.push("category_invalid");
+  // "tools", "software", "platform" — a kind of product, not a category. Every
+  // question is built as "{stem} tools", so a category that is nothing but the
+  // template's own noun renders "What are the top tools right now?": a question
+  // with no subject, never calibrated, and eighteen paid calls measuring
+  // visibility in no market at all. Refused here rather than discovered in the
+  // report, which is what the confirm step is for.
+  else if (!hasGeoCategorySubject(category)) {
+    rejections.push("category_has_no_subject");
+  }
 
   const buyer = bounded(input.buyer, MAX_BUYER);
   if (buyer === null) rejections.push("buyer_invalid");
