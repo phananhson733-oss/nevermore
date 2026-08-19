@@ -76,6 +76,7 @@ function raw(overrides: Partial<SeoAuditRaw> = {}): SeoAuditRaw {
       fetched: true,
       urlCount: 2,
       subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+      declaredUrls: ["https://acme.test/", "https://acme.test/about"],
       complete: true,
     },
     availability: "available",
@@ -501,7 +502,7 @@ describe("site-wide SEO audit model", () => {
     const report = buildSeoAuditReport(
       raw({
         robots: { fetched: false, groups: [], sitemaps: [] },
-        sitemap: { fetched: false, urlCount: 0, subjectUrls: [], complete: false },
+        sitemap: { fetched: false, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: false },
       }),
     );
 
@@ -899,7 +900,7 @@ describe("seo audit record invariants", () => {
 
   it("only tests sitemap membership when a sitemap was collected", () => {
     const withoutSitemap = buildSeoAuditReport(
-      raw({ sitemap: { fetched: false, urlCount: 0, subjectUrls: [], complete: false } }),
+      raw({ sitemap: { fetched: false, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: false } }),
     );
     const record = withoutSitemap.records.find(
       (entry) => entry.id === "page_not_in_sitemap",
@@ -1169,6 +1170,7 @@ describe("sitemap completeness reaches the published payload", () => {
           fetched: true,
           urlCount: 2,
           subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+          declaredUrls: ["https://acme.test/", "https://acme.test/about"],
           complete: true,
           ...sitemap,
         },
@@ -1196,5 +1198,54 @@ describe("sitemap completeness reaches the published payload", () => {
         ),
       }),
     ).toBe(false);
+  });
+});
+
+/**
+ * The provider answers about exact URLs; the subject key is not one.
+ *
+ * `subjectUrls` strips the non-root trailing slash so `/x` and `/x/` group
+ * together, which is right for every place this product aggregates and wrong
+ * for the one place it asks Google a question. A sitemap that declares
+ * `https://acme.test/blog/` was having its index coverage measured against
+ * `https://acme.test/blog` — a different page, and typically an excluded one,
+ * so a healthy trailing-slash site read as a Blocker.
+ */
+describe("the declared sitemap identity survives to the published payload", () => {
+  const resources = () =>
+    buildSeoAuditReport(
+      raw({
+        sitemap: {
+          fetched: true,
+          urlCount: 2,
+          subjectUrls: ["https://acme.test/blog", "https://acme.test/pricing"],
+          declaredUrls: [
+            "https://acme.test/blog/",
+            "https://acme.test/pricing",
+          ],
+          complete: true,
+        },
+      }),
+    ).siteResources;
+
+  it("keeps the aggregation subject for everything that groups pages", () => {
+    expect(resources().sitemapUrls).toEqual([
+      "https://acme.test/blog",
+      "https://acme.test/pricing",
+    ]);
+  });
+
+  it("publishes the spelling the sitemap used, for the census that asks", () => {
+    expect(resources().sitemapDeclaredUrls).toEqual([
+      "https://acme.test/blog/",
+      "https://acme.test/pricing",
+    ]);
+  });
+
+  it("keeps the two lists the same length, member for member", () => {
+    // They are indexed against each other. A payload where they drift is one
+    // where the census asks about a URL belonging to a different row.
+    const site = resources();
+    expect(site.sitemapDeclaredUrls).toHaveLength(site.sitemapUrls.length);
   });
 });

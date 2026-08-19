@@ -169,9 +169,17 @@ const sitemapSchema = z
      * answer nobody measured.
      */
     complete: z.boolean(),
+    /** One declared identity per member; see CrawlSitemapProjection. */
+    declaredUrls: z
+      .array(boundedUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
   })
   .strict()
-  .refine((value) => value.urlCount === value.subjectUrls.length);
+  .refine(
+    (value) =>
+      value.urlCount === value.subjectUrls.length &&
+      value.declaredUrls.length === value.subjectUrls.length,
+  );
 const providerUsageSchema = z
   .record(
     z.string().min(1).max(MAX_PROVIDER_USAGE_KEY_CHARS),

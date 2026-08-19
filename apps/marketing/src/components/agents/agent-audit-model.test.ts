@@ -58,6 +58,7 @@ const data: AgentAuditSuccessData = {
       sitemapReferencesObserved: 0,
       sitemapFetched: false,
       sitemapUrls: [],
+      sitemapDeclaredUrls: [],
       sitemapUrlsComplete: true,
     },
     records: [],

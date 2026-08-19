@@ -433,6 +433,11 @@ function projectSiteResources(
     // list here does not read as "we could not measure" — it reads as "this
     // site declares no sitemap URLs", which is a statement about the site.
     sitemapUrls: [...siteResources.sitemapUrls],
+    // The same members as the sitemap spelled them. A1's census sends these to
+    // a provider that answers per exact URL, so dropping them here would leave
+    // the census asking about the trailing-slash-stripped aggregation subject,
+    // which is a different page to Google.
+    sitemapDeclaredUrls: [...siteResources.sitemapDeclaredUrls],
     sitemapUrlsComplete: siteResources.sitemapUrlsComplete,
   };
 }
@@ -636,8 +641,12 @@ export async function handleAgentAuditRequest(
         // that ranks. This comment described that failure while the line below
         // it caused it.
         targetPageUrl: landedTargetUrl(result),
-        // A1's denominator: the pages this site declares it wants indexed.
-        sitemapUrls: result.siteResources.sitemapUrls,
+        // A1's denominator: the pages this site declares it wants indexed,
+        // spelled the way it declared them. `sitemapUrls` beside it is the
+        // aggregation subject with the trailing slash removed, and URL
+        // Inspection answers about exact URLs — asking about the stripped form
+        // asks Google about a page the sitemap never listed.
+        sitemapUrls: result.siteResources.sitemapDeclaredUrls,
         sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
         // The visitor's own spelling, not the lowercase identity: it is echoed
         // back in the evidence, and the match lowercases both sides anyway.

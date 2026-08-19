@@ -1687,6 +1687,10 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
       sitemapUrls: raw.sitemap.subjectUrls.slice(0, SITEMAP_URLS_PUBLISHED_CAP),
+      sitemapDeclaredUrls: raw.sitemap.declaredUrls.slice(
+        0,
+        SITEMAP_URLS_PUBLISHED_CAP,
+      ),
       // Two separate facts, and the length alone was only ever the first.
       // "The survivors fit inside the publication cap" says nothing about the
       // children that never answered, the caps that stopped the walk, or the

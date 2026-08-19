@@ -104,6 +104,21 @@ export interface CrawlSitemapProjection {
    * this flag to know whether it holds a population or a sample.
    */
   readonly complete: boolean;
+  /**
+   * The identities the sitemap actually declared, one per member.
+   *
+   * `subjectUrls` is an aggregation key: it has the non-root trailing slash
+   * removed so that `/x` and `/x/` collapse into one subject, which is what
+   * this product wants everywhere it groups pages. It is the wrong thing to
+   * hand a provider that answers about exact URLs — Google's URL Inspection
+   * treats `/x` and `/x/` as two different pages, so asking about the stripped
+   * form asks about a URL the sitemap never declared, and on any site that
+   * ends its paths with a slash the answer comes back about the wrong page.
+   *
+   * Same order as `subjectUrls`, one entry each, first declaration winning
+   * when two spellings share a subject.
+   */
+  readonly declaredUrls: readonly string[];
 }
 
 // ---------------------------------------------------------------------------

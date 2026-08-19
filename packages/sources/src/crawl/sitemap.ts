@@ -152,6 +152,8 @@ export async function collectSitemap(
   deps: SitemapDeps,
 ): Promise<CrawlSitemapProjection> {
   const members = new Set<string>();
+  /** subjectUrl -> the exact identity the sitemap spelled, first one wins. */
+  const declaredBySubject = new Map<string, string>();
   const visited = new Set<string>();
   let fetchedAny = false;
   let documents = 0;
@@ -217,6 +219,9 @@ export async function collectSitemap(
         fetchUrl: pair.fetchUrl,
         subjectUrl: pair.subjectUrl,
       });
+      if (!declaredBySubject.has(pair.subjectUrl)) {
+        declaredBySubject.set(pair.subjectUrl, pair.fetchUrl);
+      }
       members.add(pair.subjectUrl);
     }
   };
@@ -228,6 +233,9 @@ export async function collectSitemap(
     fetched: fetchedAny,
     urlCount: subjectUrls.length,
     subjectUrls,
+    declaredUrls: subjectUrls.map(
+      (subjectUrl) => declaredBySubject.get(subjectUrl) ?? subjectUrl,
+    ),
     // Nothing was read at all is not a complete reading of nothing.
     complete: fetchedAny && !degraded,
   };

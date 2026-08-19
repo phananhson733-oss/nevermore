@@ -303,13 +303,26 @@ function boundedRobotsProjection(
 function boundedSitemapProjection(
   projection: CrawlSitemapProjection,
 ): CrawlSitemapProjection {
-  const subjectUrls = projection.subjectUrls
-    .filter((url) => url.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars)
+  // Indices are filtered and sliced together so a member and the identity it
+  // was declared under cannot drift apart; keeping two independently bounded
+  // lists in step is exactly the kind of pairing that silently misaligns.
+  const kept = projection.subjectUrls
+    .map((subjectUrl, index) => ({
+      subjectUrl,
+      declaredUrl: projection.declaredUrls[index] ?? subjectUrl,
+    }))
+    .filter(
+      (entry) =>
+        entry.subjectUrl.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars &&
+        entry.declaredUrl.length <= CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    )
     .slice(0, CRAWL_PROJECTION_LIMITS.maxSitemapUrls);
+  const subjectUrls = kept.map((entry) => entry.subjectUrl);
   return {
     fetched: projection.fetched,
     urlCount: subjectUrls.length,
     subjectUrls,
+    declaredUrls: kept.map((entry) => entry.declaredUrl),
     // This bound drops members too, so it carries the same consequence as a
     // child that would not fetch: whoever divides by this list is holding a
     // sample. Both the collector's own completeness and this projection's have

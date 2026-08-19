@@ -848,9 +848,19 @@ const crawlSitemapProjectionSchema = z
      * every other number it did not observe.
      */
     complete: z.boolean().optional(),
+    /** Optional for the same reason `complete` is: older rows predate it. */
+    declaredUrls: z
+      .array(boundedCrawlUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls)
+      .optional(),
   })
   .strict()
-  .refine((value) => value.urlCount === value.subjectUrls.length);
+  .refine(
+    (value) =>
+      value.urlCount === value.subjectUrls.length &&
+      (value.declaredUrls === undefined ||
+        value.declaredUrls.length === value.subjectUrls.length),
+  );
 
 const gscWindowMetricsSchema = z
   .object({

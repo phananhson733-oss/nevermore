@@ -171,6 +171,17 @@ export interface SeoAuditSiteResources {
    * Host-level and visitor-neutral, so the shared crawl row is the right home.
    */
   readonly sitemapUrls: readonly string[];
+  /**
+   * The same members, spelled the way the sitemap declared them.
+   *
+   * `sitemapUrls` carries the aggregation subject, which has the non-root
+   * trailing slash removed so `/x` and `/x/` group together. Anything that
+   * asks a provider about an exact URL has to use this list instead: Google's
+   * URL Inspection answers about `/x` and `/x/` separately, so a site that
+   * ends its paths with a slash was having its index coverage measured against
+   * URLs its sitemap never declared.
+   */
+  readonly sitemapDeclaredUrls: readonly string[];
   /** False when the cap cut the list short, so no rate may be published. */
   readonly sitemapUrlsComplete: boolean;
 }

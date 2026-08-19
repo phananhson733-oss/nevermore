@@ -162,7 +162,12 @@ describe("collectSitemap exact fetch identities", () => {
     expect(projection).toEqual({
       fetched: true,
       urlCount: 1,
+      // One aggregation subject, and the spelling the sitemap actually used
+      // for it — the slashed form, because it was declared first. Anything
+      // that asks a provider about an exact URL needs this and not the
+      // subject: Google answers about `/docs` and `/docs/` separately.
       subjectUrls: ["https://example.com/docs"],
+      declaredUrls: ["https://example.com/docs/"],
       complete: true,
     });
     expect(onMember).toHaveBeenCalledTimes(2);

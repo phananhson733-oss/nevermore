@@ -22,6 +22,7 @@ function raw(
       fetched: true,
       urlCount: 2,
       subjectUrls: ["https://acme.com/", "https://acme.com/orphan"],
+      declaredUrls: ["https://acme.com/", "https://acme.com/orphan"],
       complete: true,
     },
     pages: [
@@ -280,6 +281,7 @@ describe("buildInternalLinkAuditPayload", () => {
         ...base.sitemap,
         urlCount: 5,
         subjectUrls: [home, b, c, deep, island],
+        declaredUrls: [home, b, c, deep, island],
         complete: true,
       },
     });

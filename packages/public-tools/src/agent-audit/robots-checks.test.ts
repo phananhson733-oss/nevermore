@@ -69,6 +69,7 @@ function raw(overrides: {
       fetched: overrides.sitemapFetched ?? true,
       urlCount: (overrides.sitemapUrls ?? []).length,
       subjectUrls: overrides.sitemapUrls ?? [],
+      declaredUrls: overrides.sitemapUrls ?? [],
       complete: true,
     },
     availability: "available",
@@ -110,6 +111,7 @@ describe("A5 — sitemap URLs robots.txt blocks", () => {
       raw({
         groups: BLOCKS_GOOGLE,
         sitemapUrls: ["https://acme.test/", "https://acme.test/blog/post"],
+        sitemapDeclaredUrls: ["https://acme.test/", "https://acme.test/blog/post"],
       }),
       "A5",
     );
@@ -136,6 +138,7 @@ describe("A5 — sitemap URLs robots.txt blocks", () => {
       raw({
         robotsFetched: false,
         sitemapUrls: ["https://acme.test/blog/post"],
+        sitemapDeclaredUrls: ["https://acme.test/blog/post"],
       }),
       "A5",
     );
@@ -161,6 +164,7 @@ describe("A5 — sitemap URLs robots.txt blocks", () => {
         pages: [page("https://acme.test/", {}, 0)],
         groups: BLOCKS_GOOGLE,
         sitemapUrls: ["https://acme.test/blog/never-crawled"],
+        sitemapDeclaredUrls: ["https://acme.test/blog/never-crawled"],
       }),
       "A5",
     );

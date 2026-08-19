@@ -56,6 +56,7 @@ const success = {
         sitemapReferencesObserved: 1,
         sitemapFetched: true,
         sitemapUrls: [],
+        sitemapDeclaredUrls: [],
         sitemapUrlsComplete: true,
       },
       records: RECORD_SPECS.map(([id, category], index) => ({

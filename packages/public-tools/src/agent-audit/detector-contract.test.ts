@@ -97,6 +97,7 @@ function raw(): SeoAuditRaw {
       fetched: true,
       urlCount: 2,
       subjectUrls: ["https://acme.test/", "https://acme.test/about"],
+      declaredUrls: ["https://acme.test/", "https://acme.test/about"],
       complete: true,
     },
     availability: "available",

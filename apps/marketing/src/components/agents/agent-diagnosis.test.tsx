@@ -207,6 +207,7 @@ function auditData({
         sitemapReferencesObserved: availability === "unavailable" ? 0 : 1,
         sitemapFetched: availability !== "unavailable",
         sitemapUrls: [],
+        sitemapDeclaredUrls: [],
         sitemapUrlsComplete: true,
       },
       records,

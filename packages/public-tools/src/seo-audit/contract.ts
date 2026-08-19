@@ -208,6 +208,15 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
       SITEMAP_URLS_PUBLISHED_CAP,
       CRAWL_PROJECTION_LIMITS.maxUrlChars,
     ) &&
+    isBoundedStringList(
+      value.sitemapDeclaredUrls,
+      SITEMAP_URLS_PUBLISHED_CAP,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    ) &&
+    // One declared identity per member. A payload where these drift apart is
+    // one where the census would ask about a URL belonging to a different row.
+    (value.sitemapDeclaredUrls as readonly string[]).length ===
+      (value.sitemapUrls as readonly string[]).length &&
     typeof value.sitemapUrlsComplete === "boolean"
   );
 }

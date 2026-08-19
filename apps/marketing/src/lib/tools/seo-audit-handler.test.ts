@@ -66,7 +66,7 @@ const raw = {
   host: "acme.test",
   pages: [],
   robots: { fetched: true, groups: [], sitemaps: [] },
-  sitemap: { fetched: true, urlCount: 0, subjectUrls: [], complete: true },
+  sitemap: { fetched: true, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: true },
   availability: "available",
   capturedAt: "2026-07-30T09:00:00.000Z",
   sourceWindow: {
@@ -112,6 +112,7 @@ const payload = {
       sitemapReferencesObserved: 0,
       sitemapFetched: true,
       sitemapUrls: [],
+      sitemapDeclaredUrls: [],
       sitemapUrlsComplete: true,
     },
     records: [],

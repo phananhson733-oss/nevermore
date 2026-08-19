@@ -137,6 +137,7 @@ const SITE_RESOURCES = {
   sitemapReferencesObserved: 1,
   sitemapFetched: true,
   sitemapUrls: [],
+  sitemapDeclaredUrls: [],
   sitemapUrlsComplete: true,
 } as const;
 

@@ -380,7 +380,7 @@ function validProjectionFor(
         sitemaps: [],
       };
     case "crawl.sitemap.v1":
-      return { fetched: true, urlCount: 0, subjectUrls: [], complete: true };
+      return { fetched: true, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: true };
     case "gsc.page.v1":
       return {
         current28d: { clicks: 1, impressions: 10, position: 2 },
