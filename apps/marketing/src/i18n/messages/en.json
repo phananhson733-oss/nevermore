@@ -3470,7 +3470,8 @@
         "boundaryCitation": "Citation is not recommendation",
         "boundaryNoScore": "No overall number",
         "coverageDetails": "See the per-mode detail",
-        "questionsEyebrow": "Question by question"
+        "questionsEyebrow": "Question by question",
+        "sampleDetails": "Open this question's full evidence"
       },
       "identity": {
         "collector": "Collector",

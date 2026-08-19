@@ -3470,7 +3470,8 @@
         "boundaryCitation": "引用不等于推荐",
         "boundaryNoScore": "不给总分",
         "coverageDetails": "查看分模式明细",
-        "questionsEyebrow": "逐个问题"
+        "questionsEyebrow": "逐个问题",
+        "sampleDetails": "展开这题的完整证据"
       },
       "identity": {
         "collector": "采集方",
