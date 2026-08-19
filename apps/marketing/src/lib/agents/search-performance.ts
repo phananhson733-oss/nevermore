@@ -3,7 +3,7 @@
 // @pos    -- server-only composition; the audit degrades to the gated state on any miss
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { keywordCoverageProperty } from "@sf/public-tools";
+import { brandTermCandidates, keywordCoverageProperty } from "@sf/public-tools";
 import {
   buildSearchPerformanceRecords,
   type SearchPerformanceRaw,
@@ -81,7 +81,13 @@ export async function readAgentSearchPerformance(
     targetPageUrl: input.targetPageUrl ?? null,
     targetQueries: input.targetQueries ?? [],
   });
-  const records = buildSearchPerformanceRecords(raw, input.pages);
+  // Brand terms come from the property the visitor already authorised, not
+  // from a field they have to fill in first.
+  const records = buildSearchPerformanceRecords(
+    raw,
+    input.pages,
+    brandTermCandidates(property),
+  );
   if (records.length === 0) return null;
 
   return {

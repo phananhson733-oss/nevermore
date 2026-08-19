@@ -137,6 +137,15 @@ function declaredFactsOf(
       withoutAlt: onPage.images.withoutAlt,
       withDimensions: onPage.images.withDimensions,
       lazyLoaded: onPage.images.lazyLoaded,
+      /**
+       * The first image, and what it declares about its own size.
+       *
+       * Carried because a lazy-loaded count alone cannot be graded — the
+       * On-Page Checker says so in its own comment and declines to grade it.
+       * The first image plus a declared size can be: it separates a lazy hero
+       * from a lazy 32-pixel logo mark, which is what the count could not do.
+       */
+      first: onPage.firstImage,
     },
     externalLinks: {
       total: onPage.externalLinks.total,
@@ -229,5 +238,7 @@ export function buildTargetPageExtract(
     // is here because the heading-shape checks need the target page's own
     // sequence and the report deliberately drops per-page facts.
     headingLevels: onPage === undefined ? null : onPage.headingLevels,
+    wordsUnderEachH3:
+      onPage === undefined ? null : onPage.wordsUnderEachH3,
   };
 }

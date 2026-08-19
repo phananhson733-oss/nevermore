@@ -38,6 +38,7 @@ const EXTRACT: SeoAuditTargetPageExtract = {
   termFrequencies: null,
   truncatedLists: false,
   headingLevels: null,
+  wordsUnderEachH3: null,
   response: {
     status: 200,
     finalStatus: 200,

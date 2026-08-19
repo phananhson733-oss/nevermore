@@ -27,7 +27,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v8",
+        schemaVersion: "seo_audit.sitewide.v9",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -94,7 +94,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
       // Pinned as a literal so adding a detector shows up here as a number
       // someone has to change on purpose.
-      expect(envelope.data.result.records).toHaveLength(41);
+      expect(envelope.data.result.records).toHaveLength(44);
       expect("pages" in envelope.data.result).toBe(false);
     },
   );
@@ -299,6 +299,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       termFrequencies: null,
       truncatedLists: false,
       headingLevels: null,
+      wordsUnderEachH3: null,
           response: {
             status: 200,
             finalStatus: 200,
@@ -333,6 +334,7 @@ describe("isAgentAuditSuccessEnvelope", () => {
       withoutAlt: 0,
       withDimensions: 0,
       lazyLoaded: 0,
+      first: null,
     },
             externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
             htmlBytes: 24_576,

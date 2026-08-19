@@ -73,7 +73,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
   ["3.4", "H2 count", "H2 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
-  ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Use the confirmed page-type substance preset", "使用已确认页面类型的内容充实度预设"],
+  ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Within the reviewed substance range for the confirmed page type; below it is a Tip. Whitespace words between headings, so a CJK page is not measured here.", "落在已确认页面类型的审阅内容量区间内；低于该区间为提示。按标题之间的空白分词计，因此中日韩页面不在此判定。"],
   ["4.1", "Main-content word count", "正文字数", "At least 60% of the reviewed top-10 median; otherwise Warning", "至少为已审阅前十中位数的 60%；否则为警告"],
   ["4.2", "Target-query density", "目标词密度", "Listed for review, not judged: keyword density is not a documented ranking signal and is not used to judge a page.", "仅列出待复核，不作判定：关键词密度不是有据可查的排名信号，不用于判定页面。"],
   ["4.3", "First target-query occurrence", "目标词首次出现位置", "Internal heuristic only. Position in the text is not a documented ranking signal.", "仅为内部启发式。目标词在正文中的位置不是有据可查的排名信号。"],
@@ -82,7 +82,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["5.1", "Images missing alt text", "无 alt 图片数", "0 images with no alt attribute; otherwise Warning. An empty alt marks a decorative image and counts as covered.", "没有 alt 属性的图片为 0 张；否则为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["5.2", "Per-image file size", "单图体积", "Below 200 KB; otherwise Tip", "低于 200KB；否则为提示"],
   ["5.3", "Modern image format share", "现代图片格式占比", "At least 80% WebP or AVIF among images whose format the URL states; otherwise Tip. An unreadable extension leaves the ratio rather than counting against it.", "在 URL 能读出格式的图片中，WebP 或 AVIF 至少占 80%；否则为提示。读不出扩展名的图片不计入该比例，也不算作旧格式。"],
-  ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "No; otherwise Warning", "否；否则为警告"],
+  ["5.4", "Above-the-fold image lazy loading", "首屏图片是否 lazy-load", "The first image in document order is not lazy-loaded; otherwise Warning. A static crawl has no viewport, so document order stands in for the fold.", "文档顺序中的第一张图片没有被 lazy-load；否则为警告。静态抓取没有视口，因此以文档顺序代替首屏折线。"],
   ["6.1", "Inbound internal link count", "入站内链数", "At least 1; zero is Warning; 2× check weight", "至少 1 条；0 条为警告；检查权重 2 倍"],
   ["6.2", "Outbound internal link count", "出站内链数", "At least 1 observed outbound internal link; zero is Warning", "至少观察到 1 条出站内链；0 条为警告"],
   ["6.3", "Broken internal links on this page", "本页出站断链数", "0 broken outbound internal links; above 0 is Warning", "本页出站内链断链为 0；大于 0 为警告"],
@@ -90,7 +90,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Listed for review, not judged: display only, no pass/fail threshold. Included because nofollow on outbound links is a choice, not a score.", "仅列出待复核，不作判定：仅展示，不设通过阈值。列在这里是因为出站链接加不加 nofollow 是选择，不是分数。"],
   ["7.1", "JSON-LD presence", "JSON-LD 是否存在", "At least one parseable JSON-LD block; absent or malformed is a Tip", "至少 1 个可解析的 JSON-LD 块；缺失或损坏为提示"],
   ["7.2", "Schema type matches page type", "Schema 类型与页面类型匹配", "Declares a type from the reviewed set for the confirmed page type; otherwise Tip. Site-furniture types are ignored, and the reviewed set is published with the finding.", "声明了已确认页面类型对应审阅集合中的某个类型；否则为提示。站点通用类型不计入，审阅集合会与发现一同给出。"],
-  ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present; otherwise Warning", "所有必填字段均存在；否则为警告"],
+  ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present for the types in the reviewed table; otherwise Warning. A type outside the table is not judged rather than assumed complete.", "审阅表中所列类型的必填字段齐全；否则为警告。表外的类型不作判定，而不是假定其完整。"],
   ["7.4", "FAQPage matches visible FAQ", "FAQPage 与页面 FAQ 是否一致", "Every item matches visible content; otherwise Warning", "逐条匹配可见内容；否则为警告"],
   ["7.5", "BreadcrumbList markup below the root", "根目录以下页面的 BreadcrumbList 标记", "Present on pages below the root; otherwise Tip. Presence only: this run keeps no visible trail to compare the markup against.", "根目录以下的页面存在该标记；否则为提示。仅判定是否存在：本次运行不保留可见路径，无法与标记比对。"],
   ["8.1", "Largest Contentful Paint (LCP)", "最大内容绘制（LCP）", "CrUX p75 over 28 days: 2.5 s or less good, over 2.5 s to 4.0 s needs improvement, over 4.0 s poor", "CrUX 28 天窗口 p75：不超过 2.5 秒为良好，超过 2.5 秒至 4.0 秒待改进，超过 4.0 秒为差"],
@@ -98,7 +98,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["8.3", "Cumulative Layout Shift (CLS)", "累积布局偏移（CLS）", "CrUX p75 over 28 days: 0.1 or less good, over 0.1 to 0.25 needs improvement, over 0.25 poor", "CrUX 28 天窗口 p75：不超过 0.1 为良好，超过 0.1 至 0.25 待改进，超过 0.25 为差"],
   ["8.4", "Time to First Byte (TTFB)", "首字节时间（TTFB）", "800 ms or less good, over 800 ms to 1.8 s needs improvement, over 1.8 s poor", "不超过 800 毫秒为良好，超过 800 毫秒至 1.8 秒待改进，超过 1.8 秒为差"],
   ["8.5", "Total page weight", "页面总体积", "Below 2 MB", "低于 2MB"],
-  ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 in a separate Lighthouse lab run", "独立 Lighthouse 实验室运行中为 0"],
+  ["8.6", "Render-blocking resource count", "渲染阻塞资源数", "0 render-blocking stylesheets or synchronous scripts in the head; above 0 is a Tip. Read from the markup, not from a lab run.", "head 中阻塞渲染的样式表与同步脚本为 0；大于 0 为提示。依据标记判定，不是实验室运行。"],
   ["9.1", "AI answer block on the results page", "结果页是否出现 AI 答案块", "Absent; present is Warning because ranking may not produce a click. Presence only — whether the block fully answers the query is a content judgement this run does not make.", "不存在；存在则为警告，因为获得排名也可能没有点击。仅判定是否存在——该答案块是否完整回答了查询属于内容判断，本次运行不作此判断。"],
   // 9.2 "recently registered domains in the top 10" was removed on 2026-08-18.
   // It needs a domain registration date, which no wired provider returns. The
@@ -273,6 +273,12 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   "3.5": ["h3_count_outside_reviewed_range"],
   "4.2": ["target_query_density"],
   "7.2": ["schema_type_unmatched_to_page_type"],
+  "8.6": ["render_blocking_head_resource"],
+  "5.4": ["first_image_lazy_loaded"],
+  "3.6": ["thin_section_under_h3"],
+  "7.3": ["json_ld_missing_required_property"],
+  "4.3": ["target_query_first_appearance"],
+  E4: ["non_brand_click_share"],
   "8.1": ["core_web_vital_lcp"],
   "8.2": ["core_web_vital_inp"],
   "8.3": ["core_web_vital_cls"],
@@ -534,7 +540,9 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   // 9.3 stays: it needs a traffic estimate per page-one domain, which is a
   // second paid call against a different endpoint, and the sample this one
   // takes carries domains without any measure of what they receive.
-  if (/^8\.[56]$/.test(id) || id === "9.3") return "not-integrated";
+  // 8.5 still needs subresource bytes, which is one request per asset; 9.3
+  // needs a traffic estimate per page-one domain, a second paid call.
+  if (id === "8.5" || id === "9.3") return "not-integrated";
   return ready ? "ready" : "needs-integration";
 }
 
@@ -759,6 +767,30 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
     "The page declares structured data, but not a type from the reviewed set for the page type you confirmed — and both the set and what was found are printed with the finding, so you can decide which one is wrong. Often it is the confirmation: a page can legitimately be more than one thing, and this is a Tip precisely because the mapping is a judgement rather than a rule. When the markup really is the mismatch, change the @type rather than adding a second block; two types competing to describe one page is how a rich result stops appearing at all. Site-furniture types are ignored here, so declaring only a breadcrumb does not pass.",
     "页面声明了结构化数据，但不是你所确认的页面类型对应审阅集合里的任何一个——审阅集合和实际发现的内容都会与结论一起印出来，你可以自己判断哪一边错了。很多时候错的是确认本身：一个页面完全可能同时是好几种东西，而这一项之所以是提示，正因为这个对照关系是判断而不是规则。如果确实是标记不对，那就改 @type，而不是再加一个块；两个类型争着描述同一个页面，正是富媒体结果彻底不再出现的成因。站点通用类型在这里不计入，所以只声明一个面包屑是不能通过的。",
   ),
+  "8.6": l(
+    "Each of these stops the parser where it sits, so the reader waits for it before seeing anything. Stylesheets come first: inline what the first screen needs and load the rest with a non-blocking pattern, because a single blocking sheet in the head delays every pixel. Then the synchronous scripts — most of them want `defer`, which keeps execution order and stops blocking; `async` only suits scripts that touch nothing else on the page. This is read from your markup, not from a lab run, so it tells you what will block rather than how long it blocked on one sample.",
+    "这些资源都会在它所在的位置把解析器停住，读者要等它加载完才能看见任何东西。先处理样式表：首屏需要的内联进去，其余用非阻塞方式加载，因为 head 里哪怕只有一张阻塞样式表，也会推迟每一个像素。然后是同步脚本——它们大多数需要的是 `defer`，它保留执行顺序又不阻塞；`async` 只适合完全不碰页面上其他东西的脚本。这一项依据你的标记判定，不是依据某次实验室运行，所以它告诉你的是「什么会阻塞」，而不是「某一次采样阻塞了多久」。",
+  ),
+  "5.4": l(
+    "The first image on this page defers its own load, which is almost always the one a reader sees first — and the browser will not even start fetching it until layout says it is needed. That delays the exact paint the loading metrics measure, so lazy-loading here costs more than it saves. Take `loading=\"lazy\"` off the first image and add `fetchpriority=\"high\"` instead; keep lazy for everything below it, where it does what it is for. This run has no viewport, so it reads document order as a stand-in for the fold — check that the first image really is the prominent one before acting.",
+    "这个页面上的第一张图片给自己加了延迟加载，而它几乎总是读者最先看到的那张——浏览器要等布局判定需要它时才会开始下载。这恰好推迟了加载类指标所衡量的那次绘制，所以在这里做 lazy-load 是得不偿失的。把第一张图上的 `loading=\"lazy\"` 去掉，改成 `fetchpriority=\"high\"`；它下面的图片保持 lazy，那才是这个属性该用的地方。本次运行没有视口，因此用文档顺序代替首屏折线——动手前请确认第一张图确实就是那张主图。",
+  ),
+  "3.6": l(
+    "The sections under these H3s are thinner than the range reviewed for this page type. Read it as a structure signal, not a word quota: a very short section usually means the heading promised something the text did not deliver, and the fix is to either answer the question the heading asks or fold the section into its neighbour. Adding words to reach a number is the failure mode. Counted in whitespace words between headings, so a page written in a script without word gaps is not measured here at all.",
+    "这些 H3 下面的小节，内容量低于该页面类型的审阅区间。把它当作结构信号，不是字数配额：一个非常短的小节，通常意味着标题承诺了正文没有兑现的东西，修法要么是把标题提出的问题真正回答掉，要么把这个小节并进相邻的小节。为了凑数字而加字才是失败模式。按标题之间的空白分词计数，所以不使用词间空格的文字所写的页面，在这里根本不参与判定。",
+  ),
+  "7.3": l(
+    "A type is declared without the properties that type needs, so a search system can read the markup and still cannot use it — which is the same outcome as having no markup, after the work of adding some. Fill the named properties from data the visible page already shows; a required property invented to satisfy a validator is worse than the gap, because it makes the page claim something it does not say. Only the types in the reviewed table are judged: a type outside it is left alone rather than assumed complete, so a clean result here is not a statement about every block on the page.",
+    "声明了某个类型，却没带这个类型必需的字段，于是搜索系统读得到标记却用不了它——效果和完全没有标记一样，只是白做了加标记的工。用可见页面上已经展示的数据去补上点名的那些字段；为了让校验器通过而编造出来的必填字段比缺字段更糟，因为那会让页面声称它并没有说过的事情。只有审阅表里的类型会被判定：表外的类型不作处理，也不假定其完整，所以这一项通过并不代表页面上每一个块都没问题。",
+  ),
+  "4.3": l(
+    "Published, not judged: where a term sits in the text is not a documented ranking signal, and this reports slots rather than character offsets because slots are what the run captured. What it is useful for is the coarse question — does the page name what it is about anywhere a reader meets early, or only far down. If the answer is \"none\", that is checks 2.3 and 3.2 speaking, and those are the ones worth acting on.",
+    "只公布，不判定：一个词在文本中的位置不是有据可查的排名信号；这里报的是「槽位」而不是字符偏移，因为槽位才是本次运行真正采集到的东西。它有用的地方在于那个粗粒度的问题——页面有没有在读者早期就会读到的位置点明自己讲什么，还是只在很靠后的地方才出现。如果答案是「都没有」，那说话的其实是 2.3 和 3.2，值得动手的是那两项。",
+  ),
+  E4: l(
+    "Published, not judged: a healthy split depends on how well known the brand already is, so the level says little and the trend says a lot — compare this run against your own earlier ones rather than against anyone else. A very high non-brand share on a site with a known name usually means the brand queries are being lost rather than that the rest is winning; a very low one means the site is being found by people who already knew it, which is a marketing result rather than a search one. Brand terms are derived from the property you authorised and matched as substrings, so \"acme pricing\" counts as brand.",
+    "只公布，不判定：健康的占比取决于品牌本身已经多为人知，所以绝对值说明不了什么，趋势才说明问题——拿这次运行和你自己以前的比，别和别人比。一个已有知名度的站点如果非品牌占比极高，通常意味着品牌词的流量正在流失，而不是其余部分打赢了；占比极低则意味着找到这个站点的人本来就认识它，那是市场结果不是搜索结果。品牌词由你授权的那个资源派生并按子串匹配，所以「acme pricing」算作品牌词。",
+  ),
   D6: l(
     "An alternate that answers 4xx or 5xx breaks the cluster for every language in it, not only the one that points at the dead URL: search systems treat the set as a set, and one unreachable member is enough to stop them swapping any of the others in. Fix the URL rather than deleting the tag — deleting it makes the cluster smaller and quietly correct, which loses the page the alternate was pointing at. Alternates outside this crawl are not classified either way, so a cross-domain cluster shows only the part that was reached.",
     "任何一个返回 4xx 或 5xx 的备用地址，破坏的是整个簇里所有语言，而不只是指向死链的那一个：搜索系统把这一组当作一组看，只要有一个成员不可达，其余成员的互换也会停下来。要修那个 URL，而不是删掉那个标签——删掉只会让簇变小然后「安静地正确」，代价是丢掉那个备用地址本来指向的页面。抓取范围之外的备用地址两个方向都不判定，所以跨域的簇在这里只显示被抓到的那部分。",
@@ -926,7 +958,7 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     // page" and was still resolving to Warning because nobody added it.
     failureResult:
       DECLARES_NO_JUDGEMENT.test(thresholdEn) ||
-      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4"].includes(id)
+      ["A7", "C6", "D7", "B5", "D2", "2.1", "6.4", "6.5", "2.4", "2.6", "3.2", "3.3", "3.4", "3.5", "4.3", "4.4", "5.2", "5.3", "7.1", "7.2", "7.5", "9.4", "8.6", "3.6"].includes(id)
       ? "tip"
       : "warning",
     primaryAgent,

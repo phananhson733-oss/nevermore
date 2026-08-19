@@ -187,6 +187,12 @@ export interface SeoAuditTargetDeclaredFacts {
     /** Both `width` and `height` declared, which is what reserves the box. */
     readonly withDimensions: number;
     readonly lazyLoaded: number;
+    /** The first image in document order, or null when the page has none. */
+    readonly first: {
+      readonly lazyLoaded: boolean;
+      readonly width: number | null;
+      readonly height: number | null;
+    } | null;
   };
   readonly externalLinks: {
     readonly total: number;
@@ -299,6 +305,14 @@ export interface SeoAuditTargetPageExtract {
    * them. A measurement, so it sits beside `declared` rather than inside it.
    */
   readonly headingLevels: readonly number[] | null;
+  /**
+   * Words of body text under each H3, segmented at heading boundaries.
+   *
+   * Also a measurement. Carried because the section-substance check judges it
+   * against the range for the page type the visitor confirmed, and that
+   * confirmation only exists per request.
+   */
+  readonly wordsUnderEachH3: readonly number[] | null;
 }
 
 export interface SeoAuditReport {

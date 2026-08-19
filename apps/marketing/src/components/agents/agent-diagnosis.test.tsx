@@ -177,7 +177,7 @@ function auditData({
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v8",
+        schemaVersion: "seo_audit.sitewide.v9",
         completedAt: "2026-08-13T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },

@@ -82,6 +82,7 @@ describe("readAgentSearchPerformance", () => {
       "impression_share_top_positions",
       "impression_share_low_click_positions",
       "target_query_ranking_band",
+      "non_brand_click_share",
     ]);
   });
 

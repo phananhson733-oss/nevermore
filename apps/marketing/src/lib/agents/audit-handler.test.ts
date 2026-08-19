@@ -58,7 +58,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v8",
+    schemaVersion: "seo_audit.sitewide.v9",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -148,6 +148,7 @@ function successWithExtract(
             termFrequencies: null,
             truncatedLists: false,
             headingLevels: null,
+            wordsUnderEachH3: null,
             response: {
               status: 200,
               finalStatus: 200,
@@ -182,6 +183,7 @@ function successWithExtract(
       withoutAlt: 0,
       withDimensions: 0,
       lazyLoaded: 0,
+      first: null,
     },
               externalLinks: { total: 1, nofollow: 0, blankWithoutNoopener: 0 },
               htmlBytes: 24_576,
@@ -496,7 +498,7 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.searchPerformance).toEqual(searchRegion);
     // Beside, not inside: the crawl ledger is what gets cached by host, and
     // these numbers belong to one visitor's verified property.
-    expect(body.data.result.records).toHaveLength(41);
+    expect(body.data.result.records).toHaveLength(44);
   });
 
   it("omits the region entirely when nothing covers the host", async () => {
@@ -624,7 +626,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v8",
+            schemaVersion: "seo_audit.sitewide.v9",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -727,7 +729,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(body.data.run.agent).toBe("tech");
     expect(body.data.result.records).toEqual(upstreamPayload.result.records);
-    expect(body.data.result.records).toHaveLength(41);
+    expect(body.data.result.records).toHaveLength(44);
   });
 
   it.each([
@@ -1252,6 +1254,7 @@ describe("handleAgentAuditRequest", () => {
                   termFrequencies: null,
                   truncatedLists: false,
                   headingLevels: null,
+                  wordsUnderEachH3: null,
                   rawHtml: "<html>everything the crawler held</html>",
                 },
               },
@@ -1293,6 +1296,7 @@ describe("handleAgentAuditRequest", () => {
                   termFrequencies: null,
                   truncatedLists: false,
                   headingLevels: null,
+                  wordsUnderEachH3: null,
                 },
               },
             },

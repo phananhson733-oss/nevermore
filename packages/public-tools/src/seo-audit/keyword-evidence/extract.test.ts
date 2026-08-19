@@ -203,6 +203,10 @@ describe("buildTargetPageExtract on-page facts", () => {
     charset: "utf-8",
     faviconDeclared: true,
     hreflangAlternates: [],
+    renderBlocking: { stylesheets: 0, scripts: 0 },
+    firstImage: null,
+    wordsUnderEachH3: [],
+    jsonLdProperties: [],
     hreflang: ["en"],
     images: {
       total: 4,
@@ -211,6 +215,7 @@ describe("buildTargetPageExtract on-page facts", () => {
       withoutAlt: 0,
       withDimensions: 2,
       lazyLoaded: 1,
+      first: null,
     },
     externalLinks: { total: 2, nofollow: 1, blankWithoutNoopener: 0 },
     htmlBytes: 31_744,
@@ -250,6 +255,10 @@ describe("buildTargetPageExtract on-page facts", () => {
       // Also a measurement, not a declaration: whether an alternate resolves is
       // something this run went and checked, not something the markup said.
       hreflangAlternates: _alternates,
+      renderBlocking: _blocking,
+      firstImage: _lazy,
+      wordsUnderEachH3: _sections2,
+      jsonLdProperties: _properties,
       ...declared
     } = onPage;
     expect(extract.declared).toEqual(declared);

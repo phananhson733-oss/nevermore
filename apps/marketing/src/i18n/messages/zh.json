@@ -998,7 +998,15 @@
         "no_page_type_was_confirmed_so_there_is_nothing_to_match_the_schema_against": "没有确认页面类型，因此没有东西可以拿来与声明的 Schema 匹配。",
         "the_submitted_page_was_not_collected_so_it_declared_nothing": "提交的页面未被本次抓取采集，因此读不到它声明的任何内容。",
         "this_page_declares_only_site_furniture_types_which_check_7_1_reports": "这个页面只声明了 BreadcrumbList、WebSite 这类站点通用类型。它到底有没有可用的结构化数据，由 7.1 报告。",
-        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "这是一份审阅过的「页面类型到 Schema 类型」对照关系，不是规则。一个页面完全可能同时是好几种东西，所以这一项是提示。"
+        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "这是一份审阅过的「页面类型到 Schema 类型」对照关系，不是规则。一个页面完全可能同时是好几种东西，所以这一项是提示。",
+        "declared_in_the_head_markup_no_lab_run_and_no_network_timing": "依据 head 声明的内容判定。没有实验室运行也没有网络计时，所以它说的是「什么会阻塞」，不是「某一次阻塞了多久」。",
+        "whitespace_words_between_headings_not_a_cjk_safe_measure": "按标题之间的空白分词计数。不使用词间空格的文字所写的页面在这里完全不参与判定。",
+        "only_types_in_the_reviewed_required_property_table_are_judged": "只判定审阅必填字段表里的类型。表外的类型不作处理，因此这一项通过并不代表页面上每一个块都没问题。",
+        "slot_order_not_a_character_offset_and_never_judged": "按槽位报告，不是按字符偏移，而且从不用于判定任何结论。",
+        "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish": "统计窗口内没有任何点击被报告，因此没有可公布的占比。",
+        "brand_terms_derived_from_the_property_and_matched_as_substrings": "品牌词由已授权资源派生并按子串匹配，因此包含品牌名的查询会算作品牌词。",
+        "this_page_has_no_h3_so_there_is_no_section_to_measure": "这个页面根本没有 H3，因此没有可衡量的小节。大纲该不该有第三层，由 3.5 判定。",
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。"
       },
       "records": {
         "robots_resource": {
@@ -1228,6 +1236,30 @@
         "schema_type_unmatched_to_page_type": {
           "title": "声明的 Schema 类型与已确认页面类型不匹配",
           "description": "页面声明了结构化数据，但不属于你所确认的页面类型对应的审阅集合。BreadcrumbList、WebSite 这类站点通用类型在判定时不计入。"
+        },
+        "render_blocking_head_resource": {
+          "title": "head 中存在渲染阻塞资源的页面",
+          "description": "head 中未标注非屏幕 media 的样式表，以及带 src 且既无 async 也无 defer 的脚本。两者都会在所在位置把解析器停住。依据标记判定，不是依据实验室运行。"
+        },
+        "first_image_lazy_loaded": {
+          "title": "第一张图片被延迟加载的页面",
+          "description": "文档顺序中的第一张图片带有 loading=lazy。静态抓取没有视口，因此以文档顺序代替首屏折线。"
+        },
+        "thin_section_under_h3": {
+          "title": "H3 小节内容偏少的页面",
+          "description": "按标题边界切分后，每个 H3 下正文的平均词数。按空白分词计数，因此不使用词间空格的文字所写的页面不在此判定。"
+        },
+        "json_ld_missing_required_property": {
+          "title": "声明了类型却缺必填字段的页面",
+          "description": "已声明的 JSON-LD 类型缺少审阅表为该类型列出的必填字段。表外的类型不作判定，也不假定其完整。"
+        },
+        "target_query_first_appearance": {
+          "title": "目标词首次出现的位置",
+          "description": "按读者遇到的顺序（title、H1、开头文本、子标题、description），目标词首次出现在哪个槽位。只公布，不判定。"
+        },
+        "non_brand_click_share": {
+          "title": "非品牌词点击占比",
+          "description": "不含品牌词的查询带来的点击，占全部报告点击的比例。品牌词由已授权资源派生并按子串匹配，所以「acme pricing」算作品牌词。只公布，不判定。"
         }
       },
       "evidence": {
@@ -1338,7 +1370,21 @@
         "density_numerator_units": "目标词计量单位数",
         "density_denominator_units": "文本计量单位数",
         "declared_schema_types": "已声明的类型",
-        "expected_schema_types": "该页面类型的审阅类型"
+        "expected_schema_types": "该页面类型的审阅类型",
+        "render_blocking_stylesheets": "阻塞样式表数",
+        "render_blocking_scripts": "阻塞脚本数",
+        "first_image_lazy_loaded": "第一张图是否 lazy",
+        "average_words_under_h3": "每个 H3 小节平均词数",
+        "h3_sections": "H3 小节数",
+        "thinnest_section_words": "最少的小节词数",
+        "missing_required_properties": "缺失的必填字段",
+        "judged_json_ld_types": "已判定的类型",
+        "first_slot_containing_query": "首次出现的槽位",
+        "non_brand_click_share": "非品牌点击占比",
+        "brand_clicks": "品牌词点击",
+        "brand_terms_used": "使用的品牌词",
+        "first_image_width": "第一张图宽度",
+        "first_image_height": "第一张图高度"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
@@ -2714,7 +2760,8 @@
         "imageLoading": {
           "_label": "图片懒加载",
           "none": "{total} 张图片都没有声明 loading=\"lazy\"。",
-          "some": "{total} 张图片里有 {lazy} 张声明了 loading=\"lazy\"。这里不判分：首屏那张图懒加载反而会拖慢访客等的东西，而我们看不出哪张在首屏。"
+          "some": "{total} 张图片中有 {lazy} 张声明了 loading=\"lazy\"。只对首图评分，而首图不在其中——更下方的图片本就应该延迟加载。",
+          "leadLazy": "页面第一张图片（{width}×{height}）要等读者滚动后才开始加载，而它正是读者最先想看到的东西。首图改为正常加载，延迟加载留给更下方的图片。"
         },
         "urlShape": {
           "_label": "URL 形态",

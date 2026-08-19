@@ -223,6 +223,8 @@ function headingShapeFor(
     pageType: preset.pageType,
     h2: preset.h2,
     h3: preset.h3,
+    substanceWords: preset.substanceWords,
+    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
   };
 }
 
@@ -499,6 +501,8 @@ function projectTargetPageExtract(
     // happened to carry.
     headingLevels:
       extract.headingLevels === null ? null : [...extract.headingLevels],
+    wordsUnderEachH3:
+      extract.wordsUnderEachH3 === null ? null : [...extract.wordsUnderEachH3],
     response: {
       status: extract.response.status,
       finalStatus: extract.response.finalStatus,
@@ -515,49 +519,10 @@ function projectTargetPageExtract(
       internalOutlinksWithoutAnchorText:
         extract.response.internalOutlinksWithoutAnchorText,
     },
-    declared:
-      extract.declared === null
-        ? null
-        : {
-            lang: extract.declared.lang,
-            openGraph: {
-              title: extract.declared.openGraph.title,
-              description: extract.declared.openGraph.description,
-              image: extract.declared.openGraph.image,
-            },
-            twitterCard: extract.declared.twitterCard,
-            viewport: extract.declared.viewport,
-            charset: extract.declared.charset,
-            faviconDeclared: extract.declared.faviconDeclared,
-            hreflang: [...extract.declared.hreflang],
-            images: {
-              total: extract.declared.images.total,
-              withAlt: extract.declared.images.withAlt,
-              withEmptyAlt: extract.declared.images.withEmptyAlt,
-              withoutAlt: extract.declared.images.withoutAlt,
-              withDimensions: extract.declared.images.withDimensions,
-              lazyLoaded: extract.declared.images.lazyLoaded,
-            },
-            externalLinks: {
-              total: extract.declared.externalLinks.total,
-              nofollow: extract.declared.externalLinks.nofollow,
-              blankWithoutNoopener:
-                extract.declared.externalLinks.blankWithoutNoopener,
-            },
-            htmlBytes: extract.declared.htmlBytes,
-            visibleTextBytes: extract.declared.visibleTextBytes,
-            scriptBytes: extract.declared.scriptBytes,
-            interactive: {
-              forms: extract.declared.interactive.forms,
-              inputs: extract.declared.interactive.inputs,
-              buttons: extract.declared.interactive.buttons,
-              selects: extract.declared.interactive.selects,
-              textareas: extract.declared.interactive.textareas,
-              canvases: extract.declared.interactive.canvases,
-              media: extract.declared.interactive.media,
-              iframes: extract.declared.interactive.iframes,
-            },
-          },
+    // Passed through rather than re-listed field by field: a hand-written copy
+    // of this shape is a copy that silently drops whatever the parser learns
+    // next, and this file already lost `images.first` that way.
+    declared: extract.declared,
   };
 }
 

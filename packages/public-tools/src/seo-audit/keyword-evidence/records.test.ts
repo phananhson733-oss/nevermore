@@ -103,6 +103,46 @@ describe("keyword evidence records", () => {
     ).toBe("natal chart");
   });
 
+  describe("3.6 — words under each H3", () => {
+    const shape = (words: readonly number[]) => ({
+      levels: words.map(() => 3),
+      pageType: "guide",
+      h2: { min: 0, max: 99 },
+      h3: { min: 0, max: 99 },
+      substanceWords: 80,
+      wordsUnderEachH3: words,
+    });
+    const decide = (words: readonly number[] | null) =>
+      evaluateAgentAuditScope("page", {
+        availability: "available",
+        records: buildKeywordEvidenceRecords(
+          TARGET,
+          evidenceFor(["natal chart"]),
+          words === null ? null : shape(words),
+        ),
+        targetUrl: TARGET,
+        targetInspected: true,
+        inspectedTargetUrl: TARGET,
+      }).checks.find((entry) => entry.check.id === "3.6");
+
+    it("passes sections that carry the reviewed substance", () => {
+      expect(decide([120, 100])?.result).toBe("pass");
+    });
+
+    it("fires on sections that carry almost nothing", () => {
+      expect(decide([4, 6])?.result).toBe("tip");
+    });
+
+    it("does not judge a page with no H3 at all", () => {
+      // An outline with no third level is 3.5's finding, not this one.
+      expect(decide([])?.result).toBe("excluded");
+    });
+
+    it("does not judge a run with no confirmed page type", () => {
+      expect(decide(null)?.result).toBe("excluded");
+    });
+  });
+
   it("carries a category a crawl payload may never hold", () => {
     // The cache is keyed by host and shared. A record derived from one
     // visitor's typed query must be refused by the crawl payload guard, and

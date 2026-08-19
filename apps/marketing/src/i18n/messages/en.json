@@ -998,7 +998,15 @@
         "no_page_type_was_confirmed_so_there_is_nothing_to_match_the_schema_against": "No page type was confirmed, so there is nothing to match the declared schema against.",
         "the_submitted_page_was_not_collected_so_it_declared_nothing": "The submitted page was not collected in this crawl, so nothing it declares could be read.",
         "this_page_declares_only_site_furniture_types_which_check_7_1_reports": "This page declares only site-furniture types such as BreadcrumbList or WebSite. Whether it has usable structured data at all is check 7.1's finding.",
-        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "A reviewed mapping from page type to schema type, not a rule. A page can legitimately be more than one thing, which is why this is a Tip."
+        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "A reviewed mapping from page type to schema type, not a rule. A page can legitimately be more than one thing, which is why this is a Tip.",
+        "declared_in_the_head_markup_no_lab_run_and_no_network_timing": "Read from what the head declares. No lab run and no network timing, so this says what will block rather than how long it blocked once.",
+        "whitespace_words_between_headings_not_a_cjk_safe_measure": "Whitespace words between headings. A page written in a script without word gaps is not measured here at all.",
+        "only_types_in_the_reviewed_required_property_table_are_judged": "Only types in the reviewed required-property table are judged. A type outside it is left alone, so a clean result is not a statement about every block on the page.",
+        "slot_order_not_a_character_offset_and_never_judged": "Reported by slot rather than by character offset, and never used to decide anything.",
+        "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish": "No clicks were reported in the window, so there is no split to publish.",
+        "brand_terms_derived_from_the_property_and_matched_as_substrings": "Brand terms are derived from the authorised property and matched as substrings, so a query containing the name counts as brand.",
+        "this_page_has_no_h3_so_there_is_no_section_to_measure": "This page has no H3 at all, so there is no section to measure. Whether the outline should have a third level is check 3.5's finding.",
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "The first image in document order, judged only when the markup declares a size large enough for it to be the image a reader came for. A static crawl has no viewport, and a 32-pixel logo mark is the first image on a very large share of sites."
       },
       "records": {
         "robots_resource": {
@@ -1228,6 +1236,30 @@
         "schema_type_unmatched_to_page_type": {
           "title": "Declared schema type does not match the confirmed page type",
           "description": "The page declares structured data, but not a type from the reviewed set for the page type you confirmed. Site-furniture types such as BreadcrumbList and WebSite are ignored when deciding."
+        },
+        "render_blocking_head_resource": {
+          "title": "Pages with render-blocking resources in the head",
+          "description": "Stylesheets without a non-screen media, and script tags with src carrying neither async nor defer, declared in the head. Both stop the parser where they sit. Read from the markup, not from a lab run."
+        },
+        "first_image_lazy_loaded": {
+          "title": "Pages whose first image defers its own load",
+          "description": "The first image in document order carries loading=lazy. A static crawl has no viewport, so document order stands in for the fold."
+        },
+        "thin_section_under_h3": {
+          "title": "Pages whose H3 sections are thin",
+          "description": "Average words of body text under each H3, segmented at heading boundaries. Counted in whitespace words, so a page written in a script without word gaps is not measured here."
+        },
+        "json_ld_missing_required_property": {
+          "title": "Pages declaring a type without its required properties",
+          "description": "A declared JSON-LD type is missing a property the reviewed table lists as required for it. Types outside that table are not judged rather than assumed complete."
+        },
+        "target_query_first_appearance": {
+          "title": "Where the target query first appears",
+          "description": "The first slot containing the confirmed query, in the order a reader meets them: title, H1, opening text, sub-headings, description. Published, never judged."
+        },
+        "non_brand_click_share": {
+          "title": "Share of clicks not from the site's own name",
+          "description": "Clicks from queries that do not contain a brand term, over all reported clicks. Brand terms are derived from the authorised property and matched as substrings, so \"acme pricing\" counts as brand. Published, never judged."
         }
       },
       "evidence": {
@@ -1338,7 +1370,21 @@
         "density_numerator_units": "Query units counted",
         "density_denominator_units": "Text units counted",
         "declared_schema_types": "Types declared",
-        "expected_schema_types": "Reviewed types for this page type"
+        "expected_schema_types": "Reviewed types for this page type",
+        "render_blocking_stylesheets": "Blocking stylesheets",
+        "render_blocking_scripts": "Blocking scripts",
+        "first_image_lazy_loaded": "First image is lazy",
+        "average_words_under_h3": "Average words per H3 section",
+        "h3_sections": "H3 sections",
+        "thinnest_section_words": "Thinnest section",
+        "missing_required_properties": "Missing required properties",
+        "judged_json_ld_types": "Types judged",
+        "first_slot_containing_query": "First slot containing the query",
+        "non_brand_click_share": "Non-brand click share",
+        "brand_clicks": "Brand clicks",
+        "brand_terms_used": "Brand terms used",
+        "first_image_width": "First image width",
+        "first_image_height": "First image height"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",
@@ -2714,7 +2760,8 @@
         "imageLoading": {
           "_label": "Image lazy loading",
           "none": "None of the {total} images declare loading=\"lazy\".",
-          "some": "{lazy} of {total} images declare loading=\"lazy\". Not graded: deferring the image at the top of the page delays the very thing a visitor is waiting for, and we cannot tell which image is where."
+          "some": "{lazy} of {total} images declare loading=\"lazy\". Only the first image is graded, and it is not one of them — images further down are meant to be deferred.",
+          "leadLazy": "The first image on the page waits for the reader to scroll before it loads ({width}×{height}). That delays the very thing they came to see. Load the lead image normally and keep lazy loading for images further down."
         },
         "urlShape": {
           "_label": "URL shape",

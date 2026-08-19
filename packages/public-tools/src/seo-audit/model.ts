@@ -294,6 +294,49 @@ function isOriginRoot(url: string): boolean {
   }
 }
 
+/**
+ * Properties a declared type needs to be usable, by lowercase `@type`.
+ *
+ * Short on purpose: only what Google's rich-result documentation lists as
+ * required, and only for types a marketing site actually ships. A type absent
+ * from this table is not judged — assuming a type is complete because we have
+ * no opinion about it would report every unlisted type as correct.
+ */
+const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
+  product: ["name"],
+  offer: ["price", "priceCurrency"],
+  article: ["headline"],
+  blogposting: ["headline"],
+  newsarticle: ["headline"],
+  faqpage: ["mainEntity"],
+  question: ["name", "acceptedAnswer"],
+  howto: ["name", "step"],
+  recipe: ["name", "recipeIngredient", "recipeInstructions"],
+  event: ["name", "startDate", "location"],
+  jobposting: ["title", "datePosted", "hiringOrganization"],
+  breadcrumblist: ["itemListElement"],
+  softwareapplication: ["name"],
+  organization: ["name"],
+  localbusiness: ["name", "address"],
+};
+
+/**
+ * Smallest declared edge that could plausibly be the image a reader came for.
+ *
+ * A 32-pixel logo mark is the first `<img>` on a very large share of sites.
+ */
+const LEAD_IMAGE_MIN_EDGE = 200;
+
+/** Whether the first image declares a size big enough to be worth judging. */
+function leadImageIsJudgeable(facts: ParsedOnPageFacts | null): boolean {
+  const first = facts?.firstImage;
+  if (first === undefined || first === null) return false;
+  const width = first.width ?? 0;
+  const height = first.height ?? 0;
+  if (first.width === null && first.height === null) return false;
+  return Math.max(width, height) >= LEAD_IMAGE_MIN_EDGE;
+}
+
 function buildRecords(
   raw: SeoAuditRaw,
   pages: readonly SeoAuditPage[],
@@ -316,6 +359,12 @@ function buildRecords(
     onPageByUrl.get(page.url) ?? null;
   const hreflangTargetsOf = (page: SeoAuditPage) =>
     onPageOf(page)?.hreflangAlternates ?? [];
+  /** JSON-LD nodes whose type this run has a reviewed opinion about. */
+  const judgedJsonLdNodes = (page: SeoAuditPage) =>
+    (onPageOf(page)?.jsonLdProperties ?? []).filter(
+      (node) =>
+        REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !== undefined,
+    ).map((node) => ({ type: node.type.trim().toLowerCase(), keys: node.keys }));
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -1239,6 +1288,96 @@ function buildRecords(
       limitation: "external_links_counted_by_destination_not_by_anchor",
     }),
     record({
+      // 8.6. The published threshold said "in a separate Lighthouse lab run",
+      // which is not what happens — this reads the markup. Render-blocking is
+      // a property of where a resource sits and what it declares, so it is
+      // readable without running anything.
+      id: "render_blocking_head_resource",
+      category: "structure",
+      population: "every_collected_page",
+      tested: htmlPages,
+      observations: htmlPages.flatMap((page) => {
+        const blocking = onPageOf(page)?.renderBlocking;
+        if (blocking === undefined) return [];
+        const total = blocking.stylesheets + blocking.scripts;
+        return total === 0
+          ? []
+          : [
+              pageObservation(page, {
+                render_blocking_stylesheets: blocking.stylesheets,
+                render_blocking_scripts: blocking.scripts,
+              }),
+            ];
+      }),
+      limitation:
+        "declared_in_the_head_markup_no_lab_run_and_no_network_timing",
+    }),
+    record({
+      // 5.4. A static crawl has no viewport, so it cannot know the fold. What
+      // it can know is which image comes first and how big the markup says it
+      // is — and the first image is very often a 32-pixel logo mark, where
+      // lazy loading is harmless. Firing on one of those is noise, so this
+      // needs a declared size large enough to be the image the reader came
+      // for. An image that declares no size at all is not judged: guessing
+      // would put the logo back in.
+      id: "first_image_lazy_loaded",
+      category: "structure",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => leadImageIsJudgeable(onPageOf(page))),
+      observations: htmlPages
+        .filter((page) => {
+          const first = onPageOf(page)?.firstImage;
+          return (
+            leadImageIsJudgeable(onPageOf(page)) && first?.lazyLoaded === true
+          );
+        })
+        .map((page) => {
+          const first = onPageOf(page)?.firstImage;
+          return pageObservation(page, {
+            first_image_lazy_loaded: true,
+            first_image_width: first?.width ?? null,
+            first_image_height: first?.height ?? null,
+            images_on_page: onPageOf(page)?.images.total ?? 0,
+          });
+        }),
+      limitation:
+        "first_image_in_document_order_with_a_declared_size_no_viewport_is_available",
+    }),
+    record({
+      // 7.3. The required-property table is a judgement, so it is written down
+      // where it can be argued with. It is deliberately short: only properties
+      // Google's own rich-result documentation lists as required, and only for
+      // types a marketing site actually ships. A type not in the table is not
+      // judged rather than assumed complete.
+      id: "json_ld_missing_required_property",
+      category: "structured_data",
+      population: "conditional_subset",
+      tested: htmlPages.filter((page) => judgedJsonLdNodes(page).length > 0),
+      observations: htmlPages.flatMap((page) => {
+        const missing = judgedJsonLdNodes(page).flatMap((node) => {
+          const required = REQUIRED_JSON_LD_PROPERTIES[node.type] ?? [];
+          const absent = required.filter((key) => !node.keys.includes(key));
+          return absent.length === 0
+            ? []
+            : [`${node.type}:${absent.join(",")}`];
+        });
+        return missing.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                missing_required_properties: missing
+                  .slice(0, MAX_LISTED_SOURCE_PAGES)
+                  .join(" "),
+                judged_json_ld_types: judgedJsonLdNodes(page)
+                  .map((node) => node.type)
+                  .join(" "),
+              }),
+            ];
+      }),
+      limitation:
+        "only_types_in_the_reviewed_required_property_table_are_judged",
+    }),
+    record({
       id: "json_ld_parse_error",
       category: "structured_data",
       tested: htmlPages,
@@ -1360,7 +1499,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v8",
+      schemaVersion: "seo_audit.sitewide.v9",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

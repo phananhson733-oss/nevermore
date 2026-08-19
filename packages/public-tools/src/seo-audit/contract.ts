@@ -249,7 +249,8 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "response",
   "declared",
 
-  "headingLevels",];
+  "headingLevels",
+  "wordsUnderEachH3",];
 
 /**
  * Characters, counted the way the producer counts them.
@@ -366,7 +367,8 @@ function isResponseFacts(value: unknown): boolean {
   );
 }
 
-const IMAGE_FACTS_KEYS: readonly string[] = [
+/** The counted facts. `first` is not one of them — it is not a number. */
+const IMAGE_COUNT_KEYS: readonly string[] = [
   "total",
   "withAlt",
   "withEmptyAlt",
@@ -375,11 +377,27 @@ const IMAGE_FACTS_KEYS: readonly string[] = [
   "lazyLoaded",
 ];
 
+const IMAGE_FACTS_KEYS: readonly string[] = [...IMAGE_COUNT_KEYS, "first"];
+
+const FIRST_IMAGE_KEYS: readonly string[] = ["lazyLoaded", "width", "height"];
+
+function isFirstImage(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isObject(value) &&
+    hasExactly(value, FIRST_IMAGE_KEYS) &&
+    typeof value["lazyLoaded"] === "boolean" &&
+    (value["width"] === null || isNonNegativeInteger(value["width"])) &&
+    (value["height"] === null || isNonNegativeInteger(value["height"]))
+  );
+}
+
 function isImageFacts(value: unknown): boolean {
   return (
     isObject(value) &&
     hasExactly(value, IMAGE_FACTS_KEYS) &&
-    IMAGE_FACTS_KEYS.every((key) => isNonNegativeInteger(value[key]))
+    IMAGE_COUNT_KEYS.every((key) => isNonNegativeInteger(value[key])) &&
+    isFirstImage(value["first"])
   );
 }
 
@@ -543,6 +561,12 @@ export function isSeoAuditTargetPageExtract(
         : null,
     ) &&
     typeof value.truncatedLists === "boolean" &&
+    (value.wordsUnderEachH3 === null ||
+      (Array.isArray(value.wordsUnderEachH3) &&
+        value.wordsUnderEachH3.length <= 200 &&
+        value.wordsUnderEachH3.every(
+          (words) => typeof words === "number" && Number.isInteger(words) && words >= 0,
+        ))) &&
     (value.headingLevels === null ||
       (Array.isArray(value.headingLevels) &&
         value.headingLevels.length <= 100 &&
@@ -568,7 +592,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v8" &&
+    run.schemaVersion === "seo_audit.sitewide.v9" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

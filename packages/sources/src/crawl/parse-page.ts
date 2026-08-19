@@ -204,6 +204,51 @@ export interface ParsedOnPageFacts {
    * that the document does not contain.
    */
   readonly headingLevels: readonly number[];
+  /**
+   * Resources in `<head>` that block the first paint.
+   *
+   * A stylesheet without a non-screen `media`, and a `<script src>` carrying
+   * neither `async` nor `defer`. Both stop the parser where they sit, which is
+   * what "render-blocking" means — it is a property of the markup, readable
+   * without running anything.
+   */
+  readonly renderBlocking: {
+    readonly stylesheets: number;
+    readonly scripts: number;
+  };
+  /**
+   * The first image in document order, and what it declares about itself.
+   *
+   * Null when the page carries no image. Document order stands in for "the one
+   * the reader sees first" — a static crawl has no viewport, so it cannot know
+   * the fold. The declared size travels with it because the first image is very
+   * often a 32-pixel logo mark, and lazy-loading one of those is harmless: a
+   * check that fires on it is noise, which is worse than a check that misses.
+   */
+  readonly firstImage: {
+    readonly lazyLoaded: boolean;
+    /** Declared width and height, or null when the markup states neither. */
+    readonly width: number | null;
+    readonly height: number | null;
+  } | null;
+  /**
+   * Words of body text under each H3, in document order.
+   *
+   * Segmented at heading boundaries: everything after one H3 and before the
+   * next heading of any level belongs to that H3. Empty when the page has no
+   * H3, which is a different fact from every H3 being empty.
+   */
+  readonly wordsUnderEachH3: readonly number[];
+  /**
+   * Property keys declared by each JSON-LD node, keyed by its `@type`.
+   *
+   * Keys only, never values: the question is whether a type carries the
+   * properties it needs, and the values are the site's content.
+   */
+  readonly jsonLdProperties: readonly {
+    readonly type: string;
+    readonly keys: readonly string[];
+  }[];
   readonly externalLinks: ParsedExternalLinkFacts;
   /**
    * UTF-8 byte counts, not character counts.
@@ -494,6 +539,62 @@ function collectTypes(value: unknown, types: Set<string>): void {
   }
 }
 
+/**
+ * Property keys per JSON-LD node, keyed by its `@type`.
+ *
+ * Keys only. The question these feed is whether a declared type carries the
+ * properties it needs; the values are the site's content and none of our
+ * business. Nested nodes are walked so a `Product` inside a `@graph` counts.
+ */
+function collectJsonLdProperties(
+  html: string,
+): readonly { readonly type: string; readonly keys: readonly string[] }[] {
+  const out: { type: string; keys: string[] }[] = [];
+  const blocks = html.matchAll(
+    /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi,
+  );
+  let blockCount = 0;
+  for (const block of blocks) {
+    if (++blockCount > CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks) break;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(decodeHtml(block[1] ?? ""));
+    } catch {
+      continue;
+    }
+    // Iterative, like the type walk beside it: a hostile document must not be
+    // able to recurse this parser off its stack.
+    const queue: unknown[] = [parsed];
+    let visited = 0;
+    while (queue.length > 0 && visited < CRAWL_PROJECTION_LIMITS.maxJsonLdNodes) {
+      const node = queue.shift();
+      visited += 1;
+      if (Array.isArray(node)) {
+        queue.push(...node);
+        continue;
+      }
+      if (typeof node !== "object" || node === null) continue;
+      const record = node as Record<string, unknown>;
+      for (const value of Object.values(record)) {
+        if (typeof value === "object" && value !== null) queue.push(value);
+      }
+      const declared = record["@type"];
+      const types = Array.isArray(declared) ? declared : [declared];
+      for (const type of types) {
+        if (typeof type !== "string" || type.trim() === "") continue;
+        if (out.length >= CRAWL_PROJECTION_LIMITS.maxJsonLdTypes) break;
+        out.push({
+          type: truncate(type.trim(), CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
+          keys: Object.keys(record)
+            .filter((key) => !key.startsWith("@"))
+            .slice(0, CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
+        });
+      }
+    }
+  }
+  return out;
+}
+
 function collectJsonLd(html: string): CrawlJsonLdProjection {
   const types = new Set<string>();
   let errorCount = 0;
@@ -704,6 +805,80 @@ function collectImageFormats(html: string): readonly string[] {
     const withoutQuery = decodeHtml(src).split(/[?#]/)[0] ?? "";
     const extension = /\.([a-z0-9]{2,5})$/i.exec(withoutQuery)?.[1];
     if (extension !== undefined) out.push(extension.toLowerCase());
+  }
+  return out;
+}
+
+/** Stylesheets and scripts in `<head>` that stop the parser where they sit. */
+/** Comments removed; the elements a reader never sees are left in place. */
+function withoutComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, " ");
+}
+
+function collectRenderBlocking(html: string): {
+  readonly stylesheets: number;
+  readonly scripts: number;
+} {
+  const head = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(html)?.[1] ?? "";
+  let stylesheets = 0;
+  for (const match of head.matchAll(openingTagPattern("link", "gi"))) {
+    const tag = match[0];
+    if (!(attr(tag, "rel") ?? "").toLowerCase().split(/\s+/).includes("stylesheet")) {
+      continue;
+    }
+    // `media="print"` and the like do not block the first paint.
+    const media = (attr(tag, "media") ?? "").trim().toLowerCase();
+    if (media !== "" && media !== "all" && media !== "screen") continue;
+    stylesheets += 1;
+  }
+  let scripts = 0;
+  for (const match of head.matchAll(openingTagPattern("script", "gi"))) {
+    const tag = match[0];
+    if (attr(tag, "src") === null) continue;
+    if (/\basync\b/i.test(tag) || /\bdefer\b/i.test(tag)) continue;
+    // A module script defers by definition.
+    if ((attr(tag, "type") ?? "").trim().toLowerCase() === "module") continue;
+    scripts += 1;
+  }
+  return { stylesheets, scripts };
+}
+
+/** The first image in document order, and what it declares about itself. */
+function collectFirstImage(html: string): {
+  readonly lazyLoaded: boolean;
+  readonly width: number | null;
+  readonly height: number | null;
+} | null {
+  const first = html.match(openingTagPattern("img", "i"));
+  if (first === null) return null;
+  const dimension = (name: string): number | null => {
+    const raw = (attr(first[0], name) ?? "").trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  };
+  return {
+    lazyLoaded: (attr(first[0], "loading") ?? "").trim().toLowerCase() === "lazy",
+    width: dimension("width"),
+    height: dimension("height"),
+  };
+}
+
+/** Words of body text under each H3, segmented at heading boundaries. */
+function collectWordsUnderEachH3(html: string): readonly number[] {
+  const parts = html.split(/(<h[1-6]\b[^>]*>)/i);
+  const out: number[] = [];
+  let underH3 = false;
+  for (const part of parts) {
+    const opening = /^<h([1-6])\b/i.exec(part);
+    if (opening !== null) {
+      underH3 = opening[1] === "3";
+      continue;
+    }
+    if (!underH3) continue;
+    const text = extractNormalisedBody(part);
+    out.push(text === "" ? 0 : text.split(/\s+/).filter(Boolean).length);
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHeadings) break;
   }
   return out;
 }
@@ -998,6 +1173,12 @@ function collectOnPageFacts(
     images: collectImageFacts(markup),
     imageFormats: collectImageFormats(markup),
     headingLevels: collectHeadingLevels(markup),
+    // Comment-stripped but script-preserved: both of these read <script> tags,
+    // which `markup` removes.
+    renderBlocking: collectRenderBlocking(withoutComments(rawHtml)),
+    firstImage: collectFirstImage(markup),
+    wordsUnderEachH3: collectWordsUnderEachH3(markup),
+    jsonLdProperties: collectJsonLdProperties(withoutComments(rawHtml)),
     externalLinks: collectExternalLinkFacts(markup, pageUrl, pageOrigin),
     htmlBytes: UTF8.encode(rawHtml).length,
     visibleTextBytes: UTF8.encode(bodyText).length,

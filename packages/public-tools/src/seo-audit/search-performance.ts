@@ -358,6 +358,80 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
 }
 
 /**
+ * Share of clicks that did not come from the site's own name (E4).
+ *
+ * Published, never judged: the check's own threshold says a healthy split
+ * depends on brand maturity and asks the reader to look at the trend, not the
+ * level. The brand terms are derived from the property rather than typed in by
+ * the visitor — a tool that needs an answer before it can say anything is the
+ * empty form this whole layer exists to remove.
+ *
+ * A query merely CONTAINING the brand counts as brand: "acme pricing" is
+ * someone who already knows the name.
+ */
+function nonBrandClickShareRecord(
+  raw: SearchPerformanceRaw,
+  brandTerms: readonly string[],
+): SeoAuditRecord {
+  const terms = brandTerms
+    .map((term) => term.trim().toLowerCase())
+    .filter((term) => term.length >= 3);
+  const measurable = !raw.queriesTruncated && terms.length > 0;
+  let brandClicks = 0;
+  let totalClicks = 0;
+  if (measurable) {
+    for (const row of raw.queries) {
+      if (row.clicks <= 0) continue;
+      totalClicks += row.clicks;
+      const query = row.key.toLowerCase();
+      if (terms.some((term) => query.includes(term))) brandClicks += row.clicks;
+    }
+  }
+  if (!measurable || totalClicks === 0) {
+    return {
+      id: "non_brand_click_share",
+      category: "search_performance",
+      state: "unverified",
+      unit: "pages",
+      population: "conditional_subset",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation: raw.queriesTruncated
+        ? "query_rows_hit_the_row_cap_so_the_reported_total_is_short"
+        : "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+    };
+  }
+  return {
+    id: "non_brand_click_share",
+    category: "search_performance",
+    state: "observed",
+    unit: "pages",
+    population: "conditional_subset",
+    targetTested: null,
+    tested: 1,
+    affected: 1,
+    observations: [
+      {
+        url: null,
+        values: values({
+          non_brand_click_share: Number(
+            ((totalClicks - brandClicks) / totalClicks).toFixed(4),
+          ),
+          brand_clicks: brandClicks,
+          clicks_total: totalClicks,
+          brand_terms_used: terms.join(" "),
+          property: raw.property,
+        }),
+      },
+    ],
+    limitation:
+      "brand_terms_derived_from_the_property_and_matched_as_substrings",
+  };
+}
+
+/**
  * Records for the checks that need an authorized Search Console property.
  *
  * Returns nothing at all when no grant covered this run, so the checks stay
@@ -366,6 +440,8 @@ function targetQueryBandRecord(raw: SearchPerformanceRaw): SeoAuditRecord {
 export function buildSearchPerformanceRecords(
   raw: SearchPerformanceRaw | null | undefined,
   htmlPages: readonly SeoAuditPage[],
+  /** Derived from the property by the caller; never typed in by the visitor. */
+  brandTerms: readonly string[] = [],
 ): readonly SeoAuditRecord[] {
   if (!raw) return [];
   return [
@@ -385,6 +461,7 @@ export function buildSearchPerformanceRecords(
       "low_click_position_impression_share",
     ),
     targetQueryBandRecord(raw),
+    nonBrandClickShareRecord(raw, brandTerms),
   ];
 }
 
@@ -413,6 +490,9 @@ export const SEARCH_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   "worst_query",
   "queries_confirmed",
   "clicks_total",
+  "non_brand_click_share",
+  "brand_clicks",
+  "brand_terms_used",
 ];
 
 /** Record ids this module emits, in the order it emits them. */
@@ -421,4 +501,5 @@ export const SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
   "impression_share_top_positions",
   "impression_share_low_click_positions",
   "target_query_ranking_band",
+  "non_brand_click_share",
 ];
