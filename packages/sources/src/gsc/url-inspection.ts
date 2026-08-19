@@ -193,7 +193,7 @@ export async function inspectUrlIndexStatus(
     if (fatal !== null) break;
     // The census is all-or-nothing, so running out of time is the same answer
     // as running out of quota: no rate, and a reason the reader can act on.
-    if (now() - startedAt > budgetMs) {
+    if (now() - startedAt >= budgetMs) {
       return { status: "unavailable", reason: "provider_unavailable" };
     }
     const batchStartedAt = now();
@@ -201,8 +201,17 @@ export async function inspectUrlIndexStatus(
       options.urls.slice(start, start + CONCURRENCY).map(inspect),
     );
     const elapsed = now() - batchStartedAt;
-    if (elapsed < BATCH_INTERVAL_MS && start + CONCURRENCY < options.urls.length) {
-      await (options.sleep ?? defaultSleep)(BATCH_INTERVAL_MS - elapsed);
+    const pause = BATCH_INTERVAL_MS - elapsed;
+    // Only sleep if the wait itself still leaves budget to do something after
+    // it. Sleeping right up to the ceiling burns the run's remaining time and
+    // then returns unavailable anyway, having spent the quota on the batches
+    // before it for nothing.
+    if (
+      pause > 0 &&
+      start + CONCURRENCY < options.urls.length &&
+      now() - startedAt + pause < budgetMs
+    ) {
+      await (options.sleep ?? defaultSleep)(pause);
     }
   }
 

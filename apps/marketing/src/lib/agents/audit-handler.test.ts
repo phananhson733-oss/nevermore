@@ -738,7 +738,7 @@ describe("handleAgentAuditRequest", () => {
             records: [
               ...buildPagePerformanceRecords(null),
               ...buildPageWeightRecords(null),
-              ...buildImageWeightRecords(null),
+              ...buildImageWeightRecords(null, undefined, true),
             ],
           },
         },
@@ -807,7 +807,7 @@ describe("handleAgentAuditRequest", () => {
         records: [
           ...buildPagePerformanceRecords(null),
           ...buildPageWeightRecords(null),
-          ...buildImageWeightRecords(null),
+          ...buildImageWeightRecords(null, undefined, true),
         ],
       },
     });

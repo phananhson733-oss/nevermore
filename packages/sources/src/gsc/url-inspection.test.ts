@@ -22,15 +22,27 @@ function respond(verdict: string): Response {
 
 const FAILED = { ok: false, status: 500 } as unknown as Response;
 
-/** A clock that only moves when the code under test sleeps. */
-function fakeClock() {
+/**
+ * A clock that moves when the code sleeps AND when a request goes out.
+ *
+ * Requests have to cost time or the budget test is vacuous: with fetches free,
+ * a run that skips its pacing sleeps finishes five hundred URLs at t=0 and the
+ * wall-clock ceiling is never reached in the fake even though it always would
+ * be in production.
+ */
+function fakeClock(perRequestMs = 40) {
   let t = 0;
+  let slept = 0;
   return {
     now: () => t,
     sleep: async (ms: number) => {
       t += ms;
+      slept += ms;
     },
-    slept: () => t,
+    tick: () => {
+      t += perRequestMs;
+    },
+    slept: () => slept,
   };
 }
 
@@ -44,7 +56,10 @@ async function run(
     siteUrl: SITE,
     accessToken: "token",
     urls: urls(responses.length),
-    fetchImpl: async () => responses[call++] ?? FAILED,
+    fetchImpl: async () => {
+      clock.tick();
+      return responses[call++] ?? FAILED;
+    },
     now: clock.now,
     sleep: clock.sleep,
     ...overrides,
@@ -114,13 +129,26 @@ describe("URL Inspection census", () => {
     // Concurrency is not a rate limit. The ceiling is per SITE and shared with
     // every other tool the customer points at the property, so running flat out
     // spends quota their other workflows were relying on.
+    const calls = 50;
     const { clock } = await run(
-      Array.from({ length: 50 }, () => respond("PASS")),
+      Array.from({ length: calls }, () => respond("PASS")),
       { budgetMs: 10 * 60_000 },
     );
 
-    // 50 calls at half the published 600/min ceiling is at least 10 seconds.
-    expect(clock.slept()).toBeGreaterThanOrEqual(9_000);
+    // The rate that matters is requests per minute of wall clock, not how long
+    // the code chose to sleep — pacing correctly subtracts however long the
+    // requests themselves took, so asserting the sleep total would move every
+    // time the fake's per-request cost changed.
+    const perMinute = (calls / clock.now()) * 60_000;
+    // Asserted against Google's published per-site ceiling, which is the
+    // contract. The module aims at half of it as a margin for the customer's
+    // other tools, but a short run measures a little over that half because
+    // the final batch needs no trailing pause — over-specifying the margin
+    // would make this test fail on arithmetic that is working as intended.
+    expect(perMinute).toBeLessThan(600);
+    // And it is genuinely paced, not just concurrency-limited: unpaced, fifty
+    // requests at 40ms each would clear in two seconds, i.e. 1500/min.
+    expect(perMinute).toBeLessThan(400);
   });
 
   it("stops rather than overrunning its wall-clock budget", async () => {

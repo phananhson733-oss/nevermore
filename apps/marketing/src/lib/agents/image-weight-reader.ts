@@ -26,12 +26,22 @@ const MAX_IMAGES_MEASURED = 25;
 /**
  * How many run at once.
  *
- * These all land on the visitor's own origin, and a burst of parallel requests
- * at a site we are also crawling is the behaviour that gets a crawler blocked.
+ * A burst of parallel requests at a host we are also crawling is the behaviour
+ * that gets a crawler blocked, and these often land on the audited site itself.
  */
 const CONCURRENCY = 4;
 
 const TIMEOUT_MS = 6_000;
+
+/**
+ * Outbound bytes one run will spend weighing images.
+ *
+ * The page being audited chooses these URLs, so without a run-level ceiling a
+ * hostile page can point twenty-five fetches at a third party on every audit.
+ * Bounding the total rather than the per-image size means the cost of a run is
+ * fixed no matter what the page declares.
+ */
+const MAX_RUN_TRANSFER_BYTES = 3 * 1024 * 1024;
 
 export type ImageWeightUnavailableReason =
   | "no_images_declared"
@@ -71,23 +81,12 @@ export type ImageWeightReadResult =
  * answer HEAD with no `Content-Length`, and a CDN that negotiates format by
  * `Accept` can answer HEAD about a different variant than it would send.
  */
-async function weigh(
-  url: string,
-  allowedOrigin: string,
-): Promise<ImageWeightRaw | null> {
+async function weigh(url: string): Promise<ImageWeightRaw | null> {
   let result;
   try {
     result = await fetchPublicResource(url, {
       timeoutMs: TIMEOUT_MS,
       maxBodyBytes: IMAGE_TRANSFER_BUDGET_BYTES,
-      // Same-origin only, and enforced rather than assumed. An `<img src>` can
-      // name any host on the internet, so without this the audited page — which
-      // an attacker may control — chooses twenty-five arbitrary targets and
-      // this server fetches up to 200 KB from each, on every run, uncached.
-      // That is a bandwidth-amplification primitive pointed at third parties.
-      // Off-origin images are simply not weighed, which the `complete` bit
-      // then reports rather than hiding.
-      allowedOrigin,
     });
   } catch {
     return null;
@@ -105,17 +104,32 @@ async function weigh(
 }
 
 /** Runs `weigh` over the list, `CONCURRENCY` at a time, in order. */
+/**
+ * Runs `weigh` over the list, `CONCURRENCY` at a time, stopping at the budget.
+ *
+ * Off-origin images are fetched, because that is where real sites keep them: a
+ * same-origin restriction reads as prudent and in practice reports "cannot
+ * judge" on every site with a CDN, an image optimiser or object storage, which
+ * is most of them. The private-network guard inside `fetchPublicResource` runs
+ * on the initial URL and again on every redirect hop, so the SSRF surface is
+ * already closed; what is left is outbound volume, and volume is what
+ * `MAX_RUN_TRANSFER_BYTES` bounds. The cap is on the whole run rather than
+ * per image, so a page cannot widen it by declaring more images.
+ */
 async function weighAll(
   urls: readonly string[],
-  allowedOrigin: string,
 ): Promise<readonly ImageWeightRaw[]> {
   const out: ImageWeightRaw[] = [];
+  let spent = 0;
   for (let start = 0; start < urls.length; start += CONCURRENCY) {
+    if (spent >= MAX_RUN_TRANSFER_BYTES) break;
     const batch = await Promise.all(
-      urls.slice(start, start + CONCURRENCY).map((url) => weigh(url, allowedOrigin)),
+      urls.slice(start, start + CONCURRENCY).map((url) => weigh(url)),
     );
     for (const measured of batch) {
-      if (measured !== null) out.push(measured);
+      if (measured === null) continue;
+      spent += measured.transferredBytes;
+      out.push(measured);
     }
   }
   return out;
@@ -125,19 +139,17 @@ export function createImageWeightReader(options: {
   readonly weighImage?: (url: string) => Promise<ImageWeightRaw | null>;
 } = {}): (input: {
   readonly sources: readonly string[];
-  /** The audited page's origin; nothing off it is fetched. */
-  readonly pageOrigin: string;
 }) => Promise<ImageWeightReadResult> {
   const measure = options.weighImage;
 
-  return async ({ sources, pageOrigin }) => {
+  return async ({ sources }) => {
     const bounded = sources.slice(0, MAX_IMAGES_MEASURED);
     if (bounded.length === 0) {
       return { status: "unavailable", reason: "no_images_declared" };
     }
     const images =
       measure === undefined
-        ? await weighAll(bounded, pageOrigin)
+        ? await weighAll(bounded)
         : (
             await Promise.all(bounded.map((url) => measure(url)))
           ).filter((entry): entry is ImageWeightRaw => entry !== null);

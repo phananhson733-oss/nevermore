@@ -16,7 +16,7 @@ const TARGET = "https://acme.test/page";
 function check(images: readonly ImageWeightRaw[] | null) {
   return evaluateAgentAuditScope("page", {
     availability: "available",
-    records: buildImageWeightRecords(images),
+    records: buildImageWeightRecords(images, undefined, true),
     targetUrl: TARGET,
     targetInspected: true,
     inspectedTargetUrl: TARGET,
@@ -73,10 +73,11 @@ describe("5.2 — per-image transfer weight", () => {
   });
 
   it("counts what it weighed, not what the page declared", () => {
-    const record = buildImageWeightRecords([
-      image("a.webp", 10),
-      image("b.png", 900_000),
-    ])[0];
+    const record = buildImageWeightRecords(
+      [image("a.webp", 10), image("b.png", 900_000)],
+      undefined,
+      true,
+    )[0];
 
     expect(record?.tested).toBe(2);
     expect(record?.affected).toBe(1);

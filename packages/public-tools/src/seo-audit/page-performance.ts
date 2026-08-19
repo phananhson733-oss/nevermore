@@ -256,8 +256,12 @@ export function buildImageWeightRecords(
    * plus twenty-four failed fetches would otherwise render as a clean page.
    * A partial sample may still FAIL — finding one oversized image is proof —
    * so it is only the clean verdict that is withheld.
+   *
+   * Required, with no default. A default of `true` makes omission read as
+   * proof of completeness, so the next caller that forgets it silently gets
+   * the fail-open behaviour this argument was added to remove.
    */
-  complete = true,
+  complete: boolean,
 ): readonly SeoAuditRecord[] {
   if (images === null || images === undefined || images.length === 0) {
     return [

@@ -71,10 +71,13 @@ export interface SearchPerformanceRaw {
  * How much of the property's reported impressions must land on crawled pages
  * before A2 will publish a share.
  *
- * Below this the run has seen too little of where the traffic actually goes
- * for "5% of impressions are on dead URLs" to mean anything.
+ * A2 passes below 5% and blocks above 20%, so the unresolved remainder has to
+ * be small next to those marks for a clean verdict to mean anything: at a half
+ * resolved, the half we never saw could be entirely retired URLs and the
+ * published share would still read near zero. Four fifths keeps the blind spot
+ * roughly at the failing threshold rather than four times past it.
  */
-const MIN_RESOLVED_IMPRESSION_SHARE = 0.5;
+const MIN_RESOLVED_IMPRESSION_SHARE = 0.8;
 
 /** Highest average position still counted in the top band. */
 const TOP_BAND_MAX = 6;

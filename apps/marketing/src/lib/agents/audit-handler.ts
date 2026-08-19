@@ -119,7 +119,6 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readImageWeights?: (input: {
     readonly sources: readonly string[];
-    readonly pageOrigin: string;
   }) => Promise<
     | {
         readonly status: "ok";
@@ -684,10 +683,7 @@ export async function handleAgentAuditRequest(
     }
     try {
       const sources = result.targetPageExtract?.declared?.images.sources ?? [];
-      const weighed = await dependencies.readImageWeights?.({
-        sources,
-        pageOrigin: result.siteOrigin,
-      });
+      const weighed = await dependencies.readImageWeights?.({ sources });
       if (weighed?.status === "ok") {
         imageWeights = weighed.images;
         imageWeightsComplete = weighed.complete;

@@ -63,7 +63,7 @@ describe("page performance records", () => {
           [
             ...buildPagePerformanceRecords(input),
             ...buildPageWeightRecords(weight),
-            ...buildImageWeightRecords(null),
+            ...buildImageWeightRecords(null, undefined, true),
           ].map((record) => record.id),
         ).toEqual(PAGE_PERFORMANCE_RECORD_IDS);
       }

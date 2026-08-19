@@ -121,16 +121,34 @@ describe("A2 — impressions on URLs the site no longer serves", () => {
   it("leaves a URL the crawl never reached out of both halves", () => {
     // "The site dropped it" and "our bounded crawl did not reach it" produce
     // the identical row. Counting it as abandoned would fail every site with
-    // deep pagination the crawl skips by design.
+    // deep pagination the crawl skips by design. With the unresolved share
+    // small, the rest of the property can still be judged.
     expect(
       a2(
         [
-          { path: "/a", impressions: 700 },
-          { path: "/never-crawled", impressions: 300 },
+          { path: "/a", impressions: 900 },
+          { path: "/never-crawled", impressions: 50 },
         ],
         LIVE,
       )?.result,
     ).toBe("pass");
+  });
+
+  it("refuses when too much of the property never resolved to a crawled page", () => {
+    // A retired URL is by definition no longer linked, so it is exactly what a
+    // bounded crawl misses. Dropping those impressions from both halves and
+    // publishing the rest computes the share over the pages that are still
+    // alive — and a site whose dead URLs hold most of its impressions reads
+    // as 0% abandoned, which is the failure this check exists to find.
+    expect(
+      a2(
+        [
+          { path: "/a", impressions: 300 },
+          { path: "/never-crawled", impressions: 700 },
+        ],
+        LIVE,
+      )?.result,
+    ).toBe("excluded");
   });
 
   it("refuses to judge when the row list hit its cap", () => {
