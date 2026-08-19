@@ -161,4 +161,3 @@ guarded transport and assert/report 14 pages without running LLM or DataForSEO.
 
 Request an independent diff review, fix only actionable findings, rerun the
 affected checks, and report any unrelated baseline failures separately.
-

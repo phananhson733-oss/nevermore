@@ -109,4 +109,3 @@ coverage, and SERP sampling.
   `max_urls`.
 - Focused tests, package typechecks/lint, full unit suite, and a bounded live
   crawl of `aistorygenerator.work`. No paid LLM or DataForSEO replay is required.
-
