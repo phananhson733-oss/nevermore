@@ -248,6 +248,26 @@ function lowTrafficRecord(
   const small = known.filter(
     (entry) => entry.organicEtv < LOW_TRAFFIC_ETV_CEILING,
   );
+  // "Nobody on page one is small" is a claim about ALL ten domains, and it
+  // cannot be made from the subset the provider happened to size. One large
+  // domain resolved plus nine unresolved — one of which is the small
+  // competitor this check exists to surface — would otherwise publish the Tip
+  // saying the query is unwinnable. Finding a small site is still decisive in
+  // the other direction, so only the negative verdict needs the full set.
+  if (small.length === 0 && known.length < measured.length) {
+    return {
+      id: "page_one_without_a_low_traffic_site",
+      category: "serp_shape",
+      state: "unverified",
+      unit: "pages",
+      population: "target_page",
+      targetTested: null,
+      tested: 0,
+      affected: 0,
+      observations: [],
+      limitation: "not_every_page_one_domain_could_be_sized_this_run",
+    };
+  }
   return {
     id: "page_one_without_a_low_traffic_site",
     category: "serp_shape",
@@ -311,4 +331,5 @@ export const SERP_SHAPE_LIMITATION_CODES: readonly string[] = [
   "one_live_sample_of_one_results_page_which_changes_between_requests",
   "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized",
   "traffic_estimates_are_modelled_not_measured_visits",
+  "not_every_page_one_domain_could_be_sized_this_run",
 ];

@@ -16,6 +16,10 @@ import {
  * requests on one page's decoration than the whole crawl spends on the site,
  * for a check whose published severity is a Tip. Images are weighed in
  * document order, so the ones a reader meets first are the ones measured.
+ *
+ * Truncating here is a measurement gap, not a clean bill of health: the
+ * twenty-sixth image can be the ten-megabyte one. A run that hits this cap
+ * reports the cap rather than a pass — see `complete` on the result.
  */
 const MAX_IMAGES_MEASURED = 25;
 
@@ -34,7 +38,19 @@ export type ImageWeightUnavailableReason =
   | "no_image_could_be_fetched";
 
 export type ImageWeightReadResult =
-  | { readonly status: "ok"; readonly images: readonly ImageWeightRaw[] }
+  | {
+      readonly status: "ok";
+      readonly images: readonly ImageWeightRaw[];
+      /**
+       * Whether every image the page declares was weighed.
+       *
+       * False when the cap truncated the list or a fetch failed. Without it,
+       * "no image is over budget" is a claim about the images that happened to
+       * answer — one 10 KB image plus twenty-four failures plus a 10 MB
+       * twenty-sixth renders as a healthy page.
+       */
+      readonly complete: boolean;
+    }
   | {
       readonly status: "unavailable";
       readonly reason: ImageWeightUnavailableReason;
@@ -55,12 +71,23 @@ export type ImageWeightReadResult =
  * answer HEAD with no `Content-Length`, and a CDN that negotiates format by
  * `Accept` can answer HEAD about a different variant than it would send.
  */
-async function weigh(url: string): Promise<ImageWeightRaw | null> {
+async function weigh(
+  url: string,
+  allowedOrigin: string,
+): Promise<ImageWeightRaw | null> {
   let result;
   try {
     result = await fetchPublicResource(url, {
       timeoutMs: TIMEOUT_MS,
       maxBodyBytes: IMAGE_TRANSFER_BUDGET_BYTES,
+      // Same-origin only, and enforced rather than assumed. An `<img src>` can
+      // name any host on the internet, so without this the audited page — which
+      // an attacker may control — chooses twenty-five arbitrary targets and
+      // this server fetches up to 200 KB from each, on every run, uncached.
+      // That is a bandwidth-amplification primitive pointed at third parties.
+      // Off-origin images are simply not weighed, which the `complete` bit
+      // then reports rather than hiding.
+      allowedOrigin,
     });
   } catch {
     return null;
@@ -80,11 +107,12 @@ async function weigh(url: string): Promise<ImageWeightRaw | null> {
 /** Runs `weigh` over the list, `CONCURRENCY` at a time, in order. */
 async function weighAll(
   urls: readonly string[],
+  allowedOrigin: string,
 ): Promise<readonly ImageWeightRaw[]> {
   const out: ImageWeightRaw[] = [];
   for (let start = 0; start < urls.length; start += CONCURRENCY) {
     const batch = await Promise.all(
-      urls.slice(start, start + CONCURRENCY).map((url) => weigh(url)),
+      urls.slice(start, start + CONCURRENCY).map((url) => weigh(url, allowedOrigin)),
     );
     for (const measured of batch) {
       if (measured !== null) out.push(measured);
@@ -97,17 +125,19 @@ export function createImageWeightReader(options: {
   readonly weighImage?: (url: string) => Promise<ImageWeightRaw | null>;
 } = {}): (input: {
   readonly sources: readonly string[];
+  /** The audited page's origin; nothing off it is fetched. */
+  readonly pageOrigin: string;
 }) => Promise<ImageWeightReadResult> {
   const measure = options.weighImage;
 
-  return async ({ sources }) => {
+  return async ({ sources, pageOrigin }) => {
     const bounded = sources.slice(0, MAX_IMAGES_MEASURED);
     if (bounded.length === 0) {
       return { status: "unavailable", reason: "no_images_declared" };
     }
     const images =
       measure === undefined
-        ? await weighAll(bounded)
+        ? await weighAll(bounded, pageOrigin)
         : (
             await Promise.all(bounded.map((url) => measure(url)))
           ).filter((entry): entry is ImageWeightRaw => entry !== null);
@@ -118,6 +148,11 @@ export function createImageWeightReader(options: {
     if (images.length === 0) {
       return { status: "unavailable", reason: "no_image_could_be_fetched" };
     }
-    return { status: "ok", images };
+    return {
+      status: "ok",
+      images,
+      // Every declared image was reachable AND the list was not truncated.
+      complete: images.length === sources.length,
+    };
   };
 }

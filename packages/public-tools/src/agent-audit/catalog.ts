@@ -463,7 +463,10 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "page_total_transfer_bytes",
       kind: "aggregate-max",
       label: "total_transfer_bytes",
-      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES,
+      // The published sentence is "Below 2MB", so exactly 2MB is on the
+      // failing side. `passAtOrBelow` compares with <=, so the pass mark is
+      // one byte under the budget rather than the budget itself.
+      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES - 1,
     },
   ],
   "8.1": [

@@ -1024,7 +1024,10 @@
         "the_index_status_source_did_not_finish_this_run": "The index-status read did not finish within this run's budget, so no rate is published.",
         "index_status_is_googles_own_verdict_per_declared_url": "Each verdict is Google's own, read one URL at a time. Only URLs the sitemap declares are counted, on either side of the rate.",
         "this_market_has_no_traffic_estimate_source_so_page_one_is_not_sized": "This market has no traffic-estimate source, so page one was not sized. No request was sent rather than paying to be told the same thing.",
-        "traffic_estimates_are_modelled_not_measured_visits": "Traffic figures are a provider's model of monthly organic visits, not measured ones. A domain the provider said nothing about is left out entirely rather than counted as small."
+        "traffic_estimates_are_modelled_not_measured_visits": "Traffic figures are a provider's model of monthly organic visits, not measured ones. A domain the provider said nothing about is left out entirely rather than counted as small.",
+        "not_every_declared_image_could_be_weighed_this_run": "Some images this page declares were not weighed - off-origin, unreachable, or past the per-run cap - so no clean verdict is given. A page can still fail here: one oversized image is proof.",
+        "not_every_page_one_domain_could_be_sized_this_run": "The traffic provider returned nothing for at least one page-one domain, so 'nobody here is small' cannot be stated. Finding a small site would still have been decisive.",
+        "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned."
       },
       "records": {
         "robots_resource": {

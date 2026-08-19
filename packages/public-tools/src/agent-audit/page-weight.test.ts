@@ -38,10 +38,15 @@ describe("8.5 — total page weight", () => {
     expect(check(weighing(5_000_000))?.result).toBe("warning");
   });
 
-  it("passes exactly at the budget", () => {
-    // The published rule is "below 2MB", and the boundary is where a rule with
-    // no aggregate entry would have failed every page including a 40 KB one.
-    expect(check(weighing(PAGE_WEIGHT_BUDGET_BYTES))?.result).toBe("pass");
+  it("fails exactly at the budget, because the published rule says below", () => {
+    // "Below 2MB" puts exactly 2MB on the failing side. The first version of
+    // this test asserted a pass here while its own comment quoted the rule as
+    // "below" — the test encoded the off-by-one rather than catching it.
+    expect(check(weighing(PAGE_WEIGHT_BUDGET_BYTES))?.result).toBe("warning");
+  });
+
+  it("passes one byte under the budget", () => {
+    expect(check(weighing(PAGE_WEIGHT_BUDGET_BYTES - 1))?.result).toBe("pass");
   });
 
   it("does not judge a run that weighed nothing", () => {

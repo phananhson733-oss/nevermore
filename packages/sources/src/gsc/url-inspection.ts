@@ -25,6 +25,20 @@ const SITE_QUERIES_PER_MINUTE = 600;
 /** Concurrent inspections. Kept far below the per-minute ceiling. */
 const CONCURRENCY = 5;
 
+/**
+ * Minimum spacing between batches, derived from the published site ceiling.
+ *
+ * Concurrency alone is not a rate limit: five at a time with no spacing issues
+ * as fast as the network allows, which on a warm connection is far past 600 a
+ * minute. The ceiling is per SITE and shared with every other tool the
+ * customer points at the property, so overrunning it does not just fail our
+ * run — it spends quota their other workflows were relying on. Half the
+ * published rate leaves room for those other tools.
+ */
+const BATCH_INTERVAL_MS = Math.ceil(
+  (60_000 * CONCURRENCY) / (SITE_QUERIES_PER_MINUTE / 2),
+);
+
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
@@ -94,7 +108,12 @@ export interface UrlInspectionOptions {
   /** Wall-clock ceiling for the whole census. */
   readonly budgetMs?: number;
   readonly now?: () => number;
+  /** Injected in tests so the pacing gate never sleeps for real. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Asks Google whether it has each URL indexed.
@@ -177,13 +196,24 @@ export async function inspectUrlIndexStatus(
     if (now() - startedAt > budgetMs) {
       return { status: "unavailable", reason: "provider_unavailable" };
     }
+    const batchStartedAt = now();
     await Promise.all(
       options.urls.slice(start, start + CONCURRENCY).map(inspect),
     );
+    const elapsed = now() - batchStartedAt;
+    if (elapsed < BATCH_INTERVAL_MS && start + CONCURRENCY < options.urls.length) {
+      await (options.sleep ?? defaultSleep)(BATCH_INTERVAL_MS - elapsed);
+    }
   }
 
   if (fatal !== null) return { status: "unavailable", reason: fatal };
-  if (statuses.length === 0) {
+  // A census is all or nothing. Returning the URLs that happened to answer
+  // would hand the caller a denominator made of exactly the URLs Google felt
+  // like responding about: one indexed page plus four hundred failed requests
+  // renders as 100% index coverage and clears the 90% rail. The membership of
+  // that sample is decided by request order and provider mood, which is the
+  // "unavailable is not 0" rule broken in the direction that hides a failure.
+  if (statuses.length === 0 || unanswered > 0) {
     return { status: "unavailable", reason: "provider_unavailable" };
   }
   return { status: "ok", statuses, unanswered };

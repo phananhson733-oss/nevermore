@@ -119,8 +119,13 @@ export interface AgentAuditHandlerDependencies {
    */
   readonly readImageWeights?: (input: {
     readonly sources: readonly string[];
+    readonly pageOrigin: string;
   }) => Promise<
-    | { readonly status: "ok"; readonly images: readonly ImageWeightRaw[] }
+    | {
+        readonly status: "ok";
+        readonly images: readonly ImageWeightRaw[];
+        readonly complete: boolean;
+      }
     | { readonly status: "unavailable"; readonly reason: string }
   >;
   readonly readSearchPerformance?: (input: {
@@ -653,6 +658,7 @@ export async function handleAgentAuditRequest(
   let pageWeight: PageWeightRaw | null = null;
   let imageWeights: readonly ImageWeightRaw[] | null = null;
   let imageWeightLimitation = "no_image_weights_were_measured_for_this_run";
+  let imageWeightsComplete = true;
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   if (result.targetInspected) {
     try {
@@ -678,9 +684,13 @@ export async function handleAgentAuditRequest(
     }
     try {
       const sources = result.targetPageExtract?.declared?.images.sources ?? [];
-      const weighed = await dependencies.readImageWeights?.({ sources });
+      const weighed = await dependencies.readImageWeights?.({
+        sources,
+        pageOrigin: result.siteOrigin,
+      });
       if (weighed?.status === "ok") {
         imageWeights = weighed.images;
+        imageWeightsComplete = weighed.complete;
       } else if (weighed?.status === "unavailable") {
         imageWeightLimitation =
           weighed.reason === "no_images_declared"
@@ -830,7 +840,11 @@ export async function handleAgentAuditRequest(
                 // one page, and `page_performance` is excluded from
                 // CRAWL_CATEGORIES so it can never reach the shared cache row.
                 ...buildPageWeightRecords(pageWeight, pagePerformanceGap),
-                ...buildImageWeightRecords(imageWeights, imageWeightLimitation),
+                ...buildImageWeightRecords(
+                  imageWeights,
+                  imageWeightLimitation,
+                  imageWeightsComplete,
+                ),
               ],
             },
           }

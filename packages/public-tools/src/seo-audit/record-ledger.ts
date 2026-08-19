@@ -209,6 +209,7 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
 export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   ...INDEX_COVERAGE_LIMITATION_CODES,
   "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved",
+  "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge",
   "query_rows_hit_the_row_cap_so_the_reported_total_is_short",
   "share_of_reported_queries_only_banded_by_one_average_position_each",
   "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing",

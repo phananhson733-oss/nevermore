@@ -17,10 +17,11 @@ describe("image weight reader", () => {
         complete: true,
       }),
     });
-    const result = await read({ sources: [url(1), url(2)] });
+    const result = await read({ sources: [url(1), url(2)], pageOrigin: "https://acme.test" });
 
     expect(result.status).toBe("ok");
     expect(result.status === "ok" && result.images).toHaveLength(2);
+    expect(result.status === "ok" && result.complete).toBe(true);
   });
 
   it("stops at the measured ceiling however many the page declares", async () => {
@@ -36,9 +37,25 @@ describe("image weight reader", () => {
     });
     await read({
       sources: Array.from({ length: 300 }, (_, i) => url(i)),
+      pageOrigin: "https://acme.test",
     });
 
     expect(seen.length).toBeLessThanOrEqual(25);
+  });
+
+  it("reports an incomplete sample rather than a clean one", async () => {
+    // Twenty-five is the cap; a page with more images has not been fully
+    // measured, and "nothing over budget" would be a claim about the images
+    // that happened to be first in document order.
+    const read = createImageWeightReader({
+      weighImage: async (u) => ({ url: u, transferredBytes: 10, complete: true }),
+    });
+    const result = await read({
+      sources: Array.from({ length: 40 }, (_, i) => url(i)),
+      pageOrigin: "https://acme.test",
+    });
+
+    expect(result.status === "ok" && result.complete).toBe(false);
   });
 
   it("says nothing was fetched rather than reporting a clean page", async () => {
@@ -46,7 +63,7 @@ describe("image weight reader", () => {
     // would read as "no image is over budget", which is a claim about files
     // that never arrived.
     const read = createImageWeightReader({ weighImage: async () => null });
-    const result = await read({ sources: [url(1)] });
+    const result = await read({ sources: [url(1)], pageOrigin: "https://acme.test" });
 
     expect(result).toEqual({
       status: "unavailable",
@@ -57,7 +74,7 @@ describe("image weight reader", () => {
   it("separates a page with no images from a page whose images failed", async () => {
     const read = createImageWeightReader({ weighImage: async () => null });
 
-    expect(await read({ sources: [] })).toEqual({
+    expect(await read({ sources: [], pageOrigin: "https://acme.test" })).toEqual({
       status: "unavailable",
       reason: "no_images_declared",
     });

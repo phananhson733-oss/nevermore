@@ -67,6 +67,15 @@ export interface SearchPerformanceRaw {
   readonly targetPageQueriesTruncated: boolean;
 }
 
+/**
+ * How much of the property's reported impressions must land on crawled pages
+ * before A2 will publish a share.
+ *
+ * Below this the run has seen too little of where the traffic actually goes
+ * for "5% of impressions are on dead URLs" to mean anything.
+ */
+const MIN_RESOLVED_IMPRESSION_SHARE = 0.5;
+
 /** Highest average position still counted in the top band. */
 const TOP_BAND_MAX = 6;
 /** Highest average position still counted in the low-click band. */
@@ -219,10 +228,34 @@ function abandonedImpressionRecord(
     0,
   );
 
+  /**
+   * Impressions on URLs with a row but no crawled page.
+   *
+   * These are the ones this check cannot speak for, and they are not a random
+   * remainder: a retired URL is by definition not linked from the current
+   * site, so it is exactly the kind the bounded crawl never reaches. Dropping
+   * them from both halves and publishing the rest would compute the share over
+   * the surviving pages and report ~0% on a site whose retired URLs hold most
+   * of its impressions — the failure this check exists to find, rendered as a
+   * pass. So the run has to resolve most of the property's impressions before
+   * a share means anything.
+   */
+  const unresolvedImpressions = raw.pages.reduce((sum, row) => {
+    const subject = subjectUrlOf(row.key);
+    return subject !== null && statusBySubject.has(subject)
+      ? sum
+      : sum + row.impressions;
+  }, 0);
+  const reportedImpressions = totalImpressions + unresolvedImpressions;
+
   // A capped page list drops the long tail, and the tail is where retired URLs
   // live — so a truncated read would compute this share over the healthy head
   // and report a site as cleaner than it is.
-  const measurable = !raw.pagesTruncated && totalImpressions > 0;
+  const measurable =
+    !raw.pagesTruncated &&
+    totalImpressions > 0 &&
+    reportedImpressions > 0 &&
+    totalImpressions / reportedImpressions >= MIN_RESOLVED_IMPRESSION_SHARE;
 
   return {
     id: "abandoned_url_impression_share",
@@ -256,7 +289,9 @@ function abandonedImpressionRecord(
       : [],
     limitation: raw.pagesTruncated
       ? "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing"
-      : "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved",
+      : measurable
+        ? "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved"
+        : "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge",
   };
 }
 

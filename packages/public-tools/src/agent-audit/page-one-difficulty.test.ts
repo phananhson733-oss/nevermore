@@ -62,9 +62,36 @@ describe("9.3 — is anyone on page one small enough to displace", () => {
     // Null is "we know nothing", and reading it as low traffic manufactures
     // the very opening this check exists to find — turning every provider gap
     // into a false "this query is winnable".
+    const record = buildSerpShapeRecords(
+      sample([...big(9), { domain: "unknown.test", organicEtv: null }]),
+    ).find((entry) => entry.id === "page_one_without_a_low_traffic_site");
+
+    expect(record?.observations).toEqual([]);
+  });
+
+  it("refuses the negative verdict when a domain went unsized", () => {
+    // "Nobody on page one is small" is a claim about all ten domains. One
+    // unresolved domain could be the small competitor, so the claim cannot be
+    // made from the subset the provider happened to size.
     expect(
       check([...big(9), { domain: "unknown.test", organicEtv: null }])?.result,
-    ).toBe("tip");
+    ).toBe("excluded");
+  });
+
+  it("still reports the negative when every domain was sized", () => {
+    expect(check(big(10))?.result).toBe("tip");
+  });
+
+  it("still finds a small site even when others went unsized", () => {
+    // A positive finding is decisive from a subset: seeing one small domain
+    // proves one exists. Only the negative needs the full set.
+    expect(
+      check([
+        ...big(8),
+        { domain: "unknown.test", organicEtv: null },
+        { domain: "small.test", organicEtv: 10 },
+      ])?.result,
+    ).toBe("pass");
   });
 
   it("does not judge a market with no traffic-estimate source", () => {

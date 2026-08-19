@@ -247,6 +247,17 @@ export function buildImageWeightRecords(
   images: readonly ImageWeightRaw[] | null | undefined,
   /** Named so an unmeasurable run says which kind of nothing it got. */
   limitation = "no_image_weights_were_measured_for_this_run",
+  /**
+   * Whether every image the page declares was weighed.
+   *
+   * A partial sample cannot clear this check. "None of the images I managed to
+   * fetch is over budget" is not "none of the page's images is over budget",
+   * and the gap between them is where the heavy image lives: one small image
+   * plus twenty-four failed fetches would otherwise render as a clean page.
+   * A partial sample may still FAIL — finding one oversized image is proof —
+   * so it is only the clean verdict that is withheld.
+   */
+  complete = true,
 ): readonly SeoAuditRecord[] {
   if (images === null || images === undefined || images.length === 0) {
     return [
@@ -270,6 +281,24 @@ export function buildImageWeightRecords(
     (image) =>
       !image.complete || image.transferredBytes >= IMAGE_TRANSFER_BUDGET_BYTES,
   );
+  // Nothing over budget, but we did not see every image: that is an unfinished
+  // measurement, not a pass.
+  if (over.length === 0 && !complete) {
+    return [
+      {
+        id: "image_over_transfer_budget",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: "not_every_declared_image_could_be_weighed_this_run",
+      } satisfies SeoAuditRecord,
+    ];
+  }
   return [
     {
       id: "image_over_transfer_budget",
@@ -317,4 +346,5 @@ export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "no_image_weights_were_measured_for_this_run",
   "the_page_declared_no_images_to_weigh",
   "no_declared_image_could_be_fetched_this_run",
+  "not_every_declared_image_could_be_weighed_this_run",
 ];
