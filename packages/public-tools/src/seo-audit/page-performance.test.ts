@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
 import {
   buildPagePerformanceRecords,
+  buildPageWeightRecords,
   PAGE_PERFORMANCE_RECORD_IDS,
   type PagePerformanceRaw,
 } from "./page-performance.ts";
@@ -38,10 +39,32 @@ function decide(input: PagePerformanceRaw | null, id: string) {
 
 describe("page performance records", () => {
   it("emits all four whatever CrUX returned", () => {
+    const four = PAGE_PERFORMANCE_RECORD_IDS.filter((id) =>
+      id.startsWith("core_web_vital_"),
+    );
     for (const input of [null, raw(), raw({ lcp: null, inp: null })]) {
-      expect(buildPagePerformanceRecords(input).map((r) => r.id)).toEqual(
-        PAGE_PERFORMANCE_RECORD_IDS,
-      );
+      expect(buildPagePerformanceRecords(input).map((r) => r.id)).toEqual(four);
+    }
+  });
+
+  it("fills the region's exact id list between its two builders", () => {
+    // PAGE_PERFORMANCE_RECORD_IDS is the wire guard's exact list, and the
+    // region is refused whole when the records do not match it. The field half
+    // and the lab half are built separately, so nothing but this asserts that
+    // together they still add up — and a region refused at the seam blanks the
+    // panel rather than dropping one check.
+    for (const input of [null, raw()]) {
+      for (const weight of [
+        null,
+        { url: "https://acme.test/", totalTransferBytes: 1 },
+      ]) {
+        expect(
+          [
+            ...buildPagePerformanceRecords(input),
+            ...buildPageWeightRecords(weight),
+          ].map((record) => record.id),
+        ).toEqual(PAGE_PERFORMANCE_RECORD_IDS);
+      }
     }
   });
 
@@ -58,9 +81,9 @@ describe("page performance records", () => {
   });
 
   it("separates no source from no data for this page", () => {
-    expect(
-      buildPagePerformanceRecords(null)[0]?.limitation,
-    ).toBe("no_field_data_source_was_configured_for_this_run");
+    expect(buildPagePerformanceRecords(null)[0]?.limitation).toBe(
+      "no_field_data_source_was_configured_for_this_run",
+    );
     expect(
       buildPagePerformanceRecords(raw({ cls: null })).find(
         (entry) => entry.id === "core_web_vital_cls",

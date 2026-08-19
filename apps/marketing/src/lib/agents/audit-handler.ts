@@ -30,8 +30,10 @@ import {
 import { AGENT_AUDIT_HEADING_PRESETS } from "@sf/public-tools/agent-audit";
 import {
   buildPagePerformanceRecords,
+  buildPageWeightRecords,
   type PagePerformanceGap,
   type PagePerformanceRaw,
+  type PageWeightRaw,
 } from "@sf/public-tools/seo-audit/page-performance";
 import {
   defaultPagePerformanceReader,
@@ -621,22 +623,31 @@ export async function handleAgentAuditRequest(
   // produce nothing — no key, no field data, a slow answer, a shared-quota 429
   // — is the same settled outcome, and the records name which one.
   let pagePerformance: PagePerformanceRaw | null = null;
+  let pageWeight: PageWeightRaw | null = null;
   let pagePerformanceGap: PagePerformanceGap = "source_not_configured";
   if (result.targetInspected) {
     try {
       const read = await dependencies.readPagePerformance?.({
-        url: result.inspectedTargetUrl ?? result.targetUrl,
+        // The landed URL, for the same reason the search region above uses it:
+        // `inspectedTargetUrl` is what the crawl REQUESTED, so on a site that
+        // redirects we were asking PageSpeed about a URL that 301s. CrUX has no
+        // url-level sample for a redirect, so 8.1-8.4 quietly fell back to the
+        // whole origin's p75 on every such site — the fast page inheriting the
+        // slow site's verdict that this module's own comment warns about.
+        url: landedTargetUrl(result) ?? result.targetUrl,
       });
       if (read?.status === "ok") {
         pagePerformance = read.field;
       } else if (read !== undefined) {
         pagePerformanceGap = read.reason;
       }
+      // Independent of the field block: a page too new for CrUX still weighs
+      // something, and that is exactly the page 8.5 is worth running on.
+      pageWeight = read?.weight ?? null;
     } catch {
       pagePerformanceGap = "provider_unavailable";
     }
   }
-
 
   const evidence =
     input.value.targetQueries === null
@@ -653,8 +664,10 @@ export async function handleAgentAuditRequest(
   // disagree about which word this page is being judged on.
   const primaryQuery =
     evidence !== null && evidence.availability === "available"
-      ? (evidence.queries.find((query) => query.isPrimary) ??
-          evidence.queries[0])?.displayQuery ?? null
+      ? ((
+          evidence.queries.find((query) => query.isPrimary) ??
+          evidence.queries[0]
+        )?.displayQuery ?? null)
       : null;
   // Wrapped even though the seam's own contract is that it resolves. The crawl
   // has already succeeded and the credit is already spent by the time this
@@ -763,10 +776,17 @@ export async function handleAgentAuditRequest(
         ? {
             pagePerformance: {
               version: AGENT_PAGE_PERFORMANCE_VERSION,
-              records: buildPagePerformanceRecords(
-                pagePerformance,
-                pagePerformanceGap,
-              ),
+              records: [
+                ...buildPagePerformanceRecords(
+                  pagePerformance,
+                  pagePerformanceGap,
+                ),
+                // Rides in the same region because it shares the region's whole
+                // reason for existing: it is one visitor's paid measurement of
+                // one page, and `page_performance` is excluded from
+                // CRAWL_CATEGORIES so it can never reach the shared cache row.
+                ...buildPageWeightRecords(pageWeight, pagePerformanceGap),
+              ],
             },
           }
         : {}),

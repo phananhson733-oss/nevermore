@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v11",
+      schemaVersion: "seo_audit.sitewide.v12",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -85,7 +85,7 @@ describe("buildAgentAuditViewModel", () => {
       expect(model.scopes.site.inventoryReady).toBe(25);
       expect(model.scopes.page.groups).toHaveLength(9);
       expect(model.scopes.page.total).toBe(49);
-      expect(model.scopes.page.inventoryReady).toBe(45);
+      expect(model.scopes.page.inventoryReady).toBe(46);
       expect(
         model.scopes.site.total + model.scopes.page.total,
       ).toBe(80);
@@ -198,7 +198,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v11",
+      schemaVersion: "seo_audit.sitewide.v12",
       persistence: "none",
     });
   });

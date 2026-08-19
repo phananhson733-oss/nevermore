@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
 import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
-import { buildPagePerformanceRecords } from "@sf/public-tools/seo-audit/page-performance";
+import { buildPagePerformanceRecords, buildPageWeightRecords } from "@sf/public-tools/seo-audit/page-performance";
 import {
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -58,7 +58,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v11",
+    schemaVersion: "seo_audit.sitewide.v12",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -363,9 +363,74 @@ describe("handleAgentAuditRequest", () => {
     expect(seen[0]?.url).toBe(landed);
   });
 
+  it("asks PageSpeed about the URL the crawl landed on, not the one it requested", async () => {
+    // The sibling above has had this guard since the day 9.5 published "no
+    // impressions" about a page that ranks. The PageSpeed call twenty lines
+    // below it kept passing `inspectedTargetUrl` — the pre-redirect form — so
+    // on any site that redirects, CrUX found no url-level sample and 8.1-8.4
+    // silently fell back to the whole origin's p75. That is the fast page
+    // inheriting the slow site's verdict the producer explicitly warns about.
+    const requested = "http://acme.test/page";
+    const landed = "https://acme.test/page/";
+    const seen: string[] = [];
+    const collected = {
+      url: requested,
+      subjectUrl: requested,
+      finalUrl: landed,
+      depth: 0,
+      initialStatus: 301,
+      finalStatus: 200,
+      redirectHops: 1,
+      contentType: "text/html; charset=utf-8",
+      robotsDirectiveState: "noindex_not_observed",
+      canonicalTarget: landed,
+      title: "T",
+      metaDescription: "D",
+      h1Count: 1,
+      headingsCount: 1,
+      wordCount: 300,
+      inboundLinks: 0,
+      outboundLinks: 0,
+      sitemapMember: true,
+      jsonLdTypes: [],
+      jsonLdErrorCount: 0,
+    };
+
+    await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetInspected: true,
+                inspectedTargetUrl: requested,
+                pages: [collected],
+              },
+            },
+          }),
+        readPagePerformance: async (input) => {
+          seen.push(input.url);
+          return {
+            status: "unavailable" as const,
+            reason: "no_field_data" as const,
+            weight: null,
+          };
+        },
+      }),
+    );
+
+    expect(seen[0]).toBe(landed);
+  });
+
   it("says no source was configured, not that CrUX has nothing for the page", async () => {
-    // This is production today: PAGESPEED_API_KEY is set in no environment of
-    // the marketing project. The first version substituted a fabricated
+    // PAGESPEED_API_KEY now exists on the marketing project for Preview and
+    // Production, so this is no longer the production path — but it is still
+    // the path taken by any deployment without the key, and by every run whose
+    // key is rejected. The first version substituted a fabricated
     // `no_field_data` result here, which publishes a claim about the visitor's
     // own real-user traffic that the run never went and looked for.
     const response = await handleAgentAuditRequest(
@@ -384,7 +449,10 @@ describe("handleAgentAuditRequest", () => {
     };
 
     const records = body.data.result.pagePerformance?.records ?? [];
-    expect(records).toHaveLength(4);
+    // Five: the four Core Web Vitals plus the page-weight record behind 8.5,
+    // which shares the region because it is the other half of the same paid
+    // PageSpeed response.
+    expect(records).toHaveLength(5);
     for (const record of records) {
       expect(record.limitation).toBe(
         "no_field_data_source_was_configured_for_this_run",
@@ -455,6 +523,7 @@ describe("handleAgentAuditRequest", () => {
         readSearchPerformance: async () => searchRegion,
         readPagePerformance: async () => ({
           status: "ok" as const,
+          weight: null,
           field: {
             url: "https://acme.test/",
             sourceLevel: "url" as const,
@@ -480,7 +549,7 @@ describe("handleAgentAuditRequest", () => {
     // Every region present, and the guard accepting the whole envelope with
     // all of them attached at once.
     expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
-    expect(body.data.result.pagePerformance?.records).toHaveLength(4);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(5);
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
   });
 
@@ -626,7 +695,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v11",
+            schemaVersion: "seo_audit.sitewide.v12",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },
@@ -648,7 +717,10 @@ describe("handleAgentAuditRequest", () => {
           // drift from what the handler attaches.
           pagePerformance: {
             version: AGENT_PAGE_PERFORMANCE_VERSION,
-            records: buildPagePerformanceRecords(null),
+            records: [
+              ...buildPagePerformanceRecords(null),
+              ...buildPageWeightRecords(null),
+            ],
           },
         },
       },
@@ -713,7 +785,10 @@ describe("handleAgentAuditRequest", () => {
       records: upstreamPayload.result.records,
       pagePerformance: {
         version: AGENT_PAGE_PERFORMANCE_VERSION,
-        records: buildPagePerformanceRecords(null),
+        records: [
+          ...buildPagePerformanceRecords(null),
+          ...buildPageWeightRecords(null),
+        ],
       },
     });
     expect(JSON.stringify(body)).not.toContain("private");

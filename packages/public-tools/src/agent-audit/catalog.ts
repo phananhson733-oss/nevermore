@@ -1,3 +1,4 @@
+import { PAGE_WEIGHT_BUDGET_BYTES } from "../seo-audit/page-performance.ts";
 import type {
   AgentAuditCheckDefinition,
   AgentAuditEngineState,
@@ -215,6 +216,7 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C5: ["page_without_any_discovery_path"],
   "7.4": ["faq_schema_question_not_on_page"],
   "4.5": ["page_near_duplicate_of_another_page"],
+  "8.5": ["page_total_transfer_bytes"],
   C2: ["internal_target_http_error"],
   D2: ["meta_description_duplicate"],
   D3: ["title_missing", "h1_missing"],
@@ -405,6 +407,17 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
   ],
   // The three published CrUX bands, expressed exactly: pass at or below the
   // good bound, degrade through the needs-improvement band, fail past it.
+  // Without this rule the evaluator reads any record with `affected > 0` as a
+  // full failure, and 8.5's record is always affected:1 when it measured
+  // anything — so a 40 KB page would publish the same verdict as a 40 MB one.
+  "8.5": [
+    {
+      recordId: "page_total_transfer_bytes",
+      kind: "aggregate-max",
+      label: "total_transfer_bytes",
+      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES,
+    },
+  ],
   "8.1": [
     {
       recordId: "core_web_vital_lcp",
@@ -516,6 +529,27 @@ function authority(id: string): AgentAuditThresholdAuthority {
  * for a detector that ran and matched nothing. That is a measurement, not a gap,
  * and reading it as a gap is what made the panel look uniformly unfinished.
  */
+/**
+ * Checks whose numbers come from PageSpeed Insights, not from our crawl.
+ *
+ * `dataSource` is otherwise derived from engine state, so every ready check
+ * renders "Bounded crawl". That was already false for 8.1-8.4, which are CrUX
+ * field data — real visits to the site, measured by Chrome — and naming our
+ * crawler as the source of someone else's field data misrepresents both what
+ * was measured and how current it is.
+ *
+ * The two sources stay apart because they answer differently: CrUX is the p75
+ * of real visits over 28 days, while the lab run is one load on one emulated
+ * device right now.
+ */
+const EXTERNALLY_MEASURED: Readonly<Record<string, AgentAuditLocalizedText>> = {
+  "8.1": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.2": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.3": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.4": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
+  "8.5": l("PageSpeed Insights lab run", "PageSpeed Insights 实验室加载"),
+};
+
 function engine(id: string, ready: boolean): AgentAuditEngineState {
   // A2 and E5 read like crawl checks because the crawl supplies the URL set,
   // but both are impression shares and an impression only exists in Search
@@ -523,16 +557,16 @@ function engine(id: string, ready: boolean): AgentAuditEngineState {
   if (["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5", "9.5"].includes(id)) {
     return "access-required";
   }
-  // 8.5 and 8.6 stay: both need Lighthouse lab audit details (transfer bytes,
-  // render-blocking resources) that the field read does not return, and 8.6's
-  // detail array is absent rather than empty when the audit did not run, which
-  // reads as a pass on something unmeasured.
+  // 8.5 came off this list: it never did need one request per asset. PageSpeed
+  // already runs the full Lighthouse performance category on every call this
+  // product makes, and `total-byte-weight` is the sum of every network
+  // request's transferred bytes — the exact number, sitting in the half of the
+  // response the reader used to parse and throw away.
+  //
   // 9.3 stays: it needs a traffic estimate per page-one domain, which is a
   // second paid call against a different endpoint, and the sample this one
   // takes carries domains without any measure of what they receive.
-  // 8.5 still needs subresource bytes, which is one request per asset; 9.3
-  // needs a traffic estimate per page-one domain, a second paid call.
-  if (id === "8.5" || id === "9.3") return "not-integrated";
+  if (id === "9.3") return "not-integrated";
   return ready ? "ready" : "needs-integration";
 }
 
@@ -930,7 +964,10 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
     howToFix: fix(id, scope, groupId),
     threshold: l(thresholdEn, thresholdZh),
     thresholdAuthority: authority(id),
-    dataSource: l(
+    dataSource:
+      EXTERNALLY_MEASURED[id] !== undefined && ready
+      ? EXTERNALLY_MEASURED[id]
+      : l(
       UNMEASURABLE_HERE[id] !== undefined
         ? "Outside what a bounded anonymous crawl can observe"
         : engine(id, ready) === "access-required"

@@ -28,11 +28,44 @@ export interface PagePerformanceRaw {
   readonly formFactor: "mobile" | "desktop";
 }
 
+/**
+ * What the page weighed when Lighthouse loaded it.
+ *
+ * Separate from `PagePerformanceRaw` because it comes from the lab half of the
+ * PageSpeed response, not the CrUX field half. A page can have one and not the
+ * other, and merging them would make each hostage to the other's absence.
+ */
+export interface PageWeightRaw {
+  /** The URL Lighthouse finished on — the post-redirect form. */
+  readonly url: string;
+  /** Sum of every network request's transferred bytes. */
+  readonly totalTransferBytes: number;
+}
+
+/** The catalogue's published rule for 8.5, restated where it is enforced. */
+export const PAGE_WEIGHT_BUDGET_BYTES = 2 * 1024 * 1024;
+
 const METRICS = [
-  { id: "core_web_vital_lcp", label: "lcp_ms", read: (raw: PagePerformanceRaw) => raw.lcp },
-  { id: "core_web_vital_inp", label: "inp_ms", read: (raw: PagePerformanceRaw) => raw.inp },
-  { id: "core_web_vital_cls", label: "cls_score", read: (raw: PagePerformanceRaw) => raw.cls },
-  { id: "core_web_vital_ttfb", label: "ttfb_ms", read: (raw: PagePerformanceRaw) => raw.ttfb },
+  {
+    id: "core_web_vital_lcp",
+    label: "lcp_ms",
+    read: (raw: PagePerformanceRaw) => raw.lcp,
+  },
+  {
+    id: "core_web_vital_inp",
+    label: "inp_ms",
+    read: (raw: PagePerformanceRaw) => raw.inp,
+  },
+  {
+    id: "core_web_vital_cls",
+    label: "cls_score",
+    read: (raw: PagePerformanceRaw) => raw.cls,
+  },
+  {
+    id: "core_web_vital_ttfb",
+    label: "ttfb_ms",
+    read: (raw: PagePerformanceRaw) => raw.ttfb,
+  },
 ] as const;
 
 /**
@@ -132,18 +165,71 @@ export function buildPagePerformanceRecords(
   });
 }
 
-export const PAGE_PERFORMANCE_RECORD_IDS: readonly string[] = METRICS.map(
-  (metric) => metric.id,
-);
+/**
+ * The record behind 8.5, from the lab half of the same PageSpeed response.
+ *
+ * One record, always emitted, `unverified` when nothing was weighed. The
+ * observation carries the byte count rather than a verdict so the catalogue's
+ * published 2 MB rule stays the only place the threshold lives.
+ */
+export function buildPageWeightRecords(
+  weight: PageWeightRaw | null | undefined,
+  gap: PagePerformanceGap = "source_not_configured",
+): readonly SeoAuditRecord[] {
+  if (weight === null || weight === undefined) {
+    return [
+      {
+        id: "page_total_transfer_bytes",
+        category: "page_performance",
+        state: "unverified",
+        unit: "pages",
+        population: "target_page",
+        targetTested: null,
+        tested: 0,
+        affected: 0,
+        observations: [],
+        limitation: GAP_LIMITATION[gap],
+      } satisfies SeoAuditRecord,
+    ];
+  }
+  return [
+    {
+      id: "page_total_transfer_bytes",
+      category: "page_performance",
+      state: "observed",
+      unit: "pages",
+      population: "target_page",
+      targetTested: true,
+      tested: 1,
+      affected: 1,
+      observations: [
+        {
+          url: weight.url,
+          values: [
+            { label: "total_transfer_bytes", value: weight.totalTransferBytes },
+          ],
+        },
+      ],
+      limitation: "page_weight_is_one_lab_load_on_an_emulated_mobile_device",
+    } satisfies SeoAuditRecord,
+  ];
+}
+
+export const PAGE_PERFORMANCE_RECORD_IDS: readonly string[] = [
+  ...METRICS.map((metric) => metric.id),
+  "page_total_transfer_bytes",
+];
 
 export const PAGE_PERFORMANCE_EVIDENCE_LABELS: readonly string[] = [
   ...METRICS.map((metric) => metric.label),
   "crux_source_level",
   "crux_form_factor",
+  "total_transfer_bytes",
 ];
 
 export const PAGE_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   ...Object.values(GAP_LIMITATION),
   "crux_had_no_url_level_data_so_these_are_the_whole_origin_p75_values",
   "crux_p75_of_real_visits_over_a_28_day_window_lags_a_change_you_just_shipped",
+  "page_weight_is_one_lab_load_on_an_emulated_mobile_device",
 ];

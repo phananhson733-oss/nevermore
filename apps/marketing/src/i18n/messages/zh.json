@@ -1009,7 +1009,8 @@
         "first_image_in_document_order_with_a_declared_size_no_viewport_is_available": "取文档顺序中的第一张图片，且只在标记声明的尺寸大到足以成为读者真正要看的那张图时才判定。静态抓取没有视口，而 32 像素的 logo 标记在相当大比例的站点上就是第一张图。",
         "crawl_incomplete_inlinks_unreliable": "本次运行未抓完整站，或某个页面的内链数超出抓取保留上限，因此「没有页面链接到这里」与「本次抓取没看到那条链接」无法区分。不点名任何页面。",
         "faq_match_against_collected_paragraphs_only": "问题是拿本次抓取保留的标题和段落来比对的，而保留量有上限。FAQ 超出该范围的页面不作判定。",
-        "similarity_measured_on_collected_paragraphs_after_chrome": "相似度基于本次抓取保留的段落计算，并先剔除大多数页面共有的段落（视为站点框架）。剩余文本过少的页面不打分。"
+        "similarity_measured_on_collected_paragraphs_after_chrome": "相似度基于本次抓取保留的段落计算，并先剔除大多数页面共有的段落（视为站点框架）。剩余文本过少的页面不打分。",
+        "page_weight_is_one_lab_load_on_an_emulated_mobile_device": "这是模拟移动设备上一次 Lighthouse 加载的结果，不是真实访问。对不同设备发送不同字节的页面会有出入。"
       },
       "records": {
         "robots_resource": {
@@ -1275,6 +1276,10 @@
         "page_near_duplicate_of_another_page": {
           "title": "页面与另一页高度重复",
           "description": "去掉站点框架后，其独有文本与另一已采集页面的重合度达到或超过审阅阈值的页面。"
+        },
+        "page_total_transfer_bytes": {
+          "title": "整页传输体积",
+          "description": "PageSpeed 的 Lighthouse 加载目标页时，所有网络请求传输字节的总和。"
         }
       },
       "evidence": {
@@ -1399,7 +1404,8 @@
         "brand_clicks": "品牌词点击",
         "brand_terms_used": "使用的品牌词",
         "first_image_width": "第一张图宽度",
-        "first_image_height": "第一张图高度"
+        "first_image_height": "第一张图高度",
+        "total_transfer_bytes": "传输字节总数"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",
