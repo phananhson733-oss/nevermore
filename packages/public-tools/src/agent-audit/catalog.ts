@@ -44,7 +44,7 @@ const SITE_TITLES: readonly CheckSeed[] = [
   ["D3", "Pages missing title or H1", "缺失 Title 或 H1 的页数", "0 pages; above 0 is Warning", "0 页；大于 0 为警告"],
   ["D4", "Image alt coverage", "图片 alt 覆盖率", "100% of the pages carrying images have alt on all of them; below 95% is Warning. An empty alt marks a decorative image and counts as covered.", "含图片的页面中，100% 的页面其图片都带 alt；低于 95% 为警告。空 alt 是装饰性图片的标记，计为已覆盖。"],
   ["D5", "Schema coverage", "Schema 覆盖率", "At least 90%; otherwise Warning", "至少 90%；否则为警告"],
-  ["D6", "hreflang cluster completeness", "hreflang 簇完整性", "100% valid targets; any 404 target is Blocker", "目标 100% 有效；任何 404 目标均为阻断"],
+  ["D6", "hreflang cluster completeness", "hreflang 簇完整性", "100% valid targets; any 4xx or 5xx target is Blocker. Only alternates this run also fetched are classified; one outside the crawl is reported as unclassified, never as valid.", "目标 100% 有效；任何 4xx 或 5xx 目标均为阻断。只对本次运行同时抓取到的备用地址判定；抓取范围之外的报为未分类，绝不算作有效。"],
   ["D7", "Pages whose canonical points at another page", "Canonical 指向他页的页数", "Listed for review, not judged: cross-page canonicals are often deliberate consolidation. Confirm each target is the intended one.", "仅列出待复核，不作判定：跨页 Canonical 常是有意收敛。请确认每个目标都是预期页面。"],
   ["E1", "Pages with impressions", "有曝光页数占比", "At least 60%; below 30% is Warning", "至少 60%；低于 30% 为警告"],
   ["E2", "Impression share in positions 1–6", "排名 1–6 的曝光占比", "At least 20%; below 10% is Warning", "至少 20%；低于 10% 为警告"],
@@ -60,7 +60,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["1.4", "Canonical target", "Canonical 目标", "A canonical is present and self-referencing; a missing canonical or one pointing elsewhere is a Warning. Destination status is not collected.", "存在且自指的 Canonical；缺失或指向他页为警告。本工具不采集 Canonical 目标的状态码。"],
   ["1.5", "Included in sitemap", "是否在 sitemap 中", "Present in a collected sitemap; otherwise Warning. Not testable when no sitemap was collected.", "存在于已采集的 sitemap 中；否则为警告。未采集到 sitemap 时不判定。"],
   ["1.6", "Redirect chain length", "跳转链长度", "At most one hop; two or more is Warning, non-200 destination is Blocker", "最多一跳；两跳及以上为警告，终点非 200 为阻断"],
-  ["1.7", "hreflang target validity", "hreflang 目标有效性", "Every target returns 200; a 404 target is Blocker", "所有目标均返回 200；指向 404 为阻断"],
+  ["1.7", "hreflang target validity", "hreflang 目标有效性", "No alternate returns 4xx or 5xx; one that does is Blocker. Only alternates this run also fetched are classified.", "没有返回 4xx 或 5xx 的备用地址；出现即为阻断。只对本次运行同时抓取到的备用地址判定。"],
   ["1.8", "Soft 404 detection", "软 404 检测", "Not a 200 response that both states a not-found phrase and falls below the published body floor; a soft 404 is Blocker. Thin content alone is not judged here.", "不是「返回 200、同时出现「找不到」类措辞、且正文量低于公布下限」的页面；软 404 为阻断。仅仅内容少不在这里判定。"],
   ["2.1", "Title length", "Title 长度", "Reviewed working range 15–70 characters; Google truncates by rendered width, not character count", "已审阅工作区间 15–70 个字符；Google 按渲染宽度截断，而非字符数"],
   ["2.2", "Sitewide title uniqueness", "Title 全站唯一", "Unique among evaluated canonical pages; otherwise Warning", "在已评估 Canonical 页面中唯一；否则为警告"],
@@ -71,8 +71,8 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["3.1", "H1 count", "H1 数量", "Exactly 1; otherwise Warning", "恰好 1 个；否则为警告"],
   ["3.2", "H1 contains the target query", "H1 含目标词", "Contains the confirmed target query as a token sequence; otherwise Tip. No synonym or stemming set is applied.", "以词序列形式包含已确认目标词；否则为提示。不做同义词或词形还原。"],
   ["3.3", "Continuous heading hierarchy", "标题层级连续", "No skipped levels; otherwise Tip", "无跳级；否则为提示"],
-  ["3.4", "H2 count", "H2 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
-  ["3.5", "H3 count", "H3 数量", "Use the confirmed page-type soft preset", "使用已确认页面类型的软预设"],
+  ["3.4", "H2 count", "H2 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
+  ["3.5", "H3 count", "H3 数量", "Within the reviewed range for the confirmed page type; outside it is a Tip. The range is published with the finding — it is a reviewed working band, not a documented rule.", "落在已确认页面类型的审阅区间内；超出为提示。区间会与发现一同给出——它是审阅过的工作区间，不是有据可查的规则。"],
   ["3.6", "Average words beneath each H3", "每个 H3 下平均字数", "Use the confirmed page-type substance preset", "使用已确认页面类型的内容充实度预设"],
   ["4.1", "Main-content word count", "正文字数", "At least 60% of the reviewed top-10 median; otherwise Warning", "至少为已审阅前十中位数的 60%；否则为警告"],
   ["4.2", "Target-query density", "目标词密度", "Internal heuristic only. Keyword density is not a documented ranking signal and is not used to judge a page.", "仅为内部启发式。关键词密度不是有据可查的排名信号，不用于判定页面。"],
@@ -89,7 +89,7 @@ const PAGE_TITLES: readonly CheckSeed[] = [
   ["6.4", "Click depth", "点击深度", "At most 4 clicks from the crawl entry point; deeper is a Tip", "距抓取入口最多 4 次点击；更深为提示"],
   ["6.5", "External dofollow / nofollow ratio", "外链 dofollow / nofollow 比", "Display only; no pass/fail threshold", "仅展示，不设通过阈值"],
   ["7.1", "JSON-LD presence", "JSON-LD 是否存在", "At least one parseable JSON-LD block; absent or malformed is a Tip", "至少 1 个可解析的 JSON-LD 块；缺失或损坏为提示"],
-  ["7.2", "Schema type matches page type", "Schema 类型是否匹配页面", "Matches confirmed page type; otherwise Tip", "匹配已确认页面类型；否则为提示"],
+  ["7.2", "Schema type matches page type", "Schema 类型与页面类型匹配", "Declares a type from the reviewed set for the confirmed page type; otherwise Tip. Site-furniture types are ignored, and the reviewed set is published with the finding.", "声明了已确认页面类型对应审阅集合中的某个类型；否则为提示。站点通用类型不计入，审阅集合会与发现一同给出。"],
   ["7.3", "Required-property completeness", "必填字段完整性", "Every required property present; otherwise Warning", "所有必填字段均存在；否则为警告"],
   ["7.4", "FAQPage matches visible FAQ", "FAQPage 与页面 FAQ 是否一致", "Every item matches visible content; otherwise Warning", "逐条匹配可见内容；否则为警告"],
   ["7.5", "BreadcrumbList markup below the root", "根目录以下页面的 BreadcrumbList 标记", "Present on pages below the root; otherwise Tip. Presence only: this run keeps no visible trail to compare the markup against.", "根目录以下的页面存在该标记；否则为提示。仅判定是否存在：本次运行不保留可见路径，无法与标记比对。"],
@@ -212,6 +212,8 @@ const UNMEASURABLE_HERE: Readonly<Record<string, AgentAuditLocalizedText>> = {
 };
 
 const BLOCKER_EVIDENCE: Readonly<Record<string, readonly string[]>> = {
+  D6: ["hreflang_target_http_error"],
+  "1.7": ["hreflang_target_http_error"],
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
   "1.1": ["non_2xx_final_status"],
@@ -263,6 +265,14 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   A4: ["soft_404_page"],
   "1.8": ["soft_404_page"],
   D1: ["title_duplicate"],
+  D6: ["hreflang_target_http_error"],
+  "1.7": ["hreflang_target_http_error"],
+  "4.4": ["content_to_code_ratio"],
+  "6.5": ["external_link_follow_mix"],
+  "3.4": ["h2_count_outside_reviewed_range"],
+  "3.5": ["h3_count_outside_reviewed_range"],
+  "4.2": ["target_query_density"],
+  "7.2": ["schema_type_unmatched_to_page_type"],
   "8.1": ["core_web_vital_lcp"],
   "8.2": ["core_web_vital_inp"],
   "8.3": ["core_web_vital_cls"],
@@ -732,6 +742,38 @@ const HOW_TO_FIX: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "9.4": l(
     "No forum, Q&A or video result appeared in this sample, which says the audience for this query is being served by publishers rather than by each other. That makes it harder, not impossible: there is no discussion thread to outrank, so the competition is other pages doing the same job as yours. Read it beside the AI answer check — a query with a block and no community results is one where the answer is settled and a page has little room to add, and that is the clearest signal to spend the effort somewhere else.",
     "本次采样中没有出现论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。这让它更难，但不是不可能：没有讨论帖可以超越，竞争对手就是其他在做同样事情的页面。要和 AI 答案那一项结合起来读——一个既有答案块、又没有社区型结果的查询，意味着答案已经定型、页面能补充的空间很小，这是把力气花到别处去的最清晰信号。",
+  ),
+  "3.4": l(
+    "The count sits outside the range reviewed for this page type, and the range is printed beside it so you can judge the judgement. Too few usually means one long section doing the work of three, and the fix is to find where the reader's question changes and put a heading there. Too many usually means headings used for emphasis rather than structure — those belong in the text. Neither is a rule: it is a working band, and a page with a good reason to sit outside it is a page sitting outside it on purpose.",
+    "H2 数量落在为该页面类型审阅过的区间之外，区间就印在旁边，你可以自己判断这个判断。偏少通常意味着一个长小节在干三个小节的活，修法是找到读者的问题发生转变的地方，在那里加一个标题。偏多通常意味着标题被当成强调在用，而不是当成结构——那些内容应该回到正文里。两者都不是规则：这是一个工作区间，一个有充分理由待在区间之外的页面，就是有意待在外面。",
+  ),
+  "3.5": l(
+    "Same reading as the H2 count, one level down: H3s are the steps inside a section, so too few means a section that a reader cannot scan and too many means the section should probably have been two. Check this one against the H2 count rather than on its own — a page with three H2s and thirty H3s is not a page with too many H3s, it is a page whose top level is too coarse.",
+    "读法与 H2 数量相同，只是低一层：H3 是小节内部的步骤，所以偏少意味着这个小节读者没法扫读，偏多意味着这个小节本该拆成两个。这一项要和 H2 数量放在一起看，别单独看——三个 H2 配三十个 H3 的页面，问题不是 H3 太多，而是顶层划得太粗。",
+  ),
+  "4.2": l(
+    "Published, not judged. Keyword density is not a documented ranking signal, and this check says so in its own threshold — the number is here because the run already computed it and a reader asking for it should not be told no detector exists. If you are going to act on anything in this area, act on whether the page answers the query, which is what checks 2.3 and 3.2 measure. Writing to hit a density figure is the failure mode this check refuses to encourage.",
+    "只公布，不判定。关键词密度不是有据可查的排名信号，这项检查在自己的阈值里就是这么写的——数字放在这里，是因为本次运行本来就算出来了，而一个想看它的读者不该被告知「没有检测器」。如果你要在这个方向上动手，那就去看页面是否真的回答了这个查询，也就是 2.3 和 3.2 在测的东西。为了凑到某个密度数值去写作，正是这项检查拒绝鼓励的那种做法。",
+  ),
+  "7.2": l(
+    "The page declares structured data, but not a type from the reviewed set for the page type you confirmed — and both the set and what was found are printed with the finding, so you can decide which one is wrong. Often it is the confirmation: a page can legitimately be more than one thing, and this is a Tip precisely because the mapping is a judgement rather than a rule. When the markup really is the mismatch, change the @type rather than adding a second block; two types competing to describe one page is how a rich result stops appearing at all. Site-furniture types are ignored here, so declaring only a breadcrumb does not pass.",
+    "页面声明了结构化数据，但不是你所确认的页面类型对应审阅集合里的任何一个——审阅集合和实际发现的内容都会与结论一起印出来，你可以自己判断哪一边错了。很多时候错的是确认本身：一个页面完全可能同时是好几种东西，而这一项之所以是提示，正因为这个对照关系是判断而不是规则。如果确实是标记不对，那就改 @type，而不是再加一个块；两个类型争着描述同一个页面，正是富媒体结果彻底不再出现的成因。站点通用类型在这里不计入，所以只声明一个面包屑是不能通过的。",
+  ),
+  D6: l(
+    "An alternate that answers 4xx or 5xx breaks the cluster for every language in it, not only the one that points at the dead URL: search systems treat the set as a set, and one unreachable member is enough to stop them swapping any of the others in. Fix the URL rather than deleting the tag — deleting it makes the cluster smaller and quietly correct, which loses the page the alternate was pointing at. Alternates outside this crawl are not classified either way, so a cross-domain cluster shows only the part that was reached.",
+    "任何一个返回 4xx 或 5xx 的备用地址，破坏的是整个簇里所有语言，而不只是指向死链的那一个：搜索系统把这一组当作一组看，只要有一个成员不可达，其余成员的互换也会停下来。要修那个 URL，而不是删掉那个标签——删掉只会让簇变小然后「安静地正确」，代价是丢掉那个备用地址本来指向的页面。抓取范围之外的备用地址两个方向都不判定，所以跨域的簇在这里只显示被抓到的那部分。",
+  ),
+  "1.7": l(
+    "This page declares an alternate that does not resolve. Check the direction of the error first: a 404 usually means the alternate was never published or its path changed, while a 5xx means it exists and is failing, and only the second is worth a retry before editing anything. Then check reciprocity — every page in a cluster must point back at every other, including itself. A one-way declaration is the most common way a cluster looks complete on one page and is invisible from the others.",
+    "这个页面声明了一个解析不了的备用地址。先看错误方向：404 通常意味着这个备用地址从未发布或路径变了，而 5xx 意味着它存在但正在出错，只有后者值得先重试再动手改。然后检查互指——簇里每个页面都必须指回其余每一个，也包括它自己。单向声明是最常见的一种情况：在这一页看起来簇是完整的，从其他页面看却根本不存在。",
+  ),
+  "4.4": l(
+    "This is the share of the delivered HTML that is text a reader can see. There is no threshold worth publishing for it, so nothing here fails — read it as a weight hint. A low ratio on a page that renders fine usually means inline data or a large framework payload shipped with the document; that costs transfer and parse time on every visit, and it is the same bytes the performance checks measure from the other side. A high ratio is not automatically good either: it is what a page with almost no markup looks like.",
+    "这是交付的 HTML 里读者能看见的文字所占的比例。没有值得公布的阈值，所以这里不会判任何页面不通过——把它当作体积提示来读。一个渲染正常的页面比例偏低，通常意味着随文档一起发出的内联数据或较大的框架负载；这会在每次访问上消耗传输和解析时间，也正是性能检查从另一侧测到的同一批字节。比例高也不自动等于好：一个几乎没有标记的页面就长这样。",
+  ),
+  "6.5": l(
+    "Counted by destination rather than by anchor, so one partner linked from the nav, the body and the footer counts once. There is no ratio worth publishing — nofollow on outbound links is a choice about what you vouch for, not a score — so read it as a description of what this page currently vouches for. The one entry worth acting on is links that open in a new tab without rel=\"noopener\": that is a security property, not an SEO one, and it is listed here because this is where the outbound links already are.",
+    "按目标地址统计，不按锚点统计，所以一个合作方即使在导航、正文、页脚各链一次也只算一个。没有值得公布的比例——出站链接加 nofollow 是「你愿意为什么背书」的选择，不是分数——所以把它当作「这个页面目前为什么背书」的描述来读。这里唯一值得动手的一项是：在新标签打开却没有 rel=\"noopener\" 的链接。那是安全属性不是 SEO 属性，列在这里只是因为出站链接本来就在这。",
   ),
   D1: l(
     "Two pages with the same title are two pages asking to be shown for the same thing, and a search system picks one. Group the duplicates before editing: an exact repeat across a paginated archive or a filtered listing is a template that never varies its title, and the fix is to give the template a variable — the page number, the filter, the section — not to hand-write forty titles. If the pages really are the same page, the duplicate title is the symptom and the canonical is the fix. Variants that already converge on a canonical are excluded from this count, so what is left is genuinely competing.",

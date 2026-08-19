@@ -202,6 +202,7 @@ describe("buildTargetPageExtract on-page facts", () => {
     viewport: "width=device-width, initial-scale=1",
     charset: "utf-8",
     faviconDeclared: true,
+    hreflangAlternates: [],
     hreflang: ["en"],
     images: {
       total: 4,
@@ -246,6 +247,9 @@ describe("buildTargetPageExtract on-page facts", () => {
       // counted, not something the markup declared.
       imageFormats: _formats,
       headingLevels: _levels,
+      // Also a measurement, not a declaration: whether an alternate resolves is
+      // something this run went and checked, not something the markup said.
+      hreflangAlternates: _alternates,
       ...declared
     } = onPage;
     expect(extract.declared).toEqual(declared);

@@ -224,5 +224,10 @@ export function buildTargetPageExtract(
     truncatedLists: h1.truncated || (subHeadings?.truncated ?? false),
     response: responseFactsOf(projection),
     declared: onPage === undefined ? null : declaredFactsOf(onPage),
+    // Beside `declared` rather than inside it: a level sequence is a
+    // measurement of the document, not something the markup declares, and it
+    // is here because the heading-shape checks need the target page's own
+    // sequence and the report deliberately drops per-page facts.
+    headingLevels: onPage === undefined ? null : onPage.headingLevels,
   };
 }

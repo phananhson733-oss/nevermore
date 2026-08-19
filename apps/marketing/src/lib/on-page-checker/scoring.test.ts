@@ -25,6 +25,7 @@ function extract(
     staticBodyUnits: { units: 1_400, basis: "words" },
     termFrequencies: null,
     truncatedLists: false,
+    headingLevels: null,
     response: {
       status: 200,
       finalStatus: 200,

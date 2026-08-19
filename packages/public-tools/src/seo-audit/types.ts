@@ -294,6 +294,11 @@ export interface SeoAuditTargetPageExtract {
   readonly response: SeoAuditTargetResponseFacts;
   /** What the markup declared, or null when the crawl did not carry it. */
   readonly declared: SeoAuditTargetDeclaredFacts | null;
+  /**
+   * Heading levels in document order, or null when the crawl did not carry
+   * them. A measurement, so it sits beside `declared` rather than inside it.
+   */
+  readonly headingLevels: readonly number[] | null;
 }
 
 export interface SeoAuditReport {

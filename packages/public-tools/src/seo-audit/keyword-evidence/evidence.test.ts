@@ -24,6 +24,7 @@ const extract: SeoAuditTargetPageExtract = {
   staticBodyUnits: { units: 1631, basis: "words" as const },
   termFrequencies: null,
   truncatedLists: false,
+  headingLevels: null,
   response: {
     status: 200,
     finalStatus: 200,
@@ -542,6 +543,7 @@ describe("buildKeywordEvidence — density is counted over the text it names", (
       staticBodyUnits: null,
       termFrequencies: null,
       truncatedLists: false,
+      headingLevels: null,
       response: {
         status: 200,
         finalStatus: 200,

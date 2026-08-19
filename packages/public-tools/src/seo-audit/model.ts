@@ -314,6 +314,8 @@ function buildRecords(
   );
   const onPageOf = (page: SeoAuditPage): ParsedOnPageFacts | null =>
     onPageByUrl.get(page.url) ?? null;
+  const hreflangTargetsOf = (page: SeoAuditPage) =>
+    onPageOf(page)?.hreflangAlternates ?? [];
   const htmlPages = pages.filter(
     (page) =>
       page.finalStatus !== null &&
@@ -1152,6 +1154,91 @@ function buildRecords(
         "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
     }),
     record({
+      // D6 and 1.7. Only alternates this crawl also fetched are classified —
+      // the same posture the broken-link check takes, and for the same reason:
+      // an international cluster routinely points at another domain, and a
+      // target we never requested is not a target we can call broken.
+      id: "hreflang_target_http_error",
+      category: "indexability",
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => hreflangTargetsOf(page).length > 0,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const broken = hreflangTargetsOf(page).filter((alternate) => {
+          const target = collectedBySubject.get(
+            subjectUrlOf(alternate.href) ?? alternate.href,
+          );
+          return (
+            target !== undefined &&
+            target.finalStatus !== null &&
+            target.finalStatus >= 400
+          );
+        });
+        return broken.length === 0
+          ? []
+          : [
+              pageObservation(page, {
+                broken_hreflang_targets: broken.length,
+                declared_hreflang_alternates: hreflangTargetsOf(page).length,
+                // The URLs, not just the count: "two alternates are broken" is
+                // not something a reader can act on.
+                broken_hreflang_sample: broken
+                  .slice(0, MAX_LISTED_SOURCE_PAGES)
+                  .map((alternate) => `${alternate.lang}=${alternate.href}`)
+                  .join(" "),
+              }),
+            ];
+      }),
+      limitation: "hreflang_targets_outside_this_crawl_were_not_classified",
+    }),
+    record({
+      // 4.4. Published as a rendering-weight hint with no threshold, so this
+      // never fails a page — but "no detector reads it yet" was false, and a
+      // reader planning work can use the number.
+      id: "content_to_code_ratio",
+      category: "structure",
+      population: "every_collected_page",
+      tested: htmlPages,
+      observations: htmlPages.flatMap((page) => {
+        const facts = onPageOf(page);
+        if (facts === null || facts.htmlBytes <= 0) return [];
+        return [
+          pageObservation(page, {
+            visible_text_bytes: facts.visibleTextBytes,
+            html_bytes: facts.htmlBytes,
+            script_bytes: facts.scriptBytes,
+            content_to_code_ratio: Number(
+              (facts.visibleTextBytes / facts.htmlBytes).toFixed(4),
+            ),
+          }),
+        ];
+      }),
+      limitation: "utf8_bytes_of_the_delivered_html_no_rendering_performed",
+    }),
+    record({
+      // 6.5. Display only, and the parser now keeps external links — this was
+      // listed as permanently unmeasurable because they used to be dropped.
+      id: "external_link_follow_mix",
+      category: "links",
+      population: "conditional_subset",
+      tested: htmlPages.filter(
+        (page) => (onPageOf(page)?.externalLinks.total ?? 0) > 0,
+      ),
+      observations: htmlPages.flatMap((page) => {
+        const links = onPageOf(page)?.externalLinks;
+        if (links === undefined || links.total === 0) return [];
+        return [
+          pageObservation(page, {
+            external_links: links.total,
+            external_links_nofollow: links.nofollow,
+            external_links_blank_without_noopener: links.blankWithoutNoopener,
+          }),
+        ];
+      }),
+      limitation: "external_links_counted_by_destination_not_by_anchor",
+    }),
+    record({
       id: "json_ld_parse_error",
       category: "structured_data",
       tested: htmlPages,
@@ -1273,7 +1360,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v7",
+      schemaVersion: "seo_audit.sitewide.v8",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

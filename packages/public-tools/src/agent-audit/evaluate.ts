@@ -73,12 +73,16 @@ function projectRecordToTarget(
     };
   }
 
-  // Absence is evidence about this page only when the record tested every
-  // collected page and this page was one of them. A record that tested a
-  // qualifying subset (pages that have a title, sitemap members) says nothing
-  // about a page that may never have qualified.
+  // Absence is evidence about this page only when the rule tested it. That is
+  // what `targetTested` answers, and it answers it for a qualifying subset too
+  // — the case this used to get wrong. A record that tested only pages with an
+  // hreflang alternate says nothing about a page that has none, and everything
+  // about one that has three and no broken target; keying on population alone
+  // reported both as "not tested", so a correctly-built page came back looking
+  // like a hole in the audit.
   return inspectedTargetUrl !== null &&
-    record.population === "every_collected_page"
+    (record.targetTested === true ||
+      record.population === "every_collected_page")
     ? {
         ...record,
         state: "not_observed",

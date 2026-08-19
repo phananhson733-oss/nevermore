@@ -248,7 +248,8 @@ const TARGET_PAGE_EXTRACT_KEYS: readonly string[] = [
   "truncatedLists",
   "response",
   "declared",
-];
+
+  "headingLevels",];
 
 /**
  * Characters, counted the way the producer counts them.
@@ -542,6 +543,16 @@ export function isSeoAuditTargetPageExtract(
         : null,
     ) &&
     typeof value.truncatedLists === "boolean" &&
+    (value.headingLevels === null ||
+      (Array.isArray(value.headingLevels) &&
+        value.headingLevels.length <= 100 &&
+        value.headingLevels.every(
+          (level) =>
+            typeof level === "number" &&
+            Number.isInteger(level) &&
+            level >= 1 &&
+            level <= 6,
+        ))) &&
     isResponseFacts(value.response) &&
     (value.declared === null || isDeclaredFacts(value.declared))
   );
@@ -557,7 +568,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v7" &&
+    run.schemaVersion === "seo_audit.sitewide.v8" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

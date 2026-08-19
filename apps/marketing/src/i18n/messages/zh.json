@@ -987,7 +987,18 @@
         "this_runs_market_is_not_one_the_results_page_provider_covers": "本次运行的市场不在结果页供应商覆盖范围内，因此没有采样，也没有产生付费调用。",
         "the_results_page_provider_did_not_answer_this_run": "结果页数据供应商本次未应答，因此没有采样。值得再试一次。",
         "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "本次运行的 robots.txt 规则触到了自身上限，某条 Disallow 可能在被读到之前就被丢掉了。相关放行检查按「未验证」报告，而不是按「已放行」。",
-        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。"
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "sitemap 触到了本次运行的 URL 上限，被检查的范围里可能缺少某些已声明的 URL。成员按顺序读取，因此被截掉的往往是靠后的一整个分支。",
+        "hreflang_targets_outside_this_crawl_were_not_classified": "抓取范围之外的备用地址两个方向都不判定。跨域的簇在这里只显示被抓到的那部分。",
+        "utf8_bytes_of_the_delivered_html_no_rendering_performed": "按交付 HTML 的 UTF-8 字节数计。不做渲染，因此这是被传输的内容，不是浏览器最终呈现的内容。",
+        "external_links_counted_by_destination_not_by_anchor": "外链按目标地址统计，同一页面上多次链到同一合作方只算一个。",
+        "no_page_type_was_confirmed_so_there_is_no_reviewed_range_to_compare_against": "本次运行没有确认页面类型，因此没有可用来对比标题数量的审阅区间。",
+        "a_reviewed_range_for_the_confirmed_page_type_not_a_documented_rule": "这是针对已确认页面类型审阅过的工作区间，不是有据可查的规则。区间会印在数量旁边。",
+        "no_confirmed_query_or_no_captured_text_to_compute_a_density_over": "没有确认目标词，或者没有可用来计算密度的采集文本。",
+        "density_over_the_captured_text_only_and_never_judged": "密度基于本次运行采集到的文本，不是整页，而且从不用于判定任何结论。",
+        "no_page_type_was_confirmed_so_there_is_nothing_to_match_the_schema_against": "没有确认页面类型，因此没有东西可以拿来与声明的 Schema 匹配。",
+        "the_submitted_page_was_not_collected_so_it_declared_nothing": "提交的页面未被本次抓取采集，因此读不到它声明的任何内容。",
+        "this_page_declares_only_site_furniture_types_which_check_7_1_reports": "这个页面只声明了 BreadcrumbList、WebSite 这类站点通用类型。它到底有没有可用的结构化数据，由 7.1 报告。",
+        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "这是一份审阅过的「页面类型到 Schema 类型」对照关系，不是规则。一个页面完全可能同时是好几种东西，所以这一项是提示。"
       },
       "records": {
         "robots_resource": {
@@ -1189,6 +1200,34 @@
         "no_community_result_present": {
           "title": "结果页没有出现社区型结果",
           "description": "对结果页的单次实时采样中没有论坛、问答或视频类结果，这说明这个查询的受众是由出版方在服务，而不是由用户彼此服务。"
+        },
+        "hreflang_target_http_error": {
+          "title": "hreflang 备用地址无法解析的页面",
+          "description": "已采集页面中，声明了返回 4xx 或 5xx 的 hreflang 备用地址的页面。只对本次运行同时抓取到的备用地址判定；抓取范围之外的报为未分类，绝不算作有效。"
+        },
+        "content_to_code_ratio": {
+          "title": "交付 HTML 中可见文字的占比",
+          "description": "可见文字的 UTF-8 字节数除以交付文档的 UTF-8 字节数，不做渲染。作为体积提示公布，不套用任何阈值。"
+        },
+        "external_link_follow_mix": {
+          "title": "出站链接及其中的 nofollow 数",
+          "description": "外链按目标地址统计而不是按锚点统计，所以一个合作方即使在导航、正文、页脚各链一次也只算一个。含在新标签打开却没有 rel=noopener 的链接。"
+        },
+        "h2_count_outside_reviewed_range": {
+          "title": "H2 数量超出审阅区间",
+          "description": "H2 标题数量落在已确认页面类型的审阅区间之外。区间会与结论一同给出：它是工作区间，不是有据可查的规则。"
+        },
+        "h3_count_outside_reviewed_range": {
+          "title": "H3 数量超出审阅区间",
+          "description": "H3 标题数量落在已确认页面类型的审阅区间之外。要和 H2 数量放在一起看，别单独看。"
+        },
+        "target_query_density": {
+          "title": "已确认目标词在采集文本中的密度",
+          "description": "已确认目标词在本次运行采集到的文本中出现的频率，占该文本的比例。只公布，不判定：密度不是有据可查的排名信号。"
+        },
+        "schema_type_unmatched_to_page_type": {
+          "title": "声明的 Schema 类型与已确认页面类型不匹配",
+          "description": "页面声明了结构化数据，但不属于你所确认的页面类型对应的审阅集合。BreadcrumbList、WebSite 这类站点通用类型在判定时不计入。"
         }
       },
       "evidence": {
@@ -1280,7 +1319,26 @@
         "organic_results_sampled": "采样到的自然结果数",
         "unresolved_serp_items": "因不可用而丢弃的条目数",
         "sampled_market": "市场",
-        "sampled_language": "语言"
+        "sampled_language": "语言",
+        "broken_hreflang_targets": "失效的备用地址数",
+        "declared_hreflang_alternates": "声明的备用地址数",
+        "broken_hreflang_sample": "失效的备用地址",
+        "visible_text_bytes": "可见文字字节数",
+        "html_bytes": "HTML 字节数",
+        "script_bytes": "脚本字节数",
+        "content_to_code_ratio": "文字占 HTML 比例",
+        "external_links": "外链数",
+        "external_links_nofollow": "标记 nofollow 的",
+        "external_links_blank_without_noopener": "新标签打开且无 noopener 的",
+        "heading_count": "该层级标题数",
+        "reviewed_minimum": "审阅下限",
+        "reviewed_maximum": "审阅上限",
+        "confirmed_page_type": "已确认页面类型",
+        "query_density": "密度",
+        "density_numerator_units": "目标词计量单位数",
+        "density_denominator_units": "文本计量单位数",
+        "declared_schema_types": "已声明的类型",
+        "expected_schema_types": "该页面类型的审阅类型"
       },
       "notAvailable": "暂无",
       "booleanTrue": "是",

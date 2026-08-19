@@ -71,6 +71,7 @@ const extract: SeoAuditTargetPageExtract = {
   staticBodyUnits: null,
   termFrequencies: null,
   truncatedLists: false,
+  headingLevels: null,
   response: {
     status: 200,
     finalStatus: 200,

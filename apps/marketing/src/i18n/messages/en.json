@@ -987,7 +987,18 @@
         "this_runs_market_is_not_one_the_results_page_provider_covers": "This run's market is not one the results-page provider covers, so no sample was taken and no paid call was made.",
         "the_results_page_provider_did_not_answer_this_run": "The results-page provider did not answer this run, so no sample was taken. Worth trying again.",
         "robots_rules_hit_this_runs_cap_so_a_disallow_may_have_been_dropped": "This run's robots.txt rules hit its own cap, so a Disallow may have been dropped before it could be read. The allowance checks are reported as unverified rather than as permission.",
-        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "The sitemap hit this run's URL cap, so a declared URL may be missing from what was checked. Members are read in order, so what falls off is a whole late-alphabet section."
+        "sitemap_urls_hit_this_runs_cap_so_a_declared_url_may_be_missing": "The sitemap hit this run's URL cap, so a declared URL may be missing from what was checked. Members are read in order, so what falls off is a whole late-alphabet section.",
+        "hreflang_targets_outside_this_crawl_were_not_classified": "Alternates outside this crawl were not classified in either direction. A cross-domain cluster shows only the part that was reached.",
+        "utf8_bytes_of_the_delivered_html_no_rendering_performed": "UTF-8 bytes of the delivered HTML. No rendering is performed, so this is what was transferred rather than what a browser ended up showing.",
+        "external_links_counted_by_destination_not_by_anchor": "External links are counted by destination, so one partner linked several times from the same page counts once.",
+        "no_page_type_was_confirmed_so_there_is_no_reviewed_range_to_compare_against": "No page type was confirmed for this run, so there is no reviewed range to compare the heading counts against.",
+        "a_reviewed_range_for_the_confirmed_page_type_not_a_documented_rule": "A reviewed working band for the confirmed page type, not a documented rule. The range is published beside the count.",
+        "no_confirmed_query_or_no_captured_text_to_compute_a_density_over": "No confirmed query, or no captured text to compute a density over.",
+        "density_over_the_captured_text_only_and_never_judged": "Density is over the text this run captured, not the whole page, and it is never used to decide anything.",
+        "no_page_type_was_confirmed_so_there_is_nothing_to_match_the_schema_against": "No page type was confirmed, so there is nothing to match the declared schema against.",
+        "the_submitted_page_was_not_collected_so_it_declared_nothing": "The submitted page was not collected in this crawl, so nothing it declares could be read.",
+        "this_page_declares_only_site_furniture_types_which_check_7_1_reports": "This page declares only site-furniture types such as BreadcrumbList or WebSite. Whether it has usable structured data at all is check 7.1's finding.",
+        "a_reviewed_mapping_of_page_type_to_schema_type_not_a_rule": "A reviewed mapping from page type to schema type, not a rule. A page can legitimately be more than one thing, which is why this is a Tip."
       },
       "records": {
         "robots_resource": {
@@ -1189,6 +1200,34 @@
         "no_community_result_present": {
           "title": "No community result appeared on the results page",
           "description": "One live sample of the results page carried no forum, Q&A or video result, which says the audience for this query is being served by publishers rather than by each other."
+        },
+        "hreflang_target_http_error": {
+          "title": "Pages whose hreflang alternate does not resolve",
+          "description": "Collected pages declaring an hreflang alternate that answers 4xx or 5xx. Only alternates this run also fetched are classified; one outside the crawl is reported as unclassified, never as valid."
+        },
+        "content_to_code_ratio": {
+          "title": "Share of the delivered HTML that is visible text",
+          "description": "UTF-8 bytes of visible text over UTF-8 bytes of the delivered document, measured without rendering. Published as a weight hint; no threshold is applied."
+        },
+        "external_link_follow_mix": {
+          "title": "Outbound links and how many are nofollow",
+          "description": "External links counted by destination rather than by anchor, so one partner linked from the nav, the body and the footer counts once. Includes links opening in a new tab without rel=noopener."
+        },
+        "h2_count_outside_reviewed_range": {
+          "title": "H2 count outside the reviewed range",
+          "description": "The number of H2 headings sits outside the range reviewed for the confirmed page type. The range is published with the finding: it is a working band, not a documented rule."
+        },
+        "h3_count_outside_reviewed_range": {
+          "title": "H3 count outside the reviewed range",
+          "description": "The number of H3 headings sits outside the range reviewed for the confirmed page type. Read it against the H2 count rather than on its own."
+        },
+        "target_query_density": {
+          "title": "Target query density over the captured text",
+          "description": "How often the confirmed query appears in the text this run captured, as a share of that text. Published, never judged: density is not a documented ranking signal."
+        },
+        "schema_type_unmatched_to_page_type": {
+          "title": "Declared schema type does not match the confirmed page type",
+          "description": "The page declares structured data, but not a type from the reviewed set for the page type you confirmed. Site-furniture types such as BreadcrumbList and WebSite are ignored when deciding."
         }
       },
       "evidence": {
@@ -1280,7 +1319,26 @@
         "organic_results_sampled": "Organic results sampled",
         "unresolved_serp_items": "Items dropped as unusable",
         "sampled_market": "Market",
-        "sampled_language": "Language"
+        "sampled_language": "Language",
+        "broken_hreflang_targets": "Broken alternates",
+        "declared_hreflang_alternates": "Alternates declared",
+        "broken_hreflang_sample": "Broken alternates found",
+        "visible_text_bytes": "Visible text bytes",
+        "html_bytes": "HTML bytes",
+        "script_bytes": "Script bytes",
+        "content_to_code_ratio": "Text share of HTML",
+        "external_links": "External links",
+        "external_links_nofollow": "Marked nofollow",
+        "external_links_blank_without_noopener": "New tab without noopener",
+        "heading_count": "Headings at this level",
+        "reviewed_minimum": "Reviewed minimum",
+        "reviewed_maximum": "Reviewed maximum",
+        "confirmed_page_type": "Confirmed page type",
+        "query_density": "Density",
+        "density_numerator_units": "Query units counted",
+        "density_denominator_units": "Text units counted",
+        "declared_schema_types": "Types declared",
+        "expected_schema_types": "Reviewed types for this page type"
       },
       "notAvailable": "Not available",
       "booleanTrue": "Yes",

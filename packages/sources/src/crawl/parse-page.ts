@@ -171,6 +171,19 @@ export interface ParsedOnPageFacts {
   readonly charset: string | null;
   readonly faviconDeclared: boolean;
   readonly hreflang: readonly string[];
+  /**
+   * The `hreflang` alternates as declared: language and target together.
+   *
+   * `hreflang` above keeps only the language codes, which answers "what does
+   * this page claim" but not "does the claim resolve" — and the checks that
+   * matter are about the target. Cross-origin targets are kept: an
+   * international cluster routinely points at another domain, and dropping
+   * those would report a correct cluster as incomplete.
+   */
+  readonly hreflangAlternates: readonly {
+    readonly lang: string;
+    readonly href: string;
+  }[];
   readonly images: ParsedImageFacts;
   /**
    * The file extension of each image reference, in document order.
@@ -857,6 +870,37 @@ function collectExternalLinkFacts(
   };
 }
 
+/** The same alternates, with the target each one points at. */
+function collectHreflangAlternates(
+  html: string,
+  pageUrl: string,
+): readonly { readonly lang: string; readonly href: string }[] {
+  const out: { lang: string; href: string }[] = [];
+  for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
+    const tag = match[0];
+    if (attr(tag, "rel")?.toLowerCase() !== "alternate") continue;
+    const lang = attr(tag, "hreflang")?.trim();
+    const href = attr(tag, "href")?.trim();
+    if (!lang || !href) continue;
+    // Resolved against the page so a relative alternate is comparable with the
+    // collected pages, and decoded first for the same reason every other href
+    // on this page is: `&amp;` is a separator, not a literal.
+    let resolved: string;
+    try {
+      resolved = new URL(decodeHtml(href), pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
+    out.push({
+      lang: boundChars(lang, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+      href: resolved,
+    });
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxRobotsDirectives) break;
+  }
+  return out;
+}
+
 function collectHreflang(html: string): readonly string[] {
   const tags = [...html.matchAll(openingTagPattern("link", "gi"))].map(
     (match) => match[0],
@@ -950,6 +994,7 @@ function collectOnPageFacts(
     charset: collectCharset(metaTags),
     faviconDeclared: collectFaviconDeclared(markup),
     hreflang: collectHreflang(markup),
+    hreflangAlternates: collectHreflangAlternates(markup, pageUrl),
     images: collectImageFacts(markup),
     imageFormats: collectImageFormats(markup),
     headingLevels: collectHeadingLevels(markup),

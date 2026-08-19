@@ -4,6 +4,7 @@
 
 import type {
   SeoAuditCoverage,
+  SeoAuditTargetPageExtract,
   SeoAuditRecord,
   SeoAuditReport,
   SeoAuditSiteResources,
@@ -22,7 +23,11 @@ import {
 } from "../tools/seo-audit-input.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { readAgentSearchPerformance } from "./search-performance.ts";
-import { buildKeywordEvidenceRecords } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import {
+  buildKeywordEvidenceRecords,
+  type HeadingShapeInput,
+} from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import { AGENT_AUDIT_HEADING_PRESETS } from "@sf/public-tools/agent-audit";
 import {
   buildPagePerformanceRecords,
   type PagePerformanceGap,
@@ -194,6 +199,31 @@ function landedTargetUrl(result: {
   const requested = result.inspectedTargetUrl ?? result.targetUrl;
   const page = result.pages.find((entry) => entry.url === requested);
   return page?.finalUrl ?? requested;
+}
+
+/**
+ * The heading shape the confirmed page type asks for, or null.
+ *
+ * Null when the visitor confirmed no page type — the checks then report that
+ * there is no reviewed range to compare against, which is the honest answer.
+ * The range travels with the finding so a reader can judge the judgement.
+ */
+function headingShapeFor(
+  pageRole: string | null | undefined,
+  result: { readonly targetPageExtract: SeoAuditTargetPageExtract | null },
+): HeadingShapeInput | null {
+  if (!pageRole) return null;
+  const preset = AGENT_AUDIT_HEADING_PRESETS[pageRole];
+  const levels = result.targetPageExtract?.headingLevels;
+  if (preset === undefined || levels === undefined || levels === null) {
+    return null;
+  }
+  return {
+    levels,
+    pageType: preset.pageType,
+    h2: preset.h2,
+    h3: preset.h3,
+  };
 }
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -464,6 +494,11 @@ function projectTargetPageExtract(
             })),
           })),
     truncatedLists: extract.truncatedLists,
+    // Rebuilt field by field like every other projected value, so the browser
+    // gets what this boundary decided to publish and not whatever the payload
+    // happened to carry.
+    headingLevels:
+      extract.headingLevels === null ? null : [...extract.headingLevels],
     response: {
       status: extract.response.status,
       finalStatus: extract.response.finalStatus,
@@ -719,6 +754,8 @@ export async function handleAgentAuditRequest(
               records: buildKeywordEvidenceRecords(
                 result.inspectedTargetUrl ?? result.targetUrl,
                 evidence,
+                headingShapeFor(input.value.pageRole, result),
+                result.targetPageExtract?.response.jsonLdTypes ?? null,
               ),
             },
           }),
