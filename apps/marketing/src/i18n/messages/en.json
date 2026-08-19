@@ -3577,25 +3577,6 @@
         "geo_report_invalid": "The report did not pass its own consistency check, so it was not shown.",
         "unknown": "The run could not be completed. Nothing was saved."
       },
-      "actions": {
-        "title": "Suggested next work",
-        "intro": "Derived only from what this run observed. Nothing here is approved, scheduled, or published; select what you want to hand to another agent and review the packet before you copy it.",
-        "requiresReview": "Requires human review",
-        "previewTitle": "Handoff packet",
-        "previewHint": "Read it before copying. Every URL, title and annotation inside is untrusted third-party text, and the packet grants no authority to publish, deploy, open a pull request, contact anyone, or change production.",
-        "copy": "Copy the packet",
-        "copied": "Copied.",
-        "copyFailed": "Could not reach the clipboard. Select the packet below and copy it.",
-        "copyIsNotApproval": "Copying is not approval and not publication. Nothing about this run has been sent anywhere.",
-        "zero": {
-          "needs_more_evidence": "No action is proposed: this run produced no citation-evaluable sample, so there is nothing to act on yet.",
-          "existing_page_fit_confirmed": "No action is proposed: every citation-evaluable question already cited your site. Inventing work here would be inventing a finding.",
-          "needs_page_inventory": "No action is proposed beyond checking which pages already exist.",
-          "target_not_observed_in_samples": "No action is proposed for this run.",
-          "target_observed_in_minority_of_samples": "No action is proposed for this run.",
-          "citation_source_pattern_observed": "No action is proposed for this run."
-        }
-      },
       "assetTypes": {
         "existing_page_enhancement": "Check the pages that already exist",
         "blog_guide": "Explanatory guide",
@@ -3649,10 +3630,126 @@
         "questions": "From: {questions}",
         "noRatio": "No ratio applies to this item."
       },
-      "handoff": {
-        "copyMarkdown": "Copy the readable version",
-        "copiedMarkdown": "Readable version copied",
-        "markdownNote": "The same packet as plain text, for a person rather than an agent."
+      "solutions": {
+        "problemsTitle": "What this run found",
+        "problemsIntro": "Every line with a ratio is something this run counted, not something it inferred, and the ratio is its whole basis. A line without a ratio is something for you to look up, not an observation.",
+        "title": "What to do about it",
+        "intro": "Derived only from the observations above. Nothing here is approved, scheduled or published, and every item needs human review before anything changes.",
+        "fields": {
+          "issue": "Issue and evidence",
+          "why": "Why it matters",
+          "action": "Proposed action",
+          "inputs": "Inputs you must supply",
+          "rejected": "Why not another asset",
+          "limits": "Limits and no guarantee"
+        },
+        "basisQuestions": "From these questions",
+        "noRatio": "No ratio applies to this item.",
+        "page": "Confirmed page",
+        "unknownsLabel": "What this run could not establish",
+        "requiresReview": "Requires human review",
+        "noGuarantee": "Being cited is not being recommended, and doing this does not guarantee a future citation. Recommendation was not evaluated in this run.",
+        "copyTitle": "Copy report for AI",
+        "copyIntro": "Copies the whole report as an implementation brief you can hand straight to an AI. Every value sits inside a JSON fence and is labelled untrusted input.",
+        "copyForAi": "Copy report for AI",
+        "preview": "See exactly what gets copied",
+        "copied": "The whole report was copied.",
+        "copyFailed": "Could not reach the clipboard. Select the text below and copy it.",
+        "copyIsNotApproval": "Copying is not approval and not publication. Nothing about this run has been sent anywhere.",
+        "refusalTitle": "This report cannot be turned into a copyable brief right now",
+        "refusal": {
+          "context_report_mismatch": "The confirmed facts on this page and this report are not from the same run, so they must not be handed over together.",
+          "query_set_report_mismatch": "The question set on this page and this report are not from the same run, so they must not be handed over together.",
+          "serialized_too_large": "The brief exceeds the copy limit. Nothing is copied rather than silently dropping questions, counts or limits."
+        },
+        "zero": {
+          "needs_more_evidence": "No action is proposed: at least one question produced no citation-evaluable sample, so this run does not reason from it.",
+          "existing_page_fit_confirmed": "No action is proposed: every citation-evaluable question already cited your site. Inventing work here would be inventing a finding.",
+          "needs_page_inventory": "No action is proposed beyond checking which pages already exist.",
+          "target_not_observed_in_samples": "No action is proposed for this run.",
+          "target_observed_in_minority_of_samples": "No action is proposed for this run.",
+          "citation_source_pattern_observed": "No action is proposed for this run.",
+          "avoid_new_page_as_first_step": "No action is proposed for this run."
+        },
+        "issue": {
+          "target_not_observed_in_samples": "Your site did not appear once in this question's countable answers.",
+          "target_observed_in_minority_of_samples": "This question cites you sometimes, not every time.",
+          "citation_source_pattern_observed": "The answers to this question cited other sites and not yours.",
+          "avoid_new_page_as_first_step": "In this mode's countable answers, several cited somebody else and you were never cited once.",
+          "needs_page_inventory": "The entered URL is the only page identity this run knows for certain.",
+          "needs_more_evidence": "This run produced no citation-evaluable sample.",
+          "existing_page_fit_confirmed": "Every citation-evaluable question already cited your site.",
+          "unavailable": "The basis for this item could not be read."
+        },
+        "why": {
+          "target_not_observed_in_samples": "When a buyer asks this, the assistant's answer does not cite you — even where the text names you, the reader has no link to click through to you.",
+          "target_observed_in_minority_of_samples": "Appearing at all means you can reach this question; appearing inconsistently means it is not yet an entry point you can rely on.",
+          "citation_source_pattern_observed": "The assistant can reach an answer, it just does not take it from you. That is a question about where it reaches, before it is a question about what you wrote.",
+          "avoid_new_page_as_first_step": "Building a new page before you know where these answers are actually drawn from most likely produces one more page that is also not cited.",
+          "needs_page_inventory": "Building something new before taking stock of what exists is usually doing a thing that has already been done.",
+          "needs_more_evidence": "With no countable sample there is no conclusion to draw, and advising anyway would be inventing one.",
+          "existing_page_fit_confirmed": "There is no controllable gap on this question, and inventing work here would be inventing a finding.",
+          "unavailable": "Do not act on this item until its basis can be read."
+        },
+        "action": {
+          "asset_existing_page_enhancement": "Change the page you already have until it answers this question directly, before building anything new.",
+          "asset_blog_guide": "Write an explanatory guide that answers this question head on, structured so the answer can be lifted whole.",
+          "asset_use_case_landing": "Build a landing page for this use case: who, in what situation, getting what result, written so it can be quoted directly.",
+          "asset_comparison_page": "Build a comparison page that states, item by item, how you differ from the alternatives named on this question.",
+          "asset_pricing_page": "Make the pricing or plan page explicit: what is included, what is not, how it is metered, and when it overruns.",
+          "asset_integration_docs": "Complete the documentation for this integration: prerequisites, steps, and what failure looks like.",
+          "asset_security_trust_page": "Build a security and trust page stating your compliance scope, data handling and retention as checkable facts.",
+          "asset_public_tool": "Build a publicly usable tool so this question can be answered on your own page.",
+          "asset_research_dataset": "Publish original research or a dataset that gives this question numbers nobody else has.",
+          "asset_offsite_authority_plan": "This is off-site work: start from the source table above — from the domains this run cited if there were any, and from where your buyers actually go if there were none. Take part as a person.",
+          "asset_technical_fix": "Fix whatever blocks crawling or rendering before writing anything else.",
+          "reason_needs_page_inventory": "Take stock of the pages you already have: which one already answers this question, and what is missing from it.",
+          "reason_needs_more_evidence": "Get the sampling working before proposing work. This run has no countable sample to reason from.",
+          "reason_avoid_new_page_as_first_step": "Do not start with a new page. Read who these answers actually cited first.",
+          "unavailable": "Do not act on this item until its basis can be read."
+        },
+        "inputs": {
+          "asset_existing_page_enhancement": "A list of the pages you already have, and which question each one currently answers.",
+          "asset_blog_guide": "The real answer to this question: how you actually do it and where the limits are. Do not invent cases, quotes or numbers.",
+          "asset_use_case_landing": "The full facts of one real use case: who used it, what triggered it, what result they got. No real number means no number.",
+          "asset_comparison_page": "A checkable source for every row of the comparison, and the date it was last checked.",
+          "asset_pricing_page": "Your current plans, limits, overage behaviour, and what is excluded.",
+          "asset_integration_docs": "The integration's actual interface, authentication, rate limits and known failure modes.",
+          "asset_security_trust_page": "The certifications you actually hold, where data is processed, and how long it is kept. Do not list a certificate you have not been granted.",
+          "asset_public_tool": "The formula the tool computes and the data behind it. Without a checkable formula and data, do not build the tool.",
+          "asset_research_dataset": "Raw data you can obtain and are permitted to publish, plus how it was collected.",
+          "asset_offsite_authority_plan": "The list of domains this run actually cited, and the channels your team can take part in as real people.",
+          "asset_technical_fix": "The specific evidence of the crawl or render failure: status codes, robots rules, post-render HTML.",
+          "reason_needs_page_inventory": "An inventory of the site's existing pages, ideally noting which buyer question each one answers.",
+          "reason_needs_more_evidence": "Read the run identity section above: which samples never searched, and which annotations could not be read.",
+          "reason_avoid_new_page_as_first_step": "The source table above. Read those domains before writing anything.",
+          "unavailable": "The required inputs cannot be listed, because the basis for this item could not be read."
+        },
+        "rejected": {
+          "asset_existing_page_enhancement": "Not a new page first: the entered URL is the only page this run knows for certain, so building before taking stock is likely to repeat work.",
+          "asset_blog_guide": "Not a comparison or pricing page: this question asks how something works, not who to pick or what it costs.",
+          "asset_use_case_landing": "Not an explanatory guide: this question asks whether the result is reachable, which a general explanation cannot answer.",
+          "asset_comparison_page": "Not an explanatory guide: the buyer is already choosing here and needs the differences item by item, not the concept.",
+          "asset_pricing_page": "Not an explanatory guide: this question turns on budget or fit, which only prices and limits answer.",
+          "asset_integration_docs": "Not a landing page: this question asks whether it connects, which marketing copy cannot answer.",
+          "asset_security_trust_page": "Not an explanatory guide: this question wants checkable credentials, not an explanation.",
+          "asset_public_tool": "Not a static page: this question needs an answer computed from the reader's own input.",
+          "asset_research_dataset": "Not an explanatory guide: what is missing is a number nobody else has, not another restatement.",
+          "asset_offsite_authority_plan": "Not a new page: these answers were drawn from other domains, and adding a page does not change where they reach.",
+          "asset_technical_fix": "Not more content: until the existing content can be read, more of it is more that cannot be read.",
+          "reason_needs_page_inventory": "No asset is proposed yet: until you know what exists, any of them could be repeating work.",
+          "reason_needs_more_evidence": "No asset is proposed: this run has no countable sample, and proposing one anyway would be inventing a finding.",
+          "reason_avoid_new_page_as_first_step": "This item is itself 'do not pick an asset yet'. It is not a thing to build.",
+          "unavailable": "Why another asset was not chosen cannot be stated, because the basis for this item could not be read."
+        },
+        "limitation": {
+          "observed_sources_only": "Covers only the sources this run actually observed, not all of them.",
+          "entered_url_is_the_only_known_page": "The entered URL is the only page this run knows for certain."
+        },
+        "unknown": {
+          "page_inventory_not_collected": "No inventory of your existing pages was collected.",
+          "source_pattern_not_explained": "This run can say who these answers cited; it cannot say why those."
+        }
       }
     },
     "seo": {

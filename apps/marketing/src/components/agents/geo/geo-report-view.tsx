@@ -19,6 +19,7 @@ import type {
   GeoSearchCounts,
 } from "../../../lib/agents/geo-report-derive";
 import type { GeoContextSnapshotV1 } from "../../../lib/agents/geo-context";
+import type { GeoQuerySetV1 } from "../../../lib/agents/geo-query-contract";
 import {
   deriveGeoSourceLandscape,
   type GeoModeSourcesV1,
@@ -344,12 +345,19 @@ function ModeSourceTable({
               samples: sources.citationEvaluableSamples,
               questions: sources.citationEvaluableQuestions,
             })}{" "}
-            {t(
-              sources.targetObserved
-                ? "sources.targetPresent"
-                : "sources.targetAbsent",
-              { host: targetHost },
-            )}
+            {/*
+              Only when the mode had something to count. A table with rows and a
+              null verdict cannot happen — the rows come from countable samples
+              — but reading the boolean without checking would print "was not
+              cited" for a mode that could not be read at all.
+            */}
+            {sources.targetObserved !== null &&
+              t(
+                sources.targetObserved
+                  ? "sources.targetPresent"
+                  : "sources.targetAbsent",
+                { host: targetHost },
+              )}
           </p>
           <div className="mt-1.5 overflow-x-auto rounded-card border border-brand-border-card">
             <table className="w-full border-collapse bg-brand-panel text-[12px]">
@@ -462,7 +470,13 @@ function QuestionCard({
         <p className="max-w-[46rem] text-[13.5px] leading-[1.6] text-text-dark-primary">
           {question.text}
         </p>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
+        {/*
+          Wraps rather than refuses to shrink. `shrink-0` kept this row at its
+          full three-chip width, and at 320px that pushed the whole page 15px
+          sideways — a horizontal scrollbar on the report, caused by a row of
+          labels. The chips already wrap; they just needed to be allowed to.
+        */}
+        <div className="flex min-w-0 flex-wrap gap-1.5">
           <Tag
             tone={question.mode === "retrieval_probe" ? "accent" : "neutral"}
           >
@@ -516,13 +530,23 @@ function QuestionCard({
 
 export function GeoReportView({
   report,
-  context,
+  capture,
   locale,
   onRestart,
 }: {
   readonly report: GeoReportDataV3;
-  /** Omitted only where the report is rendered without its confirmed context. */
-  readonly context?: GeoContextSnapshotV1;
+  /**
+   * The confirmed context and the query set that was actually run.
+   *
+   * One prop rather than two, because the solutions section needs both and a
+   * report rendered with the context of one run and the questions of another is
+   * the exact pairing the copy builder refuses. Optional only for the callers
+   * that render evidence without the confirmation that produced it.
+   */
+  readonly capture?: {
+    readonly context: GeoContextSnapshotV1;
+    readonly querySet: GeoQuerySetV1;
+  };
   readonly locale: string;
   readonly onRestart: () => void;
 }) {
@@ -666,8 +690,13 @@ export function GeoReportView({
         )}
       </div>
 
-      {context !== undefined && (
-        <GeoActionPanel report={report} context={context} />
+      {capture !== undefined && (
+        <GeoActionPanel
+          report={report}
+          context={capture.context}
+          querySet={capture.querySet}
+          locale={locale}
+        />
       )}
 
       <div className="rounded-card border border-brand-border-dashed bg-brand-panel-sunken p-5">

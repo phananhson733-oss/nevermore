@@ -4,6 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
+import { clearGeoReportSession } from "../../lib/agents/geo-session-state.ts";
 import { clearOnPageStorage } from "../../lib/on-page-checker/storage.ts";
 
 /** Web Storage can throw on access alone; a refusal is the same as empty. */
@@ -36,5 +37,12 @@ export async function signOut(): Promise<void> {
     readableStorage("localStorage"),
     readableStorage("sessionStorage"),
   );
+  // The GEO report is the previous person's paid output, and it restores itself
+  // on mount. The reload below would otherwise put it straight back on screen
+  // for whoever is at this keyboard now. Named explicitly rather than swept by
+  // prefix: this list is only as good as the person adding the next feature
+  // remembering it, and the sign-out test names the key so a rename fails here.
+  const session = readableStorage("sessionStorage");
+  if (session !== null) clearGeoReportSession(session);
   window.location.reload();
 }
