@@ -253,3 +253,61 @@ describe("v2 Agent audit catalog", () => {
     );
   });
 });
+
+/**
+ * The inclusivity a rule executes is the inclusivity its sentence prints.
+ *
+ * This exists because fixing one instance is not fixing the class. 8.5 was
+ * published as "Below 2 MB" and executed as "at or below", and the fix — one
+ * byte subtracted from the bound — went in beside A2, which had the identical
+ * defect and the identical shape and was not touched. Both are now expressed
+ * directly, and this walks the whole catalogue so the next one cannot be a
+ * judgement call about whether anybody remembered to look.
+ */
+describe("published bounds and executed bounds agree on their edges", () => {
+  const EXCLUSIVE = /\b(?:Below|Under|Less than|Fewer than)\b/i;
+  const INCLUSIVE = /\b(?:or less|At most|or fewer|No more than|or below)\b/i;
+
+  const aggregates = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+    .flatMap((group) => group.checks)
+    .flatMap((check) =>
+      check.issueRules
+        .filter((rule) => rule.kind === "aggregate-max")
+        .map((rule) => ({ id: check.id, threshold: check.threshold.en, rule })),
+    );
+
+  it("covers the checks this guard is supposed to reach", () => {
+    // A guard over an empty list is not a guard. If the rule table stops using
+    // `aggregate-max`, this number moves and someone reads this comment.
+    expect(aggregates.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("uses an exclusive bound wherever the sentence says below", () => {
+    for (const entry of aggregates) {
+      if (!EXCLUSIVE.test(entry.threshold)) continue;
+      expect(
+        { id: entry.id, passBelow: entry.rule.passBelow },
+        `${entry.id} publishes "${entry.threshold}"`,
+      ).toEqual({ id: entry.id, passBelow: expect.any(Number) });
+    }
+  });
+
+  it("uses an inclusive bound wherever the sentence says at most", () => {
+    for (const entry of aggregates) {
+      if (!INCLUSIVE.test(entry.threshold)) continue;
+      expect(
+        { id: entry.id, passAtOrBelow: entry.rule.passAtOrBelow },
+        `${entry.id} publishes "${entry.threshold}"`,
+      ).toEqual({ id: entry.id, passAtOrBelow: expect.any(Number) });
+    }
+  });
+
+  it("never leaves a rule with both bounds or neither", () => {
+    for (const entry of aggregates) {
+      const set = [entry.rule.passAtOrBelow, entry.rule.passBelow].filter(
+        (bound) => bound !== undefined,
+      );
+      expect(set, `${entry.id}`).toHaveLength(1);
+    }
+  });
+});

@@ -467,7 +467,11 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "abandoned_url_impression_share",
       kind: "aggregate-max",
       label: "abandoned_url_impression_share",
-      passAtOrBelow: 0.05,
+      // Published as "Below 5%", so exactly five percent is on the failing
+      // side. The share is `goneImpressions / totalImpressions`, a ratio of
+      // two integers, so exactly 0.05 is not a measure-zero curiosity — fifty
+      // abandoned impressions in a thousand hits it exactly.
+      passBelow: 0.05,
       failAbove: 0.2,
     },
   ],
@@ -476,10 +480,11 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "page_total_transfer_bytes",
       kind: "aggregate-max",
       label: "total_transfer_bytes",
-      // The published sentence is "Below 2MB", so exactly 2MB is on the
-      // failing side. `passAtOrBelow` compares with <=, so the pass mark is
-      // one byte under the budget rather than the budget itself.
-      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES - 1,
+      // Published as "Below 2 MB", so exactly 2 MB is on the failing side.
+      // This used to be written as `PAGE_WEIGHT_BUDGET_BYTES - 1` because the
+      // rule could only express an inclusive bound; the bound now says what
+      // the sentence says.
+      passBelow: PAGE_WEIGHT_BUDGET_BYTES,
     },
   ],
   "8.1": [
