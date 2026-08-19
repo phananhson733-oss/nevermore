@@ -29,10 +29,7 @@ import { SERP_LANGUAGES, SERP_LOCATIONS } from "./serp-markets.ts";
  * re-exported here: this is where the enforcement lives, and the tests that
  * pin the enforcement read the list from the module that enforces it.
  */
-export {
-  SERP_LANGUAGES,
-  SERP_LOCATIONS,
-} from "./serp-markets.ts";
+export { SERP_LANGUAGES, SERP_LOCATIONS } from "./serp-markets.ts";
 
 /** Results read back. One page, because that is what "page one" means. */
 const SERP_DEPTH = 10;
@@ -72,10 +69,20 @@ export function hostKey(value: string): string | null {
   return null;
 }
 
-/** One line per paid call, so the spend can be summed out of the logs. */
-function logProviderCost(usd: number, market: string, query: string): void {
+/**
+ * One line per paid call, so the spend can be summed out of the logs.
+ *
+ * `unknown` rather than `0` when the provider did not state a cost: the call
+ * was still made and still billed, and a zero here would quietly balance an
+ * invoice that does not balance.
+ */
+function logProviderCost(
+  usd: number | null,
+  market: string,
+  query: string,
+): void {
   console.info(
-    `[serp-landscape] paid_call cost_usd=${usd} market=${market} query_units=${
+    `[serp-landscape] paid_call cost_usd=${usd ?? "unknown"} market=${market} query_units=${
       [...query].length
     }`,
   );
@@ -100,8 +107,17 @@ export interface SerpLandscapeDependencies {
    * that talks to DataForSEO. A log line is enough to sum from; a ledger row
    * would put provider cost in a table whose subject is user credits.
    */
-  readonly onCost?: (usd: number, market: string, query: string) => void;
-  /** Injected in tests so no suite ever reaches a paid endpoint. */
+  readonly onCost?: (usd: number | null, market: string, query: string) => void;
+  /**
+   * The traffic estimator. Injected in tests to keep the call observable.
+   *
+   * Injection is NOT what keeps a suite off the paid endpoint — this comment
+   * used to claim it was, while three test files reached this line without
+   * injecting anything and the empty-string credential default still produced
+   * a valid Basic header. What keeps a suite off the endpoint is the credential
+   * guard inside `bulkTrafficEstimation`, because that one cannot be forgotten
+   * by a test author who does not know this seam exists.
+   */
   readonly estimateTraffic?: typeof bulkTrafficEstimation;
 }
 
@@ -254,7 +270,9 @@ export async function readSerpLandscape(
     }
     return {
       availability: "unavailable",
-      reason: notConfigured ? "provider_not_configured" : "provider_unavailable",
+      reason: notConfigured
+        ? "provider_not_configured"
+        : "provider_unavailable",
     };
   }
 }
