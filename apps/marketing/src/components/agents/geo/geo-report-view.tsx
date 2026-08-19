@@ -488,6 +488,87 @@ function SourceLandscape({
   );
 }
 
+/**
+ * Why a sample is not in the citation denominator, or what it observed.
+ *
+ * One phrase, not six chips. The full six — answered, searched, citation,
+ * mention, eligibility, recommendation — are all true and all still on the page
+ * one disclosure down; as a default they turned every sample into a row of
+ * labels and eight questions into a wall nobody reads to the end of. The
+ * disqualifying reason wins when there is one, because "we could not count
+ * this" is the fact that decides how to read the ratio above.
+ */
+function sampleOutcomeKey(
+  sample: GeoSampleV3,
+  mode: GeoQuestionObservationV3["mode"],
+): string {
+  if (sample.answerStatus !== "answered") return "answerStatus.no_usable_answer";
+  if (mode === "retrieval_probe" && sample.webSearchPerformed !== true) {
+    return "results.notSearched";
+  }
+  return `citationStatus.${sample.citationStatus}`;
+}
+
+/**
+ * One sample, one line: which try it was, what came of it, who it cited.
+ *
+ * The hosts are deduped per sample. The same page cited three times in one
+ * answer is three observations and the evidence list keeps all three, but a row
+ * whose job is "who did this answer reach for" must not repeat a name.
+ */
+function CompactSampleRow({
+  sample,
+  mode,
+  targetHost,
+}: {
+  readonly sample: GeoSampleV3;
+  readonly mode: GeoQuestionObservationV3["mode"];
+  readonly targetHost: string;
+}) {
+  const t = useTranslations("agents.geo");
+  const hosts = [
+    ...new Set(
+      sample.evidence
+        .filter(
+          (entry): entry is GeoCitationEvidenceRefV1 => entry.kind === "cited",
+        )
+        .map((entry) => entry.domain),
+    ),
+  ];
+
+  return (
+    <li
+      data-testid="geo-sample-row"
+      className="grid gap-1 border-t border-brand-border-card py-1.5 text-[11px] leading-[1.5] sm:grid-cols-[5.5rem_10rem_minmax(0,1fr)] sm:gap-2.5"
+    >
+      <span className="font-mono text-text-dark-tertiary">
+        {t("results.sampleLabel", { index: sample.sampleIndex })}
+      </span>
+      <span className="text-text-dark-secondary">
+        {t(sampleOutcomeKey(sample, mode))}
+      </span>
+      <span className="flex min-w-0 flex-wrap gap-1">
+        {hosts.length === 0 ? (
+          <span className="text-text-dark-tertiary">—</span>
+        ) : (
+          hosts.map((host) => (
+            <span
+              key={host}
+              className={`rounded-row border px-1.5 py-0.5 font-mono text-[9.5px] break-all ${
+                host === targetHost
+                  ? "border-brand-accent/50 text-brand-accent-text"
+                  : "border-brand-border-strong text-text-dark-secondary"
+              }`}
+            >
+              {host}
+            </span>
+          ))
+        )}
+      </span>
+    </li>
+  );
+}
+
 function QuestionCard({
   question,
   targetHost,
@@ -557,11 +638,33 @@ function QuestionCard({
         })}
       </p>
 
-      <ul className="mt-2">
+      <ul className="mt-2.5">
         {question.samples.map((sample) => (
-          <SampleRow key={sample.sampleId} sample={sample} />
+          <CompactSampleRow
+            key={sample.sampleId}
+            sample={sample}
+            mode={question.mode}
+            targetHost={targetHost}
+          />
         ))}
       </ul>
+
+      {/*
+        Nothing is lost, it is one click away. The exact URLs, the titles, the
+        annotation spans and the mention excerpts are what this report claims to
+        be exact about; they are also the reason a run of eight questions filled
+        several screens before a reader reached the part that says what to do.
+      */}
+      <details className="mt-2.5 min-w-0">
+        <summary className="cursor-pointer text-[11.5px] text-text-dark-secondary">
+          {t("results.sampleDetails")}
+        </summary>
+        <ul className="mt-1">
+          {question.samples.map((sample) => (
+            <SampleRow key={sample.sampleId} sample={sample} />
+          ))}
+        </ul>
+      </details>
     </li>
   );
 }
@@ -632,9 +735,26 @@ export function GeoReportView({
           {t("results.sampledAt", { date: formatDate(run.sampledAt, locale) })}
         </p>
 
-        <h3 className="mt-4 text-[12.5px] font-semibold text-text-dark-primary">
-          {t("results.identityTitle")}
-        </h3>
+        {/*
+          One line by default, ten fields one click down.
+          The ten are there because a single "provider" label would let a
+          DataForSEO answer read as if the visitor had asked ChatGPT Pro
+          themselves — collector, upstream and surface are three separate facts
+          and at least one of them is always the one a reader needs. As an
+          opening they were ten rows above the first number.
+        */}
+        <p className="mt-4 font-mono text-[11px] break-all text-text-dark-secondary">
+          {[
+            provenance.surface,
+            provenance.modelRequested,
+            provenance.webSearchCountryIsoCodeRequested,
+            formatDate(run.sampledAt, locale),
+          ].join(" · ")}
+        </p>
+        <details className="mt-2 min-w-0">
+          <summary className="cursor-pointer text-[12px] text-text-dark-secondary">
+            {t("results.identityTitle")}
+          </summary>
         <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
           {identity.map(([key, value]) => (
             <div key={key} className="text-[11.5px] leading-[1.5]">
@@ -650,7 +770,12 @@ export function GeoReportView({
         <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
           {t(`identity.${provenance.triggerCalibrationScope}`)}
         </p>
-        <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-tertiary">
+        </details>
+        {/*
+          Stays outside the disclosure. What is kept and what is not is a promise
+          to the person reading, not a detail they have to go looking for.
+        */}
+        <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-tertiary">
           {t("results.notStored")}
         </p>
       </div>
@@ -784,6 +909,15 @@ export function GeoReportView({
         targetHost={report.run.targetHost}
       />
 
+      {capture !== undefined && (
+        <GeoActionPanel
+          report={report}
+          context={capture.context}
+          querySet={capture.querySet}
+          locale={locale}
+        />
+      )}
+
       <div>
         <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
           {t("results.questionsEyebrow")}
@@ -807,15 +941,6 @@ export function GeoReportView({
           </ul>
         )}
       </div>
-
-      {capture !== undefined && (
-        <GeoActionPanel
-          report={report}
-          context={capture.context}
-          querySet={capture.querySet}
-          locale={locale}
-        />
-      )}
 
       <div className="rounded-card border border-brand-border-dashed bg-brand-panel-sunken p-5">
         <h3 className="text-[12.5px] font-semibold text-text-dark-primary">

@@ -26,6 +26,8 @@ import {
   observeToSample,
   type GeoSamplingContext,
 } from "../../../lib/agents/geo-sampling";
+import { confirmGeoContext } from "../../../lib/agents/geo-context";
+import { buildGeoCoreQuerySet } from "../../../lib/agents/geo-questions";
 import { GeoReportView } from "./geo-report-view";
 
 const ALIASES: readonly GeoConfirmedAliasV1[] = [
@@ -390,6 +392,112 @@ describe("GeoReportView", () => {
 
     expect(numberUnder("Never searched")).toBe("3");
     expect(numberUnder("Attempted")).toBe("4");
+  });
+
+  it("puts the per-question detail after the solutions, not before them", async () => {
+    // Eight questions at three samples each filled several screens before a
+    // reader reached the part that says what to do. The evidence is the proof,
+    // not the point. Rendered WITH the capture, because without it the
+    // solutions panel is absent and the assertion would be about two other
+    // sections entirely.
+    const report = await buildReport();
+    const confirmed = await confirmGeoContext(
+      {
+        targetUrl: "https://acme.test/",
+        productName: "Acme Analytics",
+        brandAliases: [
+          {
+            alias: "Acme Analytics",
+            source: "profile_product_name",
+            confirmed: true,
+          },
+        ],
+        category: "seo",
+        categoryConfirmed: true,
+        buyer: "ceo",
+        user: "",
+        jtbd: "",
+        useCases: [],
+        outcomes: [],
+        barriers: [],
+        directCompetitors: [],
+        indirectAlternatives: [],
+        marketCode: "US",
+        targetQueryLanguage: "en",
+        sourceProfileVersion: "geo-context.local.v1",
+        sourceSummary: [
+          { field: "category", source: "user_edit", limitationCode: null },
+        ],
+      },
+      () => new Date("2026-08-19T09:00:00.000Z"),
+    );
+    if (!confirmed.ok) throw new Error("fixture context");
+    const built = await buildGeoCoreQuerySet(
+      confirmed.snapshot,
+      () => new Date("2026-08-19T09:00:00.000Z"),
+    );
+    if (!built.ok) throw new Error("fixture query set");
+
+    act(() => {
+      root.render(
+        <NextIntlClientProvider
+          locale="en"
+          timeZone="UTC"
+          messages={{ agents: en.agents }}
+        >
+          <GeoReportView
+            report={report}
+            capture={{
+              context: confirmed.snapshot,
+              querySet: built.querySet,
+            }}
+            locale="en"
+            onRestart={() => undefined}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("What to do about it");
+    expect(text.indexOf("What this run reached")).toBeLessThan(
+      text.indexOf("What this run found"),
+    );
+    expect(text.indexOf("What to do about it")).toBeLessThan(
+      text.indexOf("Question by question"),
+    );
+    // And the caveats still close the report.
+    expect(text.indexOf("Question by question")).toBeLessThan(
+      text.indexOf("What this cannot tell you"),
+    );
+  });
+
+  it("shows one line per sample and keeps the exact evidence one click down", async () => {
+    render(await buildReport());
+
+    // The compact row: which try, what came of it, which hosts.
+    const rows = host.querySelectorAll('[data-testid="geo-sample-row"]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(host.textContent).toContain("Sample 1");
+    // Nothing was dropped to get there — the exact URL is still rendered,
+    // inside the disclosure.
+    expect(host.textContent).toContain("Open this question's full evidence");
+    expect(
+      [...host.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    ).toContain("https://acme.test/pricing?utm_source=openai");
+  });
+
+  it("names why a sample could not be counted rather than six labels", async () => {
+    // A probe that never searched is out of the denominator, and that is the
+    // fact that decides how to read the ratio above it.
+    render(await buildReport({ searched: false }));
+    const compact = [...host.querySelectorAll('[data-testid="geo-sample-row"]')]
+      .map((row) => row.textContent ?? "")
+      .join("\n");
+
+    expect(compact).toContain("No web search");
+    // The full six are still available, just not the default.
+    expect(compact).not.toContain("Recommendation not evaluated");
   });
 
   it("keeps retrieval and natural-demand denominators apart", async () => {
