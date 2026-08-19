@@ -81,7 +81,7 @@ export type ImageWeightReadResult =
  * answer HEAD with no `Content-Length`, and a CDN that negotiates format by
  * `Accept` can answer HEAD about a different variant than it would send.
  */
-async function weigh(url: string): Promise<ImageWeightRaw | null> {
+async function weigh(url: string): Promise<WeighOutcome> {
   let result;
   try {
     result = await fetchPublicResource(url, {
@@ -89,21 +89,59 @@ async function weigh(url: string): Promise<ImageWeightRaw | null> {
       maxBodyBytes: IMAGE_TRANSFER_BUDGET_BYTES,
     });
   } catch {
-    return null;
+    return { spentBytes: 0, measured: null };
   }
-  if (result.kind !== "ok") return null;
+  if (result.kind !== "ok") return { spentBytes: 0, measured: null };
+  // Every byte that arrived counts against the run, whatever the response
+  // turned out to be. The transport reads the bounded body before the status
+  // is inspected, so a page pointing twenty-five `<img>` at a host that answers
+  // 500 with a 200 KB body transferred five megabytes while the ledger stayed
+  // at zero — against a three-megabyte cap whose whole claim is that the cost
+  // of a run is fixed no matter what the page declares.
+  const spentBytes = result.bytes;
   // A redirect to an error page, or an origin answering 404 with a body, is not
   // an image weight. Only a page that served the thing is measured.
-  if (result.finalStatus < 200 || result.finalStatus >= 300) return null;
+  if (result.finalStatus < 200 || result.finalStatus >= 300) {
+    return { spentBytes, measured: null };
+  }
+  // Nor is an HTML error page served with a 200. Without this a page can
+  // declare `<img src="/missing">`, answer with a two-kilobyte soft error, and
+  // have it measured as a healthy small image — and if every declared image
+  // does it, the set is called complete and 5.2 passes a page on which no
+  // image was ever served.
+  if (!isImageContentType(result.contentType)) {
+    return { spentBytes, measured: null };
+  }
   return {
-    url,
-    transferredBytes: result.bytes,
-    // False means the cap cut it short, which is exactly "at least the budget".
-    complete: result.bodyComplete,
+    spentBytes,
+    measured: {
+      url,
+      transferredBytes: result.bytes,
+      // False means the cap cut it short, which is exactly "at least the budget".
+      complete: result.bodyComplete,
+    },
   };
 }
 
-/** Runs `weigh` over the list, `CONCURRENCY` at a time, in order. */
+export interface WeighOutcome {
+  /** Bytes this attempt pulled over the wire, measurable or not. */
+  readonly spentBytes: number;
+  readonly measured: ImageWeightRaw | null;
+}
+
+/**
+ * Whether the response the origin actually served is an image.
+ *
+ * A missing type is accepted: plenty of origins serve images without one, and
+ * refusing them would report "cannot judge" on sites whose images are fine. A
+ * type that is present and says something else is refused, because that is the
+ * origin telling us it sent something other than an image.
+ */
+function isImageContentType(contentType: string | null): boolean {
+  if (contentType === null) return true;
+  return /^\s*image\//i.test(contentType);
+}
+
 /**
  * Runs `weigh` over the list, `CONCURRENCY` at a time, stopping at the budget.
  *
@@ -118,41 +156,61 @@ async function weigh(url: string): Promise<ImageWeightRaw | null> {
  */
 async function weighAll(
   urls: readonly string[],
-): Promise<readonly ImageWeightRaw[]> {
+  fetchOne: (url: string) => Promise<WeighOutcome> = weigh,
+): Promise<{
+  readonly images: readonly ImageWeightRaw[];
+  /** True when the byte ceiling stopped the run before the list ran out. */
+  readonly stoppedAtBudget: boolean;
+}> {
   const out: ImageWeightRaw[] = [];
   let spent = 0;
+  let stoppedAtBudget = false;
   for (let start = 0; start < urls.length; start += CONCURRENCY) {
-    if (spent >= MAX_RUN_TRANSFER_BYTES) break;
+    if (spent >= MAX_RUN_TRANSFER_BYTES) {
+      stoppedAtBudget = true;
+      break;
+    }
     const batch = await Promise.all(
-      urls.slice(start, start + CONCURRENCY).map((url) => weigh(url)),
+      urls.slice(start, start + CONCURRENCY).map((url) => fetchOne(url)),
     );
-    for (const measured of batch) {
-      if (measured === null) continue;
-      spent += measured.transferredBytes;
-      out.push(measured);
+    for (const outcome of batch) {
+      // Charged whether or not it produced a measurement. The ledger used to
+      // move only on success, so every byte spent on a 4xx, a 5xx or a
+      // non-image was invisible to the cap that exists to bound exactly that.
+      spent += outcome.spentBytes;
+      if (outcome.measured !== null) out.push(outcome.measured);
     }
   }
-  return out;
+  return { images: out, stoppedAtBudget };
 }
 
-export function createImageWeightReader(options: {
-  readonly weighImage?: (url: string) => Promise<ImageWeightRaw | null>;
-} = {}): (input: {
+export function createImageWeightReader(
+  options: {
+    /**
+     * The single-image transport, injected in tests.
+     *
+     * Deliberately the leaf and not the whole measurement. The seam used to
+     * replace `weighAll` itself, so every test bypassed the batching, the
+     * concurrency limit, the byte ceiling and `weigh`'s own status and
+     * content-type handling — the branch production actually takes, since the
+     * handler constructs this reader with no arguments. Throwing on the first
+     * line of `weighAll` left the whole suite green. Stubbing one fetch keeps
+     * the code under test the code that ships.
+     */
+    readonly weighImage?: (url: string) => Promise<WeighOutcome>;
+  } = {},
+): (input: {
   readonly sources: readonly string[];
 }) => Promise<ImageWeightReadResult> {
-  const measure = options.weighImage;
-
   return async ({ sources }) => {
     const bounded = sources.slice(0, MAX_IMAGES_MEASURED);
     if (bounded.length === 0) {
       return { status: "unavailable", reason: "no_images_declared" };
     }
-    const images =
-      measure === undefined
-        ? await weighAll(bounded)
-        : (
-            await Promise.all(bounded.map((url) => measure(url)))
-          ).filter((entry): entry is ImageWeightRaw => entry !== null);
+    const { images, stoppedAtBudget } = await weighAll(
+      bounded,
+      options.weighImage,
+    );
 
     // Not a pass. Every fetch failing means we learned nothing about this
     // page's images, and reporting "no image is over budget" would be a claim
@@ -163,7 +221,14 @@ export function createImageWeightReader(options: {
     return {
       status: "ok",
       images,
-      // Every declared image was reachable AND the list was not truncated.
+      // One condition, because it already covers all three ways an image can
+      // go unlooked-at: the count cap truncating the list, the byte ceiling
+      // ending the run, and an individual fetch coming back unusable each
+      // leave fewer measurements than the page declared. Spelling the other
+      // two out separately reads as extra protection and cannot change the
+      // answer — a run stopped by the ceiling has always fetched fewer than it
+      // was given. `stoppedAtBudget` is returned for the caller's benefit, not
+      // consulted here.
       complete: images.length === sources.length,
     };
   };
