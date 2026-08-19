@@ -1028,7 +1028,8 @@
         "not_every_declared_image_could_be_weighed_this_run": "Some images this page declares were not weighed - off-origin, unreachable, or past the per-run cap - so no clean verdict is given. A page can still fail here: one oversized image is proof.",
         "not_every_page_one_domain_could_be_sized_this_run": "The traffic provider returned nothing for at least one page-one domain, so 'nobody here is small' cannot be stated. Finding a small site would still have been decisive.",
         "too_few_of_this_propertys_impressions_landed_on_crawled_pages_to_judge": "Most of this property's reported impressions are on URLs this crawl never reached, so the share would be computed over the pages that happen to still be linked - exactly the ones that are not abandoned.",
-        "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "Some pages had so many similar siblings that they could not all be compared exactly, so those pages are reported as not scored rather than as distinct. A duplicate that was found is still reported."
+        "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly": "Some pages had so many similar siblings that they could not all be compared exactly, so those pages are reported as not scored rather than as distinct. A duplicate that was found is still reported.",
+        "this_sitemap_declares_more_urls_than_one_run_can_ask_google_about": "This site's sitemap declares more URLs than one audit run can ask Google about within its time budget, so no index coverage rate is published. Nothing was spent against the property's inspection quota."
       },
       "records": {
         "robots_resource": {

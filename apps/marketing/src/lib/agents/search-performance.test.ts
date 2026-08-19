@@ -7,6 +7,9 @@ import type { SeoAuditReport } from "@sf/public-tools";
 import type { SearchPerformanceRaw } from "@sf/public-tools/seo-audit/search-performance";
 
 import type { GrantResolution } from "../auth/grant-cookie.ts";
+import { maxCensusUrls } from "@sf/sources/gsc/url-inspection";
+import { SITEMAP_URLS_PUBLISHED_CAP } from "@sf/public-tools/seo-audit/types";
+
 import { readAgentSearchPerformance } from "./search-performance.ts";
 
 function page(url: string): SeoAuditReport["pages"][number] {
@@ -172,5 +175,37 @@ describe("readAgentSearchPerformance", () => {
         },
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * The two numbers that decide whether A1 can ever publish.
+ *
+ * `SITEMAP_URLS_PUBLISHED_CAP` bounds what the cached payload carries;
+ * `maxCensusUrls` bounds what one run can ask Google about inside its budget.
+ * They were set independently, so a 500-URL cap sat above a budget that
+ * reaches about three hundred, and every site in between burned three hundred
+ * calls of a shared per-site quota to be told the run did not finish.
+ *
+ * They are allowed to differ — the payload bound exists for a different reason
+ * — but the gap has to be a decision someone made, not one that appeared. This
+ * fails if the publication cap is raised without the census budget moving with
+ * it.
+ */
+describe("the census ceiling and the publication cap", () => {
+  const CENSUS_BUDGET_MS = 60_000;
+
+  it("still refuses more than one run can ask about, and says so rather than spending", () => {
+    expect(maxCensusUrls(CENSUS_BUDGET_MS)).toBe(300);
+    expect(SITEMAP_URLS_PUBLISHED_CAP).toBe(500);
+  });
+
+  it("keeps the publication cap from silently outgrowing the census", () => {
+    // Raising the cap alone widens the band of sites that get "declares more
+    // URLs than one run can ask Google about" — an honest sentence, but one
+    // nobody chose. Raise the budget with it, or move this number knowingly.
+    expect(SITEMAP_URLS_PUBLISHED_CAP).toBeLessThanOrEqual(
+      maxCensusUrls(CENSUS_BUDGET_MS) * 2,
+    );
   });
 });

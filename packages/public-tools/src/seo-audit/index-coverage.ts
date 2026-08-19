@@ -26,7 +26,8 @@ export type IndexCoverageGap =
   | "no_sitemap_urls_declared"
   | "quota_exhausted"
   | "not_authorized"
-  | "provider_unavailable";
+  | "provider_unavailable"
+  | "census_larger_than_one_run";
 
 const GAP_LIMITATION: Readonly<Record<IndexCoverageGap, string>> = {
   source_not_configured: "no_index_status_source_was_configured_for_this_run",
@@ -36,6 +37,8 @@ const GAP_LIMITATION: Readonly<Record<IndexCoverageGap, string>> = {
   quota_exhausted: "the_propertys_url_inspection_quota_was_already_spent",
   not_authorized: "this_grant_does_not_cover_url_inspection_for_this_property",
   provider_unavailable: "the_index_status_source_did_not_finish_this_run",
+  census_larger_than_one_run:
+    "this_sitemap_declares_more_urls_than_one_run_can_ask_google_about",
 };
 
 /**
