@@ -14,7 +14,8 @@
     "./public-http": "./src/public-http/index.ts",
     "./url-safety": "./src/url-safety/index.ts",
     "./gsc/url-inspection": "./src/gsc/url-inspection.ts",
-    "./dataforseo/labs-traffic": "./src/dataforseo/labs-traffic.ts"
+    "./dataforseo/labs-traffic": "./src/dataforseo/labs-traffic.ts",
+    "./crawl-limits": "./src/crawl/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

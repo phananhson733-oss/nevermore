@@ -1,4 +1,8 @@
-import { CRAWL_PROJECTION_LIMITS } from "@sf/sources";
+// The narrow subpath, never the `@sf/sources` barrel. This module is reachable
+// from the client bundle, and the barrel drags the crawler in with it — which
+// puts `node:net` in a browser chunk and fails `pnpm build` with an error that
+// names a different file. Unit tests and typecheck both stay green.
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources/crawl-limits";
 
 import { SITEMAP_URLS_PUBLISHED_CAP } from "./types.ts";
 
