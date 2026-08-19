@@ -212,6 +212,66 @@ describe("GeoWorkbench", () => {
     expect(button("Run 18 provider calls")).toBeDefined();
   });
 
+  it("says what each wording was not calibrated against, before the run button", async () => {
+    // The registry has recorded these codes since it was written and nothing
+    // read them. The alternatives probe substitutes the visitor's competitor
+    // into a sentence measured with "semrush", and it is the only retrieval
+    // probe with no currency cue to fall back on — a fact the visitor was
+    // paying eighteen calls without ever being shown.
+    await confirmContext();
+
+    // Scoped to the row it belongs to. `brand_comparison` carries the same code,
+    // so a page-wide substring match passes with the alternatives probe's own
+    // record removed — which is exactly the assertion this test replaces.
+    const rowFor = (value: string): string => {
+      const input = [
+        ...host.querySelectorAll<HTMLInputElement>('input[id^="geo-q-"]'),
+      ].find((entry) => entry.value === value);
+      return input?.closest("li")?.textContent ?? "";
+    };
+    const alternatives = rowFor("Best alternatives to semrush for seo");
+    expect(alternatives).not.toBe("");
+    expect(alternatives).toContain(
+      "Calibration substituted a name the model almost certainly knows",
+    );
+    expect(alternatives).toContain("only calibrated on software categories");
+    expect(alternatives).toContain("Calibrated on few samples");
+
+    // And the probe that substitutes no name does not claim that gap.
+    const topTools = rowFor("What are the top seo tools right now?");
+    expect(topTools).not.toBe("");
+    expect(topTools).not.toContain(
+      "Calibration substituted a name the model almost certainly knows",
+    );
+  });
+
+  it("refuses a category that is only a kind of product", async () => {
+    render();
+    await act(async () => {
+      setValue(field("geo-url"), "acme.test");
+      setValue(field("geo-product"), "Acme Analytics");
+      setValue(field("geo-category"), "tools");
+      setValue(field("geo-buyer"), "ceo");
+      setValue(host.querySelector<HTMLSelectElement>("#geo-market")!, "US");
+    });
+    await act(async () => {
+      button("Review the facts")!.click();
+    });
+    await act(async () => {
+      host.querySelector<HTMLInputElement>('input[id^="geo-alias-"]')!.click();
+      host.querySelector<HTMLInputElement>("#geo-category-confirm")!.click();
+    });
+    await act(async () => {
+      button("Confirm and generate the questions")!.click();
+    });
+    await flush();
+
+    // Refused at the confirm step rather than discovered in a report built from
+    // "What are the top tools right now?".
+    expect(host.textContent).toContain("are kinds of product, not categories");
+    expect(host.querySelectorAll('input[id^="geo-q-"]')).toHaveLength(0);
+  });
+
   it("marks the question that already contains the customer's own brand", async () => {
     await confirmContext();
 

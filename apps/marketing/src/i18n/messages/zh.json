@@ -3579,7 +3579,8 @@
         "unknown_query": "该问题已不在本组问题里。",
         "template_unavailable": "其中一个槽位没有可用的已标定措辞。",
         "placeholder_rejected": "你填的某个值放不进已标定的措辞。请缩短成一个普通名词短语。",
-        "question_not_payable": "有一句问题超过 provider 接受的长度，请缩短。"
+        "question_not_payable": "有一句问题超过 provider 接受的长度，请缩短。",
+        "category_has_no_subject": "「工具」「软件」「平台」是一类产品，不是品类。每个问题都会拼成「你的品类 + tools」，只填产品名词会生成「What are the top tools right now?」——一个没有主语的问题。请填你所在的领域，比如「SEO 报告」「AI 可见度追踪」。"
       },
       "slots": {
         "category_discovery": "品类发现",
@@ -3608,7 +3609,12 @@
         "promptedBrand": "含你的品牌名",
         "measured": "已实测措辞",
         "demoted": "已编辑 · 非实测",
-        "triggerClause": "已登记的时效性证据子句：「{clause}」。"
+        "triggerClause": "已登记的时效性证据子句：「{clause}」。",
+        "calibration": {
+          "software_category_only": "这条措辞只在软件类品类上标定过。",
+          "single_seed_grandfathered": "标定样本较少（3–6 次），按当时的门槛记录并沿用。",
+          "substituted_name_differs_from_seed": "标定时代入的是模型几乎必然认识的名字；换成你自己的名字，这条措辞没有被测量过。"
+        }
       },
       "plan": {
         "title": "本轮会做什么",

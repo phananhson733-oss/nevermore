@@ -12,6 +12,7 @@ import type {
   GeoQuerySetV1,
   GeoQueryUnitV1,
 } from "../../../lib/agents/geo-query-contract";
+import { findGeoTemplate } from "../../../lib/agents/geo-template-registry";
 import { geoPlannedCallCount } from "../../../lib/agents/geo-query-contract";
 
 const FIELD_CLASS =
@@ -57,6 +58,19 @@ function QueryRow({
   const t = useTranslations("agents.geo");
   const prompted = promptContainsTargetAlias(query.text, context.brandAliases);
   const measured = query.templateId !== null && query.source !== "user_edit";
+  /**
+   * The shipped template's own record of what it was not measured against.
+   *
+   * Read from the registry rather than carried on the query, because the query
+   * is a rendered string and this is a property of the wording it came from. An
+   * edited query has no template and therefore no calibration to qualify — the
+   * `demoted` chip already says the stronger thing about it.
+   */
+  const calibrationGaps =
+    query.templateId === null || query.templateVersion === null || !measured
+      ? []
+      : (findGeoTemplate(query.templateId, query.templateVersion)?.limitations ??
+        []);
 
   return (
     <li className="grid gap-2 border-t border-brand-border-card py-3 first:border-t-0">
@@ -92,6 +106,25 @@ function QueryRow({
         <p className="text-[11px] leading-[1.55] text-text-dark-tertiary">
           {t("queries.triggerClause", { clause: query.retrievalTriggerClause })}
         </p>
+      )}
+      {/*
+        What the calibration behind this wording does not cover, on the screen
+        where the visitor decides whether to pay for it. The registry has
+        recorded these codes since it was written and nothing read them, so a
+        measurement whose seeds used a famous competitor and a visitor whose
+        competitor is not famous looked identical right up to the report.
+      */}
+      {calibrationGaps.length > 0 && (
+        <ul className="grid gap-0.5">
+          {calibrationGaps.map((code) => (
+            <li
+              key={code}
+              className="text-[11px] leading-[1.55] text-text-dark-tertiary"
+            >
+              {t(`queries.calibration.${code}`)}
+            </li>
+          ))}
+        </ul>
       )}
     </li>
   );
