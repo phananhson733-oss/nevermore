@@ -280,7 +280,10 @@ export function GeoActionPanel({
   return (
     <>
       <section className={CARD_CLASS}>
-        <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
+          {t("solutions.problemsEyebrow")}
+        </p>
+        <h3 className="mt-1 text-[14px] font-semibold text-text-dark-primary">
           {t("solutions.problemsTitle")}
         </h3>
         <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">
@@ -314,7 +317,10 @@ export function GeoActionPanel({
       </section>
 
       <section>
-        <h3 className="text-[14px] font-semibold text-text-dark-primary">
+        <p className="font-mono text-[10px] tracking-[0.06em] text-text-dark-tertiary uppercase">
+          {t("solutions.solutionsEyebrow")}
+        </p>
+        <h3 className="mt-1 text-[14px] font-semibold text-text-dark-primary">
           {t("solutions.title")}
         </h3>
         <p className="mt-1 text-[11.5px] leading-[1.55] text-text-dark-secondary">

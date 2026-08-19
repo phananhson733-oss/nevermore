@@ -208,6 +208,14 @@ describe("GeoReportView", () => {
     host.remove();
   });
 
+  /** The overview figure printed under a given label. */
+  function numberUnder(label: string): string | undefined {
+    const term = [...host.querySelectorAll("dt")].find(
+      (node) => node.textContent?.trim() === label,
+    );
+    return term?.parentElement?.querySelector("dd")?.textContent?.trim();
+  }
+
   function render(report: GeoReportDataV3): void {
     act(() => {
       root.render(
@@ -342,6 +350,48 @@ describe("GeoReportView", () => {
     expect(questionLine).toContain("Never searched");
   });
 
+  it("opens with four numbers, and counts never-searched over probes alone", async () => {
+    // The fixture: one retrieval probe of three samples where the middle one
+    // never searched, plus a one-shot natural-demand question. A run-level
+    // "never searched" would be tempted to count the natural-demand answer,
+    // which was never expected to search — reporting a working instrument as a
+    // broken one. It is counted over probes and says so.
+    render(await buildReport());
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("Current ChatGPT snapshot");
+    expect(text).toContain("Attempted");
+    expect(text).toContain("Observed");
+    expect(text).toContain("Never searched");
+    expect(text).toContain("Retrieval probes only");
+    // The number, not only the label. This fixture has three probe samples
+    // that all searched and one natural-demand answer that did not, so the
+    // honest count is zero — and a run-level subtraction would print one.
+    expect(numberUnder("Never searched")).toBe("0");
+    expect(numberUnder("Attempted")).toBe("4");
+    expect(numberUnder("Observed")).toBe("4");
+    // The four boundaries are beside the numbers, not only at the foot of the
+    // page where a caveat is read after the number it qualifies.
+    expect(text).toContain("Unavailable is not zero");
+    expect(text).toContain("Citation is not recommendation");
+    expect(text).toContain("No overall number");
+    // The per-mode tables are still on the page, one disclosure down: the two
+    // denominators are the reason this report exists.
+    expect(text).toContain("See the per-mode detail");
+    expect(text).toContain("Citations · retrieval probes");
+    expect(text).toContain("Citations · natural demand");
+  });
+
+  it("counts a probe that never searched, and still ignores the one-shot question", async () => {
+    // The mirror fixture: now the three probe samples are the ones that did not
+    // search. Three, not four — the natural-demand answer never searched either
+    // and was never expected to.
+    render(await buildReport({ searched: false }));
+
+    expect(numberUnder("Never searched")).toBe("3");
+    expect(numberUnder("Attempted")).toBe("4");
+  });
+
   it("keeps retrieval and natural-demand denominators apart", async () => {
     render(await buildReport());
     const text = host.textContent ?? "";
@@ -395,6 +445,18 @@ describe("GeoReportView", () => {
     expect(host.textContent).toContain("Degraded run");
     expect(host.textContent).toContain("instrumentation failure");
     expect(host.textContent).toContain("Never searched");
+    // The state is on the overview too, where it is read before any number
+    // below it. The banner is the reason; this is the one word for it.
+    expect(host.textContent).toContain("Partially available");
+    expect(host.textContent).not.toContain("Fully available");
+  });
+
+  it("calls a clean run fully available", async () => {
+    render(await buildReport());
+
+    expect(host.textContent).toContain("Fully available");
+    expect(host.textContent).not.toContain("Partially available");
+    expect(host.textContent).not.toContain("Degraded run");
   });
 
   it("keeps a trigger-failed probe out of the citation denominator", async () => {
