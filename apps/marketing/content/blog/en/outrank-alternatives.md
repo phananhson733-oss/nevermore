@@ -49,7 +49,7 @@ That is a different purchase. You are buying recurring site-level analysis, not 
 
 ### Where We Are Not an Alternative
 
-Our own tools do not generate, schedule or publish articles, so if the thirty-a-month output is why you subscribed to Outrank, nothing on our side replaces it and you should stay on a production tool. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data — it states plainly that its report does not claim Search Console, traffic or ranking data, and that 24 of its 81 catalogue checks are decided by what that crawl can see. Naming that boundary is more useful to you than pretending the categories overlap.
+Our own tools do not generate, schedule or publish articles, so if the thirty-a-month output is why you subscribed to Outrank, nothing on our side replaces it and you should stay on a production tool. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data. If you have connected a Search Console property that covers the site, the report can add search-performance and sitemap index-status evidence; without that connection it claims no traffic or ranking data. Each run reports which catalogue checks its supplied inputs evaluated and which were excluded. Naming that boundary is more useful to you than pretending the categories overlap.
 
 ## Common Misreadings When Comparing These Tools
 

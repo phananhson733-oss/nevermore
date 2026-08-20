@@ -49,7 +49,7 @@ function sourceFiles(directory: string): readonly string[] {
  * product name of its own re-creates the choice we removed. A blacklist of
  * sentences is worked around by writing a new sentence; a banned name is not.
  *
- * The route itself stays reachable and stays in the header — as a focus.
+ * The route itself stays reachable from the hub, below the peer Agent cards.
  */
 const RETIRED_PRODUCT_NAME = "Tech Agent";
 

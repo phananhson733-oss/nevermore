@@ -370,11 +370,13 @@
       "step4Desc": "带负责人、状态与依赖关系的 30/60/90 计划。"
     },
     "capabilities": {
-      "eyebrow": "一个 Agent，两个焦点",
-      "title": "选择与你的问题匹配的审查",
-      "subtitle": "一个 URL 输入、一次运行、一份结果。内容检查与技术检查是同一次审查在同一批抓取上的两个焦点，不是两个各自维护状态的产品。",
+      "eyebrow": "SEO 与 GEO Agents",
+      "title": "按问题选择需要的证据",
+      "subtitle": "用 SEO Agent 检查公开页面与抓取证据；用 GEO Agent 观察 AI 回答是否引用你的站点。",
       "seoTitle": "SEO Agent",
       "seoDesc": "审查已采集公开 HTML 中的元数据、标题结构与结构化数据状态。",
+      "geoTitle": "GEO Agent",
+      "geoDesc": "把买家真正会问的问题交给 AI，并查看回答引用了哪些来源，同时保留每个分母。",
       "techTitle": "技术焦点",
       "techDesc": "在有边界的抓取中审查响应、静态可索引指令与内链状态。",
       "accountRequired": "需要已验证账号",
@@ -384,7 +386,7 @@
       "linksTitle": "内链审计",
       "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
       "cardCta": "打开 Agent",
-      "viewAll": "打开 SEO Agent"
+      "viewAll": "查看全部 Agents"
     },
     "socialProof": {
       "title": "SEO 建议应当展示它的推导过程",
@@ -3974,7 +3976,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "不保存到项目",
-      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。只有你已连接的 Search Console 资源才会出现搜索表现数据；未连接时报告不声称任何流量或排名数据。",
+      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，用于解释发现并组织选中方案；它不参与建议排序。只有你已连接的 Search Console 资源才会出现搜索表现数据；未连接时报告不声称任何流量或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "从 URL 到检查结论的有界路径",
       "howBody": "Agent 将已采集证据、无法核验项和可调整建议分开呈现，不会把限制误写成通过或评分。",
@@ -3983,9 +3985,9 @@
       "step2Title": "检查公开 HTML",
       "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "整个目录共 {total} 项检查；其中 {decided} 项在当前已支持输入组合下接有检测器，{sourceGated} 项还需要已连接的 Search Console 资源。单次运行只评估其实际收到的上下文与已连接数据源所支持的检查；结果页的已评估与已排除数量才是该次运行的事实。限制永远不会变成通过。",
       "step4Title": "审阅选中的 SEO 方案",
-      "step4Body": "结合证据和已确认的搜索上下文确定优先级，再检查页面级变更与验证计划，但不会自动应用。",
+      "step4Body": "建议依次按结果严重度、本次运行证据、检查归属的 Agent 和已观测触达范围排序。已确认搜索上下文用于解释发现与组织选中方案，不会重排建议；方案不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
     },
     "tech": {
@@ -4008,10 +4010,10 @@
       "step2Title": "检查有边界响应",
       "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
       "step3Title": "看清本次抓取能判定什么",
-      "step3Body": "目录共 {total} 项检查，其中 {decided} 项本次运行有检测器可用，这些里又有 {sourceGated} 项还需要你已连接的 Search Console 资源。其余保持列出并标记为已排除，各自说明还缺哪个数据源。限制永远不会变成通过。",
+      "step3Body": "整个目录共 {total} 项检查；其中 {decided} 项在当前已支持输入组合下接有检测器，{sourceGated} 项还需要已连接的 Search Console 资源。单次运行只评估其实际收到的上下文与已连接数据源所支持的检查；结果页的已评估与已排除数量才是该次运行的事实。限制永远不会变成通过。",
       "step4Title": "审阅选中的技术方案",
       "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
-      "finalBoundary": "模板是可调整预览。本 Agent 不会运行 Lighthouse、不执行 JavaScript、不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
+      "finalBoundary": "模板是可调整预览。本 Agent 不会运行 Lighthouse、不执行 JavaScript，也不会编辑站点、创建 PR 或部署。"
     },
     "workbench": {
       "stage1": "阶段 01 · 目标",
@@ -4019,7 +4021,7 @@
         "stage": "阶段 01 · Product Profile",
         "seo": {
           "title": "先确认搜索上下文，再开始诊断",
-          "body": "检查产品、受众、目标查询、页面角色、国家与语言。SEO Agent 使用已确认上下文解释站级和页面级证据；上下文不能替代实际观测。"
+          "body": "检查产品、受众、目标查询、页面角色、国家与语言。SEO Agent 使用已确认上下文解释站级和页面级证据，并组织选中方案；上下文不能替代实际观测，也不参与建议排序。"
         },
         "tech": {
           "title": "先确认技术上下文，再开始诊断",
@@ -4203,6 +4205,7 @@
             "profile_source_unavailable": "公开网站或画像来源暂时不可用；系统没有编造画像事实。",
             "auth_required": "请先登录，再运行画像诊断。",
             "auth_unavailable": "暂时无法验证账户状态，请稍后重试。",
+            "invalid_origin": "无法确认该请求来自本站，请刷新页面后再试。",
             "intent_unavailable": "本次诊断请求未能完成授权，请重试。",
             "rate_limited": "画像诊断额度已用完，请稍后重试。",
             "request_failed": "画像诊断未能完成，因此没有应用草稿。",
@@ -4212,9 +4215,9 @@
         "search": {
           "eyebrow": "DataForSEO · 搜索证据",
           "title": "值得审核的搜索域",
-          "description": "DataForSEO 观测会先生成直接或间接竞品的系统建议。你可以审核并修改任何关系；搜索重合只是证据，不等于已确认的商业关系。",
-          "action": "刷新搜索格局",
-          "loadingAction": "正在刷新搜索格局",
+          "description": "重新读取 DataForSEO 搜索证据；可能复用缓存中最近 1 小时内的观测，下方证据观测时间会说明实际时间。搜索重合只是证据，不等于已确认的商业关系。",
+          "action": "读取搜索格局",
+          "loadingAction": "正在读取搜索格局",
           "missingPrerequisite": "请先补充 {fields}，再请求搜索证据。",
           "organicBoundary": "竞品关系由系统基于自然关键词重合进行本地推导，可随时修改；这不是 DataForSEO 已确认的商业关系。",
           "serpBoundary": "目标查询中观测到的域名默认建议为低置信度的间接竞品；你可以逐项审核或修改。",
@@ -4223,7 +4226,7 @@
           "marketUnsupported": "当前市场与查询无法映射到受支持的搜索数据方式；仍可手动填写商业竞品。",
           "sourceUnavailable": "搜索数据尚未配置或暂时不可用。缺失值不会被当作 0；商业竞品可保持为空或手动填写。",
           "summary": {
-            "idle": "运行画像诊断以获取数据源支持的搜索候选，或手动刷新搜索格局。",
+            "idle": "运行画像诊断以获取数据源支持的搜索候选，或再次读取会复用缓存的搜索格局。",
             "loading": "正在获取数据源支持的搜索域，并生成可修改的竞品关系建议。",
             "available": "下方有 {count} 个由数据源支持、并已给出可修改关系建议的搜索域候选。",
             "noData": "本次有边界的数据源请求未观测到搜索域候选；商业竞品框架保持不变。",
@@ -4241,7 +4244,7 @@
           "visibilityLabel": "可见度",
           "relevantSerpItemsLabel": "相关 SERP 项",
           "rankLabel": "观测排名",
-          "observedAtLabel": "获取时间",
+          "observedAtLabel": "证据观测时间",
           "unavailableMetricLabel": "不可用",
           "counts": {
             "providerLabel": "搜索候选",
@@ -4276,6 +4279,7 @@
           "errors": {
             "authRequired": "请先登录，再请求搜索数据证据。",
             "authUnavailable": "暂时无法验证账户状态，请稍后再请求搜索证据。",
+            "invalidOrigin": "无法确认该请求来自本站，请刷新页面后再试。",
             "searchTimeout": "搜索域请求在完成前超时。未生成候选域或商业竞品结论；请重试。",
             "requestFailed": "搜索证据请求未完成，因此没有生成任何商业竞品结论。"
           }
@@ -4298,7 +4302,12 @@
         },
         "boundary": "运行前请检查本 Agent 的上下文。已提供事实、字段级来源与推断假设会保持明确标记；接受仅作用于本次 Agent 运行，不会写入 app 的 Product Profile。",
         "readiness": {
-          "missing": "运行前请补全这些 Product / 核心 ICP 必填项：{fields}。"
+          "missing": "继续前请输入有效的运行条件：{fields}。"
+        },
+        "validation": {
+          "targetUrl": "请输入有效的公开 HTTP 或 HTTPS URL。不支持私有网络、本机、IP、端口、凭据或保留示例域名。",
+          "market": "请输入已分配的 ISO 3166-1 alpha-2 国家代码，例如 US、GB 或 CN。",
+          "locale": "请输入有效的 BCP 47 语言标签，例如 en-US 或 zh-CN。"
         },
         "actions": {
           "review": "检查并调整",
@@ -4545,7 +4554,7 @@
         "stage3Body": "排序依据依次为：结果严重度、本次运行是否采集到证据、检查归属的 Agent、已观测触达范围。已确认画像不参与此排序。本次无法评估的检查会单独说明，不进入排序。",
         "stage4": "阶段 04 · 已选方案与验证",
         "stage4Title": "实施前完整检查一个方案",
-        "stage4Body": "将问题、证据、拟议变更、适用上下文、验证步骤、影响范围、风险与限制放在一起审阅。",
+        "stage4Body": "将问题、证据、拟议变更、适用上下文、验证步骤、影响范围、风险与限制放在一起审阅。已确认 Product / ICP Profile 用来组织适用上下文和选中方案，不会重排建议。",
         "selected": "已选建议",
         "priority": "证据优先级",
         "reach": "已观测触达范围 · {count}",
@@ -4787,6 +4796,7 @@
           "errors": {
             "auth_required": "请先登录再生成草稿。",
             "auth_unavailable": "登录状态暂时读不到，请稍后再试。",
+            "invalid_origin": "无法确认该请求来自本站，请刷新页面后再试。",
             "invalid_request": "这一项没有可用于生成草稿的页面文字。",
             "rate_limited": "本小时的草稿次数已用完，稍后再试。",
             "quota_unavailable": "配额暂时读不到，请稍后再试。",
@@ -4816,6 +4826,7 @@
       "errors": {
         "auth_required": "运行本 Agent 需要已验证会话。请继续使用 Google 登录，之后只有匹配的待运行请求才可恢复。",
         "auth_unavailable": "当前无法验证身份，因此审计尚未开始。请在认证服务恢复后重试。",
+        "invalid_origin": "无法确认该请求来自本站，请刷新页面后再试。",
         "intent_expired": "这条待运行请求已经过期并被清除。请检查 URL；如果仍想继续，请重新运行本 Agent。",
         "intent_unavailable": "此浏览器无法为登录保留待运行请求，因此审计尚未开始。请检查浏览器存储权限后重试。",
         "audit_response_invalid": "Agent 返回的响应无法安全展示，因此没有从中推断任何结果。",

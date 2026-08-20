@@ -1,20 +1,25 @@
 // @input  -- draft requests against a stubbed model and quota
-// @output -- proof the boundary refuses before it spends, and refuses a bad reply
+// @output -- proof the private boundary rejects cross-origin before spending
 // @pos    -- unit coverage for the Stage 04 draft endpoint
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  DRAFT_ERROR_CODES,
   handleAgentDraftRequest,
   type DraftHandlerDependencies,
 } from "./draft-handler.ts";
 
-function request(body: unknown = validBody()): Request {
+function request(
+  body: unknown = validBody(),
+  headers: Readonly<Record<string, string>> = {},
+): Request {
   return new Request("https://gengrowth.ai/api/agents/seo/draft", {
     method: "POST",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
+      ...headers,
     },
     body: JSON.stringify(body),
   });
@@ -47,6 +52,7 @@ function dependencies(
       status: "authenticated" as const,
       userId: "user-1",
     }),
+    isSameOriginPost: () => true,
     consumeQuota: async () => ({ kind: "allowed" }) as const,
     createCompletion: () => async () => ({ text: GOOD_REPLY }),
     ...overrides,
@@ -87,6 +93,115 @@ describe("handleAgentDraftRequest", () => {
     // reach the quota store, let alone the model.
     expect(consumeQuota).not.toHaveBeenCalled();
     expect(createCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects a present cross-origin header after auth and before reading or spending", async () => {
+    const order: string[] = [];
+    const consumeQuota = vi.fn(async () => ({ kind: "allowed" }) as const);
+    const createCompletion = vi.fn(() => async () => ({ text: GOOD_REPLY }));
+    const incoming = request(validBody(), {
+      origin: "https://attacker.example",
+    });
+    const response = await handleAgentDraftRequest(
+      incoming,
+      dependencies({
+        authenticate: vi.fn(async () => {
+          order.push("auth");
+          return { status: "authenticated" as const, userId: "user-1" };
+        }),
+        isSameOriginPost: vi.fn(() => {
+          order.push("origin");
+          return false;
+        }),
+        consumeQuota,
+        createCompletion,
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_origin" },
+    });
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+    expect(incoming.bodyUsed).toBe(false);
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(createCompletion).not.toHaveBeenCalled();
+    expect(order).toEqual(["auth", "origin"]);
+  });
+
+  it("marks success and every stable error response as private and non-cacheable", async () => {
+    const responses = {
+      success: await handleAgentDraftRequest(request(), dependencies()),
+      auth_required: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          authenticate: async () => ({ status: "unauthenticated" as const }),
+        }),
+      ),
+      auth_unavailable: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          authenticate: async () => ({ status: "unavailable" as const }),
+        }),
+      ),
+      invalid_origin: await handleAgentDraftRequest(
+        request(validBody(), { origin: "https://attacker.example" }),
+        dependencies({ isSameOriginPost: () => false }),
+      ),
+      invalid_request: await handleAgentDraftRequest(
+        request({ ...validBody(), kind: "content-brief" }),
+        dependencies(),
+      ),
+      rate_limited: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          consumeQuota: async () => ({
+            kind: "limited" as const,
+            retryAfterSeconds: 60,
+          }),
+        }),
+      ),
+      quota_unavailable: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          consumeQuota: async () => ({ kind: "unavailable" as const }),
+        }),
+      ),
+      drafts_unavailable: await handleAgentDraftRequest(
+        request(),
+        dependencies({ createCompletion: () => null }),
+      ),
+      draft_provider_unavailable: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          createCompletion: () => async () => {
+            throw new Error("provider unavailable");
+          },
+        }),
+      ),
+      draft_unusable: await handleAgentDraftRequest(
+        request(),
+        dependencies({
+          createCompletion: () => async () => ({ text: "not a draft" }),
+        }),
+      ),
+    };
+
+    expect(Object.keys(responses).sort()).toEqual(
+      ["success", ...DRAFT_ERROR_CODES].sort(),
+    );
+    expect(
+      Object.fromEntries(
+        Object.entries(responses).map(([code, response]) => [
+          code,
+          response.headers.get("cache-control"),
+        ]),
+      ),
+    ).toEqual(
+      Object.fromEntries(
+        Object.keys(responses).map((code) => [code, "no-store, private"]),
+      ),
+    );
   });
 
   it("does not call the model for a request it cannot read", async () => {

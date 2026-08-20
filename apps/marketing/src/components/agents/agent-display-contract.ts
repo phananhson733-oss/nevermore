@@ -5,14 +5,14 @@
 import { allAgentAuditRecords } from "../../lib/agents/audit-contract";
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import {
-  SEARCH_PERFORMANCE_LIMITATION_CODES,
   SEO_AUDIT_EVIDENCE_LABELS,
   SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
 import {
-  SEARCH_PERFORMANCE_EVIDENCE_LABELS,
-  SEARCH_PERFORMANCE_RECORD_IDS,
+  SEARCH_CONSOLE_EVIDENCE_LABELS,
+  SEARCH_CONSOLE_LIMITATION_CODES,
+  SEARCH_CONSOLE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
   KEYWORD_EVIDENCE_EVIDENCE_LABELS,
@@ -46,7 +46,7 @@ import type { AgentKind } from "./agent-types";
 const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_RECORD_IDS,
   // Derived per visitor rather than crawled, and rendered by the same seam.
-  ...SEARCH_PERFORMANCE_RECORD_IDS,
+  ...SEARCH_CONSOLE_RECORD_IDS,
   ...KEYWORD_EVIDENCE_RECORD_IDS,
   ...PAGE_PERFORMANCE_RECORD_IDS,
   ...SERP_SHAPE_RECORD_IDS,
@@ -73,7 +73,7 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
  */
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_EVIDENCE_LABELS,
-  ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  ...SEARCH_CONSOLE_EVIDENCE_LABELS,
   ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
   ...SERP_SHAPE_EVIDENCE_LABELS,
@@ -90,23 +90,10 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
  */
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_LIMITATION_CODES,
-  ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+  ...SEARCH_CONSOLE_LIMITATION_CODES,
   ...KEYWORD_EVIDENCE_LIMITATION_CODES,
   ...PAGE_PERFORMANCE_LIMITATION_CODES,
-  ...SERP_SHAPE_LIMITATION_CODES,  "resource_not_observed_does_not_prove_absence",
-  "static_response_directives_only",
-  "normalised_text_match_within_inspected_pages",
-  "bounded_static_html_crawl_inlinks_only",
-  "crawl_incomplete_inlinks_unreliable",
-  "faq_match_against_collected_paragraphs_only",
-  "similarity_measured_on_collected_paragraphs_after_chrome",
-  "uncollected_link_targets_not_classified",
-  "static_html_json_ld_only",
-  "no_sitemap_collected_membership_not_testable",
-  "display_width_approximation_rendered_pixel_width_not_measured",
-  "bounded_static_html_crawl_outlinks_only",
-  "depth_from_bounded_crawl_entry_point_only",
-
+  ...SERP_SHAPE_LIMITATION_CODES,
 ]);
 
 /**

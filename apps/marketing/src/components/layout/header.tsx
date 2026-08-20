@@ -122,7 +122,7 @@ export function Header() {
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <nav
                 aria-label="Mobile navigation"
-                className="mt-8 flex flex-col gap-4 px-4"
+                className="mt-8 flex flex-col gap-4 px-4 pb-6"
               >
                 {headerNavItems.map((item) =>
                   item.menu ? (

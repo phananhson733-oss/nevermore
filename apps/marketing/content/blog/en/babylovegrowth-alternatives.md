@@ -50,7 +50,7 @@ Neither replaces the AI-citation tracking, which is currently the least substitu
 
 ### Where We Are Not an Alternative
 
-We do not generate articles, publish them, build links, or post to Reddit, so nothing on our side replaces this bundle. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data, and states plainly that its report does not claim Search Console, traffic or ranking data. It answers a narrower question — whether what you already published holds together — which is worth asking before you renew any of the above.
+We do not generate articles, publish them, build links, or post to Reddit, so nothing on our side replaces this bundle. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data. If you have connected a Search Console property that covers the site, the report can add search-performance and sitemap index-status evidence; without that connection it claims no traffic or ranking data. Each run reports which catalogue checks its supplied inputs evaluated and which were excluded. It answers a narrower question — whether what you already published holds together — which is worth asking before you renew any of the above.
 
 ## Common Misreadings When Comparing These Tools
 

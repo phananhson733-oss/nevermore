@@ -1,4 +1,4 @@
-// @input  -- authenticated exact profile-search POST plus explicit market/language/query
+// @input  -- authenticated same-origin profile-search POST plus exact search context
 // @output -- cost-bounded DataForSEO overlap/SERP evidence or typed availability
 // @pos    -- marketing-only server boundary for Agent profile search enrichment
 
@@ -23,6 +23,7 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
+import { isSameOriginPost } from "../auth/disconnect.ts";
 import { extractClientIp } from "../rate-limit.ts";
 import {
   readCrawlCache,
@@ -36,6 +37,10 @@ import {
   type PublicToolSlot,
 } from "../tools/public-tool-request.ts";
 import type { AgentKind } from "./audit-contract.ts";
+import {
+  canonicalAgentLanguageTag,
+  isAgentMarketCodeValid,
+} from "./profile-input-validation.ts";
 import {
   AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
   isAgentProfileSearchEnvelope,
@@ -85,6 +90,7 @@ export interface AgentProfileSearchLog {
 
 export interface AgentProfileSearchDependencies {
   readonly authenticate: () => Promise<ServerAuthenticationStatus>;
+  readonly isSameOriginPost: (request: Request) => boolean;
   readonly normalizeUrl: (value: unknown) => SeoAuditUrlResult;
   readonly resolveMarket: (
     marketCode: unknown,
@@ -139,6 +145,7 @@ function defaultLog(record: AgentProfileSearchLog): void {
 
 const DEFAULT_DEPENDENCIES: AgentProfileSearchDependencies = {
   authenticate: getServerAuthenticationStatus,
+  isSameOriginPost,
   normalizeUrl: normalizeSeoAuditUrl,
   resolveMarket: resolveDataForSeoMarket,
   credentials: providerCredentials,
@@ -223,17 +230,6 @@ function error(code: string, status: number, retryAfter?: number): Response {
   );
 }
 
-function canonicalLanguageTag(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (trimmed === "" || trimmed.length > 35) return null;
-  try {
-    return Intl.getCanonicalLocales(trimmed)[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function canonicalProductProfileSearchSeeds(
   value: unknown,
 ): readonly string[] | null {
@@ -280,13 +276,13 @@ function parseInput(value: unknown): ProfileSearchInput | null {
     return null;
   }
   const marketCode = object.marketCode.trim().toUpperCase();
-  const languageTag = canonicalLanguageTag(object.languageTag);
+  const languageTag = canonicalAgentLanguageTag(object.languageTag);
   const targetQuery = object.targetQuery.trim();
   const productProfileSearchSeeds = canonicalProductProfileSearchSeeds(
     object.productProfileSearchSeeds,
   );
   if (
-    !/^[A-Z]{2}$/.test(marketCode) ||
+    !isAgentMarketCodeValid(marketCode) ||
     languageTag === null ||
     targetQuery.length > TARGET_QUERY_MAX_LENGTH ||
     productProfileSearchSeeds === null
@@ -574,6 +570,9 @@ export async function handleAgentProfileSearchRequest(
   }
   if (authentication === "unavailable") return error("auth_unavailable", 503);
   if (authentication === "unauthenticated") return error("auth_required", 401);
+  if (!dependencies.isSameOriginPost(request)) {
+    return error("invalid_origin", 403);
+  }
 
   const body = await readPublicToolJson(request, REQUEST_BODY_LIMIT_BYTES);
   if (!body.ok) return requestError(body);

@@ -347,6 +347,106 @@ describe("AgentProfilePanel", () => {
     expect(action.disabled).toBe(true);
   });
 
+  it.each([
+    {
+      field: "url",
+      profile: {
+        targetUrl: "not a url",
+        host: "",
+        country: "US",
+        locale: "en-US",
+      },
+      error: "validation.targetUrl",
+    },
+    {
+      field: "market",
+      profile: {
+        targetUrl: "astrologywiki.com",
+        host: "astrologywiki.com",
+        country: "ZZ",
+        locale: "en-US",
+      },
+      error: "validation.market",
+    },
+    {
+      field: "language",
+      profile: {
+        targetUrl: "astrologywiki.com",
+        host: "astrologywiki.com",
+        country: "US",
+        locale: "en_US",
+      },
+      error: "validation.locale",
+    },
+  ])(
+    "marks an invalid $field and disables refresh, search, and final run",
+    ({ field, profile: runInputs, error }) => {
+      const profile = {
+        ...createAgentProfileDraft("seo", "astrologywiki.com"),
+        ...runInputs,
+      };
+      renderPanel(
+        profile,
+        undefined,
+        undefined,
+        {
+          loading: false,
+          data: null,
+          errorCode: null,
+          onDiscover: vi.fn(),
+        },
+        undefined,
+        vi.fn(),
+      );
+
+      const input = document.querySelector(
+        `[data-profile-refresh-field="${field}"]`,
+      ) as HTMLInputElement;
+      const validation = document.querySelector(
+        `[data-profile-validation-error="${field}"]`,
+      );
+      const refresh = document.querySelector(
+        '[data-profile-refresh-action="run"]',
+      ) as HTMLButtonElement;
+      const search = document.querySelector(
+        "[data-profile-search] button",
+      ) as HTMLButtonElement;
+      const confirm = document.querySelector(
+        '[data-profile-action="confirm"]',
+      ) as HTMLButtonElement;
+
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(input.getAttribute("aria-describedby")).toContain(
+        validation?.id,
+      );
+      expect(validation?.textContent).toBe(error);
+      expect(refresh.disabled).toBe(true);
+      expect(search.disabled).toBe(true);
+      expect(confirm.disabled).toBe(true);
+    },
+  );
+
+  it("allows a bounded run when optional Product, CTA, and ICP copy is empty", () => {
+    const profile = {
+      ...updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      productName: "",
+      primaryCta: "",
+      primaryIcp: "",
+    };
+    renderPanel(profile);
+
+    expect(
+      (
+        document.querySelector(
+          '[data-profile-action="confirm"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
   it("runs cached diagnosis only from the explicit top action", () => {
     const onRefresh = vi.fn();
     renderPanel(
@@ -891,6 +991,7 @@ describe("AgentProfilePanel", () => {
   it.each([
     ["unknown", "refresh.errors.unknown"],
     ["invalid_url", "refresh.errors.request_failed"],
+    ["invalid_origin", "refresh.errors.invalid_origin"],
   ])("maps the %s error to a closed and safe copy key", (errorCode, copyKey) => {
     renderPanel(
       updateAgentProfile(
@@ -1614,6 +1715,25 @@ describe("AgentProfilePanel", () => {
       document.querySelector('[data-profile-search-error="search_timeout"]')
         ?.textContent,
     ).toContain("search.errors.searchTimeout");
+  });
+
+  it("uses dedicated reload-and-retry copy for an invalid_origin search error", () => {
+    renderPanel(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      undefined,
+      undefined,
+      {
+        loading: false,
+        data: null,
+        errorCode: "invalid_origin",
+        onDiscover: vi.fn(),
+      },
+    );
+
+    expect(
+      document.querySelector('[data-profile-search-error="invalid_origin"]')
+        ?.textContent,
+    ).toContain("search.errors.invalidOrigin");
   });
 
   it("requires a target query before provider search in the CN market", () => {

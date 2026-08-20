@@ -7,7 +7,12 @@ import {
   KEYWORD_EVIDENCE_VERSION,
   TEXT_UNITS_VERSION,
 } from "@sf/public-tools/seo-audit/keyword-evidence/types";
+import { buildIndexCoverageRecords } from "@sf/public-tools/seo-audit/index-coverage";
+import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
+import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
 import {
+  AGENT_SEARCH_PERFORMANCE_VERSION,
+  AGENT_SERP_SHAPE_VERSION,
   isAgentAuditSuccessEnvelope,
   type AgentAuditSuccessEnvelope,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -498,6 +503,116 @@ describe("isAgentAuditSuccessEnvelope", () => {
             },
           },
         }),
+      ).toBe(false);
+    });
+  });
+
+  describe("the supplemental SERP-shape region", () => {
+    const records = buildSerpShapeRecords(null, "source_not_configured");
+
+    const withSerpShape = (serpShape: unknown): unknown => ({
+      data: {
+        ...success.data,
+        result: { ...success.data.result, serpShape },
+      },
+    });
+
+    it("accepts the real producer ledger", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSerpShape({
+            version: AGENT_SERP_SHAPE_VERSION,
+            records,
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it.each([
+      [
+        "a stale version",
+        { version: "serp_shape.agent.v0", records },
+      ],
+      [
+        "a missing producer record",
+        { version: AGENT_SERP_SHAPE_VERSION, records: records.slice(1) },
+      ],
+      [
+        "a duplicate producer record",
+        {
+          version: AGENT_SERP_SHAPE_VERSION,
+          records: [records[0], records[0], records[2]],
+        },
+      ],
+    ])("rejects %s", (_label, serpShape) => {
+      expect(isAgentAuditSuccessEnvelope(withSerpShape(serpShape))).toBe(false);
+    });
+  });
+
+  describe("the combined Search Console region", () => {
+    const records = [
+      ...buildSearchPerformanceRecords(
+        {
+          property: "sc-domain:acme.test",
+          startDate: "2026-07-19",
+          endDate: "2026-08-15",
+          pages: [
+            {
+              key: "https://acme.test/",
+              clicks: 3,
+              impressions: 90,
+              position: 4,
+            },
+          ],
+          queries: [
+            { key: "acme", clicks: 3, impressions: 90, position: 4 },
+          ],
+          pagesTruncated: false,
+          queriesTruncated: false,
+          targetPageQueries: null,
+          targetPageUrl: null,
+          confirmedQueries: [],
+          targetPageQueriesTruncated: false,
+        },
+        [],
+      ),
+      ...buildIndexCoverageRecords(null),
+    ];
+
+    const withSearchPerformance = (
+      nextRecords: readonly unknown[],
+    ): unknown => ({
+      data: {
+        ...success.data,
+        result: {
+          ...success.data.result,
+          searchPerformance: {
+            version: AGENT_SEARCH_PERFORMANCE_VERSION,
+            property: "sc-domain:acme.test",
+            startDate: "2026-07-19",
+            endDate: "2026-08-15",
+            records: nextRecords,
+          },
+        },
+      },
+    });
+
+    it("accepts all seven producer records", () => {
+      expect(records).toHaveLength(7);
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance(records))).toBe(
+        true,
+      );
+    });
+
+    it.each([
+      ["a subset", records.slice(0, -1)],
+      [
+        "a duplicate",
+        records.map((record, index) => (index === 6 ? records[0] : record)),
+      ],
+    ])("rejects %s", (_label, nextRecords) => {
+      expect(
+        isAgentAuditSuccessEnvelope(withSearchPerformance(nextRecords)),
       ).toBe(false);
     });
   });

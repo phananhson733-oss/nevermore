@@ -126,6 +126,9 @@ const PROFILE_PATHS = [
   "options.auditScope.page-only",
   "boundary",
   "readiness.missing",
+  "validation.targetUrl",
+  "validation.market",
+  "validation.locale",
   "provenance.derivations.declared",
   "provenance.derivations.observed",
   "provenance.derivations.inferred",
@@ -156,6 +159,7 @@ const PROFILE_PATHS = [
   "refresh.sources.total",
   "refresh.sources.expand",
   "refresh.diagnostics.unavailableFields",
+  "refresh.errors.invalid_origin",
   "search.eyebrow",
   "search.title",
   "search.description",
@@ -169,6 +173,7 @@ const PROFILE_PATHS = [
   "search.sourceUnavailable",
   "search.errors.authRequired",
   "search.errors.authUnavailable",
+  "search.errors.invalidOrigin",
   "search.errors.requestFailed",
   "search.domainLabel",
   "search.intersectionsLabel",
@@ -360,6 +365,7 @@ describe("Agent message catalogs", () => {
 
   it("defines every four-stage workbench message in both locales", () => {
     for (const messages of [en, zh]) {
+      messageAt(messages, "agents.workbench.errors.invalid_origin");
       for (const path of PROFILE_PATHS) {
         messageAt(messages, `agents.workbench.profile.${path}`);
       }
@@ -566,5 +572,81 @@ describe("Agent message catalogs", () => {
     expect(AGENT_AUDIT_COVERAGE.sourceGated).toBeLessThanOrEqual(
       AGENT_AUDIT_COVERAGE.decided,
     );
+  });
+
+  it("describes catalogue readiness without promising every detector runs on every request", () => {
+    for (const agent of ["seo", "tech"] as const) {
+      expect(en.agents[agent].step3Body).toMatch(/supported inputs/i);
+      expect(en.agents[agent].step3Body).toMatch(/evaluated.*excluded/i);
+      expect(en.agents[agent].step3Body).not.toMatch(/this run can use/i);
+
+      expect(zh.agents[agent].step3Body).toMatch(/已支持输入/);
+      expect(zh.agents[agent].step3Body).toMatch(/已评估.*已排除/);
+      expect(zh.agents[agent].step3Body).not.toMatch(/本次运行有检测器可用/);
+    }
+  });
+
+  it("uses Product and ICP to explain and frame the selected solution, not to rank it", () => {
+    const english = [
+      en.agents.seo.dataBoundaryBody,
+      en.agents.seo.step4Body,
+      en.agents.workbench.profile.seo.body,
+      en.agents.workbench.recommendations.stage3Body,
+      en.agents.workbench.recommendations.stage4Body,
+    ].join(" ");
+    const chinese = [
+      zh.agents.seo.dataBoundaryBody,
+      zh.agents.seo.step4Body,
+      zh.agents.workbench.profile.seo.body,
+      zh.agents.workbench.recommendations.stage3Body,
+      zh.agents.workbench.recommendations.stage4Body,
+    ].join(" ");
+
+    expect(english).toMatch(/severity.*evidence.*Agent.*reach/i);
+    expect(english).toMatch(/Product \/ ICP.*(?:explain|interpret).*selected solution/i);
+    expect(english).toMatch(/(?:does not|not).*re-?rank/i);
+    expect(english).not.toMatch(/confirmed search context.*priorit/i);
+
+    expect(chinese).toMatch(/严重度.*证据.*Agent.*触达范围/);
+    expect(chinese).toMatch(/Product \/ ICP.*(?:解释|组织).*选中方案/);
+    expect(chinese).toMatch(/不参与.*排序|不会.*重排/);
+    expect(chinese).not.toMatch(/结合证据和已确认的搜索上下文确定优先级/);
+  });
+
+  it("describes Profile Search as a cache-aware reread with an evidence timestamp", () => {
+    expect(en.agents.workbench.profile.search.action).toMatch(/read/i);
+    expect(en.agents.workbench.profile.search.action).not.toMatch(
+      /refresh|live/i,
+    );
+    expect(en.agents.workbench.profile.search.description).toMatch(
+      /cached.*(?:one|1) hour/i,
+    );
+    expect(en.agents.workbench.profile.search.observedAtLabel).toMatch(
+      /evidence.*observed/i,
+    );
+
+    expect(zh.agents.workbench.profile.search.action).toMatch(/读取/);
+    expect(zh.agents.workbench.profile.search.action).not.toMatch(/刷新|实时/);
+    expect(zh.agents.workbench.profile.search.description).toMatch(
+      /缓存.*1\s*小时/,
+    );
+    expect(zh.agents.workbench.profile.search.observedAtLabel).toMatch(
+      /证据.*观测/,
+    );
+  });
+
+  it("keeps Tech Search Console and draft-origin boundaries truthful in both locales", () => {
+    expect(en.agents.tech.finalBoundary).not.toMatch(
+      /does not.*read Search Console index coverage/i,
+    );
+    expect(zh.agents.tech.finalBoundary).not.toContain(
+      "不读取 Search Console 索引覆盖",
+    );
+    expect(
+      en.agents.workbench.recommendations.draft.errors.invalid_origin,
+    ).toContain("verified as coming from this site");
+    expect(
+      zh.agents.workbench.recommendations.draft.errors.invalid_origin,
+    ).toContain("来自本站");
   });
 });

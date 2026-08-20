@@ -77,6 +77,28 @@ export function buildIndexCoverageRecords(
   }
 
   const notIndexed = entries.filter((entry) => entry.verdict !== "PASS");
+  const aggregateValues = [
+    {
+      label: "index_coverage_rate",
+      value: (entries.length - notIndexed.length) / entries.length,
+    },
+    { label: "sitemap_urls_inspected", value: entries.length },
+  ] as const;
+  // A measured aggregate needs one observation even when the site is clean;
+  // otherwise the record contract reads `affected: 0` as a simple absence and
+  // never applies A1's aggregate threshold. When URLs are missing, carry that
+  // aggregate on the first actionable URL so `affected` remains the number of
+  // URLs the reader can open rather than an off-by-one aggregate row.
+  const observations =
+    notIndexed.length === 0
+      ? [{ url: null, values: aggregateValues }]
+      : notIndexed.map((entry, index) => ({
+          url: entry.url,
+          values: [
+            ...(index === 0 ? aggregateValues : []),
+            { label: "index_status_verdict", value: entry.verdict },
+          ],
+        }));
   return [
     {
       id: "sitemap_url_not_indexed",
@@ -86,24 +108,8 @@ export function buildIndexCoverageRecords(
       population: "site_resource",
       targetTested: null,
       tested: entries.length,
-      affected: notIndexed.length,
-      observations: [
-        {
-          url: null,
-          values: [
-            {
-              label: "index_coverage_rate",
-              value:
-                (entries.length - notIndexed.length) / entries.length,
-            },
-            { label: "sitemap_urls_inspected", value: entries.length },
-          ],
-        },
-        ...notIndexed.map((entry) => ({
-          url: entry.url,
-          values: [{ label: "index_status_verdict", value: entry.verdict }],
-        })),
-      ],
+      affected: observations.length,
+      observations,
       limitation: "index_status_is_googles_own_verdict_per_declared_url",
     } satisfies SeoAuditRecord,
   ];

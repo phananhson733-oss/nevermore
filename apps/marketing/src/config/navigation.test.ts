@@ -13,9 +13,9 @@ import {
 /**
  * The header Agents submenu against the route directories it can drift from.
  *
- * A menu is a second copy of a route catalogue, and second copies rot. The
- * route directories are therefore the authority and the two lists are checked
- * in both directions.
+ * SEO and GEO are the peer products in the primary menu. Tech deliberately
+ * remains a routed compatibility focus under SEO, so the route catalogue is
+ * also checked without promoting every routed focus back into the peer menu.
  */
 
 const AGENTS_ROUTE_DIR = fileURLToPath(
@@ -59,9 +59,9 @@ function lookup(messages: Record<string, unknown>, key: string): unknown {
 }
 
 describe("Agents submenu", () => {
-  it("matches the routed Agent pages exactly", () => {
-    expect(menuSlugs().sort()).toEqual(routedAgentSlugs());
-    expect(menuSlugs().sort()).toEqual(["geo", "seo", "tech"]);
+  it("exposes only SEO and GEO as peers while Tech remains routed", () => {
+    expect(menuSlugs().sort()).toEqual(["geo", "seo"]);
+    expect(routedAgentSlugs()).toEqual(["geo", "seo", "tech"]);
   });
 
   it("does not repeat an Agent across groups", () => {

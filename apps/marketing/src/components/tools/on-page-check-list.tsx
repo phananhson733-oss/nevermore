@@ -6,10 +6,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { useTranslations } from "next-intl";
-import type {
-  CheckState,
-  OnPageCheck,
-} from "../../lib/on-page-checker/check-types.ts";
+import type { CheckState } from "../../lib/on-page-checker/check-types.ts";
 import { checkLabelKey } from "../../lib/on-page-checker/check-types.ts";
 import type { CategoryScore } from "../../lib/on-page-checker/scoring.ts";
 

@@ -370,11 +370,13 @@
       "step4Desc": "A 30/60/90 plan carrying owners, status and dependencies."
     },
     "capabilities": {
-      "eyebrow": "One Agent, two focuses",
-      "title": "Choose the review that matches the question",
-      "subtitle": "One URL input, one run, one result. Content checks and technical checks are two focuses of the same review over the same crawl, not two products with separate state.",
+      "eyebrow": "SEO and GEO Agents",
+      "title": "Choose the evidence your question needs",
+      "subtitle": "Use the SEO Agent to inspect public-page and crawl evidence. Use the GEO Agent to observe whether AI answers cite your site.",
       "seoTitle": "SEO Agent",
       "seoDesc": "Inspect metadata, heading structure, and structured-data conditions observed in collected public HTML.",
+      "geoTitle": "GEO Agent",
+      "geoDesc": "Ask a real AI assistant your buyers' questions and see which sources it cited, with every denominator shown.",
       "techTitle": "Technical focus",
       "techDesc": "Inspect crawl responses, static indexability directives, and internal-link conditions in a bounded crawl.",
       "accountRequired": "Verified account",
@@ -384,7 +386,7 @@
       "linksTitle": "Internal Link Audit",
       "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
       "cardCta": "Open Agent",
-      "viewAll": "Open the SEO Agent"
+      "viewAll": "View all Agents"
     },
     "socialProof": {
       "title": "SEO advice should show its work",
@@ -3974,7 +3976,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "No project persistence",
-      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. Search Console figures appear only for a property you have connected; without that connection the report claims no traffic or ranking data.",
+      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used to interpret findings and frame the selected solution; it does not rank recommendations. Search Console figures appear only for a property you have connected; without that connection the report claims no traffic or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "A bounded path from URL to review",
       "howBody": "The Agent separates collected evidence, unverified checks, and adaptable guidance so a limitation never becomes a pass or a score.",
@@ -3983,9 +3985,9 @@
       "step2Title": "Inspect public HTML",
       "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "Across the {total}-check catalogue, {decided} checks have detectors across the currently supported inputs; {sourceGated} of those also require a connected Search Console property. A specific run evaluates only what its supplied context and connected sources support. Its evaluated and excluded counts are the facts for that run; a limitation never becomes a pass.",
       "step4Title": "Review the selected SEO solution",
-      "step4Body": "Prioritize evidence and the confirmed search context, then inspect a page-specific change and validation plan without applying it.",
+      "step4Body": "Order recommendations by result severity, collected evidence, Agent ownership, and observed reach. Use confirmed search context to explain findings and frame the selected page-specific solution, not to re-rank recommendations. Nothing is applied.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
     },
     "tech": {
@@ -4008,10 +4010,10 @@
       "step2Title": "Inspect bounded responses",
       "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
       "step3Title": "See what this crawl can decide",
-      "step3Body": "{decided} of the {total} catalogue checks have a detector this run can use, and {sourceGated} of those also need a Search Console property you have connected. The rest stay listed and excluded, each naming the source it still needs. A limitation never becomes a pass.",
+      "step3Body": "Across the {total}-check catalogue, {decided} checks have detectors across the currently supported inputs; {sourceGated} of those also require a connected Search Console property. A specific run evaluates only what its supplied context and connected sources support. Its evaluated and excluded counts are the facts for that run; a limitation never becomes a pass.",
       "step4Title": "Review the selected technical solution",
       "step4Body": "Trace the affected response, directive, link, template, or configuration and inspect a code-oriented validation plan without applying it.",
-      "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."
+      "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, edit a site, create a pull request, or deploy."
     },
     "workbench": {
       "stage1": "Stage 01 · Target",
@@ -4019,7 +4021,7 @@
         "stage": "Stage 01 · Product Profile",
         "seo": {
           "title": "Confirm search context before diagnosis",
-          "body": "Review the product, audience, intended query, page role, country, and language. SEO Agent uses this confirmed context to interpret site and page evidence; context never replaces an observation."
+          "body": "Review the product, audience, intended query, page role, country, and language. SEO Agent uses this confirmed context to interpret site and page evidence and frame the selected solution; context never replaces an observation or re-ranks recommendations."
         },
         "tech": {
           "title": "Confirm technical context before diagnosis",
@@ -4203,6 +4205,7 @@
             "profile_source_unavailable": "The public site or profile source is temporarily unavailable. No profile facts were invented.",
             "auth_required": "Sign in to run a profile diagnosis.",
             "auth_unavailable": "Account verification is temporarily unavailable. Try again.",
+            "invalid_origin": "This request could not be verified as coming from this site. Reload and try again.",
             "intent_unavailable": "The diagnosis request could not be authorized. Try again.",
             "rate_limited": "The profile-diagnosis allowance has been reached. Try again later.",
             "request_failed": "Profile diagnosis could not be completed. No draft was applied.",
@@ -4212,9 +4215,9 @@
         "search": {
           "eyebrow": "DataForSEO · search evidence",
           "title": "Domains worth review",
-          "description": "DataForSEO observations receive an initial direct or indirect system suggestion. Review or change any relationship; search overlap is evidence, not a confirmed business fact.",
-          "action": "Refresh search landscape",
-          "loadingAction": "Refreshing search landscape",
+          "description": "Read the search landscape again with DataForSEO evidence. A cached observation from up to one hour ago may be reused; the evidence timestamp below shows when it was observed. Search overlap is evidence, not a confirmed business fact.",
+          "action": "Read search landscape",
+          "loadingAction": "Reading search landscape",
           "missingPrerequisite": "Add {fields} before requesting search evidence.",
           "organicBoundary": "Relationship suggestions are derived locally from organic keyword overlap. They remain editable and are not DataForSEO-confirmed business relationships.",
           "serpBoundary": "Domains observed for this exact target query default to an indirect alternative with low confidence. Review or change each relationship.",
@@ -4223,7 +4226,7 @@
           "marketUnsupported": "This market and query do not map to a supported search-data method. You can still enter business competitors manually.",
           "sourceUnavailable": "Search data is not configured or is temporarily unavailable. No missing value is treated as zero; business competitors can remain empty or be entered manually.",
           "summary": {
-            "idle": "Run profile diagnosis to collect provider-backed search candidates, or refresh the search landscape explicitly.",
+            "idle": "Run profile diagnosis to collect provider-backed search candidates, or read the cache-aware search landscape again.",
             "loading": "Collecting provider-backed search domains and preparing editable relationship suggestions.",
             "available": "{count, plural, one {# provider-backed search candidate has an editable system relationship suggestion.} other {# provider-backed search candidates have editable system relationship suggestions.}}",
             "noData": "The bounded provider request observed no search-domain candidates. The business frame is unchanged.",
@@ -4241,7 +4244,7 @@
           "visibilityLabel": "Visibility",
           "relevantSerpItemsLabel": "Relevant SERP items",
           "rankLabel": "Observed rank",
-          "observedAtLabel": "Fetched at",
+          "observedAtLabel": "Evidence observed at",
           "unavailableMetricLabel": "Unavailable",
           "counts": {
             "providerLabel": "Search candidates",
@@ -4276,6 +4279,7 @@
           "errors": {
             "authRequired": "Sign in to request provider-backed search evidence.",
             "authUnavailable": "Account verification is temporarily unavailable. Try again before requesting search evidence.",
+            "invalidOrigin": "This request could not be verified as coming from this site. Reload and try again.",
             "searchTimeout": "The search-domain request timed out before completion. No candidate domain or business-competitor conclusion was created; try again.",
             "requestFailed": "The search-evidence request could not be completed. No business-competitor conclusion was created."
           }
@@ -4298,7 +4302,12 @@
         },
         "boundary": "Review this Agent's context before running. Supplied facts, field-level provenance, and inferred assumptions stay visibly labeled; acceptance applies only to this Agent run and does not write an app Product Profile.",
         "readiness": {
-          "missing": "Complete these required Product / Core ICP fields before running: {fields}."
+          "missing": "Enter valid run inputs before continuing: {fields}."
+        },
+        "validation": {
+          "targetUrl": "Enter a valid public HTTP or HTTPS URL. Private, local, IP, port, credential, and reserved example destinations are not supported.",
+          "market": "Enter an assigned ISO 3166-1 alpha-2 country code, such as US, GB, or CN.",
+          "locale": "Enter a valid BCP 47 language tag, such as en-US or zh-CN."
         },
         "actions": {
           "review": "Review & adjust",
@@ -4545,7 +4554,7 @@
         "stage3Body": "Ordered by result severity, then by whether this run collected evidence, then by which Agent owns the check, then by observed reach. The confirmed Profile is not part of this ordering. Checks this run could not evaluate are reported separately and never enter the ranking.",
         "stage4": "Stage 04 · Selected solution & validation",
         "stage4Title": "Review one solution before implementation",
-        "stage4Body": "Inspect the issue, evidence, proposed change, applicable context, validation steps, impact surface, risks, and limits together.",
+        "stage4Body": "Inspect the issue, evidence, proposed change, applicable context, validation steps, impact surface, risks, and limits together. The confirmed Product / ICP Profile frames the applicable context and selected solution; it does not re-rank recommendations.",
         "selected": "Selected recommendation",
         "priority": "Evidence priority",
         "reach": "Observed reach · {count}",
@@ -4787,6 +4796,7 @@
           "errors": {
             "auth_required": "Sign in to draft.",
             "auth_unavailable": "Your sign-in state could not be read just now. Try again shortly.",
+            "invalid_origin": "This request could not be verified as coming from this site. Reload and try again.",
             "invalid_request": "There is no page text to draft from for this item.",
             "rate_limited": "You have used this hour's drafts. Try again shortly.",
             "quota_unavailable": "The quota could not be read just now. Try again shortly.",
@@ -4816,6 +4826,7 @@
       "errors": {
         "auth_required": "Your verified session is required to run this Agent. Continue with Google sign-in, then the matching pending run can resume.",
         "auth_unavailable": "Authentication could not be verified right now, so no audit started. Try again when the authentication service is available.",
+        "invalid_origin": "This request could not be verified as coming from this site. Reload and try again.",
         "intent_expired": "This pending run has expired and was cleared. Review the URL, then run this Agent again if you still want to continue.",
         "intent_unavailable": "This browser could not keep the pending run for sign-in, so no audit started. Check browser storage access, then try again.",
         "audit_response_invalid": "The Agent returned a response that could not be safely displayed. No result has been inferred from it.",

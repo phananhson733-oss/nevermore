@@ -25,6 +25,11 @@ import type {
   AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
 import {
+  isAgentLanguageTagValid,
+  isAgentMarketCodeValid,
+  isAgentTargetUrlValid,
+} from "../../lib/agents/profile-input-validation";
+import {
   classifyAgentCompetitorProfile,
   deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
@@ -170,6 +175,7 @@ const PROFILE_REFRESH_ERROR_KEYS = new Set([
   "profile_source_unavailable",
   "auth_required",
   "auth_unavailable",
+  "invalid_origin",
   "intent_unavailable",
   "rate_limited",
   "request_failed",
@@ -199,16 +205,6 @@ function profileSourceClass(source: AgentProfileFieldSource): ProfileSourceClass
 
 function proposalValue(value: string | readonly string[]): string {
   return typeof value === "string" ? value : value.join(" · ");
-}
-
-function canonicalLanguageTag(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 35) return null;
-  try {
-    return Intl.getCanonicalLocales(trimmed)[0] ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function profileRefreshErrorKey(errorCode: string): string {
@@ -428,8 +424,17 @@ export function AgentProfilePanel({
       !COMPETITOR_FIELDS.has(field),
   );
 
+  const targetUrlValid = isAgentTargetUrlValid(profile.targetUrl);
+  const marketValid = isAgentMarketCodeValid(profile.country);
+  const targetLanguageValid = isAgentLanguageTagValid(profile.locale);
+  const targetUrlInvalid = urlInvalid || !targetUrlValid;
   const canConfirm = !disabled && isAgentProfileReady(profile);
-  const missingReadyFields = AGENT_PROFILE_READY_FIELDS.filter((field) => {
+  const missingReadyFields = [
+    !targetUrlValid ? "targetUrl" : null,
+    !marketValid ? "country" : null,
+    !targetLanguageValid ? "locale" : null,
+  ].filter((field): field is "targetUrl" | "country" | "locale" => field !== null);
+  const missingProfileProvenanceFields = AGENT_PROFILE_READY_FIELDS.filter((field) => {
     const value = profile[field];
     const source = profile.fieldProvenance.find(
       (entry) => entry.path === `/${field}`,
@@ -441,11 +446,14 @@ export function AgentProfilePanel({
         : typeof value !== "string" || value.trim().length === 0)
     );
   });
+  for (const field of missingProfileProvenanceFields) {
+    if (!missingReadyFields.includes(field)) missingReadyFields.push(field);
+  }
   const readinessMessageId = `${agent}-profile-readiness`;
   const missingSearchPrerequisites = [
-    profile.targetUrl.trim() ? null : t("fields.targetUrl"),
-    /^[A-Z]{2}$/.test(profile.country) ? null : t("fields.country"),
-    profile.locale.trim() ? null : t("fields.locale"),
+    targetUrlValid ? null : t("fields.targetUrl"),
+    marketValid ? null : t("fields.country"),
+    targetLanguageValid ? null : t("fields.locale"),
     profile.country === "CN" && !profile.targetQuery.trim()
       ? t("fields.targetQuery")
       : null,
@@ -461,9 +469,11 @@ export function AgentProfilePanel({
   const actionableRefreshProposals = refreshProposals.filter(
     (proposal) => proposal.currentSource !== "user_edit",
   );
-  const targetLanguageValid = canonicalLanguageTag(profile.locale) !== null;
   const marketOptionsId = `${agent}-profile-market-options`;
   const languageOptionsId = `${agent}-profile-language-options`;
+  const targetUrlValidationId = `${agent}-profile-target-url-validation`;
+  const marketValidationId = `${agent}-profile-market-validation`;
+  const languageValidationId = `${agent}-profile-language-validation`;
   const suppliedProductInformation = getSuppliedProductInformation(
     profile,
     locale,
@@ -666,6 +676,8 @@ export function AgentProfilePanel({
         ? t("search.errors.authRequired")
         : profileSearch?.errorCode === "auth_unavailable"
           ? t("search.errors.authUnavailable")
+          : profileSearch?.errorCode === "invalid_origin"
+            ? t("search.errors.invalidOrigin")
           : profileSearch?.errorCode === "search_timeout"
             ? t("search.errors.searchTimeout")
             : t("search.errors.requestFailed"),
@@ -759,12 +771,25 @@ export function AgentProfilePanel({
                 disabled={disabled || profileRefresh?.loading}
                 value={profile.targetUrl}
                 onChange={handleUrlChange}
-                aria-invalid={urlInvalid}
-                aria-describedby={errorId}
+                aria-invalid={targetUrlInvalid ? true : undefined}
+                aria-describedby={
+                  [errorId, targetUrlInvalid ? targetUrlValidationId : null]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
                 placeholder={t("fields.targetUrlPlaceholder")}
                 className="min-w-0 flex-1 bg-transparent font-mono text-[13.5px] text-text-dark-primary outline-none placeholder:text-text-dark-faint disabled:opacity-60"
               />
             </span>
+            {targetUrlInvalid ? (
+              <span
+                id={targetUrlValidationId}
+                data-profile-validation-error="url"
+                className="mt-1.5 block text-[10.5px] leading-[1.45] text-brand-error"
+              >
+                {t("validation.targetUrl")}
+              </span>
+            ) : null}
           </label>
 
           <label className="block" htmlFor={`${agent}-profile-market`}>
@@ -781,6 +806,8 @@ export function AgentProfilePanel({
               list={marketOptionsId}
               maxLength={2}
               disabled={disabled || profileRefresh?.loading}
+              aria-invalid={!marketValid ? true : undefined}
+              aria-describedby={!marketValid ? marketValidationId : undefined}
               value={profile.country}
               onChange={(event) =>
                 handleFieldChange("country", event.target.value)
@@ -793,6 +820,15 @@ export function AgentProfilePanel({
                 <option key={market} value={market} />
               ))}
             </datalist>
+            {!marketValid ? (
+              <span
+                id={marketValidationId}
+                data-profile-validation-error="market"
+                className="mt-1.5 block text-[10.5px] leading-[1.45] text-brand-error"
+              >
+                {t("validation.market")}
+              </span>
+            ) : null}
           </label>
 
           <label className="block" htmlFor={`${agent}-profile-language`}>
@@ -808,8 +844,9 @@ export function AgentProfilePanel({
               list={languageOptionsId}
               maxLength={35}
               disabled={disabled || profileRefresh?.loading}
-              aria-invalid={
-                profile.locale.trim() && !targetLanguageValid ? true : undefined
+              aria-invalid={!targetLanguageValid ? true : undefined}
+              aria-describedby={
+                !targetLanguageValid ? languageValidationId : undefined
               }
               value={profile.locale}
               onChange={(event) =>
@@ -823,6 +860,15 @@ export function AgentProfilePanel({
                 <option key={language} value={language} />
               ))}
             </datalist>
+            {!targetLanguageValid ? (
+              <span
+                id={languageValidationId}
+                data-profile-validation-error="language"
+                className="mt-1.5 block text-[10.5px] leading-[1.45] text-brand-error"
+              >
+                {t("validation.locale")}
+              </span>
+            ) : null}
           </label>
 
           <button
@@ -832,8 +878,8 @@ export function AgentProfilePanel({
               disabled ||
               profileRefresh?.loading ||
               !onRefresh ||
-              !profile.targetUrl.trim() ||
-              !/^[A-Z]{2}$/.test(profile.country) ||
+              !targetUrlValid ||
+              !marketValid ||
               !targetLanguageValid
             }
             onClick={() =>

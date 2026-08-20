@@ -350,6 +350,36 @@ describe("Agent pending intents", () => {
     expect(isRunnablePendingAgentIntent(intent!)).toBe(false);
   });
 
+  it.each([
+    { targetUrl: "https://example.com", country: "US", locale: "en-US" },
+    { targetUrl: "https://astrologywiki.com", country: "ZZ", locale: "en-US" },
+    { targetUrl: "https://astrologywiki.com", country: "US", locale: "en_US" },
+  ])(
+    "does not persist refresh or search resume state for invalid run inputs: $targetUrl $country $locale",
+    ({ targetUrl, country, locale }) => {
+      const refreshStorage = new MemoryStorage();
+      const searchStorage = new MemoryStorage();
+      const profile = updateAgentProfile(
+        createAgentProfileDraft("seo", targetUrl),
+        { country, locale },
+      );
+
+      expect(
+        storeAgentProfileRefreshIntent(
+          refreshStorage,
+          profile,
+          "prefer_cache",
+          1_000,
+        ),
+      ).toBeNull();
+      expect(
+        storeAgentProfileSearchIntent(searchStorage, profile, 1_000),
+      ).toBeNull();
+      expect(refreshStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+      expect(searchStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+    },
+  );
+
   it("rejects malformed refresh-profile payloads and clears them fail-closed", () => {
     const storage = new MemoryStorage();
     const now = 20_000;
@@ -424,7 +454,7 @@ describe("Agent pending intents", () => {
   it("accepts a canonical non-region BCP 47 target language", () => {
     const storage = new MemoryStorage();
     const profile = updateAgentProfile(
-      createAgentProfileDraft("seo", "https://example.com"),
+      createAgentProfileDraft("seo", "https://acme.com"),
       { country: "US", locale: "zh-Hant" },
     );
 

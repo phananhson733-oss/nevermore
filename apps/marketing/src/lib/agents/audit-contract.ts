@@ -3,7 +3,6 @@
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
 import type {
-  SeoAuditCategory,
   SeoAuditCoverage,
   SeoAuditPayload,
   SeoAuditReport,
@@ -36,7 +35,7 @@ import {
   SEO_AUDIT_RECORD_CATEGORIES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
-import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
+import { SEARCH_CONSOLE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
 import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
@@ -330,9 +329,9 @@ function isAgentKeywordChecks(value: unknown): value is AgentKeywordChecks {
  * crawl version describes. Changing any of them has to change this literal.
  *
  * v2 adds the target page's own query rows and the band record built from them.
- * A v1 payload is not a v2 payload missing a field: its ledger is complete for
- * three records and the guard below requires four, so an old cached or in-
- * flight body is rejected rather than rendered with a check that silently never
+ * A v1 payload is not a v2 payload missing a field: the guard below requires
+ * the producer's complete current Search Console ledger, so an old or partial
+ * body is rejected rather than rendered with a check that silently never
  * decides.
  */
 export const AGENT_SEARCH_PERFORMANCE_VERSION =
@@ -372,9 +371,9 @@ function isAgentSearchPerformance(
   // producer rather than a second list beside it.
   const ids = value.records.map((record) => record.id).sort();
   return (
-    ids.length === SEARCH_PERFORMANCE_RECORD_IDS.length &&
+    ids.length === SEARCH_CONSOLE_RECORD_IDS.length &&
     ids.every(
-      (id, index) => id === SEARCH_PERFORMANCE_RECORD_IDS.slice().sort()[index],
+      (id, index) => id === SEARCH_CONSOLE_RECORD_IDS.slice().sort()[index],
     )
   );
 }
@@ -731,6 +730,10 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.searchPerformanceUnavailable === undefined ||
       value.searchPerformanceUnavailable === true
+    ) ||
+    !(
+      value.serpShape === undefined ||
+      isAgentSerpShape(value.serpShape)
     ) ||
     !(
       value.serpLandscape === undefined ||

@@ -1,5 +1,5 @@
-// @input  -- an authenticated request naming one solution kind and the page's own text
-// @output -- one preview draft, or a stable code the surface can explain
+// @input  -- authenticated same-origin request naming a solution and page text
+// @output -- one private no-store preview draft, or a stable private error
 // @pos    -- server-only boundary; nothing here applies, saves, or deploys anything
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -15,6 +15,7 @@ import {
 import { createHash } from "node:crypto";
 
 import { getServerAuthenticatedUser } from "../auth/server-auth-user.ts";
+import { isSameOriginPost } from "../auth/disconnect.ts";
 import { createDraftCompletion } from "../tools/quick-wins-drafts.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { consumePublicToolQuota } from "../tools/shared-rate-limit.ts";
@@ -44,6 +45,7 @@ const MAX_HEADINGS = 24;
 export const DRAFT_ERROR_CODES = [
   "auth_required",
   "auth_unavailable",
+  "invalid_origin",
   "invalid_request",
   "rate_limited",
   "quota_unavailable",
@@ -57,6 +59,7 @@ export type DraftErrorCode = (typeof DRAFT_ERROR_CODES)[number];
 const STATUS: Readonly<Record<DraftErrorCode, number>> = {
   auth_required: 401,
   auth_unavailable: 503,
+  invalid_origin: 403,
   invalid_request: 400,
   rate_limited: 429,
   quota_unavailable: 503,
@@ -77,6 +80,7 @@ export type DraftAuthentication =
 
 export interface DraftHandlerDependencies {
   readonly authenticate: () => Promise<DraftAuthentication>;
+  readonly isSameOriginPost: (request: Request) => boolean;
   /**
    * Keyed by account, not by address.
    *
@@ -105,6 +109,7 @@ export const DEFAULT_DRAFT_DEPENDENCIES: DraftHandlerDependencies = {
       ? { status: "authenticated", userId: user.userId }
       : { status: user.status };
   },
+  isSameOriginPost,
   consumeQuota: async (accountKey) => {
     const outcome = await consumePublicToolQuota(
       `agent-draft:${accountKey}`,
@@ -121,20 +126,26 @@ export const DEFAULT_DRAFT_DEPENDENCIES: DraftHandlerDependencies = {
 };
 
 function fail(code: DraftErrorCode, retryAfterSeconds?: number): Response {
+  const headers = new Headers({ "Cache-Control": "no-store, private" });
+  if (retryAfterSeconds !== undefined) {
+    headers.set("Retry-After", String(retryAfterSeconds));
+  }
   return Response.json(
     { error: { code } },
     {
       status: STATUS[code],
-      headers:
-        retryAfterSeconds === undefined
-          ? {}
-          : { "retry-after": String(retryAfterSeconds) },
+      headers,
     },
   );
 }
 
-/** Rejects a placeholder a model emitted instead of writing something. */
-const PLACEHOLDER = /^(?:todo|tbd|n\/a|none|\[[^\]]*\]|<[^>]*>)$/i;
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x1f || codeUnit === 0x7f) return true;
+  }
+  return false;
+}
 
 /**
  * The exact public URL, or null.
@@ -144,7 +155,7 @@ const PLACEHOLDER = /^(?:todo|tbd|n\/a|none|\[[^\]]*\]|<[^>]*>)$/i;
  */
 function publicUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 2_048) return null;
-  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
+  if (hasControlCharacter(value)) return null;
   try {
     const parsed = new URL(value.trim());
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -224,6 +235,7 @@ export async function handleAgentDraftRequest(
   }
   if (authentication.status === "unauthenticated") return fail("auth_required");
   if (authentication.status !== "authenticated") return fail("auth_unavailable");
+  if (!dependencies.isSameOriginPost(request)) return fail("invalid_origin");
   // Hashed, so an account id never becomes a key in the quota store.
   const accountKey = createHash("sha256")
     .update(authentication.userId)
@@ -274,5 +286,11 @@ export async function handleAgentDraftRequest(
   // renders as an empty box the reader takes for "nothing to say here".
   if (draft === null) return fail("draft_unusable");
 
-  return Response.json({ data: { draft } }, { status: 200 });
+  return Response.json(
+    { data: { draft } },
+    {
+      status: 200,
+      headers: { "Cache-Control": "no-store, private" },
+    },
+  );
 }

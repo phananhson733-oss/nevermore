@@ -1,5 +1,5 @@
-// @input  -- authenticated Agent POST request and existing bounded SEO audit handler
-// @output -- buffered, category-projected evidence or stable auth/upstream errors
+// @input  -- authenticated same-origin Agent POST and existing bounded SEO audit handler
+// @output -- private buffered evidence or stable auth/origin/upstream errors
 // @pos    -- shared server-only execution boundary for both of the Agent's focuses
 
 import type {
@@ -13,6 +13,7 @@ import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
+import { isSameOriginPost } from "../auth/disconnect.ts";
 import type { QualifyingTool } from "../credits/credits-config.ts";
 import { reportFirstToolRun } from "../credits/report-first-run.ts";
 import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
@@ -42,11 +43,7 @@ import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
 } from "./page-performance-reader.ts";
-import {
-  buildSerpShapeRecords,
-  type SerpShapeGap,
-  type SerpShapeRaw,
-} from "@sf/public-tools/seo-audit/serp-shape";
+import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
 
 import { buildKeywordEvidence } from "@sf/public-tools";
 import { readSerpLandscape } from "../tools/serp-landscape.ts";
@@ -66,6 +63,8 @@ import {
 export interface AgentAuditHandlerDependencies {
   /** Proves a real Supabase user before any part of the audit request is read. */
   readonly authenticate: () => Promise<ServerAuthenticationStatus>;
+  /** Rejects a present foreign Origin after authentication and before the body. */
+  readonly isSameOriginPost: (request: Request) => boolean;
   /** Runs the existing bounded crawler, gate, and completed-result cache. */
   /**
    * Runs the crawl. Receives the request object itself, plus the body this
@@ -151,11 +150,9 @@ export interface AgentAuditHandlerDependencies {
   /**
    * Reads page one for the primary query, when this boundary wants it.
    *
-   * Absent on the SEO Agent's own route: the Agent's cost profile is its own
-   * decision, and a seam attached to the shared handler would have spent a
-   * provider call on every Agent run without anyone asking for one. The
-   * On-Page Checker attaches it, because "who is already on page one, and are
-   * you" is the context its report was missing.
+   * The direct SEO Agent and the On-Page Checker both attach the same bounded
+   * reader. A missing confirmed query resolves as `no_target_query` before the
+   * reader constructs a provider client, so an empty query spends nothing.
    *
    * It must resolve rather than throw: the crawl has already finished by the
    * time this runs, and losing it to a provider timeout would trade the thing
@@ -176,6 +173,7 @@ export interface AgentAuditHandlerDependencies {
  */
 export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
+  isSameOriginPost,
   delegate: (request, input) =>
     handleSeoAuditRequest(request, undefined, {
       forceBufferedJson: true,
@@ -192,6 +190,7 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   // undefined lets the handler's `source_not_configured` initial value stand.
   readPagePerformance: (input) => defaultPagePerformanceReader()?.(input),
   readImageWeights: createImageWeightReader(),
+  readSerpLandscape: (input) => readSerpLandscape(input),
 };
 
 /**
@@ -204,7 +203,6 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
 export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   ...DEFAULT_DEPENDENCIES,
   reportAs: "on-page-seo-check",
-  readSerpLandscape: (input) => readSerpLandscape(input),
 };
 
 /**
@@ -574,6 +572,9 @@ export async function handleAgentAuditRequest(
   if (authentication === "unauthenticated") {
     return errorResponse("auth_required", 401);
   }
+  if (!dependencies.isSameOriginPost(request)) {
+    return errorResponse("invalid_origin", 403);
+  }
 
   // Both layers need the body: this one to build the keyword region, the
   // delegate to run the crawl. A body can only be read once, so this reads a
@@ -724,7 +725,7 @@ export async function handleAgentAuditRequest(
   // frame that would return the 500. A seam that breaks its contract should
   // cost its own section, not the report.
   let landscape: SerpLandscape | null = null;
-  if (dependencies.readSerpLandscape !== undefined) {
+  if (agent === "seo" && dependencies.readSerpLandscape !== undefined) {
     try {
       landscape = await dependencies.readSerpLandscape({
         query: primaryQuery,

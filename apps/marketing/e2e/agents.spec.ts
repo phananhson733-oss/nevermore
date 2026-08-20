@@ -197,10 +197,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await url.fill("astrologywiki.com");
   await market.fill("US");
   await language.fill("en-US");
-  await page.waitForLoadState("networkidle");
 
-  expect(profileRequests).toHaveLength(0);
-  expect(auditPosts).toBe(0);
   await expect(run).toBeEnabled();
 
   const controls = [url, market, language, run];
@@ -214,6 +211,11 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   ).toBeLessThanOrEqual(
     await page.evaluate(() => document.documentElement.clientWidth),
   );
+  // The page keeps unrelated shell requests alive, so `networkidle` is not a
+  // valid readiness signal. These assertions sit immediately before the only
+  // authorized action and prove that completing the inputs did not auto-run.
+  expect(profileRequests).toHaveLength(0);
+  expect(auditPosts).toBe(0);
 
   await run.click();
 
@@ -389,13 +391,21 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(results).toBeVisible();
   await expect(results.getByText("Pages inspected")).toBeVisible();
   await expect(page.getByTestId("agent-diagnosis")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-E")).toHaveAttribute(
+  await expect(page.getByTestId("diagnosis-group-D")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  await expect(page.getByTestId("agent-recommendation-row")).toBeVisible();
+  await expect(page.getByTestId("agent-selected-solution")).toContainText(
+    "does not re-rank recommendations",
+  );
+  await expect(page.getByTestId("agent-selected-solution")).toContainText(
+    "technical seo audit",
+  );
+
   await page.getByTestId("diagnosis-scope-page").click();
-  await expect(page.getByText("9 groups · 50 checks")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-9")).toHaveAttribute(
+  await expect(page.getByText("9 groups · 49 checks")).toBeVisible();
+  await expect(page.getByTestId("diagnosis-group-2")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -410,13 +420,6 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(page.locator("[data-policy-threshold]")).toHaveCount(0);
   await expect(page.locator("[data-policy-weight]")).toHaveCount(0);
   await expect(page.locator("[data-policy-action]")).toHaveCount(0);
-  await expect(page.getByTestId("agent-recommendation-row")).toBeVisible();
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "SEO Agent decision",
-  );
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "technical seo audit",
-  );
 });
 
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
@@ -456,15 +459,17 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await completeRequiredProfileContext(page, "zh", "技术 SEO 审计");
   await page.getByRole("button", { name: "接受上下文并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-A")).toHaveAttribute(
+  await expect(page.getByTestId("diagnosis-group-C")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "HTTP/1.1 200 OK",
-  );
-  await expect(page.getByTestId("agent-selected-solution")).not.toContainText(
-    "SEO Agent decision",
+  // The fixture's only observed record is not attributable to a site-scoped
+  // Tech check, so an honest sitewide result has no recommendation to invent.
+  await expect(
+    page.getByRole("heading", { name: "暂无有证据支持的建议" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("agent-selected-solution")).toHaveCount(
+    0,
   );
   expect(
     await page.evaluate(() =>
@@ -473,18 +478,20 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   ).toContain("seo-only.example");
 });
 
-test("homepage chooses an exact Agent and retired audit pages redirect", async ({
+test("homepage keeps SEO and its technical focus exact while retired audit pages redirect", async ({
   page,
 }) => {
   await mockSession(page, false);
 
   await page.goto("/");
   const homepageUrl = page.getByLabel("Website host or URL");
-  const techButton = page.getByRole("button", { name: "Run Tech Agent" });
+  const technicalFocusButton = page.getByRole("button", {
+    name: "Open the technical view",
+  });
   await homepageUrl.fill("acme.com");
   await expect(homepageUrl).toHaveValue("acme.com");
-  await expect(techButton).toBeEnabled();
-  await techButton.click();
+  await expect(technicalFocusButton).toBeEnabled();
+  await technicalFocusButton.click();
   await expect(page).toHaveURL(/\/agents\/tech$/);
   await expect(page.getByLabel("Target URL")).toHaveValue("acme.com");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -538,5 +545,66 @@ test("primary IA groups Tools under Resources without changing its URL", async (
   await expect(page.getByRole("link", { name: "Browse Tools" })).toHaveAttribute(
     "href",
     "/tools",
+  );
+});
+
+test("390px mobile navigation keeps peer Agents and final actions keyboard-reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSession(page, false);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open menu" }).click();
+
+  const sheet = page.locator('[data-slot="sheet-content"]');
+  const navigation = page.getByRole("navigation", {
+    name: "Mobile navigation",
+  });
+  await expect(sheet).toBeVisible();
+
+  expect(
+    await sheet.evaluate((element) => getComputedStyle(element).overflowY),
+  ).toMatch(/auto|scroll/);
+  const initialSheetMetrics = await sheet.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(initialSheetMetrics.clientHeight).toBeLessThanOrEqual(844);
+  expect(initialSheetMetrics.scrollHeight).toBeGreaterThan(
+    initialSheetMetrics.clientHeight,
+  );
+
+  await expect(navigation.getByRole("link", { name: /SEO Agent/ })).toHaveCount(
+    1,
+  );
+  await expect(navigation.getByRole("link", { name: /GEO Agent/ })).toHaveCount(
+    1,
+  );
+  await expect(
+    navigation.getByRole("link", { name: /Technical focus/ }),
+  ).toHaveCount(0);
+
+  const audit = navigation.getByRole("link", { name: "Run website audit" });
+  const signIn = navigation.getByRole("button", { name: "Sign in" });
+
+  async function tabTo(target: typeof audit): Promise<void> {
+    for (let index = 0; index < 30; index += 1) {
+      if (await target.evaluate((element) => element === document.activeElement)) {
+        return;
+      }
+      await page.keyboard.press("Tab");
+    }
+    await expect(target).toBeFocused();
+  }
+
+  await tabTo(audit);
+  await expect(audit).toBeFocused();
+  await expect(audit).toBeInViewport();
+  await tabTo(signIn);
+  await expect(signIn).toBeFocused();
+  await expect(signIn).toBeInViewport();
+  expect(await sheet.evaluate((element) => element.scrollTop)).toBeGreaterThan(
+    0,
   );
 });

@@ -49,7 +49,7 @@ The extra spend over Autoblogging's entry tier buys link inventory and a managed
 
 ### Where We Are Not an Alternative
 
-We do not generate, schedule or publish articles, so nothing on our side replaces Autoblogging.ai's core function. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data, and states plainly that its report does not claim Search Console, traffic or ranking data. It answers "what did I already publish, and is it sound" — which becomes urgent precisely when a bulk tool has been running for a month.
+We do not generate, schedule or publish articles, so nothing on our side replaces Autoblogging.ai's core function. Our SEO agent runs a bounded crawl over on-page metadata, heading structure and structured data. If you have connected a Search Console property that covers the site, the report can add search-performance and sitemap index-status evidence; without that connection it claims no traffic or ranking data. Each run reports which catalogue checks its supplied inputs evaluated and which were excluded. It answers "what did I already publish, and is it sound" — which becomes urgent precisely when a bulk tool has been running for a month.
 
 ## Common Misreadings When Comparing These Tools
 

@@ -19,6 +19,11 @@ import {
   type AgentProfileRefreshData,
   type AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
+import {
+  canonicalAgentLanguageTag,
+  isAgentMarketCodeValid,
+  isAgentTargetUrlValid,
+} from "../../lib/agents/profile-input-validation";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
@@ -69,6 +74,8 @@ const EXISTING_AUDIT_ERROR_CODES = new Set([
   "robots_unreachable",
 ]);
 
+const WORKBENCH_AUDIT_ERROR_CODES = new Set(["invalid_origin"]);
+
 const URL_INPUT_ERROR_CODES = new Set([
   "invalid_url",
   "invalid_request",
@@ -77,15 +84,6 @@ const URL_INPUT_ERROR_CODES = new Set([
 
 const PROFILE_SEARCH_CLIENT_TIMEOUT_MS = 35_000;
 const PROFILE_REFRESH_CLIENT_TIMEOUT_MS = 110_000;
-
-function canonicalLanguageTag(value: string): string | null {
-  if (!value || value.length > 35) return null;
-  try {
-    return Intl.getCanonicalLocales(value)[0] ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function profileSearchRequestKey(
   profile: AgentProfileDraft,
@@ -153,8 +151,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
    *
    * Kept beside the profile rather than in it: the profile holds one
    * `targetQuery` for labelling, and the checker's question is up to five words
-   * measured against one page. Only a handoff sets this, so an ordinary Agent
-   * run keeps sending exactly what it sends today.
+   * measured against one page. A direct SEO run sends that single confirmed
+   * query, while a handoff preserves the checker's ordered one-to-five list.
    */
   const [handoffQueries, setHandoffQueries] = useState<readonly string[] | null>(
     null,
@@ -225,6 +223,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       pendingIntent?: PendingAgentIntent,
     ): Promise<void> => {
       try {
+        const directQuery = confirmedProfile.targetQuery.trim();
+        const targetQueries =
+          handoffQueriesRef.current ??
+          (directQuery === "" ? null : [directQuery]);
         const response = await fetch(AGENT_ENDPOINT[agent], {
           method: "POST",
           headers: {
@@ -232,16 +234,18 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             accept: "application/json",
           },
           body: JSON.stringify({
-          url: confirmedProfile.targetUrl,
-          // Only when this visit came from the page checker. Without a handoff
-          // the request is byte-for-byte what it was before the keyword layer.
-          ...(handoffQueriesRef.current === null
-            ? {}
-            : {
-                targetQueries: handoffQueriesRef.current,
-                pageRole: confirmedProfile.pageType,
-              }),
-        }),
+            url: confirmedProfile.targetUrl,
+            ...(agent === "seo"
+              ? {
+                  ...(targetQueries === null ? {} : { targetQueries }),
+                  // All four values come from the same captured confirmation,
+                  // so a later Profile edit cannot relabel the completed run.
+                  pageRole: confirmedProfile.pageType,
+                  market: confirmedProfile.country,
+                  language: confirmedProfile.locale,
+                }
+              : {}),
+          }),
           signal,
         });
         const body = (await response.json().catch(() => null)) as unknown;
@@ -452,13 +456,15 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         readonly reuseMatching?: boolean;
       } = {},
     ): Promise<void> => {
-      const targetLanguageTag = canonicalLanguageTag(requestedProfile.locale);
+      const targetLanguageTag = canonicalAgentLanguageTag(
+        requestedProfile.locale,
+      );
       if (
         !mounted.current ||
         profileSearchBusy.current ||
         requestedProfile.agent !== agent ||
-        !requestedProfile.targetUrl.trim() ||
-        !/^[A-Z]{2}$/.test(requestedProfile.country) ||
+        !isAgentTargetUrlValid(requestedProfile.targetUrl) ||
+        !isAgentMarketCodeValid(requestedProfile.country) ||
         !targetLanguageTag ||
         (requestedProfile.country === "CN" &&
           !requestedProfile.targetQuery.trim())
@@ -626,13 +632,15 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       mode: AgentProfileRefreshMode,
       requestedProfile: AgentProfileDraft,
     ): Promise<void> => {
-      const targetLanguageTag = canonicalLanguageTag(requestedProfile.locale);
+      const targetLanguageTag = canonicalAgentLanguageTag(
+        requestedProfile.locale,
+      );
       if (
         !mounted.current ||
         profileRefreshBusy.current ||
         requestedProfile.agent !== agent ||
-        !requestedProfile.targetUrl.trim() ||
-        !/^[A-Z]{2}$/.test(requestedProfile.country) ||
+        !isAgentTargetUrlValid(requestedProfile.targetUrl) ||
+        !isAgentMarketCodeValid(requestedProfile.country) ||
         !targetLanguageTag
       ) {
         return;
@@ -764,7 +772,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           currentProfile.targetUrl === requestedProfile.targetUrl &&
           currentProfile.host === requestedProfile.host &&
           currentProfile.country === requestedProfile.country &&
-          canonicalLanguageTag(currentProfile.locale) === targetLanguageTag
+          canonicalAgentLanguageTag(currentProfile.locale) === targetLanguageTag
             ? currentProfile
             : requestedProfile;
         const mergedProfile = applyAgentProfileRefresh(
@@ -813,7 +821,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         return;
       }
       const pending = pendingProfileSearch.current;
-      const currentLanguageTag = canonicalLanguageTag(
+      const currentLanguageTag = canonicalAgentLanguageTag(
         profileRef.current.locale,
       );
       if (
@@ -981,21 +989,28 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       next.targetUrl !== profile.targetUrl ||
       next.host !== profile.host ||
       next.country !== profile.country ||
-      canonicalLanguageTag(next.locale) !== canonicalLanguageTag(profile.locale);
+      canonicalAgentLanguageTag(next.locale) !==
+      canonicalAgentLanguageTag(profile.locale);
     const searchIdentityChanged =
       refreshIdentityChanged ||
       (next.country === "CN" &&
         next.targetQuery.trim() !== profile.targetQuery.trim());
-    // A captured report is evidence about one URL. Editing the product context
-    // that only labels that evidence must not abort a running crawl or throw
-    // away a finished one; only changing what is being audited does.
+    // Match the request assembled in `runAudit`, not the full Profile. Product
+    // and ICP fields frame the selected solution but never change the audit
+    // request, so editing them must not abort or discard its evidence.
+    const seoRequestIdentityChanged =
+      agent === "seo" &&
+      (next.pageType !== profile.pageType ||
+        next.country !== profile.country ||
+        next.locale !== profile.locale ||
+        // A handoff sends its immutable ordered query list instead. Its
+        // Profile targetQuery is only the first-query label in that mode.
+        (handoffQueries === null &&
+          next.targetQuery.trim() !== profile.targetQuery.trim()));
     const auditIdentityChanged =
       next.agent !== profile.agent ||
       next.targetUrl !== profile.targetUrl ||
-      next.host !== profile.host ||
-      // The page role now travels with a handoff and is measured, so changing it
-      // changes what was asked — a captured report no longer answers it.
-      (handoffQueries !== null && next.pageType !== profile.pageType);
+      seoRequestIdentityChanged;
     // The handed-over queries are deliberately not compared here. They are set
     // once, by the effect that consumes the intent and deletes it, so within one
     // mount they cannot change from one question to another; a second handoff is
@@ -1162,17 +1177,19 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         >
           {auditErrorKey
             ? auditT(auditErrorKey)
-            : errorCode === "auth_required"
-              ? t("errors.auth_required")
-              : errorCode === "auth_unavailable"
-                ? t("errors.auth_unavailable")
-                : errorCode === "intent_expired"
-                  ? t("errors.intent_expired")
-                  : errorCode === "intent_unavailable"
-                    ? t("errors.intent_unavailable")
-                    : errorCode === "audit_response_invalid"
-                      ? t("errors.audit_response_invalid")
-                      : t("errors.unknown")}
+            : WORKBENCH_AUDIT_ERROR_CODES.has(errorCode)
+              ? t("errors.invalid_origin")
+              : errorCode === "auth_required"
+                ? t("errors.auth_required")
+                : errorCode === "auth_unavailable"
+                  ? t("errors.auth_unavailable")
+                  : errorCode === "intent_expired"
+                    ? t("errors.intent_expired")
+                    : errorCode === "intent_unavailable"
+                      ? t("errors.intent_unavailable")
+                      : errorCode === "audit_response_invalid"
+                        ? t("errors.audit_response_invalid")
+                        : t("errors.unknown")}
         </p>
       ) : null}
 

@@ -1,10 +1,11 @@
 // @input  -- authenticated requests and controlled buffered crawler responses
-// @output -- auth-order, projection, passthrough, and fail-closed API assertions
+// @output -- auth/origin order, projection, passthrough, and fail-closed assertions
 // @pos    -- focused tests for the shared SEO and Tech Agent request wrapper
 
 import { describe, expect, it, vi } from "vitest";
 import type { SeoAuditPayload, SeoAuditRecord } from "@sf/public-tools";
 import { buildSearchPerformanceRecords } from "@sf/public-tools/seo-audit/search-performance";
+import { buildIndexCoverageRecords } from "@sf/public-tools/seo-audit/index-coverage";
 import {
   buildPagePerformanceRecords,
   buildPageWeightRecords,
@@ -15,11 +16,15 @@ import {
   AGENT_AUDIT_RECORD_CATEGORIES,
   AGENT_SEARCH_PERFORMANCE_VERSION,
   isAgentAuditSuccessEnvelope,
+  type AgentAuditSuccessEnvelope,
 } from "./audit-contract.ts";
 import {
+  DEFAULT_DEPENDENCIES,
   handleAgentAuditRequest,
   type AgentAuditHandlerDependencies,
 } from "./audit-handler.ts";
+import { readAgentSearchPerformance } from "./search-performance.ts";
+import { supportsAgentDisplayVocabulary } from "../../components/agents/agent-display-contract.ts";
 
 // Derived from the producer's ledger. A fourth hand-written copy of it lived
 // here, which is part of why a detector could land in the crawl and this
@@ -229,6 +234,7 @@ function dependencies(
 ): AgentAuditHandlerDependencies {
   return {
     authenticate: vi.fn(async () => "authenticated" as const),
+    isSameOriginPost: vi.fn(() => true),
     delegate: vi.fn(async () => success()),
     reportAs: "agent-audit",
     ...overrides,
@@ -246,37 +252,8 @@ describe("handleAgentAuditRequest", () => {
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
     endDate: "2026-08-15",
-    records: buildSearchPerformanceRecords(
-      {
-        property: "sc-domain:acme.test",
-        startDate: "2026-07-19",
-        endDate: "2026-08-15",
-        pages: [
-          { key: "https://acme.test/", clicks: 3, impressions: 90, position: 4 },
-        ],
-        queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
-        pagesTruncated: false,
-        queriesTruncated: false,
-        targetPageQueries: null,
-        targetPageUrl: null,
-        confirmedQueries: [],
-        targetPageQueriesTruncated: false,
-      },
-      [],
-    ),
-  };
-
-  it("returns a region the client guard actually accepts", async () => {
-    // Built by the real producer and read by the real guard. Both previous
-    // rounds shipped a consumer that refused its own producer's output while
-    // every unit test passed, because the fixtures were written to match the
-    // guard rather than taken from the thing that feeds it.
-    const region = {
-      version: AGENT_SEARCH_PERFORMANCE_VERSION,
-      property: "sc-domain:acme.test",
-      startDate: "2026-07-19",
-      endDate: "2026-08-15",
-      records: buildSearchPerformanceRecords(
+    records: [
+      ...buildSearchPerformanceRecords(
         {
           property: "sc-domain:acme.test",
           startDate: "2026-07-19",
@@ -301,17 +278,111 @@ describe("handleAgentAuditRequest", () => {
         },
         [],
       ),
-    };
+      ...buildIndexCoverageRecords(null),
+    ],
+  };
+
+  it("delivers the real seven-record Search Console region through the handler, wire guard, and display seam", async () => {
+    // Crosses the actual producer composition. Calling only
+    // `buildSearchPerformanceRecords` misses A1, which is exactly how the
+    // six-record consumer stayed green while production emitted seven.
     const response = await handleAgentAuditRequest(
       request(),
       "seo",
-      dependencies({ readSearchPerformance: async () => region }),
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                // The handler fixture's generic `sample` label and free-form
+                // limitation intentionally exercise only the wire guard. This
+                // test crosses the display seam too, so give the neutral crawl
+                // ledger the same vocabulary-safe clean shape production uses.
+                records: upstreamPayload.result.records.map((record) => ({
+                  ...record,
+                  state: "not_observed" as const,
+                  affected: 0,
+                  observations: [],
+                  limitation: null,
+                })),
+                siteResources: {
+                  ...upstreamPayload.result.siteResources,
+                  sitemapUrls: ["https://acme.test/"],
+                  sitemapUrlsComplete: true,
+                },
+              },
+            },
+          }),
+        readSearchPerformance: (input) =>
+          readAgentSearchPerformance(input, {
+            resolveGrant: async () => ({
+              kind: "grant" as const,
+              accessToken: "test-token",
+              properties: ["sc-domain:acme.test"],
+              propertyTotal: 1,
+            }),
+            read: async () => ({
+              property: "sc-domain:acme.test",
+              startDate: "2026-07-19",
+              endDate: "2026-08-15",
+              pages: [
+                {
+                  key: "https://acme.test/",
+                  clicks: 3,
+                  impressions: 90,
+                  position: 4,
+                },
+              ],
+              queries: [
+                { key: "acme", clicks: 3, impressions: 90, position: 4 },
+              ],
+              pagesTruncated: false,
+              queriesTruncated: false,
+              targetPageQueries: null,
+              targetPageUrl: null,
+              confirmedQueries: [],
+              targetPageQueriesTruncated: false,
+            }),
+            inspectIndexStatus: async () => ({
+              status: "ok" as const,
+              statuses: [
+                {
+                  url: "https://acme.test/",
+                  verdict: "PASS" as const,
+                  lastCrawledAt: "2026-08-18T00:00:00.000Z",
+                },
+              ],
+              unanswered: 0,
+            }),
+          }),
+      }),
     );
-    const body = await response.json();
+    const body = (await response.json()) as AgentAuditSuccessEnvelope;
+    const ids = body.data.result.searchPerformance?.records.map(
+      (record) => record.id,
+    );
 
-    expect(response.status).toBe(200);
-    expect(region.records.length).toBeGreaterThan(0);
-    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+    expect({
+      status: response.status,
+      ids,
+      wireAccepted: isAgentAuditSuccessEnvelope(body),
+      displayAccepted: supportsAgentDisplayVocabulary(body.data, "seo"),
+    }).toEqual({
+      status: 200,
+      ids: [
+        "page_without_search_impressions",
+        "abandoned_url_impression_share",
+        "impression_share_top_positions",
+        "impression_share_low_click_positions",
+        "target_query_ranking_band",
+        "non_brand_click_share",
+        "sitemap_url_not_indexed",
+      ],
+      wireAccepted: true,
+      displayAccepted: true,
+    });
   });
 
   it("asks Search Console about the URL the crawl landed on, not the one it requested", async () => {
@@ -628,6 +699,7 @@ describe("handleAgentAuditRequest", () => {
     const delegate = vi.fn(async () => success());
     const response = await handleAgentAuditRequest(incoming, "seo", {
       authenticate: vi.fn(async () => "unauthenticated" as const),
+      isSameOriginPost: vi.fn(() => true),
       delegate,
       reportAs: "agent-audit",
     });
@@ -647,6 +719,7 @@ describe("handleAgentAuditRequest", () => {
       authenticate: async () => {
         throw new Error("Supabase unavailable");
       },
+      isSameOriginPost: vi.fn(() => true),
       delegate,
       reportAs: "agent-audit",
     });
@@ -657,6 +730,47 @@ describe("handleAgentAuditRequest", () => {
     });
     expect(incoming.bodyUsed).toBe(false);
     expect(delegate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a present cross-origin header after auth and before reading the body", async () => {
+    const order: string[] = [];
+    const delegate = vi.fn(async () => success());
+    const incoming = new Request(
+      "https://gengrowth.ai/api/agents/seo/audit",
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          origin: "https://attacker.example",
+        },
+        body: JSON.stringify({ url: "acme.test" }),
+      },
+    );
+    const response = await handleAgentAuditRequest(
+      incoming,
+      "seo",
+      dependencies({
+        authenticate: vi.fn(async () => {
+          order.push("auth");
+          return "authenticated" as const;
+        }),
+        isSameOriginPost: vi.fn(() => {
+          order.push("origin");
+          return false;
+        }),
+        delegate,
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_origin" },
+    });
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+    expect(incoming.bodyUsed).toBe(false);
+    expect(delegate).not.toHaveBeenCalled();
+    expect(order).toEqual(["auth", "origin"]);
   });
 
   it("authenticates before delegating the original request instance", async () => {
@@ -670,6 +784,7 @@ describe("handleAgentAuditRequest", () => {
           order.push("auth");
           return "authenticated";
         },
+        isSameOriginPost: () => true,
         delegate: async (forwarded, input) => {
           order.push("delegate");
           // Identity, not a copy: a reconstructed Request lost Next's own
@@ -1411,7 +1526,11 @@ describe("handleAgentAuditRequest", () => {
  * has to leave the check intact — including the one where the provider is down.
  */
 describe("the results-page region", () => {
-  function landscapeRequest(): Request {
+  it("attaches the existing bounded results-page reader to direct SEO runs", () => {
+    expect(DEFAULT_DEPENDENCIES.readSerpLandscape).toBeTypeOf("function");
+  });
+
+  function landscapeRequest(language = "en", market = "GB"): Request {
     return new Request("https://gengrowth.ai/api/tools/on-page-seo-check", {
       method: "POST",
       headers: {
@@ -1422,11 +1541,30 @@ describe("the results-page region", () => {
       body: JSON.stringify({
         url: "acme.test",
         targetQueries: ["acme pricing", "pricing plans"],
-        market: "GB",
-        language: "en",
+        market,
+        language,
       }),
     });
   }
+
+  it("keeps the technical compatibility focus outside ranking-data reads", async () => {
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "provider_unavailable" as const,
+    }));
+
+    const response = await handleAgentAuditRequest(
+      landscapeRequest(),
+      "tech",
+      dependencies({ readSerpLandscape, delegate: async () => successWithExtract() }),
+    );
+    const body = (await response.json()) as {
+      readonly data: { readonly result: { readonly serpLandscape?: unknown } };
+    };
+
+    expect(readSerpLandscape).not.toHaveBeenCalled();
+    expect(body.data.result.serpLandscape).toBeUndefined();
+  });
 
   it("looks up the query the evidence layer already called primary", async () => {
     const readSerpLandscape = vi.fn(async () => ({
@@ -1450,6 +1588,47 @@ describe("the results-page region", () => {
     expect(input.query).toBe("acme pricing");
     expect(input.market).toBe("GB");
     expect(input.language).toBe("en");
+  });
+
+  it("accepts the same bounded BCP 47 language tags as the confirmed Profile", async () => {
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "provider_unavailable" as const,
+    }));
+
+    const response = await handleAgentAuditRequest(
+      landscapeRequest("zh-Hant-CN-x-private"),
+      "seo",
+      dependencies({ readSerpLandscape, delegate: async () => successWithExtract() }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(readSerpLandscape).toHaveBeenCalledOnce();
+    const [input] = readSerpLandscape.mock.calls[0] as unknown as [
+      { readonly language: string },
+    ];
+    expect(input.language).toBe("zh-Hant-CN-x-private");
+  });
+
+  it("rejects an unassigned market before crawl or ranking-data work", async () => {
+    const delegate = vi.fn(async () => successWithExtract());
+    const readSerpLandscape = vi.fn(async () => ({
+      availability: "unavailable" as const,
+      reason: "market_not_supported" as const,
+    }));
+
+    const response = await handleAgentAuditRequest(
+      landscapeRequest("en", "ZZ"),
+      "seo",
+      dependencies({ readSerpLandscape, delegate }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(delegate).not.toHaveBeenCalled();
+    expect(readSerpLandscape).not.toHaveBeenCalled();
   });
 
   it("looks nothing up when the page was never read", async () => {

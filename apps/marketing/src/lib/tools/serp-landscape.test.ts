@@ -18,9 +18,16 @@ function clientReturning(rows: readonly unknown[], itemTypes: unknown = null) {
     providerStatusCode: 20_000,
     taskStatusCode: 20_000,
   }));
+  const estimateTraffic = vi.fn(async (input: { readonly targets: readonly string[] }) => ({
+    rows: input.targets.map((target) => ({ target, organicEtv: null })),
+    unresolvedTargets: [],
+    costUsd: 0,
+  }));
+  const client = { serpOrganic } as never;
   return {
     serpOrganic,
-    client: { serpOrganic } as never,
+    estimateTraffic,
+    dependencies: { client, estimateTraffic },
   };
 }
 
@@ -37,7 +44,10 @@ const ROWS = [
 
 describe("readSerpLandscape", () => {
   it("reads page one and finds this page's own domain on it", async () => {
-    const { client, serpOrganic } = clientReturning(ROWS, ["organic", "ai_overview"]);
+    const { dependencies, serpOrganic } = clientReturning(ROWS, [
+      "organic",
+      "ai_overview",
+    ]);
 
     const result = await readSerpLandscape(
       {
@@ -46,7 +56,7 @@ describe("readSerpLandscape", () => {
         language: "en-US",
         targetUrl: "https://www.acme.test/pricing",
       },
-      { client },
+      dependencies,
     );
 
     expect(serpOrganic).toHaveBeenCalledWith({
@@ -69,7 +79,7 @@ describe("readSerpLandscape", () => {
   });
 
   it("reports a page that is not on the results it read, without calling it unranked", async () => {
-    const { client } = clientReturning(ROWS);
+    const { dependencies } = clientReturning(ROWS);
 
     const result = await readSerpLandscape(
       {
@@ -78,19 +88,19 @@ describe("readSerpLandscape", () => {
         language: "en",
         targetUrl: "https://elsewhere.test/",
       },
-      { client },
+      dependencies,
     );
 
     expect(result).toMatchObject({ availability: "available", targetPosition: null });
   });
 
   it("books what the call cost, since the provider itemises nothing per tool", async () => {
-    const { client } = clientReturning(ROWS);
+    const { dependencies } = clientReturning(ROWS);
     const onCost = vi.fn();
 
     await readSerpLandscape(
       { query: "q", market: "US", language: "en", targetUrl: "https://a.test/" },
-      { client, onCost },
+      { ...dependencies, onCost },
     );
 
     expect(onCost).toHaveBeenCalledWith(0.002, "US", "q");
@@ -99,12 +109,12 @@ describe("readSerpLandscape", () => {
   it("logs what it spent when nobody is listening", async () => {
     // The provider itemises nothing per tool, so a call nobody records is a
     // charge nobody can attribute.
-    const { client } = clientReturning(ROWS);
+    const { dependencies } = clientReturning(ROWS);
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     try {
       await readSerpLandscape(
         { query: "q", market: "US", language: "en", targetUrl: "https://a.test/" },
-        { client },
+        dependencies,
       );
       expect(info).toHaveBeenCalledWith(
         expect.stringContaining("[serp-landscape] paid_call cost_usd=0.002"),
@@ -115,11 +125,11 @@ describe("readSerpLandscape", () => {
   });
 
   it("spends nothing on a market it cannot look up", async () => {
-    const { client, serpOrganic } = clientReturning(ROWS);
+    const { dependencies, serpOrganic } = clientReturning(ROWS);
 
     const result = await readSerpLandscape(
       { query: "q", market: "ZZ", language: "en", targetUrl: "https://a.test/" },
-      { client },
+      dependencies,
     );
 
     expect(serpOrganic).not.toHaveBeenCalled();
@@ -130,11 +140,11 @@ describe("readSerpLandscape", () => {
   });
 
   it("spends nothing when no query was submitted", async () => {
-    const { client, serpOrganic } = clientReturning(ROWS);
+    const { dependencies, serpOrganic } = clientReturning(ROWS);
 
     const result = await readSerpLandscape(
       { query: null, market: "US", language: "en", targetUrl: "https://a.test/" },
-      { client },
+      dependencies,
     );
 
     expect(serpOrganic).not.toHaveBeenCalled();
@@ -198,14 +208,14 @@ describe("readSerpLandscape", () => {
   });
 
   it("bounds the provider's feature list where it is produced", async () => {
-    const { client } = clientReturning(
+    const { dependencies } = clientReturning(
       ROWS,
       Array.from({ length: 60 }, (_, index) => `feature_${index}`.repeat(20)),
     );
 
     const result = await readSerpLandscape(
       { query: "q", market: "US", language: "en", targetUrl: "https://a.test/" },
-      { client },
+      dependencies,
     );
 
     // The guard that validates this shape allows 40 names of 64 characters. A
@@ -219,11 +229,11 @@ describe("readSerpLandscape", () => {
   });
 
   it("finds the target host even when the URL carries no scheme", async () => {
-    const { client } = clientReturning(ROWS);
+    const { dependencies } = clientReturning(ROWS);
 
     const result = await readSerpLandscape(
       { query: "q", market: "US", language: "en", targetUrl: "acme.test/pricing" },
-      { client },
+      dependencies,
     );
 
     // Failing to parse our own target would have published "not among the top
@@ -232,7 +242,7 @@ describe("readSerpLandscape", () => {
   });
 
   it("will not claim the page when the provider gave no URL to compare", async () => {
-    const { client } = clientReturning([
+    const { dependencies } = clientReturning([
       { rankGroup: 1, domain: "acme.test", sitelinkCount: 0, url: null },
     ]);
 
@@ -243,7 +253,7 @@ describe("readSerpLandscape", () => {
         language: "en",
         targetUrl: "https://acme.test/pricing",
       },
-      { client },
+      dependencies,
     );
 
     expect(result).toMatchObject({ targetPosition: 1, targetPageOnPage: false });
@@ -256,7 +266,7 @@ describe("readSerpLandscape", () => {
     // Domain match is not page match, and the provider gives the URL. Reporting
     // only the host said "your page is at position 2" when position 2 was a
     // different page of theirs competing for the same query.
-    const { client } = clientReturning([
+    const { dependencies } = clientReturning([
       { rankGroup: 1, domain: "big.com", sitelinkCount: 0, url: "https://big.com/" },
       {
         rankGroup: 2,
@@ -273,7 +283,7 @@ describe("readSerpLandscape", () => {
         language: "en",
         targetUrl: "https://acme.test/pricing",
       },
-      { client },
+      dependencies,
     );
 
     expect(result).toMatchObject({
@@ -286,11 +296,11 @@ describe("readSerpLandscape", () => {
   });
 
   it("spends nothing on a language the provider was never going to accept", async () => {
-    const { client, serpOrganic } = clientReturning(ROWS);
+    const { dependencies, serpOrganic } = clientReturning(ROWS);
 
     const result = await readSerpLandscape(
       { query: "q", market: "US", language: "zz", targetUrl: "https://a.test/" },
-      { client },
+      dependencies,
     );
 
     // The market was allow-listed for exactly this reason and the language was
@@ -325,7 +335,7 @@ describe("what the form offers is what this lookup accepts", () => {
   it.each(SERP_MARKET_OPTIONS.map((option) => option.code))(
     "looks up %s instead of refusing it",
     async (market) => {
-      const { client, serpOrganic } = clientReturning(ROWS);
+      const { dependencies, serpOrganic } = clientReturning(ROWS);
       const result = await readSerpLandscape(
         {
           query: "q",
@@ -333,7 +343,7 @@ describe("what the form offers is what this lookup accepts", () => {
           language: DEFAULT_SERP_LANGUAGE,
           targetUrl: "https://a.test/",
         },
-        { client },
+        dependencies,
       );
       expect(serpOrganic).toHaveBeenCalled();
       expect(result.availability).toBe("available");
@@ -343,7 +353,7 @@ describe("what the form offers is what this lookup accepts", () => {
   it.each(SERP_LANGUAGE_OPTIONS.map((option) => option.code))(
     "accepts %s instead of refusing it",
     async (language) => {
-      const { client, serpOrganic } = clientReturning(ROWS);
+      const { dependencies, serpOrganic } = clientReturning(ROWS);
       const result = await readSerpLandscape(
         {
           query: "q",
@@ -351,7 +361,7 @@ describe("what the form offers is what this lookup accepts", () => {
           language,
           targetUrl: "https://a.test/",
         },
-        { client },
+        dependencies,
       );
       expect(serpOrganic).toHaveBeenCalled();
       expect(result.availability).toBe("available");

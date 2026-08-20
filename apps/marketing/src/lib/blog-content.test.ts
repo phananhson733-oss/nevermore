@@ -257,6 +257,31 @@ describe("repository-backed blog content", () => {
     expect(combinedContent).not.toContain("https://app.gengrowth.ai/");
   });
 
+  it("keeps published SEO Agent comparisons on the current conditional-evidence contract", async () => {
+    const slugs = [
+      "outrank-alternatives",
+      "babylovegrowth-alternatives",
+      "autoblogging-ai-alternatives",
+    ];
+    const posts = await Promise.all(
+      slugs.map((slug) => getLocalBlogPostBySlug(slug, "en")),
+    );
+
+    for (const [index, post] of posts.entries()) {
+      expect(post, slugs[index]).not.toBeNull();
+      if (!post) continue;
+      expect(post.content, slugs[index]).not.toMatch(
+        /does not claim Search Console, traffic or ranking data/i,
+      );
+      expect(post.content, slugs[index]).toMatch(
+        /connected (?:a )?Search Console property/i,
+      );
+    }
+
+    const combinedContent = posts.map((post) => post?.content ?? "").join("\n");
+    expect(combinedContent).not.toMatch(/24 of (?:its|the) 81 catalogue checks/i);
+  });
+
   it("does not link published articles through retired marketing routes", async () => {
     const posts = await getLocalBlogPosts();
     const combinedContent = posts.map((post) => post.content).join("\n");

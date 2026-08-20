@@ -8,6 +8,10 @@ import {
   type KeywordEvidencePageRole,
   type NormalizedTargetQuery,
 } from "@sf/public-tools";
+import {
+  canonicalAgentLanguageTag,
+  isAgentMarketCodeValid,
+} from "../agents/profile-input-validation.ts";
 
 /**
  * Body budget for an SEO audit request.
@@ -111,28 +115,18 @@ export function readSeoAuditInput(
 
   let market: string | null = null;
   if (input.market !== undefined) {
-    if (
-      typeof input.market !== "string" ||
-      !/^[A-Za-z]{2}$/.test(input.market)
-    ) {
+    if (typeof input.market !== "string") {
       return { ok: false };
     }
-    market = input.market.toUpperCase();
+    const candidate = input.market.trim().toUpperCase();
+    if (!isAgentMarketCodeValid(candidate)) return { ok: false };
+    market = candidate;
   }
 
   let language: string | null = null;
   if (input.language !== undefined) {
-    // A BCP-47 shape, bounded. Which languages can actually be served is the
-    // lookup's business, not this validator's: failing the whole request over
-    // a field the crawl never reads would lose the check to keep the context.
-    if (
-      typeof input.language !== "string" ||
-      input.language.length > 16 ||
-      !/^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/.test(input.language)
-    ) {
-      return { ok: false };
-    }
-    language = input.language;
+    language = canonicalAgentLanguageTag(input.language);
+    if (language === null) return { ok: false };
   }
 
   return {

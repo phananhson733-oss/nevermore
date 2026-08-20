@@ -1,12 +1,17 @@
-// @input  — next-intl common 命名空间、lib/theme 常量、lucide 图标
+// @input  — next-intl locale/common 命名空间、lib/theme 常量、lucide 图标
 // @output — ThemeToggle 组件（深/浅主题切换按钮）
 // @pos    — Header 子组件，与 LanguageSwitcher 并列
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLayoutEffect } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { Moon, Sun } from "lucide-react";
-import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "@/lib/theme";
+import {
+  isTheme,
+  THEME_ATTRIBUTE,
+  THEME_STORAGE_KEY,
+} from "@/lib/theme";
 
 /**
  * 主题开关。
@@ -22,6 +27,19 @@ import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from "@/lib/theme";
  */
 export function ThemeToggle() {
   const t = useTranslations("common");
+  const locale = useLocale();
+
+  useLayoutEffect(() => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      if (isTheme(stored)) {
+        document.documentElement.setAttribute(THEME_ATTRIBUTE, stored);
+      }
+    } catch {
+      // Reading localStorage can throw in Safari private mode. The current DOM
+      // theme remains usable even when there is no stored preference to restore.
+    }
+  }, [locale]);
 
   const toggle = () => {
     const root = document.documentElement;

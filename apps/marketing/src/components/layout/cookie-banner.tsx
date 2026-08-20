@@ -1,10 +1,11 @@
-// @input  -- consent-panel, cookie-consent-state, lucide-react Settings icon
+// @input  -- next-intl footer messages, consent-panel, cookie-consent-state, lucide-react Settings icon
 // @output -- CookieBanner component (banner + preferences modal + floating button)
 // @pos    -- Global layout component for cookie consent, SPEC 2.4.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { Settings } from "lucide-react";
 import { getStoredConsent } from "./cookie-consent-state";
 import { ConsentPanel } from "./consent-panel";
@@ -16,6 +17,7 @@ export function CookieBanner({
   prefsOpen?: boolean;
   onPrefsClose?: () => void;
 }) {
+  const t = useTranslations("footer");
   const [showBanner, setShowBanner] = useState(() => {
     if (typeof window === "undefined") return false;
     return getStoredConsent() === null;
@@ -103,7 +105,7 @@ export function CookieBanner({
           ref={triggerRef}
           onClick={() => setShowPreferences(true)}
           className="fixed right-4 bottom-4 z-40 flex size-10 items-center justify-center rounded-full border border-brand-border-strong bg-brand-panel text-text-dark-secondary transition-colors hover:border-brand-accent/50 hover:text-text-dark-primary"
-          aria-label="Cookie Preferences"
+          aria-label={t("cookiePreferences")}
         >
           <Settings className="size-4" aria-hidden="true" />
         </button>

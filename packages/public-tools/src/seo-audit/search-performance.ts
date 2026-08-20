@@ -1,10 +1,14 @@
 // @input  -- authorized Search Console rows plus the pages this crawl collected
-// @output -- evidence records for the search-performance checks (E1, E2, E3)
+// @output -- search-performance records plus the combined Search Console consumer ledger
 // @pos    -- pure projection; owns no credential, makes no request
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 
+import {
+  INDEX_COVERAGE_EVIDENCE_LABELS,
+  INDEX_COVERAGE_RECORD_IDS,
+} from "./index-coverage.ts";
 import type {
   SeoAuditEvidenceValueEntry,
   SeoAuditObservation,
@@ -632,3 +636,29 @@ export const SEARCH_PERFORMANCE_RECORD_IDS: readonly string[] = [
   "target_query_ranking_band",
   "non_brand_click_share",
 ];
+
+/**
+ * Every record the Agent's Search Console region emits, in producer order.
+ *
+ * A real region appends the index-coverage record to the six performance
+ * records. Consumers must use this combined ledger rather than treating the
+ * lower-level performance builder as the whole wire contract.
+ */
+export const SEARCH_CONSOLE_RECORD_IDS: readonly string[] = [
+  ...SEARCH_PERFORMANCE_RECORD_IDS,
+  ...INDEX_COVERAGE_RECORD_IDS,
+];
+
+/** Observation labels published anywhere in the combined region. */
+export const SEARCH_CONSOLE_EVIDENCE_LABELS: readonly string[] = [
+  ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  ...INDEX_COVERAGE_EVIDENCE_LABELS,
+];
+
+/**
+ * Limitation codes published anywhere in the combined region.
+ *
+ * The existing ledger already includes the index-coverage gap codes; this
+ * alias gives every Search Console consumer the same combined import surface.
+ */
+export { SEARCH_PERFORMANCE_LIMITATION_CODES as SEARCH_CONSOLE_LIMITATION_CODES } from "./record-ledger.ts";

@@ -12,14 +12,11 @@ export function menuItemPath(
 }
 
 /**
- * The SEO Agent and its technical focus, surfaced in the primary header submenu.
+ * The two peer Agent products surfaced in the primary header submenu.
  *
- * Two entries, one product: the technical route renders the same workbench over
- * the same engine and keeps its own URL, so it stays listed and reachable while
- * reading as a focus rather than a second Agent.
- *
- * Agent route directories are the catalogue authority. `navigation.test.ts`
- * fails if the menu and those directories drift in either direction.
+ * The technical route remains a reachable SEO compatibility focus, but it is
+ * deliberately subordinate rather than a third peer Agent. `navigation.test.ts`
+ * guards both the peer menu and that compatibility route.
  */
 export const agentsMenuGroups: NavMenuGroup[] = [
   {
@@ -36,12 +33,6 @@ export const agentsMenuGroups: NavMenuGroup[] = [
         labelKey: "nav.agentsMenu.geo.label",
         descriptionKey: "nav.agentsMenu.geo.description",
         icon: "Radar",
-      },
-      {
-        slug: "tech",
-        labelKey: "nav.agentsMenu.tech.label",
-        descriptionKey: "nav.agentsMenu.tech.description",
-        icon: "Wrench",
       },
     ],
   },

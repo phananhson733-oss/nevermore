@@ -1,5 +1,5 @@
 // @input  — next-intl, framer-motion
-// @output — CapabilitiesPreview 组件（一个 SEO Agent，两个焦点）
+// @output — CapabilitiesPreview 组件（SEO / GEO 两个同级 Agent）
 // @pos    — 首页区块 2，深色背景 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -9,26 +9,29 @@ import { useLocale } from "next-intl";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import { ScanSearch, Wrench, type LucideIcon } from "lucide-react";
+import { Radar, ScanSearch, type LucideIcon } from "lucide-react";
 import { localePath } from "@/lib/locale-path";
 
 const CARDS: {
   icon: LucideIcon;
   titleKey: string;
   descKey: string;
+  showsCrawlEvidence: boolean;
   slug: string;
 }[] = [
   {
     icon: ScanSearch,
     titleKey: "seoTitle",
     descKey: "seoDesc",
+    showsCrawlEvidence: true,
     slug: "seo",
   },
   {
-    icon: Wrench,
-    titleKey: "techTitle",
-    descKey: "techDesc",
-    slug: "tech",
+    icon: Radar,
+    titleKey: "geoTitle",
+    descKey: "geoDesc",
+    showsCrawlEvidence: false,
+    slug: "geo",
   },
 ];
 
@@ -101,9 +104,11 @@ export function CapabilitiesPreview() {
                   <span className="rounded-md border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
                     {t("accountRequired")}
                   </span>
-                  <span className="rounded-md border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
-                    {t("liveCrawl")}
-                  </span>
+                  {card.showsCrawlEvidence ? (
+                    <span className="rounded-md border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
+                      {t("liveCrawl")}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors group-hover:text-brand-accent-hover">
                   {t("cardCta")}

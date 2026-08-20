@@ -62,8 +62,8 @@ const AGENT_SHELL_COPY_KEYS = [
   "home.capabilities.subtitle",
   "home.capabilities.seoTitle",
   "home.capabilities.seoDesc",
-  "home.capabilities.techTitle",
-  "home.capabilities.techDesc",
+  "home.capabilities.geoTitle",
+  "home.capabilities.geoDesc",
   "home.capabilities.accountRequired",
   "home.capabilities.liveCrawl",
   "home.capabilities.cardCta",
@@ -166,10 +166,14 @@ describe("homepage Agent links", () => {
     host.remove();
   });
 
-  it("offers only the SEO and Tech Agent cards", () => {
+  it("offers only the SEO and GEO peer Agent cards", () => {
     const contents = source("./capabilities-preview.tsx");
     expect(contents).toContain('slug: "seo"');
-    expect(contents).toContain('slug: "tech"');
+    expect(contents).toContain('slug: "geo"');
+    expect(contents).not.toContain('slug: "tech"');
+    expect(contents).toMatch(
+      /icon: Radar,[\s\S]*?showsCrawlEvidence: false,[\s\S]*?slug: "geo"/,
+    );
     expect(contents).toContain("`/agents/${card.slug}`");
     expect(contents).not.toContain("`/tools/${card.slug}`");
   });
@@ -216,6 +220,18 @@ describe("Agent shell copy", () => {
       "有边界的抓取证据",
     );
   });
+
+  it.each(["en", "zh"])(
+    "describes the %s GEO card as AI-answer evidence, not crawl evidence",
+    (locale) => {
+      const description = lookup(
+        messages(locale),
+        "home.capabilities.geoDesc",
+      );
+      expect(description).toMatch(/AI/);
+      expect(description).not.toMatch(/crawl|抓取/i);
+    },
+  );
 });
 
 afterEach(() => {

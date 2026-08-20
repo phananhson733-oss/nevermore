@@ -1,5 +1,5 @@
 // @input  -- authenticated profile-search requests plus injected provider/cache/concurrency seams
-// @output -- auth order, strict input, cost gates, market routing, and safe projections
+// @output -- auth/origin order, strict input, cost gates, routing, and projections
 // @pos    -- focused TDD suite for the marketing-only DataForSEO boundary
 
 import { describe, expect, it, vi } from "vitest";
@@ -142,6 +142,7 @@ function dependencies(
   const upstream = provider();
   return {
     authenticate: vi.fn(async () => "authenticated" as const),
+    isSameOriginPost: vi.fn(() => true),
     normalizeUrl: vi.fn(() => ({
       ok: true as const,
       url: "https://www.acme.com/pricing?ref=agent",
@@ -714,6 +715,38 @@ describe("handleAgentProfileSearchRequest", () => {
     expect(incoming.bodyUsed).toBe(false);
   });
 
+  it("rejects a present cross-origin header after auth and before reading the body", async () => {
+    const order: string[] = [];
+    const createProvider = vi.fn();
+    const incoming = request(undefined, {
+      origin: "https://attacker.example",
+    });
+    const response = await handleAgentProfileSearchRequest(
+      incoming,
+      "seo",
+      dependencies({
+        authenticate: vi.fn(async () => {
+          order.push("auth");
+          return "authenticated" as const;
+        }),
+        isSameOriginPost: vi.fn(() => {
+          order.push("origin");
+          return false;
+        }),
+        createProvider: createProvider as never,
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_origin" },
+    });
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+    expect(incoming.bodyUsed).toBe(false);
+    expect(createProvider).not.toHaveBeenCalled();
+    expect(order).toEqual(["auth", "origin"]);
+  });
+
   it.each([
     [
       "extra key",
@@ -740,6 +773,16 @@ describe("handleAgentProfileSearchRequest", () => {
       {
         url: "acme.com",
         marketCode: "USA",
+        languageTag: "en",
+        targetQuery: "seo",
+        productProfileSearchSeeds: [],
+      },
+    ],
+    [
+      "unassigned market",
+      {
+        url: "acme.com",
+        marketCode: "ZZ",
         languageTag: "en",
         targetQuery: "seo",
         productProfileSearchSeeds: [],

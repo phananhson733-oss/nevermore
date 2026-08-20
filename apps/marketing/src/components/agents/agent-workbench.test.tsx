@@ -153,7 +153,7 @@ const PROFILE_REFRESH_LIST_FIELDS = new Set<AgentProfileRefreshFieldPath>([
 function profileRefreshEnvelope(
   agent: AgentKind,
   {
-    submittedUrl = "example.com",
+    submittedUrl = "acme.com",
     marketCode = "US",
     languageTag = "en-US",
     outputLocale = "en",
@@ -238,7 +238,7 @@ function profileRefreshEnvelope(
 function profileSearchEnvelope(
   agent: AgentKind,
   {
-    targetHost = "example.com",
+    targetHost = "acme.com",
     marketCode = "US",
     availability = "available",
   }: {
@@ -320,6 +320,29 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   act(() => {
     setValue.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string): void {
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  if (!setValue) throw new Error("HTMLSelectElement.value setter unavailable");
+  act(() => {
+    setValue.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function ensureProfileReviewOpen(): void {
+  if (document.querySelector('[aria-label="fields.targetQuery"]')) return;
+  act(() => {
+    (
+      document.querySelector(
+        'button[data-profile-action="review"]',
+      ) as HTMLButtonElement
+    ).click();
   });
 }
 
@@ -439,7 +462,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         if (path === "/api/agents/seo/profile-search") {
           expect(init?.body).toBe(
             JSON.stringify({
-              url: "example.com",
+              url: "acme.com",
               marketCode: "US",
               languageTag: "en-US",
               targetQuery: "growth evidence",
@@ -454,7 +477,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext("US", "en-US", "growth evidence");
     await flushAsyncWork();
 
@@ -502,7 +525,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -539,7 +562,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -583,7 +606,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -627,7 +650,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -682,7 +705,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext("CN", "zh-CN");
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -707,7 +730,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         if (path === "/api/agents/seo/profile-refresh") {
           expect(init?.body).toBe(
             JSON.stringify({
-              url: "example.com",
+              url: "acme.com",
               marketCode: "US",
               languageTag: "en-US",
               outputLocale: "en",
@@ -725,7 +748,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext("US", "en-US");
     await flushAsyncWork();
 
@@ -775,7 +798,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -812,7 +835,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -845,7 +868,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -878,7 +901,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
   it("resumes a stored profile diagnosis exactly once after a signed-in reload without running audit", async () => {
     const pendingProfile = updateAgentProfile(
-      createAgentProfileDraft("tech", "example.com"),
+      createAgentProfileDraft("tech", "acme.com"),
       { country: "US", locale: "en-US" },
     );
     expect(
@@ -927,7 +950,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -960,7 +983,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1013,7 +1036,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1054,7 +1077,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       ),
     ).toHaveLength(1);
     expect(profileSearchBody).toMatchObject({
-      url: "example.com",
+      url: "acme.com",
       marketCode: "US",
       languageTag: "en-US",
       targetQuery: "merged search context",
@@ -1069,7 +1092,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1091,7 +1114,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1107,7 +1130,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
   });
 
   it("accepts a strict live response when the submitted URL contains a www host", async () => {
-    const submittedUrl = "https://www.example.com/pricing";
+    const submittedUrl = "https://www.acme.com/pricing";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
       String(input) === "/api/auth/session"
         ? Response.json({ signedIn: true })
@@ -1149,7 +1172,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await act(async () => {
@@ -1181,7 +1204,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
 
@@ -1214,7 +1237,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await act(async () => {
@@ -1255,7 +1278,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     act(() => {
       const action = document.querySelector(
@@ -1345,7 +1368,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext();
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1377,7 +1400,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "acme.com");
     setRunContext("US", "not_a_locale");
 
     expect(
@@ -1408,7 +1431,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     setRunContext("US", "en-us");
     runProfileDiagnosis();
     await flushAsyncWork();
@@ -1608,7 +1631,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     {
       identity: "host",
       initialContext: () => setRunContext(),
-      changeIdentity: () => setProfileUrl("tech", "example.com"),
+      changeIdentity: () => setProfileUrl("tech", "acme.com"),
     },
     {
       identity: "market",
@@ -1845,7 +1868,6 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
     renderStrict("seo");
     await flushAsyncWork();
-    setRunContext();
     confirmProfile();
     await flushAsyncWork();
 
@@ -1855,6 +1877,8 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       // Order is the visitor's, and the wire treats it as significant.
       targetQueries: ["natal chart", "birth chart"],
       pageRole: "guide",
+      market: "GB",
+      language: "en-GB",
     });
   });
 
@@ -1946,9 +1970,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
   });
 
-  it("keeps a page-focused launch out of an ordinary Agent request", async () => {
-    // No handoff: the request body must be byte-for-byte what it was before the
-    // keyword layer existed.
+  it("carries the confirmed direct SEO context and one target query into the request", async () => {
     const bodies: string[] = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1963,13 +1985,49 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
     renderStrict("seo");
     setProfileUrl("seo", "astrologywiki.com");
-    setRunContext();
+    setRunContext("GB", "en-GB", "natal chart");
     confirmProfile();
     await flushAsyncWork();
 
     expect(bodies.length).toBeGreaterThan(0);
     for (const body of bodies) {
-      expect(JSON.parse(body)).toEqual({ url: "astrologywiki.com" });
+      expect(JSON.parse(body)).toEqual({
+        url: "astrologywiki.com",
+        targetQueries: ["natal chart"],
+        pageRole: "homepage",
+        market: "GB",
+        language: "en-GB",
+      });
+    }
+  });
+
+  it("omits targetQueries for a blank direct SEO query without dropping confirmed context", async () => {
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext("US", "en-US");
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(JSON.parse(body)).toEqual({
+        url: "astrologywiki.com",
+        pageRole: "homepage",
+        market: "US",
+        language: "en-US",
+      });
     }
   });
 
@@ -1981,7 +2039,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         }
         expect(input).toBe("/api/agents/seo/audit");
         expect(init?.body).toBe(
-          JSON.stringify({ url: "astrologywiki.com/birth-chart" }),
+          JSON.stringify({
+            url: "astrologywiki.com/birth-chart",
+            pageRole: "tool",
+            market: "US",
+            language: "en-US",
+          }),
         );
         return Response.json(
           successEnvelope("seo", "astrologywiki.com/birth-chart"),
@@ -2052,7 +2115,14 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
-        expect(init?.body).toBe(JSON.stringify({ url: "astrologywiki.com" }));
+        expect(init?.body).toBe(
+          JSON.stringify({
+            url: "astrologywiki.com",
+            pageRole: "homepage",
+            market: "US",
+            language: "en-US",
+          }),
+        );
         return Response.json(successEnvelope("seo"));
       },
     );
@@ -2156,10 +2226,34 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     );
   });
 
+  it("shows specific same-origin guidance for an invalid_origin audit response", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL) =>
+        String(input) === "/api/auth/session"
+          ? Response.json({ signedIn: true })
+          : Response.json(
+              { error: { code: "invalid_origin" } },
+              { status: 403 },
+            ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(postCalls(fetchMock)).toHaveLength(1);
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+      "errors.invalid_origin",
+    );
+  });
+
   it.each([
     ["invalid_url", 400, "true"],
-    ["rate_limited", 429, "false"],
-    ["scan_failed", 502, "false"],
+    ["rate_limited", 429, null],
+    ["scan_failed", 502, null],
   ] as const)(
     "marks the URL invalid for %s only when the URL caused the failure",
     async (errorCode, status, expectedAriaInvalid) => {
@@ -2320,7 +2414,54 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(postCalls(fetchMock)).toHaveLength(1);
   });
 
-  it("keeps a captured report labelled with the context it actually ran under", async () => {
+  it.each([
+    {
+      identity: "target query",
+      changeIdentity: () => {
+        ensureProfileReviewOpen();
+        setInputValue(
+          document.querySelector(
+            'input[aria-label="fields.targetQuery"]',
+          ) as HTMLInputElement,
+          "relationship astrology",
+        );
+      },
+    },
+    {
+      identity: "page role",
+      changeIdentity: () => {
+        ensureProfileReviewOpen();
+        setSelectValue(
+          document.querySelector(
+            '[aria-label="fields.pageType"]',
+          ) as HTMLSelectElement,
+          "guide",
+        );
+      },
+    },
+    {
+      identity: "market",
+      changeIdentity: () =>
+        setInputValue(
+          document.querySelector(
+            '[data-profile-refresh-field="market"]',
+          ) as HTMLInputElement,
+          "GB",
+        ),
+    },
+    {
+      identity: "language",
+      changeIdentity: () =>
+        setInputValue(
+          document.querySelector(
+            '[data-profile-refresh-field="language"]',
+          ) as HTMLInputElement,
+          "en-GB",
+        ),
+    },
+  ])(
+    "drops a captured direct SEO report when its confirmed $identity changes",
+    async ({ changeIdentity }) => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL): Promise<Response> => {
         if (String(input) === "/api/auth/session") {
@@ -2333,26 +2474,21 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
     renderStrict("seo");
     setProfileUrl("seo", "astrologywiki.com");
-    setRunContext("US", "en-US");
+    setRunContext("US", "en-US", "natal chart");
     confirmProfile();
     await flushAsyncWork();
 
-    const reportCountry = () =>
-      document
-        .querySelector('[data-testid="agent-results"]')
-        ?.getAttribute("data-profile-country");
-    expect(reportCountry()).toBe("US");
+      expect(
+        document.querySelector('[data-testid="agent-results"]'),
+      ).not.toBeNull();
 
-    // Editing the market after the fact must not relabel a captured report
-    // with a context that run never used.
-    setRunContext("GB", "en-GB");
-    await flushAsyncWork();
+      changeIdentity();
+      await flushAsyncWork();
 
-    expect(
-      document.querySelector('[data-testid="agent-results"]'),
-    ).not.toBeNull();
-    expect(reportCountry()).toBe("US");
-  });
+      expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();
+      expect(postCalls(fetchMock)).toHaveLength(1);
+    },
+  );
 
   it("drops a captured report once the audited URL changes", async () => {
     const fetchMock = vi.fn(
@@ -2374,7 +2510,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       document.querySelector('[data-testid="agent-results"]'),
     ).not.toBeNull();
 
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "acme.com");
     await flushAsyncWork();
 
     expect(document.querySelector('[data-testid="agent-results"]')).toBeNull();

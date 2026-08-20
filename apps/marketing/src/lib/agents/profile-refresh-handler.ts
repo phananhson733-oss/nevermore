@@ -34,6 +34,10 @@ import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { KeywordLlmError } from "../tools/keyword-llm-client.ts";
 import type { AgentKind } from "./audit-contract.ts";
 import {
+  canonicalAgentLanguageTag,
+  isAgentMarketCodeValid,
+} from "./profile-input-validation.ts";
+import {
   AGENT_PROFILE_REFRESH_SCHEMA_VERSION,
   AGENT_PROFILE_REFRESH_READY_FIELD_PATHS,
   isAgentProfileRefreshData,
@@ -47,12 +51,6 @@ import {
 } from "./profile-refresh-prompt.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
-const ISO_3166_ALPHA2_MARKET_CODES = new Set(
-  "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(
-    " ",
-  ),
-);
-
 interface ProfileRefreshInput {
   readonly url: string;
   readonly marketCode: string;
@@ -231,17 +229,6 @@ function contextErrorResponse(error: unknown): Response {
   return json({ error: { code: error.code } }, status[error.code] ?? 503);
 }
 
-function canonicalLanguageTag(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (trimmed === "" || trimmed.length > 35) return null;
-  try {
-    return Intl.getCanonicalLocales(trimmed)[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function parseInput(value: unknown): ProfileRefreshInput | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -265,10 +252,10 @@ function parseInput(value: unknown): ProfileRefreshInput | null {
     return null;
   }
   const marketCode = object.marketCode.trim().toUpperCase();
-  const languageTag = canonicalLanguageTag(object.languageTag);
-  const outputLocale = canonicalLanguageTag(object.outputLocale);
+  const languageTag = canonicalAgentLanguageTag(object.languageTag);
+  const outputLocale = canonicalAgentLanguageTag(object.outputLocale);
   if (
-    !ISO_3166_ALPHA2_MARKET_CODES.has(marketCode) ||
+    !isAgentMarketCodeValid(marketCode) ||
     languageTag === null ||
     (outputLocale !== "en" && outputLocale !== "zh")
   ) {

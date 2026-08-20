@@ -6,6 +6,11 @@ import type {
   AgentProfileRefreshFieldPath,
   AgentProfileRefreshResult,
 } from "../../lib/agents/profile-refresh-contract";
+import {
+  isAgentLanguageTagValid,
+  isAgentMarketCodeValid,
+  isAgentTargetUrlValid,
+} from "../../lib/agents/profile-input-validation";
 import type { AgentKind } from "./agent-types";
 
 export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v3" as const;
@@ -1301,8 +1306,8 @@ function isCompleteFieldProvenance(
  * The context a run actually consumes.
  *
  * The audit itself is decided by crawl evidence alone, so blocking a run on
- * fifteen positioning fields bought nothing. These five are the ones the run
- * reads back: they label the evidence and fill the Stage 04 solution preview.
+ * positioning fields bought nothing. Only the market and locale need field
+ * provenance; target URL validity is checked separately below.
  *
  * The first desired outcome is deliberately not here. It ships with a prompt
  * for a placeholder ("Confirm the first search-growth outcome.") and the page
@@ -1311,15 +1316,20 @@ function isCompleteFieldProvenance(
  * visible way to satisfy it.
  */
 export const AGENT_PROFILE_READY_FIELDS = [
-  "productName",
-  "primaryCta",
-  "primaryIcp",
   "country",
   "locale",
 ] as const satisfies readonly AgentProfileEditableField[];
 
-/** Minimal local gate aligned with the app's confirmed Product Profile roots. */
+/** Minimal local gate for inputs the bounded audit actually consumes. */
 export function isAgentProfileReady(profile: AgentProfileDraft): boolean {
+  if (
+    !isAgentTargetUrlValid(profile.targetUrl) ||
+    !isAgentMarketCodeValid(profile.country) ||
+    !isAgentLanguageTagValid(profile.locale) ||
+    !PAGE_TYPE_VALUES.has(profile.pageType)
+  ) {
+    return false;
+  }
   const provenance = new Map(
     profile.fieldProvenance.map((entry) => [entry.path, entry]),
   );
@@ -1353,15 +1363,15 @@ export function isAgentProfileDraft(
     (exactUrl === undefined || candidate.targetUrl === exactUrl) &&
     isBoundedString(candidate.host, true) &&
     candidate.host === displayHost(candidate.targetUrl) &&
-    isBoundedString(candidate.productName) &&
+    isBoundedString(candidate.productName, true) &&
     isBoundedString(candidate.oneLinePositioning) &&
     isBoundedString(candidate.valueProposition) &&
     isStringArray(candidate.coreFeatures, 20) &&
     isStringArray(candidate.categories, 20) &&
     isBoundedString(candidate.businessModel) &&
-    isBoundedString(candidate.primaryCta) &&
+    isBoundedString(candidate.primaryCta, true) &&
     isStringArray(candidate.trustSignals, 20) &&
-    isBoundedString(candidate.primaryIcp) &&
+    isBoundedString(candidate.primaryIcp, true) &&
     isBoundedString(candidate.buyer) &&
     isBoundedString(candidate.user) &&
     isBoundedString(candidate.triggerPain) &&

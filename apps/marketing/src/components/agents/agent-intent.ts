@@ -4,6 +4,11 @@
 
 import type { AgentKind } from "./agent-types";
 import {
+  isAgentLanguageTagValid,
+  isAgentMarketCodeValid,
+  isAgentTargetUrlValid,
+} from "../../lib/agents/profile-input-validation";
+import {
   isAgentProfileDraft,
   isConfirmedAgentProfile,
   type AgentProfileDraft,
@@ -157,15 +162,6 @@ function isRefreshMode(value: unknown): value is AgentProfileRefreshMode {
   return value === "prefer_cache" || value === "refresh";
 }
 
-function isCanonicalLanguageTag(value: string): boolean {
-  if (!value || value.length > 35) return false;
-  try {
-    return Intl.getCanonicalLocales(value)[0] === value;
-  } catch {
-    return false;
-  }
-}
-
 function isRefreshProfileDraft(
   value: unknown,
   agent: AgentKind,
@@ -175,8 +171,9 @@ function isRefreshProfileDraft(
     return false;
   }
   return (
-    /^[A-Z]{2}$/.test(value.country) &&
-    isCanonicalLanguageTag(value.locale)
+    isAgentTargetUrlValid(value.targetUrl) &&
+    isAgentMarketCodeValid(value.country) &&
+    isAgentLanguageTagValid(value.locale)
   );
 }
 

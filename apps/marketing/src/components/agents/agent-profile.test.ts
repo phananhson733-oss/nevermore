@@ -1116,9 +1116,9 @@ describe("Agent-local Product / ICP profiles", () => {
     ).toBe(false);
   });
 
-  it("confirms only a minimally complete Product Profile and primary ICP", () => {
+  it("confirms a bounded audit from valid run inputs without requiring Product or ICP copy", () => {
     const supplied = createAgentProfileDraft("seo", "astrologywiki.com");
-    const generic = createAgentProfileDraft("seo", "example.com");
+    const generic = createAgentProfileDraft("seo", "acme.com");
 
     expect(isAgentProfileReady(supplied)).toBe(false);
     expect(confirmAgentProfile(supplied).reviewState).toBe(
@@ -1132,9 +1132,13 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(confirmAgentProfile(suppliedWithRunMarket).reviewState).toBe(
       "confirmed",
     );
-    expect(isAgentProfileReady(generic)).toBe(false);
-    expect(confirmAgentProfile(generic).reviewState).toBe(
-      "needs_confirmation",
+    const genericWithRunInputs = updateAgentProfile(generic, {
+      country: "US",
+      locale: "en-US",
+    });
+    expect(isAgentProfileReady(genericWithRunInputs)).toBe(true);
+    expect(confirmAgentProfile(genericWithRunInputs).reviewState).toBe(
+      "confirmed",
     );
     // Positioning detail enriches the record but does not decide the audit, so
     // it no longer stands between a visitor and their own site's evidence.
@@ -1147,16 +1151,17 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, useCases: [] }),
     ).toBe(true);
-    // The context the run reads back still has to be there.
+    // Product, CTA, and ICP remain reviewable context, but the bounded crawl
+    // does not consume them and therefore must not be blocked by their absence.
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, productName: "" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, primaryIcp: "" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({ ...suppliedWithRunMarket, primaryCta: "" }),
-    ).toBe(false);
+    ).toBe(true);
     // The first desired outcome ships as a placeholder sentence rendered as a
     // heading, so it labels the run without gating it.
     expect(
@@ -1169,7 +1174,7 @@ describe("Agent-local Product / ICP profiles", () => {
           (entry) => entry.path !== "/primaryIcp",
         ),
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({
         ...suppliedWithRunMarket,
@@ -1186,7 +1191,7 @@ describe("Agent-local Product / ICP profiles", () => {
             : entry,
         ),
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAgentProfileReady({
         ...suppliedWithRunMarket,
@@ -1234,6 +1239,45 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(confirmAgentProfile(missingAuditLocale).reviewState).toBe(
       "needs_confirmation",
     );
+
+    for (const targetUrl of [
+      "not a url",
+      "ftp://acme.com",
+      "http://localhost:3000",
+      "https://example.com",
+    ]) {
+      expect(
+        isAgentProfileReady({
+          ...suppliedWithRunMarket,
+          targetUrl,
+          host: "",
+        }),
+        targetUrl,
+      ).toBe(false);
+    }
+
+    for (const country of ["EU", "UK", "ZZ", "U1"]) {
+      expect(
+        isAgentProfileReady({ ...suppliedWithRunMarket, country }),
+        country,
+      ).toBe(false);
+    }
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, country: "GB" }),
+    ).toBe(true);
+
+    for (const locale of ["not_a_language", "en_US", "x", ""]) {
+      expect(
+        isAgentProfileReady({ ...suppliedWithRunMarket, locale }),
+        locale,
+      ).toBe(false);
+    }
+    expect(
+      isAgentProfileReady({
+        ...suppliedWithRunMarket,
+        locale: "zh-Hans-CN",
+      }),
+    ).toBe(true);
   });
 });
 

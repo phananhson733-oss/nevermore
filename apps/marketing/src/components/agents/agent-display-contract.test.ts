@@ -2,16 +2,18 @@
 // @output -- regression coverage for record, evidence, limitation, and Agent drift
 // @pos    -- unit guard preventing dynamic next-intl missing-message failures
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  SEARCH_PERFORMANCE_LIMITATION_CODES,
   SEO_AUDIT_EVIDENCE_LABELS,
   SEO_AUDIT_LIMITATION_CODES,
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
 import {
-  SEARCH_PERFORMANCE_EVIDENCE_LABELS,
-  SEARCH_PERFORMANCE_RECORD_IDS,
+  SEARCH_CONSOLE_EVIDENCE_LABELS,
+  SEARCH_CONSOLE_LIMITATION_CODES,
+  SEARCH_CONSOLE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
   KEYWORD_EVIDENCE_EVIDENCE_LABELS,
@@ -101,6 +103,19 @@ function data(): AgentAuditSuccessData {
 }
 
 describe("record vocabulary", () => {
+  it("derives limitation codes without hand-kept string literals", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./agent-display-contract.ts", import.meta.url)),
+      "utf8",
+    );
+    const initializer = source.match(
+      /export const AGENT_LIMITATION_CODES:[\s\S]*?new Set\(\[([\s\S]*?)\]\);/,
+    )?.[1];
+
+    expect(initializer).toBeDefined();
+    expect(initializer).not.toMatch(/["'`]/);
+  });
+
   /**
    * The seam above fails closed on an unrecognised record, so a detector that
    * lands without copy does not render a broken panel — it renders no panel at
@@ -119,7 +134,7 @@ describe("record vocabulary", () => {
       >;
       for (const id of [
         ...SEO_AUDIT_RECORD_IDS,
-        ...SEARCH_PERFORMANCE_RECORD_IDS,
+        ...SEARCH_CONSOLE_RECORD_IDS,
         ...KEYWORD_EVIDENCE_RECORD_IDS,
         ...PAGE_PERFORMANCE_RECORD_IDS,
         ...SERP_SHAPE_RECORD_IDS,
@@ -147,7 +162,7 @@ describe("record vocabulary", () => {
         .limitations as Readonly<Record<string, string>>;
       for (const code of [
         ...SEO_AUDIT_LIMITATION_CODES,
-        ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+        ...SEARCH_CONSOLE_LIMITATION_CODES,
         ...KEYWORD_EVIDENCE_LIMITATION_CODES,
         ...PAGE_PERFORMANCE_LIMITATION_CODES,
         ...SERP_SHAPE_LIMITATION_CODES,
@@ -166,7 +181,7 @@ describe("record vocabulary", () => {
         .evidence as Readonly<Record<string, string>>;
       for (const label of [
         ...SEO_AUDIT_EVIDENCE_LABELS,
-        ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+        ...SEARCH_CONSOLE_EVIDENCE_LABELS,
         ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
         ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
         ...SERP_SHAPE_EVIDENCE_LABELS,
