@@ -218,6 +218,60 @@ describe("Agent display vocabulary", () => {
     expect(supportsAgentDisplayVocabulary(crawl, "seo")).toBe(true);
   });
 
+  it("accepts the evidence emitted by real near-duplicate and FAQ records", () => {
+    const current = data();
+    const base = current.result.records[0]!;
+    const captured: AgentAuditSuccessData = {
+      ...current,
+      result: {
+        ...current.result,
+        records: [
+          {
+            ...base,
+            id: "page_near_duplicate_of_another_page",
+            category: "structure",
+            observations: [
+              {
+                url: "https://example.com/near-duplicate",
+                values: [
+                  { label: "similarity_to_nearest_page", value: 0.91 },
+                  { label: "nearest_page", value: "https://example.com/" },
+                  { label: "distinctive_blocks_compared", value: 12 },
+                ],
+              },
+            ],
+            limitation:
+              "similarity_measured_on_collected_paragraphs_after_chrome",
+          },
+          {
+            ...base,
+            id: "faq_schema_question_not_on_page",
+            category: "structured_data",
+            observations: [
+              {
+                url: "https://example.com/faq",
+                values: [
+                  { label: "declared_faq_questions", value: 8 },
+                  {
+                    label: "questions_not_found_in_visible_text",
+                    value: 3,
+                  },
+                  {
+                    label: "first_missing_question",
+                    value: "How does it work?",
+                  },
+                ],
+              },
+            ],
+            limitation: "faq_match_against_collected_paragraphs_only",
+          },
+        ],
+      },
+    };
+
+    expect(supportsAgentDisplayVocabulary(captured, "seo")).toBe(true);
+  });
+
   it.each([
     ["record id", { id: "future_record" }],
     ["evidence label", { evidenceLabel: "future_measurement" }],

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CrawlPageRecord } from "@sf/sources";
+import { parsePage } from "@sf/sources/crawl-page";
 import { buildSeoAuditPayload, buildSeoAuditReport } from "./model.ts";
 import { isSeoAuditPayload } from "./contract.ts";
+import { SEO_AUDIT_EVIDENCE_LABELS } from "./record-ledger.ts";
 import type { SeoAuditRaw } from "./scan.ts";
 
 function page(
@@ -97,6 +99,34 @@ function raw(overrides: Partial<SeoAuditRaw> = {}): SeoAuditRaw {
 
 function byId(report: ReturnType<typeof buildSeoAuditReport>, id: string) {
   return report.records.find((record) => record.id === id);
+}
+
+function pageFromHtml(
+  url: string,
+  html: string,
+  depth = 1,
+): CrawlPageRecord {
+  const parsed = parsePage(html, url);
+  const base = page(url, {}, depth);
+  return {
+    ...base,
+    onPage: parsed.onPage,
+    projection: {
+      ...base.projection,
+      canonicalTarget: parsed.canonicalTarget ?? url,
+      robotsIndexable: parsed.robotsIndexable,
+      robotsDirectives: parsed.robotsDirectives,
+      title: parsed.title,
+      metaDescription: parsed.metaDescription,
+      h1: parsed.h1,
+      headings: parsed.headings,
+      wordCount: parsed.wordCount,
+      internalOutlinks: parsed.internalOutlinks,
+      jsonLd: parsed.jsonLd,
+      bodyExcerpt: parsed.bodyExcerpt,
+      paragraphs: parsed.paragraphs,
+    },
+  };
 }
 
 describe("site-wide SEO audit model", () => {
@@ -726,6 +756,64 @@ describe("crawl-response records", () => {
 });
 
 describe("seo audit record invariants", () => {
+  it("declares every label emitted by the near-duplicate and FAQ producers", () => {
+    const article = (topic: string) =>
+      Array.from(
+        { length: 12 },
+        (_, index) =>
+          `<p>${topic} includes practical evidence for decision ${index} today.</p>`,
+      ).join("");
+    const faq = `<script type="application/ld+json">${JSON.stringify({
+      "@type": "FAQPage",
+      mainEntity: [
+        { "@type": "Question", name: "How do I cancel?" },
+        { "@type": "Question", name: "Is there a free plan?" },
+      ],
+    })}</script>`;
+    const document = (head: string, body: string) =>
+      `<html><head><title>Evidence</title>${head}</head><body><h1>Evidence</h1>${body}</body></html>`;
+    const shared = article("Our returns policy allows thirty days and refunds");
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          pageFromHtml("https://acme.test/duplicate-a", document("", shared)),
+          pageFromHtml("https://acme.test/duplicate-b", document("", shared)),
+          pageFromHtml(
+            "https://acme.test/distinct",
+            document("", article("A separate analytics guide explains cohorts")),
+          ),
+          pageFromHtml(
+            "https://acme.test/faq",
+            document(
+              faq,
+              `<h2>How do I cancel?</h2>${article("Account settings explain cancellation steps")}`,
+            ),
+          ),
+        ],
+      }),
+    );
+    const labels = [
+      "page_near_duplicate_of_another_page",
+      "faq_schema_question_not_on_page",
+    ].flatMap(
+      (id) =>
+        byId(report, id)?.observations.flatMap((observation) =>
+          observation.values.map((entry) => entry.label),
+        ) ?? [],
+    );
+
+    expect([...new Set(labels)].sort()).toEqual([
+      "declared_faq_questions",
+      "distinctive_blocks_compared",
+      "first_missing_question",
+      "nearest_page",
+      "questions_not_found_in_visible_text",
+      "similarity_to_nearest_page",
+    ]);
+    const declared = new Set(SEO_AUDIT_EVIDENCE_LABELS);
+    expect(labels.filter((label) => !declared.has(label))).toEqual([]);
+  });
+
   it("keeps every record's affected count inside the population it tested", () => {
     // A 404 page is still parsed, so its outbound links can name a broken
     // target. Counting those pages as affected while the denominator only
