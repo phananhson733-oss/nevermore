@@ -198,7 +198,7 @@ export function AgentEvidenceDetails({
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h5 className="text-[12px] font-semibold text-text-dark-primary">
-            {t("affectedObservationsTitle", { total: observations.length })}
+            {t("affectedObservationsTitle", { total: urlCount })}
           </h5>
           <p className="mt-1 font-mono text-[10.5px] text-text-dark-faint">
             {t("affectedObservationsCount", {

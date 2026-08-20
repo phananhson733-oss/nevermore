@@ -148,7 +148,9 @@ function observedReach(records: readonly SeoAuditRecord[]): number {
   for (const record of records) {
     for (const observation of record.observations) {
       if (observation.url === null) siteLevelAffected += 1;
-      else affectedUrls.add(observation.url);
+      else {
+        affectedUrls.add(comparableUrl(observation.url) ?? observation.url);
+      }
     }
   }
   return affectedUrls.size + siteLevelAffected;

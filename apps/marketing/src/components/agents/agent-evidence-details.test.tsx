@@ -30,6 +30,7 @@ import {
   updateAgentProfile,
 } from "./agent-profile";
 import { AgentRecommendations } from "./agent-recommendations";
+import { rankAgentRecommendations } from "./agent-result-helpers";
 
 const TARGET_URL = "https://example.com/target";
 
@@ -60,19 +61,21 @@ function observation(
 }
 
 function evaluatedCheck({
+  id = "2.3",
   scope = "site",
   evidenceRecordIds,
   truth = "observed",
 }: {
+  readonly id?: string;
   readonly scope?: "site" | "page";
   readonly evidenceRecordIds: readonly string[];
   readonly truth?: AgentAuditEvaluatedCheck["truth"];
 }): AgentAuditEvaluatedCheck {
   return {
     check: {
-      id: "2.3",
+      id,
       scope,
-      groupId: "2",
+      groupId: id.split(".")[0] ?? id,
       title: { en: "Target query in title", zh: "Title 包含目标词" },
       impact: {
         en: "This condition changes how the page is understood.",
@@ -294,6 +297,63 @@ describe("agentAffectedObservations", () => {
   });
 });
 
+describe("affected URL reach", () => {
+  it("counts hash variants once so ranking matches the grouped observation rows", () => {
+    const hashVariants = evaluatedCheck({
+      id: "2.3",
+      evidenceRecordIds: ["hash-one", "hash-two"],
+    });
+    const twoPages = evaluatedCheck({
+      id: "2.4",
+      evidenceRecordIds: ["two-pages"],
+    });
+    const ranked = rankAgentRecommendations(
+      "seo",
+      [hashVariants, twoPages],
+      [
+        record("hash-one", [
+          observation("https://example.com/same#one", "title", "One"),
+        ]),
+        record("hash-two", [
+          observation("https://example.com/same", "title", "Two"),
+        ]),
+        record("two-pages", [
+          observation("https://example.com/first", "title", "First"),
+          observation("https://example.com/second", "title", "Second"),
+        ]),
+      ],
+      { limit: 3 },
+    );
+
+    expect(ranked.map((item) => item.check.check.id)).toEqual(["2.4", "2.3"]);
+    expect(
+      ranked.find((item) => item.check.check.id === "2.3")?.reach,
+    ).toBe(1);
+  });
+
+  it("still counts distinct unparseable non-empty values and Site-level evidence honestly", () => {
+    const check = evaluatedCheck({
+      id: "2.5",
+      evidenceRecordIds: ["invalid-values"],
+    });
+    const [recommendation] = rankAgentRecommendations(
+      "seo",
+      [check],
+      [
+        record("invalid-values", [
+          observation("not a url", "title", "First"),
+          observation("not a url", "title", "Duplicate"),
+          observation("another invalid value", "title", "Second"),
+          observation(null, "groups_observed", 1),
+        ]),
+      ],
+      { limit: 3 },
+    );
+
+    expect(recommendation?.reach).toBe(3);
+  });
+});
+
 describe("AgentEvidenceDetails", () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -359,7 +419,33 @@ describe("AgentEvidenceDetails", () => {
     expect(host.textContent).toContain("Evidence record");
     expect(host.textContent).toContain("Public static HTML");
     expect(host.textContent).toContain("Observed");
+    expect(
+      host.querySelector('[data-testid="agent-evidence-details"] h5')
+        ?.textContent,
+    ).toBe("Affected URLs (0)");
+    expect(host.textContent).toContain("Showing 1 of 1");
     expect(host.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  it("counts only URL rows in a mixed heading while retaining the Site-level row", () => {
+    const check = evaluatedCheck({ evidenceRecordIds: ["mixed"] });
+    renderEvidence(check, [
+      record("mixed", [
+        observation(null, "groups_observed", 2),
+        observation("https://example.com/affected", "title", "Affected"),
+      ]),
+    ]);
+
+    expect(
+      host.querySelector('[data-testid="agent-evidence-details"] h5')
+        ?.textContent,
+    ).toBe("Affected URLs (1)");
+    expect(host.textContent).toContain("Showing 2 of 2");
+    expect(host.textContent).toContain("Site-level observation");
+    expect(host.textContent).toContain("https://example.com/affected");
+    expect(
+      host.querySelectorAll('[data-testid="agent-affected-observation"]'),
+    ).toHaveLength(2);
   });
 
   it("shows the catalog record title while retaining a safe raw-id fallback", () => {
