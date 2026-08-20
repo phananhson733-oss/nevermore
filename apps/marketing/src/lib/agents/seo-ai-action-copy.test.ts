@@ -53,10 +53,12 @@ function check({
   truth = "observed",
   scope = "page",
   evidenceRecordIds = ["title", "site"],
+  primaryAgent = "seo",
 }: {
   readonly truth?: AgentAuditEvaluatedCheck["truth"];
   readonly scope?: AgentAuditEvaluatedCheck["check"]["scope"];
   readonly evidenceRecordIds?: readonly string[];
+  readonly primaryAgent?: AgentAuditEvaluatedCheck["check"]["primaryAgent"];
 } = {}): AgentAuditEvaluatedCheck {
   const engine: AgentAuditEvaluatedCheck["engine"] =
     truth === "source-gated"
@@ -90,7 +92,7 @@ function check({
       blockerEvidenceRecordIds: [],
       failureResult: "warning",
       inventoryReady: true,
-      primaryAgent: "seo",
+      primaryAgent,
       engine,
       evidenceRecordIds,
       issueRules: [],
@@ -687,11 +689,25 @@ describe("buildSeoAiActionCopy", () => {
     expect(result).toEqual({ ok: false, reason: "context_invalid" });
   });
 
-  it("rejects a matching Tech profile and Tech solution in the SEO-specific builder", () => {
-    const result = buildSeoAiActionCopy({
+  it("allows a Tech-primary subordinate check for SEO context while rejecting Tech runtime identity", () => {
+    const selectedCheck = check({
+      primaryAgent: "tech",
+      evidenceRecordIds: [],
+    });
+    const seoResult = buildSeoAiActionCopy({
       audience: "chatbot",
       locale: "en",
-      selectedCheck: check(),
+      selectedCheck,
+      evidenceRecords: [],
+      targetUrl: TARGET_URL,
+      profile: profile("seo"),
+      solution: solution(),
+      content: CONTENT,
+    });
+    const techResult = buildSeoAiActionCopy({
+      audience: "chatbot",
+      locale: "en",
+      selectedCheck,
       evidenceRecords: [],
       targetUrl: TARGET_URL,
       profile: profile("tech"),
@@ -699,7 +715,8 @@ describe("buildSeoAiActionCopy", () => {
       content: CONTENT,
     });
 
-    expect(result).toEqual({ ok: false, reason: "context_invalid" });
+    expect(seoResult.ok).toBe(true);
+    expect(techResult).toEqual({ ok: false, reason: "context_invalid" });
   });
 
   it("rejects a base payload that cannot fit even after every URL is omitted", () => {

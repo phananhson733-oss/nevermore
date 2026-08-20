@@ -325,6 +325,8 @@ function renderMarkdown(
 export function buildSeoAiActionCopy(
   input: BuildSeoAiActionCopyInput,
 ): BuildSeoAiActionCopyResult {
+  // `primaryAgent` owns recommendation ordering; Tech-primary subordinate
+  // checks remain valid inside an otherwise confirmed SEO run.
   if (
     input.solution.agent !== "seo" ||
     !isConfirmedAgentProfile(
