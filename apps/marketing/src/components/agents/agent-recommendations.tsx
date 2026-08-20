@@ -282,6 +282,31 @@ function SelectedSolution({
         </div>
       </header>
 
+      {recommendation.agent === "seo" ? (
+        <div
+          data-testid="agent-stage4-ai-handoff"
+          className="border-b border-brand-border px-[18px] py-[22px] md:px-8 md:py-[26px]"
+        >
+          <AgentAiActionCopy
+            locale={locale === "zh" ? "zh" : "en"}
+            selectedCheck={evaluated}
+            evidenceRecords={recommendation.evidenceRecords}
+            targetUrl={targetUrl}
+            profile={profile}
+            solution={template}
+            className="[&_p]:!leading-[1.65]"
+            content={{
+              recommendation: resolvedRecommendation,
+              applicableContext: resolvedApplicableContext,
+              validation: resolvedValidation,
+              impact: resolvedImpact,
+              risks: resolvedRisks,
+              limits: resolvedLimits,
+            }}
+          />
+        </div>
+      ) : null}
+
       <div
         data-testid="agent-stage4-body"
         className="grid gap-5 px-[18px] py-[22px] md:px-8 md:py-[30px] lg:grid-cols-2"
@@ -352,7 +377,10 @@ function SelectedSolution({
             <p className="mb-3 !text-[13px] !leading-[1.65]">
               {localized(check.howToFix, locale)}
             </p>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded-row border border-brand-border-dashed bg-brand-panel-sunken p-4 font-mono text-[12px] leading-[1.65] text-text-dark-strong">
+            <pre
+              data-testid="agent-solution-preview"
+              className="overflow-x-auto whitespace-pre-wrap rounded-row border border-brand-border-dashed bg-brand-panel-sunken p-4 font-mono text-[12px] leading-[1.65] text-text-dark-strong"
+            >
               {gated
                 ? `${t("unavailableInvestigation")}\n\n${template.preview}`
                 : template.preview}
@@ -467,26 +495,6 @@ function SelectedSolution({
               {t("previewBoundary")}
             </p>
           </DetailSection>
-
-          {recommendation.agent === "seo" ? (
-            <AgentAiActionCopy
-              locale={locale === "zh" ? "zh" : "en"}
-              selectedCheck={evaluated}
-              evidenceRecords={recommendation.evidenceRecords}
-              targetUrl={targetUrl}
-              profile={profile}
-              solution={template}
-              className="[&_p]:!leading-[1.65]"
-              content={{
-                recommendation: resolvedRecommendation,
-                applicableContext: resolvedApplicableContext,
-                validation: resolvedValidation,
-                impact: resolvedImpact,
-                risks: resolvedRisks,
-                limits: resolvedLimits,
-              }}
-            />
-          ) : null}
         </div>
       </div>
     </article>

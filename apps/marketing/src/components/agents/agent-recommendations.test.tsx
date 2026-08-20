@@ -325,12 +325,16 @@ describe("AgentRecommendations", () => {
   it("gives SEO and Tech different solution shapes and copy from the same check", () => {
     render("seo", "seo:page:1.4");
     const seoCopy = solutionCopy();
-    const seoPreview = host.querySelector("pre")?.textContent ?? "";
+    const seoPreview =
+      host.querySelector('[data-testid="agent-solution-preview"]')
+        ?.textContent ?? "";
     const seoContext = host.textContent ?? "";
 
     render("tech", "tech:page:1.4");
     const techCopy = solutionCopy();
-    const techPreview = host.querySelector("pre")?.textContent ?? "";
+    const techPreview =
+      host.querySelector('[data-testid="agent-solution-preview"]')
+        ?.textContent ?? "";
     const techContext = host.textContent ?? "";
 
     expect(seoContext).toContain("AstrologyWiki");
@@ -412,7 +416,9 @@ describe("AgentRecommendations", () => {
         ]),
       ],
     });
-    const preview = host.querySelector("pre")?.textContent ?? "";
+    const preview =
+      host.querySelector('[data-testid="agent-solution-preview"]')
+        ?.textContent ?? "";
 
     expect(preview).toContain("https://astrologywiki.com/");
     expect(preview).toContain("Redirect chain length observed");

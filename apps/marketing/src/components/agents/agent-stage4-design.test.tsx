@@ -174,6 +174,9 @@ describe("Agent Stage 04 design contract", () => {
       '[data-testid="agent-stage4-header-layout"]',
     );
     const stage4Body = host.querySelector('[data-testid="agent-stage4-body"]');
+    const stage4AiHandoff = host.querySelector(
+      '[data-testid="agent-stage4-ai-handoff"]',
+    );
     const stage4Title = host.querySelector('[data-testid="agent-stage4-title"]');
     const stage4Eyebrow = host.querySelector('[data-testid="agent-stage4-eyebrow"]');
     const issueTitle = host.querySelector('[data-testid="agent-stage4-issue-title"]');
@@ -239,7 +242,9 @@ describe("Agent Stage 04 design contract", () => {
     const validation = host.querySelector(
       '[data-testid="agent-solution-validation"]',
     );
-    const fixPreview = host.querySelector("pre");
+    const fixPreview = host.querySelector(
+      '[data-testid="agent-solution-preview"]',
+    );
     expect(sectionHeading?.className).toContain("text-[14px]");
     expect(sectionHeading?.className).toContain("leading-[1.4]");
     expect(issueParagraphs.length).toBeGreaterThan(0);
@@ -260,6 +265,46 @@ describe("Agent Stage 04 design contract", () => {
     expect(aiAction?.className).toContain("[&_p]:!leading-[1.65]");
     expect(fixPreview?.className).toContain("text-[12px]");
     expect(fixPreview?.className).toContain("leading-[1.65]");
+
+    const directStageOrder = [...(stage4?.children ?? [])]
+      .map((child) => child.getAttribute("data-testid"))
+      .filter((testId) =>
+        [
+          "agent-stage4-header",
+          "agent-stage4-ai-handoff",
+          "agent-stage4-body",
+        ].includes(testId ?? ""),
+      );
+    expect(directStageOrder).toEqual([
+      "agent-stage4-header",
+      "agent-stage4-ai-handoff",
+      "agent-stage4-body",
+    ]);
+    expect(stage4?.querySelectorAll('[data-testid="agent-ai-action-copy"]')).toHaveLength(1);
+    expect(stage4AiHandoff?.parentElement).toBe(stage4);
+    expect(stage4AiHandoff?.nextElementSibling).toBe(stage4Body);
+    expect(stage4Body?.contains(aiAction ?? null)).toBe(false);
+    expect(stage4AiHandoff?.className).toContain("border-b");
+    expect(stage4AiHandoff?.className).toContain("px-[18px]");
+    expect(stage4AiHandoff?.className).toContain("py-[22px]");
+    expect(stage4AiHandoff?.className).toContain("md:px-8");
+    expect(stage4AiHandoff?.className).toContain("md:py-[26px]");
+
+    for (const testId of [
+      "agent-stage4-issue",
+      "agent-stage4-evidence",
+      "agent-stage4-draft",
+      "agent-stage4-context",
+      "agent-solution-validation",
+      "agent-solution-impact",
+      "agent-solution-risks",
+      "agent-solution-limits",
+    ]) {
+      expect(
+        stage4Body?.querySelector(`[data-testid="${testId}"]`),
+        `${testId} must remain in the two-column body`,
+      ).not.toBeNull();
+    }
   });
 
   it("keeps the AI action packet SEO-only while allowing subordinate technical checks inside SEO", () => {
@@ -267,12 +312,22 @@ describe("Agent Stage 04 design contract", () => {
     expect(
       host.querySelector('[data-testid="agent-ai-action-copy"]'),
     ).toBeNull();
+    expect(
+      host.querySelector('[data-testid="agent-stage4-ai-handoff"]'),
+    ).toBeNull();
 
     render({ agent: "seo", primaryAgent: "tech" });
     const actionPacket = host.querySelector(
       '[data-testid="agent-ai-action-copy"]',
     );
     expect(actionPacket).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid="agent-stage4-ai-handoff"]')
+        ?.parentElement,
+    ).toBe(host.querySelector('[data-testid="agent-selected-solution"]'));
+    expect(
+      host.querySelectorAll('[data-testid="agent-ai-action-copy"]'),
+    ).toHaveLength(1);
     expect(
       host.querySelector('[data-testid="agent-stage4-issue-title"]')?.textContent,
     ).toContain("Target query in title");
