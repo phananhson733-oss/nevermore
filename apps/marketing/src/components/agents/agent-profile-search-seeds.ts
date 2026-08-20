@@ -54,6 +54,35 @@ function fieldHasApprovedSource(
   );
 }
 
+function approvedCanonicalValues(
+  profile: AgentProfileDraft,
+  field: SearchSeedField,
+): readonly string[] {
+  if (!fieldHasApprovedSource(profile, field)) return [];
+  const rawValue = profile[field];
+  const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+  const canonicalValues: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const canonical = canonicalSearchSeed(value);
+    if (!canonical) continue;
+    const identity = canonical.toLocaleLowerCase("en-US");
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    canonicalValues.push(canonical);
+  }
+  return canonicalValues;
+}
+
+function isGenericSearchLabel(value: string): boolean {
+  return (
+    /\b(?:app|application|platform|product|service|software|solution|tool|website|workspace)\b/iu.test(
+      value,
+    ) ||
+    /(?:平台|产品|服务|软件|方案|工具|网站|应用)$/u.test(value)
+  );
+}
+
 export function deriveProductProfileSearchSeeds(
   profile: AgentProfileDraft,
 ): readonly string[] {
@@ -83,6 +112,35 @@ export function deriveProductProfileSearchSeeds(
     if (seeds.length === MAX_SEARCH_SEEDS) break;
   }
   return seeds;
+}
+
+export function deriveSuggestedTargetQuery(
+  profile: AgentProfileDraft,
+): string | null {
+  const productNames = approvedCanonicalValues(profile, "productName");
+  const brandIdentities = new Set(
+    productNames.map((value) => value.toLocaleLowerCase("en-US")),
+  );
+  const categoryOrCapability = [
+    ...approvedCanonicalValues(profile, "categories"),
+    ...approvedCanonicalValues(profile, "coreFeatures"),
+  ].filter(
+    (value) => !brandIdentities.has(value.toLocaleLowerCase("en-US")),
+  );
+  const positioning = approvedCanonicalValues(
+    profile,
+    "oneLinePositioning",
+  ).filter(
+    (value) => !brandIdentities.has(value.toLocaleLowerCase("en-US")),
+  );
+
+  return (
+    categoryOrCapability.find((value) => !isGenericSearchLabel(value)) ??
+    categoryOrCapability[0] ??
+    positioning[0] ??
+    productNames[0] ??
+    null
+  );
 }
 
 export function productProfileSearchSeedsIdentity(

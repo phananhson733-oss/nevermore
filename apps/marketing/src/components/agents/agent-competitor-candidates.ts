@@ -349,18 +349,55 @@ export function resolveAgentCompetitorClassification(
   };
 }
 
+interface CanonicalCompetitorValue {
+  readonly identity: string;
+  readonly value: string;
+}
+
+function canonicalCompetitorValue(
+  value: string,
+): CanonicalCompetitorValue | null {
+  const domain = normalizeAgentProfileSearchDomain(value);
+  if (domain !== null) {
+    return { identity: `domain:${domain}`, value: domain };
+  }
+  const canonical = value.normalize("NFKC").trim().replace(/\s+/gu, " ");
+  if (!canonical) return null;
+  return {
+    identity: `label:${canonical.toLocaleLowerCase("en-US")}`,
+    value: canonical,
+  };
+}
+
 function collectManualClassifications(
   classifications: AgentCompetitorClassifications,
-): ReadonlyMap<string, AgentCompetitorClassification> {
-  const manual = new Map<string, AgentCompetitorClassification>();
+): ReadonlyMap<
+  string,
+  {
+    readonly value: string;
+    readonly classification: AgentCompetitorClassification;
+  }
+> {
+  const manual = new Map<
+    string,
+    {
+      readonly value: string;
+      readonly classification: AgentCompetitorClassification;
+    }
+  >();
   for (const [classification, values] of [
     ["indirect", classifications.indirect],
     ["direct", classifications.direct],
     ["excluded", classifications.excluded],
   ] as const) {
     for (const value of values) {
-      const domain = normalizeAgentProfileSearchDomain(value);
-      if (domain !== null) manual.set(domain, classification);
+      const canonical = canonicalCompetitorValue(value);
+      if (canonical !== null) {
+        manual.set(canonical.identity, {
+          value: canonical.value,
+          classification,
+        });
+      }
     }
   }
   return manual;
@@ -379,8 +416,9 @@ export function deriveAgentCompetitorDisplayFrame(
 
   for (const suggestion of suggestions) {
     const domain = normalizeAgentProfileSearchDomain(suggestion.domain);
-    if (domain === null || seen.has(domain)) continue;
-    seen.add(domain);
+    const identity = domain === null ? null : `domain:${domain}`;
+    if (domain === null || identity === null || seen.has(identity)) continue;
+    seen.add(identity);
     const resolution = resolveAgentCompetitorClassification(
       suggestion,
       classifications,
@@ -392,13 +430,14 @@ export function deriveAgentCompetitorDisplayFrame(
     });
   }
 
-  for (const [domain, classification] of collectManualClassifications(
-    classifications,
-  )) {
-    if (seen.has(domain)) continue;
-    seen.add(domain);
+  for (const [
+    identity,
+    { value, classification },
+  ] of collectManualClassifications(classifications)) {
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     frame[classification].push({
-      domain,
+      domain: value,
       classification,
       source: "manual",
       suggestion: null,
@@ -406,6 +445,77 @@ export function deriveAgentCompetitorDisplayFrame(
   }
 
   return frame;
+}
+
+/** Materialize one reviewed local snapshot without persisting an App Profile. */
+export function acceptAgentCompetitorSuggestions(
+  profile: AgentProfileDraft,
+  suggestions: readonly AgentCompetitorSuggestion[],
+  classifications?: AgentCompetitorClassifications,
+  preferredClassification?: AgentCompetitorClassification,
+): AgentProfileDraft {
+  const requested = classifications ?? {
+    direct: profile.directCompetitors,
+    indirect: profile.indirectAlternatives,
+    excluded: profile.excludedAlternatives,
+  };
+  const preferredIdentities = new Set(
+    preferredClassification === undefined
+      ? []
+      : requested[preferredClassification].flatMap((value) => {
+          const canonical = canonicalCompetitorValue(value);
+          return canonical === null ? [] : [canonical.identity];
+        }),
+  );
+  const withoutPreferredValues = (values: readonly string[]) =>
+    preferredIdentities.size === 0
+      ? values
+      : values.filter((value) => {
+          const canonical = canonicalCompetitorValue(value);
+          return (
+            canonical === null || !preferredIdentities.has(canonical.identity)
+          );
+        });
+  const reviewed: AgentCompetitorClassifications = {
+    direct:
+      preferredClassification === "direct"
+        ? requested.direct
+        : withoutPreferredValues(requested.direct),
+    indirect:
+      preferredClassification === "indirect"
+        ? requested.indirect
+        : withoutPreferredValues(requested.indirect),
+    excluded:
+      preferredClassification === "excluded"
+        ? requested.excluded
+        : withoutPreferredValues(requested.excluded),
+  };
+  const explicitIdentities = new Set(
+    Object.values(reviewed)
+      .flat()
+      .flatMap((value) => {
+        const canonical = canonicalCompetitorValue(value);
+        return canonical === null ? [] : [canonical.identity];
+      }),
+  );
+  const omittedSuggestions = classifications
+    ? suggestions.flatMap((suggestion) => {
+        const domain = normalizeAgentProfileSearchDomain(suggestion.domain);
+        return domain === null || explicitIdentities.has(`domain:${domain}`)
+          ? []
+          : [domain];
+      })
+    : [];
+  const frame = deriveAgentCompetitorDisplayFrame(suggestions, {
+    ...reviewed,
+    excluded: [...reviewed.excluded, ...omittedSuggestions],
+  });
+
+  return updateAgentProfile(profile, {
+    directCompetitors: frame.direct.map(({ domain }) => domain),
+    indirectAlternatives: frame.indirect.map(({ domain }) => domain),
+    excludedAlternatives: frame.excluded.map(({ domain }) => domain),
+  });
 }
 
 function withoutDomain(

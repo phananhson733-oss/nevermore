@@ -16,9 +16,8 @@ import {
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
-import {
-  normalizeAgentProfileSearchDomain,
-  type AgentProfileSearchData,
+import type {
+  AgentProfileSearchData,
 } from "../../lib/agents/profile-search-contract";
 import type {
   AgentProfileRefreshData,
@@ -30,6 +29,7 @@ import {
   isAgentTargetUrlValid,
 } from "../../lib/agents/profile-input-validation";
 import {
+  acceptAgentCompetitorSuggestions,
   classifyAgentCompetitorProfile,
   deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
@@ -55,6 +55,7 @@ import {
   type AgentProfileSourceId,
 } from "./agent-profile";
 import { getSuppliedProductInformation } from "./agent-product-information";
+import { deriveSuggestedTargetQuery } from "./agent-profile-search-seeds";
 import type { AgentKind } from "./agent-types";
 
 export interface AgentProfilePanelProps {
@@ -388,6 +389,34 @@ export function AgentProfilePanel({
     field: (typeof LIST_FIELDS)[number],
     value: string,
   ): void {
+    if (COMPETITOR_FIELDS.has(field)) {
+      onChange(
+        acceptAgentCompetitorSuggestions(
+          profile,
+          competitorSuggestions,
+          {
+            direct:
+              field === "directCompetitors"
+                ? value.split(/[,\n]/)
+                : directDisplayValues,
+            indirect:
+              field === "indirectAlternatives"
+                ? value.split(/[,\n]/)
+                : indirectDisplayValues,
+            excluded:
+              field === "excludedAlternatives"
+                ? value.split(/[,\n]/)
+                : excludedDisplayValues,
+          },
+          field === "directCompetitors"
+            ? "direct"
+            : field === "indirectAlternatives"
+              ? "indirect"
+              : "excluded",
+        ),
+      );
+      return;
+    }
     onChange(
       updateAgentProfile(profile, {
         [field]: value
@@ -529,14 +558,35 @@ export function AgentProfilePanel({
         }
       : undefined;
   }
+  const targetQueryWasEdited =
+    profile.fieldProvenance.find((entry) => entry.path === "/targetQuery")
+      ?.source === "user_edit";
+  const suggestedTargetQuery =
+    profile.targetQuery.trim() || targetQueryWasEdited
+      ? null
+      : deriveSuggestedTargetQuery(profile);
+  const effectiveTargetQuery = profile.targetQuery.trim()
+    ? profile.targetQuery
+    : (suggestedTargetQuery ?? "");
+
   function contextFieldValue(
     field: "country" | "locale" | "targetQuery",
   ): string {
+    if (field === "targetQuery" && suggestedTargetQuery !== null) {
+      return `${suggestedTargetQuery} · ${t("provenance.derivations.inferred")} · ${t("values.confirmationRequired")}`;
+    }
     return profile[field].trim() || t("values.confirmationRequired");
   }
   function contextFieldProvenance(
     field: "country" | "locale" | "targetQuery",
   ) {
+    if (field === "targetQuery" && suggestedTargetQuery !== null) {
+      return {
+        derivation: "inferred",
+        sourceClass: "inferred" as const,
+        label: `${t("provenance.derivations.inferred")} · ${t("provenance.confidence.low")} · ${t("provenance.sourceClasses.inferred")}`,
+      };
+    }
     return profile[field].trim()
       ? fieldProvenance(field)
       : {
@@ -575,35 +625,28 @@ export function AgentProfilePanel({
     competitorSuggestions,
     competitorClassifications,
   );
-  function competitorDisplayValues(
-    entries: (typeof competitorDisplayFrame)["direct"],
-    manualValues: readonly string[],
-  ): readonly string[] {
-    const values = entries.map(({ domain }) => domain);
-    const seen = new Set(values.map((value) => value.toLowerCase()));
-    for (const value of manualValues) {
-      const trimmed = value.trim();
-      if (!trimmed) continue;
-      const key =
-        normalizeAgentProfileSearchDomain(trimmed) ?? trimmed.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      values.push(trimmed);
+  const directDisplayValues = competitorDisplayFrame.direct.map(
+    ({ domain }) => domain,
+  );
+  const indirectDisplayValues = competitorDisplayFrame.indirect.map(
+    ({ domain }) => domain,
+  );
+  const excludedDisplayValues = competitorDisplayFrame.excluded.map(
+    ({ domain }) => domain,
+  );
+
+  function listFieldValue(field: (typeof LIST_FIELDS)[number]): string {
+    if (field === "directCompetitors") {
+      return directDisplayValues.join(", ");
     }
-    return values;
+    if (field === "indirectAlternatives") {
+      return indirectDisplayValues.join(", ");
+    }
+    if (field === "excludedAlternatives") {
+      return excludedDisplayValues.join(", ");
+    }
+    return profile[field].join(", ");
   }
-  const directDisplayValues = competitorDisplayValues(
-    competitorDisplayFrame.direct,
-    profile.directCompetitors,
-  );
-  const indirectDisplayValues = competitorDisplayValues(
-    competitorDisplayFrame.indirect,
-    profile.indirectAlternatives,
-  );
-  const excludedDisplayValues = competitorDisplayValues(
-    competitorDisplayFrame.excluded,
-    profile.excludedAlternatives,
-  );
   function competitorDisplayProvenance(
     field: "directCompetitors" | "indirectAlternatives" | "excludedAlternatives",
     entries: (typeof competitorDisplayFrame)["direct"],
@@ -1741,7 +1784,11 @@ export function AgentProfilePanel({
                   type="text"
                   maxLength={2_048}
                   disabled={disabled}
-                  value={profile[field]}
+                  value={
+                    field === "targetQuery"
+                      ? effectiveTargetQuery
+                      : profile[field]
+                  }
                   onChange={(event) =>
                     handleFieldChange(field, event.target.value)
                   }
@@ -1760,7 +1807,7 @@ export function AgentProfilePanel({
                   type="text"
                   maxLength={2_048}
                   disabled={disabled}
-                  value={profile[field].join(", ")}
+                  value={listFieldValue(field)}
                   onChange={(event) =>
                     handleListFieldChange(field, event.target.value)
                   }
@@ -1875,7 +1922,22 @@ export function AgentProfilePanel({
               aria-describedby={
                 missingReadyFields.length > 0 ? readinessMessageId : undefined
               }
-              onClick={() => onConfirm(confirmAgentProfile(profile))}
+              onClick={() => {
+                const acceptedQueryProfile =
+                  suggestedTargetQuery === null
+                    ? profile
+                    : updateAgentProfile(profile, {
+                        targetQuery: suggestedTargetQuery,
+                      });
+                onConfirm(
+                  confirmAgentProfile(
+                    acceptAgentCompetitorSuggestions(
+                      acceptedQueryProfile,
+                      competitorSuggestions,
+                    ),
+                  ),
+                );
+              }}
               className="inline-flex h-10.5 items-center justify-center gap-2 rounded-[9px] bg-brand-gradient px-4 text-[12.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
               {t("actions.confirmRun")}

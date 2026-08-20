@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
 import {
+  acceptAgentCompetitorSuggestions,
   classifyAgentCompetitorProfile,
   deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
@@ -528,5 +529,150 @@ describe("deriveAgentCompetitorDisplayFrame", () => {
         .flat()
         .map(({ domain }) => domain),
     ).toHaveLength(6);
+  });
+});
+
+describe("acceptAgentCompetitorSuggestions", () => {
+  it("materializes the effective mixed review frame into exclusive local arrays", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        directCompetitors: ["manual-direct.example"],
+        excludedAlternatives: ["manual-excluded.example"],
+      },
+    );
+
+    const accepted = acceptAgentCompetitorSuggestions(profile, [
+      {
+        domain: "manual-direct.example",
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "medium",
+        suggestedClassification: "indirect",
+        evidenceKind: "organic_search_overlap",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: 8,
+          averagePosition: 3,
+          medianPosition: null,
+          summedPosition: 24,
+          organicEstimatedTrafficVolume: 400,
+          rank: null,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
+        },
+      },
+      {
+        domain: "suggested-indirect.example",
+        reviewBucket: "adjacent_overlap",
+        discoveryConfidence: "low",
+        suggestedClassification: "indirect",
+        evidenceKind: "organic_search_overlap",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: 2,
+          averagePosition: 6,
+          medianPosition: null,
+          summedPosition: 18,
+          organicEstimatedTrafficVolume: 120,
+          rank: null,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
+        },
+      },
+      {
+        domain: "manual-excluded.example",
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "medium",
+        suggestedClassification: "direct",
+        evidenceKind: "organic_search_overlap",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: 10,
+          averagePosition: 2,
+          medianPosition: null,
+          summedPosition: 12,
+          organicEstimatedTrafficVolume: 700,
+          rank: null,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
+        },
+      },
+    ]);
+
+    expect(accepted.directCompetitors).toEqual(["manual-direct.example"]);
+    expect(accepted.indirectAlternatives).toEqual([
+      "suggested-indirect.example",
+    ]);
+    expect(accepted.excludedAlternatives).toEqual([
+      "manual-excluded.example",
+    ]);
+  });
+
+  it("normalizes domain identities, preserves free-form values, and keeps every value in one manual-winning group", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        directCompetitors: ["WWW.DUP.EXAMPLE", " Alternative   A "],
+        indirectAlternatives: ["dup.example", "alternative a"],
+        excludedAlternatives: ["DUP.EXAMPLE", "ALTERNATIVE A"],
+      },
+    );
+
+    const accepted = acceptAgentCompetitorSuggestions(profile, [
+      {
+        domain: "dup.example",
+        reviewBucket: "higher_overlap",
+        discoveryConfidence: "medium",
+        suggestedClassification: "direct",
+        evidenceKind: "organic_search_overlap",
+        observedAt: OBSERVED_AT,
+        metrics: {
+          intersections: 8,
+          averagePosition: 3,
+          medianPosition: null,
+          summedPosition: 24,
+          organicEstimatedTrafficVolume: 400,
+          rank: null,
+          rating: null,
+          keywordsCount: null,
+          visibility: null,
+          relevantSerpItems: null,
+        },
+      },
+    ]);
+
+    expect(accepted.directCompetitors).toEqual([]);
+    expect(accepted.indirectAlternatives).toEqual([]);
+    expect(accepted.excludedAlternatives).toEqual([
+      "dup.example",
+      "ALTERNATIVE A",
+    ]);
+  });
+
+  it("treats a visible provider suggestion removed from all review fields as excluded", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
+    const suggestions = deriveAgentCompetitorSuggestions(
+      overlapData([
+        overlap("removed.example", 12, 300),
+        overlap("retained.example", 10, 250),
+      ]),
+      profile.host,
+    );
+
+    const accepted = acceptAgentCompetitorSuggestions(profile, suggestions, {
+      direct: ["retained.example"],
+      indirect: [],
+      excluded: [],
+    });
+
+    expect(accepted.directCompetitors).toEqual(["retained.example"]);
+    expect(accepted.indirectAlternatives).toEqual([]);
+    expect(accepted.excludedAlternatives).toEqual(["removed.example"]);
   });
 });

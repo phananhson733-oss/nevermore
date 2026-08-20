@@ -59,11 +59,11 @@ function renderPanel(
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  act(() => {
+  const renderProfile = (nextProfile: AgentProfileDraft) => {
     root?.render(
       <AgentProfilePanel
-        agent={profile.agent}
-        profile={profile}
+        agent={nextProfile.agent}
+        profile={nextProfile}
         onChange={onChange}
         onConfirm={onConfirm}
         profileSearch={profileSearch}
@@ -71,8 +71,18 @@ function renderPanel(
         onRefresh={onRefresh}
       />,
     );
+  };
+  act(() => {
+    renderProfile(profile);
   });
-  return { onChange, onConfirm, onRefresh };
+  return {
+    onChange,
+    onConfirm,
+    onRefresh,
+    rerender(nextProfile: AgentProfileDraft) {
+      act(() => renderProfile(nextProfile));
+    },
+  };
 }
 
 function setValue(control: HTMLInputElement | HTMLSelectElement, value: string) {
@@ -1226,7 +1236,7 @@ describe("AgentProfilePanel", () => {
     ).toBe("Observed primaryIcp");
   });
 
-  it("renders empty run-context inputs as confirmation-required missing values", () => {
+  it("renders empty market and language as missing while showing the inferred query as unconfirmed", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
     const context = document.querySelector('[data-profile-card="context"]');
@@ -1234,11 +1244,7 @@ describe("AgentProfilePanel", () => {
     const fact = (label: string) =>
       facts.find((entry) => entry.querySelector("dt")?.textContent === label);
 
-    for (const label of [
-      "fields.country",
-      "fields.locale",
-      "fields.targetQuery",
-    ]) {
+    for (const label of ["fields.country", "fields.locale"]) {
       expect(fact(label)?.querySelector("dd")?.textContent).toBe(
         "values.confirmationRequired",
       );
@@ -1246,6 +1252,118 @@ describe("AgentProfilePanel", () => {
         "missing",
       );
     }
+    expect(fact("fields.targetQuery")?.querySelector("dd")?.textContent).toBe(
+      "Birth-chart calculator · provenance.derivations.inferred · values.confirmationRequired",
+    );
+    expect(
+      fact("fields.targetQuery")?.getAttribute("data-profile-provenance"),
+    ).toBe("inferred");
+  });
+
+  it("shows an inferred target query in context and review, then confirms it into the local run snapshot", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        country: "US",
+        locale: "en-US",
+      },
+    );
+    const onConfirm = vi.fn();
+    renderPanel(profile, undefined, onConfirm);
+
+    const context = document.querySelector('[data-profile-card="context"]');
+    const facts = Array.from(context?.querySelectorAll("dl > div") ?? []);
+    const fact = (label: string) =>
+      facts.find((entry) => entry.querySelector("dt")?.textContent === label);
+
+    expect(fact("fields.targetQuery")?.querySelector("dd")?.textContent).toBe(
+      "Birth-chart calculator · provenance.derivations.inferred · values.confirmationRequired",
+    );
+    expect(
+      fact("fields.targetQuery")?.getAttribute("data-profile-provenance"),
+    ).toBe("inferred");
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.targetQuery"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("Birth-chart calculator");
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-action="confirm"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewState: "confirmed",
+        targetQuery: "Birth-chart calculator",
+      }),
+    );
+  });
+
+  it("preserves an explicit query exactly and never replaces a user-cleared query with an inference", () => {
+    const explicit = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        country: "US",
+        locale: "en-US",
+        targetQuery: "  natal chart for beginners  ",
+      },
+    );
+    const explicitConfirm = vi.fn();
+    renderPanel(explicit, undefined, explicitConfirm);
+
+    act(() => {
+      document
+        .querySelector<HTMLButtonElement>('[data-profile-action="confirm"]')
+        ?.click();
+    });
+    expect(explicitConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ targetQuery: "  natal chart for beginners  " }),
+    );
+
+    act(() => root?.unmount());
+    root = null;
+    document.body.replaceChildren();
+
+    const cleared = updateAgentProfile(explicit, { targetQuery: "" });
+    const clearedConfirm = vi.fn();
+    renderPanel(cleared, undefined, clearedConfirm);
+    const context = document.querySelector('[data-profile-card="context"]');
+    const targetFact = Array.from(context?.querySelectorAll("dl > div") ?? [])
+      .find(
+        (entry) =>
+          entry.querySelector("dt")?.textContent === "fields.targetQuery",
+      );
+    expect(targetFact?.querySelector("dd")?.textContent).toBe(
+      "values.confirmationRequired",
+    );
+    expect(targetFact?.getAttribute("data-profile-provenance")).toBe(
+      "missing",
+    );
+
+    act(() => {
+      document
+        .querySelector<HTMLButtonElement>('[data-profile-action="confirm"]')
+        ?.click();
+    });
+    expect(clearedConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ targetQuery: "" }),
+    );
   });
 
   it("shows provider-observed domains with editable system relationship defaults without mutating the draft", () => {
@@ -1340,6 +1458,154 @@ describe("AgentProfilePanel", () => {
     expect(profile.directCompetitors).toEqual([]);
     expect(profile.indirectAlternatives).toEqual([]);
     expect(profile.excludedAlternatives).toEqual([]);
+  });
+
+  it("fills the competitor review fields from visible system suggestions and confirms them into the local run snapshot", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    const onConfirm = vi.fn();
+    renderPanel(profile, undefined, onConfirm, {
+      loading: false,
+      errorCode: null,
+      onDiscover: vi.fn(),
+      data: {
+        schemaVersion: "agent_profile_search.v1",
+        agent: "seo",
+        targetHost: "astrologywiki.com",
+        availability: "available",
+        method: "target_query_serp",
+        market: {
+          code: "US",
+          locationCode: 2_840,
+          languageCode: "en",
+        },
+        observedAt: "2026-08-13T00:00:00.000Z",
+        rows: [
+          {
+            kind: "target_query_serp",
+            domain: "observed-one.example",
+            rank: 1,
+          },
+          {
+            kind: "target_query_serp",
+            domain: "observed-two.example",
+            rank: 2,
+          },
+        ],
+      },
+    });
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-action="review"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.indirectAlternatives"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("observed-one.example, observed-two.example");
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-action="confirm"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewState: "confirmed",
+        indirectAlternatives: [
+          "observed-one.example",
+          "observed-two.example",
+        ],
+      }),
+    );
+  });
+
+  it("keeps a removed visible suggestion excluded after the controlled profile rerenders", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    const panel = renderPanel(profile, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      onDiscover: vi.fn(),
+      data: {
+        schemaVersion: "agent_profile_search.v1",
+        agent: "seo",
+        targetHost: "astrologywiki.com",
+        availability: "available",
+        method: "target_query_serp",
+        market: { code: "US", locationCode: 2_840, languageCode: "en" },
+        observedAt: "2026-08-13T00:00:00.000Z",
+        rows: [
+          { kind: "target_query_serp", domain: "removed.example", rank: 1 },
+          { kind: "target_query_serp", domain: "retained.example", rank: 2 },
+        ],
+      },
+    });
+
+    act(() => {
+      document
+        .querySelector<HTMLButtonElement>('[data-profile-action="review"]')
+        ?.click();
+    });
+    const indirect = document.querySelector(
+      'input[aria-label="fields.indirectAlternatives"]',
+    ) as HTMLInputElement;
+    expect(indirect.value).toBe("removed.example, retained.example");
+
+    setValue(indirect, "retained.example");
+    const edited = panel.onChange.mock.lastCall?.[0] as AgentProfileDraft;
+    expect(edited.indirectAlternatives).toEqual(["retained.example"]);
+    expect(edited.excludedAlternatives).toEqual(["removed.example"]);
+
+    panel.rerender(edited);
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.indirectAlternatives"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("retained.example");
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.excludedAlternatives"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("removed.example");
+
+    setValue(
+      document.querySelector(
+        'input[aria-label="fields.directCompetitors"]',
+      ) as HTMLInputElement,
+      "removed.example",
+    );
+    const moved = panel.onChange.mock.lastCall?.[0] as AgentProfileDraft;
+    expect(moved.directCompetitors).toEqual(["removed.example"]);
+    expect(moved.indirectAlternatives).toEqual(["retained.example"]);
+    expect(moved.excludedAlternatives).toEqual([]);
+
+    panel.rerender(moved);
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.directCompetitors"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("removed.example");
   });
 
   it("shows Product Profile seed SERP domains with editable indirect defaults without mutating the draft", () => {

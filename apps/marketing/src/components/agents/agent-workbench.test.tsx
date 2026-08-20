@@ -2014,10 +2014,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     }
   });
 
-  it("omits targetQueries for a blank direct SEO query without dropping confirmed context", async () => {
+  it("carries an inferred direct SEO target query into the confirmed request when the visitor left it blank", async () => {
     const bodies: string[] = [];
+    const paths: string[] = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        paths.push(String(input));
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
@@ -2037,6 +2039,83 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     for (const body of bodies) {
       expect(JSON.parse(body)).toEqual({
         url: "astrologywiki.com",
+        targetQueries: ["Birth-chart calculator"],
+        pageRole: "homepage",
+        market: "US",
+        language: "en-US",
+      });
+    }
+    expect(paths).toEqual([
+      "/api/auth/session",
+      "/api/agents/seo/audit",
+    ]);
+  });
+
+  it("does not resurrect an inferred query after the visitor explicitly clears it", async () => {
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext("US", "en-US");
+    ensureProfileReviewOpen();
+    const targetQuery = document.querySelector(
+      'input[aria-label="fields.targetQuery"]',
+    ) as HTMLInputElement;
+    expect(targetQuery.value).toBe("Birth-chart calculator");
+    setInputValue(targetQuery, "");
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.targetQuery"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
+
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(bodies[0] as string)).toEqual({
+      url: "astrologywiki.com",
+      pageRole: "homepage",
+      market: "US",
+      language: "en-US",
+    });
+  });
+
+  it("omits targetQueries for a blank direct SEO query when no credible seed exists", async () => {
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "unknown-example.test");
+    setRunContext("US", "en-US");
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(JSON.parse(body)).toEqual({
+        url: "unknown-example.test",
         pageRole: "homepage",
         market: "US",
         language: "en-US",
@@ -2054,6 +2133,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         expect(init?.body).toBe(
           JSON.stringify({
             url: "astrologywiki.com/birth-chart",
+            targetQueries: ["Birth-chart calculator"],
             pageRole: "tool",
             market: "US",
             language: "en-US",
