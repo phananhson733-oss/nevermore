@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { SeoAuditRecord } from "@sf/public-tools";
 import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
@@ -29,6 +29,32 @@ export interface AgentAiActionCopyProps {
 type CopyTarget = "chatbot" | "code_agent";
 type CopyState = "idle" | "done" | "failed";
 
+interface CopyFeedback {
+  readonly packetIdentity: string;
+  readonly copied: CopyTarget | null;
+  readonly state: CopyState;
+  readonly fallback: string | null;
+}
+
+function builtPacketIdentity(
+  chatbot: ReturnType<typeof buildSeoAiActionCopy>,
+  codeAgent: ReturnType<typeof buildSeoAiActionCopy>,
+): string {
+  return JSON.stringify([
+    chatbot.ok ? ["ok", chatbot.markdown] : ["error", chatbot.reason],
+    codeAgent.ok ? ["ok", codeAgent.markdown] : ["error", codeAgent.reason],
+  ]);
+}
+
+function idleFeedback(packetIdentity: string): CopyFeedback {
+  return {
+    packetIdentity,
+    copied: null,
+    state: "idle",
+    fallback: null,
+  };
+}
+
 export function AgentAiActionCopy({
   locale,
   selectedCheck,
@@ -40,9 +66,6 @@ export function AgentAiActionCopy({
   className = "",
 }: AgentAiActionCopyProps) {
   const t = useTranslations("agents.workbench.recommendations");
-  const [copied, setCopied] = useState<CopyTarget | null>(null);
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const [fallback, setFallback] = useState<string | null>(null);
 
   const chatbot = useMemo(
     () =>
@@ -72,6 +95,24 @@ export function AgentAiActionCopy({
       }),
     [content, evidenceRecords, locale, profile, selectedCheck, solution, targetUrl],
   );
+  const packetIdentity = builtPacketIdentity(chatbot, codeAgent);
+  const [feedback, setFeedback] = useState<CopyFeedback>(() =>
+    idleFeedback(packetIdentity),
+  );
+  const latestCopyRequest = useRef(0);
+  const previousPacketIdentity = useRef(packetIdentity);
+
+  useEffect(() => {
+    if (previousPacketIdentity.current === packetIdentity) return;
+    previousPacketIdentity.current = packetIdentity;
+    latestCopyRequest.current += 1;
+    setFeedback(idleFeedback(packetIdentity));
+  }, [packetIdentity]);
+
+  const visibleFeedback =
+    feedback.packetIdentity === packetIdentity
+      ? feedback
+      : idleFeedback(packetIdentity);
   const investigationOnly =
     chatbot.ok &&
     !codeAgent.ok &&
@@ -81,17 +122,28 @@ export function AgentAiActionCopy({
   const copy = useCallback(async (target: CopyTarget) => {
     const built = target === "chatbot" ? chatbot : codeAgent;
     if (!built.ok) return;
+    const request = ++latestCopyRequest.current;
+    const requestPacketIdentity = packetIdentity;
+    setFeedback(idleFeedback(requestPacketIdentity));
     try {
       await navigator.clipboard.writeText(built.markdown);
-      setCopied(target);
-      setCopyState("done");
-      setFallback(null);
+      if (request !== latestCopyRequest.current) return;
+      setFeedback({
+        packetIdentity: requestPacketIdentity,
+        copied: target,
+        state: "done",
+        fallback: null,
+      });
     } catch {
-      setCopied(target);
-      setCopyState("failed");
-      setFallback(built.markdown);
+      if (request !== latestCopyRequest.current) return;
+      setFeedback({
+        packetIdentity: requestPacketIdentity,
+        copied: target,
+        state: "failed",
+        fallback: built.markdown,
+      });
     }
-  }, [chatbot, codeAgent]);
+  }, [chatbot, codeAgent, packetIdentity]);
 
   return (
     <section
@@ -178,18 +230,20 @@ export function AgentAiActionCopy({
           role="status"
           aria-live="polite"
           className={`text-[11.5px] ${
-            copyState === "failed" ? "text-brand-warning" : "text-brand-accent-text"
+            visibleFeedback.state === "failed"
+              ? "text-brand-warning"
+              : "text-brand-accent-text"
           }`}
         >
-          {copyState === "done" && copied !== null
+          {visibleFeedback.state === "done" && visibleFeedback.copied !== null
             ? t("copyTaskCopied", {
                 target:
-                  copied === "chatbot"
+                  visibleFeedback.copied === "chatbot"
                     ? t("copyTaskChatbotShort")
                     : t("copyTaskCodeAgentShort"),
               })
             : null}
-          {copyState === "failed" ? t("copyTaskFailed") : null}
+          {visibleFeedback.state === "failed" ? t("copyTaskFailed") : null}
         </p>
       </div>
 
@@ -199,13 +253,13 @@ export function AgentAiActionCopy({
         </p>
       ) : null}
 
-      {fallback !== null ? (
+      {visibleFeedback.fallback !== null ? (
         <textarea
           data-testid="agent-ai-copy-fallback"
           readOnly
           aria-label={t("copyTaskFallbackAria")}
           className="mt-3 h-48 w-full rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary"
-          value={fallback}
+          value={visibleFeedback.fallback}
         />
       ) : null}
     </section>

@@ -331,6 +331,162 @@ describe("AgentAiActionCopy", () => {
     },
   );
 
+  it("clears stale feedback when the built packet changes but preserves it for equivalent inline content", async () => {
+    const writeText = vi
+      .fn<(_: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("denied"))
+      .mockResolvedValueOnce();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const issueA = {
+      ...CONTENT,
+      recommendation: "ISSUE_A_REMEDIATION",
+    };
+    const issueB = {
+      ...CONTENT,
+      recommendation: "ISSUE_B_REMEDIATION",
+    };
+
+    render({ content: issueA });
+    const chatbot = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Chatbot"),
+    );
+    await act(async () =>
+      chatbot?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(
+      host.querySelector<HTMLTextAreaElement>(
+        '[data-testid="agent-ai-copy-fallback"]',
+      )?.value,
+    ).toContain("ISSUE_A_REMEDIATION");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Clipboard access was denied",
+    );
+
+    render({ content: issueB });
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-preview-chatbot"]')
+        ?.textContent,
+    ).toContain("ISSUE_B_REMEDIATION");
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-preview-chatbot"]')
+        ?.textContent,
+    ).not.toContain("ISSUE_A_REMEDIATION");
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-fallback"]'),
+    ).toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("");
+
+    const currentChatbot = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Chatbot"),
+    );
+    await act(async () =>
+      currentChatbot?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      ),
+    );
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Chatbot",
+    );
+
+    render({
+      content: {
+        ...issueB,
+        validation: [...issueB.validation],
+      },
+    });
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Chatbot",
+    );
+    expect(intlErrors).toEqual([]);
+  });
+
+  it("clears an earlier failure as soon as a new copy request starts", async () => {
+    let resolveLatest!: () => void;
+    const latest = new Promise<void>((resolve) => {
+      resolveLatest = resolve;
+    });
+    const writeText = vi
+      .fn<(_: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("denied"))
+      .mockReturnValueOnce(latest);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render();
+
+    const chatbot = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Chatbot"),
+    );
+    const codeAgent = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Code Agent"),
+    );
+    await act(async () =>
+      chatbot?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-fallback"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      codeAgent?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-fallback"]'),
+    ).toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("");
+
+    await act(async () => {
+      resolveLatest();
+      await latest;
+    });
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Code Agent",
+    );
+  });
+
+  it("lets only the latest overlapping clipboard request settle UI feedback", async () => {
+    let rejectFirst!: (reason: Error) => void;
+    const first = new Promise<void>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const writeText = vi
+      .fn<(_: string) => Promise<void>>()
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render();
+
+    const chatbot = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Chatbot"),
+    );
+    const codeAgent = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Code Agent"),
+    );
+    act(() => {
+      chatbot?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () =>
+      codeAgent?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(writeText.mock.calls[0]?.[0]).not.toBe(writeText.mock.calls[1]?.[0]);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Code Agent",
+    );
+
+    await act(async () => {
+      rejectFirst(new Error("late denial"));
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Code Agent",
+    );
+    expect(host.querySelector('[role="status"]')?.textContent).not.toContain(
+      "Clipboard access was denied",
+    );
+    expect(
+      host.querySelector('[data-testid="agent-ai-copy-fallback"]'),
+    ).toBeNull();
+  });
+
   it.each(["source-gated", "unavailable", "illustrative"] as const)(
     "offers a Chatbot investigation brief and withholds Code Agent when truth is %s",
     async (truth) => {
