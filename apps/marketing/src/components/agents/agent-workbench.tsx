@@ -34,6 +34,7 @@ import { AgentProfilePanel } from "./agent-profile-panel";
 import {
   applyAgentProfileRefresh,
   checkerHandoffEdits,
+  confirmAgentProfile,
   createAgentProfileDraft,
   updateAgentProfile,
   type AgentProfileDraft,
@@ -222,6 +223,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const runAudit = useCallback(
     async (
       confirmedProfile: AgentProfileDraft,
+      editableProfile: AgentProfileDraft,
       currentOperation: number,
       signal?: AbortSignal,
       pendingIntent?: PendingAgentIntent,
@@ -270,7 +272,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             const stored = storage
               ? pendingIntent
                 ? restorePendingAgentIntent(storage, agent, pendingIntent)
-                : storeConfirmedAgentRunIntent(storage, confirmedProfile)
+                : storeConfirmedAgentRunIntent(
+                    storage,
+                    confirmedProfile,
+                    editableProfile,
+                  )
               : null;
             if (!stored) {
               setErrorCode("intent_unavailable");
@@ -308,6 +314,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const gateAndRun = useCallback(
     async (
       confirmedProfile: AgentProfileDraft,
+      editableProfile: AgentProfileDraft,
       signal?: AbortSignal,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
@@ -382,7 +389,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             ? existing && isRunnablePendingAgentIntent(existing)
               ? existing
               : null
-            : storeConfirmedAgentRunIntent(storage, confirmedProfile);
+            : storeConfirmedAgentRunIntent(
+                storage,
+                confirmedProfile,
+                editableProfile,
+              );
           if (!stored) {
             setSignInOpen(false);
             setSignInPurpose(null);
@@ -400,7 +411,13 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         setSignInPurpose(null);
         const storage = getSessionIntentStorage();
         if (storage) clearPendingAgentIntent(storage, agent);
-        await runAudit(confirmedProfile, currentOperation, signal, pendingIntent);
+        await runAudit(
+          confirmedProfile,
+          editableProfile,
+          currentOperation,
+          signal,
+          pendingIntent,
+        );
       } finally {
         if (currentOperation === operationId.current) {
           busy.current = false;
@@ -414,6 +431,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const startOperation = useCallback(
     (
       confirmedProfile: AgentProfileDraft,
+      editableProfile: AgentProfileDraft,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
       silentSignedOut = false,
@@ -424,6 +442,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       activeOperationController.current = controller;
       const completion = gateAndRun(
         confirmedProfile,
+        editableProfile,
         controller.signal,
         replaceInterruptedResume,
         pendingIntent,
@@ -914,14 +933,15 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       return;
     }
 
-    if (!isRunnablePendingAgentIntent(pending) || !pending.confirmedProfile) {
+    if (!isRunnablePendingAgentIntent(pending)) {
       if (storage) clearPendingAgentIntent(storage, agent);
       return;
     }
     resumeIntent.current = pending;
-    setProfile(pending.confirmedProfile);
+    setProfile(pending.editableProfile);
     const started = startOperation(
       pending.confirmedProfile,
+      pending.editableProfile,
       true,
       pending,
     );
@@ -968,14 +988,16 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       const pending =
         (storage ? readPendingAgentIntent(storage, agent) : null) ??
         resumeIntent.current;
-      if (
-        !pending ||
-        !isRunnablePendingAgentIntent(pending) ||
-        !pending.confirmedProfile
-      ) {
+      if (!pending || !isRunnablePendingAgentIntent(pending)) {
         return;
       }
-      startOperation(pending.confirmedProfile, false, pending, true);
+      startOperation(
+        pending.confirmedProfile,
+        pending.editableProfile,
+        false,
+        pending,
+        true,
+      );
     }
 
     window.addEventListener("focus", resumeAfterAppSignIn);
@@ -1068,8 +1090,9 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
   function handleProfileConfirm(confirmedProfile: AgentProfileDraft): void {
     if (confirmedProfile.agent !== agent || busy.current) return;
-    setProfile(confirmedProfile);
-    startOperation(confirmedProfile);
+    const editableProfile = confirmAgentProfile(profileRef.current);
+    setProfile(editableProfile);
+    startOperation(confirmedProfile, editableProfile);
   }
 
   function handleDialogChange(open: boolean): void {

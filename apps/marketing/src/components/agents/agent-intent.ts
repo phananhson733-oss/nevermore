@@ -77,8 +77,10 @@ export interface PendingAgentIntent {
   readonly url: string;
   readonly createdAt: number;
   readonly expiresAt: number;
-  /** Present only for a confirmed run interrupted by authentication. */
+  /** Immutable outbound snapshot for a run interrupted by authentication. */
   readonly confirmedProfile?: AgentProfileDraft;
+  /** Confirmed editable draft restored to Stage 01 after authentication. */
+  readonly editableProfile?: AgentProfileDraft;
   /** Present only for a profile refresh request that must never auto-run audit. */
   readonly refreshProfile?: AgentProfileDraft;
   readonly refreshMode?: AgentProfileRefreshMode;
@@ -95,7 +97,7 @@ export interface PendingAgentIntent {
 }
 
 export function pendingAgentIntentKey(agent: AgentKind): string {
-  return `gengrowth:agent-intent:${agent}:v3`;
+  return `gengrowth:agent-intent:${agent}:v4`;
 }
 
 /**
@@ -109,6 +111,7 @@ function legacyPendingAgentIntentKeys(agent: AgentKind): readonly string[] {
   return [
     `gengrowth:agent-intent:${agent}:v1`,
     `gengrowth:agent-intent:${agent}:v2`,
+    `gengrowth:agent-intent:${agent}:v3`,
   ];
 }
 
@@ -125,10 +128,20 @@ function isPendingIntent(
     candidate.scope === undefined ||
     candidate.scope === "site" ||
     candidate.scope === "page";
-  const confirmedProfileIsValid =
-    candidate.confirmedProfile === undefined ||
-    (candidate.purpose === "run_confirmed_profile" &&
-      isConfirmedAgentProfile(candidate.confirmedProfile, agent, candidate.url));
+  const runProfilesAreValid =
+    candidate.purpose === "run_confirmed_profile"
+      ? isConfirmedAgentProfile(
+          candidate.confirmedProfile,
+          agent,
+          candidate.url,
+        ) &&
+        isConfirmedAgentProfile(
+          candidate.editableProfile,
+          agent,
+          candidate.url,
+        )
+      : candidate.confirmedProfile === undefined &&
+        candidate.editableProfile === undefined;
   const searchProfileIsValid =
     candidate.purpose !== "search_profile"
       ? candidate.searchProfile === undefined
@@ -153,7 +166,7 @@ function isPendingIntent(
     Number.isFinite(candidate.expiresAt) &&
     candidate.expiresAt > candidate.createdAt &&
     candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS &&
-    confirmedProfileIsValid &&
+    runProfilesAreValid &&
     refreshProfileIsValid
   );
 }
@@ -178,8 +191,8 @@ function isRefreshProfileDraft(
 }
 
 /**
- * The numeric fourth argument is retained for the existing auth handoff while
- * callers migrate. New acquisition surfaces must pass an explicit purpose.
+ * The numeric fourth argument is retained only to reject the old profile-less
+ * run handoff safely. New acquisition surfaces must pass an explicit purpose.
  */
 export function storePendingAgentIntent(
   storage: IntentStorage,
@@ -193,6 +206,7 @@ export function storePendingAgentIntent(
       ? "run_confirmed_profile"
       : purposeOrNow;
   const now = typeof purposeOrNow === "number" ? purposeOrNow : explicitNow;
+  if (purpose === "run_confirmed_profile") return null;
   if (!url.trim() || url.length > 2_048 || !Number.isFinite(now)) return null;
   const intent: PendingAgentIntent = {
     agent,
@@ -245,30 +259,45 @@ export function storePageFocusedAgentIntent(
   }
 }
 
-/** Store the exact, already-confirmed local snapshot for an auth-interrupted run. */
+/** Store separate outbound and editable snapshots for an auth-interrupted run. */
 export function storeConfirmedAgentRunIntent(
   storage: IntentStorage,
-  profile: AgentProfileDraft,
+  confirmedProfile: AgentProfileDraft,
+  editableProfile: AgentProfileDraft,
   now = Date.now(),
 ): PendingAgentIntent | null {
-  if (!isConfirmedAgentProfile(profile, profile.agent, profile.targetUrl)) {
+  if (
+    !isConfirmedAgentProfile(
+      confirmedProfile,
+      confirmedProfile.agent,
+      confirmedProfile.targetUrl,
+    ) ||
+    !isConfirmedAgentProfile(
+      editableProfile,
+      confirmedProfile.agent,
+      confirmedProfile.targetUrl,
+    )
+  ) {
     return null;
   }
   const intent: PendingAgentIntent = {
-    agent: profile.agent,
+    agent: confirmedProfile.agent,
     purpose: "run_confirmed_profile",
-    url: profile.targetUrl,
+    url: confirmedProfile.targetUrl,
     createdAt: now,
     expiresAt: now + AGENT_INTENT_TTL_MS,
-    confirmedProfile: profile,
+    confirmedProfile,
+    editableProfile,
   };
-  if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
+  if (!Number.isFinite(now) || !isPendingIntent(intent, confirmedProfile.agent)) {
+    return null;
+  }
   try {
-    for (const legacy of legacyPendingAgentIntentKeys(profile.agent)) {
+    for (const legacy of legacyPendingAgentIntentKeys(confirmedProfile.agent)) {
       storage.removeItem(legacy);
     }
     storage.setItem(
-      pendingAgentIntentKey(profile.agent),
+      pendingAgentIntentKey(confirmedProfile.agent),
       JSON.stringify(intent),
     );
     return intent;
@@ -360,10 +389,23 @@ export function isProfileSearchPendingAgentIntent(
 /** A homepage preparation intent is data for Stage 01, never permission to POST. */
 export function isRunnablePendingAgentIntent(
   intent: PendingAgentIntent,
-): boolean {
+): intent is PendingAgentIntent & {
+  readonly purpose: "run_confirmed_profile";
+  readonly confirmedProfile: AgentProfileDraft;
+  readonly editableProfile: AgentProfileDraft;
+} {
   return (
     intent.purpose === "run_confirmed_profile" &&
-    isConfirmedAgentProfile(intent.confirmedProfile, intent.agent, intent.url)
+    isConfirmedAgentProfile(
+      intent.confirmedProfile,
+      intent.agent,
+      intent.url,
+    ) &&
+    isConfirmedAgentProfile(
+      intent.editableProfile,
+      intent.agent,
+      intent.url,
+    )
   );
 }
 
@@ -419,8 +461,8 @@ export function readPendingAgentIntent(
   const key = pendingAgentIntentKey(agent);
   let raw: string | null = null;
   try {
-    // v1 had no purpose. Delete rather than guess whether it was a homepage
-    // prefill or a visitor-confirmed run.
+    // Superseded slots cannot prove the current two-snapshot run contract.
+    // Delete rather than guessing whether an old value is safe to resume.
     for (const legacy of legacyPendingAgentIntentKeys(agent)) {
       storage.removeItem(legacy);
     }

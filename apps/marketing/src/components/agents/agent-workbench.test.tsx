@@ -63,6 +63,10 @@ vi.mock("./agent-results", () => ({
       readonly targetUrl: string;
       readonly reviewState: string;
       readonly country: string;
+      readonly targetQuery: string;
+      readonly directCompetitors: readonly string[];
+      readonly indirectAlternatives: readonly string[];
+      readonly excludedAlternatives: readonly string[];
     };
   }) => (
     <div
@@ -73,6 +77,10 @@ vi.mock("./agent-results", () => ({
       data-profile-url={profile.targetUrl}
       data-profile-state={profile.reviewState}
       data-profile-country={profile.country}
+      data-profile-query={profile.targetQuery}
+      data-profile-direct={profile.directCompetitors.join(",")}
+      data-profile-indirect={profile.indirectAlternatives.join(",")}
+      data-profile-excluded={profile.excludedAlternatives.join(",")}
     />
   ),
 }));
@@ -244,10 +252,12 @@ function profileSearchEnvelope(
     targetHost = "acme.com",
     marketCode = "US",
     availability = "available",
+    domain = "competitor.example",
   }: {
     readonly targetHost?: string;
     readonly marketCode?: string;
     readonly availability?: "available" | "source_unavailable";
+    readonly domain?: string;
   } = {},
 ) {
   return {
@@ -269,7 +279,7 @@ function profileSearchEnvelope(
           ? [
               {
                 kind: "organic_search_overlap",
-                domain: "competitor.example",
+                domain,
                 intersections: 12,
                 averagePosition: 8.5,
                 summedPosition: 102,
@@ -687,6 +697,97 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       targetQuery: "",
       productProfileSearchSeeds: [],
     });
+  });
+
+  it("keeps accepted system suggestions in the immutable run snapshot without laundering them into the next editable search context", async () => {
+    let searchRequests = 0;
+    const auditBodies: unknown[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        if (path === "/api/agents/seo/profile-search") {
+          searchRequests += 1;
+          return Response.json(
+            profileSearchEnvelope("seo", {
+              targetHost: "astrologywiki.com",
+              marketCode: searchRequests === 1 ? "US" : "GB",
+              domain:
+                searchRequests === 1
+                  ? "provider-a.example"
+                  : "provider-b.example",
+            }),
+          );
+        }
+        if (path === "/api/agents/seo/audit") {
+          auditBodies.push(JSON.parse(String(init?.body)));
+          return Response.json(successEnvelope("seo"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext("US", "en-US");
+    ensureProfileReviewOpen();
+    setInputValue(
+      document.querySelector(
+        'input[aria-label="fields.directCompetitors"]',
+      ) as HTMLInputElement,
+      "manual.example",
+    );
+    discoverSearchCandidates();
+    await flushAsyncWork();
+    expect(document.body.textContent).toContain("provider-a.example");
+
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(auditBodies).toEqual([
+      {
+        url: "astrologywiki.com",
+        targetQueries: ["Birth-chart calculator"],
+        pageRole: "homepage",
+        market: "US",
+        language: "en-US",
+      },
+    ]);
+    const runResult = document.querySelector(
+      '[data-testid="agent-results"]',
+    ) as HTMLElement;
+    expect(runResult.dataset.profileQuery).toBe("Birth-chart calculator");
+    expect(runResult.dataset.profileDirect).toBe(
+      "provider-a.example,manual.example",
+    );
+    expect(factValue("fields.targetQuery")).toBe(
+      "Birth-chart calculator · provenance.derivations.inferred · values.confirmationRequired",
+    );
+
+    setRunContext("GB", "en-US");
+    ensureProfileReviewOpen();
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.directCompetitors"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("manual.example");
+
+    discoverSearchCandidates();
+    await flushAsyncWork();
+
+    const directCompetitors = (
+      document.querySelector(
+        'input[aria-label="fields.directCompetitors"]',
+      ) as HTMLInputElement
+    ).value;
+    expect(directCompetitors).toBe("provider-b.example, manual.example");
+    expect(directCompetitors).not.toContain("provider-a.example");
+    expect(searchRequests).toBe(2);
   });
 
   it("does not automatically request CN search evidence without an explicit target query", async () => {
@@ -1599,7 +1700,11 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         locale: "en-US",
       }),
     );
-    storeConfirmedAgentRunIntent(sessionStorage, staleAuditProfile);
+    storeConfirmedAgentRunIntent(
+      sessionStorage,
+      staleAuditProfile,
+      staleAuditProfile,
+    );
     discoverSearchCandidates();
     await flushAsyncWork();
 
@@ -2191,6 +2296,13 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         agent: "tech",
         targetUrl: "astrologywiki.com",
         reviewState: "confirmed",
+        targetQuery: "Birth-chart calculator",
+      },
+      editableProfile: {
+        agent: "tech",
+        targetUrl: "astrologywiki.com",
+        reviewState: "confirmed",
+        targetQuery: "",
       },
     });
   });
@@ -2202,7 +2314,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         locale: "en-US",
       }),
     );
-    storeConfirmedAgentRunIntent(sessionStorage, profile);
+    storeConfirmedAgentRunIntent(sessionStorage, profile, profile);
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === "/api/auth/session") {
@@ -2227,6 +2339,104 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(postCalls(fetchMock)).toHaveLength(1);
     expect(sessionStorage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
     expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+  });
+
+  it("restores the editable draft separately from the immutable run snapshot after sign-in reload", async () => {
+    let signedIn = false;
+    let searchRequests = 0;
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path === "/api/auth/session") {
+          return Response.json({ signedIn });
+        }
+        if (path === "/api/agents/seo/profile-search") {
+          searchRequests += 1;
+          return Response.json(
+            profileSearchEnvelope("seo", {
+              targetHost: "astrologywiki.com",
+              marketCode: searchRequests === 1 ? "US" : "GB",
+              domain:
+                searchRequests === 1
+                  ? "provider-a.example"
+                  : "provider-b.example",
+            }),
+          );
+        }
+        if (path === "/api/agents/seo/audit") {
+          return Response.json(successEnvelope("seo"));
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext("US", "en-US");
+    ensureProfileReviewOpen();
+    setInputValue(
+      document.querySelector(
+        'input[aria-label="fields.directCompetitors"]',
+      ) as HTMLInputElement,
+      "manual.example",
+    );
+    discoverSearchCandidates();
+    await flushAsyncWork();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(readPendingAgentIntent(sessionStorage, "seo")).toMatchObject({
+      purpose: "run_confirmed_profile",
+      confirmedProfile: {
+        targetQuery: "Birth-chart calculator",
+        directCompetitors: ["provider-a.example", "manual.example"],
+      },
+      editableProfile: {
+        targetQuery: "",
+        directCompetitors: ["manual.example"],
+      },
+    });
+
+    await act(async () => root?.unmount());
+    root = null;
+    document.body.replaceChildren();
+    signedIn = true;
+
+    renderStrict("seo");
+    await flushAsyncWork();
+
+    const runResult = document.querySelector(
+      '[data-testid="agent-results"]',
+    ) as HTMLElement;
+    expect(runResult.dataset.profileQuery).toBe("Birth-chart calculator");
+    expect(runResult.dataset.profileDirect).toBe(
+      "provider-a.example,manual.example",
+    );
+    expect(factValue("fields.targetQuery")).toBe(
+      "Birth-chart calculator · provenance.derivations.inferred · values.confirmationRequired",
+    );
+
+    setRunContext("GB", "en-US");
+    ensureProfileReviewOpen();
+    expect(
+      (
+        document.querySelector(
+          'input[aria-label="fields.directCompetitors"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("manual.example");
+
+    discoverSearchCandidates();
+    await flushAsyncWork();
+    const directCompetitors = (
+      document.querySelector(
+        'input[aria-label="fields.directCompetitors"]',
+      ) as HTMLInputElement
+    ).value;
+    expect(directCompetitors).toBe("provider-b.example, manual.example");
+    expect(directCompetitors).not.toContain("provider-a.example");
+    expect(searchRequests).toBe(2);
   });
 
   it("never probes, prefills, or consumes the other Agent's intent", async () => {
@@ -2402,6 +2612,49 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
     expect(postCalls(fetchMock)).toHaveLength(1);
     expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
+  });
+
+  it("keeps both snapshots through an API-level auth race", async () => {
+    let auditRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn: true });
+      }
+      auditRequests += 1;
+      return auditRequests === 1
+        ? Response.json(
+            { error: { code: "auth_required" } },
+            { status: 401 },
+          )
+        : Response.json(successEnvelope("seo"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    setRunContext();
+    confirmProfile();
+    await flushAsyncWork();
+
+    expect(readPendingAgentIntent(sessionStorage, "seo")).toMatchObject({
+      purpose: "run_confirmed_profile",
+      confirmedProfile: { targetQuery: "Birth-chart calculator" },
+      editableProfile: { targetQuery: "" },
+    });
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await flushAsyncWork();
+
+    expect(auditRequests).toBe(2);
+    expect(
+      (
+        document.querySelector('[data-testid="agent-results"]') as HTMLElement
+      ).dataset.profileQuery,
+    ).toBe("Birth-chart calculator");
+    expect(factValue("fields.targetQuery")).toBe(
+      "Birth-chart calculator · provenance.derivations.inferred · values.confirmationRequired",
+    );
   });
 
   it("allows only one session probe and POST for rapid double confirmation", async () => {

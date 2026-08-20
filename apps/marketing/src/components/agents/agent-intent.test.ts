@@ -62,13 +62,19 @@ describe("Agent pending intents", () => {
   it("survives within ten minutes and expires at the TTL boundary", () => {
     const storage = new MemoryStorage();
     const start = 1_000;
-    storePendingAgentIntent(storage, "seo", "https://example.com", start);
+    storePendingAgentIntent(
+      storage,
+      "seo",
+      "https://example.com",
+      "prepare_profile",
+      start,
+    );
 
     expect(
       readPendingAgentIntent(storage, "seo", start + AGENT_INTENT_TTL_MS - 1),
     )?.toMatchObject({
       agent: "seo",
-      purpose: "run_confirmed_profile",
+      purpose: "prepare_profile",
       url: "https://example.com",
     });
     expect(
@@ -88,7 +94,7 @@ describe("Agent pending intents", () => {
     );
 
     expect(pendingAgentIntentKey("seo")).toBe(
-      "gengrowth:agent-intent:seo:v3",
+      "gengrowth:agent-intent:seo:v4",
     );
     expect(prepared?.purpose).toBe("prepare_profile");
     expect(readPendingAgentIntent(storage, "seo", 1_001)?.purpose).toBe(
@@ -103,14 +109,29 @@ describe("Agent pending intents", () => {
 
   it("resumes only a confirmed profile with the exact Agent and URL snapshot", () => {
     const storage = new MemoryStorage();
-    const profile = confirmAgentProfile(
+    const editableProfile = confirmAgentProfile(
       updateAgentProfile(
         createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
-        { country: "US", locale: "en-US" },
+        {
+          country: "US",
+          locale: "en-US",
+          directCompetitors: ["manual.example"],
+        },
       ),
     );
+    const confirmedProfile = confirmAgentProfile(
+      updateAgentProfile(editableProfile, {
+        targetQuery: "technical seo audit",
+        directCompetitors: ["provider.example", "manual.example"],
+      }),
+    );
 
-    const intent = storeConfirmedAgentRunIntent(storage, profile, 1_000);
+    const intent = storeConfirmedAgentRunIntent(
+      storage,
+      confirmedProfile,
+      editableProfile,
+      1_000,
+    );
 
     expect(intent).toMatchObject({
       purpose: "run_confirmed_profile",
@@ -120,15 +141,95 @@ describe("Agent pending intents", () => {
         agent: "tech",
         targetUrl: "https://astrologywiki.com/pricing",
         reviewState: "confirmed",
+        targetQuery: "technical seo audit",
+        directCompetitors: ["provider.example", "manual.example"],
+      },
+      editableProfile: {
+        agent: "tech",
+        targetUrl: "https://astrologywiki.com/pricing",
+        reviewState: "confirmed",
+        targetQuery: "",
+        directCompetitors: ["manual.example"],
       },
     });
     expect(isRunnablePendingAgentIntent(intent!)).toBe(true);
+    expect(readPendingAgentIntent(storage, "tech", 1_001)).toMatchObject({
+      confirmedProfile: {
+        targetQuery: "technical seo audit",
+        directCompetitors: ["provider.example", "manual.example"],
+      },
+      editableProfile: {
+        targetQuery: "",
+        directCompetitors: ["manual.example"],
+      },
+    });
     expect(
       isRunnablePendingAgentIntent({
         ...intent!,
         url: "https://astrologywiki.com/other",
       }),
     ).toBe(false);
+  });
+
+  it.each([
+    {
+      label: "missing confirmed Profile",
+      mutate: (intent: Record<string, unknown>) => {
+        delete intent.confirmedProfile;
+      },
+    },
+    {
+      label: "missing editable Profile",
+      mutate: (intent: Record<string, unknown>) => {
+        delete intent.editableProfile;
+      },
+    },
+    {
+      label: "mismatched editable Profile URL",
+      mutate: (intent: Record<string, unknown>) => {
+        intent.editableProfile = {
+          ...(intent.editableProfile as Record<string, unknown>),
+          targetUrl: "https://astrologywiki.com/other",
+        };
+      },
+    },
+  ])("rejects a runnable intent with $label", ({ mutate }) => {
+    const storage = new MemoryStorage();
+    const profile = confirmAgentProfile(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "https://astrologywiki.com/pricing"),
+        { country: "US", locale: "en-US" },
+      ),
+    );
+    const malformed = structuredClone({
+      agent: "seo",
+      purpose: "run_confirmed_profile",
+      url: "https://astrologywiki.com/pricing",
+      createdAt: 1_000,
+      expiresAt: 1_000 + AGENT_INTENT_TTL_MS,
+      confirmedProfile: profile,
+      editableProfile: profile,
+    }) as Record<string, unknown>;
+    mutate(malformed);
+    storage.setItem(pendingAgentIntentKey("seo"), JSON.stringify(malformed));
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("does not create a runnable intent without both explicit Profile snapshots", () => {
+    const storage = new MemoryStorage();
+
+    expect(
+      storePendingAgentIntent(
+        storage,
+        "seo",
+        "https://astrologywiki.com",
+        "run_confirmed_profile",
+        1_000,
+      ),
+    ).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });
 
   it("physically removes a confirmed profile handoff at its expiry", () => {
@@ -141,7 +242,7 @@ describe("Agent pending intents", () => {
         { country: "US", locale: "en-US" },
       ),
     );
-    const intent = storeConfirmedAgentRunIntent(storage, profile)!;
+    const intent = storeConfirmedAgentRunIntent(storage, profile, profile)!;
 
     schedulePendingAgentIntentExpiry(storage, intent);
     vi.advanceTimersByTime(AGENT_INTENT_TTL_MS - 1);
@@ -153,7 +254,7 @@ describe("Agent pending intents", () => {
     expect(storage.getItem(pendingAgentIntentKey("tech"))).toBeNull();
   });
 
-  it("fails closed on a v2 payload with an unknown purpose", () => {
+  it("fails closed on a current payload with an unknown purpose", () => {
     const storage = new MemoryStorage();
     storage.setItem(
       pendingAgentIntentKey("seo"),
@@ -173,6 +274,7 @@ describe("Agent pending intents", () => {
   it.each([
     "gengrowth:agent-intent:seo:v1",
     "gengrowth:agent-intent:seo:v2",
+    "gengrowth:agent-intent:seo:v3",
   ])("removes the superseded slot %s rather than reading it", (legacyKey) => {
     const storage = new MemoryStorage();
     storage.setItem(
@@ -216,7 +318,7 @@ describe("Agent pending intents", () => {
   it("rejects a stored scope outside the known values", () => {
     const storage = new MemoryStorage();
     storage.setItem(
-      "gengrowth:agent-intent:seo:v3",
+      pendingAgentIntentKey("seo"),
       JSON.stringify({
         agent: "seo",
         purpose: "prepare_profile",
@@ -233,7 +335,7 @@ describe("Agent pending intents", () => {
   it("rejects a purpose that is not in the known set", () => {
     const storage = new MemoryStorage();
     storage.setItem(
-      "gengrowth:agent-intent:seo:v3",
+      pendingAgentIntentKey("seo"),
       JSON.stringify({
         agent: "seo",
         purpose: "publish_everything",
@@ -248,7 +350,13 @@ describe("Agent pending intents", () => {
 
   it("never resumes an intent on the other Agent", () => {
     const storage = new MemoryStorage();
-    storePendingAgentIntent(storage, "seo", "https://seo.example", 1_000);
+    storePendingAgentIntent(
+      storage,
+      "seo",
+      "https://seo.example",
+      "prepare_profile",
+      1_000,
+    );
 
     expect(readPendingAgentIntent(storage, "tech", 1_001)).toBeNull();
     expect(readPendingAgentIntent(storage, "seo", 1_001)?.url).toBe(
@@ -290,8 +398,20 @@ describe("Agent pending intents", () => {
 
   it("clears only the abandoned Agent intent", () => {
     const storage = new MemoryStorage();
-    storePendingAgentIntent(storage, "seo", "https://seo.example", 1_000);
-    storePendingAgentIntent(storage, "tech", "https://tech.example", 1_000);
+    storePendingAgentIntent(
+      storage,
+      "seo",
+      "https://seo.example",
+      "prepare_profile",
+      1_000,
+    );
+    storePendingAgentIntent(
+      storage,
+      "tech",
+      "https://tech.example",
+      "prepare_profile",
+      1_000,
+    );
 
     clearPendingAgentIntent(storage, "seo");
 
@@ -303,10 +423,19 @@ describe("Agent pending intents", () => {
 
   it("restores an auth-raced intent without extending its original expiry", () => {
     const storage = new MemoryStorage();
-    const intent = storePendingAgentIntent(
+    const editableProfile = confirmAgentProfile(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "https://astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+    );
+    const confirmedProfile = confirmAgentProfile(
+      updateAgentProfile(editableProfile, { targetQuery: "seo audit" }),
+    );
+    const intent = storeConfirmedAgentRunIntent(
       storage,
-      "seo",
-      "https://example.com",
+      confirmedProfile,
+      editableProfile,
       1_000,
     )!;
     clearPendingAgentIntent(storage, "seo");
@@ -317,6 +446,10 @@ describe("Agent pending intents", () => {
     expect(readPendingAgentIntent(storage, "seo", 2_000)?.expiresAt).toBe(
       1_000 + AGENT_INTENT_TTL_MS,
     );
+    expect(readPendingAgentIntent(storage, "seo", 2_000)).toMatchObject({
+      confirmedProfile: { targetQuery: "seo audit" },
+      editableProfile: { targetQuery: "" },
+    });
   });
 
   it("stores a refresh-profile intent with the exact local draft and mode", () => {
