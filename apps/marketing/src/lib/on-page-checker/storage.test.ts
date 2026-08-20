@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { pendingAgentIntentKey } from "../../components/agents/agent-intent";
+
 import {
   appendOnPageHistory,
   clearOnPageStorage,
@@ -384,7 +386,7 @@ describe("clearOnPageStorage", () => {
   it("removes the Agent intent the checker wrote for a handoff", () => {
     const session = new MemoryStorage();
     session.setItem(
-      "gengrowth:agent-intent:seo:v3",
+      pendingAgentIntentKey("seo"),
       JSON.stringify({ purpose: "page_focused_launch" }),
     );
 
@@ -392,7 +394,7 @@ describe("clearOnPageStorage", () => {
 
     // Left behind, the next account in this tab inherits the previous
     // visitor's page for the rest of the intent's window.
-    expect(session.getItem("gengrowth:agent-intent:seo:v3")).toBeNull();
+    expect(session.getItem(pendingAgentIntentKey("seo"))).toBeNull();
   });
 
   it("collects keys before deleting so none are skipped", () => {

@@ -57,6 +57,7 @@ import {
   SERP_LANGUAGES,
   SERP_LOCATIONS,
 } from "../../lib/tools/serp-markets.ts";
+import { pendingAgentIntentKey } from "../agents/agent-intent";
 
 const { OnPageChecker } = await import("./on-page-checker");
 
@@ -550,7 +551,7 @@ describe("On-Page checker local state", () => {
       pageType: "homepage",
     });
     // And the Agent knows to open on that page rather than on the site.
-    const intent = sessionStorage.getItem("gengrowth:agent-intent:seo:v3");
+    const intent = sessionStorage.getItem(pendingAgentIntentKey("seo"));
     expect(JSON.parse(String(intent))).toMatchObject({
       purpose: "page_focused_launch",
       scope: "page",
@@ -607,7 +608,7 @@ describe("On-Page checker local state", () => {
       pageType: "guide",
     });
     expect(
-      JSON.parse(String(sessionStorage.getItem("gengrowth:agent-intent:seo:v3"))),
+      JSON.parse(String(sessionStorage.getItem(pendingAgentIntentKey("seo")))),
     ).toMatchObject({ purpose: "page_focused_launch", scope: "page" });
     expect(assign).toHaveBeenCalledWith("/agents/seo");
   });
@@ -675,7 +676,7 @@ describe("On-Page checker local state", () => {
    */
   it("clears the recent checks and leaves every handoff record intact", async () => {
     sessionStorage.setItem(
-      "gengrowth:agent-intent:seo:v3",
+      pendingAgentIntentKey("seo"),
       JSON.stringify({ purpose: "profile_refresh", url: "other.test" }),
     );
     globalThis.fetch = vi.fn(async () =>
@@ -700,7 +701,7 @@ describe("On-Page checker local state", () => {
     // The pair survives whole, so the Agent still gets the whole question.
     expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).not.toBeNull();
     expect(
-      JSON.parse(String(sessionStorage.getItem("gengrowth:agent-intent:seo:v3"))),
+      JSON.parse(String(sessionStorage.getItem(pendingAgentIntentKey("seo")))),
     ).toMatchObject({ purpose: "page_focused_launch" });
   });
 
@@ -724,7 +725,7 @@ describe("On-Page checker local state", () => {
       buttonWith(host, "Clear").click();
     });
 
-    const intent = sessionStorage.getItem("gengrowth:agent-intent:seo:v3");
+    const intent = sessionStorage.getItem(pendingAgentIntentKey("seo"));
     const draft = sessionStorage.getItem("gengrowth:onpage-draft:v1");
     const pageFocused =
       intent !== null &&
