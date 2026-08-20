@@ -9,7 +9,10 @@ import {
   agentAffectedObservations,
   type AgentAffectedObservation,
 } from "../../components/agents/agent-evidence-observations";
-import type { AgentProfileDraft } from "../../components/agents/agent-profile";
+import {
+  isConfirmedAgentProfile,
+  type AgentProfileDraft,
+} from "../../components/agents/agent-profile";
 import type { AgentSolutionTemplate } from "../../components/agents/agent-solution-templates";
 import { withinBriefBudget } from "../copy-brief/budget";
 import {
@@ -46,7 +49,7 @@ export interface BuildSeoAiActionCopyInput {
 
 export type BuildSeoAiActionCopyResult =
   | { readonly ok: true; readonly markdown: string; readonly includedUrls: number; readonly omittedUrls: number }
-  | { readonly ok: false; readonly reason: "evidence_unavailable" | "serialized_too_large" };
+  | { readonly ok: false; readonly reason: "context_invalid" | "evidence_unavailable" | "serialized_too_large" };
 
 interface CopyChrome {
   readonly title: string;
@@ -323,6 +326,16 @@ export function buildSeoAiActionCopy(
   input: BuildSeoAiActionCopyInput,
 ): BuildSeoAiActionCopyResult {
   if (
+    !isConfirmedAgentProfile(
+      input.profile,
+      input.solution.agent,
+      input.targetUrl,
+    )
+  ) {
+    return { ok: false, reason: "context_invalid" };
+  }
+
+  if (
     input.audience === "code_agent" &&
     truthPreventsImplementation(input.selectedCheck.truth)
   ) {
@@ -338,7 +351,8 @@ export function buildSeoAiActionCopy(
   const urlObservations = observations.filter((entry) => entry.url !== null);
 
   let includedUrls = urlObservations.length;
-  while (includedUrls >= 0) {
+  const minimumIncludedUrls = urlObservations.length > 0 ? 1 : 0;
+  while (includedUrls >= minimumIncludedUrls) {
     const payload = buildPayload(
       input,
       observations,
