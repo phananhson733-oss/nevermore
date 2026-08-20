@@ -550,9 +550,13 @@ describe("GeoReportView", () => {
   it("renders the degraded banner when a probe never searched", async () => {
     render(await buildReport({ searched: false }));
 
-    expect(host.textContent).toContain("Degraded run");
-    expect(host.textContent).toContain("instrumentation failure");
+    expect(host.textContent).toContain("never triggered a web search");
+    // The causal claim is earned here: this probe's wording was calibrated to
+    // reach the live web and did not, on any sample.
+    expect(host.textContent).toContain("instrument problem");
     expect(host.textContent).toContain("Never searched");
+    // And the other case did not happen, so its sentence is absent.
+    expect(host.textContent).not.toContain("on some samples and not others");
     // The state is on the overview too, where it is read before any number
     // below it. The banner is the reason; this is the one word for it.
     expect(host.textContent).toContain("Partially available");
@@ -565,6 +569,32 @@ describe("GeoReportView", () => {
     expect(host.textContent).toContain("Fully available");
     expect(host.textContent).not.toContain("Partially available");
     expect(host.textContent).not.toContain("Degraded run");
+  });
+
+  it("does not call a mixed trigger an instrument failure", async () => {
+    // A run where nothing failed outright and four probes searched on some
+    // tries printed "0 probes never searched ... this is an instrumentation
+    // failure": a zero-valued clause and a claim about cause that nothing
+    // established. Only `trigger_failed` is defined as an instrument failure;
+    // searching on two tries out of three is the surface being
+    // non-deterministic, which is why three samples are taken.
+    const report = await buildReport();
+    const mixed: GeoReportDataV3 = {
+      ...report,
+      coverage: {
+        ...report.coverage,
+        triggerFailedProbes: 0,
+        degradedProbes: 4,
+      },
+    };
+    render(mixed);
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("on some samples and not others");
+    expect(text).toContain("the question was still measured");
+    // Neither the cause nor the empty clause.
+    expect(text).not.toContain("instrument problem");
+    expect(text).not.toContain("never triggered a web search");
   });
 
   it("keeps a trigger-failed probe out of the citation denominator", async () => {

@@ -3643,7 +3643,6 @@
         "searched": "已搜索",
         "notSearched": "未联网搜索",
         "recommendationNotEvaluated": "推荐关系未评估",
-        "degradedBanner": "降级运行：{failed} 个检索探针完全没有触发联网搜索，{mixed} 个只是有时触发。这是仪器故障，不是关于你站点的结论；这些样本已从引用统计中剔除。",
         "probeSummary": "探针：{valid} 有效 · {failed} 未搜索 · {mixed} 时有时无 · {unavailable} 无回答",
         "snapshotEyebrow": "当前 ChatGPT 快照",
         "overviewTitle": "检测概览",
@@ -3662,7 +3661,9 @@
         "boundaryNoScore": "不给总分",
         "coverageDetails": "查看分模式明细",
         "questionsEyebrow": "逐个问题",
-        "sampleDetails": "展开这题的完整证据"
+        "sampleDetails": "展开这题的完整证据",
+        "degradedFailed": "{failed} 个检索探针一次都没有触发联网搜索。这些措辞是按「会触达实时网页」标定过的，所以这是仪器问题，不是关于你站点的结论——它们的样本已从引用统计中整体剔除。",
+        "degradedMixed": "{mixed} 个检索探针只在部分采样里触发了联网搜索。没搜索的那几次不计入引用分母，题目仍然被测量了，只是次数比计划的少：下面每一题的比值里，分母就是实际计入的次数。同一个问题重复问会不会每次都联网，本轮无法判断原因。"
       },
       "identity": {
         "collector": "采集方",
