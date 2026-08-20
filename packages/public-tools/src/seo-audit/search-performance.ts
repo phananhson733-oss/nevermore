@@ -264,6 +264,33 @@ function abandonedImpressionRecord(
     reportedImpressions > 0 &&
     totalImpressions / reportedImpressions >= MIN_RESOLVED_IMPRESSION_SHARE;
 
+  const aggregateValues = measurable
+    ? values({
+        abandoned_url_impression_share: goneImpressions / totalImpressions,
+        impressions_in_band: goneImpressions,
+        impressions_total: totalImpressions,
+        property: raw.property,
+      })
+    : [];
+  // As with index coverage, the measured aggregate needs one observation even
+  // when it is clean so the aggregate rule can read the honest zero. When
+  // there are actionable URLs, carry the aggregate on the first one instead
+  // of adding a fifth row to four affected URLs.
+  const observations: readonly SeoAuditObservation[] = !measurable
+    ? []
+    : gone.length === 0
+      ? [{ url: null, values: aggregateValues }]
+      : gone.map((entry, index) => ({
+          url: entry.page.url,
+          values: [
+            ...(index === 0 ? aggregateValues : []),
+            ...values({
+              impressions: entry.row.impressions,
+              final_status: entry.page.finalStatus,
+            }),
+          ],
+        }));
+
   return {
     id: "abandoned_url_impression_share",
     category: "search_performance",
@@ -272,28 +299,8 @@ function abandonedImpressionRecord(
     population: "every_collected_page",
     targetTested: null,
     tested: measurable ? resolved.length : 0,
-    affected: measurable ? gone.length : 0,
-    observations: measurable
-      ? [
-          {
-            url: raw.property,
-            values: values({
-              abandoned_url_impression_share:
-                goneImpressions / totalImpressions,
-              impressions_in_band: goneImpressions,
-              impressions_total: totalImpressions,
-              property: raw.property,
-            }),
-          },
-          ...gone.map((entry) => ({
-            url: entry.page.url,
-            values: values({
-              impressions: entry.row.impressions,
-              final_status: entry.page.finalStatus,
-            }),
-          })),
-        ]
-      : [],
+    affected: observations.length,
+    observations,
     limitation: raw.pagesTruncated
       ? "page_rows_hit_the_row_cap_so_a_page_with_impressions_may_be_missing"
       : measurable

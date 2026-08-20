@@ -55,6 +55,7 @@ import {
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
   isCanonicalIsoTimestamp,
+  isAgentAuditSuccessEnvelope,
   isSeoAuditUpstreamSuccessEnvelope,
   type AgentAuditResult,
   type AgentAuditSuccessData,
@@ -865,9 +866,14 @@ export async function handleAgentAuditRequest(
     },
   };
 
+  const responseEnvelope = { data: projected };
+  if (!isAgentAuditSuccessEnvelope(responseEnvelope)) {
+    return errorResponse("audit_response_invalid", 502);
+  }
+
   dependencies.reportFirstRun?.(dependencies.reportAs);
   return Response.json(
-    { data: projected },
+    responseEnvelope,
     {
       status: upstream.status,
       headers: successHeaders(

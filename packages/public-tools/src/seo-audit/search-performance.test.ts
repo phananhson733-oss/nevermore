@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
+import { isSearchPerformanceRecord } from "./contract.ts";
 import {
   buildSearchPerformanceRecords,
   type SearchPerformanceRaw,
@@ -210,6 +211,77 @@ describe("search performance records", () => {
 
     expect(band?.observations).toEqual([]);
     expect(band?.state).toBe("unverified");
+  });
+
+  it("attaches the abandoned-share aggregate to the first gone URL", () => {
+    const gone = Array.from({ length: 4 }, (_, index) => ({
+      ...page(`https://acme.test/gone-${index}`),
+      finalStatus: 410,
+    }));
+    const records = buildSearchPerformanceRecords(
+      raw({
+        pages: gone.map((entry, index) =>
+          row(entry.url, (index + 1) * 10, 4),
+        ),
+      }),
+      gone,
+    );
+    const record = byId(records, "abandoned_url_impression_share");
+    const labels = record?.observations[0]?.values.map((entry) => entry.label);
+
+    expect(record?.tested).toBe(4);
+    expect(record?.affected).toBe(4);
+    expect(record?.observations).toHaveLength(4);
+    expect(record?.observations.map((entry) => entry.url)).toEqual(
+      gone.map((entry) => entry.url),
+    );
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "abandoned_url_impression_share",
+        "impressions_in_band",
+        "impressions_total",
+        "property",
+        "impressions",
+        "final_status",
+      ]),
+    );
+    expect(record === undefined ? false : isSearchPerformanceRecord(record)).toBe(
+      true,
+    );
+  });
+
+  it("keeps a measurable zero-gone aggregate wire-valid", () => {
+    const healthy = [page("https://acme.test/a"), page("https://acme.test/b")];
+    const record = byId(
+      buildSearchPerformanceRecords(
+        raw({ pages: healthy.map((entry) => row(entry.url, 50, 4)) }),
+        healthy,
+      ),
+      "abandoned_url_impression_share",
+    );
+    const aggregate = Object.fromEntries(
+      record?.observations[0]?.values.map((entry) => [entry.label, entry.value]) ??
+        [],
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(2);
+    expect(record?.affected).toBe(1);
+    expect(record?.observations).toEqual([
+      {
+        url: null,
+        values: expect.any(Array),
+      },
+    ]);
+    expect(aggregate).toMatchObject({
+      abandoned_url_impression_share: 0,
+      impressions_in_band: 0,
+      impressions_total: 100,
+      property: "sc-domain:acme.test",
+    });
+    expect(record === undefined ? false : isSearchPerformanceRecord(record)).toBe(
+      true,
+    );
   });
 });
 

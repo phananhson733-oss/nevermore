@@ -271,7 +271,7 @@ function lowTrafficRecord(
   return {
     id: "page_one_without_a_low_traffic_site",
     category: "serp_shape",
-    state: "observed",
+    state: small.length === 0 ? "observed" : "not_observed",
     unit: "pages",
     population: "target_page",
     targetTested: true,

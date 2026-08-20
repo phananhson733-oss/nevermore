@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
+import { isSerpShapeRecord } from "./contract.ts";
 import {
   buildSerpShapeRecords,
   SERP_SHAPE_RECORD_IDS,
@@ -110,5 +111,40 @@ describe("serp shape records", () => {
         (entry) => entry.label === "serp_item_types",
       )?.value,
     ).toBe("organic ai_overview shopping");
+  });
+
+  it("reports the negative low-traffic condition as not observed when a small site exists", () => {
+    const record = buildSerpShapeRecords(
+      raw({
+        domainTraffic: [{ domain: "small.test", organicEtv: 999 }],
+      }),
+    ).find((entry) => entry.id === "page_one_without_a_low_traffic_site");
+
+    expect(record).toMatchObject({
+      state: "not_observed",
+      tested: 1,
+      affected: 0,
+      observations: [],
+    });
+    expect(record === undefined ? false : isSerpShapeRecord(record)).toBe(true);
+  });
+
+  it("observes the low-traffic gap when every sized page-one site is large", () => {
+    const record = buildSerpShapeRecords(
+      raw({
+        domainTraffic: [
+          { domain: "large-a.test", organicEtv: 10_000 },
+          { domain: "large-b.test", organicEtv: 20_000 },
+        ],
+      }),
+    ).find((entry) => entry.id === "page_one_without_a_low_traffic_site");
+
+    expect(record).toMatchObject({
+      state: "observed",
+      tested: 1,
+      affected: 1,
+    });
+    expect(record?.observations).toHaveLength(1);
+    expect(record === undefined ? false : isSerpShapeRecord(record)).toBe(true);
   });
 });

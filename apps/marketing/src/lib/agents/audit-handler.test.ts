@@ -456,6 +456,155 @@ describe("handleAgentAuditRequest", () => {
     });
   });
 
+  it("round-trips real abandoned-share and low-traffic producers through both client guards", async () => {
+    const gonePages = Array.from({ length: 4 }, (_, index) => {
+      const url = `https://acme.test/gone-${index}`;
+      return {
+        url,
+        subjectUrl: url,
+        finalUrl: url,
+        depth: 1,
+        initialStatus: 410,
+        finalStatus: 410,
+        redirectHops: 0,
+        contentType: "text/html",
+        robotsDirectiveState: "noindex_not_observed" as const,
+        canonicalTarget: url,
+        title: "Gone",
+        metaDescription: "Gone",
+        h1Count: 1,
+        headingsCount: 1,
+        wordCount: 100,
+        inboundLinks: 1,
+        outboundLinks: 0,
+        sitemapMember: false,
+        jsonLdTypes: [],
+        jsonLdErrorCount: 0,
+      };
+    });
+    const healthyUrl = "https://acme.test/healthy";
+    const healthyPage = {
+      ...gonePages[0]!,
+      url: healthyUrl,
+      subjectUrl: healthyUrl,
+      finalUrl: healthyUrl,
+      initialStatus: 200,
+      finalStatus: 200,
+      title: "Healthy",
+      metaDescription: "Healthy",
+    };
+    const response = await handleAgentAuditRequest(
+      currentKeywordRequest(["birth chart"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                pages: [...gonePages, healthyPage],
+                records: upstreamPayload.result.records.map((record) => ({
+                  ...record,
+                  state: "not_observed" as const,
+                  affected: 0,
+                  observations: [],
+                  limitation: null,
+                })),
+              },
+            },
+          }),
+        readSearchPerformance: (input) =>
+          readAgentSearchPerformance(input, {
+            resolveGrant: async () => ({
+              kind: "grant" as const,
+              accessToken: "test-token",
+              properties: ["sc-domain:acme.test"],
+              propertyTotal: 1,
+            }),
+            read: async () => ({
+              property: "sc-domain:acme.test",
+              startDate: "2026-07-19",
+              endDate: "2026-08-15",
+              pages: gonePages.map((entry, index) => ({
+                key: entry.url,
+                clicks: 0,
+                impressions: (index + 1) * 10,
+                position: 4,
+              })).concat({
+                key: healthyPage.url,
+                clicks: 0,
+                impressions: 0,
+                position: 0,
+              }),
+              queries: [
+                { key: "birth chart", clicks: 3, impressions: 100, position: 4 },
+              ],
+              pagesTruncated: false,
+              queriesTruncated: false,
+              targetPageQueries: null,
+              targetPageUrl: null,
+              confirmedQueries: [],
+              targetPageQueriesTruncated: false,
+            }),
+          }),
+        readSerpLandscape: async () => ({
+          availability: "available" as const,
+          query: "birth chart",
+          market: "US",
+          language: "en",
+          resultsObserved: 1,
+          domainTraffic: [{ domain: "small.test", organicEtv: 999 }],
+          withSitelinks: 0,
+          features: ["organic"],
+          targetPosition: null,
+          targetPageOnPage: false,
+          rows: [
+            {
+              position: 1,
+              domain: "small.test",
+              sitelinkCount: 0,
+              isTarget: false,
+              isTargetPage: null,
+            },
+          ],
+        }),
+      }),
+    );
+    const body = (await response.json()) as AgentAuditSuccessEnvelope;
+
+    expect(response.status).toBe(200);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+    expect(supportsAgentDisplayVocabulary(body.data, "seo")).toBe(true);
+  });
+
+  it("rejects a malformed final optional region before reporting success", async () => {
+    const malformed = structuredClone(searchRegion);
+    malformed.records[1] = {
+      ...malformed.records[1]!,
+      state: "observed",
+      tested: 1,
+      affected: 0,
+      observations: [],
+    };
+    const reportFirstRun = vi.fn();
+
+    const response = await handleAgentAuditRequest(
+      currentRequest(),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => malformed,
+        reportFirstRun,
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
+    });
+    expect(reportFirstRun).not.toHaveBeenCalled();
+  });
+
   it("asks Search Console about the URL the crawl landed on, not the one it requested", async () => {
     // On any site that redirects — trailing slash, http to https — the
     // requested form matches no Search Console row, so 9.5 published "no
