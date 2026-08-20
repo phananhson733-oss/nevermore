@@ -657,6 +657,34 @@ describe("buildSeoAiActionCopy", () => {
 
   it.each([
     {
+      name: "scheme-optional Profile URL and normalized HTTPS audit URL",
+      profileUrl: "astrologywiki.com",
+      auditUrl: "https://astrologywiki.com/",
+    },
+    {
+      name: "equivalent URLs with different fragments",
+      profileUrl: "astrologywiki.com/#profile-review",
+      auditUrl: "https://astrologywiki.com/#audit-result",
+    },
+  ])("accepts $name", ({ profileUrl, auditUrl }) => {
+    const result = buildSeoAiActionCopy({
+      audience: "chatbot",
+      locale: "en",
+      selectedCheck: check(),
+      evidenceRecords: [],
+      targetUrl: auditUrl,
+      profile: profile("seo", profileUrl),
+      solution: solution(),
+      content: CONTENT,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(actionPayload(result.markdown).target.targetUrl).toBe(auditUrl);
+  });
+
+  it.each([
+    {
       name: "needs-confirmation profile",
       runProfile: {
         ...profile(),
@@ -665,9 +693,29 @@ describe("buildSeoAiActionCopy", () => {
       targetUrl: TARGET_URL,
     },
     {
-      name: "mismatched target URL",
-      runProfile: profile(),
+      name: "mismatched URL scheme",
+      runProfile: profile("seo", "http://astrologywiki.com/"),
+      targetUrl: "https://astrologywiki.com/",
+    },
+    {
+      name: "mismatched URL host",
+      runProfile: profile("seo", "astrologywiki.com"),
+      targetUrl: "https://www.astrologywiki.com/",
+    },
+    {
+      name: "mismatched URL path",
+      runProfile: profile("seo", "astrologywiki.com/target"),
       targetUrl: "https://astrologywiki.com/different-target",
+    },
+    {
+      name: "mismatched URL query",
+      runProfile: profile("seo", "astrologywiki.com/?page=1"),
+      targetUrl: "https://astrologywiki.com/?page=2",
+    },
+    {
+      name: "invalid audit URL",
+      runProfile: profile(),
+      targetUrl: "not a URL",
     },
     {
       name: "mismatched Agent identity",

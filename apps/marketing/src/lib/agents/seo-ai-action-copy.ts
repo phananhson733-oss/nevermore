@@ -178,6 +178,31 @@ function truthPreventsImplementation(
   );
 }
 
+/**
+ * Compare the visitor's confirmed, scheme-optional URL with the browser-normalized
+ * audit target without weakening any part that changes the fetched resource.
+ */
+function canonicalTargetUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const hasHttpScheme = /^https?:\/\//i.test(trimmed);
+  if (!hasHttpScheme && trimmed.includes("://")) return null;
+  try {
+    const parsed = new URL(hasHttpScheme ? trimmed : `https://${trimmed}`);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function sameTargetUrl(left: string, right: string): boolean {
+  const canonicalLeft = canonicalTargetUrl(left);
+  const canonicalRight = canonicalTargetUrl(right);
+  return canonicalLeft !== null && canonicalLeft === canonicalRight;
+}
+
 function observationPayload(
   observation: AgentAffectedObservation,
   locale: SeoAiActionCopyLocale,
@@ -329,11 +354,8 @@ export function buildSeoAiActionCopy(
   // checks remain valid inside an otherwise confirmed SEO run.
   if (
     input.solution.agent !== "seo" ||
-    !isConfirmedAgentProfile(
-      input.profile,
-      "seo",
-      input.targetUrl,
-    )
+    !isConfirmedAgentProfile(input.profile, "seo") ||
+    !sameTargetUrl(input.profile.targetUrl, input.targetUrl)
   ) {
     return { ok: false, reason: "context_invalid" };
   }
