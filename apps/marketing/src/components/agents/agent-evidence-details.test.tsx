@@ -6,7 +6,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SeoAuditEvidenceValue,
   SeoAuditRecord,
@@ -310,6 +310,7 @@ describe("AgentEvidenceDetails", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     host.remove();
+    vi.restoreAllMocks();
   });
 
   function renderEvidence(
@@ -361,6 +362,28 @@ describe("AgentEvidenceDetails", () => {
     expect(host.querySelectorAll("a")).toHaveLength(0);
   });
 
+  it("shows the catalog record title while retaining a safe raw-id fallback", () => {
+    const missingMessage = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const check = evaluatedCheck({
+      evidenceRecordIds: ["title_missing", "unknown_record"],
+    });
+    renderEvidence(check, [
+      record("title_missing", [
+        observation("https://example.com/titled", "title", null),
+      ]),
+      record("unknown_record", [
+        observation("https://example.com/fallback", "title", null),
+      ]),
+    ]);
+
+    expect(host.textContent).toContain("Title not present");
+    expect(host.textContent).toContain("title_missing");
+    expect(host.textContent).toContain("unknown_record");
+    expect(missingMessage).not.toHaveBeenCalled();
+  });
+
   it("shows five rows by default and exposes then collapses the full set", async () => {
     const records = Array.from({ length: 7 }, (_, index) =>
       record(`record-${index + 1}`, [
@@ -379,6 +402,10 @@ describe("AgentEvidenceDetails", () => {
     expect(
       host.querySelectorAll('[data-testid="agent-affected-observation"]'),
     ).toHaveLength(5);
+    expect(
+      host.querySelector('[data-testid="agent-evidence-details"] h5')
+        ?.textContent,
+    ).toBe("Affected URLs (7)");
     expect(host.textContent).toContain("Showing 5 of 7");
     const showAll = host.querySelector<HTMLButtonElement>(
       '[data-testid="agent-evidence-toggle"]',

@@ -198,7 +198,7 @@ export function AgentEvidenceDetails({
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h5 className="text-[12px] font-semibold text-text-dark-primary">
-            {t("affectedObservationsTitle")}
+            {t("affectedObservationsTitle", { total: observations.length })}
           </h5>
           <p className="mt-1 font-mono text-[10.5px] text-text-dark-faint">
             {t("affectedObservationsCount", {
@@ -268,7 +268,12 @@ export function AgentEvidenceDetails({
                         <dt className="font-mono text-[10px] tracking-[0.08em] text-text-dark-faint uppercase">
                           {t("evidenceRecordLabel")}
                         </dt>
-                        <dd className="mt-1 break-all font-mono text-[11px] text-text-dark-primary">
+                        <dd className="mt-1 break-words text-[11px] text-text-dark-primary">
+                          {auditT.has(`records.${group.recordId}.title`)
+                            ? auditT(`records.${group.recordId}.title`)
+                            : group.recordId}
+                        </dd>
+                        <dd className="mt-1 break-all font-mono text-[10px] text-text-dark-faint">
                           {group.recordId}
                         </dd>
                       </div>

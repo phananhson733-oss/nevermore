@@ -4582,7 +4582,7 @@
         "sourceLabel": "Evidence source",
         "truthLabel": "Truthfulness",
         "evidenceRecordLabel": "Evidence record",
-        "affectedObservationsTitle": "Affected URLs & observations",
+        "affectedObservationsTitle": "Affected URLs ({total})",
         "affectedObservationsCount": "Showing {shown} of {total}",
         "showAllObservations": "Show all {count}",
         "showFirstObservations": "Show first {count}",

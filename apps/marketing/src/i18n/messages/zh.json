@@ -4582,7 +4582,7 @@
         "sourceLabel": "证据来源",
         "truthLabel": "真实性",
         "evidenceRecordLabel": "证据记录",
-        "affectedObservationsTitle": "受影响 URL 与观测",
+        "affectedObservationsTitle": "受影响 URL（{total}）",
         "affectedObservationsCount": "正在显示 {shown} / {total}",
         "showAllObservations": "显示全部 {count} 条",
         "showFirstObservations": "收起至前 {count} 条",
