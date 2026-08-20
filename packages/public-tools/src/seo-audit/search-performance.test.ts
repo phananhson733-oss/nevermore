@@ -220,9 +220,7 @@ describe("search performance records", () => {
     }));
     const records = buildSearchPerformanceRecords(
       raw({
-        pages: gone.map((entry, index) =>
-          row(entry.url, (index + 1) * 10, 4),
-        ),
+        pages: gone.map((entry, index) => row(entry.url, (index + 1) * 10, 4)),
       }),
       gone,
     );
@@ -245,9 +243,9 @@ describe("search performance records", () => {
         "final_status",
       ]),
     );
-    expect(record === undefined ? false : isSearchPerformanceRecord(record)).toBe(
-      true,
-    );
+    expect(
+      record === undefined ? false : isSearchPerformanceRecord(record),
+    ).toBe(true);
   });
 
   it("keeps a measurable zero-gone aggregate wire-valid", () => {
@@ -260,8 +258,10 @@ describe("search performance records", () => {
       "abandoned_url_impression_share",
     );
     const aggregate = Object.fromEntries(
-      record?.observations[0]?.values.map((entry) => [entry.label, entry.value]) ??
-        [],
+      record?.observations[0]?.values.map((entry) => [
+        entry.label,
+        entry.value,
+      ]) ?? [],
     );
 
     expect(record?.state).toBe("observed");
@@ -279,9 +279,30 @@ describe("search performance records", () => {
       impressions_total: 100,
       property: "sc-domain:acme.test",
     });
-    expect(record === undefined ? false : isSearchPerformanceRecord(record)).toBe(
-      true,
+    expect(
+      record === undefined ? false : isSearchPerformanceRecord(record),
+    ).toBe(true);
+  });
+
+  it("keeps a fully covered site wire-valid instead of refusing the response", () => {
+    // Every crawled page has impressions. The record names a defect — pages
+    // without impressions — so a site with none of them is `not_observed`,
+    // never `observed` with zero affected rows: that combination violates the
+    // wire contract and made the whole audit unrenderable for clean sites.
+    const pages = [page("https://acme.test/a"), page("https://acme.test/b")];
+    const records = buildSearchPerformanceRecords(
+      raw({ pages: pages.map((entry) => row(entry.url, 25, 4)) }),
+      pages,
     );
+    const coverage = byId(records, "page_without_search_impressions");
+
+    expect(coverage?.state).toBe("not_observed");
+    expect(coverage?.tested).toBe(2);
+    expect(coverage?.affected).toBe(0);
+    expect(coverage?.observations).toEqual([]);
+    for (const record of records) {
+      expect(isSearchPerformanceRecord(record), record.id).toBe(true);
+    }
   });
 });
 
@@ -301,6 +322,12 @@ describe("search performance checks", () => {
         pages,
       );
 
+    // Full coverage is the cleanest possible outcome and must read as a pass,
+    // not as a refused response.
+    expect(
+      evaluate(covered(10)).checks.find((entry) => entry.check.id === "E1")
+        ?.result,
+    ).toBe("pass");
     // Published as "at least 60% of pages have impressions". Six of ten is
     // exactly the mark and must pass.
     expect(

@@ -329,7 +329,15 @@ function coverageRecord(
   return {
     id: "page_without_search_impressions",
     category: "search_performance",
-    state: measurable ? "observed" : "unverified",
+    // The id names a defect, so a site where every crawled page has
+    // impressions is `not_observed` — measured and clean. `observed` with zero
+    // affected rows violates the wire contract and refused the whole audit for
+    // exactly the sites doing best on this check.
+    state: !measurable
+      ? "unverified"
+      : uncovered.length === 0
+        ? "not_observed"
+        : "observed",
     unit: "pages",
     population: "every_collected_page",
     // Property-level numbers; whether the named page sat in this
