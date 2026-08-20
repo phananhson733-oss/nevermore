@@ -15,6 +15,20 @@ import {
 } from "./seo-ai-action-copy";
 import { briefByteLength } from "../copy-brief/budget";
 
+const budgetProbe = vi.hoisted(() => ({ attempts: 0 }));
+vi.mock("../copy-brief/budget", async (importOriginal) => {
+  const original = await importOriginal<
+    typeof import("../copy-brief/budget")
+  >();
+  return {
+    ...original,
+    withinBriefBudget(markdown: string, maxBytes: number) {
+      budgetProbe.attempts += 1;
+      return original.withinBriefBudget(markdown, maxBytes);
+    },
+  };
+});
+
 const TARGET_URL = "https://astrologywiki.com/target";
 
 function record(
@@ -144,6 +158,25 @@ function solution(): AgentSolutionTemplate {
     impactSurfaceKey: "recommendations.seo.kinds.searchPresentation.impactSurface",
     risksKey: "recommendations.seo.kinds.searchPresentation.risks",
     limitsKey: "recommendations.seo.kinds.searchPresentation.limits",
+  };
+}
+
+function techSolution(): AgentSolutionTemplate {
+  return {
+    ...solution(),
+    agent: "tech",
+    recommendationKey:
+      "recommendations.tech.kinds.searchPresentation.recommendation",
+    applicableContextKey: "recommendations.tech.applicableContext",
+    validationKeys: [
+      "recommendations.tech.kinds.searchPresentation.validation1",
+      "recommendations.tech.kinds.searchPresentation.validation2",
+      "recommendations.tech.kinds.searchPresentation.validation3",
+    ],
+    impactSurfaceKey:
+      "recommendations.tech.kinds.searchPresentation.impactSurface",
+    risksKey: "recommendations.tech.kinds.searchPresentation.risks",
+    limitsKey: "recommendations.tech.kinds.searchPresentation.limits",
   };
 }
 
@@ -540,6 +573,53 @@ describe("buildSeoAiActionCopy", () => {
     ).toBe(true);
   });
 
+  it("selects the highest fitting complete URL prefix with logarithmic budget checks", () => {
+    const rowCount = 800;
+    const records = Array.from({ length: rowCount }, (_, index) =>
+      record(`realistic-title-${index + 1}`, [
+        {
+          url: `https://astrologywiki.com/guide/page-${index + 1}`,
+          values: [
+            {
+              label: "title",
+              value: `Observed title ${index + 1}: ${"shared template metadata requires one owning-route correction ".repeat(4)}`,
+            },
+          ],
+        },
+      ]),
+    );
+    budgetProbe.attempts = 0;
+
+    const result = buildSeoAiActionCopy({
+      audience: "code_agent",
+      locale: "en",
+      selectedCheck: check({
+        scope: "site",
+        evidenceRecordIds: records.map((entry) => entry.id),
+      }),
+      evidenceRecords: records,
+      targetUrl: TARGET_URL,
+      profile: profile(),
+      solution: solution(),
+      content: CONTENT,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.includedUrls).toBeGreaterThan(0);
+    expect(result.includedUrls).toBeLessThan(rowCount);
+    expect(result.omittedUrls).toBe(rowCount - result.includedUrls);
+    expect(actionPayload(result.markdown).affected.observations).toHaveLength(
+      result.includedUrls,
+    );
+    expect(briefByteLength(result.markdown)).toBeLessThanOrEqual(
+      SEO_AI_ACTION_COPY_MAX_BYTES,
+    );
+    expect(budgetProbe.attempts).toBeLessThanOrEqual(
+      Math.ceil(Math.log2(rowCount)) + 2,
+    );
+  });
+
   it("rejects serialization when a URL-bearing result cannot include one complete URL row", () => {
     const recordId = "oversized-url-row";
     const result = buildSeoAiActionCopy({
@@ -601,6 +681,21 @@ describe("buildSeoAiActionCopy", () => {
       targetUrl,
       profile: runProfile,
       solution: solution(),
+      content: CONTENT,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "context_invalid" });
+  });
+
+  it("rejects a matching Tech profile and Tech solution in the SEO-specific builder", () => {
+    const result = buildSeoAiActionCopy({
+      audience: "chatbot",
+      locale: "en",
+      selectedCheck: check(),
+      evidenceRecords: [],
+      targetUrl: TARGET_URL,
+      profile: profile("tech"),
+      solution: techSolution(),
       content: CONTENT,
     });
 

@@ -326,9 +326,10 @@ export function buildSeoAiActionCopy(
   input: BuildSeoAiActionCopyInput,
 ): BuildSeoAiActionCopyResult {
   if (
+    input.solution.agent !== "seo" ||
     !isConfirmedAgentProfile(
       input.profile,
-      input.solution.agent,
+      "seo",
       input.targetUrl,
     )
   ) {
@@ -349,27 +350,48 @@ export function buildSeoAiActionCopy(
     input.targetUrl,
   );
   const urlObservations = observations.filter((entry) => entry.url !== null);
+  const totalUrls = urlObservations.length;
 
-  let includedUrls = urlObservations.length;
-  const minimumIncludedUrls = urlObservations.length > 0 ? 1 : 0;
-  while (includedUrls >= minimumIncludedUrls) {
+  const serialize = (
+    includedUrls: number,
+  ): Extract<BuildSeoAiActionCopyResult, { readonly ok: true }> | null => {
     const payload = buildPayload(
       input,
       observations,
       includedUrls,
-      urlObservations.length - includedUrls,
+      totalUrls - includedUrls,
     );
     const markdown = renderMarkdown(chrome, input, payload);
-    if (withinBriefBudget(markdown, SEO_AI_ACTION_COPY_MAX_BYTES)) {
-      return {
-        ok: true,
-        markdown,
-        includedUrls,
-        omittedUrls: urlObservations.length - includedUrls,
-      };
-    }
-    includedUrls -= 1;
+    if (!withinBriefBudget(markdown, SEO_AI_ACTION_COPY_MAX_BYTES)) return null;
+    return {
+      ok: true,
+      markdown,
+      includedUrls,
+      omittedUrls: totalUrls - includedUrls,
+    };
+  };
+
+  const allUrls = serialize(totalUrls);
+  if (allUrls) return allUrls;
+  if (totalUrls <= 1) {
+    return { ok: false, reason: "serialized_too_large" };
   }
 
-  return { ok: false, reason: "serialized_too_large" };
+  const oneUrl = serialize(1);
+  if (!oneUrl) return { ok: false, reason: "serialized_too_large" };
+
+  let best = oneUrl;
+  let low = 2;
+  let high = totalUrls - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = serialize(middle);
+    if (candidate) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
