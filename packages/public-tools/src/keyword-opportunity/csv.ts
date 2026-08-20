@@ -1,11 +1,13 @@
 // @input  -- one KeywordOpportunityResult
-// @output -- the shown rows as RFC 4180 CSV, and the filename for it
-// @pos    -- the export half of the map; the same evidence, in a file that survives the tab
+// @output -- one shared candidate order, plus eligible rows as RFC 4180 CSV and its filename
+// @pos    -- keeps UI/export order aligned and preserves the same evidence outside the tab
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type {
+  KeywordOpportunityIncomplete,
   KeywordOpportunityResult,
   KeywordOpportunityRow,
+  KeywordOpportunityWithheld,
 } from "./types.ts";
 
 /**
@@ -42,6 +44,21 @@ const COLUMNS = [
   // filtering the export filters on `verify_weak_site_breakthrough`, and that
   // has to keep working when the page is read in the other language.
   "checks",
+  "providerIntent",
+  "serpIntent",
+  "youngDomainState",
+  "youngDomain",
+  "youngDomainAgeMonths",
+  "lowOrganicTrafficDomainState",
+  "lowOrganicTrafficDomain",
+  "lowOrganicTrafficDomainEtv",
+  "communityResultState",
+  "communityResultDomain",
+  "communityResultPosition",
+  "aiOverviewAvailability",
+  "aiOverviewAssessment",
+  "aiOverviewDiscount",
+  "decisionReason",
 ] as const;
 
 /**
@@ -96,6 +113,10 @@ function rowCells(
   result: KeywordOpportunityResult,
   row: KeywordOpportunityRow,
 ): string {
+  const youngDomain = row.signals?.youngDomain;
+  const lowTraffic = row.signals?.lowOrganicTrafficDomain;
+  const community = row.signals?.communityResult;
+
   return [
     text(result.marketCode),
     text(result.languageCode),
@@ -112,13 +133,208 @@ function rowCells(
     text(row.discoveryBasis),
     text(row.clusterId ?? ""),
     text(row.nextChecks.join("|")),
+    text(row.validation.providerIntent ?? ""),
+    text(row.serpIntent?.intent ?? ""),
+    text(youngDomain?.state ?? ""),
+    text(youngDomain?.state === "observed" ? youngDomain.observation.domain : ""),
+    num(
+      youngDomain?.state === "observed"
+        ? youngDomain.observation.ageMonths
+        : null,
+    ),
+    text(lowTraffic?.state ?? ""),
+    text(lowTraffic?.state === "observed" ? lowTraffic.observation.domain : ""),
+    num(
+      lowTraffic?.state === "observed"
+        ? lowTraffic.observation.organicEtv
+        : null,
+    ),
+    text(community?.state ?? ""),
+    text(community?.state === "observed" ? community.observation.domain : ""),
+    num(
+      community?.state === "observed"
+        ? community.observation.position
+        : null,
+    ),
+    text(row.aiOverview?.availability ?? ""),
+    text(row.aiOverview?.answerAssessment ?? ""),
+    row.decision === undefined
+      ? ""
+      : row.decision.discounts.includes("ai_overview_answer_discount")
+        ? "yes"
+        : "no",
+    text(row.decision?.basis ?? ""),
   ].join(",");
 }
 
+export type KeywordOpportunityDisplayItem =
+  | {
+      readonly disposition: "eligible";
+      readonly candidate: KeywordOpportunityRow;
+    }
+  | {
+      readonly disposition: "excluded";
+      readonly candidate: KeywordOpportunityWithheld;
+    }
+  | {
+      readonly disposition: "incomplete";
+      readonly candidate: KeywordOpportunityIncomplete;
+    };
+
+type KeywordOpportunityDisplayInput = Pick<
+  KeywordOpportunityResult,
+  "rows" | "withheld" | "incomplete"
+>;
+
+const DISPOSITION_ORDER = {
+  eligible: 0,
+  excluded: 1,
+  incomplete: 2,
+} as const;
+
+const ELIGIBLE_LANE_ORDER = {
+  seo: 0,
+  geo: 1,
+} as const;
+
+/** Normalize only for deterministic ordering; the original keyword is shown. */
+function normalizedKeyword(keyword: string): string {
+  return keyword.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function finiteVolume(row: KeywordOpportunityRow): number | null {
+  const volume = row.validation.volume;
+  return volume !== null && Number.isFinite(volume) ? volume : null;
+}
+
+function compareNullableDescending(
+  left: number | null,
+  right: number | null,
+): number {
+  if (left === null) return right === null ? 0 : 1;
+  if (right === null) return -1;
+  return right - left;
+}
+
+function compareEligible(
+  left: KeywordOpportunityRow,
+  right: KeywordOpportunityRow,
+): number {
+  // The page renders SEO and GEO as separate sections in this order. CSV is a
+  // flattened view of those sections, so lane grouping must precede the v2
+  // evidence tuple or a high-signal GEO row would jump above the SEO section.
+  const laneOrder =
+    ELIGIBLE_LANE_ORDER[left.lane] - ELIGIBLE_LANE_ORDER[right.lane];
+  if (laneOrder !== 0) return laneOrder;
+
+  const signalOrder = compareNullableDescending(
+    left.decision?.positiveSignals.length ?? null,
+    right.decision?.positiveSignals.length ?? null,
+  );
+  if (signalOrder !== 0) return signalOrder;
+
+  const leftDiscounted =
+    left.decision?.discounts.includes("ai_overview_answer_discount") ?? false;
+  const rightDiscounted =
+    right.decision?.discounts.includes("ai_overview_answer_discount") ?? false;
+  if (leftDiscounted !== rightDiscounted) return leftDiscounted ? 1 : -1;
+
+  const volumeOrder = compareNullableDescending(
+    finiteVolume(left),
+    finiteVolume(right),
+  );
+  if (volumeOrder !== 0) return volumeOrder;
+
+  return compareText(
+    normalizedKeyword(left.keyword),
+    normalizedKeyword(right.keyword),
+  );
+}
+
+function compareReasoned(
+  left: KeywordOpportunityWithheld | KeywordOpportunityIncomplete,
+  right: KeywordOpportunityWithheld | KeywordOpportunityIncomplete,
+): number {
+  const keywordOrder = compareText(
+    normalizedKeyword(left.keyword),
+    normalizedKeyword(right.keyword),
+  );
+  if (keywordOrder !== 0) return keywordOrder;
+  return compareText(left.reason, right.reason);
+}
+
+function compareDisplayItems(
+  left: KeywordOpportunityDisplayItem,
+  right: KeywordOpportunityDisplayItem,
+): number {
+  const dispositionOrder =
+    DISPOSITION_ORDER[left.disposition] - DISPOSITION_ORDER[right.disposition];
+  if (dispositionOrder !== 0) return dispositionOrder;
+
+  if (left.disposition === "eligible" && right.disposition === "eligible") {
+    return compareEligible(left.candidate, right.candidate);
+  }
+  if (left.disposition === "excluded" && right.disposition === "excluded") {
+    return compareReasoned(left.candidate, right.candidate);
+  }
+  if (left.disposition === "incomplete" && right.disposition === "incomplete") {
+    return compareReasoned(left.candidate, right.candidate);
+  }
+  return 0;
+}
+
 /**
- * The rows in the order every surface shows them: the SEO lane sorted by
- * measured volume descending with unpriced rows last, then the GEO lane in
- * payload order.
+ * One deterministic order across all three v2 result dispositions.
+ *
+ * Excluded and incomplete rows do not participate in eligible ranking. They
+ * are ordered only by normalized keyword and exact reason; no absent or
+ * partial metric is converted to zero to make the comparator convenient.
+ */
+export function keywordOpportunityDisplayItems(
+  result: KeywordOpportunityDisplayInput,
+): readonly KeywordOpportunityDisplayItem[] {
+  for (const candidate of result.rows) {
+    if (
+      candidate.decision !== undefined &&
+      candidate.decision.disposition !== "eligible"
+    ) {
+      throw new Error(
+        `KeywordOpportunityResult.rows contains a ${candidate.decision.disposition} decision`,
+      );
+    }
+  }
+
+  const items: KeywordOpportunityDisplayItem[] = [
+    ...result.rows.map(
+      (candidate): KeywordOpportunityDisplayItem => ({
+        disposition: "eligible",
+        candidate,
+      }),
+    ),
+    ...result.withheld.map(
+      (candidate): KeywordOpportunityDisplayItem => ({
+        disposition: "excluded",
+        candidate,
+      }),
+    ),
+    ...(result.incomplete ?? []).map(
+      (candidate): KeywordOpportunityDisplayItem => ({
+        disposition: "incomplete",
+        candidate,
+      }),
+    ),
+  ];
+  return items.sort(compareDisplayItems);
+}
+
+/**
+ * Eligible-only compatibility view of the shared v2 order.
  *
  * Shared by the on-screen tables and the export below because the file and
  * the page are the same claim — a reader who downloads and then compares
@@ -128,11 +344,10 @@ function rowCells(
 export function keywordOpportunityDisplayRows(
   rows: readonly KeywordOpportunityRow[],
 ): readonly KeywordOpportunityRow[] {
-  const seo = rows
-    .filter((row) => row.lane === "seo")
-    .sort((a, b) => (b.validation.volume ?? -1) - (a.validation.volume ?? -1));
-  const geo = rows.filter((row) => row.lane === "geo");
-  return [...seo, ...geo];
+  return keywordOpportunityDisplayItems({ rows, withheld: [] }).flatMap(
+    (item) =>
+      item.disposition === "eligible" ? [item.candidate] : [],
+  );
 }
 
 /** The shown rows as CSV, in the order the surface displays them. */

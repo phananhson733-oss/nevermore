@@ -297,15 +297,15 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   "low-competition-keywords": {
     path: "/tools/low-competition-keywords",
     eyebrow: "Content opportunity planning",
-    title: "Find low competition keywords with a weak site already on page one",
+    title: "Find low competition keywords with observed page-one openings",
     description:
-      "Reads your site, prices candidate terms with real search data, and keeps the ones where a low-authority site already holds a page-one place.",
+      "Reads your site, prices candidate terms with real search data, and keeps the ones where page one shows a young domain, a low-traffic domain, or a community result.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
       "Read-only. Your own Search Console queries are what tell the map which terms your site already serves, so it does not hand you back a page you have.",
     cta: "Connect Search Console",
     trust:
-      "No fabricated search volume, and no keyword called winnable on a difficulty score. Every search term shown had its page one opened; question phrasings are matched to your own pages instead.",
+      "No fabricated search volume, and no candidate called eligible on a difficulty score. Every shown keyword had page one checked; unavailable evidence stays incomplete instead of becoming a negative.",
     workflowTitle: "How the map decides what to show you",
     steps: [
       {
@@ -314,26 +314,26 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "We read your site first",
-        text: "Up to fourteen pages, product pages first, and we show you what we understood before spending anything. Wrong reading, wrong keywords — so you get to correct it.",
+        text: "A bounded context of up to 20 pages, product pages first, and we show you what we understood before spending anything. It is not a whole-site crawl. Wrong reading, wrong keywords — so you get to correct it.",
       },
       {
         name: "Candidates are priced, not guessed",
         text: "Every term goes to a search-data provider. Terms it has no data for are reported as having no data, never as zero demand.",
       },
       {
-        name: "Page one is opened for the survivors",
-        text: "Up to twenty terms per run have their real page one sampled. A term is only called winnable when a low-authority domain already ranks there — named, with its position, so you can open the page yourself. The weakest rank is a proxy signal, not a verdict; trusting difficulty scores instead is what sent our own keyword picks wrong four times.",
+        name: "Every candidate except an explicit-zero term gets a page-one check",
+        text: "Every candidate except an explicit-zero term is attempted in ordered parallel waves of up to ten. Completed reads report young-domain, low-organic-traffic-domain and community-result evidence separately; a provider gap remains incomplete instead of becoming a negative.",
       },
     ],
     outputTitle: "What you get back",
     outputs: [
       {
-        label: "Search terms with measured demand",
-        body: "Volume from the provider, the weakest domain currently holding a page-one place — named, with its position — and whether the provider observed an AI Overview on that page. The whole table exports as CSV.",
+        label: "Search-form opportunities",
+        body: "Provider volume and intent, a separately provenanced SERP interpreted intent, all three raw opportunity signals, and AI Overview provider availability beside its LLM answer assessment. A complete answer is a ranking discount, never a veto. The whole table exports as CSV.",
       },
       {
-        label: "Questions your site already answers",
-        body: "Question phrasings matched to a page you have. No search volume is claimed for these — they almost never have any.",
+        label: "Question-form opportunities",
+        body: "Question phrasings that cleared the same page-one signal rule. A supporting site page is shown only when one was observed, and no search volume is claimed when the provider returned none.",
       },
       {
         label: "Checks before you act",
@@ -341,7 +341,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "Where the rest went",
-        body: "Every candidate that did not reach the table, with the specific wall it hit — and for the terms the sampling budget never reached, a one-click way to hand them to the seed field for a narrower re-run.",
+        body: "Excluded candidates and candidates whose detection stayed incomplete are separate lists, each with exact reasons. Missing evidence is never presented as a negative signal, and retry guidance stays attached to the incomplete section.",
       },
     ],
     faq: [
@@ -359,7 +359,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         question:
           "Why would the map suggest terms that have nothing to do with my business?",
         answer:
-          "The candidates come from a model reading up to fourteen of your pages, and models mishandle ambiguous words: an earlier version of our own internal keyword engine once tagged 'miami dade transit bus tracker' as astrology-relevant, because 'transit' is a legitimate astrology term. That failure is why this map shows you what it read and waits for your confirmation before spending anything — and why the seed field exists. Correct the reading, and the candidates follow.",
+          "The candidates come from a model reading a bounded context of up to 20 of your pages, and models mishandle ambiguous words: an earlier version of our own internal keyword engine once tagged 'miami dade transit bus tracker' as astrology-relevant, because 'transit' is a legitimate astrology term. That failure is why this map shows you what it read and waits for your confirmation before spending anything — and why the seed field exists. Correct the reading, and the candidates follow.",
       },
       {
         question:
@@ -370,17 +370,17 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "What does the weakest rank tell me — and what does it not?",
         answer:
-          "It answers one narrow question: how weak is the weakest domain currently holding a page-one place. One low number is evidence that a small site got in; it says nothing about the other nine results, the intent behind the query, or what kind of page wins. That is why every row carries checks to run before acting, and why the domain and its position are shown for you to open.",
+          "It answers one narrow question: how weak is the weakest domain currently holding a page-one place. It is raw context, not the decision rule. The v2 decision instead asks whether page one contains a young domain, a domain below the requesting site's organic-traffic threshold, or a community result; each signal and its unavailable state is shown separately.",
       },
       {
-        question: "Why were some candidates never checked against page one?",
+        question: "Does every candidate get checked against page one?",
         answer:
-          "Each run samples at most twenty page ones and stops at a per-run cost ceiling, because sampling is the expensive stage of a free tool. The held-back list names every term the budget did not reach, and the button under that list hands them to the seed field for a narrower re-run. Seeds steer the next run's candidate generation toward those terms; the pricing and page-one gates then judge them like any other candidate.",
+          "Every deduplicated candidate except a term the provider explicitly priced at zero is attempted. Checks run in fixed parallel waves of up to ten. A provider or interpretation failure is recorded on the affected candidate as unavailable evidence; it does not silently turn into a negative or disappear from the report.",
       },
       {
         question: "Does the map detect AI Overviews?",
         answer:
-          "It records what the provider observed: when a sampled page one carried an AI Overview, the row says so, and the CSV export carries the same column. A dash means the provider reported nothing about the page's features, which is not the same as no AI Overview. The map does not model how much traffic an AI Overview absorbs — treat its presence as a reason to open the page before writing anything.",
+          "It keeps two claims separate. Provider availability says whether page one contained an AI Overview or whether that fact was unavailable. A provenanced LLM answer assessment says whether returned AI Overview content completely, partially, or did not answer the query. A complete answer is a ranking discount, never a veto, and an unavailable assessment remains unavailable.",
       },
       {
         question: "Is the search volume global?",
@@ -395,7 +395,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "How long does it take?",
         answer:
-          "About twenty seconds to read your site, then roughly two minutes to price the candidates and open page one for the survivors one at a time.",
+          "The site read is bounded to 20 pages. Candidate pricing and page-one checks then continue through every candidate except an explicit-zero term in parallel waves of up to ten, so there is no fixed duration promise; elapsed time depends on the candidate count and provider responses.",
       },
     ],
   },
@@ -628,15 +628,15 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   "low-competition-keywords": {
     path: "/tools/low-competition-keywords",
     eyebrow: "内容机会规划",
-    title: "找出第一页已经有弱站排上去的低竞争关键词",
+    title: "找出第一页已经出现机会信号的低竞争关键词",
     description:
-      "读取你的站点，用真实搜索数据给候选词核价，只保留第一页已经有低权重站点占位的词。",
+      "读取你的站点，用真实搜索数据给候选词核价，保留第一页出现年轻域名、低流量域名或社区结果的词。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
       "只读授权。正是你自己的 Search Console 查询数据，让这张地图知道哪些词你的站点已经在服务——从而不会把你已经有的页面再推荐给你一遍。",
     cta: "连接 Search Console",
     trust:
-      "不虚构搜索量，也不靠难度分判定「可赢」。每一个展示出来的搜索词，第一页都被真实打开过；问句条目则按「你站上是否已有页面回答它」来匹配。",
+      "不虚构搜索量，也不靠难度分判定是否符合条件。每一个展示出来的关键词都检查过第一页；不可用证据会留在检测未完成，而不会变成阴性。",
     workflowTitle: "这张地图凭什么决定给你看什么",
     steps: [
       {
@@ -645,26 +645,26 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "先读你的站点",
-        text: "最多十四个页面、产品页优先，并且在花掉任何钱之前把我们读到的内容摆给你看。读错了关键词就会错，所以这一步由你来纠正。",
+        text: "读取最多 20 个页面的有限上下文、产品页优先，并且在花掉任何钱之前把我们读到的内容摆给你看；这不是全站完整抓取。读错了关键词就会错，所以这一步由你来纠正。",
       },
       {
         name: "候选词是核价出来的，不是猜的",
         text: "每个词都送去搜索数据源。数据源没有数据的词，会如实报告为「无数据」，绝不写成需求为零。",
       },
       {
-        name: "对通过的词打开第一页",
-        text: "每次运行最多对二十个词抽样真实第一页。只有当低权重域名已经排在那里时，一个词才会被称为可赢——并写明是哪个域名、排在第几位，方便你亲自打开核对。「最弱排名」是代理信号而不是判定；改信难度分，正是我们自己连续选错四次词的原因。",
+        name: "除明确核价为零外，每个候选词都检查第一页",
+        text: "除明确核价为零以外的每个候选词都会尝试检查，并按固定顺序、每波最多 10 个并行执行。完成的读取会分别报告年轻域名、低自然搜索流量域名和社区结果证据；数据源缺口会留在「检测未完成」，不会变成阴性。",
       },
     ],
     outputTitle: "你会拿到什么",
     outputs: [
       {
-        label: "有实测需求的搜索词",
-        body: "数据源给出的搜索量，加上当前占据第一页的最弱域名——具名、带排位——以及数据源在那一页上是否观测到 AI Overview。整张表可导出为 CSV。",
+        label: "搜索式机会",
+        body: "数据源返回的搜索量与意图、单独保留来源的 SERP 解读意图、三项机会信号的原始证据，以及 AI Overview 的数据源可用性与 LLM 答案评估。完整回答只作为排序折扣，绝不作为否决条件。整张表可导出为 CSV。",
       },
       {
-        label: "你站点已经能回答的问题",
-        body: "问句说法，并对应到你已有的页面。这些不声称任何搜索量——它们基本上也没有。",
+        label: "问句式机会",
+        body: "通过同一套第一页信号规则的问句说法。只有观测到站内支持页面时才会展示对应 URL；数据源没有返回搜索量时，不会声称存在搜索量。",
       },
       {
         label: "动手前该查什么",
@@ -672,7 +672,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "其余的都去哪了",
-        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。对抽样预算没轮到的那些词，还有一键把它们填入种子、跑一轮更窄地图的入口。",
+        body: "已排除的候选词和检测未完成的候选词分成两份清单，并逐项保留精确原因。缺失证据不会被写成阴性，重试建议会留在检测未完成区。",
       },
     ],
     faq: [
@@ -689,7 +689,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "为什么地图会给出和我的业务毫无关系的词？",
         answer:
-          "候选词来自模型读你的至多十四个页面，而模型会在多义词上出错：我们内部关键词引擎的一个早期版本，就曾把「miami dade transit bus tracker」标成与占星相关——因为 transit（行星过境）恰好是占星的正当用词。正是那次失败，让这张地图先把读到的内容摆给你、等你确认后才花钱，也是种子词一栏存在的原因。把读取纠正了，候选词自然就正了。",
+          "候选词来自模型读取你站点最多 20 个页面的有限上下文，而模型会在多义词上出错：我们内部关键词引擎的一个早期版本，就曾把「miami dade transit bus tracker」标成与占星相关——因为 transit（行星过境）恰好是占星的正当用词。正是那次失败，让这张地图先把读到的内容摆给你、等你确认后才花钱，也是种子词一栏存在的原因。把读取纠正了，候选词自然就正了。",
       },
       {
         question: "难度分说很容易，为什么第一页看起来还是打不进去？",
@@ -699,17 +699,17 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "「最弱排名」到底能告诉我什么、不能告诉我什么？",
         answer:
-          "它只回答一个很窄的问题：当前占据第一页的域名里，最弱的那个有多弱。一个低数字是「小站进得去」的证据；它不涉及其余九条结果、查询背后的意图、以及赢家是哪类页面。所以每一行都带着动手前要跑的检查，也所以域名和排位都摆出来，让你亲自打开看。",
+          "它只回答一个很窄的问题：当前占据第一页的域名里，最弱的那个有多弱。它是原始上下文，不是判定规则。v2 的判定会改问第一页是否出现年轻域名、自然搜索流量低于当前站点阈值的域名、或社区结果；每项信号及其不可用状态都会单独展示。",
       },
       {
-        question: "为什么有些候选词从来没被对照过第一页？",
+        question: "每个候选词都会检查第一页吗？",
         answer:
-          "每次运行最多抽样二十个第一页，并有单次成本上限——抽样是这个免费工具最贵的一步。被拦下的清单会点名预算没轮到的每一个词，清单下的按钮会把它们填入种子、跑一轮更窄的地图。种子是用来牵引下一轮候选词生成的；核价和第一页闸口仍会像对待其他候选词一样判它们。",
+          "去重候选词中，除数据源明确核价为零的词以外，每一个都会尝试检查。检查按固定顺序、每波最多 10 个并行执行。某个候选词的数据源或解读失败，会记录为证据不可用；不会悄悄变成阴性，也不会从报告里消失。",
       },
       {
         question: "地图检测 AI Overview 吗？",
         answer:
-          "它记录数据源观测到的事实：抽样的第一页上有 AI Overview 时，那一行会标出来，CSV 导出里也带同一列。破折号表示数据源没有报告那一页的元素构成——这和「没有 AI Overview」不是一回事。地图不建模 AI Overview 会吸走多少流量——把它的存在当成动笔之前先打开那一页的理由。",
+          "它把两种声明分开。数据源可用性说明第一页是否有 AI Overview，或这项事实是否不可用；带来源的 LLM 答案评估说明返回内容是完整回答、部分回答，还是没有回答查询。完整回答只作为排序折扣，绝不作为否决条件；不可用的评估仍保持不可用。",
       },
       {
         question: "搜索量是全球的吗？",
@@ -724,7 +724,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "要跑多久？",
         answer:
-          "读站点大约二十秒，然后大约两分钟用于核价，以及对通过的词逐个打开第一页。",
+          "站点读取最多覆盖 20 个页面。随后会按每波最多 10 个并行，继续核价并检查除明确核价为零以外的每个候选词，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
       },
     ],
   },

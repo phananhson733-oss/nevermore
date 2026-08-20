@@ -1,6 +1,6 @@
 // @input  -- per-call provider cost, the shared Supabase quota, and a clock
-// @output -- a per-run cost ceiling, an account-level daily breaker, one cost log line
-// @pos    -- the only place DataForSEO spend on the keyword tool is counted and bounded
+// @output -- actual provider-cost telemetry plus legacy opt-in admission helpers
+// @pos    -- the only place DataForSEO spend on the keyword tool is counted; v2 does not cap it
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolError } from "@sf/public-tools";
@@ -15,24 +15,25 @@ import {
 } from "./shared-rate-limit.ts";
 
 /**
- * The three billed endpoints the Keyword Opportunity Map touches.
+ * The four billed endpoints the Keyword Opportunity Map touches.
  *
- * Grouped by endpoint rather than summed flat because the two caps that matter
- * (150 candidates, 20 SERP samples) each drive exactly one of these, so a run
- * that came in expensive is only diagnosable if the total can be split back
- * apart. Search Console is absent on purpose: it is the one stage that costs
- * nothing, and listing it at 0 would read as "measured zero".
+ * Grouped by endpoint rather than summed flat because candidate pricing,
+ * all-candidate SERP reads, rank lookup and traffic lookup have different cost
+ * shapes. A run that came in expensive is only diagnosable if the total can be
+ * split back apart. Search Console is absent on purpose: it is the one stage
+ * that costs nothing, and listing it at 0 would read as "measured zero".
  */
 export const KEYWORD_COST_ENDPOINTS = [
   "keyword_overview",
   "serp_organic",
   "bulk_ranks",
+  "bulk_traffic",
 ] as const;
 
 export type KeywordCostEndpoint = (typeof KEYWORD_COST_ENDPOINTS)[number];
 
 /**
- * Hard ceiling on provider spend inside one run, in USD.
+ * Legacy opt-in ceiling on provider spend inside one run, in USD.
  *
  * 0.25 is three times the measured p50 of $0.088 (2026-08-10 calibration: 150
  * candidates, 20 SERP samples, single market). Three times, not 1.2x, because
@@ -43,7 +44,8 @@ export type KeywordCostEndpoint = (typeof KEYWORD_COST_ENDPOINTS)[number];
  * runs and teach everyone to raise it. At 3x it can only fire on a shape the
  * calibration never saw, which is the only case worth stopping.
  *
- * It bounds a single run. The daily breaker below bounds the account.
+ * The v2 handler deliberately does not call `admitStage`; it records actual
+ * spend only. This value remains for older callers and compatibility tests.
  */
 export const KEYWORD_MAX_PROVIDER_COST_USD = 0.25;
 
@@ -51,16 +53,16 @@ export const KEYWORD_MAX_PROVIDER_COST_USD = 0.25;
 export const KEYWORD_RUN_P50_COST_USD = 0.088;
 
 /**
- * Account-level exposure a single day may create, in USD.
+ * Legacy account-level exposure a single day may create, in USD.
  *
- * The breaker exists to bound the blast radius of one bad day, not to pace the
+ * The dormant breaker exists to bound the blast radius of one bad day, not to pace the
  * month: monthly pacing is already enforced outside our code by the prepaid
  * balance and DataForSEO's own account cost limit (error 40203). $5 buys
  * {@link KEYWORD_DAILY_RUN_MAX} runs at the p50, comfortably above any plausible
  * day of real traffic on a tool that requires a Google sign-in plus a Search
  * Console grant.
  *
- * Honest ceiling: the two guards multiply, so a pathological day where every
+ * Honest ceiling when a caller opts into both guards: a pathological day where every
  * run rides the per-run cap costs KEYWORD_DAILY_RUN_MAX x $0.25, not $5. The
  * count is a budget only as long as the p50 holds; it is a run cap always.
  */
@@ -96,7 +98,12 @@ function roundUsd(value: number): number {
 }
 
 function emptyTotals(): Readonly<Record<KeywordCostEndpoint, number>> {
-  return { keyword_overview: 0, serp_organic: 0, bulk_ranks: 0 };
+  return {
+    keyword_overview: 0,
+    serp_organic: 0,
+    bulk_ranks: 0,
+    bulk_traffic: 0,
+  };
 }
 
 export interface KeywordCostAccumulator {

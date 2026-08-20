@@ -35,6 +35,9 @@ export function toKeywordContextCrawl(
     })),
     pagesFetched: result.pagesFetched,
     productPagesFetched: result.productPagesFetched,
+    ...(result.sitemapInventory === undefined
+      ? {}
+      : { sitemapInventory: result.sitemapInventory }),
     // The crawl reports `null` for "ran to completion". The orchestration
     // carries this straight into the sealed token and then into the report, so
     // it needs a word rather than an absence.

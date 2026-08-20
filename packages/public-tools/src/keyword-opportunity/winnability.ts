@@ -41,7 +41,7 @@ export interface KeywordOpportunitySerpSample {
     readonly domain: string;
     readonly position: number;
   }[];
-  /** Provider domain rank per domain. Missing entries are skipped, not zeroed. */
+  /** Provider domain rank per domain. Missing and provider-zero entries are unresolved. */
   readonly domainRanks: ReadonlyMap<string, number>;
   /**
    * SERP element types the provider observed on the page, e.g. `ai_overview`.
@@ -87,7 +87,10 @@ export function judgeKeywordWinnability(
   } | null = null;
   for (const [index, result] of sample.results.entries()) {
     const rank = topTenDomainRanks[index];
-    if (rank === null || rank === undefined) continue;
+    // DataForSEO uses zero when it has no usable backlink authority for a
+    // domain. Keep that raw provider value in `topTenDomainRanks`, but do not
+    // turn it into the weakest possible site and a false break-in point.
+    if (rank === null || rank === undefined || rank === 0) continue;
     // Strictly less-than, so a tie keeps the earliest occurrence — the best
     // position that weak rank holds, which is the page the reader would open.
     if (weakest === null || rank < weakest.rank) {

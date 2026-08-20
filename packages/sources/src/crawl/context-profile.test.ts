@@ -5,6 +5,7 @@ import {
   CONTEXT_PROFILE_MAX_TEXT_CHARS,
   CONTEXT_PROFILE_MIN_PAGES,
   CONTEXT_PROFILE_SITEMAP_LIMITS,
+  CONTEXT_PROFILE_SITEMAP_TRUNCATION_REASONS,
   CONTEXT_PROFILE_USER_AGENT,
 } from "./context-profile.ts";
 import type { PublicResourceFetchOptions } from "../public-http/index.ts";
@@ -21,7 +22,7 @@ import {
 describe("context profile budget", () => {
   it("states the Tranche 2 profile rather than the 240-second audit profile", () => {
     expect(CONTEXT_PROFILE_CRAWL_BUDGET).toMatchObject({
-      maxUrls: 14,
+      maxUrls: 20,
       maxDepth: 3,
       maxWallClockMs: 60_000,
       maxBodyBytes: 2 * 1024 * 1024,
@@ -34,6 +35,19 @@ describe("context profile budget", () => {
       maxChildDocuments: 3,
       maxUrls: 500,
     });
+    expect(CONTEXT_PROFILE_SITEMAP_TRUNCATION_REASONS).toEqual([
+      "seed_cap",
+      "child_document_cap",
+      "url_cap",
+      "nested_index_skipped",
+      "off_origin_filtered",
+      "budget_stopped",
+      "document_unavailable",
+      "document_body_truncated",
+      "malformed_document",
+      "malformed_url_filtered",
+      "token_budget",
+    ]);
     expect(CONTEXT_PROFILE_MIN_PAGES).toBe(3);
     expect(CONTEXT_PROFILE_USER_AGENT).toContain("GenGrowth-Context-Profiler");
   });
@@ -219,6 +233,18 @@ describe("robots.txt citizenship", () => {
 });
 
 describe("sitemap", () => {
+  it("reports an unavailable inventory when no sitemap can be fetched", async () => {
+    const result = await run(fakeSite(marketingSite()));
+
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: false,
+      complete: false,
+      documentsRead: 0,
+      truncationReasons: ["document_unavailable"],
+    });
+  });
+
   it("reads a flat sitemap for candidates the homepage does not link", async () => {
     const site = fakeSite(
       marketingSite({
@@ -237,6 +263,47 @@ describe("sitemap", () => {
       "/pricing",
       "/features",
     ]);
+    expect(result.sitemapInventory).toEqual({
+      urls: [
+        "https://acme.test/pricing",
+        "https://acme.test/features",
+      ],
+      fetched: true,
+      complete: true,
+      documentsRead: 1,
+      truncationReasons: [],
+    });
+  });
+
+  it("marks the bounded inventory incomplete when robots declares more than one seed", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/": { body: page("Acme") },
+        "/robots.txt": {
+          body:
+            "User-agent: *\n" +
+            "Sitemap: https://acme.test/first.xml\n" +
+            "Sitemap: https://acme.test/second.xml\n",
+        },
+        "/first.xml": {
+          body: "<urlset><url><loc>https://acme.test/pricing</loc></url></urlset>",
+        },
+        "/second.xml": {
+          body: "<urlset><url><loc>https://acme.test/features</loc></url></urlset>",
+        },
+      }),
+    );
+    const result = await run(site);
+
+    expect(site.requested).toContain(`${ORIGIN}/first.xml`);
+    expect(site.requested).not.toContain(`${ORIGIN}/second.xml`);
+    expect(result.sitemapInventory).toEqual({
+      urls: [`${ORIGIN}/pricing`],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["seed_cap"],
+    });
   });
 
   it("prefers non-article children of a sitemap index and reads at most three", async () => {
@@ -280,6 +347,17 @@ describe("sitemap", () => {
       "/about",
       "/faq",
     ]);
+    expect(result.sitemapInventory).toEqual({
+      urls: [
+        `${ORIGIN}/about`,
+        `${ORIGIN}/pricing`,
+        `${ORIGIN}/faq`,
+      ],
+      fetched: true,
+      complete: false,
+      documentsRead: 4,
+      truncationReasons: ["child_document_cap"],
+    });
   });
 
   it("uses the sitemap robots.txt declares rather than the standard path", async () => {
@@ -323,6 +401,139 @@ describe("sitemap", () => {
     const result = await run(site);
 
     expect(result.pagesFetched).toBe(5);
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["malformed_document"],
+    });
+  });
+
+  it("rejects a soft-error HTML document that only mentions a urlset tag", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/sitemap.xml": {
+          body:
+            '<html><body><script>const example = "<urlset></urlset>";</script></body></html>',
+        },
+      }),
+    );
+    const result = await run(site);
+
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["malformed_document"],
+    });
+  });
+
+  it("accepts a genuinely empty urlset as a complete bounded inventory", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/sitemap.xml": {
+          body: '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',
+        },
+      }),
+    );
+    const result = await run(site);
+
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: true,
+      complete: true,
+      documentsRead: 1,
+      truncationReasons: [],
+    });
+  });
+
+  it("does not call a response complete when the transport hit its body cap", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/": { body: page("Acme") },
+        "/sitemap.xml": {
+          body: "<urlset><url><loc>https://acme.test/pricing</loc></url></urlset>",
+        },
+      }),
+    );
+    const result = await run(site, {
+      fetch: async (url, options) => {
+        const response = await site.fetch(url, options);
+        if (
+          new URL(url).pathname === "/sitemap.xml" &&
+          response.kind === "ok"
+        ) {
+          return { ...response, bodyComplete: false };
+        }
+        return response;
+      },
+    });
+
+    expect(result.sitemapInventory).toEqual({
+      urls: [`${ORIGIN}/pricing`],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["document_body_truncated"],
+    });
+  });
+
+  it("skips a nested sitemap index and records why its URLs are absent", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/": { body: page("Acme") },
+        "/sitemap.xml": {
+          body:
+            "<sitemapindex><sitemap><loc>https://acme.test/nested.xml</loc></sitemap></sitemapindex>",
+        },
+        "/nested.xml": {
+          body:
+            "<sitemapindex><sitemap><loc>https://acme.test/pages.xml</loc></sitemap></sitemapindex>",
+        },
+        "/pages.xml": {
+          body: "<urlset><url><loc>https://acme.test/pricing</loc></url></urlset>",
+        },
+      }),
+    );
+    const result = await run(site);
+
+    expect(site.requested).toContain(`${ORIGIN}/nested.xml`);
+    expect(site.requested).not.toContain(`${ORIGIN}/pages.xml`);
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: true,
+      complete: false,
+      documentsRead: 2,
+      truncationReasons: ["nested_index_skipped"],
+    });
+  });
+
+  it("filters a malformed member URL and records the incomplete inventory", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/": { body: page("Acme") },
+        "/sitemap.xml": {
+          body:
+            "<urlset>" +
+            "<url><loc>::::</loc></url>" +
+            "<url><loc>https://user:secret@acme.test/private</loc></url>" +
+            "<url><loc>https://acme.test/%E0%A4%A</loc></url>" +
+            "<url><loc>https://acme.test/pricing</loc></url>" +
+            "</urlset>",
+        },
+      }),
+    );
+    const result = await run(site);
+
+    expect(result.sitemapInventory).toEqual({
+      urls: [`${ORIGIN}/pricing`],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["malformed_url_filtered"],
+    });
   });
 });
 
@@ -371,9 +582,9 @@ describe("transport wiring", () => {
 });
 
 describe("frontier edge cases", () => {
-  it("replenishes failed candidates without claiming max_urls when the tail is exhausted", async () => {
+  it("replenishes failed candidates until all 20 page slots succeed", async () => {
     const tail = Array.from(
-      { length: 13 },
+      { length: 19 },
       (_unused, index) => `/tools/t${index.toString().padStart(2, "0")}`,
     );
     const routes: Record<string, Route> = {
@@ -399,8 +610,8 @@ describe("frontier edge cases", () => {
     const site = fakeSite(routes);
     const result = await run(site);
 
-    expect(result.pagesFetched).toBe(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls);
-    expect(result.pages.at(-1)?.path).toBe("/tools/t12");
+    expect(result.pagesFetched).toBe(20);
+    expect(result.pages.at(-1)?.path).toBe("/tools/t18");
     expect(result.stopReason).toBeNull();
     expect(result.botProtectionResponses).toBe(1);
     expect(result.rateLimitedResponses).toBe(1);
@@ -524,6 +735,13 @@ describe("frontier edge cases", () => {
 
     expect(site.requested).not.toContain("https://cdn.other.test/pages.xml");
     expect(result.pages.map((entry) => entry.path)).toEqual(["/", "/pricing"]);
+    expect(result.sitemapInventory).toEqual({
+      urls: [`${ORIGIN}/pricing`],
+      fetched: true,
+      complete: false,
+      documentsRead: 2,
+      truncationReasons: ["off_origin_filtered"],
+    });
   });
 
   it("stops reading sitemap children once the URL cap is reached", async () => {
@@ -552,5 +770,47 @@ describe("frontier edge cases", () => {
     expect(site.requested).toContain(`${ORIGIN}/bulk.xml`);
     expect(site.requested).not.toContain(`${ORIGIN}/more.xml`);
     expect(result.pages.map((entry) => entry.path)).not.toContain("/pricing");
+    expect(result.sitemapInventory).toBeDefined();
+    expect(result.sitemapInventory?.urls).toHaveLength(
+      CONTEXT_PROFILE_SITEMAP_LIMITS.maxUrls,
+    );
+    expect(result.sitemapInventory).toMatchObject({
+      fetched: true,
+      complete: false,
+      documentsRead: 2,
+      truncationReasons: ["url_cap"],
+    });
+  });
+
+  it("marks a sitemap inventory incomplete when the crawl budget stops a child read", async () => {
+    const site = fakeSite(
+      marketingSite({
+        "/": { body: page("Acme") },
+        "/sitemap.xml": {
+          body:
+            "<sitemapindex><sitemap><loc>https://acme.test/pages.xml</loc></sitemap></sitemapindex>",
+        },
+        "/pages.xml": {
+          body: "<urlset><url><loc>https://acme.test/pricing</loc></url></urlset>",
+        },
+      }),
+      {
+        onRequest: (url, current) => {
+          if (new URL(url).pathname === "/sitemap.xml") {
+            current.advance(CONTEXT_PROFILE_CRAWL_BUDGET.maxWallClockMs);
+          }
+        },
+      },
+    );
+    const result = await run(site);
+
+    expect(site.requested).not.toContain(`${ORIGIN}/pages.xml`);
+    expect(result.sitemapInventory).toEqual({
+      urls: [],
+      fetched: true,
+      complete: false,
+      documentsRead: 1,
+      truncationReasons: ["budget_stopped"],
+    });
   });
 });

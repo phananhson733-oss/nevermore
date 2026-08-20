@@ -6,7 +6,6 @@
 import {
   buildKeywordOpportunityPayload,
   buildKeywordCoverageIndex,
-  isKeywordAlreadyCovered,
   createPublicToolError,
   judgeKeywordWinnability,
   KEYWORD_OPPORTUNITY_UNSAMPLED,
@@ -14,12 +13,15 @@ import {
   keywordTokens,
   keywordValidationFor,
   KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
   KEYWORD_STAGE_SERP_SAMPLE,
+  KEYWORD_STAGE_SERP_SAMPLE_PARTIAL,
   keywordVolumeKey,
   observeKeywordCoverage,
   resolveKeywordValidations,
   toKeywordOpportunityErrorCode,
   type KeywordCoveragePage,
+  type KeywordCoverageRead,
   type KeywordCoverageQueryRow,
   type KeywordOpportunityBasis,
   type KeywordOpportunityContext,
@@ -27,18 +29,27 @@ import {
   type KeywordOpportunityObservation,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
+  type KeywordOpportunityProviderIntent,
+  type KeywordOpportunitySerpFailureReason,
+  type KeywordOpportunitySerpStatus,
 } from "@sf/public-tools";
+import {
+  normalizeRdapDomain,
+  normalizeTrafficDomain,
+  type DomainRegistrationEvidence,
+} from "@sf/sources";
+import type { ContextProfileSitemapInventory } from "@sf/sources/crawl-context-profile";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import {
-  estimateBulkRanksCostUsd,
-  estimateSerpSampleCostUsd,
-  consumeKeywordDailyBudget,
-  keywordBudgetRefusal,
   reportKeywordRunCost,
-  type KeywordBudgetOutcome,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
+import { buildKeywordSignalEvidence } from "./keyword-signal-evidence.ts";
 import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
+import type {
+  KeywordSerpInterpretation,
+  KeywordSerpInterpretationInput,
+} from "./keyword-prompts.ts";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
@@ -57,26 +68,17 @@ const CONTEXT_BODY_LIMIT_BYTES = 4_096;
  * Larger than every sibling tool's limit, on purpose.
  *
  * Stage two carries the sealed context back up. AES-GCM plus base64url runs
- * about 1.4x the plaintext, and the plaintext is a list of propositions. At
- * 4,096 a legitimate request would 413 before any handler logging ran, which
- * leaves nothing in the trace to explain it.
+ * about 1.4x the plaintext. The 22 KiB ceiling is the smallest whole-KiB bound
+ * that admits the sealed 20-page long-URL/CJK fixture while preserving the
+ * measured wrapper margin below.
  */
-export const OPPORTUNITIES_BODY_LIMIT_BYTES = 16_384;
+export const OPPORTUNITIES_BODY_LIMIT_BYTES = 22_528;
 
 /** How long a carry-over token stays usable. */
 export const KEYWORD_CONTEXT_TTL_SECONDS = 600;
 
 /** Candidates sent for pricing in one run. The linear cost driver. */
 export const KEYWORD_CANDIDATE_CAP = 150;
-
-/**
- * Pages of page-one sampling per run.
- *
- * The other linear cost driver, and the more expensive one per unit. Twenty
- * covers the survivors of a typical run at roughly four cents; the survivors
- * are sorted before sampling so the cap cuts the least promising tail.
- */
-export const KEYWORD_SERP_SAMPLE_CAP = 20;
 
 /** Seed terms a visitor may supply. */
 export const KEYWORD_MAX_SEEDS = 10;
@@ -87,7 +89,7 @@ export const KEYWORD_MAX_SEED_LENGTH = 80;
  *
  * A ladder rather than one constant because no constant can be right: the
  * sealed token also carries model-written propositions, the visitor's seeds
- * and up to fourteen URLs, none of which have a fixed size. Stage one seals,
+ * and up to twenty URLs, none of which have a fixed size. Stage one seals,
  * measures the real result against the real limit, and drops to the next rung
  * if it does not fit — so the guarantee comes from measurement rather than
  * from arithmetic that a Japanese site would quietly break.
@@ -100,7 +102,7 @@ export const KEYWORD_CONTEXT_HEADING_BUDGETS = [6_000, 3_000, 1_200, 0];
 /**
  * Bytes the sealed token may occupy.
  *
- * Stage two reads `{"contextToken":"…"}` under a 16,384-byte limit; the margin
+ * Stage two reads `{"contextToken":"…"}` under a 22,528-byte limit; the margin
  * covers that wrapper and any whitespace a client adds.
  */
 export const KEYWORD_CONTEXT_TOKEN_MAX_BYTES =
@@ -178,6 +180,8 @@ export interface KeywordContextToken {
     readonly title: string;
     readonly headings?: readonly string[];
   }[];
+  /** Optional only while a token minted by the previous deployment is alive. */
+  readonly sitemapInventory?: ContextProfileSitemapInventory;
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
   readonly stopReason: string;
@@ -209,13 +213,46 @@ export interface KeywordCandidateDraft {
 
 export interface KeywordSerpSampleResult {
   readonly keyword: string;
+  /** Optional only for legacy injected samples; production always supplies it. */
+  readonly status?: KeywordOpportunitySerpStatus;
+  /** Optional only for legacy injected samples; production always supplies it. */
+  readonly failureReason?: KeywordOpportunitySerpFailureReason | null;
+  /** Null for an unavailable attempt; optional only for legacy samples. */
+  readonly observedAt?: string | null;
   /** Top ten organic results in rank order, position included. */
   readonly results: readonly {
     readonly domain: string;
     readonly position: number;
+    /** Optional only for legacy injected samples; production always supplies it. */
+    readonly title?: string | null;
+    /** Optional only for legacy injected samples; production always supplies it. */
+    readonly url?: string | null;
   }[];
-  /** SERP element types the provider observed; null means it reported none. */
+  /** SERP element types the provider observed; null means the list was unreported. */
   readonly pageItemTypes: readonly string[] | null;
+  /** Provider AI Overview block, with omitted text preserved as null. */
+  readonly aiOverview?: {
+    readonly markdown: string | null;
+    readonly isAsync: boolean | null;
+    readonly references: readonly {
+      readonly title: string | null;
+      readonly url: string | null;
+    }[];
+  } | null;
+  /** Concrete provider community results; null means availability unreported. */
+  readonly communityItems?:
+    | readonly {
+        readonly type:
+          | "discussions_and_forums"
+          | "forum"
+          | "video"
+          | "twitter";
+        readonly position: number;
+        readonly title: string | null;
+        readonly url: string | null;
+        readonly domain: string | null;
+      }[]
+    | null;
 }
 
 export interface KeywordContextCrawlResult {
@@ -229,6 +266,8 @@ export interface KeywordContextCrawlResult {
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
   readonly stopReason: string;
+  /** Optional for old injected results; production crawls always provide it. */
+  readonly sitemapInventory?: ContextProfileSitemapInventory;
 }
 
 /**
@@ -276,16 +315,29 @@ export interface KeywordOpportunityDependencies {
     readonly marketCode: string;
     readonly languageCode: string;
   }) => Promise<readonly KeywordOpportunityProviderRow[]>;
-  /** Offline test seam. Samples page one for the survivors. */
+  /** Offline test seam. Samples page one for every candidate except explicit zero. */
   readonly sampleSerp: (input: {
     readonly keywords: readonly string[];
     readonly marketCode: string;
     readonly languageCode: string;
   }) => Promise<readonly KeywordSerpSampleResult[]>;
+  /** Optional for injected/pre-v2 callers; production always supplies it. */
+  readonly interpretSerpEvidence?: (
+    inputs: readonly KeywordSerpInterpretationInput[],
+  ) => Promise<readonly KeywordSerpInterpretation[]>;
   /** Offline test seam. Resolves domains to provider ranks. */
   readonly resolveDomainRanks: (
     domains: readonly string[],
   ) => Promise<ReadonlyMap<string, number>>;
+  /** Estimated organic traffic keyed by the traffic seam's normalized domain. */
+  readonly resolveDomainTraffic: (input: {
+    readonly domains: readonly string[];
+    readonly marketCode: string;
+  }) => Promise<ReadonlyMap<string, number | null> | null>;
+  /** RDAP evidence keyed by normalizeRdapDomain(domain). */
+  readonly resolveDomainRegistrations: (
+    domains: readonly string[],
+  ) => Promise<ReadonlyMap<string, DomainRegistrationEvidence>>;
   /**
    * Produce the Search Console access token for this request.
    *
@@ -296,7 +348,8 @@ export interface KeywordOpportunityDependencies {
    */
   readonly resolveGrant: () => Promise<GrantResolution>;
   /**
-   * Offline test seam. The visitor's own Search Console queries.
+   * Offline test seam. The visitor's Search Console queries and positive
+   * query-page observations for the same finalised window.
    *
    * Takes a property identifier — `sc-domain:acme.com` or a verified URL
    * prefix — not the site URL the visitor typed. Search Console is addressed
@@ -306,15 +359,7 @@ export interface KeywordOpportunityDependencies {
     readonly property: string;
     /** From this request's resolution; never captured at module scope. */
     readonly accessToken: string;
-  }) => Promise<readonly KeywordCoverageQueryRow[]>;
-  /**
-   * The account-wide daily breaker, consulted before anything billable runs.
-   *
-   * Separate from the per-IP gates: those keep one caller from monopolising
-   * the tool, this one keeps the whole tool from draining a prepaid balance
-   * that the paid analysis pipeline also spends from.
-   */
-  readonly consumeDailyBudget: () => Promise<KeywordBudgetOutcome>;
+  }) => Promise<KeywordCoverageRead | readonly KeywordCoverageQueryRow[]>;
   /**
    * What the model cost this run, read once at the end.
    *
@@ -325,14 +370,36 @@ export interface KeywordOpportunityDependencies {
    */
   readonly llmUsage?: () => KeywordLlmUsage;
   /**
-   * Books provider spend and answers whether the next stage still fits.
+   * Books actual provider spend for request telemetry.
    *
    * Passed in rather than created here so the route's provider adapters can
-   * record into the same accumulator the orchestration reads.
+   * record into the same accumulator the orchestration reports.
    */
   readonly costs: KeywordCostAccumulator;
   readonly now: () => Date;
   readonly extractClientIp: (headers: Headers) => string;
+}
+
+function isLegacyCoverageRead(
+  read: KeywordCoverageRead | readonly KeywordCoverageQueryRow[],
+): read is readonly KeywordCoverageQueryRow[] {
+  return Array.isArray(read);
+}
+
+/** Preserve existing injected query-only readers while production returns v2. */
+function normalizeCoverageRead(
+  read: KeywordCoverageRead | readonly KeywordCoverageQueryRow[],
+): KeywordCoverageRead {
+  if (!isLegacyCoverageRead(read)) return read;
+  return {
+    queryRows: read,
+    queryPageRows: [],
+    // A legacy array is still proof that its query lane completed, including
+    // when it completed with zero rows. It carries no query-page read at all,
+    // so that missing lane must be explicit rather than treated as clean.
+    queryPaging: { pagesFetched: 1, truncated: false },
+    queryPagePaging: { pagesFetched: 0, truncated: true },
+  };
 }
 
 function json(
@@ -477,32 +544,86 @@ export async function handleKeywordContextRequest(
       sub: identity.sub,
     };
 
-    // Seal, measure, and step down the ladder until the real token fits the
-    // real limit. Everything else in here is variable-length and outside this
-    // handler's control — model-written propositions, the visitor's seeds, up
-    // to fourteen URLs — so a fixed heading budget could only ever be a guess
-    // that some site disproves in production.
-    let contextToken = "";
-    let headingBudget = 0;
-    for (const budget of KEYWORD_CONTEXT_HEADING_BUDGETS) {
-      const headings = trimKeywordContextHeadings(crawl.pages, budget);
+    const sealToken = (
+      headingBudgetBytes: number,
+      sitemapInventory: ContextProfileSitemapInventory | undefined,
+    ): string => {
+      const headings = trimKeywordContextHeadings(
+        crawl.pages,
+        headingBudgetBytes,
+      );
       const token: KeywordContextToken = {
         ...base,
+        ...(sitemapInventory === undefined ? {} : { sitemapInventory }),
         pages: crawl.pages.map((page, index) => ({
           url: page.url,
           title: page.title,
           headings: headings[index] ?? [],
         })),
       };
-      contextToken = seal("gg_kw_context", token, KEYWORD_CONTEXT_TTL_SECONDS);
+      return seal("gg_kw_context", token, KEYWORD_CONTEXT_TTL_SECONDS);
+    };
+
+    // Seal, measure, and step down the ladder until the real token fits the
+    // real limit. Everything else in here is variable-length and outside this
+    // handler's control — model-written propositions, the visitor's seeds, up
+    // to twenty URLs — so a fixed heading budget could only ever be a guess
+    // that some site disproves in production.
+    let contextToken = "";
+    let headingBudget = 0;
+    for (const budget of KEYWORD_CONTEXT_HEADING_BUDGETS) {
+      contextToken = sealToken(budget, crawl.sitemapInventory);
       headingBudget = budget;
       if (keywordByteLength(contextToken) <= KEYWORD_CONTEXT_TOKEN_MAX_BYTES) {
         break;
       }
     }
 
+    // A complete sitemap may carry hundreds of safe URLs, while stage two has
+    // a deliberately small request body. If the zero-heading token still does
+    // not fit, keep the largest measured prefix and name the exact omission.
+    // Ciphertext length is deterministic for a given plaintext length, so a
+    // binary search proves the chosen prefix against the real sealed token.
+    if (
+      keywordByteLength(contextToken) > KEYWORD_CONTEXT_TOKEN_MAX_BYTES &&
+      crawl.sitemapInventory !== undefined &&
+      crawl.sitemapInventory.urls.length > 0
+    ) {
+      const originalInventory = crawl.sitemapInventory;
+      let lower = 0;
+      let upper = originalInventory.urls.length - 1;
+      let fittedToken: string | null = null;
+      while (lower <= upper) {
+        const count = Math.floor((lower + upper) / 2);
+        const truncatedInventory: ContextProfileSitemapInventory = {
+          ...originalInventory,
+          urls: originalInventory.urls.slice(0, count),
+          complete: false,
+          truncationReasons: [
+            ...originalInventory.truncationReasons.filter(
+              (reason) => reason !== "token_budget",
+            ),
+            "token_budget",
+          ],
+        };
+        const candidateToken = sealToken(0, truncatedInventory);
+        if (
+          keywordByteLength(candidateToken) <= KEYWORD_CONTEXT_TOKEN_MAX_BYTES
+        ) {
+          fittedToken = candidateToken;
+          lower = count + 1;
+        } else {
+          upper = count - 1;
+        }
+      }
+      if (fittedToken !== null) {
+        contextToken = fittedToken;
+        headingBudget = 0;
+      }
+    }
+
     if (keywordByteLength(contextToken) > KEYWORD_CONTEXT_TOKEN_MAX_BYTES) {
-      // The ladder bounds headings; propositions, titles and up to fourteen
+      // The ladder bounds headings; propositions, titles and up to twenty
       // URLs are not bounded by anything here, so the last rung can still be
       // over. Answering 200 with this token would be a success the handler has
       // already proved is unusable: the surface would post it to stage two,
@@ -567,39 +688,32 @@ function parseOpportunitiesInput(
   return { contextToken: token };
 }
 
-/**
- * Order the survivors before the sample cap bites.
- *
- * Proposition-derived terms first, then by ascending difficulty. The cap is a
- * cost control, so what it cuts should be the tail the reader would have
- * looked at last — and the proposition lane is the scarce output: Tranche 2
- * produced 19 priced proposition terms against 343 expansion ones.
- */
-function serpSampleOrder(
-  a: {
-    readonly basis: KeywordOpportunityBasis;
-    readonly difficulty: number | null;
-  },
-  b: {
-    readonly basis: KeywordOpportunityBasis;
-    readonly difficulty: number | null;
-  },
-): number {
-  const aProposition = a.basis === "site_proposition" ? 0 : 1;
-  const bProposition = b.basis === "site_proposition" ? 0 : 1;
-  if (aProposition !== bProposition) return aProposition - bProposition;
-  return (
-    (a.difficulty ?? Number.MAX_SAFE_INTEGER) -
-    (b.difficulty ?? Number.MAX_SAFE_INTEGER)
-  );
+const PROVIDER_INTENTS: ReadonlySet<KeywordOpportunityProviderIntent> = new Set([
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+]);
+
+function providerIntent(
+  value: string | null,
+): KeywordOpportunityProviderIntent | null {
+  return value !== null &&
+    PROVIDER_INTENTS.has(value as KeywordOpportunityProviderIntent)
+    ? (value as KeywordOpportunityProviderIntent)
+    : null;
+}
+
+function normalizedSiteDomain(siteUrl: string): string | null {
+  try {
+    return normalizeTrafficDomain(new URL(siteUrl).hostname);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Stage two: price the candidates and judge them.
- *
- * This is where the money is spent, so this is where the durable limit sits.
- * Putting it on stage one instead would turn the carry-over token into a
- * free-reruns oracle for the expensive half.
  */
 export async function handleKeywordOpportunitiesRequest(
   request: Request,
@@ -637,18 +751,7 @@ export async function handleKeywordOpportunitiesRequest(
   );
   if (!gate.ok) return gate.response;
 
-  // The daily breaker comes after admission and before the first billable
-  // call. Before the gate it would spend a quota slot on requests the gate was
-  // about to turn away; after any provider call it would be reporting a
-  // ceiling the run had already crossed.
-  const budget = await dependencies.consumeDailyBudget();
-  const refusal = keywordBudgetRefusal(budget);
-  if (refusal !== null) {
-    gate.release();
-    return refusal;
-  }
-
-  // Resolved inside the gate, after the breaker: the coverage read is what
+  // Resolved inside the gate: the coverage read is what
   // makes this tool honest about terms the site already serves, and a visitor
   // whose authorization has lapsed needs the route back to the consent screen
   // rather than a report with a silently missing stage.
@@ -700,7 +803,7 @@ export async function handleKeywordOpportunitiesRequest(
     // layer can tell "the property served nothing" from "nobody looked". An
     // empty array here would collapse the two and put a false negative on
     // every row.
-    let coverageRows: readonly KeywordCoverageQueryRow[] | null = null;
+    let coverageRead: KeywordCoverageRead | null = null;
     // The grant lists properties, not sites. Resolving here also answers
     // whether this visitor is entitled to read the site at all: no match means
     // no property whose queries we may fetch.
@@ -717,10 +820,18 @@ export async function handleKeywordOpportunitiesRequest(
       );
     } else {
       try {
-        coverageRows = await dependencies.readCoverageQueries({
-          property,
-          accessToken: grant.accessToken,
-        });
+        coverageRead = normalizeCoverageRead(
+          await dependencies.readCoverageQueries({
+            property,
+            accessToken: grant.accessToken,
+          }),
+        );
+        if (
+          coverageRead.queryPaging.truncated ||
+          coverageRead.queryPagePaging.truncated
+        ) {
+          unavailableStages.push(KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED);
+        }
       } catch (error) {
         // Coverage is the one stage whose absence must not stop the run:
         // without it the tool cannot say a term is already served, which is a
@@ -739,7 +850,12 @@ export async function handleKeywordOpportunitiesRequest(
       }
     }
     const coverageIndex =
-      coverageRows === null ? null : buildKeywordCoverageIndex(coverageRows);
+      coverageRead === null
+        ? null
+        : buildKeywordCoverageIndex(
+            coverageRead.queryRows,
+            coverageRead.queryPageRows,
+          );
     const coveragePages: readonly KeywordCoveragePage[] = token.pages.map(
       (page) => ({
         url: page.url,
@@ -748,8 +864,7 @@ export async function handleKeywordOpportunitiesRequest(
         // running right now has pages with no `headings` at all. Its TTL is
         // ten minutes, so every deployment of this change has a ten-minute
         // window where spreading `undefined` would throw — after admission,
-        // after the daily budget, and after this run has already paid for
-        // expansion and volume validation.
+        // after this run has already paid for expansion and volume validation.
         tokens: keywordTokens([page.title, ...(page.headings ?? [])].join(" ")),
       }),
     );
@@ -777,87 +892,307 @@ export async function handleKeywordOpportunitiesRequest(
         : null;
     };
 
-    const priced = candidates.map((candidate) => ({
-      candidate,
-      validation: keywordValidationFor(validations, candidate.keyword),
-      coverage: observeKeywordCoverage(
-        candidate.keyword,
-        coverageIndex,
-        coveragePages,
-        attributedPage(candidate),
-      ),
-    }));
-
-    const sampleTargets = priced
-      .filter(
-        (row) =>
-          row.validation.availability === "available" &&
-          // Anything not MEASURED as covered is eligible, which is the same
-          // line `isKeywordAlreadyCovered` draws. The filter used to name only
-          // the not-observed state, which quietly excluded
-          // `related_coverage_unverified` — a lexical guess — from sampling.
-          // An unsampled SEO row can never be winnable and is therefore
-          // withheld, so title overlap was acting as the hard filter that
-          // `coverage.ts` explicitly promises it is not, and the headings
-          // added here would have made it fire far more often.
-          !isKeywordAlreadyCovered(row.coverage.state),
-      )
-      .sort((a, b) =>
-        serpSampleOrder(
-          {
-            basis: a.candidate.discoveryBasis,
-            difficulty: a.validation.difficulty,
-          },
-          {
-            basis: b.candidate.discoveryBasis,
-            difficulty: b.validation.difficulty,
-          },
+    const priced = candidates.map((candidate) => {
+      const resolved = keywordValidationFor(validations, candidate.keyword);
+      return {
+        candidate,
+        validation: {
+          ...resolved,
+          providerIntent: providerIntent(resolved.intent),
+        },
+        coverage: observeKeywordCoverage(
+          candidate.keyword,
+          coverageIndex,
+          coveragePages,
+          attributedPage(candidate),
+          token.sitemapInventory ?? null,
         ),
-      )
-      .slice(0, KEYWORD_SERP_SAMPLE_CAP);
+      };
+    });
 
-    let samples: readonly KeywordSerpSampleResult[] = [];
-    let domainRanks: ReadonlyMap<string, number> = new Map();
-    // Sampling and its rank lookup are the priciest stage and the only optional
-    // one, so the per-run ceiling is checked here. Asked before spending, not
-    // after: the earlier stages are already billed either way, and cutting this
-    // one degrades the run to `partial` rather than losing what was paid for.
-    const serpEstimate =
-      estimateSerpSampleCostUsd(sampleTargets.length) +
-      estimateBulkRanksCostUsd(sampleTargets.length * 10);
-    const serpAdmitted =
-      sampleTargets.length > 0 &&
-      dependencies.costs.admitStage("serp_sample", serpEstimate);
-    if (sampleTargets.length > 0 && !serpAdmitted) {
-      unavailableStages.push("serp_sample_cost_capped");
+    // v2 samples the immutable deduplicated plan in input order. The only
+    // intentional omission is a provider-priced numeric zero; provider silence
+    // and existing-page evidence still receive the same SERP facts as every
+    // other candidate.
+    const sampleTargets = priced.filter(
+      (row) => row.validation.availability !== "explicit_zero",
+    );
+    const runObservedAt = dependencies.now().toISOString();
+    const returnedSamples =
+      sampleTargets.length === 0
+        ? []
+        : await dependencies.sampleSerp({
+            keywords: sampleTargets.map((row) => row.candidate.keyword),
+            marketCode: token.marketCode,
+            languageCode: token.languageCode,
+          });
+    const returnedByKeyword = new Map(
+      returnedSamples.map((sample) => [keywordVolumeKey(sample.keyword), sample]),
+    );
+    const attemptedSamples = sampleTargets.map((row): KeywordSerpSampleResult => {
+      const returned = returnedByKeyword.get(
+        keywordVolumeKey(row.candidate.keyword),
+      );
+      if (returned === undefined) {
+        return {
+          keyword: row.candidate.keyword,
+          status: "unavailable",
+          failureReason: "provider_unavailable",
+          observedAt: null,
+          results: [],
+          pageItemTypes: null,
+          aiOverview: null,
+          communityItems: null,
+        };
+      }
+      // The optional branch is the ten-minute compatibility window for an
+      // injected/pre-v2 producer. Task 8A production outcomes always carry the
+      // status explicitly.
+      const status = returned.status ?? "complete";
+      return status === "complete"
+        ? {
+            ...returned,
+            keyword: row.candidate.keyword,
+            status,
+            failureReason: null,
+            observedAt: returned.observedAt ?? runObservedAt,
+          }
+        : {
+            ...returned,
+            keyword: row.candidate.keyword,
+            status,
+            failureReason: returned.failureReason ?? "provider_unavailable",
+            observedAt: null,
+            results: [],
+          };
+    });
+    const completeSamples = attemptedSamples.filter(
+      (sample) => sample.status === "complete",
+    );
+    if (attemptedSamples.length > 0 && completeSamples.length === 0) {
+      unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE);
+    } else if (completeSamples.length < attemptedSamples.length) {
+      unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE_PARTIAL);
     }
-    if (serpAdmitted) {
+
+    const interpretationInputs: readonly KeywordSerpInterpretationInput[] =
+      completeSamples.map((sample) => ({
+        keyword: sample.keyword,
+        observedAt: sample.observedAt ?? runObservedAt,
+        organicResults: sample.results.map((result) => ({
+          position: result.position,
+          title: result.title ?? null,
+          url: result.url ?? null,
+        })),
+        aiOverviewMarkdown: sample.aiOverview?.markdown ?? null,
+      }));
+    let returnedInterpretations: readonly KeywordSerpInterpretation[] = [];
+    if (
+      interpretationInputs.length > 0 &&
+      dependencies.interpretSerpEvidence !== undefined
+    ) {
       try {
-        samples = await dependencies.sampleSerp({
-          keywords: sampleTargets.map((row) => row.candidate.keyword),
-          marketCode: token.marketCode,
-          languageCode: token.languageCode,
-        });
-        domainRanks = await dependencies.resolveDomainRanks([
-          ...new Set(
-            samples.flatMap((sample) =>
-              sample.results.map((result) => result.domain),
-            ),
-          ),
-        ]);
-      } catch {
-        // Without page one no term may be called winnable, so the run reports
-        // the gap rather than falling back to the difficulty score — that
-        // fallback is exactly what misled the team's own selection.
-        unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE);
+        returnedInterpretations =
+          await dependencies.interpretSerpEvidence(interpretationInputs);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "serp_interpretation",
+            failureReason:
+              error instanceof KeywordLlmError
+                ? error.reason
+                : "interpretation_unavailable",
+          }),
+        );
       }
     }
+    const completeInterpretationKeys = new Set(
+      interpretationInputs.map((input) => keywordVolumeKey(input.keyword)),
+    );
+    const interpretationsByKeyword = new Map<
+      string,
+      KeywordSerpInterpretation | null
+    >();
+    for (const interpretation of returnedInterpretations) {
+      const key = keywordVolumeKey(interpretation.keyword);
+      if (key === "" || !completeInterpretationKeys.has(key)) continue;
+      if (interpretationsByKeyword.has(key)) {
+        interpretationsByKeyword.set(key, null);
+      } else {
+        interpretationsByKeyword.set(key, interpretation);
+      }
+    }
+
+    const organicDomains = [
+      ...new Set(
+        completeSamples.flatMap((sample) =>
+          sample.results.map((result) => result.domain.trim().toLowerCase()),
+        ),
+      ),
+    ].filter((domain) => domain !== "");
+    const trafficDomains = [
+      ...new Set(
+        organicDomains
+          .map(normalizeTrafficDomain)
+          .filter((domain): domain is string => domain !== null),
+      ),
+    ];
+    const registrationDomains = [
+      ...new Set(
+        organicDomains
+          .map(normalizeRdapDomain)
+          .filter((domain): domain is string => domain !== null),
+      ),
+    ];
+    const siteDomain = normalizedSiteDomain(token.siteUrl);
+    const rankTargets = [...organicDomains];
+    if (siteDomain !== null && !rankTargets.includes(siteDomain)) {
+      rankTargets.push(siteDomain);
+    }
+
+    let domainRanks: ReadonlyMap<string, number> | null = null;
+    let domainTraffic: ReadonlyMap<string, number | null> | null = null;
+    let domainRegistrations: ReadonlyMap<
+      string,
+      DomainRegistrationEvidence
+    > | null = null;
+    if (completeSamples.length > 0 && organicDomains.length > 0) {
+      const [ranks, traffic, registrations] = await Promise.all([
+        dependencies.resolveDomainRanks(rankTargets).catch(() => {
+          console.error(
+            JSON.stringify({
+              tool: "keyword_opportunity",
+              stage: "domain_rank",
+              reason: "read_failed",
+            }),
+          );
+          return null;
+        }),
+        dependencies
+          .resolveDomainTraffic({
+            domains: trafficDomains,
+            marketCode: token.marketCode,
+          })
+          .catch(() => {
+            console.error(
+              JSON.stringify({
+                tool: "keyword_opportunity",
+                stage: "domain_traffic",
+                reason: "read_failed",
+              }),
+            );
+            return null;
+          }),
+        dependencies
+          .resolveDomainRegistrations(registrationDomains)
+          .catch(() => {
+            console.error(
+              JSON.stringify({
+                tool: "keyword_opportunity",
+                stage: "domain_registration",
+                reason: "read_failed",
+              }),
+            );
+            return null;
+          }),
+      ]);
+      domainRanks = ranks;
+      domainTraffic = traffic;
+      domainRegistrations = registrations;
+    }
+    const siteDomainRank =
+      siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);
     const samplesByKeyword = new Map(
-      samples.map((sample) => [sample.keyword, sample]),
+      attemptedSamples.map((sample) => [keywordVolumeKey(sample.keyword), sample]),
     );
 
     const observations: KeywordOpportunityObservation[] = priced.map((row) => {
-      const sample = samplesByKeyword.get(row.candidate.keyword);
+      const attempted = samplesByKeyword.get(
+        keywordVolumeKey(row.candidate.keyword),
+      );
+      const sample: KeywordSerpSampleResult = attempted ?? {
+        keyword: row.candidate.keyword,
+        status: "unavailable",
+        failureReason: null,
+        observedAt: null,
+        results: [],
+        pageItemTypes: null,
+        aiOverview: null,
+        communityItems: null,
+      };
+      const enriched = buildKeywordSignalEvidence({
+        sample,
+        observedAt: runObservedAt,
+        siteDomainRank,
+        domainTraffic,
+        domainRegistrations,
+        marketCode: token.marketCode,
+        languageCode: token.languageCode,
+      });
+      const interpretation = interpretationsByKeyword.get(
+        keywordVolumeKey(row.candidate.keyword),
+      );
+      const availableInterpretation =
+        interpretation?.availability === "available" ? interpretation : null;
+      const serpIntent =
+        availableInterpretation === null
+          ? null
+          : {
+              intent: availableInterpretation.intent,
+              source: "serp_top_ten_interpretation" as const,
+              observedAt: sample.observedAt ?? runObservedAt,
+              modelId: availableInterpretation.modelId,
+              promptVersion: availableInterpretation.promptVersion,
+            };
+      const aiOverview =
+        availableInterpretation !== null
+          ? {
+              ...enriched.aiOverview,
+              answerAssessment:
+                availableInterpretation.aiOverviewAssessment,
+              reason: availableInterpretation.reason,
+              modelId: availableInterpretation.modelId,
+              promptVersion: availableInterpretation.promptVersion,
+            }
+          : enriched.aiOverview.availability === "observed" &&
+              enriched.aiOverview.markdown !== null
+            ? {
+                ...enriched.aiOverview,
+                answerAssessment: "unavailable" as const,
+                reason: "interpretation_unavailable",
+                modelId: null,
+                promptVersion: null,
+              }
+            : enriched.aiOverview;
+      const serp =
+        sample.status === "complete"
+          ? {
+              ...judgeKeywordWinnability(
+                {
+                  results: sample.results,
+                  domainRanks: domainRanks ?? new Map(),
+                  pageItemTypes: sample.pageItemTypes,
+                },
+                siteDomainRank,
+              ),
+              status: "complete" as const,
+              failureReason: null,
+              observedAt: sample.observedAt ?? runObservedAt,
+              organicResults: sample.results.map((result) => ({
+                position: result.position,
+                domain: result.domain,
+                title: result.title ?? null,
+                url: result.url ?? null,
+              })),
+            }
+          : {
+              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+              status: "unavailable" as const,
+              failureReason: sample.failureReason ?? null,
+              observedAt: null,
+              organicResults: [],
+            };
       return {
         keyword: row.candidate.keyword,
         lane: row.candidate.questionForm ? "geo" : "seo",
@@ -865,17 +1200,10 @@ export async function handleKeywordOpportunitiesRequest(
         questionForm: row.candidate.questionForm,
         propositionIndex: row.candidate.propositionIndex,
         validation: row.validation,
-        serp:
-          sample === undefined
-            ? KEYWORD_OPPORTUNITY_UNSAMPLED
-            : judgeKeywordWinnability(
-                {
-                  results: sample.results,
-                  domainRanks,
-                  pageItemTypes: sample.pageItemTypes,
-                },
-                null,
-              ),
+        serp,
+        serpIntent,
+        signals: enriched.signals,
+        aiOverview,
         coverage: row.coverage.state,
         supportingPageUrl: row.coverage.supportingPageUrl,
       };
@@ -897,7 +1225,7 @@ export async function handleKeywordOpportunitiesRequest(
       generated: drafts.length,
       observations,
       unavailableStages,
-      completedAt: dependencies.now().toISOString(),
+      completedAt: runObservedAt,
     });
 
     // The run's only cost record. There is no ledger table and the provider
@@ -906,7 +1234,7 @@ export async function handleKeywordOpportunitiesRequest(
     reportKeywordRunCost({
       costs: dependencies.costs,
       candidateCount: candidates.length,
-      serpSampled: samples.length,
+      serpSampled: completeSamples.length,
       llm: dependencies.llmUsage?.(),
     });
 
@@ -948,7 +1276,6 @@ export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
   | "resolveGrant"
   | "openCrawlGate"
   | "openGscGate"
-  | "consumeDailyBudget"
   | "now"
 > = {
   readIdentity: async () => {
@@ -958,6 +1285,5 @@ export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
   resolveGrant: resolveTrafficDropGrant,
   openCrawlGate: (clientIp, siteUrl) => openCrawlGate(clientIp, siteUrl),
   openGscGate: (clientIp) => openGscGate(clientIp),
-  consumeDailyBudget: () => consumeKeywordDailyBudget(),
   now: () => new Date(),
 };

@@ -66,6 +66,9 @@ catalogs:
     react-dom:
       specifier: 19.2.7
       version: 19.2.7
+    tldts:
+      specifier: 7.4.9
+      version: 7.4.9
     tsx:
       specifier: 4.20.3
       version: 4.20.3
@@ -509,6 +512,9 @@ importers:
       '@sf/contracts':
         specifier: workspace:*
         version: link:../contracts
+      tldts:
+        specifier: 'catalog:'
+        version: 7.4.9
       undici:
         specifier: 'catalog:'
         version: 7.29.0

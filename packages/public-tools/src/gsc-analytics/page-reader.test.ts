@@ -115,6 +115,35 @@ describe("readQueryPageRows", () => {
 
     expect(result.rows.map((r) => r.query)).toEqual(["ok"]);
   });
+
+  it("drops a row whose query or page key is empty", async () => {
+    const { client } = clientReturning([
+      [
+        qpRow("", "https://example.com/missing-query"),
+        qpRow("missing page", ""),
+        qpRow("ok", "https://example.com/ok"),
+      ],
+    ]);
+
+    const result = await readQueryPageRows(client, WINDOW);
+
+    expect(result.rows.map(({ query, page }) => ({ query, page }))).toEqual([
+      { query: "ok", page: "https://example.com/ok" },
+    ]);
+  });
+
+  it("keeps the four-page prefix and marks it truncated when every page is full", async () => {
+    const full = Array.from({ length: GSC_ROW_LIMIT }, (_, index) =>
+      qpRow(`query ${index}`, `https://example.com/${index}`),
+    );
+    const { client, calls } = clientReturning([full, full, full, full]);
+
+    const result = await readQueryPageRows(client, WINDOW);
+
+    expect(calls).toHaveLength(4);
+    expect(result.rows).toHaveLength(GSC_ROW_LIMIT * 4);
+    expect(result.paging).toEqual({ pagesFetched: 4, truncated: true });
+  });
 });
 
 describe("queryPageCoverage", () => {

@@ -29,6 +29,7 @@ catalog:
 
   # HTTP transport
   undici: 7.29.0
+  tldts: 7.4.9
 
   # UI data + i18n
   '@tanstack/react-query': 5.101.2

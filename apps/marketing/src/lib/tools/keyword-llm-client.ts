@@ -1,5 +1,5 @@
 // @input  -- provider env/options, an injected fetch, one task-deadlined request
-// @output -- a request-deadlined JSON completion with usage, or KeywordLlmError
+// @output -- a request-deadlined JSON completion with model/usage, or KeywordLlmError
 // @pos    -- the marketing site's only LLM transport; consumed by keyword-prompts.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -217,6 +217,8 @@ export function mergeKeywordLlmUsage(
 export interface KeywordLlmCompletion {
   readonly content: string;
   readonly usage: KeywordLlmUsage;
+  /** Bounded provider response model, falling back to the configured model. */
+  readonly modelId?: string | null;
 }
 
 export interface KeywordLlmClient {
@@ -492,6 +494,28 @@ function readUsage(data: unknown): KeywordLlmUsage {
   };
 }
 
+const MAX_KEYWORD_LLM_MODEL_ID_CHARS = 200;
+const SAFE_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u;
+
+/** Keep model provenance without retaining arbitrary provider response text. */
+function safeModelId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 &&
+    trimmed.length <= MAX_KEYWORD_LLM_MODEL_ID_CHARS &&
+    SAFE_MODEL_ID.test(trimmed)
+    ? trimmed
+    : null;
+}
+
+function readModelId(data: unknown, configuredModel: string): string | null {
+  const responseModel =
+    typeof data === "object" && data !== null
+      ? (data as Record<string, unknown>)["model"]
+      : undefined;
+  return safeModelId(responseModel) ?? safeModelId(configuredModel);
+}
+
 export interface KeywordLlmClientOptions {
   /** Offline test seam. Skips the env read entirely. */
   readonly config?: KeywordLlmConfig;
@@ -612,7 +636,11 @@ class ChatCompletionsClient implements KeywordLlmClient {
           readUsage(data),
         );
       }
-      return { content, usage: readUsage(data) };
+      return {
+        content,
+        usage: readUsage(data),
+        modelId: readModelId(data, config.model),
+      };
     } finally {
       clearTimeout(timer);
     }

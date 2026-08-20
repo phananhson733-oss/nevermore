@@ -52,8 +52,8 @@ export interface KeywordOpportunityCheckInput {
  *    also earns the page-type check.
  * 3. Weak-site breakthrough is worth confirming precisely when the tool is
  *    leaning on it — an abandoned post on a small domain may not be defendable.
- * 4. Overlap with an existing page matters whenever the site may already serve
- *    the term, including the unverified lexical case.
+ * 4. Overlap remains when coverage is lexical-only or unread. Positive exact
+ *    coverage settles that one question; it does not settle intent or fit.
  * 5. A term with no measured demand, or one on the GEO lane, has nothing to
  *    size the bet with; saying so is more useful than a confidence number.
  * 6. Commercial fit is always the reader's call: demand is not intent to buy.
@@ -76,13 +76,16 @@ export function keywordNextChecks(
   // it". The coverage union grows, and a negation silently grants the check to
   // every member added later — including ones where it would be wrong.
   //
-  // `gsc_query_sample_not_read` earns it for the opposite reason to the
-  // observed states: nobody checked, so the reader is the only one who can.
+  // Exact positive coverage settles overlap. Lexical-only, sample-miss, and
+  // unread states retain it because none proves which page should serve.
   if (
-    row.coverage === "observed_exact_strong" ||
-    row.coverage === "observed_exact_weak" ||
     row.coverage === "related_coverage_unverified" ||
-    row.coverage === "gsc_query_sample_not_read"
+    row.coverage === "not_observed_in_gsc_query_sample" ||
+    row.coverage === "gsc_query_sample_not_read" ||
+    row.coverage === "possible_existing_page" ||
+    row.coverage === "not_observed_in_bounded_inventory" ||
+    row.coverage === "inventory_unavailable" ||
+    row.coverage === "inventory_truncated"
   ) {
     checks.push("check_existing_page_overlap");
   }

@@ -58,8 +58,18 @@ describe("createKeywordCostAccumulator", () => {
       keyword_overview: 0.033,
       serp_organic: 0.004,
       bulk_ranks: 0,
+      bulk_traffic: 0,
     });
     expect(costs.spent()).toBe(0.037);
+  });
+
+  it("books Labs traffic spend as its own provider endpoint", () => {
+    const costs = createKeywordCostAccumulator();
+
+    costs.record("bulk_traffic", 0.012);
+
+    expect(costs.byEndpoint().bulk_traffic).toBe(0.012);
+    expect(costs.spent()).toBe(0.012);
   });
 
   /**
@@ -352,6 +362,7 @@ describe("reportKeywordRunCost", () => {
         keyword_overview: 0.017,
         serp_organic: 0.04,
         bulk_ranks: 0.031,
+        bulk_traffic: 0,
       },
       candidateCount: 150,
       serpSampled: 20,

@@ -15,6 +15,7 @@
     "./url-safety": "./src/url-safety/index.ts",
     "./gsc/url-inspection": "./src/gsc/url-inspection.ts",
     "./dataforseo/labs-traffic": "./src/dataforseo/labs-traffic.ts",
+    "./rdap/domain-registration": "./src/rdap/domain-registration.ts",
     "./crawl-limits": "./src/crawl/types.ts"
   },
   "scripts": {
@@ -23,6 +24,7 @@
   },
   "dependencies": {
     "@sf/contracts": "workspace:*",
+    "tldts": "catalog:",
     "undici": "catalog:"
   },
   "devDependencies": {

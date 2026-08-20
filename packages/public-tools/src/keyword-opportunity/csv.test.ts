@@ -1,10 +1,83 @@
 import { describe, expect, it } from "vitest";
 
-import { keywordOpportunityCsv, keywordOpportunityCsvFilename } from "./csv.ts";
+import {
+  keywordOpportunityCsv,
+  keywordOpportunityCsvFilename,
+  keywordOpportunityDisplayItems,
+  keywordOpportunityDisplayRows,
+} from "./csv.ts";
 import type {
+  KeywordOpportunityDecision,
+  KeywordOpportunityIncomplete,
   KeywordOpportunityResult,
   KeywordOpportunityRow,
+  KeywordOpportunitySignals,
+  KeywordOpportunityWithheld,
 } from "./types.ts";
+
+const V2_COLUMNS = [
+  "providerIntent",
+  "serpIntent",
+  "youngDomainState",
+  "youngDomain",
+  "youngDomainAgeMonths",
+  "lowOrganicTrafficDomainState",
+  "lowOrganicTrafficDomain",
+  "lowOrganicTrafficDomainEtv",
+  "communityResultState",
+  "communityResultDomain",
+  "communityResultPosition",
+  "aiOverviewAvailability",
+  "aiOverviewAssessment",
+  "aiOverviewDiscount",
+  "decisionReason",
+] as const;
+
+const YOUNG_DOMAIN_OBSERVATION = {
+  domain: "young.test",
+  registrationDate: "2026-01-02T00:00:00.000Z",
+  observedAt: "2026-08-20T00:00:00.000Z",
+  ageMonths: 7,
+} as const;
+
+const SIGNALS: KeywordOpportunitySignals = {
+  youngDomain: {
+    state: "observed",
+    observation: YOUNG_DOMAIN_OBSERVATION,
+  },
+  lowOrganicTrafficDomain: {
+    state: "observed",
+    observation: {
+      domain: "quiet.test",
+      organicEtv: 321,
+      threshold: 5_000,
+      marketCode: "US",
+      languageCode: "en",
+      observedAt: "2026-08-20T00:00:00.000Z",
+    },
+  },
+  communityResult: {
+    state: "observed",
+    observation: {
+      domain: "forum.test",
+      url: "https://forum.test/thread",
+      position: 4,
+      source: "provider_item_type",
+    },
+  },
+};
+
+function decision(
+  overrides: Partial<KeywordOpportunityDecision> = {},
+): KeywordOpportunityDecision {
+  return {
+    disposition: "eligible",
+    basis: "positive_signal_observed",
+    positiveSignals: ["young_domain"],
+    discounts: [],
+    ...overrides,
+  };
+}
 
 function row(
   overrides: Partial<KeywordOpportunityRow> = {},
@@ -42,6 +115,10 @@ function row(
 
 function result(
   rows: readonly KeywordOpportunityRow[],
+  options: {
+    readonly withheld?: readonly KeywordOpportunityWithheld[];
+    readonly incomplete?: readonly KeywordOpportunityIncomplete[];
+  } = {},
 ): KeywordOpportunityResult {
   return {
     availability: "available",
@@ -56,7 +133,10 @@ function result(
       stopReason: "budget",
     },
     rows,
-    withheld: [],
+    withheld: options.withheld ?? [],
+    ...(options.incomplete === undefined
+      ? {}
+      : { incomplete: options.incomplete }),
     clusters: [],
     funnel: {
       generated: 100,
@@ -75,6 +155,36 @@ function result(
   };
 }
 
+function incomplete(
+  keyword: string,
+  reason: KeywordOpportunityIncomplete["reason"],
+): KeywordOpportunityIncomplete {
+  const source = row({ keyword });
+  return {
+    keyword,
+    lane: source.lane,
+    discoveryBasis: source.discoveryBasis,
+    validation: source.validation,
+    coverage: source.coverage,
+    serp: { ...source.serp, status: "unavailable" },
+    serpIntent: null,
+    signals: {
+      ...SIGNALS,
+      communityResult: {
+        state: "unavailable",
+        observation: null,
+        reason: "provider_unavailable",
+      },
+    },
+    aiOverview: null,
+    reason,
+    decision: decision({
+      disposition: "incomplete",
+      basis: "signal_evidence_unavailable",
+    }),
+  };
+}
+
 function lines(csv: string): readonly string[] {
   return csv.replace(/^\uFEFF/, "").split("\r\n");
 }
@@ -85,11 +195,76 @@ describe("keywordOpportunityCsv", () => {
     const [header, first] = lines(csv);
 
     expect(header).toBe(
-      "market,language,lane,keyword,volume,difficulty,weakestDomainRank,weakestDomain,weakestPosition,aiOverviewObserved,coverage,supportingPageUrl,discoveryBasis,clusterId,checks",
+      `market,language,lane,keyword,volume,difficulty,weakestDomainRank,weakestDomain,weakestPosition,aiOverviewObserved,coverage,supportingPageUrl,discoveryBasis,clusterId,checks,${V2_COLUMNS.join(",")}`,
     );
-    expect(first).toBe(
-      "US,en,seo,travel espresso kit,1300,12,38,smallbrew.test,6,no,not_observed_in_gsc_query_sample,,site_proposition,cluster-1,read_page_one_intent|judge_commercial_fit",
+    expect(first?.split(",").slice(0, 15)).toEqual(
+      "US,en,seo,travel espresso kit,1300,12,38,smallbrew.test,6,no,not_observed_in_gsc_query_sample,,site_proposition,cluster-1,read_page_one_intent|judge_commercial_fit".split(
+        ",",
+      ),
     );
+    expect(first?.split(",").slice(15)).toEqual(V2_COLUMNS.map(() => ""));
+  });
+
+  it("exports public v2 provider, signal, AI Overview, and decision metadata without a raw-answer column", () => {
+    const csv = keywordOpportunityCsv(
+      result([
+        row({
+          validation: {
+            ...row().validation,
+            providerIntent: "commercial",
+          },
+          serpIntent: {
+            intent: "mixed",
+            source: "serp_top_ten_interpretation",
+            observedAt: "2026-08-20T00:00:00.000Z",
+            modelId: "model-1",
+            promptVersion: "serp-intent.v1",
+          },
+          signals: SIGNALS,
+          aiOverview: {
+            availability: "observed",
+            loadedAsync: true,
+            answerAssessment: "complete",
+            reason: "fully_answered",
+            modelId: "model-1",
+            promptVersion: "aio-answer.v1",
+          },
+          decision: decision({
+            positiveSignals: [
+              "young_domain",
+              "low_organic_traffic_domain",
+              "community_result",
+            ],
+            discounts: ["ai_overview_answer_discount"],
+          }),
+        }),
+      ]),
+    );
+    const [header, first] = lines(csv);
+    const columns = header?.split(",") ?? [];
+    const cells = first?.split(",") ?? [];
+    const v2Cells = V2_COLUMNS.map(
+      (column) => cells[columns.indexOf(column)] ?? "missing",
+    );
+
+    expect(v2Cells).toEqual([
+      "commercial",
+      "mixed",
+      "observed",
+      "young.test",
+      "7",
+      "observed",
+      "quiet.test",
+      "321",
+      "observed",
+      "forum.test",
+      "4",
+      "observed",
+      "complete",
+      "yes",
+      "positive_signal_observed",
+    ]);
+    expect(header).not.toContain("markdown");
   });
 
   it("starts with a byte-order mark and joins rows with CRLF, for Excel", () => {
@@ -149,6 +324,28 @@ describe("keywordOpportunityCsv", () => {
     expect(lines(csv)[1]).toContain("'=cmd|'/c calc'!A0");
   });
 
+  it("neutralises formula-leading v2 evidence values too", () => {
+    const csv = keywordOpportunityCsv(
+      result([
+        row({
+          signals: {
+            ...SIGNALS,
+            youngDomain: {
+              state: "observed",
+              observation: {
+                ...YOUNG_DOMAIN_OBSERVATION,
+                domain: "=malicious-domain",
+              },
+            },
+          },
+          decision: decision(),
+        }),
+      ]),
+    );
+
+    expect(lines(csv)[1]).toContain(",'=malicious-domain,");
+  });
+
   it("quotes cells that carry the delimiter", () => {
     const csv = keywordOpportunityCsv(
       result([row({ keyword: "espresso, but portable" })]),
@@ -156,7 +353,7 @@ describe("keywordOpportunityCsv", () => {
     expect(lines(csv)[1]).toContain('"espresso, but portable"');
   });
 
-  it("exports rows in the display order: SEO by volume descending, then GEO", () => {
+  it("exports eligible rows in the shared v2 display order", () => {
     // The file and the page are the same claim. A reader who downloads and
     // compares must not find the two disagreeing about order.
     const small = row({ keyword: "small" });
@@ -166,15 +363,185 @@ describe("keywordOpportunityCsv", () => {
     };
     const question = {
       ...row({ keyword: "a question", lane: "geo" as const }),
+      decision: decision({
+        positiveSignals: ["young_domain", "community_result"],
+      }),
       supportingPageUrl: "https://example.test/page",
     };
-    const csv = keywordOpportunityCsv(result([question, small, big]));
+    const csv = keywordOpportunityCsv(
+      result([
+        question,
+        { ...small, decision: decision() },
+        { ...big, decision: decision() },
+      ]),
+    );
 
     expect(
       lines(csv)
         .slice(1)
         .map((line) => line.split(",")[3]),
     ).toEqual(["big", "small", "a question"]);
+  });
+});
+
+describe("keywordOpportunityDisplayItems", () => {
+  it("orders dispositions, then gives excluded and incomplete deterministic keyword/reason order", () => {
+    const ordered = keywordOpportunityDisplayItems(
+      result([row({ keyword: "eligible" })], {
+        withheld: [
+          {
+            keyword: "Zulu",
+            discoveryBasis: "site_proposition",
+            reason: "volume_priced_at_zero",
+          },
+          {
+            keyword: "alpha",
+            discoveryBasis: "site_proposition",
+            reason: "already_covered",
+          },
+        ],
+        incomplete: [
+          incomplete("Zulu", "serp_evidence_unavailable"),
+          incomplete("alpha", "community_result_signal_unavailable"),
+        ],
+      }),
+    );
+
+    expect(
+      ordered.map(
+        (item) =>
+          `${item.disposition}:${item.candidate.keyword}:${"reason" in item.candidate ? item.candidate.reason : ""}`,
+      ),
+    ).toEqual([
+      "eligible:eligible:",
+      "excluded:alpha:already_covered",
+      "excluded:Zulu:volume_priced_at_zero",
+      "incomplete:alpha:community_result_signal_unavailable",
+      "incomplete:Zulu:serp_evidence_unavailable",
+    ]);
+  });
+
+  it("orders eligible rows by positive signal count descending", () => {
+    const one = row({ keyword: "one", decision: decision() });
+    const two = row({
+      keyword: "two",
+      decision: decision({
+        positiveSignals: ["young_domain", "community_result"],
+      }),
+    });
+
+    expect(keywordOpportunityDisplayRows([one, two]).map((item) => item.keyword)).toEqual([
+      "two",
+      "one",
+    ]);
+  });
+
+  it("keeps the page's SEO section before GEO even when GEO has more signals", () => {
+    const seo = row({
+      keyword: "seo opening",
+      lane: "seo",
+      validation: { ...row().validation, volume: 1 },
+      decision: decision({ positiveSignals: ["young_domain"] }),
+    });
+    const geo = row({
+      keyword: "geo opening",
+      lane: "geo",
+      validation: { ...row().validation, volume: 100_000 },
+      decision: decision({
+        positiveSignals: [
+          "young_domain",
+          "low_organic_traffic_domain",
+          "community_result",
+        ],
+      }),
+    });
+
+    expect(keywordOpportunityDisplayRows([geo, seo])).toEqual([seo, geo]);
+  });
+
+  it.each(["excluded", "incomplete"] as const)(
+    "fails closed when result.rows contains a %s decision",
+    (disposition) => {
+      const invalid = row({
+        keyword: "misclassified",
+        decision: decision({ disposition }),
+      });
+
+      expect(() =>
+        keywordOpportunityDisplayItems(result([invalid])),
+      ).toThrowError(
+        `KeywordOpportunityResult.rows contains a ${disposition} decision`,
+      );
+    },
+  );
+
+  it("puts an undiscounted eligible row before an AI-answer-discounted row", () => {
+    const undiscounted = row({
+      keyword: "undiscounted",
+      validation: { ...row().validation, volume: 10 },
+      decision: decision(),
+    });
+    const discounted = row({
+      keyword: "discounted",
+      validation: { ...row().validation, volume: 10_000 },
+      decision: decision({ discounts: ["ai_overview_answer_discount"] }),
+    });
+
+    expect(
+      keywordOpportunityDisplayRows([discounted, undiscounted]).map(
+        (item) => item.keyword,
+      ),
+    ).toEqual(["undiscounted", "discounted"]);
+  });
+
+  it("sorts measured volume descending and puts null last", () => {
+    const unpriced = row({
+      keyword: "unpriced",
+      validation: { ...row().validation, volume: null },
+      decision: decision(),
+    });
+    const low = row({
+      keyword: "low",
+      validation: { ...row().validation, volume: 10 },
+      decision: decision(),
+    });
+    const high = row({
+      keyword: "high",
+      validation: { ...row().validation, volume: 100 },
+      decision: decision(),
+    });
+
+    expect(
+      keywordOpportunityDisplayRows([unpriced, low, high]).map(
+        (item) => item.keyword,
+      ),
+    ).toEqual(["high", "low", "unpriced"]);
+  });
+
+  it("uses normalized keyword order and preserves input order for a normalized tie", () => {
+    const firstTie = row({ keyword: "  Ｂeta  ", decision: decision() });
+    const alpha = row({ keyword: "alpha", decision: decision() });
+    const secondTie = row({ keyword: "beta", decision: decision() });
+
+    expect(
+      keywordOpportunityDisplayRows([firstTie, secondTie, alpha]),
+    ).toEqual([alpha, firstTie, secondTie]);
+  });
+
+  it("keeps an old result bundle with no optional v2 fields exportable", () => {
+    const oldRow = row({
+      keyword: "legacy",
+      validation: { ...row().validation, volume: null },
+    });
+    const oldResult = result([oldRow]);
+
+    expect(keywordOpportunityDisplayItems(oldResult)).toEqual([
+      { disposition: "eligible", candidate: oldRow },
+    ]);
+    expect(lines(keywordOpportunityCsv(oldResult))).toHaveLength(2);
+    expect(lines(keywordOpportunityCsv(oldResult))[1]?.split(",").slice(15)).toEqual(
+      V2_COLUMNS.map(() => ""),
+    );
   });
 });
 

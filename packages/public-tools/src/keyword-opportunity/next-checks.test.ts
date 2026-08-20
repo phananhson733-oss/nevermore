@@ -144,28 +144,20 @@ describe("keywordNextChecks", () => {
     ).not.toContain("verify_weak_site_breakthrough");
   });
 
-  it("asks about overlap whenever Search Console saw the site on the query", () => {
-    // Every coverage state except the not-observed one means the site may
-    // already serve the term, including the unverified lexical case — building
-    // a second page for it would split the site against itself.
+  it("removes only the overlap decision that positive coverage settled", () => {
     for (const coverage of [
       "observed_exact_strong",
       "observed_exact_weak",
-      "related_coverage_unverified",
     ] as const) {
-      expect(
-        keywordNextChecks(row({ coverage })),
-        `missing overlap check for ${coverage}`,
-      ).toContain("check_existing_page_overlap");
+      const checks = keywordNextChecks(row({ coverage }));
+      expect(checks, coverage).not.toContain("check_existing_page_overlap");
+      expect(checks, coverage).toContain("read_page_one_intent");
+      expect(checks, coverage).toContain("judge_commercial_fit");
     }
-  });
 
-  it("skips the overlap check when the query never appeared in the sample", () => {
-    // Absence from an anonymised sample is not evidence of absence, but it is
-    // also not a reason to send the reader hunting for a page.
     expect(
-      keywordNextChecks(row({ coverage: "not_observed_in_gsc_query_sample" })),
-    ).not.toContain("check_existing_page_overlap");
+      keywordNextChecks(row({ coverage: "related_coverage_unverified" })),
+    ).toContain("check_existing_page_overlap");
   });
 
   it("sends the reader to check overlap themselves when nobody read the sample", () => {
@@ -177,6 +169,20 @@ describe("keywordNextChecks", () => {
     expect(
       keywordNextChecks(row({ coverage: "gsc_query_sample_not_read" })),
     ).toContain("check_existing_page_overlap");
+  });
+
+  it("retains overlap for every sitemap inventory state that is not positive GSC evidence", () => {
+    for (const coverage of [
+      "possible_existing_page",
+      "not_observed_in_bounded_inventory",
+      "inventory_unavailable",
+      "inventory_truncated",
+    ] as const) {
+      expect(
+        keywordNextChecks(row({ coverage })),
+        `missing overlap check for ${coverage}`,
+      ).toContain("check_existing_page_overlap");
+    }
   });
 
   it("calls a GEO row an early bet even when demand data exists", () => {
@@ -296,9 +302,7 @@ describe("keywordNextChecks", () => {
     ]);
   });
 
-  it("returns the minimal pair for a fully evidenced, uncovered SEO row", () => {
-    // Everything that could be observed was observed, so the only work left is
-    // the judgement the tool refuses to make.
+  it("retains overlap because a GSC sample miss does not prove page absence", () => {
     expect(
       keywordNextChecks(
         row({
@@ -308,12 +312,14 @@ describe("keywordNextChecks", () => {
           coverage: "not_observed_in_gsc_query_sample",
         }),
       ),
-    ).toEqual(["read_page_one_intent", "judge_commercial_fit"]);
+    ).toEqual([
+      "read_page_one_intent",
+      "check_existing_page_overlap",
+      "judge_commercial_fit",
+    ]);
   });
 
-  it("keeps the breakthrough check ahead of overlap and the commercial call", () => {
-    // Order encodes what the reader is missing, not severity: confirm the SERP
-    // claim before deciding whether an existing page already covers it.
+  it("keeps remaining intent, breakthrough, and commercial decisions after coverage settles overlap", () => {
     const checks = keywordNextChecks(
       row({
         lane: "seo",
@@ -325,7 +331,6 @@ describe("keywordNextChecks", () => {
     expect(checks).toEqual([
       "read_page_one_intent",
       "verify_weak_site_breakthrough",
-      "check_existing_page_overlap",
       "judge_commercial_fit",
     ]);
   });
@@ -335,6 +340,7 @@ describe("keywordNextChecks", () => {
     first.push("judge_commercial_fit");
     expect(keywordNextChecks(row())).toEqual([
       "read_page_one_intent",
+      "check_existing_page_overlap",
       "judge_commercial_fit",
     ]);
   });

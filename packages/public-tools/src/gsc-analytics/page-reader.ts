@@ -50,9 +50,9 @@ interface PagedRead<T> {
 /**
  * Shared paging loop.
  *
- * `map` returns null for a row that cannot be attributed — a missing dimension
- * key. Keying such a row on `undefined` would invent an entity that collides
- * with every other malformed row in the set.
+ * `map` returns null for a row that cannot be attributed — a missing or empty
+ * dimension key. Keying such a row on `undefined` or an empty string would
+ * invent an entity that collides with every other malformed row in the set.
  */
 async function readPaged<T>(
   client: GscQueryClient,
@@ -143,7 +143,14 @@ export function readQueryPageRows(
     (keys, row) => {
       const query = keys[0];
       const page = keys[1];
-      if (query === undefined || page === undefined) return null;
+      if (
+        query === undefined ||
+        page === undefined ||
+        query.trim() === "" ||
+        page.trim() === ""
+      ) {
+        return null;
+      }
       return {
         query,
         page,

@@ -9,6 +9,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it } from "vitest";
 import type {
   KeywordOpportunityFunnel,
+  KeywordOpportunityIncomplete,
   KeywordOpportunityResult,
   KeywordOpportunityRow,
 } from "@sf/public-tools/keyword-opportunity/types";
@@ -21,6 +22,8 @@ import {
   KeywordMapResults,
   funnelGridDividesEvenly,
 } from "./keyword-map-results.tsx";
+import { KeywordMapArticle } from "./keyword-map-article.tsx";
+import { getConnectedToolContent } from "./connected-tool-content.ts";
 
 const FUNNEL: KeywordOpportunityFunnel = {
   generated: 150,
@@ -66,6 +69,148 @@ function seoRow(keyword: string): KeywordOpportunityRow {
   };
 }
 
+function v2SeoRow(keyword: string): KeywordOpportunityRow {
+  const base = seoRow(keyword);
+  return {
+    ...base,
+    validation: {
+      ...base.validation,
+      providerIntent: "commercial",
+    },
+    serp: {
+      ...base.serp,
+      status: "complete",
+      failureReason: null,
+      observedAt: "2026-08-20T08:00:00.000Z",
+      organicResults: [
+        {
+          position: 2,
+          domain: "new.example",
+          url: "https://new.example/guide",
+          title: "New clinic billing guide",
+        },
+        {
+          position: 5,
+          domain: "reddit.com",
+          url: "https://reddit.com/r/dentistry/comments/billing",
+          title: "Clinic billing discussion",
+        },
+      ],
+    },
+    serpIntent: {
+      intent: "informational",
+      source: "serp_top_ten_interpretation",
+      observedAt: "2026-08-20T08:00:00.000Z",
+      modelId: "gpt-5.4-mini",
+      promptVersion: "keyword_serp_interpretation.v1",
+    },
+    signals: {
+      youngDomain: {
+        state: "observed",
+        observation: {
+          domain: "new.example",
+          registrationDate: "2025-07-01T00:00:00.000Z",
+          observedAt: "2026-08-20T08:00:00.000Z",
+          ageMonths: 13,
+        },
+      },
+      lowOrganicTrafficDomain: {
+        state: "observed",
+        observation: {
+          domain: "tiny.example",
+          organicEtv: 420,
+          threshold: 5_000,
+          marketCode: "US",
+          languageCode: "en",
+          observedAt: "2026-08-20T08:00:00.000Z",
+        },
+      },
+      communityResult: {
+        state: "observed",
+        observation: {
+          domain: "reddit.com",
+          url: "https://reddit.com/r/dentistry/comments/billing",
+          position: 5,
+          source: "domain_fallback",
+        },
+      },
+    },
+    aiOverview: {
+      availability: "observed",
+      loadedAsync: true,
+      answerAssessment: "complete",
+      reason: null,
+      modelId: "gpt-5.4-mini",
+      promptVersion: "keyword_serp_interpretation.v1",
+    },
+    decision: {
+      disposition: "eligible",
+      basis: "positive_signal_observed",
+      positiveSignals: [
+        "young_domain",
+        "low_organic_traffic_domain",
+        "community_result",
+      ],
+      discounts: ["ai_overview_answer_discount"],
+    },
+    coverage: "possible_existing_page",
+    nextChecks: ["read_page_one_intent", "judge_commercial_fit"],
+  };
+}
+
+function incomplete(
+  keyword: string,
+  reason: KeywordOpportunityIncomplete["reason"],
+): KeywordOpportunityIncomplete {
+  const unavailable = {
+    state: "unavailable" as const,
+    observation: null,
+    reason: "fixture_unavailable",
+  };
+  return {
+    keyword,
+    lane: "seo",
+    discoveryBasis: "traditional_expansion",
+    validation: {
+      availability: "available",
+      volume: 100,
+      difficulty: 20,
+      providerIntent: "informational",
+      intent: "informational",
+      serpFeatures: [],
+    },
+    coverage: "not_observed_in_gsc_query_sample",
+    serp: {
+      status: "unavailable",
+      failureReason: "provider_unavailable",
+      observedAt: null,
+      organicResults: [],
+      verdict: "no_serp_evidence",
+      weakestTopTenDomainRank: null,
+      weakestTopTenDomain: null,
+      weakestTopTenPosition: null,
+      topTenDomains: [],
+      topTenDomainRanks: [],
+      pageOneItemTypes: null,
+      isEstimate: false,
+    },
+    serpIntent: null,
+    signals: {
+      youngDomain: unavailable,
+      lowOrganicTrafficDomain: unavailable,
+      communityResult: unavailable,
+    },
+    aiOverview: null,
+    reason,
+    decision: {
+      disposition: "incomplete",
+      basis: "signal_evidence_unavailable",
+      positiveSignals: [],
+      discounts: [],
+    },
+  };
+}
+
 function result(
   overrides: Partial<KeywordOpportunityResult> = {},
 ): KeywordOpportunityResult {
@@ -75,7 +220,7 @@ function result(
     languageCode: "en",
     context: {
       siteUrl: "https://acme.test",
-      pagesFetched: 14,
+      pagesFetched: 20,
       productPagesFetched: 3,
       propositions: [
         {
@@ -84,7 +229,7 @@ function result(
         },
       ],
       contextSufficient: true,
-      stopReason: "page_budget_reached",
+      stopReason: "max_urls",
     },
     rows: [seoRow("dental billing software"), seoRow("dental billing service")],
     withheld: [],
@@ -142,6 +287,26 @@ function tileFor(markup: string, label: string): string {
   return markup.slice(start, at);
 }
 
+function tableRowFor(markup: string, keyword: string): string {
+  const at = markup.indexOf(keyword);
+  expect(at, `no row for ${keyword}`).toBeGreaterThan(-1);
+  const start = markup.lastIndexOf("<tr", at);
+  const end = markup.indexOf("</tr>", at);
+  expect(start, `${keyword} is not inside a row`).toBeGreaterThan(-1);
+  expect(end, `${keyword} row never closes`).toBeGreaterThan(at);
+  return markup.slice(start, end);
+}
+
+function detailsFor(markup: string, label: string): string {
+  const at = markup.indexOf(asRendered(label));
+  expect(at, `no details group labelled ${label}`).toBeGreaterThan(-1);
+  const start = markup.lastIndexOf("<details", at);
+  const end = markup.indexOf("</details>", at);
+  expect(start, `${label} is not inside details`).toBeGreaterThan(-1);
+  expect(end, `${label} details never closes`).toBeGreaterThan(at);
+  return markup.slice(start, end);
+}
+
 describe("keyword map results", () => {
   it.each(["en", "zh"] as const)("renders a full run in %s", (locale) => {
     const markup = render(locale);
@@ -152,6 +317,191 @@ describe("keyword map results", () => {
     // the data. The namespace prefix appearing at all IS the hole.
     expect(markup).not.toContain("tools.keywordMap.");
   });
+
+  it.each(["en", "zh"] as const)(
+    "states the 20-page context boundary and the exact early stop in %s",
+    (locale) => {
+      const markup = render(locale);
+      const expected =
+        locale === "en"
+          ? [
+              "bounded context of up to 20 pages",
+              "The 20-page context limit was reached",
+            ]
+          : ["最多 20 个页面的有限上下文", "已触及 20 页上下文上限"];
+      for (const copy of expected) expect(markup).toContain(copy);
+
+      expect(markup).not.toContain("covered the whole site");
+      expect(markup).not.toContain("已抓完整站");
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders provider facts and separately provenanced SERP inference in %s",
+    (locale) => {
+      const row = v2SeoRow("intent evidence keyword");
+      const markup = render(locale, result({ rows: [row] }));
+      const tableRow = tableRowFor(markup, row.keyword);
+      const headings =
+        locale === "en"
+          ? ["Provider intent", "SERP interpreted intent"]
+          : ["数据源意图", "SERP 解读意图"];
+      const evidence =
+        locale === "en"
+          ? [
+              "Commercial",
+              "Informational",
+              "gpt-5.4-mini",
+              "keyword_serp_interpretation.v1",
+            ]
+          : [
+              "商业调研型",
+              "信息型",
+              "gpt-5.4-mini",
+              "keyword_serp_interpretation.v1",
+            ];
+      for (const copy of headings) expect(markup).toContain(copy);
+      for (const copy of evidence) expect(tableRow).toContain(copy);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "does not collapse missing provider and inferred intent in %s",
+    (locale) => {
+      const base = v2SeoRow("intent unavailable keyword");
+      const row = {
+        ...base,
+        validation: {
+          ...base.validation,
+          providerIntent: null,
+          intent: null,
+        },
+        serpIntent: null,
+      };
+      const tableRow = tableRowFor(
+        render(locale, result({ rows: [row] })),
+        row.keyword,
+      );
+      const unavailable = locale === "en" ? "Not returned" : "未返回";
+      const inference = locale === "en" ? "Unavailable" : "不可用";
+
+      expect(tableRow).toContain(unavailable);
+      expect(tableRow).toContain(inference);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "shows the three signals with their raw evidence in %s",
+    (locale) => {
+      const row = v2SeoRow("three signals keyword");
+      const tableRow = tableRowFor(
+        render(locale, result({ rows: [row] })),
+        row.keyword,
+      );
+      const expected =
+        locale === "en"
+          ? [
+              "Young domain",
+              "registered 2025-07-01",
+              "13 months old",
+              "Low organic traffic domain",
+              "ETV 420",
+              "threshold 5,000",
+              "Community result",
+              "Domain fallback",
+              "reddit.com",
+              "#5",
+              "https://reddit.com/r/dentistry/comments/billing",
+              "Clinic billing discussion",
+            ]
+          : [
+              "年轻域名",
+              "注册于 2025-07-01",
+              "站龄 13 个月",
+              "低自然搜索流量域名",
+              "ETV 420",
+              "阈值 5,000",
+              "社区结果",
+              "域名回退识别",
+              "reddit.com",
+              "第 5 位",
+              "https://reddit.com/r/dentistry/comments/billing",
+              "Clinic billing discussion",
+            ];
+      for (const copy of expected) expect(tableRow).toContain(copy);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "keeps not-observed and unavailable signal states distinct in %s",
+    (locale) => {
+      const base = v2SeoRow("mixed signal states keyword");
+      const row = {
+        ...base,
+        signals: {
+          youngDomain: { state: "not_observed" as const, observation: null },
+          lowOrganicTrafficDomain: {
+            state: "unavailable" as const,
+            observation: null,
+            reason: "site_rank_tier_unavailable",
+          },
+          communityResult: {
+            state: "not_observed" as const,
+            observation: null,
+          },
+        },
+      };
+      const tableRow = tableRowFor(
+        render(locale, result({ rows: [row] })),
+        row.keyword,
+      );
+      const expected =
+        locale === "en"
+          ? ["Not observed", "Unavailable", "Site rank tier unavailable"]
+          : ["未观测到", "不可用", "站点权重层级不可用"];
+      for (const copy of expected) expect(tableRow).toContain(copy);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders bounded-inventory coverage as human copy in %s",
+    (locale) => {
+      const expected = {
+        en: {
+          possible_existing_page:
+            "A sitemap URL looks related; verify the page",
+          not_observed_in_bounded_inventory:
+            "Not found in this bounded sitemap inventory",
+          inventory_unavailable: "Sitemap inventory unavailable",
+          inventory_truncated: "Only a partial sitemap inventory was checked",
+        },
+        zh: {
+          possible_existing_page: "Sitemap 中有疑似相关页面，需核对",
+          not_observed_in_bounded_inventory:
+            "本次有限 Sitemap 页面库中未发现",
+          inventory_unavailable: "Sitemap 页面库不可用",
+          inventory_truncated: "只检查了部分 Sitemap 页面库",
+        },
+      } as const;
+      const states = Object.keys(expected[locale]) as readonly (keyof (typeof expected)[typeof locale])[];
+      const markup = render(
+        locale,
+        result({
+          rows: states.map((coverage, index) => ({
+            ...seoRow(`inventory coverage ${String(index)}`),
+            coverage,
+          })),
+        }),
+      );
+
+      for (const coverage of states) {
+        expect(markup, coverage).toContain(
+          asRendered(expected[locale][coverage]),
+        );
+        expect(markup, coverage).not.toContain(coverage);
+      }
+    },
+  );
 
   it("says the coverage sample was never read instead of counting zero", () => {
     // The single fact this report exists to protect. `null` is "nobody looked";
@@ -282,6 +632,110 @@ describe("keyword map results", () => {
       asRendered(en.tools.keywordMap.lane.geo.title),
     );
   });
+
+  it.each(["en", "zh"] as const)(
+    "renders incomplete candidates as their own exact-reason groups in %s",
+    (locale) => {
+      const value = result({
+        rows: [],
+        incomplete: [
+          incomplete("serp missing one", "serp_evidence_unavailable"),
+          incomplete("serp missing two", "serp_evidence_unavailable"),
+          incomplete(
+            "registration missing",
+            "young_domain_signal_unavailable",
+          ),
+        ],
+        funnel: { ...FUNNEL, shown: 0 },
+      });
+      const markup = render(locale, value);
+      const copy = locale === "en" ? en : zh;
+
+      expect(markup).toContain(
+        asRendered(copy.tools.keywordMap.incompleteTitle),
+      );
+      expect(markup).toContain(
+        asRendered(copy.tools.keywordMap.incompleteIntro),
+      );
+      expect(markup).toContain(
+        asRendered(
+          copy.tools.keywordMap.incomplete.serp_evidence_unavailable,
+        ),
+      );
+      expect(markup).toContain(
+        asRendered(
+          copy.tools.keywordMap.incomplete.young_domain_signal_unavailable,
+        ),
+      );
+      const serpGroup = detailsFor(
+        markup,
+        copy.tools.keywordMap.incomplete.serp_evidence_unavailable,
+      );
+      expect(serpGroup).toContain(">2</span>");
+      expect(serpGroup).toContain("serp missing one");
+      expect(serpGroup).toContain("serp missing two");
+      expect(serpGroup).not.toContain("registration missing");
+      expect(serpGroup).not.toContain("<button");
+      expect(markup).toContain("serp missing one");
+      expect(markup).toContain("serp missing two");
+      expect(markup).toContain("registration missing");
+      expect(markup).not.toContain(
+        asRendered(copy.tools.keywordMap.emptyTitle),
+      );
+      expect(markup).toContain(locale === "en" ? "3 candidates" : "3 个候选词");
+      expect(markup).toContain(
+        locale === "en"
+          ? "Retry the unchanged run after the missing evidence source recovers"
+          : "缺失的证据源恢复后，按原条件重试本次运行",
+      );
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "separates eligible, excluded and incomplete totals in %s",
+    (locale) => {
+      const markup = render(
+        locale,
+        result({
+          rows: [v2SeoRow("eligible keyword")],
+          withheld: [
+            {
+              keyword: "zero keyword",
+              discoveryBasis: "traditional_expansion",
+              reason: "volume_priced_at_zero",
+            },
+            {
+              keyword: "negative signals keyword",
+              discoveryBasis: "site_proposition",
+              reason: "all_signals_not_observed",
+            },
+          ],
+          incomplete: [
+            incomplete("incomplete keyword", "serp_evidence_unavailable"),
+          ],
+        }),
+      );
+      const expected =
+        locale === "en"
+          ? [
+              "Eligible opportunities",
+              "1 candidate",
+              "Excluded",
+              "2 candidates",
+              "Detection incomplete",
+              "Retry guidance",
+            ]
+          : [
+              "符合条件的机会",
+              "1 个候选词",
+              "已排除",
+              "2 个候选词",
+              "检测未完成",
+              "重试建议",
+            ];
+      for (const copy of expected) expect(markup).toContain(copy);
+    },
+  );
 
   it("does not say the gates dropped candidates a gate never saw", () => {
     // Empty because every gate ran and rejected everything is a finding.
@@ -511,6 +965,132 @@ describe("keyword map results", () => {
     expect(render("en")).toContain("—");
   });
 
+  it("lets observed v2 AI Overview evidence override unreported item types", () => {
+    const row = {
+      ...seoRow("evidence says shown"),
+      aiOverview: {
+        availability: "observed" as const,
+        loadedAsync: null,
+        answerAssessment: "unavailable" as const,
+        reason: "content_unavailable",
+        modelId: null,
+        promptVersion: null,
+      },
+    };
+    const markup = render("en", result({ rows: [row] }));
+
+    expect(tableRowFor(markup, row.keyword)).toContain(
+      asRendered(en.tools.keywordMap.aio.shown),
+    );
+  });
+
+  it.each(["en", "zh"] as const)(
+    "separates AI Overview availability from answer assessment and keeps complete as a discount in %s",
+    (locale) => {
+      const row = v2SeoRow("aio discounted but eligible");
+      const tableRow = tableRowFor(
+        render(locale, result({ rows: [row] })),
+        row.keyword,
+      );
+      const expected =
+        locale === "en"
+          ? [
+              "Provider availability",
+              "Observed on page one",
+              "Answer assessment",
+              "Complete answer",
+              "Ranking discount",
+              "AI Overview already answers the query",
+            ]
+          : [
+              "数据源可用性",
+              "第一页已观测到",
+              "答案评估",
+              "完整回答",
+              "排序折扣",
+              "AI Overview 已完整回答查询",
+            ];
+      for (const copy of expected) expect(tableRow).toContain(copy);
+      expect(tableRow).not.toContain(locale === "en" ? "Excluded" : "已排除");
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders not-observed AI provider evidence and unavailable assessment separately in %s",
+    (locale) => {
+      const base = v2SeoRow("aio not observed keyword");
+      const row = {
+        ...base,
+        aiOverview: {
+          availability: "not_observed" as const,
+          loadedAsync: null,
+          answerAssessment: "unavailable" as const,
+          reason: "interpretation_unavailable",
+          modelId: null,
+          promptVersion: null,
+        },
+        decision: { ...base.decision!, discounts: [] },
+      };
+      const tableRow = tableRowFor(
+        render(locale, result({ rows: [row] })),
+        row.keyword,
+      );
+
+      expect(tableRow).toContain(
+        locale === "en" ? "Not observed on page one" : "第一页未观测到",
+      );
+      expect(tableRow).toContain(locale === "en" ? "Unavailable" : "不可用");
+      expect(tableRow).not.toContain(
+        locale === "en" ? "Ranking discount" : "排序折扣",
+      );
+    },
+  );
+
+  it("lets not-observed v2 AI evidence override a legacy AI item type", () => {
+    const base = seoRow("evidence says absent");
+    const row = {
+      ...base,
+      serp: { ...base.serp, pageOneItemTypes: ["ai_overview"] },
+      aiOverview: {
+        availability: "not_observed" as const,
+        loadedAsync: null,
+        answerAssessment: "unavailable" as const,
+        reason: null,
+        modelId: null,
+        promptVersion: null,
+      },
+    };
+    const markup = render("en", result({ rows: [row] }));
+    const tableRow = tableRowFor(markup, row.keyword);
+
+    expect(tableRow).toContain(asRendered(en.tools.keywordMap.aio.notShown));
+    expect(tableRow).not.toContain(asRendered(en.tools.keywordMap.aio.shown));
+  });
+
+  it("renders unavailable v2 AI evidence as unknown despite a legacy AI item type", () => {
+    const base = seoRow("evidence unavailable");
+    const row = {
+      ...base,
+      serp: { ...base.serp, pageOneItemTypes: ["ai_overview"] },
+      aiOverview: {
+        availability: "unavailable" as const,
+        loadedAsync: null,
+        answerAssessment: "unavailable" as const,
+        reason: "item_types_unreported",
+        modelId: null,
+        promptVersion: null,
+      },
+    };
+    const markup = render("en", result({ rows: [row] }));
+    const tableRow = tableRowFor(markup, row.keyword);
+
+    expect(tableRow).toContain("—");
+    expect(tableRow).not.toContain(asRendered(en.tools.keywordMap.aio.shown));
+    expect(tableRow).not.toContain(
+      asRendered(en.tools.keywordMap.aio.notShown),
+    );
+  });
+
   it("hoists checks shared by every row and keeps the rest in the rows", () => {
     const shared = "read_page_one_intent" as const;
     const own = "judge_commercial_fit" as const;
@@ -523,6 +1103,7 @@ describe("keyword map results", () => {
     const sharedCopy = asRendered(en.tools.keywordMap.checks[shared]);
     expect(markup.indexOf(sharedCopy)).toBe(markup.lastIndexOf(sharedCopy));
     expect(markup).toContain(asRendered(en.tools.keywordMap.checks[own]));
+    expect(markup).toContain("Remaining decisions");
   });
 
   it("offers a seeded re-run only for the terms the budget never reached", () => {
@@ -564,4 +1145,96 @@ describe("keyword map results", () => {
       asRendered(en.tools.keywordMap.exportCsv),
     );
   });
+
+  it.each(["en", "zh"] as const)(
+    "keeps the lexical-only grouping limitation visible in %s",
+    (locale) => {
+      const markup = render(
+        locale,
+        result({
+          clusters: [
+            {
+              id: "grouped",
+              label: "billing group",
+              keywords: ["billing one", "billing two"],
+            },
+          ],
+        }),
+      );
+      expect(markup).toContain(
+        locale === "en"
+          ? "Grouping is lexical"
+          : "分组只基于词面重合",
+      );
+      expect(markup).toContain(
+        locale === "en"
+          ? "does not prove page-one overlap"
+          : "不能证明第一页结果重合",
+      );
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "documents full explicit-zero-exception SERP coverage without a fixed duration or cost cap in %s",
+    (locale) => {
+      const content = getConnectedToolContent(
+        locale,
+        "low-competition-keywords",
+      );
+      const serialized = JSON.stringify(content);
+      const expected =
+        locale === "en"
+          ? [
+              "up to 20 pages",
+              "Every candidate except an explicit-zero term",
+              "parallel waves of up to ten",
+              "provider availability",
+              "answer assessment",
+              "ranking discount, never a veto",
+            ]
+          : [
+              "最多 20 个页面",
+              "除明确核价为零以外的每个候选词",
+              "每波最多 10 个并行",
+              "数据源可用性",
+              "答案评估",
+              "只作为排序折扣，绝不作为否决条件",
+            ];
+      for (const copy of expected) expect(serialized).toContain(copy);
+      for (const stale of [
+        "Up to twenty terms",
+        "per-run cost ceiling",
+        "one at a time",
+        "roughly two minutes",
+        "最多二十个词",
+        "单次成本上限",
+        "逐个打开",
+        "大约两分钟",
+      ]) {
+        expect(serialized).not.toContain(stale);
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "keeps the long-form method current and has no Blog Agent handoff in %s",
+    (locale) => {
+      const markup = renderToStaticMarkup(
+        <KeywordMapArticle locale={locale} />,
+      );
+      expect(markup).toContain(
+        locale === "en"
+          ? "Every candidate except an explicit-zero term gets a real page one"
+          : "除明确核价为零外，每个候选词都检查真实第一页",
+      );
+      expect(markup).toContain(
+        locale === "en"
+          ? "complete answer lowers ordering; it does not exclude the keyword"
+          : "完整回答只会降低排序，不会排除关键词",
+      );
+      expect(markup).not.toContain("Blog Agent");
+      expect(markup).not.toContain("handoff");
+      expect(markup).not.toContain("写作 Agent");
+    },
+  );
 });

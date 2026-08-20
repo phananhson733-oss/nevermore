@@ -22,12 +22,18 @@ describe("keyword LLM usage sink", () => {
       requestCount: 1,
       retryCount: 0,
     });
+    sink.add("interpret_serp_evidence", {
+      inputTokens: 700,
+      outputTokens: 180,
+      requestCount: 2,
+      retryCount: 1,
+    });
 
     expect(sink.total()).toEqual({
-      inputTokens: 2100,
-      outputTokens: 420,
-      requestCount: 3,
-      retryCount: 1,
+      inputTokens: 2800,
+      outputTokens: 600,
+      requestCount: 5,
+      retryCount: 2,
     });
   });
 

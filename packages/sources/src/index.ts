@@ -211,6 +211,31 @@ export type {
   DataForSeoSerpOrganicRow,
 } from "./dataforseo/keyword-metrics.ts";
 export {
+  bulkTrafficEstimation,
+  labsLanguageForMarket,
+  normalizeTrafficDomain,
+  DATAFORSEO_BULK_TRAFFIC_ESTIMATION_LIVE_URL,
+  MAX_DATAFORSEO_BULK_TRAFFIC_TARGETS_PER_TASK,
+} from "./dataforseo/labs-traffic.ts";
+export type {
+  BulkTrafficEstimationOptions,
+  BulkTrafficEstimationResult,
+  DomainTrafficRow,
+} from "./dataforseo/labs-traffic.ts";
+export {
+  createDomainRegistrationResolver,
+  DEFAULT_RDAP_MAX_RESPONSE_BYTES,
+  DEFAULT_RDAP_REQUEST_TIMEOUT_MS,
+  IANA_RDAP_DNS_BOOTSTRAP_URL,
+  normalizeRdapDomain,
+} from "./rdap/domain-registration.ts";
+export type {
+  DomainRegistrationEvidence,
+  DomainRegistrationResolver,
+  DomainRegistrationResolverOptions,
+  DomainRegistrationUnavailableReason,
+} from "./rdap/domain-registration.ts";
+export {
   createDataForSeoBacklinksAdapter,
   createDataForSeoBacklinksScope,
   dataForSeoBacklinksSnapshotSummary,

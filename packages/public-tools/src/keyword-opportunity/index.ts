@@ -38,7 +38,13 @@ export {
   keywordNextChecks,
 } from "./next-checks.ts";
 export type { KeywordOpportunityCheckInput } from "./next-checks.ts";
-export { keywordOpportunityCsv, keywordOpportunityCsvFilename } from "./csv.ts";
+export {
+  keywordOpportunityCsv,
+  keywordOpportunityCsvFilename,
+  keywordOpportunityDisplayItems,
+  keywordOpportunityDisplayRows,
+} from "./csv.ts";
+export type { KeywordOpportunityDisplayItem } from "./csv.ts";
 export {
   KEYWORD_CLUSTER_JACCARD,
   clusterKeywords,

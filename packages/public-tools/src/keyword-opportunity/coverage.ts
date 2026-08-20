@@ -1,5 +1,5 @@
-// @input  -- the site's own Search Console query rows and its crawled page titles
-// @output -- a four-state read on whether the site already serves a candidate
+// @input  -- Search Console query/page rows, crawled headings, and bounded sitemap URLs
+// @output -- an evidence-qualified read with the measured supporting page when known
 // @pos    -- stops the tool recommending pages the site already has
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -30,10 +30,24 @@ export interface KeywordCoverageQueryRow {
   readonly position: number;
 }
 
+/** One positive Search Console query-page observation. */
+export interface KeywordCoverageQueryPageRow extends KeywordCoverageQueryRow {
+  readonly page: string;
+}
+
 /** One crawled page reduced to the tokens it visibly targets. */
 export interface KeywordCoveragePage {
   readonly url: string;
   readonly tokens: ReadonlySet<string>;
+}
+
+/** L1 URL inventory carried from the guarded sitemap crawl. */
+export interface KeywordCoverageInventory {
+  readonly urls: readonly string[];
+  readonly fetched: boolean;
+  readonly complete: boolean;
+  readonly documentsRead: number;
+  readonly truncationReasons: readonly string[];
 }
 
 export interface KeywordCoverageObservation {
@@ -58,6 +72,50 @@ interface ExactObservation {
    * opening from the reader for the rest of the run.
    */
   readonly weightedPosition: number;
+  /** The page Search Console positively attributed to this exact query. */
+  readonly supportingPageUrl: string | null;
+}
+
+interface QueryPageTotal {
+  readonly impressions: number;
+  readonly weighted: number;
+}
+
+function supportingPagesByQuery(
+  rows: readonly KeywordCoverageQueryPageRow[],
+): ReadonlyMap<string, string> {
+  const totals = new Map<string, Map<string, QueryPageTotal>>();
+  for (const row of rows) {
+    if (
+      !Number.isFinite(row.impressions) ||
+      row.impressions <= 0 ||
+      !Number.isFinite(row.position) ||
+      row.page.trim() === ""
+    ) {
+      continue;
+    }
+    const key = normalizeQuery(row.query);
+    if (key === "") continue;
+    const pages = totals.get(key) ?? new Map<string, QueryPageTotal>();
+    const current = pages.get(row.page) ?? { impressions: 0, weighted: 0 };
+    pages.set(row.page, {
+      impressions: current.impressions + row.impressions,
+      weighted: current.weighted + row.position * row.impressions,
+    });
+    totals.set(key, pages);
+  }
+
+  const supportingPages = new Map<string, string>();
+  for (const [key, pages] of totals) {
+    const winner = [...pages.entries()].sort(
+      ([urlA, a], [urlB, b]) =>
+        b.impressions - a.impressions ||
+        a.weighted / a.impressions - b.weighted / b.impressions ||
+        (urlA < urlB ? -1 : urlA > urlB ? 1 : 0),
+    )[0];
+    if (winner !== undefined) supportingPages.set(key, winner[0]);
+  }
+  return supportingPages;
 }
 
 /**
@@ -65,6 +123,7 @@ interface ExactObservation {
  */
 export function buildKeywordCoverageIndex(
   rows: readonly KeywordCoverageQueryRow[],
+  queryPageRows: readonly KeywordCoverageQueryPageRow[] = [],
 ): ReadonlyMap<string, ExactObservation> {
   const totals = new Map<string, { impressions: number; weighted: number }>();
   for (const row of rows) {
@@ -77,11 +136,13 @@ export function buildKeywordCoverageIndex(
     });
   }
 
+  const supportingPages = supportingPagesByQuery(queryPageRows);
   const index = new Map<string, ExactObservation>();
   for (const [key, total] of totals) {
     index.set(key, {
       impressions: total.impressions,
       weightedPosition: total.weighted / total.impressions,
+      supportingPageUrl: supportingPages.get(key) ?? null,
     });
   }
   return index;
@@ -103,6 +164,48 @@ function relatedPage(
   return null;
 }
 
+interface InventoryPageMatch {
+  readonly url: string | null;
+  readonly malformedUrlObserved: boolean;
+}
+
+/** Match only a safely decoded URL pathname; host and query text are ignored. */
+function relatedInventoryPage(
+  keyword: string,
+  urls: readonly string[],
+): InventoryPageMatch {
+  const wanted = keywordTokens(keyword);
+  let malformedUrlObserved = false;
+  for (const rawUrl of urls) {
+    let pathname: string;
+    try {
+      const parsed = new URL(rawUrl);
+      if (
+        (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+        parsed.username !== "" ||
+        parsed.password !== ""
+      ) {
+        malformedUrlObserved = true;
+        continue;
+      }
+      pathname = decodeURIComponent(parsed.pathname);
+    } catch {
+      malformedUrlObserved = true;
+      continue;
+    }
+    if (wanted.size === 0) continue;
+    const tokens = keywordTokens(pathname);
+    let hits = 0;
+    for (const token of wanted) {
+      if (tokens.has(token)) hits += 1;
+    }
+    if (hits / wanted.size >= KEYWORD_COVERAGE_TOKEN_OVERLAP) {
+      return { url: rawUrl, malformedUrlObserved };
+    }
+  }
+  return { url: null, malformedUrlObserved };
+}
+
 /**
  * Read coverage for one candidate.
  *
@@ -113,16 +216,15 @@ function relatedPage(
  *
  * `exactIndex` is null when the query sample was never read — the Search
  * Console call failed, or the visitor's grant covers no property for this
- * site. Null rather than an empty map on purpose: an empty map is a real
- * answer (a property that served nothing) and the two must not collapse, or
- * the run reports "not observed in the sample" about a sample it never
- * fetched. The page-similarity half still runs either way; it reads the crawl,
- * not Search Console, and the GEO lane depends on it.
+ * site. It can therefore never produce positive GSC evidence. The run records
+ * that failed stage separately; the row then continues through L2 and bounded
+ * inventory evidence rather than claiming a missing query row means zero.
  *
  * `attributedPageUrl` is the page the generator said the candidate came from —
  * for a proposition-derived term, the page the proposition was read off. It
  * only ever fills in `supportingPageUrl`, and never moves the coverage state:
- * where a claim originated says nothing about whether the site ranks for it.
+ * where a claim originated says nothing about whether the site ranks or has a
+ * sitemap URL for it.
  * Token overlap wins when both are available, because it is computed from what
  * the page says rather than from what the generator asserted.
  *
@@ -140,6 +242,7 @@ export function observeKeywordCoverage(
   exactIndex: ReadonlyMap<string, ExactObservation> | null,
   pages: readonly KeywordCoveragePage[],
   attributedPageUrl: string | null = null,
+  inventory: KeywordCoverageInventory | null = null,
 ): KeywordCoverageObservation {
   const exact = exactIndex?.get(normalizeQuery(keyword));
   if (
@@ -151,7 +254,10 @@ export function observeKeywordCoverage(
         exact.weightedPosition <= KEYWORD_COVERAGE_STRONG_POSITION
           ? "observed_exact_strong"
           : "observed_exact_weak",
-      supportingPageUrl: relatedPage(keyword, pages) ?? attributedPageUrl,
+      supportingPageUrl:
+        exact.supportingPageUrl ??
+        relatedPage(keyword, pages) ??
+        attributedPageUrl,
     };
   }
 
@@ -160,11 +266,38 @@ export function observeKeywordCoverage(
     return { state: "related_coverage_unverified", supportingPageUrl: related };
   }
 
+  if (
+    inventory === null ||
+    inventory.fetched !== true ||
+    inventory.documentsRead <= 0
+  ) {
+    return {
+      state: "inventory_unavailable",
+      supportingPageUrl: attributedPageUrl,
+    };
+  }
+
+  const inventoryMatch = relatedInventoryPage(keyword, inventory.urls);
+  if (inventoryMatch.url !== null) {
+    return {
+      state: "possible_existing_page",
+      supportingPageUrl: inventoryMatch.url,
+    };
+  }
+
+  if (
+    inventory.complete !== true ||
+    inventory.truncationReasons.length > 0 ||
+    inventoryMatch.malformedUrlObserved
+  ) {
+    return {
+      state: "inventory_truncated",
+      supportingPageUrl: attributedPageUrl,
+    };
+  }
+
   return {
-    state:
-      exactIndex === null
-        ? "gsc_query_sample_not_read"
-        : "not_observed_in_gsc_query_sample",
+    state: "not_observed_in_bounded_inventory",
     // Attribution alone leaves the state untouched but still names the page,
     // which is what the GEO lane is judged on: nothing here says the site
     // ranks, only that this is where the claim behind the question came from.
