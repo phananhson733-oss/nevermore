@@ -250,6 +250,158 @@ describe("AgentAiActionCopy", () => {
     });
   }
 
+  it("copies the exact Code Agent preview from the primary one-click action without a request", async () => {
+    const writeText = vi.fn<(_: string) => Promise<void>>().mockResolvedValue();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    vi.stubGlobal("fetch", fetchSpy);
+    render();
+
+    const primary = [...host.querySelectorAll("button")].find(
+      (entry) => entry.textContent === "Copy text for AI",
+    );
+    const codePreview = host.querySelector<HTMLPreElement>(
+      '[data-testid="agent-ai-copy-preview-code-agent"]',
+    );
+    expect(primary).toBeDefined();
+    await act(async () =>
+      primary?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText).toHaveBeenCalledWith(codePreview?.textContent ?? "");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "Copied Code Agent",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["source-gated", "unavailable", "illustrative"] as const)(
+    "copies the exact Chatbot investigation preview from the primary action when truth is %s",
+    async (truth) => {
+      const writeText = vi.fn<(_: string) => Promise<void>>().mockResolvedValue();
+      vi.stubGlobal("navigator", { clipboard: { writeText } });
+      render({ selectedCheck: check(truth) });
+
+      const primary = [...host.querySelectorAll("button")].find(
+        (entry) => entry.textContent === "Copy text for AI",
+      );
+      const chatbotPreview = host.querySelector<HTMLPreElement>(
+        '[data-testid="agent-ai-copy-preview-chatbot"]',
+      );
+      expect(primary).toBeDefined();
+      await act(async () =>
+        primary?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      );
+
+      expect(writeText).toHaveBeenCalledOnce();
+      expect(writeText).toHaveBeenCalledWith(chatbotPreview?.textContent ?? "");
+      expect(host.querySelector('[role="status"]')?.textContent).toContain(
+        "Copied Chatbot",
+      );
+    },
+  );
+
+  it("disables the primary action when neither audience packet can be built", () => {
+    render({ targetUrl: "https://astrologywiki.com/different-target" });
+
+    const primary = [...host.querySelectorAll("button")].find(
+      (entry) => entry.textContent === "Copy text for AI",
+    );
+    expect(primary).toBeDefined();
+    expect(primary?.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("keeps audience-specific previews and buttons in a closed advanced disclosure while primary copy still works", async () => {
+    const writeText = vi.fn<(_: string) => Promise<void>>().mockResolvedValue();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render();
+
+    const advanced = host.querySelector<HTMLDetailsElement>(
+      '[data-testid="agent-ai-copy-advanced"]',
+    );
+    const primary = [...host.querySelectorAll("button")].find(
+      (entry) => entry.textContent === "Copy text for AI",
+    );
+    const chatbot = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Chatbot"),
+    );
+    const codeAgent = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes("Copy task for Code Agent"),
+    );
+    const chatbotPreview = host.querySelector(
+      '[data-testid="agent-ai-copy-preview-chatbot"]',
+    );
+    const codePreview = host.querySelector(
+      '[data-testid="agent-ai-copy-preview-code-agent"]',
+    );
+
+    expect(advanced).not.toBeNull();
+    expect(advanced?.open).toBe(false);
+    expect(advanced?.textContent).toContain("Advanced copy options");
+    expect(advanced?.contains(primary ?? null)).toBe(false);
+    expect(advanced?.contains(chatbot ?? null)).toBe(true);
+    expect(advanced?.contains(codeAgent ?? null)).toBe(true);
+    expect(advanced?.contains(chatbotPreview)).toBe(true);
+    expect(advanced?.contains(codePreview)).toBe(true);
+
+    await act(async () =>
+      primary?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(advanced?.open).toBe(false);
+    expect(writeText).toHaveBeenCalledWith(codePreview?.textContent ?? "");
+
+    const summary = advanced?.querySelector("summary");
+    act(() => {
+      summary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(advanced?.open).toBe(true);
+  });
+
+  it("keeps an unavailable Code Agent refusal inside advanced options", () => {
+    render({ selectedCheck: check("unavailable") });
+
+    const advanced = host.querySelector<HTMLDetailsElement>(
+      '[data-testid="agent-ai-copy-advanced"]',
+    );
+    const codePreview = host.querySelector(
+      '[data-testid="agent-ai-copy-preview-code-agent"]',
+    );
+    expect(advanced).not.toBeNull();
+    expect(advanced?.contains(codePreview)).toBe(true);
+    expect(codePreview?.textContent).toContain(
+      "Code Agent implementation copy is unavailable",
+    );
+  });
+
+  it("selects the complete read-only fallback when it receives focus", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        writeText: vi
+          .fn<(_: string) => Promise<void>>()
+          .mockRejectedValue(new Error("denied")),
+      },
+    });
+    render();
+
+    const primary = [...host.querySelectorAll("button")].find(
+      (entry) => entry.textContent === "Copy text for AI",
+    );
+    await act(async () =>
+      primary?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    const fallback = host.querySelector<HTMLTextAreaElement>(
+      '[data-testid="agent-ai-copy-fallback"]',
+    );
+    expect(fallback).not.toBeNull();
+
+    act(() => {
+      fallback?.focus();
+    });
+    expect(fallback?.selectionStart).toBe(0);
+    expect(fallback?.selectionEnd).toBe(fallback?.value.length);
+  });
+
   it("copies distinct Chatbot and Code Agent briefs whose preview matches the exact copied text", async () => {
     const writeText = vi.fn<(_: string) => Promise<void>>().mockResolvedValue();
     const fetchSpy = vi.fn();
@@ -286,7 +438,7 @@ describe("AgentAiActionCopy", () => {
     expect(writeText.mock.calls[0]?.[0]).not.toBe(writeText.mock.calls[1]?.[0]);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(host.textContent).toContain("Copied");
-    expect(details).toHaveLength(2);
+    expect(details).toHaveLength(3);
     expect(intlErrors).toEqual([]);
     const liveRegion = host.querySelector('[role="status"]');
     expect(liveRegion?.getAttribute("aria-live")).toBe("polite");
@@ -523,7 +675,7 @@ describe("AgentAiActionCopy", () => {
     render({ targetUrl: "https://astrologywiki.com/different-target" });
 
     const buttons = [...host.querySelectorAll("button")];
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(3);
     expect(buttons.every((button) => button.hasAttribute("disabled"))).toBe(true);
     expect(host.textContent).toContain("confirmed run context is no longer valid");
     expect(host.textContent).not.toContain("copyTaskRefusal.context_invalid");
@@ -573,6 +725,8 @@ describe("AgentAiActionCopy", () => {
     const scalarKeys = [
       "copyTaskTitle",
       "copyTaskIntro",
+      "copyTaskPrimary",
+      "copyTaskAdvanced",
       "copyTaskChatbot",
       "copyTaskCodeAgent",
       "copyTaskChatbotShort",
@@ -593,6 +747,14 @@ describe("AgentAiActionCopy", () => {
       expect(chinese[key]).toBeTypeOf("string");
       expect(chinese[key]).not.toBe("");
     }
+    expect(english.copyTaskIntro).toContain("current SEO issue");
+    expect(english.copyTaskIntro).toContain("affected URLs");
+    expect(english.copyTaskIntro).toContain("fix");
+    expect(english.copyTaskIntro).toContain("validation");
+    expect(chinese.copyTaskIntro).toContain("当前 SEO 问题");
+    expect(chinese.copyTaskIntro).toContain("受影响 URL");
+    expect(chinese.copyTaskIntro).toContain("修复");
+    expect(chinese.copyTaskIntro).toContain("验证");
     expect(Object.keys(english.copyTaskRefusal).sort()).toEqual([
       "context_invalid",
       "evidence_unavailable",

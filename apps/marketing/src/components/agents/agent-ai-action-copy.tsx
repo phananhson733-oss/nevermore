@@ -14,6 +14,8 @@ import {
 
 const BUTTON_CLASS =
   "inline-flex h-10 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel-raised px-4 text-[12px] leading-[1.4] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
+const PRIMARY_BUTTON_CLASS =
+  "inline-flex h-10 items-center justify-center rounded-[10px] bg-brand-gradient px-4 text-[12px] leading-[1.4] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none";
 
 export interface AgentAiActionCopyProps {
   readonly locale: "en" | "zh";
@@ -118,6 +120,11 @@ export function AgentAiActionCopy({
     !codeAgent.ok &&
     codeAgent.reason === "evidence_unavailable";
   const copyUnavailable = !chatbot.ok && !codeAgent.ok;
+  const primaryTarget: CopyTarget | null = codeAgent.ok
+    ? "code_agent"
+    : chatbot.ok
+      ? "chatbot"
+      : null;
 
   const copy = useCallback(async (target: CopyTarget) => {
     const built = target === "chatbot" ? chatbot : codeAgent;
@@ -173,58 +180,16 @@ export function AgentAiActionCopy({
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-3">
-        <details className="min-w-0">
-          <summary className="cursor-pointer text-[12px] leading-[1.5] text-text-dark-secondary">
-            {t("copyTaskPreviewChatbot")}
-          </summary>
-          <pre
-            data-testid="agent-ai-copy-preview-chatbot"
-            className="mt-2 max-h-72 overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary whitespace-pre-wrap"
-          >
-            {chatbot.ok ? chatbot.markdown : t(`copyTaskRefusal.${chatbot.reason}`)}
-          </pre>
-        </details>
-
-        <details className="min-w-0">
-          <summary className="cursor-pointer text-[12px] leading-[1.5] text-text-dark-secondary">
-            {t("copyTaskPreviewCodeAgent")}
-          </summary>
-          <pre
-            data-testid="agent-ai-copy-preview-code-agent"
-            className="mt-2 max-h-72 overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary whitespace-pre-wrap"
-          >
-            {codeAgent.ok
-              ? codeAgent.markdown
-              : t(
-                  codeAgent.reason === "evidence_unavailable"
-                    ? "copyTaskCodeAgentUnavailable"
-                    : `copyTaskRefusal.${codeAgent.reason}`,
-                )}
-          </pre>
-        </details>
-      </div>
-
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className={BUTTON_CLASS}
+          className={PRIMARY_BUTTON_CLASS}
           onClick={() => {
-            void copy("chatbot");
+            if (primaryTarget !== null) void copy(primaryTarget);
           }}
-          disabled={!chatbot.ok}
+          disabled={primaryTarget === null}
         >
-          {t("copyTaskChatbot")}
-        </button>
-        <button
-          type="button"
-          className={BUTTON_CLASS}
-          onClick={() => {
-            void copy("code_agent");
-          }}
-          disabled={!codeAgent.ok}
-        >
-          {t("copyTaskCodeAgent")}
+          {t("copyTaskPrimary")}
         </button>
         <p
           role="status"
@@ -247,17 +212,83 @@ export function AgentAiActionCopy({
         </p>
       </div>
 
-      {!codeAgent.ok && codeAgent.reason === "evidence_unavailable" ? (
-        <p className="mt-3 text-[12px] leading-[1.6] text-brand-warning">
-          {t("copyTaskCodeAgentUnavailable")}
-        </p>
-      ) : null}
+      <details
+        data-testid="agent-ai-copy-advanced"
+        className="mt-4 min-w-0 border-t border-brand-border-card pt-3"
+      >
+        <summary className="cursor-pointer text-[12px] leading-[1.5] font-medium text-text-dark-secondary">
+          {t("copyTaskAdvanced")}
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <details className="min-w-0">
+            <summary className="cursor-pointer text-[12px] leading-[1.5] text-text-dark-secondary">
+              {t("copyTaskPreviewChatbot")}
+            </summary>
+            <pre
+              data-testid="agent-ai-copy-preview-chatbot"
+              className="mt-2 max-h-72 overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary whitespace-pre-wrap"
+            >
+              {chatbot.ok
+                ? chatbot.markdown
+                : t(`copyTaskRefusal.${chatbot.reason}`)}
+            </pre>
+          </details>
+
+          <details className="min-w-0">
+            <summary className="cursor-pointer text-[12px] leading-[1.5] text-text-dark-secondary">
+              {t("copyTaskPreviewCodeAgent")}
+            </summary>
+            <pre
+              data-testid="agent-ai-copy-preview-code-agent"
+              className="mt-2 max-h-72 overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary whitespace-pre-wrap"
+            >
+              {codeAgent.ok
+                ? codeAgent.markdown
+                : t(
+                    codeAgent.reason === "evidence_unavailable"
+                      ? "copyTaskCodeAgentUnavailable"
+                      : `copyTaskRefusal.${codeAgent.reason}`,
+                  )}
+            </pre>
+          </details>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className={BUTTON_CLASS}
+              onClick={() => {
+                void copy("chatbot");
+              }}
+              disabled={!chatbot.ok}
+            >
+              {t("copyTaskChatbot")}
+            </button>
+            <button
+              type="button"
+              className={BUTTON_CLASS}
+              onClick={() => {
+                void copy("code_agent");
+              }}
+              disabled={!codeAgent.ok}
+            >
+              {t("copyTaskCodeAgent")}
+            </button>
+          </div>
+
+          {!codeAgent.ok && codeAgent.reason === "evidence_unavailable" ? (
+            <p className="text-[12px] leading-[1.6] text-brand-warning">
+              {t("copyTaskCodeAgentUnavailable")}
+            </p>
+          ) : null}
+        </div>
+      </details>
 
       {visibleFeedback.fallback !== null ? (
         <textarea
           data-testid="agent-ai-copy-fallback"
           readOnly
           aria-label={t("copyTaskFallbackAria")}
+          onFocus={(event) => event.currentTarget.select()}
           className="mt-3 h-48 w-full rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[12px] leading-[1.65] text-text-dark-secondary"
           value={visibleFeedback.fallback}
         />
