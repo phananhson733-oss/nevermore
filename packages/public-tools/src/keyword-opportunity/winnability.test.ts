@@ -258,6 +258,46 @@ describe("judgeKeywordWinnability", () => {
     expect(result.topTenDomainRanks).toEqual([null, 640]);
   });
 
+  it("keeps provider rank zero raw but skips it when a valid rank is available", () => {
+    const result = judgeKeywordWinnability(
+      sample([
+        ["provider-zero.test", 0],
+        ["resolved.test", 640],
+      ]),
+      null,
+    );
+
+    expect(result.verdict).toBe("contested_evidence");
+    expect(result.weakestTopTenDomainRank).toBe(640);
+    expect(result.weakestTopTenDomain).toBe("resolved.test");
+    expect(result.weakestTopTenPosition).toBe(2);
+    expect(result.topTenDomains).toEqual([
+      "provider-zero.test",
+      "resolved.test",
+    ]);
+    expect(result.topTenDomainRanks).toEqual([0, 640]);
+  });
+
+  it("keeps an all-zero provider rank page as unresolved SERP evidence", () => {
+    const result = judgeKeywordWinnability(
+      sample([
+        ["provider-zero-a.test", 0],
+        ["provider-zero-b.test", 0],
+      ]),
+      800,
+    );
+
+    expect(result.verdict).toBe("no_serp_evidence");
+    expect(result.weakestTopTenDomainRank).toBeNull();
+    expect(result.weakestTopTenDomain).toBeNull();
+    expect(result.weakestTopTenPosition).toBeNull();
+    expect(result.topTenDomains).toEqual([
+      "provider-zero-a.test",
+      "provider-zero-b.test",
+    ]);
+    expect(result.topTenDomainRanks).toEqual([0, 0]);
+  });
+
   it("ignores rank entries for domains that are not on the sampled page one", () => {
     // The map is a lookup table, not the sample. A weak domain that happens to
     // be in the table but not in the top ten must not create a break-in point

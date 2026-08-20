@@ -476,7 +476,10 @@ describe("serpOrganic", () => {
     const { client, calls } = clientFor([
       serpEnvelope([
         { type: "ai_overview", rank_group: 1 },
-        organicItem(1, "www.Strong.com"),
+        organicItem(1, "www.Strong.com", {
+          title: "Strong result",
+          url: "https://www.strong.com/crm",
+        }),
         { type: "people_also_ask", rank_group: 2 },
         organicItem(2, "weak-blog.io"),
       ]),
@@ -501,10 +504,28 @@ describe("serpOrganic", () => {
     expect(result).toEqual({
       keyword: "crm for agencies",
       rows: [
-        { rankGroup: 1, domain: "strong.com", sitelinkCount: 0, url: null },
-        { rankGroup: 2, domain: "weak-blog.io", sitelinkCount: 0, url: null },
+        {
+          rankGroup: 1,
+          domain: "strong.com",
+          sitelinkCount: 0,
+          title: "Strong result",
+          url: "https://www.strong.com/crm",
+        },
+        {
+          rankGroup: 2,
+          domain: "weak-blog.io",
+          sitelinkCount: 0,
+          title: null,
+          url: null,
+        },
       ],
       itemTypes: ["organic", "ai_overview"],
+      aiOverview: {
+        markdown: null,
+        isAsync: null,
+        references: [],
+      },
+      communityItems: [],
       unresolvedItemCount: 0,
       costUsd: 0.002,
       providerStatusCode: 20_000,
@@ -533,6 +554,7 @@ describe("serpOrganic", () => {
       rankGroup: 1,
       domain: "brand.com",
       sitelinkCount: 3,
+      title: null,
       url: "https://brand.com/",
     });
     // A result the provider described without a links array and one that truly
@@ -584,10 +606,18 @@ describe("serpOrganic", () => {
     });
 
     expect(result.rows).toEqual([
-      { rankGroup: 1, domain: "good.com", sitelinkCount: 0, url: null },
+      {
+        rankGroup: 1,
+        domain: "good.com",
+        sitelinkCount: 0,
+        title: null,
+        url: null,
+      },
     ]);
     expect(result.unresolvedItemCount).toBe(3);
     expect(result.itemTypes).toBeNull();
+    expect(result.aiOverview).toBeNull();
+    expect(result.communityItems).toBeNull();
   });
 
   it("returns an empty sample rather than inventing one when the SERP is missing", async () => {
@@ -601,7 +631,728 @@ describe("serpOrganic", () => {
 
     expect(result.rows).toEqual([]);
     expect(result.itemTypes).toBeNull();
+    expect(result.aiOverview).toBeNull();
+    expect(result.communityItems).toBeNull();
     expect(result.costUsd).toBe(0.002);
+  });
+
+  it("loads async AI Overview content and preserves bounded community evidence", async () => {
+    const { client, calls } = clientFor([
+      serpEnvelope(
+        [
+          organicItem(1, "publisher.test", {
+            title: "A practical CRM guide",
+            url: "https://publisher.test/crm-guide",
+          }),
+          {
+            type: "ai_overview",
+            rank_group: 1,
+            rank_absolute: 1,
+            asynchronous_ai_overview: true,
+            markdown:
+              "\n## Short answer\nUse a CRM that matches the workflow.\n",
+            references: [
+              {
+                type: "ai_overview_reference",
+                source: "Reference publisher",
+                domain: "www.reference.test",
+                title: "Reference page",
+                url: "https://reference.test/source",
+              },
+              {
+                type: "ai_overview_reference",
+                title: null,
+                url: null,
+              },
+            ],
+          },
+          {
+            type: "discussions_and_forums",
+            rank_group: 1,
+            rank_absolute: 5,
+            items: [
+              {
+                type: "discussions_and_forums_element",
+                title: "Operators discuss agency CRMs",
+                url: "https://forum.test/thread",
+                domain: "www.forum.test",
+              },
+            ],
+          },
+          {
+            type: "video",
+            rank_group: 1,
+            rank_absolute: 7,
+            items: [
+              {
+                type: "video_element",
+                title: "CRM walkthrough",
+                url: "https://video.test/watch",
+                domain: "video.test",
+              },
+            ],
+          },
+          {
+            type: "twitter",
+            rank_group: 1,
+            rank_absolute: 8,
+            items: [
+              {
+                type: "twitter_element",
+                tweet: "A field report",
+                url: "https://x.com/operator/status/1",
+              },
+            ],
+          },
+          {
+            type: "forum",
+            rank_group: 4,
+            title: "Legacy forum result",
+            url: "https://legacy-forum.test/topic",
+            domain: "legacy-forum.test",
+          },
+        ],
+        [
+          "organic",
+          "ai_overview",
+          "discussions_and_forums",
+          "video",
+          "twitter",
+          "forum",
+        ],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "agency crm",
+      locationCode: 2840,
+      languageCode: "en",
+      loadAsyncAiOverview: true,
+    });
+
+    expect(calls[0]?.body).toEqual([
+      {
+        keyword: "agency crm",
+        location_code: 2840,
+        language_code: "en",
+        device: "desktop",
+        depth: 10,
+        load_async_ai_overview: true,
+      },
+    ]);
+    expect(result.rows).toEqual([
+      {
+        rankGroup: 1,
+        domain: "publisher.test",
+        sitelinkCount: 0,
+        title: "A practical CRM guide",
+        url: "https://publisher.test/crm-guide",
+      },
+    ]);
+    expect(result.aiOverview).toEqual({
+      markdown: "\n## Short answer\nUse a CRM that matches the workflow.\n",
+      isAsync: true,
+      references: [
+        {
+          source: "Reference publisher",
+          domain: "reference.test",
+          title: "Reference page",
+          url: "https://reference.test/source",
+        },
+      ],
+    });
+    expect(result.communityItems).toEqual([
+      {
+        type: "discussions_and_forums",
+        position: 5,
+        title: "Operators discuss agency CRMs",
+        url: "https://forum.test/thread",
+        domain: "forum.test",
+      },
+      {
+        type: "video",
+        position: 7,
+        title: "CRM walkthrough",
+        url: "https://video.test/watch",
+        domain: "video.test",
+      },
+      {
+        type: "twitter",
+        position: 8,
+        title: null,
+        url: "https://x.com/operator/status/1",
+        domain: null,
+      },
+      {
+        type: "forum",
+        position: 4,
+        title: "Legacy forum result",
+        url: "https://legacy-forum.test/topic",
+        domain: "legacy-forum.test",
+      },
+    ]);
+  });
+
+  it("reads references that are present only on nested AI Overview items", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            items: [
+              {
+                type: "ai_overview_element",
+                references: [
+                  {
+                    title: "Nested reference",
+                    url: "https://nested.test/source",
+                  },
+                ],
+              },
+              {
+                type: "ai_overview_expanded_element",
+                references: [
+                  {
+                    title: "Expanded reference",
+                    url: "https://expanded.test/source",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.aiOverview?.references).toEqual([
+      {
+        source: null,
+        domain: null,
+        title: "Nested reference",
+        url: "https://nested.test/source",
+      },
+      {
+        source: null,
+        domain: null,
+        title: "Expanded reference",
+        url: "https://expanded.test/source",
+      },
+    ]);
+  });
+
+  it("retains source-only and domain-only AI Overview references", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            references: [
+              {
+                source: "Source identity",
+                domain: null,
+                title: null,
+                url: null,
+              },
+              {
+                source: null,
+                domain: "bücher.test",
+                title: null,
+                url: null,
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.aiOverview?.references).toEqual([
+      {
+        source: "Source identity",
+        domain: null,
+        title: null,
+        url: null,
+      },
+      {
+        source: null,
+        domain: "xn--bcher-kva.test",
+        title: null,
+        url: null,
+      },
+    ]);
+  });
+
+  it("deduplicates AI Overview references in top-level then nested order", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            references: [
+              {
+                title: "Top shared",
+                url: "https://shared.test/source",
+              },
+              {
+                domain: "www.domain.test",
+                source: "Domain first",
+                title: "Domain top",
+                url: null,
+              },
+              {
+                domain: null,
+                source: "Source identity",
+                title: "Source top",
+                url: null,
+              },
+              {
+                domain: null,
+                source: null,
+                title: "Top only",
+                url: null,
+              },
+            ],
+            items: [
+              {
+                type: "ai_overview_element",
+                references: [
+                  {
+                    title: "Nested duplicate title",
+                    url: "https://shared.test/source",
+                  },
+                  {
+                    domain: "domain.test",
+                    source: "Different source",
+                    title: "Domain nested duplicate",
+                    url: null,
+                  },
+                  {
+                    domain: null,
+                    source: "Source identity",
+                    title: "Source nested duplicate",
+                    url: null,
+                  },
+                  {
+                    domain: null,
+                    source: null,
+                    title: "Top only",
+                    url: null,
+                  },
+                  {
+                    title: "Nested only",
+                    url: "https://nested.test/source",
+                  },
+                ],
+              },
+              {
+                type: "ai_overview_expanded_element",
+                references: [
+                  {
+                    title: "Expanded only",
+                    url: "https://expanded.test/source",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.aiOverview?.references).toEqual([
+      {
+        source: null,
+        domain: null,
+        title: "Top shared",
+        url: "https://shared.test/source",
+      },
+      {
+        source: "Domain first",
+        domain: "domain.test",
+        title: "Domain top",
+        url: null,
+      },
+      {
+        source: "Source identity",
+        domain: null,
+        title: "Source top",
+        url: null,
+      },
+      { source: null, domain: null, title: "Top only", url: null },
+      {
+        source: null,
+        domain: null,
+        title: "Nested only",
+        url: "https://nested.test/source",
+      },
+      {
+        source: null,
+        domain: null,
+        title: "Expanded only",
+        url: "https://expanded.test/source",
+      },
+    ]);
+  });
+
+  it("accepts valid Unicode community hostnames via URL normalization", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: [
+              {
+                type: "discussions_and_forums_element",
+                title: "International forum",
+                url: null,
+                domain: "bücher.test",
+              },
+            ],
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.communityItems?.[0]?.domain).toBe("xn--bcher-kva.test");
+  });
+
+  it("keeps absent, null, and blank optional community domains as null", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: [
+              {
+                type: "discussions_and_forums_element",
+                url: "https://forum.test/absent",
+              },
+              {
+                type: "discussions_and_forums_element",
+                url: "https://forum.test/null",
+                domain: null,
+              },
+              {
+                type: "discussions_and_forums_element",
+                url: "https://forum.test/blank",
+                domain: "   ",
+              },
+            ],
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.communityItems?.map((item) => item.domain)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("counts title and markdown caps in Unicode code points", async () => {
+    const title = "😀".repeat(512);
+    const markdown = "😀".repeat(65_536);
+    const source = "😀".repeat(512);
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          organicItem(1, "publisher.test", { title }),
+          {
+            type: "ai_overview",
+            markdown,
+            references: [{ source, title: null, url: null, domain: null }],
+          },
+        ],
+        ["organic", "ai_overview"],
+      ),
+    ]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+    });
+
+    expect(result.rows[0]?.title).toBe(title);
+    expect(result.aiOverview?.markdown).toBe(markdown);
+    expect(result.aiOverview?.references[0]?.source).toBe(source);
+  });
+
+  it("omits the paid request flag unless the caller explicitly enables it", async () => {
+    const { client, calls } = clientFor([serpEnvelope([], [])]);
+
+    const result = await client.serpOrganic({
+      keyword: "crm",
+      locationCode: 2840,
+      languageCode: "en",
+      loadAsyncAiOverview: false,
+    });
+
+    expect(calls[0]?.body).toEqual([
+      {
+        keyword: "crm",
+        location_code: 2840,
+        language_code: "en",
+        device: "desktop",
+        depth: 10,
+      },
+    ]);
+    expect(result.aiOverview).toBeNull();
+    expect(result.communityItems).toEqual([]);
+  });
+
+  it("fails closed on a present invalid community domain", async () => {
+    const { client } = clientFor([
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: [
+              {
+                type: "discussions_and_forums_element",
+                title: "Thread",
+                url: null,
+                domain: "not a host",
+              },
+            ],
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+    ]);
+
+    await expect(
+      client.serpOrganic({
+        keyword: "crm",
+        locationCode: 2840,
+        languageCode: "en",
+      }),
+    ).rejects.toThrow(/domain/);
+  });
+
+  it("fails closed on malformed present SERP evidence fields", async () => {
+    const cases: readonly unknown[] = [
+      serpEnvelope(
+        [{ type: "ai_overview", markdown: 12 }],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [{ type: "ai_overview", asynchronous_ai_overview: "true" }],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [{ type: "ai_overview", references: "reference" }],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            items: [
+              {
+                type: "ai_overview_element",
+                references: "reference",
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            references: [
+              {
+                source: "Reference",
+                domain: "not a host",
+                title: null,
+                url: null,
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [organicItem(1, "publisher.test", { title: 123 })],
+        ["organic"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: "thread",
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: [
+              {
+                type: "unexpected_community_element",
+                title: "Thread",
+                url: "https://forum.test/thread",
+                domain: "forum.test",
+              },
+            ],
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+    ];
+
+    for (const payload of cases) {
+      const { client } = clientFor([payload]);
+      await expect(
+        client.serpOrganic({
+          keyword: "crm",
+          locationCode: 2840,
+          languageCode: "en",
+        }),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("fails closed when remote text or evidence arrays exceed parser bounds", async () => {
+    const oversizedTitle = "😀".repeat(513);
+    const oversizedUrl = `https://example.test/${"u".repeat(2_048)}`;
+    const oversizedMarkdown = "😀".repeat(65_537);
+    const oversizedSource = "😀".repeat(513);
+    const tooManyReferences = Array.from({ length: 101 }, () => ({
+      type: "ai_overview_reference",
+      title: "Reference",
+      url: "https://reference.test/",
+    }));
+    const tooManyCommunityItems = Array.from({ length: 101 }, () => ({
+      type: "discussions_and_forums_element",
+      title: "Thread",
+      url: "https://forum.test/thread",
+      domain: "forum.test",
+    }));
+    const maximumReferences = Array.from({ length: 100 }, (_value, index) => ({
+      type: "ai_overview_reference",
+      title: `Top ${index}`,
+      url: `https://reference.test/${index}`,
+    }));
+    const cases: readonly unknown[] = [
+      serpEnvelope(
+        [organicItem(1, "publisher.test", { title: oversizedTitle })],
+        ["organic"],
+      ),
+      serpEnvelope(
+        [organicItem(1, "publisher.test", { url: oversizedUrl })],
+        ["organic"],
+      ),
+      serpEnvelope(
+        [{ type: "ai_overview", markdown: oversizedMarkdown }],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            references: [
+              {
+                source: oversizedSource,
+                domain: null,
+                title: null,
+                url: null,
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [{ type: "ai_overview", references: tooManyReferences }],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "ai_overview",
+            references: maximumReferences,
+            items: [
+              {
+                type: "ai_overview_element",
+                references: [
+                  {
+                    title: "Nested overflow",
+                    url: "https://nested.test/overflow",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        ["ai_overview"],
+      ),
+      serpEnvelope(
+        [
+          {
+            type: "discussions_and_forums",
+            rank_absolute: 4,
+            items: tooManyCommunityItems,
+          },
+        ],
+        ["discussions_and_forums"],
+      ),
+    ];
+
+    for (const payload of cases) {
+      const { client } = clientFor([payload]);
+      await expect(
+        client.serpOrganic({
+          keyword: "crm",
+          locationCode: 2840,
+          languageCode: "en",
+        }),
+      ).rejects.toThrow(/exceeded|characters|items/);
+    }
   });
 
   it("rejects an unusable SERP request", async () => {

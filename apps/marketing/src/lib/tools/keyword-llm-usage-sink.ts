@@ -8,10 +8,11 @@ import {
   mergeKeywordLlmUsage,
   type KeywordLlmUsage,
 } from "./keyword-llm-client.ts";
+import type { KeywordLlmStage } from "./keyword-prompts.ts";
 
 export interface KeywordLlmUsageSink {
-  /** Pass as `onUsage`; the stage name is accepted and ignored. */
-  readonly add: (stage: string, usage: KeywordLlmUsage) => void;
+  /** Pass as `onUsage`; the exact stage name is accepted and aggregated. */
+  readonly add: (stage: KeywordLlmStage, usage: KeywordLlmUsage) => void;
   /** The run's total, for the cost report. */
   readonly total: () => KeywordLlmUsage;
 }

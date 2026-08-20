@@ -1,9 +1,13 @@
 // @input  -- a granted Search Console property and this request's access token
-// @output -- the query rows the coverage check reads, or a throw the run degrades on
-// @pos    -- the only Search Console read the keyword map makes; transport lives here
+// @output -- query and query-page rows with bounded paging facts, or a rejected read
+// @pos    -- the keyword map's Search Console adapter; transport lives here
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { readQueryRows, type KeywordCoverageQueryRow } from "@sf/public-tools";
+import {
+  readQueryPageRows,
+  readQueryRows,
+  type KeywordCoverageRead,
+} from "@sf/public-tools";
 import { createSearchAnalyticsClient } from "@sf/sources";
 
 /** Per-call deadline for one Search Console request. */
@@ -58,7 +62,7 @@ export interface KeywordCoverageReadInput {
 }
 
 /**
- * Read the property's own queries for the coverage check.
+ * Read the property's queries and their positively observed pages.
  *
  * Rejects rather than returning an empty list when the read fails. An empty
  * list is a real answer — a property that served nothing — and handing that
@@ -80,36 +84,53 @@ export function createKeywordCoverageReader(options: {
   readonly fetchImpl?: typeof fetch;
 }): (
   input: KeywordCoverageReadInput,
-) => Promise<readonly KeywordCoverageQueryRow[]> {
+) => Promise<KeywordCoverageRead> {
   const now = options.now ?? (() => new Date());
 
   return async ({ property, accessToken }) => {
+    // Both reads are one logical observation. If either lane fails, the other
+    // must stop before it spends more shared GSC quota paging a result the
+    // handler can no longer use.
+    const siblingController = new AbortController();
     // The client's field is named `siteUrl` because that is what Google calls
     // the path segment; what it wants there is the property identifier.
     const client = createSearchAnalyticsClient({
       siteUrl: property,
       accessToken,
       requestTimeoutMs: READ_TIMEOUT_MS,
+      signal: siblingController.signal,
       ...(options.fetchImpl === undefined
         ? {}
         : { fetchImpl: options.fetchImpl }),
     });
 
     const endDate = shiftDays(now(), -FINALISATION_LAG_DAYS);
-    const read = await readQueryRows(
-      client,
-      {
-        startDate: isoDay(shiftDays(endDate, -(COVERAGE_WINDOW_DAYS - 1))),
-        endDate: isoDay(endDate),
-      },
-      undefined,
-      COVERAGE_MAX_PAGES,
-    );
+    const window = {
+      startDate: isoDay(shiftDays(endDate, -(COVERAGE_WINDOW_DAYS - 1))),
+      endDate: isoDay(endDate),
+    };
+    const [queryRead, queryPageRead] = await Promise.all([
+      readQueryRows(client, window, undefined, COVERAGE_MAX_PAGES),
+      readQueryPageRows(client, window),
+    ]).catch((error: unknown) => {
+      siblingController.abort();
+      throw error;
+    });
 
-    return read.rows.map((row) => ({
-      query: row.query,
-      impressions: row.impressions,
-      position: row.position,
-    }));
+    return {
+      queryRows: queryRead.rows.map((row) => ({
+        query: row.query,
+        impressions: row.impressions,
+        position: row.position,
+      })),
+      queryPageRows: queryPageRead.rows.map((row) => ({
+        query: row.query,
+        page: row.page,
+        impressions: row.impressions,
+        position: row.position,
+      })),
+      queryPaging: queryRead.paging,
+      queryPagePaging: queryPageRead.paging,
+    };
   };
 }

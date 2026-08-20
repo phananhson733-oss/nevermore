@@ -9,7 +9,20 @@ import {
   KEYWORD_OPPORTUNITY_AVAILABILITY_STATES,
   KEYWORD_OPPORTUNITY_COVERAGE_STATES,
   KEYWORD_OPPORTUNITY_ERROR_CODES,
+  KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS,
   KEYWORD_OPPORTUNITY_WITHHELD_REASONS,
+  KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
+  KEYWORD_STAGE_SERP_SAMPLE_PARTIAL,
+} from "@sf/public-tools/keyword-opportunity/types";
+import type {
+  KeywordOpportunityAiOverviewAssessment,
+  KeywordOpportunityAiOverviewAvailability,
+  KeywordOpportunityCommunitySource,
+  KeywordOpportunityDecisionDiscount,
+  KeywordOpportunityProviderIntent,
+  KeywordOpportunitySerpIntent,
+  KeywordOpportunitySignal,
+  KeywordOpportunitySignalState,
 } from "@sf/public-tools/keyword-opportunity/types";
 import { KEYWORD_OPPORTUNITY_CHECKS } from "@sf/public-tools/keyword-opportunity/next-checks";
 import { KEYWORD_MARKET_LOCATIONS } from "./keyword-providers.ts";
@@ -25,6 +38,59 @@ import zh from "../../i18n/messages/zh.json";
  * reintroduce exactly the drift they were added to prevent.
  */
 const BUNDLES = { en, zh } as const;
+
+type CopyEnums = {
+  readonly intents: KeywordOpportunityProviderIntent | KeywordOpportunitySerpIntent;
+  readonly signalNames: KeywordOpportunitySignal;
+  readonly signalStates: KeywordOpportunitySignalState;
+  readonly communitySources: KeywordOpportunityCommunitySource;
+  readonly aioAvailability: KeywordOpportunityAiOverviewAvailability;
+  readonly aioAssessments: KeywordOpportunityAiOverviewAssessment;
+  readonly discounts: KeywordOpportunityDecisionDiscount;
+};
+
+const COPY_ENUMS = {
+  intents: [
+    "informational",
+    "navigational",
+    "commercial",
+    "transactional",
+    "mixed",
+  ],
+  signalNames: [
+    "young_domain",
+    "low_organic_traffic_domain",
+    "community_result",
+  ],
+  signalStates: ["observed", "not_observed", "unavailable"],
+  communitySources: ["provider_item_type", "domain_fallback"],
+  aioAvailability: ["observed", "not_observed", "unavailable"],
+  aioAssessments: ["complete", "partial", "not_answered", "unavailable"],
+  discounts: ["ai_overview_answer_discount"],
+} as const satisfies {
+  readonly [Group in keyof CopyEnums]: readonly CopyEnums[Group][];
+};
+
+type AssertComplete<Union extends string, Values extends readonly string[]> =
+  Exclude<Union, Values[number]> extends never
+    ? true
+    : Exclude<Union, Values[number]>;
+
+const COPY_ENUMS_ARE_COMPLETE: {
+  readonly [Group in keyof CopyEnums]: AssertComplete<
+    CopyEnums[Group],
+    (typeof COPY_ENUMS)[Group]
+  >;
+} = {
+  intents: true,
+  signalNames: true,
+  signalStates: true,
+  communitySources: true,
+  aioAvailability: true,
+  aioAssessments: true,
+  discounts: true,
+};
+void COPY_ENUMS_ARE_COMPLETE;
 
 function namespace(locale: keyof typeof BUNDLES): Record<string, unknown> {
   const tools = BUNDLES[locale].tools as Record<string, unknown>;
@@ -58,6 +124,18 @@ function keyPaths(value: unknown, prefix = ""): string[] {
 
 describe("keyword map copy", () => {
   it.each(["en", "zh"] as const)(
+    "renders every v2 evidence enum in %s",
+    (locale) => {
+      for (const [groupName, values] of Object.entries(COPY_ENUMS)) {
+        const copy = group(locale, groupName);
+        for (const value of values) {
+          expect(copy[value], `${groupName}.${value}`).toBeTypeOf("string");
+        }
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
     "renders every coverage state in %s",
     (locale) => {
       // The state the reader sees on every single row. A missing one renders
@@ -81,6 +159,16 @@ describe("keyword map copy", () => {
     },
   );
 
+  it.each(["en", "zh"] as const)(
+    "renders every incomplete reason in %s",
+    (locale) => {
+      const copy = group(locale, "incomplete");
+      for (const reason of KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS) {
+        expect(copy[reason], `incomplete.${reason}`).toBeTypeOf("string");
+      }
+    },
+  );
+
   it.each(["en", "zh"] as const)("renders every check in %s", (locale) => {
     // The advice layer. Every row carries at least one, so a hole here is a
     // hole on a row the tool is asking someone to act on.
@@ -89,6 +177,22 @@ describe("keyword map copy", () => {
       expect(copy[check], `checks.${check}`).toBeTypeOf("string");
     }
   });
+
+  it.each(["en", "zh"] as const)(
+    "names a truncated GSC coverage read in %s",
+    (locale) => {
+      expect(group(locale, "stages")[KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED])
+        .toBeTypeOf("string");
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "names a partially completed SERP plan in %s",
+    (locale) => {
+      expect(group(locale, "stages")[KEYWORD_STAGE_SERP_SAMPLE_PARTIAL])
+        .toBeTypeOf("string");
+    },
+  );
 
   it.each(["en", "zh"] as const)(
     "renders every availability state in %s",

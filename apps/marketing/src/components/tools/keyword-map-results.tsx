@@ -1,5 +1,5 @@
 // @input  -- one finished keyword opportunity result and the page's locale
-// @output -- the run's verdict, its funnel, the two lanes, groups, and what was held back
+// @output -- the run's verdict, funnel, lanes, incomplete evidence, groups, and exclusions
 // @pos    -- read-only rendering for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -9,8 +9,10 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type {
   KeywordOpportunityCluster,
+  KeywordOpportunityIncomplete,
   KeywordOpportunityResult,
   KeywordOpportunityRow,
+  KeywordOpportunitySignalEvidence,
   KeywordOpportunityWithheld,
 } from "@sf/public-tools/keyword-opportunity/types";
 import {
@@ -142,12 +144,9 @@ export function KeywordMapResults({
    */
   readonly onRetryWithSeeds?: (keywords: readonly string[]) => void;
 }) {
-  // Volume descending, unpriced rows last. The payload arrives in candidate
-  // order — which is the generator's order — and the 2026-08-14 live review
-  // found the highest-volume term sitting at row eight of fifteen. Sorting by
-  // the measured number is presentation, not judgement, and it lives in the
-  // shared helper so the CSV export cannot disagree with the tables about
-  // order.
+  // The shared v2 order uses positive-signal count, AIO discount, volume and a
+  // stable keyword tie-break inside each lane. It lives in one helper so the
+  // CSV export cannot disagree with the tables about order.
   const ordered = keywordOpportunityDisplayRows(result.rows);
   const seo = ordered.filter((row) => row.lane === "seo");
   const geo = ordered.filter((row) => row.lane === "geo");
@@ -157,22 +156,25 @@ export function KeywordMapResults({
   const groups = result.clusters.filter(
     (cluster) => cluster.keywords.length > 1,
   );
+  const incomplete = result.incomplete ?? [];
 
   return (
     <div className="mt-8 space-y-4">
       <Verdict result={result} />
       <RunSummary result={result} locale={locale} />
 
-      {result.rows.length === 0 ? (
+      {result.rows.length === 0 && incomplete.length === 0 ? (
         <EmptyState degraded={result.unavailableStages.length > 0} />
-      ) : (
+      ) : result.rows.length > 0 ? (
         <>
+          <EligibleSummary count={result.rows.length} />
           <ExportRow result={result} />
-          <RowTable rows={seo} lane="seo" />
-          <RowTable rows={geo} lane="geo" />
+          <RowTable rows={seo} lane="seo" locale={locale} />
+          <RowTable rows={geo} lane="geo" locale={locale} />
         </>
-      )}
+      ) : null}
 
+      <Incomplete incomplete={incomplete} />
       <Groups groups={groups} />
       <Withheld
         withheld={result.withheld}
@@ -180,6 +182,20 @@ export function KeywordMapResults({
       />
       <WhereNext locale={locale} />
     </div>
+  );
+}
+
+/** The included lane, explicitly separate from exclusions and evidence gaps. */
+function EligibleSummary({ count }: { readonly count: number }) {
+  const t = useTranslations("tools.keywordMap");
+
+  return (
+    <section className={CARD}>
+      <h3 className={SECTION_TITLE}>
+        {t("eligibleTitle")} · {t("sectionCount", { count })}
+      </h3>
+      <p className={SECTION_INTRO}>{t("eligibleIntro")}</p>
+    </section>
   );
 }
 
@@ -313,6 +329,17 @@ function RunSummary({
           productPages: result.context.productPagesFetched,
         })}
       </p>
+      <p className={SECTION_INTRO}>{t("contextBoundary")}</p>
+      {result.context.stopReason !== "completed" ? (
+        <p className={SECTION_INTRO}>
+          {t("contextStopped", {
+            reason: label(
+              `contextStops.${result.context.stopReason}`,
+              result.context.stopReason,
+            ),
+          })}
+        </p>
+      ) : null}
       <p className={`${SECTION_INTRO} mt-3`}>{t("funnelIntro")}</p>
 
       {/* 1px gap over the divider colour: the counts read as one table of
@@ -434,9 +461,11 @@ export function commonChecks(
 function RowTable({
   rows,
   lane,
+  locale,
 }: {
   readonly rows: readonly KeywordOpportunityRow[];
   readonly lane: "seo" | "geo";
+  readonly locale: string;
 }) {
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
@@ -458,11 +487,17 @@ function RowTable({
 
       {/* Wide on purpose; the page must never scroll sideways because of it. */}
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left">
+        <table className="w-full min-w-[1480px] border-collapse text-left">
           <thead>
             <tr className="border-b border-brand-border-card">
               <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                 {t("columns.keyword")}
+              </th>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                {t("columns.providerIntent")}
+              </th>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                {t("columns.serpIntent")}
               </th>
               {lane === "seo" ? (
                 <>
@@ -475,9 +510,6 @@ function RowTable({
                   <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
                     {t("columns.weakest")}
                   </th>
-                  <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                    {t("columns.aiOverview")}
-                  </th>
                 </>
               ) : (
                 <th scope="col" className={`${LABEL} pr-4 pb-2`}>
@@ -485,10 +517,16 @@ function RowTable({
                 </th>
               )}
               <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                {t("columns.signals")}
+              </th>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                {t("columns.aiOverview")}
+              </th>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                 {t("columns.coverage")}
               </th>
               <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.nextChecks")}
+                {t("columns.remainingDecisions")}
               </th>
             </tr>
           </thead>
@@ -500,6 +538,12 @@ function RowTable({
               >
                 <td className="py-3 pr-4 text-[13.5px] text-text-dark-primary">
                   {row.keyword}
+                </td>
+                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
+                  <ProviderIntentCell row={row} />
+                </td>
+                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
+                  <SerpIntentCell row={row} />
                 </td>
                 {lane === "seo" ? (
                   <>
@@ -530,15 +574,22 @@ function RowTable({
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-3 pr-4 text-[12.5px]">
-                      <AiOverviewCell itemTypes={row.serp.pageOneItemTypes} />
-                    </td>
                   </>
                 ) : (
                   <td className="py-3 pr-4 text-[12.5px] break-all text-text-dark-secondary">
                     {row.supportingPageUrl ?? "—"}
                   </td>
                 )}
+                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
+                  <SignalEvidenceList row={row} locale={locale} />
+                </td>
+                <td className="py-3 pr-4 text-[12.5px]">
+                  <AiOverviewCell
+                    evidence={row.aiOverview}
+                    itemTypes={row.serp.pageOneItemTypes}
+                    decision={row.decision}
+                  />
+                </td>
                 <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
                   {label(`coverage.${row.coverage}`, row.coverage)}
                 </td>
@@ -558,18 +609,176 @@ function RowTable({
   );
 }
 
+/** Provider intent is a returned fact; null is not an inferred replacement. */
+function ProviderIntentCell({
+  row,
+}: {
+  readonly row: KeywordOpportunityRow;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const intent =
+    row.validation.providerIntent === undefined
+      ? row.validation.intent
+      : row.validation.providerIntent;
+  return intent === null
+    ? t("providerIntentMissing")
+    : label(`intents.${intent}`, intent);
+}
+
+/** The organic-result interpretation stays visibly separate and provenanced. */
+function SerpIntentCell({ row }: { readonly row: KeywordOpportunityRow }) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  if (row.serpIntent === null || row.serpIntent === undefined) {
+    return <span className="text-text-dark-faint">{t("inferenceUnavailable")}</span>;
+  }
+
+  const provenance = [row.serpIntent.modelId, row.serpIntent.promptVersion]
+    .filter((value): value is string => value !== null)
+    .join(" · ");
+  return (
+    <>
+      <span className="text-text-dark-primary">
+        {label(`intents.${row.serpIntent.intent}`, row.serpIntent.intent)}
+      </span>
+      {provenance !== "" ? (
+        <span className="mt-1 block font-mono text-[10.5px] break-all text-text-dark-faint">
+          {provenance}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function SignalBlock<Observation>({
+  name,
+  evidence,
+  renderObserved,
+}: {
+  readonly name: string;
+  readonly evidence: KeywordOpportunitySignalEvidence<Observation> | undefined;
+  readonly renderObserved: (observation: Observation) => React.ReactNode;
+}) {
+  const label = useOptionalLabel();
+  const state = evidence?.state ?? "unavailable";
+  const reason =
+    evidence?.state === "unavailable"
+      ? evidence.reason
+      : evidence === undefined
+        ? "legacy_result_unreported"
+        : null;
+
+  return (
+    <li>
+      <p className="font-medium text-text-dark-primary">
+        {label(`signalNames.${name}`, name)} {" · "}
+        {label(`signalStates.${state}`, state)}
+      </p>
+      {evidence?.state === "observed" ? (
+        <div className="mt-0.5 text-text-dark-secondary">
+          {renderObserved(evidence.observation)}
+        </div>
+      ) : reason !== null ? (
+        <p className="mt-0.5 text-text-dark-faint">
+          {label(`evidenceReasons.${reason}`, reason)}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** Three independent facts; a negative and an unavailable read never merge. */
+function SignalEvidenceList({
+  row,
+  locale,
+}: {
+  readonly row: KeywordOpportunityRow;
+  readonly locale: string;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const signals = row.signals;
+  const community = signals?.communityResult;
+  const communityResult =
+    community?.state === "observed"
+      ? (row.serp.organicResults ?? []).find(
+          (result) =>
+            result.url === community.observation.url ||
+            (result.position === community.observation.position &&
+              result.domain === community.observation.domain),
+        )
+      : undefined;
+
+  return (
+    <ul className="min-w-[270px] space-y-2.5">
+      <SignalBlock
+        name="young_domain"
+        evidence={signals?.youngDomain}
+        renderObserved={(observation) => (
+          <p>
+            {t("signalEvidence.youngObserved", {
+              domain: observation.domain,
+              date: observation.registrationDate.slice(0, 10),
+              months: formatCount(observation.ageMonths, locale),
+            })}
+          </p>
+        )}
+      />
+      <SignalBlock
+        name="low_organic_traffic_domain"
+        evidence={signals?.lowOrganicTrafficDomain}
+        renderObserved={(observation) => (
+          <p>
+            {t("signalEvidence.lowTrafficObserved", {
+              domain: observation.domain,
+              etv: formatCount(observation.organicEtv, locale),
+              threshold: formatCount(observation.threshold, locale),
+            })}
+          </p>
+        )}
+      />
+      <SignalBlock
+        name="community_result"
+        evidence={community}
+        renderObserved={(observation) => (
+          <>
+            <p>
+              {t("signalEvidence.communityObserved", {
+                source: label(
+                  `communitySources.${observation.source}`,
+                  observation.source,
+                ),
+                domain: observation.domain,
+                position: formatCount(observation.position, locale),
+              })}
+            </p>
+            <p className="break-all">{observation.url}</p>
+            <p>
+              {communityResult?.title ?? t("signalEvidence.titleUnavailable")}
+            </p>
+          </>
+        )}
+      />
+    </ul>
+  );
+}
+
 /**
  * Three states, none of them collapsible into another.
  *
- * "Shown" is the provider observing an AI Overview on the sampled page one —
- * worth flagging because it answers the query above every organic result.
- * "Not shown" is the provider listing the page's elements without one. The
- * dash is the provider staying silent (or the page never being sampled), and
- * rendering that as "not shown" would claim an observation nobody made.
+ * A present v2 evidence object is authoritative and keeps the provider's
+ * availability separate from the model's answer assessment. Older payloads do
+ * not carry that object, so only those fall back to the provider item-type
+ * list; their assessment remains unavailable.
  */
 function AiOverviewCell({
+  evidence,
   itemTypes,
+  decision,
 }: {
+  /** Present v2 evidence is authoritative over the legacy item-type proxy. */
+  readonly evidence: KeywordOpportunityRow["aiOverview"];
   /**
    * `undefined` is accepted alongside the contract's `null` for the same
    * reason the handler tolerates tokens without `headings`: a run started on
@@ -577,15 +786,119 @@ function AiOverviewCell({
    * the field. Both read as "not reported".
    */
   readonly itemTypes: readonly string[] | null | undefined;
+  readonly decision: KeywordOpportunityRow["decision"];
 }) {
   const t = useTranslations("tools.keywordMap");
-  if (itemTypes === null || itemTypes === undefined) {
-    return <span className="text-text-dark-faint">—</span>;
+  const label = useOptionalLabel();
+  const availability =
+    evidence?.availability ??
+    (itemTypes === null || itemTypes === undefined
+      ? "unavailable"
+      : itemTypes.includes("ai_overview")
+        ? "observed"
+        : "not_observed");
+  const assessment = evidence?.answerAssessment ?? "unavailable";
+  const discounted =
+    decision?.discounts.includes("ai_overview_answer_discount") === true;
+  const provenance = [evidence?.modelId, evidence?.promptVersion]
+    .filter((value): value is string => value !== null && value !== undefined)
+    .join(" · ");
+
+  return (
+    <div className="min-w-[220px] space-y-2">
+      <p>
+        <span className="block font-medium text-text-dark-primary">
+          {t("aio.providerLabel")}
+        </span>
+        <span
+          className={
+            availability === "observed"
+              ? "text-brand-warning"
+              : availability === "unavailable"
+                ? "text-text-dark-faint"
+                : "text-text-dark-secondary"
+          }
+        >
+          {availability === "unavailable" ? "— " : ""}
+          {label(`aioAvailability.${availability}`, availability)}
+        </span>
+      </p>
+      <p>
+        <span className="block font-medium text-text-dark-primary">
+          {t("aio.assessmentLabel")}
+        </span>
+        <span className="text-text-dark-secondary">
+          {label(`aioAssessments.${assessment}`, assessment)}
+        </span>
+      </p>
+      {discounted ? (
+        <p className="rounded-[6px] border border-brand-warning/25 bg-brand-warning/[0.08] px-2 py-1 text-brand-warning">
+          {t("aio.discountLabel")}: {t("discounts.ai_overview_answer_discount")}
+        </p>
+      ) : null}
+      {evidence?.reason !== null && evidence?.reason !== undefined ? (
+        <p className="text-text-dark-faint">
+          {label(`evidenceReasons.${evidence.reason}`, evidence.reason)}
+        </p>
+      ) : null}
+      {provenance !== "" ? (
+        <p className="font-mono text-[10.5px] break-all text-text-dark-faint">
+          {provenance}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Candidates whose required evidence did not complete, grouped by the gap. */
+function Incomplete({
+  incomplete,
+}: {
+  readonly incomplete: readonly KeywordOpportunityIncomplete[];
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  if (incomplete.length === 0) return null;
+
+  const byReason = new Map<KeywordOpportunityIncomplete["reason"], string[]>();
+  for (const entry of incomplete) {
+    byReason.set(entry.reason, [
+      ...(byReason.get(entry.reason) ?? []),
+      entry.keyword,
+    ]);
   }
-  if (itemTypes.includes("ai_overview")) {
-    return <span className="text-brand-warning">{t("aio.shown")}</span>;
-  }
-  return <span className="text-text-dark-secondary">{t("aio.notShown")}</span>;
+
+  return (
+    <section className={CARD}>
+      <h3 className={SECTION_TITLE}>
+        {t("incompleteTitle")} · {t("sectionCount", { count: incomplete.length })}
+      </h3>
+      <p className={SECTION_INTRO}>{t("incompleteIntro")}</p>
+      <div className="mt-4 space-y-3">
+        {[...byReason.entries()].map(([reason, keywords]) => (
+          <details key={reason} className="group">
+            <summary className="cursor-pointer text-[13px] text-text-dark-primary transition-colors marker:text-text-dark-secondary hover:text-brand-accent-text">
+              {label(`incomplete.${reason}`, reason)}
+              <span className="ml-2 font-mono text-[12px] text-text-dark-secondary tabular-nums">
+                {keywords.length}
+              </span>
+            </summary>
+            <ul className="mt-2.5 flex list-none flex-wrap gap-2 p-0">
+              {keywords.map((keyword) => (
+                <li key={keyword} className={PILL}>
+                  {keyword}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ))}
+      </div>
+      <div className="mt-5 border-t border-brand-border-faint pt-4">
+        <p className={LABEL}>{t("incompleteRetryTitle")}</p>
+        <p className={SECTION_INTRO}>{t("incompleteRetry")}</p>
+      </div>
+    </section>
+  );
 }
 
 /** A row's own checks, minus the ones the whole table already states. */
@@ -677,7 +990,9 @@ function Withheld({
 
   return (
     <section className={CARD}>
-      <h3 className={SECTION_TITLE}>{t("withheldTitle")}</h3>
+      <h3 className={SECTION_TITLE}>
+        {t("withheldTitle")} · {t("sectionCount", { count: withheld.length })}
+      </h3>
       <p className={SECTION_INTRO}>{t("withheldIntro")}</p>
       <div className="mt-4 space-y-3">
         {[...byReason.entries()].map(([reason, keywords]) => (
@@ -696,12 +1011,9 @@ function Withheld({
               ))}
             </ul>
             {/*
-             * Only the budget group gets a way forward. These terms were never
-             * judged — the per-run sample cap ran out before reaching them —
-             * and seeding the next run with them is the move that narrows it
-             * toward exactly this gap. The other reasons are verdicts or
-             * provider gaps; re-running on them changes nothing, which is
-             * what their copy says.
+             * Compatibility for a result emitted by the former capped sampler.
+             * New v2 runs attempt every candidate except explicit zero and never emit this
+             * reason, but a tab can finish a run across a deployment boundary.
              */}
             {reason === "serp_sample_budget_exhausted" &&
             onRetryWithSeeds !== undefined ? (
@@ -717,6 +1029,10 @@ function Withheld({
             ) : null}
           </details>
         ))}
+      </div>
+      <div className="mt-5 border-t border-brand-border-faint pt-4">
+        <p className={LABEL}>{t("withheldGuidanceTitle")}</p>
+        <p className={SECTION_INTRO}>{t("withheldGuidance")}</p>
       </div>
     </section>
   );

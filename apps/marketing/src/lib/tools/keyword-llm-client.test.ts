@@ -38,11 +38,13 @@ const REQUEST: KeywordLlmRequest = {
 function completion(
   content: unknown,
   usage?: Record<string, unknown>,
+  model?: unknown,
 ): Response {
   return new Response(
     JSON.stringify({
       choices: [{ message: { content } }],
       ...(usage === undefined ? {} : { usage }),
+      ...(model === undefined ? {} : { model }),
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
@@ -250,6 +252,28 @@ describe("mergeKeywordLlmUsage", () => {
 });
 
 describe("createKeywordLlmClient", () => {
+  it("carries a bounded response model id and otherwise uses the configured model", async () => {
+    const replies = [
+      completion("{}", undefined, "gpt-5.6-luna-2026-08-01"),
+      completion("{}"),
+      completion("{}", undefined, `bad\u0000${"x".repeat(300)}`),
+    ];
+    const client = createKeywordLlmClient({
+      env: DIRECT_ENV,
+      fetchImpl: async () => replies.shift()!,
+    });
+
+    await expect(client.complete(REQUEST)).resolves.toMatchObject({
+      modelId: "gpt-5.6-luna-2026-08-01",
+    });
+    await expect(client.complete(REQUEST)).resolves.toMatchObject({
+      modelId: "gpt-direct",
+    });
+    await expect(client.complete(REQUEST)).resolves.toMatchObject({
+      modelId: "gpt-direct",
+    });
+  });
+
   it("sends a JSON-mode chat request with bearer auth and no redirects", async () => {
     const capture = capturing(() => completion("{}", { prompt_tokens: 11 }));
     const client = createKeywordLlmClient({

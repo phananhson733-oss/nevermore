@@ -10,6 +10,7 @@ import {
   observeKeywordCoverage,
 } from "./coverage.ts";
 import type {
+  KeywordCoverageInventory,
   KeywordCoveragePage,
   KeywordCoverageQueryRow,
 } from "./coverage.ts";
@@ -23,6 +24,15 @@ function row(
   return { query, impressions, position };
 }
 
+function queryPageRow(
+  query: string,
+  page: string,
+  impressions: number,
+  position: number,
+) {
+  return { query, page, impressions, position };
+}
+
 /** A crawled page described by the words its title visibly targets. */
 function page(url: string, title: string): KeywordCoveragePage {
   return { url, tokens: keywordTokens(title) };
@@ -30,6 +40,22 @@ function page(url: string, title: string): KeywordCoveragePage {
 
 const NO_PAGES: readonly KeywordCoveragePage[] = [];
 const EMPTY_INDEX = buildKeywordCoverageIndex([]);
+
+function inventory(
+  urls: readonly string[],
+  overrides: Partial<KeywordCoverageInventory> = {},
+): KeywordCoverageInventory {
+  return {
+    urls,
+    fetched: true,
+    complete: true,
+    documentsRead: 1,
+    truncationReasons: [],
+    ...overrides,
+  };
+}
+
+const COMPLETE_EMPTY_INVENTORY = inventory([]);
 
 describe("coverage thresholds", () => {
   it("pins the three numbers every other case in this file is written against", () => {
@@ -137,6 +163,77 @@ describe("buildKeywordCoverageIndex", () => {
   it("returns an empty index for an empty window instead of throwing", () => {
     expect(buildKeywordCoverageIndex([]).size).toBe(0);
   });
+
+  it("retains the exact query metrics and attaches its positive query-page URL", () => {
+    const index = buildKeywordCoverageIndex(
+      [row("best crm", 40, 4)],
+      [queryPageRow("best crm", "https://example.com/gsc-page", 12, 3)],
+    );
+
+    expect(index.get("best crm")).toEqual({
+      impressions: 40,
+      weightedPosition: 4,
+      supportingPageUrl: "https://example.com/gsc-page",
+    });
+  });
+
+  it("chooses a query-page winner by impressions, position, then URL", () => {
+    const mostImpressions = buildKeywordCoverageIndex(
+      [row("best crm", 100, 8)],
+      [
+        queryPageRow("best crm", "https://example.com/a", 9, 1),
+        queryPageRow("best crm", "https://example.com/b", 10, 20),
+      ],
+    );
+    const bestPosition = buildKeywordCoverageIndex(
+      [row("best crm", 100, 8)],
+      [
+        queryPageRow("best crm", "https://example.com/a", 10, 5),
+        queryPageRow("best crm", "https://example.com/b", 10, 4),
+      ],
+    );
+    const urlTieBreak = buildKeywordCoverageIndex(
+      [row("best crm", 100, 8)],
+      [
+        queryPageRow("best crm", "https://example.com/b", 10, 4),
+        queryPageRow("best crm", "https://example.com/a", 10, 4),
+      ],
+    );
+
+    expect(mostImpressions.get("best crm")?.supportingPageUrl).toBe(
+      "https://example.com/b",
+    );
+    expect(bestPosition.get("best crm")?.supportingPageUrl).toBe(
+      "https://example.com/b",
+    );
+    expect(urlTieBreak.get("best crm")?.supportingPageUrl).toBe(
+      "https://example.com/a",
+    );
+  });
+
+  it("uses a positive query-page row without requiring a complete split", () => {
+    const index = buildKeywordCoverageIndex(
+      [row("best crm", 100, 8)],
+      [queryPageRow("best crm", "https://example.com/known", 1, 80)],
+    );
+
+    expect(index.get("best crm")?.supportingPageUrl).toBe(
+      "https://example.com/known",
+    );
+  });
+
+  it("does not turn an empty page or nonpositive metric into page evidence", () => {
+    const index = buildKeywordCoverageIndex(
+      [row("best crm", 100, 8)],
+      [
+        queryPageRow("best crm", "", 100, 1),
+        queryPageRow("best crm", "https://example.com/zero", 0, 1),
+        queryPageRow("best crm", "https://example.com/nan", Number.NaN, 1),
+      ],
+    );
+
+    expect(index.get("best crm")?.supportingPageUrl).toBeNull();
+  });
 });
 
 describe("observeKeywordCoverage", () => {
@@ -191,9 +288,15 @@ describe("observeKeywordCoverage", () => {
     expect(observeKeywordCoverage("best crm", enough, NO_PAGES).state).toBe(
       "observed_exact_strong",
     );
-    expect(observeKeywordCoverage("best crm", tooFew, NO_PAGES).state).toBe(
-      "not_observed_in_gsc_query_sample",
-    );
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        tooFew,
+        NO_PAGES,
+        null,
+        COMPLETE_EMPTY_INVENTORY,
+      ).state,
+    ).toBe("not_observed_in_bounded_inventory");
   });
 
   it("lets a thin exact row fall through to the title check rather than deciding on it", () => {
@@ -223,6 +326,46 @@ describe("observeKeywordCoverage", () => {
     expect(observeKeywordCoverage("best crm", index, pages)).toEqual({
       state: "observed_exact_strong",
       supportingPageUrl: "https://example.com/crm",
+    });
+  });
+
+  it("prefers the measured query-page URL to lexical and generator fallbacks", () => {
+    const index = buildKeywordCoverageIndex(
+      [row("best crm", 40, 4)],
+      [queryPageRow("best crm", "https://example.com/gsc", 30, 4)],
+    );
+    const pages = [page("https://example.com/lexical", "Best CRM")];
+
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        index,
+        pages,
+        "https://example.com/attributed",
+      ),
+    ).toEqual({
+      state: "observed_exact_strong",
+      supportingPageUrl: "https://example.com/gsc",
+    });
+  });
+
+  it("keeps positive GSC and crawled-page evidence ahead of sitemap slug evidence", () => {
+    const index = buildKeywordCoverageIndex([row("best crm", 40, 4)]);
+    const pages = [page("https://example.com/crawled", "Best CRM")];
+    const sitemap = inventory(["https://example.com/best-crm"]);
+
+    expect(
+      observeKeywordCoverage("best crm", index, pages, null, sitemap),
+    ).toEqual({
+      state: "observed_exact_strong",
+      supportingPageUrl: "https://example.com/crawled",
+    });
+
+    expect(
+      observeKeywordCoverage("best crm", EMPTY_INDEX, pages, null, sitemap),
+    ).toEqual({
+      state: "related_coverage_unverified",
+      supportingPageUrl: "https://example.com/crawled",
     });
   });
 
@@ -260,9 +403,15 @@ describe("observeKeywordCoverage", () => {
     const pages = [page("https://example.com/crm", "Best CRM guide")];
 
     expect(
-      observeKeywordCoverage("best crm for startups", EMPTY_INDEX, pages),
+      observeKeywordCoverage(
+        "best crm for startups",
+        EMPTY_INDEX,
+        pages,
+        null,
+        COMPLETE_EMPTY_INVENTORY,
+      ),
     ).toEqual({
-      state: "not_observed_in_gsc_query_sample",
+      state: "not_observed_in_bounded_inventory",
       supportingPageUrl: null,
     });
   });
@@ -296,27 +445,110 @@ describe("observeKeywordCoverage", () => {
     ).toBe("https://example.com/fr");
   });
 
-  it("says nothing was observed when there is neither a query row nor a page", () => {
-    // Spelled out in full because Search Console anonymises a large share of
-    // queries: this is "we did not see it", not "the site does not rank".
-    expect(observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES)).toEqual({
-      state: "not_observed_in_gsc_query_sample",
+  it("says only that a term was not found in the complete bounded inventory", () => {
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        NO_PAGES,
+        null,
+        COMPLETE_EMPTY_INVENTORY,
+      ),
+    ).toEqual({
+      state: "not_observed_in_bounded_inventory",
       supportingPageUrl: null,
     });
   });
 
-  it("separates a sample that was read and came back empty from one never read", () => {
-    // The dishonesty the first live run shipped: the Search Console read
-    // failed on every request and every row still said "not observed in the
-    // sample" — a positive claim about a sample nobody fetched. An empty map
-    // is a real answer (a property that served nothing); null is the absence
-    // of one, and the two must never collapse.
+  it("reports inventory unavailable when no inventory travelled with the run", () => {
     expect(
       observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES).state,
-    ).toBe("not_observed_in_gsc_query_sample");
+    ).toBe("inventory_unavailable");
     expect(observeKeywordCoverage("best crm", null, NO_PAGES).state).toBe(
-      "gsc_query_sample_not_read",
+      "inventory_unavailable",
     );
+  });
+
+  it("reports an unavailable fetch and an incomplete fetch separately", () => {
+    const unavailable = inventory([], {
+      fetched: false,
+      complete: false,
+      documentsRead: 0,
+      truncationReasons: ["document_unavailable"],
+    });
+    const truncated = inventory(["https://example.com/other"], {
+      complete: false,
+      truncationReasons: ["url_cap"],
+    });
+
+    expect(
+      observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES, null, unavailable)
+        .state,
+    ).toBe("inventory_unavailable");
+    expect(
+      observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES, null, truncated)
+        .state,
+    ).toBe("inventory_truncated");
+  });
+
+  it("uses only normalized URL path tokens for a possible existing page", () => {
+    const sitemap = inventory([
+      "https://example.com/products/caf%C3%A9-crm?source=secret-keyword",
+    ]);
+
+    expect(
+      observeKeywordCoverage("café crm", EMPTY_INDEX, NO_PAGES, null, sitemap),
+    ).toEqual({
+      state: "possible_existing_page",
+      supportingPageUrl:
+        "https://example.com/products/caf%C3%A9-crm?source=secret-keyword",
+    });
+    expect(
+      observeKeywordCoverage(
+        "secret keyword",
+        EMPTY_INDEX,
+        NO_PAGES,
+        null,
+        sitemap,
+      ).state,
+    ).toBe("not_observed_in_bounded_inventory");
+  });
+
+  it("keeps a slug match possible even when the inventory is truncated", () => {
+    const sitemap = inventory(["https://example.com/best-crm"], {
+      complete: false,
+      truncationReasons: ["token_budget"],
+    });
+
+    expect(
+      observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES, null, sitemap),
+    ).toEqual({
+      state: "possible_existing_page",
+      supportingPageUrl: "https://example.com/best-crm",
+    });
+  });
+
+  it("ignores a malformed pathname without throwing or claiming no page exists", () => {
+    const malformed = inventory(["https://example.com/%E0%A4%A"]);
+
+    expect(() =>
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        NO_PAGES,
+        null,
+        malformed,
+      ),
+    ).not.toThrow();
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        NO_PAGES,
+        null,
+        malformed,
+      ).state,
+    ).toBe("inventory_truncated");
   });
 
   it("still reads the crawled pages when the query sample was never read", () => {
@@ -342,9 +574,10 @@ describe("observeKeywordCoverage", () => {
         EMPTY_INDEX,
         [page("https://example.com/audit", "Free SEO audit")],
         "https://example.com/audit",
+        COMPLETE_EMPTY_INVENTORY,
       ),
     ).toEqual({
-      state: "not_observed_in_gsc_query_sample",
+      state: "not_observed_in_bounded_inventory",
       supportingPageUrl: "https://example.com/audit",
     });
   });
@@ -368,8 +601,16 @@ describe("observeKeywordCoverage", () => {
     // worse, 0/0. The guard returns before the division.
     const pages = [page("https://example.com/crm", "Best CRM")];
 
-    expect(observeKeywordCoverage("!!!", EMPTY_INDEX, pages)).toEqual({
-      state: "not_observed_in_gsc_query_sample",
+    expect(
+      observeKeywordCoverage(
+        "!!!",
+        EMPTY_INDEX,
+        pages,
+        null,
+        COMPLETE_EMPTY_INVENTORY,
+      ),
+    ).toEqual({
+      state: "not_observed_in_bounded_inventory",
       supportingPageUrl: null,
     });
   });
@@ -377,9 +618,15 @@ describe("observeKeywordCoverage", () => {
   it("survives a crawled page with an empty token set", () => {
     const pages = [page("https://example.com/empty", "---")];
 
-    expect(observeKeywordCoverage("best crm", EMPTY_INDEX, pages).state).toBe(
-      "not_observed_in_gsc_query_sample",
-    );
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        pages,
+        null,
+        COMPLETE_EMPTY_INVENTORY,
+      ).state,
+    ).toBe("not_observed_in_bounded_inventory");
   });
 });
 
@@ -396,6 +643,12 @@ describe("isKeywordAlreadyCovered", () => {
     expect(isKeywordAlreadyCovered("not_observed_in_gsc_query_sample")).toBe(
       false,
     );
+    expect(isKeywordAlreadyCovered("possible_existing_page")).toBe(false);
+    expect(isKeywordAlreadyCovered("not_observed_in_bounded_inventory")).toBe(
+      false,
+    );
+    expect(isKeywordAlreadyCovered("inventory_unavailable")).toBe(false);
+    expect(isKeywordAlreadyCovered("inventory_truncated")).toBe(false);
   });
 
   it("answers for every coverage state the contract declares", () => {

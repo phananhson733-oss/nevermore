@@ -18,16 +18,16 @@ import { createKeywordProviderSeams } from "@/lib/tools/keyword-providers";
 
 export const runtime = "nodejs";
 /**
- * The paid half: one expansion call, one batched pricing call, up to twenty
- * sampled pages of results and one rank lookup. Measured end to end the
- * provider chain runs under 30s and the model call is the long pole; 300 is
- * the platform ceiling and the deadline the sample cap was sized against.
+ * The paid half: candidate expansion, batched pricing, all-candidate SERP
+ * evidence, domain enrichments, and optional bounded interpretation. The route
+ * keeps the platform ceiling while each dependency owns its tighter deadline.
  */
 export const maxDuration = 300;
 
 export async function POST(request: Request): Promise<Response> {
-  // One accumulator per request, shared between the provider adapters that
-  // book spend and the orchestration that asks whether the next stage fits.
+  // One accumulator per request, shared between provider adapters that book
+  // actual spend and the handler that reports it. Initial v2 does not call the
+  // accumulator's legacy admission helpers or the account-wide daily breaker.
   const costs = createKeywordCostAccumulator();
   // Counted, not just offered: `onUsage` existed from the start and both
   // routes passed an empty object, so every run reported zero model calls.
@@ -41,6 +41,7 @@ export async function POST(request: Request): Promise<Response> {
       toKeywordContextCrawl(await crawlSiteContextProfile(siteUrl)),
     extractPropositions: llm.extractPropositions,
     expandCandidates: llm.expandCandidates,
+    interpretSerpEvidence: llm.interpretSerpEvidence,
     ...createKeywordProviderSeams({ costs }),
     // Built here, from the token the handler resolved inside the gate.
     readCoverageQueries: createKeywordCoverageReader({}),

@@ -88,7 +88,7 @@
       },
       "hiddenKeywords": {
         "label": "Keyword Opportunity Map",
-        "description": "Reads your site, then shows search terms with measured demand and a weak site already on page one, plus the questions your pages already answer."
+        "description": "Reads your site, then checks every candidate except an explicit-zero term for young-domain, low-traffic-domain, or community-result evidence on page one."
       }
     }
   },
@@ -2218,7 +2218,7 @@
       "rereadSite": "Read my site again",
       "reading": "Reading your site…",
       "readingTitle": "Reading your site",
-      "readingBody": "Fetching up to fourteen pages and reading the positioning off them. Usually about twenty seconds. Nothing is charged for this step.",
+      "readingBody": "Fetching a bounded context of up to 20 pages and reading the positioning from them. This is not a whole-site crawl. Nothing is charged for this step.",
       "confirmTitle": "What we read off your site",
       "confirmBody": "Read {pages} pages, {productPages} of which look like product pages. The candidate keywords are generated from these statements, so it is worth checking they describe your business before spending the search-data budget.",
       "confirmHint": "If these are wrong, the keywords will be too. Add seed terms above and read the site again, or run the map if they look right.",
@@ -2228,22 +2228,24 @@
       "startOver": "Start over",
       "running": "Running…",
       "runningTitle": "Building the opportunity map",
-      "runningBody": "Pricing candidates, reading your Search Console queries, and opening page one for the survivors one at a time. This usually takes about two minutes — the page-one sampling is deliberately serial so we do not hammer the provider.",
+      "runningBody": "Pricing candidates, reading your Search Console evidence, and checking page one for every candidate except an explicit-zero term in bounded parallel waves of up to ten. The elapsed time depends on how many candidates and provider responses this run has.",
       "runningStatus": "Still running, {seconds} seconds elapsed.",
       "elapsed": "{seconds}s elapsed",
       "statusDone": "Done. {count} opportunities.",
       "cooldown": "You can try again in {seconds}s.",
       "exportCsv": "Export CSV",
-      "commonChecksIntro": "Before acting on any row:",
+      "commonChecksIntro": "Remaining decisions for every row:",
       "retryWithSeeds": "Use these as seeds and run again",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
+      "contextBoundary": "Candidate generation used a bounded context of up to 20 pages. It is not a whole-site crawl.",
+      "contextStopped": "Context boundary: {reason}",
       "funnelIntro": "What each stage of the run saw. The counts overlap on purpose: the GEO lane is not gated on demand, so a term the provider had no data for can still be shown. Read it as where the evidence went, not as a division of the total.",
       "notMeasured": "not checked",
       "emptyTitle": "Nothing reached the tables",
       "emptyBody": "No candidate this run generated reached either table. The counts above show what each stage saw, and the list below names every term with the specific wall it hit. That is a finding about this market's public data, not a verdict on the site.",
       "emptyBodyPartial": "Part of this run did not complete, so some candidates were never judged at all rather than judged and dropped. The counts above show which gates actually ran; until the missing stage recovers, an empty list here is not evidence that there is nothing to find.",
       "clustersTitle": "Lexically related terms — review before merging",
-      "clustersIntro": "Terms whose wording overlaps enough that one page could serve them all. Only groups of two or more are listed, so the page count this implies is these groups plus one for every term that stands alone. Grouping is lexical, which makes it a suggestion and not a site structure: proving two terms belong on one page needs the page-one overlap this run does not fetch.",
+      "clustersIntro": "Terms whose wording overlaps enough that one page could serve them all. Only groups of two or more are listed. Grouping is lexical and does not prove page-one overlap, so this is a review suggestion, not a site structure.",
       "funnel": {
         "generated": "Generated",
         "deduplicated": "After dedupe",
@@ -2255,10 +2257,21 @@
         "winnableEvidence": "Weak site on page one",
         "shown": "Shown"
       },
-      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale; the domain holding it and its position sit under the number so you can open the page yourself. A 0 is the provider's own value for a domain it has no backlink data on, not a measurement of weakness. It is one proxy signal, not a verdict on the whole page — a low number means somebody small is already there, which is evidence, not a promise.",
-      "geoHint": "These carry no demand data on purpose. Question phrasings almost never have measurable search volume, so they are judged on whether your site already has a page that answers them.",
-      "withheldTitle": "Held back, and why",
-      "withheldIntro": "Each of these hit a specific wall. The reason names which one, because they imply different next moves.",
+      "weakestHint": "Weakest rank is one raw page-one fact, not the decision rule by itself. The opportunity decision uses three separately reported signals: a young domain, a low-organic-traffic domain, or a community result. Any unavailable required signal keeps the candidate incomplete.",
+      "geoHint": "These are question-form candidates judged by the same three page-one signals. A supporting page is shown only when one was observed; no demand is claimed when the provider returned none.",
+      "eligibleTitle": "Eligible opportunities",
+      "eligibleIntro": "At least one required opportunity signal was observed. AI Overview answer completeness can lower ordering; it never excludes a candidate.",
+      "withheldTitle": "Excluded",
+      "withheldIntro": "These candidates received an exclusion decision. Each exact reason is preserved instead of being folded into missing evidence.",
+      "incompleteTitle": "Detection incomplete",
+      "incompleteIntro": "These candidates were attempted, but a required evidence source did not complete. They were not rejected; the missing evidence is named below.",
+      "sectionCount": "{count, plural, one {# candidate} other {# candidates}}",
+      "incompleteRetryTitle": "Retry guidance",
+      "incompleteRetry": "Retry the unchanged run after the missing evidence source recovers. A retry before recovery is likely to reproduce the same gap.",
+      "withheldGuidanceTitle": "Next move",
+      "withheldGuidance": "An explicit provider zero is a completed snapshot. A three-signal negative may change as the results page changes; review it later rather than treating it as missing evidence.",
+      "providerIntentMissing": "Not returned",
+      "inferenceUnavailable": "Unavailable",
       "nextStepsTitle": "What might make the next run better",
       "whereNextTitle": "Where to go next",
       "whereNextBody": "Check site fundamentals without connecting Search Console. Account verification is required before an Agent crawl.",
@@ -2267,26 +2280,99 @@
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
+        "providerIntent": "Provider intent",
+        "serpIntent": "SERP interpreted intent",
         "volume": "Volume",
         "difficulty": "KD",
         "weakest": "Weakest rank",
+        "signals": "Three-signal evidence",
         "aiOverview": "AI Overview",
         "supportingPage": "Page that answers it",
         "coverage": "Your coverage",
-        "nextChecks": "Check before acting"
+        "nextChecks": "Check before acting",
+        "remainingDecisions": "Remaining decisions"
       },
       "aio": {
-        "shown": "On page one",
-        "notShown": "Not observed"
+        "shown": "Observed on page one",
+        "notShown": "Not observed on page one",
+        "providerLabel": "Provider availability",
+        "assessmentLabel": "Answer assessment",
+        "discountLabel": "Ranking discount"
+      },
+      "intents": {
+        "informational": "Informational",
+        "navigational": "Navigational",
+        "commercial": "Commercial",
+        "transactional": "Transactional",
+        "mixed": "Mixed"
+      },
+      "signalNames": {
+        "young_domain": "Young domain",
+        "low_organic_traffic_domain": "Low organic traffic domain",
+        "community_result": "Community result"
+      },
+      "signalStates": {
+        "observed": "Observed",
+        "not_observed": "Not observed",
+        "unavailable": "Unavailable"
+      },
+      "communitySources": {
+        "provider_item_type": "Provider item type",
+        "domain_fallback": "Domain fallback"
+      },
+      "signalEvidence": {
+        "youngObserved": "{domain} · registered {date} · {months} months old",
+        "lowTrafficObserved": "{domain} · ETV {etv} · threshold {threshold}",
+        "communityObserved": "{source} · {domain} · #{position}",
+        "titleUnavailable": "Result title not returned"
+      },
+      "aioAvailability": {
+        "observed": "Observed on page one",
+        "not_observed": "Not observed on page one",
+        "unavailable": "Provider evidence unavailable"
+      },
+      "aioAssessments": {
+        "complete": "Complete answer",
+        "partial": "Partial answer",
+        "not_answered": "Does not answer the query",
+        "unavailable": "Unavailable"
+      },
+      "discounts": {
+        "ai_overview_answer_discount": "AI Overview already answers the query"
+      },
+      "evidenceReasons": {
+        "legacy_result_unreported": "This older result did not report the evidence",
+        "run_observation_invalid": "Run observation time was invalid",
+        "domain_registration_stage_unavailable": "Domain-registration stage unavailable",
+        "organic_result_domains_unavailable": "Organic-result domains unavailable",
+        "domain_registration_evidence_incomplete": "Domain-registration evidence incomplete",
+        "site_rank_tier_unavailable": "Site rank tier unavailable",
+        "domain_traffic_stage_unavailable": "Domain-traffic stage unavailable",
+        "domain_traffic_evidence_incomplete": "Domain-traffic evidence incomplete",
+        "community_item_availability_unreported": "Community-item availability unreported",
+        "serp_unavailable": "Page-one evidence unavailable",
+        "content_unavailable": "AI Overview content unavailable",
+        "not_assessed": "AI Overview answer not assessed",
+        "item_types_unreported": "Page-one item types unreported",
+        "serp_evidence_unavailable": "Page-one evidence unavailable",
+        "interpretation_unavailable": "SERP interpretation unavailable"
+      },
+      "contextStops": {
+        "completed": "All eligible context pages were read",
+        "max_urls": "The 20-page context limit was reached; later eligible pages were not read",
+        "max_requests": "The request limit was reached; this context is partial",
+        "max_wall_clock": "The crawl time boundary was reached; this context is partial",
+        "max_total_bytes": "The response-byte boundary was reached; this context is partial",
+        "aborted": "The context crawl was stopped before completion"
       },
       "lane": {
         "seo": {
-          "title": "Search terms with measured demand",
-          "intro": "Each one has a search volume from the provider and a page one where at least one weak site already ranks. Neither fact says you will rank; both say the attempt is not obviously blocked."
+          "title": "Search-form opportunities",
+          "intro": "Non-question candidates with at least one observed page-one opportunity signal. Provider volume and intent stay blank when they were not returned; neither is inferred from the SERP."
         },
         "geo": {
-          "title": "Questions your site already answers",
-          "intro": "Phrasings a person would type or ask an assistant, matched to a page you already have. No search volume is claimed for these."
+          "title": "Question-form opportunities",
+          "intro": "Phrasings a person would type or ask an assistant that cleared the same page-one signal rule. A supporting site page appears only when the bounded context observed one."
         }
       },
       "coverage": {
@@ -2294,7 +2380,11 @@
         "observed_exact_weak": "Already served, below page one",
         "related_coverage_unverified": "A page looks related, unverified",
         "not_observed_in_gsc_query_sample": "Not in your query sample",
-        "gsc_query_sample_not_read": "Not checked"
+        "gsc_query_sample_not_read": "Not checked",
+        "possible_existing_page": "A sitemap URL looks related; verify the page",
+        "not_observed_in_bounded_inventory": "Not found in this bounded sitemap inventory",
+        "inventory_unavailable": "Sitemap inventory unavailable",
+        "inventory_truncated": "Only a partial sitemap inventory was checked"
       },
       "checks": {
         "read_page_one_intent": "Open page one and read what those results actually answer",
@@ -2312,7 +2402,14 @@
         "page_one_ranks_unresolved": "Page one was opened but the provider resolved no authority for its domains — a data gap, not a verdict, and a re-run hits the same gap",
         "serp_sample_budget_exhausted": "The run's page-one budget did not reach it",
         "serp_sample_unavailable": "Page-one sampling did not run",
-        "no_supporting_page": "No crawled page answers it"
+        "no_supporting_page": "No crawled page answers it",
+        "all_signals_not_observed": "All three opportunity signals were checked and none was observed"
+      },
+      "incomplete": {
+        "serp_evidence_unavailable": "Page-one evidence was unavailable",
+        "young_domain_signal_unavailable": "Domain-registration evidence was unavailable",
+        "low_organic_traffic_signal_unavailable": "Organic-traffic or site-tier evidence was unavailable",
+        "community_result_signal_unavailable": "Community-result evidence was unavailable"
       },
       "availability": {
         "available": "Complete run.",
@@ -2322,7 +2419,9 @@
       },
       "stages": {
         "gsc_coverage": "your Search Console queries",
+        "gsc_coverage_truncated": "later rows from the Search Console coverage read",
         "serp_sample": "page-one sampling",
+        "serp_sample_partial": "page-one sampling for some candidates",
         "serp_sample_cost_capped": "page-one sampling, stopped at the run's cost ceiling"
       },
       "nextSteps": {
@@ -2998,7 +3097,7 @@
           {
             "href": "/tools/low-competition-keywords",
             "name": "Keyword Opportunity Map",
-            "blurb": "Search terms with measured demand and a weak site already on page one."
+            "blurb": "Candidates except explicit-zero terms whose page one shows a young domain, low-traffic domain, or community result."
           },
           {
             "href": "/tools/seo-quick-wins",

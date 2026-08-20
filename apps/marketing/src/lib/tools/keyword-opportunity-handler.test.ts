@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { KeywordOpportunityProviderRow } from "@sf/public-tools";
+import type {
+  KeywordCoverageRead,
+  KeywordOpportunityProviderRow,
+} from "@sf/public-tools";
+import { SourceError, type DomainRegistrationEvidence } from "@sf/sources";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import { openCrawlGate, type CrawlGateDependencies } from "./crawl-gate.ts";
 import { createKeywordCostAccumulator } from "./keyword-cost-guard.ts";
 import { KeywordLlmError } from "./keyword-llm-client.ts";
+import type { KeywordSerpInterpretationInput } from "./keyword-prompts.ts";
 import {
   acquirePublicCrawlSlot,
   resetPublicToolSlots,
@@ -15,12 +20,12 @@ import {
   handleKeywordOpportunitiesRequest,
   KEYWORD_CANDIDATE_CAP,
   KEYWORD_CONTEXT_TTL_SECONDS,
-  KEYWORD_SERP_SAMPLE_CAP,
   OPPORTUNITIES_BODY_LIMIT_BYTES,
   trimKeywordContextHeadings,
   type KeywordCandidateDraft,
   type KeywordContextToken,
   type KeywordOpportunityDependencies,
+  type KeywordSerpSampleResult,
 } from "./keyword-opportunity-handler.ts";
 
 // 32 bytes of hex, the shape of the deployed key. Set at module scope because
@@ -116,6 +121,18 @@ const TOKEN: KeywordContextToken = {
   sub: SUB,
 };
 
+const COMPLETE_SITEMAP_INVENTORY = {
+  urls: [
+    "https://acme.example/",
+    "https://acme.example/pricing",
+    "https://acme.example/docs",
+  ],
+  fetched: true,
+  complete: true,
+  documentsRead: 1,
+  truncationReasons: [],
+} as const;
+
 function contextToken(overrides: Partial<KeywordContextToken> = {}): string {
   return seal(
     "gg_kw_context",
@@ -134,6 +151,52 @@ function rows(keywords: readonly string[]): KeywordOpportunityProviderRow[] {
   }));
 }
 
+function completeSample(
+  keyword: string,
+  domain = "small-blog.com",
+): KeywordSerpSampleResult {
+  return {
+    keyword,
+    status: "complete",
+    failureReason: null,
+    observedAt: COMPLETED_AT,
+    results: [
+      {
+        domain,
+        position: 3,
+        title: "A useful answer",
+        url: `https://${domain}/answer`,
+      },
+    ],
+    pageItemTypes: [],
+    aiOverview: null,
+    communityItems: [],
+  };
+}
+
+function availableRegistration(domain: string): DomainRegistrationEvidence {
+  return {
+    domain,
+    availability: "available",
+    registeredAt: "2026-01-01T00:00:00.000Z",
+    observedAt: COMPLETED_AT,
+    sourceHost: "rdap.example",
+    reason: null,
+  };
+}
+
+function cleanCoverageRead(
+  queryRows: KeywordCoverageRead["queryRows"] = [],
+  queryPageRows: KeywordCoverageRead["queryPageRows"] = [],
+): KeywordCoverageRead {
+  return {
+    queryRows,
+    queryPageRows,
+    queryPaging: { pagesFetched: 1, truncated: false },
+    queryPagePaging: { pagesFetched: 1, truncated: false },
+  };
+}
+
 /**
  * Every seam in its "everything worked" state.
  *
@@ -144,10 +207,6 @@ function deps(
   overrides: Partial<KeywordOpportunityDependencies> = {},
 ): KeywordOpportunityDependencies {
   return {
-    // The breaker and the accumulator default to "budget is fine, nothing
-    // spent yet"; the cases that care override them.
-    consumeDailyBudget: () =>
-      Promise.resolve({ kind: "allowed", runsToday: 1 }),
     resolveGrant: () =>
       Promise.resolve({
         kind: "grant",
@@ -165,20 +224,28 @@ function deps(
     expandCandidates: () => Promise.resolve(DRAFTS),
     validateVolumes: ({ keywords }) => Promise.resolve(rows(keywords)),
     sampleSerp: ({ keywords }) =>
-      Promise.resolve(
-        keywords.map((keyword) => ({
-          keyword,
-          results: [{ domain: "small-blog.example", position: 3 }],
-          pageItemTypes: null,
-        })),
-      ),
+      Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
     // 40 is below the weak-domain ceiling, so the default page one reads as
     // one a new site has already been let into.
     resolveDomainRanks: (domains) =>
       Promise.resolve(
         new Map<string, number>(domains.map((domain) => [domain, 40] as const)),
       ),
-    readCoverageQueries: () => Promise.resolve([]),
+    resolveDomainTraffic: ({ domains }) =>
+      Promise.resolve(
+        new Map<string, number | null>(
+          domains.map((domain) => [domain, 100] as const),
+        ),
+      ),
+    resolveDomainRegistrations: (domains) =>
+      Promise.resolve(
+        new Map(
+          domains.map(
+            (domain) => [domain, availableRegistration(domain)] as const,
+          ),
+        ),
+      ),
+    readCoverageQueries: () => Promise.resolve(cleanCoverageRead()),
     now: () => new Date(COMPLETED_AT),
     extractClientIp: () => "203.0.113.9",
     ...overrides,
@@ -232,13 +299,65 @@ interface OpportunitiesBody {
         readonly lane: string;
         readonly coverage: string;
         readonly supportingPageUrl: string | null;
-        readonly serp: { readonly verdict: string };
+        readonly validation: {
+          readonly availability: string;
+          readonly providerIntent: string | null;
+        };
+        readonly serp: {
+          readonly verdict: string;
+          readonly status: string;
+          readonly failureReason: string | null;
+          readonly organicResults: readonly {
+            readonly domain: string;
+            readonly title: string | null;
+            readonly url: string | null;
+          }[];
+        };
+        readonly serpIntent: {
+          readonly intent: string;
+          readonly source: string;
+          readonly observedAt: string;
+          readonly modelId: string | null;
+          readonly promptVersion: string | null;
+        } | null;
+        readonly signals: {
+          readonly youngDomain: { readonly state: string };
+          readonly lowOrganicTrafficDomain: { readonly state: string };
+          readonly communityResult: { readonly state: string };
+        };
+        readonly aiOverview: {
+          readonly availability: string;
+          readonly loadedAsync: boolean | null;
+          readonly answerAssessment: string;
+          readonly reason: string | null;
+          readonly modelId: string | null;
+          readonly promptVersion: string | null;
+        } | null;
+        readonly decision: {
+          readonly disposition: string;
+          readonly discounts: readonly string[];
+        };
       }[];
       readonly withheld: readonly {
         readonly keyword: string;
         readonly reason: string;
       }[];
       readonly funnel: Record<string, number>;
+      readonly incomplete: readonly {
+        readonly keyword: string;
+        readonly reason: string;
+        readonly serp: {
+          readonly status: string;
+          readonly failureReason: string | null;
+          readonly organicResults: readonly unknown[];
+          readonly verdict: string;
+        };
+        readonly signals: {
+          readonly youngDomain: { readonly state: string };
+          readonly lowOrganicTrafficDomain: { readonly state: string };
+          readonly communityResult: { readonly state: string };
+        };
+      }[];
     };
   };
 }
@@ -471,13 +590,13 @@ describe("handleKeywordContextRequest", () => {
 
   it("keeps the sealed token inside the limit stage two will accept", async () => {
     // Headings started travelling in the token so the coverage check can see
-    // more than a four-word title. Fourteen heading-rich pages is a realistic
+    // more than a four-word title. Twenty heading-rich pages is a realistic
     // crawl, and an unbounded token would 413 at stage two — breaking the tool
     // for exactly the sites with the most content, and only in production,
     // where real pages have real headings.
     const heavy = {
       ...CRAWL,
-      pages: Array.from({ length: 14 }, (_, index) => ({
+      pages: Array.from({ length: 20 }, (_, index) => ({
         url: `https://acme.example/page-${String(index)}`,
         title: `Page ${String(index)}`,
         headings: Array.from(
@@ -504,15 +623,82 @@ describe("handleKeywordContextRequest", () => {
     );
   });
 
-  it("keeps the sealed token inside the limit for a site written in CJK", async () => {
+  it("carries the complete bounded sitemap inventory through the sealed token", async () => {
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        crawlContext: () =>
+          Promise.resolve({
+            ...CRAWL,
+            sitemapInventory: COMPLETE_SITEMAP_INVENTORY,
+          }),
+      }),
+    );
+    const parsed = (await response.json()) as ContextBody;
+    const opened = open<KeywordContextToken>(
+      "gg_kw_context",
+      parsed.data.contextToken,
+    );
+
+    expect(response.status).toBe(200);
+    expect(opened?.sitemapInventory).toEqual(COMPLETE_SITEMAP_INVENTORY);
+  });
+
+  it("truncates only the deterministic inventory tail when the token budget is reached", async () => {
+    const inventoryUrls = Array.from(
+      { length: 500 },
+      (_unused, index) =>
+        `https://acme.example/${"inventory-segment-".repeat(10)}${String(index).padStart(3, "0")}`,
+    );
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        crawlContext: () =>
+          Promise.resolve({
+            ...CRAWL,
+            sitemapInventory: {
+              urls: inventoryUrls,
+              fetched: true,
+              complete: true,
+              documentsRead: 1,
+              truncationReasons: [],
+            },
+          }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    if (!response.ok) return;
+
+    const parsed = (await response.json()) as ContextBody;
+    const opened = open<KeywordContextToken>(
+      "gg_kw_context",
+      parsed.data.contextToken,
+    );
+    const carried = opened?.sitemapInventory;
+
+    expect(carried).toBeDefined();
+    expect(carried?.urls.length).toBeGreaterThan(0);
+    expect(carried?.urls.length).toBeLessThan(inventoryUrls.length);
+    expect(carried?.urls).toEqual(inventoryUrls.slice(0, carried?.urls.length));
+    expect(carried?.complete).toBe(false);
+    expect(carried?.truncationReasons).toContain("token_budget");
+    expect(
+      new TextEncoder().encode(
+        JSON.stringify({ contextToken: parsed.data.contextToken }),
+      ).length,
+    ).toBeLessThan(OPPORTUNITIES_BODY_LIMIT_BYTES);
+  });
+
+  it("round-trips 20 long-URL CJK pages through the stage-two body limit", async () => {
     // The budget is spent in bytes because the limit is a byte limit, and one
     // CJK character is three of them. A character budget would let this site
-    // spend triple and 413 at stage two — which every ASCII fixture above is
-    // blind to.
+    // spend triple and 413 at stage two. Long but valid URLs prove the token
+    // budget covers the complete 20-page context rather than only short slugs.
+    const longPath = "safe-segment/".repeat(50);
     const heavy = {
       ...CRAWL,
-      pages: Array.from({ length: 14 }, (_, index) => ({
-        url: `https://acme.example/page-${String(index)}`,
+      pages: Array.from({ length: 20 }, (_, index) => ({
+        url: `https://acme.example/${longPath}page-${String(index)}`,
         title: `ページ ${String(index)}`,
         headings: Array.from(
           { length: 40 },
@@ -524,18 +710,40 @@ describe("handleKeywordContextRequest", () => {
       })),
     };
 
-    const response = await handleKeywordContextRequest(
+    const context = await handleKeywordContextRequest(
       request(CONTEXT_BODY),
       deps({ crawlContext: () => Promise.resolve(heavy) }),
     );
-    const parsed = (await response.json()) as {
-      readonly data: { readonly contextToken: string };
+    expect(context.status).toBe(200);
+    if (!context.ok) return;
+
+    const parsed = (await context.json()) as {
+      readonly data: {
+        readonly contextToken: string;
+        readonly headingBudgetBytes: number;
+      };
     };
 
     const body = JSON.stringify({ contextToken: parsed.data.contextToken });
-    expect(new TextEncoder().encode(body).length).toBeLessThan(
-      OPPORTUNITIES_BODY_LIMIT_BYTES,
+    const bodyBytes = new TextEncoder().encode(body).length;
+    expect(OPPORTUNITIES_BODY_LIMIT_BYTES).toBe(22 * 1024);
+    expect(bodyBytes).toBeGreaterThan(21 * 1024);
+    expect(bodyBytes).toBeLessThan(OPPORTUNITIES_BODY_LIMIT_BYTES);
+    expect(parsed.data.headingBudgetBytes).toBe(1_200);
+
+    const opened = open<KeywordContextToken>(
+      "gg_kw_context",
+      parsed.data.contextToken,
     );
+    expect(opened?.pages).toHaveLength(20);
+    expect(opened?.pages[0]?.headings?.[0]).toContain("診療所");
+    expect(opened?.pages[19]?.url).toBe(heavy.pages[19]?.url);
+
+    const opportunities = await handleKeywordOpportunitiesRequest(
+      request({ contextToken: parsed.data.contextToken }, "opportunities"),
+      deps(),
+    );
+    expect(opportunities.status).toBe(200);
   });
 
   it("carries a real heading through the seal and into stage two's matching", async () => {
@@ -586,7 +794,7 @@ describe("handleKeywordContextRequest", () => {
     // would post it and get a body-limit rejection that retrying cannot fix.
     const huge = {
       ...CRAWL,
-      pages: Array.from({ length: 14 }, (_, index) => ({
+      pages: Array.from({ length: 20 }, (_, index) => ({
         url: `https://acme.example/${"segment/".repeat(120)}${String(index)}`,
         title: "x",
         headings: [],
@@ -816,10 +1024,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
   it("accepts a token minted before headings existed instead of throwing on it", async () => {
     // `open()` decrypts and asserts a type; it does not validate a schema. For
     // ten minutes after this ships, live tokens have pages of `{url, title}`
-    // and no `headings` key at all — and spreading `undefined` throws AFTER
-    // admission, after the daily budget, and after this run has already paid
-    // for expansion and volume validation. The visitor would see a 502 for a
-    // deploy they had no part in.
+    // and no `headings` key at all — and spreading `undefined` throws after
+    // admission and after this run has already paid for expansion and volume
+    // validation. The visitor would see a 502 for a deploy they had no part in.
     const legacyPages = PAGES.map((page) => ({
       url: page.url,
       title: page.title,
@@ -831,6 +1038,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
 
     expect(response.status).toBe(200);
+    const parsed = (await response.json()) as OpportunitiesBody;
+    expect(parsed.data.result.rows.length).toBeGreaterThan(0);
+    for (const row of parsed.data.result.rows) {
+      expect(row.coverage).toBe("inventory_unavailable");
+    }
   });
 
   it("refuses a valid token that was issued to somebody else", async () => {
@@ -981,17 +1193,93 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // Named, so the run can never read as a clean one.
     expect(parsed.data.result.availability).not.toBe("available");
     expect(parsed.data.result.availability).toBe("partial");
-    // And no row may claim the sample said anything. The first live run put
-    // `not_observed_in_gsc_query_sample` on all eight of its rows after a read
-    // that never returned — a positive statement about a sample nobody
-    // fetched, which is the same failure the withheld reasons are split to
-    // avoid.
-    // The exact state, not merely "not the wrong one": a `not.toBe` passes for
-    // any other wrong answer, and is vacuous if the fixture shows no rows.
+    // This old fixture has no inventory either, so the exact per-row state is
+    // the stronger missing evidence. The failed GSC read remains visible in
+    // `unavailableStages` above rather than being fabricated into coverage.
     expect(parsed.data.result.rows.length).toBeGreaterThan(0);
     for (const row of parsed.data.result.rows) {
-      expect(row.coverage).toBe("gsc_query_sample_not_read");
+      expect(row.coverage).toBe("inventory_unavailable");
     }
+  });
+
+  it("keeps positive rows but marks a truncated query-page read partial", async () => {
+    const sampleSerp = vi.fn(
+      ({ keywords }: { readonly keywords: readonly string[] }) =>
+        Promise.resolve(
+          keywords.map((keyword) => completeSample(keyword, "small.example")),
+        ),
+    );
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        sampleSerp,
+        readCoverageQueries: () =>
+          Promise.resolve({
+            queryRows: [
+              { query: "patient intake forms", impressions: 900, position: 3 },
+            ],
+            queryPageRows: [
+              {
+                query: "patient intake forms",
+                page: "https://acme.example/patient-intake",
+                impressions: 700,
+                position: 2,
+              },
+            ],
+            queryPaging: { pagesFetched: 1, truncated: false },
+            queryPagePaging: { pagesFetched: 4, truncated: true },
+          }),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.unavailableStages).toContain(
+      "gsc_coverage_truncated",
+    );
+    expect(parsed.data.result.unavailableStages).not.toContain("gsc_coverage");
+    expect(parsed.data.result.availability).toBe("partial");
+    // Coverage changes the final disposition, not the evidence plan: v2 still
+    // samples every candidate except explicit zero so the retained record is complete.
+    expect(sampleSerp.mock.calls[0]?.[0].keywords).toContain(
+      "patient intake forms",
+    );
+  });
+
+  it("keeps a truncated query prefix and marks the run partial", async () => {
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        readCoverageQueries: () =>
+          Promise.resolve({
+            queryRows: [],
+            queryPageRows: [],
+            queryPaging: { pagesFetched: 4, truncated: true },
+            queryPagePaging: { pagesFetched: 1, truncated: false },
+          }),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.unavailableStages).toEqual([
+      "gsc_coverage_truncated",
+    ]);
+    expect(parsed.data.result.availability).toBe("partial");
+  });
+
+  it("marks a legacy query-only coverage reader as truncated", async () => {
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({ readCoverageQueries: () => Promise.resolve([]) }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.unavailableStages).toEqual([
+      "gsc_coverage_truncated",
+    ]);
+    expect(parsed.data.result.availability).toBe("partial");
   });
 
   it("reads Search Console by property identifier, not by the site URL", async () => {
@@ -1012,7 +1300,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
           }),
         readCoverageQueries: ({ property }) => {
           seen.push(property);
-          return Promise.resolve([]);
+          return Promise.resolve(cleanCoverageRead());
         },
       }),
     );
@@ -1024,7 +1312,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // No property for this site means no queries we are entitled to read. The
     // honest answer is the unread state — not an empty sample, which would
     // read as "your site serves none of these".
-    const readCoverageQueries = vi.fn(() => Promise.resolve([]));
+    const readCoverageQueries = vi.fn(() =>
+      Promise.resolve(cleanCoverageRead()),
+    );
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
@@ -1043,7 +1333,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(readCoverageQueries).not.toHaveBeenCalled();
     expect(parsed.data.result.unavailableStages).toContain("gsc_coverage");
     for (const row of parsed.data.result.rows) {
-      expect(row.coverage).toBe("gsc_query_sample_not_read");
+      expect(row.coverage).toBe("inventory_unavailable");
     }
   });
 
@@ -1074,11 +1364,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(geo?.keyword).toBe("can i submit an insurance claim the same day");
     expect(geo?.supportingPageUrl).toBe("https://acme.example/");
     // Attribution says where the claim came from. It is not evidence the site
-    // ranks, so the coverage state must stay exactly where the sample left it.
-    expect(geo?.coverage).toBe("not_observed_in_gsc_query_sample");
+    // ranks, and this legacy token carried no inventory to check independently.
+    expect(geo?.coverage).toBe("inventory_unavailable");
   });
 
-  it("ignores an attribution from a candidate that is not on the proposition lane", async () => {
+  it("does not use an invalid attribution as coverage evidence", async () => {
     // The generator is told every `site_proposition` item must carry a valid
     // index and every expansion item must carry none. An expansion candidate
     // arriving with one is the model contradicting its own instructions, and
@@ -1100,14 +1390,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
     const parsed = (await response.json()) as OpportunitiesBody;
 
-    expect(parsed.data.result.rows.some((row) => row.lane === "geo")).toBe(
-      false,
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.keyword === "what does the pricing page say",
     );
-    expect(
-      parsed.data.result.withheld.find(
-        (row) => row.keyword === "what does the pricing page say",
-      )?.reason,
-    ).toBe("no_supporting_page");
+    expect(row?.supportingPageUrl).toBeNull();
+    expect(row?.signals.youngDomain.state).toBe("observed");
   });
 
   it("refuses an attributed page the crawl never reached", async () => {
@@ -1139,14 +1426,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
     const parsed = (await response.json()) as OpportunitiesBody;
 
-    expect(parsed.data.result.rows.some((row) => row.lane === "geo")).toBe(
-      false,
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.keyword === "what does the ghost page say",
     );
-    expect(
-      parsed.data.result.withheld.find(
-        (row) => row.keyword === "what does the ghost page say",
-      )?.reason,
-    ).toBe("no_supporting_page");
+    expect(row?.supportingPageUrl).toBeNull();
+    expect(row?.signals.youngDomain.state).toBe("observed");
   });
 
   it("matches a candidate against the crawled headings, not the title alone", async () => {
@@ -1190,13 +1474,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // silently empty the only table the tool produces.
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
-        Promise.resolve(
-          keywords.map((keyword) => ({
-            keyword,
-            results: [{ domain: "small-blog.example", position: 3 }],
-            pageItemTypes: null,
-          })),
-        ),
+        Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
     );
     await handleKeywordOpportunitiesRequest(
       body(),
@@ -1224,13 +1502,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // headings in the token makes that state far more common.
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
-        Promise.resolve(
-          keywords.map((keyword) => ({
-            keyword,
-            results: [{ domain: "small-blog.example", position: 3 }],
-            pageItemTypes: null,
-          })),
-        ),
+        Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
     );
     const response = await handleKeywordOpportunitiesRequest(
       body({
@@ -1258,35 +1530,53 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(row?.serp.verdict).toBe("winnable_evidence");
   });
 
-  it("calls nothing winnable when page one was never sampled", async () => {
-    // The regression that misled this team four times: falling back to the
-    // difficulty score when the SERP sample is missing. A score models how
-    // hard a term looks; it cannot say who actually holds page one.
+  it("labels a sitemap slug match as possible without withholding or skipping SERP", async () => {
+    const sampleSerp = vi.fn(
+      ({ keywords }: { readonly keywords: readonly string[] }) =>
+        Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
+    );
     const response = await handleKeywordOpportunitiesRequest(
-      body(),
-      deps({ sampleSerp: () => Promise.reject(new Error("provider 500")) }),
+      body({
+        contextToken: contextToken({
+          sitemapInventory: {
+            ...COMPLETE_SITEMAP_INVENTORY,
+            urls: ["https://acme.example/insurance-claim-tracking"],
+          },
+        }),
+      }),
+      deps({ sampleSerp }),
     );
     const parsed = (await response.json()) as OpportunitiesBody;
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.keyword === "insurance claim tracking",
+    );
 
-    expect(response.status).toBe(200);
-    expect(parsed.data.result.unavailableStages).toContain("serp_sample");
-    expect(parsed.data.result.funnel["winnableEvidence"]).toBe(0);
-    expect(parsed.data.result.rows).toEqual([]);
-    // The provider threw, so the stage did not run. This used to report
-    // `serp_sample_budget_exhausted` — and this assertion pinned it, which is
-    // how a test locks in a false label instead of catching one. A budget that
-    // ran out tells the reader to narrow the run; a stage that failed tells
-    // them to try the same run again.
-    expect(parsed.data.result.withheld.map((entry) => entry.reason)).toEqual(
-      DRAFTS.map(() => "serp_sample_unavailable"),
+    expect(sampleSerp.mock.calls[0]?.[0].keywords).toContain(
+      "insurance claim tracking",
+    );
+    expect(row?.coverage).toBe("possible_existing_page");
+    expect(row?.supportingPageUrl).toBe(
+      "https://acme.example/insurance-claim-tracking",
     );
   });
 
-  it("still says budget exhausted when the sample ran and simply did not reach a term", async () => {
-    // The other side of the split: nothing failed here, the cap bit. Reporting
-    // a failed stage for this would send the reader to retry rather than to
-    // narrow, which is the wrong action.
-    const many = Array.from({ length: KEYWORD_SERP_SAMPLE_CAP + 3 }, (_, i) =>
+  it("returns a hard source failure when the SERP seam throws a stage-wide authentication error", async () => {
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        sampleSerp: () =>
+          Promise.reject(new SourceError("AUTH_REQUIRED", "bad credentials")),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "keyword_source_unavailable" },
+    });
+  });
+
+  it("does not leave a budget-exhausted tail when every explicit-zero-exempt candidate was attempted", async () => {
+    const many = Array.from({ length: 23 }, (_, i) =>
       draft(`dental billing variant ${String(i)}`),
     );
     const response = await handleKeywordOpportunitiesRequest(
@@ -1296,9 +1586,10 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const parsed = (await response.json()) as OpportunitiesBody;
 
     expect(parsed.data.result.unavailableStages).not.toContain("serp_sample");
-    expect(parsed.data.result.withheld.map((entry) => entry.reason)).toContain(
+    expect(parsed.data.result.withheld.map((entry) => entry.reason)).not.toContain(
       "serp_sample_budget_exhausted",
     );
+    expect(parsed.data.result.funnel["serpSampled"]).toBe(23);
   });
 
   it("does not resolve the grant for a request the gate turned away", async () => {
@@ -1339,61 +1630,25 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses the whole run once the account's daily budget is spent, before paying for anything", async () => {
-    // The breaker guards a prepaid balance the paid analysis pipeline also
-    // spends from, so an exhausted day must stop the run at the door rather
-    // than let it buy one more report. 503 with Retry-After, and not one
-    // provider call.
-    const validateVolumes = vi.fn();
-    const expandCandidates = vi.fn();
-    const release = vi.fn();
+  it("does not consult the historical account daily budget breaker", async () => {
+    const consumeDailyBudget = vi.fn(() =>
+      Promise.resolve({ kind: "exhausted", retryAfterSeconds: 1800 } as const),
+    );
+    const dependencies = { ...deps(), consumeDailyBudget };
     const response = await handleKeywordOpportunitiesRequest(
       body(),
-      deps({
-        consumeDailyBudget: () =>
-          Promise.resolve({ kind: "exhausted", retryAfterSeconds: 1800 }),
-        openGscGate: () => Promise.resolve({ ok: true, release }),
-        expandCandidates,
-        validateVolumes,
-      }),
+      dependencies,
     );
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("1800");
-    await expect(response.json()).resolves.toEqual({
-      error: { code: "keyword_source_unavailable" },
-    });
-    expect(expandCandidates).not.toHaveBeenCalled();
-    expect(validateVolumes).not.toHaveBeenCalled();
-    // The admission slot is handed back; a refused run must not leave this IP
-    // wedged for the rest of the isolate's life.
-    expect(release).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+    expect(consumeDailyBudget).not.toHaveBeenCalled();
   });
 
-  it("treats a counter that cannot answer exactly like an exhausted day", async () => {
-    // Fail closed. A paid endpoint with no working limiter is an open tap, and
-    // a tool that is briefly unavailable is the cheaper failure.
-    const response = await handleKeywordOpportunitiesRequest(
-      body(),
-      deps({
-        consumeDailyBudget: () =>
-          Promise.resolve({ kind: "unavailable", reason: "quota store down" }),
-      }),
-    );
-
-    expect(response.status).toBe(503);
-  });
-
-  it("degrades to partial when the per-run ceiling cannot fit page-one sampling", async () => {
-    // The earlier stages are billed whether or not sampling happens, so the
-    // ceiling must cut the optional stage and keep the run — throwing here
-    // would discard work that was already paid for. And the result has to say
-    // the stage was cut: a run that came in cheap because it was truncated
-    // looks identical in the totals to a genuinely cheap one.
-    const sampleSerp = vi.fn();
-    const costs = createKeywordCostAccumulator();
-    // Book the ceiling as already spent, which is what a long expansion does.
-    costs.record("keyword_overview", 0.25);
+  it("does not consult per-run aggregate cost admission before SERP sampling", async () => {
+    const baseCosts = createKeywordCostAccumulator(0);
+    const admitStage = vi.fn(baseCosts.admitStage);
+    const costs = { ...baseCosts, admitStage };
+    const sampleSerp = vi.fn(deps().sampleSerp);
 
     const response = await handleKeywordOpportunitiesRequest(
       body(),
@@ -1401,116 +1656,36 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(sampleSerp).not.toHaveBeenCalled();
-    const parsed = (await response.json()) as OpportunitiesBody;
-    expect(parsed.data.result.unavailableStages).toContain(
-      "serp_sample_cost_capped",
-    );
-    expect(parsed.data.result.availability).not.toBe("available");
-    expect(costs.capped()).toBe(true);
+    expect(sampleSerp).toHaveBeenCalledTimes(1);
+    expect(admitStage).not.toHaveBeenCalled();
   });
 
-  it("samples no more pages of results than the run's cap", async () => {
-    // The more expensive driver per unit, so the cap is enforced even though
-    // the survivor count is already bounded by the candidate cap above it.
+  it("attempts all 150 deduplicated explicit-zero-exempt candidates in input order", async () => {
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
-        Promise.resolve(
-          keywords.map((keyword) => ({
-            keyword,
-            results: [{ domain: "small.example", position: 2 }],
-            pageItemTypes: null,
-          })),
-        ),
+        Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
+    );
+    const candidates = Array.from(
+      { length: KEYWORD_CANDIDATE_CAP },
+      (_unused, index) => draft(`billing term ${String(index)}`),
     );
     await handleKeywordOpportunitiesRequest(
       body(),
       deps({
         sampleSerp,
-        expandCandidates: () =>
-          Promise.resolve(
-            Array.from({ length: KEYWORD_SERP_SAMPLE_CAP + 5 }, (_u, index) =>
-              draft(`billing term ${index}`),
-            ),
-          ),
+        expandCandidates: () => Promise.resolve(candidates),
       }),
     );
 
-    expect(sampleSerp.mock.calls[0]?.[0].keywords).toHaveLength(
-      KEYWORD_SERP_SAMPLE_CAP,
+    expect(sampleSerp.mock.calls[0]?.[0].keywords).toEqual(
+      candidates.map((candidate) => candidate.keyword),
     );
   });
 
-  it("spends the last sample slots on proposition terms even when they look hard", async () => {
-    // The proposition lane is the scarce output — 19 priced terms against 343
-    // expansion ones in the spike — so a cap that sorted on difficulty alone
-    // would cut exactly the rows nothing else in the product can produce.
-    const expansion = Array.from(
-      { length: KEYWORD_SERP_SAMPLE_CAP },
-      (_unused, index) => draft(`billing term ${index}`),
-    );
+  it("samples provider-no-data and already-covered terms but skips explicit zero", async () => {
     const sampleSerp = vi.fn(
       ({ keywords }: { readonly keywords: readonly string[] }) =>
-        Promise.resolve(
-          keywords.map((keyword) => ({
-            keyword,
-            results: [{ domain: "small.example", position: 2 }],
-            pageItemTypes: null,
-          })),
-        ),
-    );
-
-    await handleKeywordOpportunitiesRequest(
-      body(),
-      deps({
-        sampleSerp,
-        expandCandidates: () =>
-          Promise.resolve([
-            ...expansion,
-            draft("clinic scheduling tool", {
-              discoveryBasis: "site_proposition",
-              propositionIndex: 0,
-            }),
-          ]),
-        // The proposition term is the hardest of the lot; every expansion term
-        // is trivially easy. Difficulty alone would put it last.
-        validateVolumes: ({ keywords }) =>
-          Promise.resolve(
-            keywords.map((keyword) => ({
-              keyword,
-              volume: 320,
-              difficulty: keyword === "clinic scheduling tool" ? 95 : 5,
-              intent: "informational",
-              serpFeatures: [],
-            })),
-          ),
-      }),
-    );
-
-    const sampled = sampleSerp.mock.calls[0]?.[0].keywords ?? [];
-    expect(sampled[0]).toBe("clinic scheduling tool");
-    // Twenty-one survivors into twenty slots: the tail the reader would have
-    // looked at last is what gets cut.
-    expect(sampled).toHaveLength(KEYWORD_SERP_SAMPLE_CAP);
-    expect(sampled).not.toContain(
-      `billing term ${KEYWORD_SERP_SAMPLE_CAP - 1}`,
-    );
-  });
-
-  it("samples only terms with measured demand that Search Console has not seen", async () => {
-    // Both exclusions are cost decisions with a reason. A term the provider
-    // has no volume for cannot be judged on demand anyway, and a term the site
-    // already ranks for is not an opening — paying to look at either one takes
-    // budget from a term that is.
-    const sampleSerp = vi.fn(
-      ({ keywords }: { readonly keywords: readonly string[] }) =>
-        Promise.resolve(
-          keywords.map((keyword) => ({
-            keyword,
-            results: [{ domain: "small.example", position: 2 }],
-            pageItemTypes: null,
-          })),
-        ),
+        Promise.resolve(keywords.map((keyword) => completeSample(keyword))),
     );
 
     await handleKeywordOpportunitiesRequest(
@@ -1522,6 +1697,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
             draft("dental billing software"),
             draft("clinic scheduling tool"),
             draft("patient intake forms"),
+            draft("measured zero keyword"),
           ]),
         validateVolumes: ({ keywords }) =>
           Promise.resolve(
@@ -1531,7 +1707,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
               .filter((keyword) => keyword !== "clinic scheduling tool")
               .map((keyword) => ({
                 keyword,
-                volume: 320,
+                volume: keyword === "measured zero keyword" ? 0 : 320,
                 difficulty: 12,
                 intent: "informational",
                 serpFeatures: [],
@@ -1539,15 +1715,417 @@ describe("handleKeywordOpportunitiesRequest", () => {
           ),
         // Already served, strongly, by the site's own property.
         readCoverageQueries: () =>
-          Promise.resolve([
-            { query: "patient intake forms", impressions: 900, position: 3 },
-          ]),
+          Promise.resolve(
+            cleanCoverageRead([
+              { query: "patient intake forms", impressions: 900, position: 3 },
+            ]),
+          ),
       }),
     );
 
     expect(sampleSerp.mock.calls[0]?.[0].keywords).toEqual([
       "dental billing software",
+      "clinic scheduling tool",
+      "patient intake forms",
     ]);
+  });
+
+  it("keeps complete SERPs when one attempted keyword is unavailable and enriches only complete domains", async () => {
+    const sampleSerp = vi.fn(() =>
+      Promise.resolve([
+        completeSample("complete alpha", "alpha.com"),
+        {
+          keyword: "failed beta",
+          status: "unavailable" as const,
+          failureReason: "transport_outcome_unknown" as const,
+          observedAt: null,
+          results: [],
+          pageItemTypes: null,
+          aiOverview: null,
+          communityItems: null,
+        },
+        {
+          ...completeSample("complete gamma", "alpha.com"),
+          results: [
+            completeSample("unused", "alpha.com").results[0]!,
+            completeSample("unused", "gamma.com").results[0]!,
+          ],
+        },
+      ]),
+    );
+    const resolveDomainRanks = vi.fn((domains: readonly string[]) =>
+      Promise.resolve(
+        new Map(domains.map((domain) => [domain, 100] as const)),
+      ),
+    );
+    const resolveDomainTraffic = vi.fn(
+      ({ domains }: { readonly domains: readonly string[] }) =>
+        Promise.resolve(
+          new Map(domains.map((domain) => [domain, 100] as const)),
+        ),
+    );
+    const resolveDomainRegistrations = vi.fn((domains: readonly string[]) =>
+      Promise.resolve(
+        new Map(
+          domains.map(
+            (domain) => [domain, availableRegistration(domain)] as const,
+          ),
+        ),
+      ),
+    );
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            draft("complete alpha"),
+            draft("failed beta"),
+            draft("complete gamma"),
+          ]),
+        sampleSerp,
+        resolveDomainRanks,
+        resolveDomainTraffic,
+        resolveDomainRegistrations,
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.unavailableStages).toContain(
+      "serp_sample_partial",
+    );
+    expect(parsed.data.result.unavailableStages).not.toContain("serp_sample");
+    expect(parsed.data.result.funnel["serpSampled"]).toBe(2);
+    expect(parsed.data.result.incomplete).toEqual([
+      expect.objectContaining({
+        keyword: "failed beta",
+        reason: "serp_evidence_unavailable",
+        serp: expect.objectContaining({
+          status: "unavailable",
+          failureReason: "transport_outcome_unknown",
+        }),
+      }),
+    ]);
+    expect(parsed.data.result.rows.map((row) => row.keyword)).toEqual([
+      "complete alpha",
+      "complete gamma",
+    ]);
+    expect(parsed.data.result.rows[0]?.serp.organicResults[0]).toEqual({
+      domain: "alpha.com",
+      position: 3,
+      title: "A useful answer",
+      url: "https://alpha.com/answer",
+    });
+    expect(resolveDomainRanks.mock.calls[0]?.[0]).toEqual([
+      "alpha.com",
+      "gamma.com",
+      "acme.example",
+    ]);
+    expect(resolveDomainTraffic.mock.calls[0]?.[0].domains).toEqual([
+      "alpha.com",
+      "gamma.com",
+    ]);
+    expect(resolveDomainRegistrations.mock.calls[0]?.[0]).toEqual([
+      "alpha.com",
+      "gamma.com",
+    ]);
+  });
+
+  it("marks an all-unavailable SERP plan as a failed stage and skips every domain enrichment", async () => {
+    const unavailable = (keyword: string): KeywordSerpSampleResult => ({
+      keyword,
+      status: "unavailable",
+      failureReason: "provider_unavailable",
+      observedAt: null,
+      results: [],
+      pageItemTypes: null,
+      aiOverview: null,
+      communityItems: null,
+    });
+    const resolveDomainRanks = vi.fn();
+    const resolveDomainTraffic = vi.fn();
+    const resolveDomainRegistrations = vi.fn();
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([draft("failed alpha"), draft("failed beta")]),
+        sampleSerp: ({ keywords }) =>
+          Promise.resolve(keywords.map(unavailable)),
+        resolveDomainRanks,
+        resolveDomainTraffic,
+        resolveDomainRegistrations,
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.unavailableStages).toContain("serp_sample");
+    expect(parsed.data.result.unavailableStages).not.toContain(
+      "serp_sample_partial",
+    );
+    expect(parsed.data.result.funnel["serpSampled"]).toBe(0);
+    expect(parsed.data.result.incomplete.map((entry) => entry.keyword)).toEqual([
+      "failed alpha",
+      "failed beta",
+    ]);
+    expect(resolveDomainRanks).not.toHaveBeenCalled();
+    expect(resolveDomainTraffic).not.toHaveBeenCalled();
+    expect(resolveDomainRegistrations).not.toHaveBeenCalled();
+  });
+
+  it.each(["rank", "traffic", "registration"] as const)(
+    "isolates a %s enrichment failure without discarding the completed SERP",
+    async (failedStage) => {
+      const resolveDomainRanks = vi.fn((domains: readonly string[]) =>
+        failedStage === "rank"
+          ? Promise.reject(new Error("rank unavailable"))
+          : Promise.resolve(
+              new Map(domains.map((domain) => [domain, 100] as const)),
+            ),
+      );
+      const resolveDomainTraffic = vi.fn(
+        ({ domains }: { readonly domains: readonly string[] }) =>
+          failedStage === "traffic"
+            ? Promise.reject(new Error("traffic unavailable"))
+            : Promise.resolve(
+                new Map(domains.map((domain) => [domain, 100] as const)),
+              ),
+      );
+      const resolveDomainRegistrations = vi.fn(
+        (domains: readonly string[]) =>
+          failedStage === "registration"
+            ? Promise.reject(new Error("registration unavailable"))
+            : Promise.resolve(
+                new Map(
+                  domains.map(
+                    (domain) =>
+                      [domain, availableRegistration(domain)] as const,
+                  ),
+                ),
+              ),
+      );
+      const response = await handleKeywordOpportunitiesRequest(
+        body(),
+        deps({
+          expandCandidates: () => Promise.resolve([draft("isolated failure")]),
+          resolveDomainRanks,
+          resolveDomainTraffic,
+          resolveDomainRegistrations,
+        }),
+      );
+      const parsed = (await response.json()) as OpportunitiesBody;
+      const incomplete = parsed.data.result.incomplete[0];
+
+      expect(response.status).toBe(200);
+      expect(incomplete?.serp.status).toBe("complete");
+      expect(incomplete?.serp.organicResults).toHaveLength(1);
+      expect(resolveDomainRanks).toHaveBeenCalledTimes(1);
+      expect(resolveDomainTraffic).toHaveBeenCalledTimes(1);
+      expect(resolveDomainRegistrations).toHaveBeenCalledTimes(1);
+      if (failedStage === "registration") {
+        expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+          "observed",
+        );
+      } else {
+        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+          "unavailable",
+        );
+        expect(incomplete?.signals.youngDomain.state).toBe("observed");
+      }
+    },
+  );
+
+  it("does not turn provider rank zero into a v2 eligible decision", async () => {
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () => Promise.resolve([draft("rank zero candidate")]),
+        resolveDomainRanks: (domains) =>
+          Promise.resolve(new Map(domains.map((domain) => [domain, 0] as const))),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.rows).toEqual([]);
+    expect(parsed.data.result.incomplete).toEqual([
+      expect.objectContaining({
+        keyword: "rank zero candidate",
+        reason: "low_organic_traffic_signal_unavailable",
+        serp: expect.objectContaining({
+          status: "complete",
+          verdict: "no_serp_evidence",
+        }),
+      }),
+    ]);
+  });
+
+  it("carries the provider intent as its own fact", async () => {
+    const response = await handleKeywordOpportunitiesRequest(body(), deps());
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(parsed.data.result.rows[0]?.validation.providerIntent).toBe(
+      "informational",
+    );
+  });
+
+  it("keeps provider intent beside a separately provenanced SERP interpretation and applies only the AI answer discount", async () => {
+    const complete = {
+      ...completeSample("comparison keyword"),
+      pageItemTypes: ["ai_overview"],
+      aiOverview: {
+        markdown: "The overview fully answers the comparison.",
+        isAsync: true,
+        references: [],
+      },
+    } satisfies KeywordSerpSampleResult;
+    const unavailable: KeywordSerpSampleResult = {
+      keyword: "failed keyword",
+      status: "unavailable",
+      failureReason: "provider_unavailable",
+      observedAt: null,
+      results: [],
+      pageItemTypes: null,
+      aiOverview: null,
+      communityItems: null,
+    };
+    const interpretSerpEvidence = vi.fn(
+      (samples: readonly KeywordSerpInterpretationInput[]) =>
+        Promise.resolve(
+          samples.map((sample) => ({
+            keyword: sample.keyword,
+            availability: "available" as const,
+            intent: "commercial" as const,
+            aiOverviewAssessment: "complete" as const,
+            reason:
+              "The overview resolves the comparison without another click.",
+            observedAt: sample.observedAt,
+            modelId: "gpt-5.6-luna-response",
+            promptVersion: "keyword_serp_interpretation.v1" as const,
+          })),
+        ),
+    );
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            draft("comparison keyword"),
+            draft("failed keyword"),
+          ]),
+        sampleSerp: () => Promise.resolve([complete, unavailable]),
+        interpretSerpEvidence,
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+    const row = parsed.data.result.rows.find(
+      (entry) => entry.keyword === "comparison keyword",
+    );
+
+    expect(response.status).toBe(200);
+    expect(interpretSerpEvidence).toHaveBeenCalledWith([
+      {
+        keyword: "comparison keyword",
+        observedAt: COMPLETED_AT,
+        organicResults: [
+          {
+            position: 3,
+            title: "A useful answer",
+            url: "https://small-blog.com/answer",
+          },
+        ],
+        aiOverviewMarkdown: "The overview fully answers the comparison.",
+      },
+    ]);
+    expect(row?.validation.providerIntent).toBe("informational");
+    expect(row?.serpIntent).toEqual({
+      intent: "commercial",
+      source: "serp_top_ten_interpretation",
+      observedAt: COMPLETED_AT,
+      modelId: "gpt-5.6-luna-response",
+      promptVersion: "keyword_serp_interpretation.v1",
+    });
+    expect(row?.aiOverview).toMatchObject({
+      availability: "observed",
+      loadedAsync: true,
+      answerAssessment: "complete",
+      reason: "The overview resolves the comparison without another click.",
+      modelId: "gpt-5.6-luna-response",
+      promptVersion: "keyword_serp_interpretation.v1",
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(row?.aiOverview, "markdown"),
+    ).toBe(false);
+    expect(JSON.stringify(parsed)).not.toContain(
+      "The overview fully answers the comparison.",
+    );
+    expect(row?.decision).toMatchObject({
+      disposition: "eligible",
+      discounts: ["ai_overview_answer_discount"],
+    });
+    expect(parsed.data.result.withheld).toEqual([]);
+    expect(JSON.stringify(parsed)).not.toContain('"blogAgent"');
+    expect(JSON.stringify(parsed)).not.toContain('"handoff"');
+  });
+
+  it("fails soft when SERP interpretation throws and preserves public provider facts in a 200 response", async () => {
+    const complete = {
+      ...completeSample("interpretation failure"),
+      pageItemTypes: ["ai_overview"],
+      aiOverview: {
+        markdown: "Provider-retained AI Overview markdown.",
+        isAsync: true,
+        references: [],
+      },
+    } satisfies KeywordSerpSampleResult;
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([draft("interpretation failure")]),
+        sampleSerp: () => Promise.resolve([complete]),
+        interpretSerpEvidence: () =>
+          Promise.reject(
+            new KeywordLlmError(
+              "not_configured",
+              "configuration details must not escape",
+            ),
+          ),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+    const row = parsed.data.result.rows[0];
+
+    expect(response.status).toBe(200);
+    expect(row?.validation.providerIntent).toBe("informational");
+    expect(row?.serp.status).toBe("complete");
+    expect(row?.serp.organicResults).toHaveLength(1);
+    expect(row?.serpIntent).toBeNull();
+    expect(row?.aiOverview).toMatchObject({
+      availability: "observed",
+      loadedAsync: true,
+      answerAssessment: "unavailable",
+      reason: "interpretation_unavailable",
+      modelId: null,
+      promptVersion: null,
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(row?.aiOverview, "markdown"),
+    ).toBe(false);
+    expect(JSON.stringify(parsed)).not.toContain(
+      "Provider-retained AI Overview markdown.",
+    );
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "serp_interpretation",
+      failureReason: "not_configured",
+    });
+    expect(logged.join("\n")).not.toContain("configuration details");
   });
 
   it("returns the envelope under `data` with the run contract pinned exactly", async () => {
@@ -1560,7 +2138,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // shows up as an ADDED field, and a per-field assertion is blind to that.
     expect(parsed.data.run).toEqual({
       tool: "keyword_opportunity_map",
-      schemaVersion: "keyword_opportunity_map.v1",
+      schemaVersion: "keyword_opportunity_map.v2",
       mode: "public_preview",
       scope: "site",
       persistence: "none",

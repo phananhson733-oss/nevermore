@@ -1,5 +1,5 @@
 // @input  -- a submitted site URL, a target language, and injected transport/clock seams
-// @output -- the highest-value pages of that site as LLM-ready context, or a coded failure
+// @output -- bounded sitemap inventory plus highest-value LLM context pages, or a coded failure
 // @pos    -- the data source under the Keyword Opportunity Map's "what does this company sell" step
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -10,8 +10,8 @@
  * The two answer different questions. The preview crawl answers "what is on
  * this site" and must not prefer one page over another, because an SEO audit
  * that skipped the blog would be measuring a site it invented. This crawl
- * answers "what does this company sell", where fourteen pages of blog posts are
- * a wasted budget: Tranche 1 (2026-08-10) measured 9% product/pricing/feature
+ * answers "what does this company sell", where a full twenty-page budget of
+ * blog posts is wasted: Tranche 1 (2026-08-10) measured 9% product/pricing/feature
  * pages under breadth-first ordering, and linear.app returned eight blog posts
  * and zero product pages, so the downstream LLM described blog topics as the
  * product. Ordering the frontier by `pageValueScore` moved that share to 100%
@@ -60,12 +60,11 @@ export const CONTEXT_PROFILE_USER_AGENT =
  */
 export const CONTEXT_PROFILE_CRAWL_BUDGET = Object.freeze({
   /**
-   * 14 pages. Tranche 2 measured the product-page share saturating well before
-   * this; past ~14 the frontier is spending requests on score-0 unknown paths.
-   * It is also what fits an LLM context window alongside the rest of the P0-5
-   * prompt without a summarisation pass.
+   * 20 successful pages, including the homepage. Failed candidates do not
+   * consume a slot; the ranked frontier replenishes them until this ceiling or
+   * a real crawl budget/candidate exhaustion stops the run.
    */
-  maxUrls: 14,
+  maxUrls: 20,
   /**
    * 3 segments. Every recognised positive section sits at depth 1 or 2
    * (`/pricing`, `/solutions/teams`); depth 3 is the deepest a product page was
@@ -84,8 +83,8 @@ export const CONTEXT_PROFILE_CRAWL_BUDGET = Object.freeze({
    */
   maxBodyBytes: 2 * 1024 * 1024,
   /**
-   * 24 MiB across the crawl. 14 pages at a generous 1.5 MiB each, rounded up,
-   * so a single fat page cannot starve the rest of the frontier.
+   * 24 MiB across the crawl. Twenty ordinary marketing documents fit while a
+   * series of responses near the per-page ceiling cannot overrun the crawl.
    */
   maxTotalBytes: 24 * 1024 * 1024,
   /**
@@ -102,11 +101,10 @@ export const CONTEXT_PROFILE_CRAWL_BUDGET = Object.freeze({
    * 120 wire requests, counting the entry probe, robots.txt, every sitemap
    * document, and every page.
    *
-   * Under the limits above a crawl issues at most 20 (1 + 1 + 4 + 1 + 13), so
-   * this is a backstop rather than the binding constraint: it exists so that a
-   * future change to the sitemap or frontier logic cannot silently turn one
-   * request into hundreds against a stranger's site. Do not read it as a
-   * budget the crawl expects to approach.
+   * Without failed candidates a crawl issues at most 26
+   * (1 + 1 + 4 + 1 + 19). Replenishment can issue more, so 120 remains the
+   * independent backstop that prevents a long failing frontier from turning
+   * one run into hundreds of requests against a stranger's site.
    */
   maxRequests: 120,
   /**
@@ -130,11 +128,40 @@ export const CONTEXT_PROFILE_SITEMAP_LIMITS = Object.freeze({
    */
   maxChildDocuments: 3,
   /**
-   * 500 URLs. Only their paths are scored, and the top 13 are all that get
+   * 500 URLs. Only their paths are scored, and the top 19 are all that get
    * fetched; reading further changes the ranking only in pathological cases.
    */
   maxUrls: 500,
 });
+
+/** Every reason the bounded sitemap inventory may be incomplete. */
+export const CONTEXT_PROFILE_SITEMAP_TRUNCATION_REASONS = [
+  "seed_cap",
+  "child_document_cap",
+  "url_cap",
+  "nested_index_skipped",
+  "off_origin_filtered",
+  "budget_stopped",
+  "document_unavailable",
+  "document_body_truncated",
+  "malformed_document",
+  "malformed_url_filtered",
+  "token_budget",
+] as const;
+
+export type ContextProfileSitemapTruncationReason =
+  (typeof CONTEXT_PROFILE_SITEMAP_TRUNCATION_REASONS)[number];
+
+/** URL-only L1 evidence, separate from the L2 pages selected for context. */
+export interface ContextProfileSitemapInventory {
+  readonly urls: readonly string[];
+  /** At least one sitemap document returned a 2xx response body. */
+  readonly fetched: boolean;
+  /** The discovered bounded graph was read without any known omission. */
+  readonly complete: boolean;
+  readonly documentsRead: number;
+  readonly truncationReasons: readonly ContextProfileSitemapTruncationReason[];
+}
 
 /** Below this the profile cannot describe a company; see `contextSufficient`. */
 export const CONTEXT_PROFILE_MIN_PAGES = 3;
@@ -145,6 +172,29 @@ export const CONTEXT_PROFILE_MIN_PAGES = 3;
  */
 const ARTICLE_SITEMAP_HINT =
   /(blog|post|news|article|nachrichten|neuigkeiten|presse|tag|category|kategorie|author|autor)/i;
+
+type ContextProfileSitemapRoot = "urlset" | "sitemapindex";
+
+/**
+ * Identify the actual document root, not a tag name mentioned inside HTML,
+ * JavaScript, or an error page. Sitemap XML may start with a BOM, declaration,
+ * comments, or a simple doctype before its root element.
+ */
+function sitemapDocumentRoot(body: string): ContextProfileSitemapRoot | null {
+  let rest = body.replace(/^\uFEFF/, "").trimStart();
+  for (;;) {
+    const declaration = rest.match(/^<\?xml\b[\s\S]*?\?>/i)?.[0];
+    const comment = rest.match(/^<!--[\s\S]*?-->/)?.[0];
+    const doctype = rest.match(/^<!DOCTYPE\b[^>]*>/i)?.[0];
+    const prefix = declaration ?? comment ?? doctype;
+    if (prefix === undefined) break;
+    rest = rest.slice(prefix.length).trimStart();
+  }
+  const root = rest.match(
+    /^<(?:[\w.-]+:)?(urlset|sitemapindex)\b/i,
+  )?.[1]?.toLowerCase();
+  return root === "urlset" || root === "sitemapindex" ? root : null;
+}
 
 export type ContextProfileErrorCode =
   /** The target's bot protection refused us (HTTP 403 from Cloudflare/WAF). */
@@ -202,6 +252,11 @@ export interface ContextProfileResult {
   readonly origin: string;
   /** Fetched pages in descending page-value order; the homepage is first. */
   readonly pages: readonly ContextProfilePage[];
+  /**
+   * Bounded sitemap URL inventory; never a claim about every page on the site.
+   * Optional only for an older injected/cached result crossing a deployment.
+   */
+  readonly sitemapInventory?: ContextProfileSitemapInventory;
   readonly pagesFetched: number;
   /** Pages scoring at or above `PAGE_VALUE_PRODUCT_SCORE_THRESHOLD`. */
   readonly productPagesFetched: number;
@@ -519,11 +574,15 @@ export async function crawlSiteContextProfile(
   );
 
   // --- 4. Sitemap -----------------------------------------------------------
-  const sitemapUrls = await readSitemap(origin, robots.sitemaps, request);
+  const sitemapInventory = await readSitemap(
+    origin,
+    robots.sitemaps,
+    request,
+  );
 
   // --- 5. Rank the frontier -------------------------------------------------
   const candidates = rankCandidates(
-    [...homepageLinks, ...sitemapUrls, entry.finalUrl],
+    [...homepageLinks, ...sitemapInventory.urls, entry.finalUrl],
     { origin, homepageUrl, targetLanguage, allowed },
   );
   const slots = Math.max(0, CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls - 1);
@@ -587,6 +646,7 @@ export async function crawlSiteContextProfile(
   return {
     origin,
     pages,
+    sitemapInventory,
     pagesFetched: pages.length,
     productPagesFetched: pages.filter((page) =>
       pageValueIsProductPage(page.score),
@@ -607,8 +667,8 @@ export async function crawlSiteContextProfile(
  *
  * Kept separate from the crawl so `contextSufficient` stays a fact the caller
  * can read and decide about — a crawl that always threw would make the field
- * unreachable. The ordering matters: a site that answered 403 to eleven of
- * thirteen candidates was blocked, and reporting `too_few_pages` there would
+ * unreachable. The ordering matters: a site that answered 403 to most of the
+ * ranked candidates was blocked, and reporting `too_few_pages` there would
  * send the operator looking for a content problem that does not exist.
  */
 export function assertContextProfileSufficient(
@@ -714,54 +774,130 @@ async function readSitemap(
   origin: string,
   declared: readonly string[],
   request: PacedRequest,
-): Promise<readonly string[]> {
+): Promise<ContextProfileSitemapInventory> {
   const seeds =
     declared.length > 0 ? declared.slice(0, 1) : [`${origin}/sitemap.xml`];
-  const collected: string[] = [];
+  const collected = new Set<string>();
   const visited = new Set<string>();
+  const reasons = new Set<ContextProfileSitemapTruncationReason>();
+  let documentsRead = 0;
 
-  const read = async (url: string): Promise<readonly string[] | null> => {
-    const key = canonicalizeUrl(url)?.fetchUrl ?? url;
-    if (visited.has(key)) return null;
-    visited.add(key);
+  if (declared.length > seeds.length) reasons.add("seed_cap");
+
+  const normalizeInventoryUrl = (raw: string): string | null => {
+    let parsed: URL;
     try {
-      if (new URL(key).origin !== origin) return null;
+      parsed = new URL(raw);
     } catch {
+      reasons.add("malformed_url_filtered");
       return null;
     }
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      reasons.add("malformed_url_filtered");
+      return null;
+    }
+    try {
+      decodeURIComponent(parsed.pathname);
+    } catch {
+      reasons.add("malformed_url_filtered");
+      return null;
+    }
+    if (parsed.origin !== origin) {
+      reasons.add("off_origin_filtered");
+      return null;
+    }
+    const fetchUrl = canonicalizeUrl(raw)?.fetchUrl;
+    if (!fetchUrl) {
+      reasons.add("malformed_url_filtered");
+      return null;
+    }
+    return fetchUrl;
+  };
+
+  type SitemapRead =
+    | { readonly kind: "index"; readonly locs: readonly string[] }
+    | { readonly kind: "urlset" };
+
+  const read = async (url: string): Promise<SitemapRead | null> => {
+    const key = normalizeInventoryUrl(url);
+    if (key === null) return null;
+    if (visited.has(key)) return null;
+    visited.add(key);
     const result = await request(
       key,
       CONTEXT_PROFILE_CRAWL_BUDGET.maxBodyBytes,
     );
+    if (result === null) {
+      reasons.add("budget_stopped");
+      return null;
+    }
     if (
-      result === null ||
       result.kind !== "ok" ||
       result.finalStatus < 200 ||
       result.finalStatus >= 300
     ) {
+      reasons.add("document_unavailable");
+      return null;
+    }
+    documentsRead += 1;
+    if (!result.bodyComplete) reasons.add("document_body_truncated");
+    const root = sitemapDocumentRoot(result.body);
+    if (root === null) {
+      reasons.add("malformed_document");
       return null;
     }
     const document = parseSitemapXml(result.body);
-    if (!document.isIndex) {
-      collected.push(...document.locs);
-      return null;
+    if (root === "sitemapindex") {
+      return { kind: "index", locs: document.locs };
     }
-    return orderSitemapChildren(document.locs).slice(
-      0,
-      CONTEXT_PROFILE_SITEMAP_LIMITS.maxChildDocuments,
-    );
+    for (const loc of document.locs) {
+      const member = normalizeInventoryUrl(loc);
+      if (member === null || collected.has(member)) continue;
+      if (collected.size >= CONTEXT_PROFILE_SITEMAP_LIMITS.maxUrls) {
+        reasons.add("url_cap");
+        continue;
+      }
+      collected.add(member);
+    }
+    return { kind: "urlset" };
   };
 
   for (const seed of seeds) {
-    const children = await read(seed);
-    for (const child of children ?? []) {
-      if (collected.length >= CONTEXT_PROFILE_SITEMAP_LIMITS.maxUrls) break;
-      // A child that is itself an index is not followed: `read` returns its
-      // children and this loop ignores them, which is the one-level rule.
-      await read(child);
+    const document = await read(seed);
+    if (document?.kind !== "index") continue;
+    const ordered = orderSitemapChildren(document.locs);
+    if (ordered.length > CONTEXT_PROFILE_SITEMAP_LIMITS.maxChildDocuments) {
+      reasons.add("child_document_cap");
+    }
+    const children = ordered.slice(
+      0,
+      CONTEXT_PROFILE_SITEMAP_LIMITS.maxChildDocuments,
+    );
+    for (const child of children) {
+      if (collected.size >= CONTEXT_PROFILE_SITEMAP_LIMITS.maxUrls) {
+        reasons.add("url_cap");
+        break;
+      }
+      const nested = await read(child);
+      if (nested?.kind === "index") reasons.add("nested_index_skipped");
     }
   }
-  return collected.slice(0, CONTEXT_PROFILE_SITEMAP_LIMITS.maxUrls);
+
+  const truncationReasons =
+    CONTEXT_PROFILE_SITEMAP_TRUNCATION_REASONS.filter((reason) =>
+      reasons.has(reason),
+    );
+  return {
+    urls: [...collected],
+    fetched: documentsRead > 0,
+    complete: documentsRead > 0 && truncationReasons.length === 0,
+    documentsRead,
+    truncationReasons,
+  };
 }
 
 interface RankingContext {

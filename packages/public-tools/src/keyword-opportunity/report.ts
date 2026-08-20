@@ -1,6 +1,6 @@
 // @input  -- the site context plus every per-candidate observation the pipeline gathered
 // @output -- the finished result, its funnel, and an availability the surface must obey
-// @pos    -- assembly only; every judgement was already made by the module that owns it
+// @pos    -- projects observations through the v2 decision contract into three result lists
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolResult } from "../contract.ts";
@@ -8,24 +8,37 @@ import { clusterKeywords, keywordClusterIndex } from "./cluster.ts";
 import { isKeywordAlreadyCovered } from "./coverage.ts";
 import { keywordNextChecks } from "./next-checks.ts";
 import {
+  classifyKeywordOpportunitySignals,
+  keywordOpportunityDecisionDiscounts,
+} from "./signals.ts";
+import {
   KEYWORD_OPPORTUNITY_SCHEMA_VERSION,
   KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
   KEYWORD_STAGE_SERP_SAMPLE,
 } from "./types.ts";
 import { isKeywordWinnable } from "./winnability.ts";
 import type {
+  KeywordOpportunityAiOverviewEvidence,
+  KeywordOpportunityAiOverviewObservation,
   KeywordOpportunityAvailability,
   KeywordOpportunityBasis,
   KeywordOpportunityContext,
   KeywordOpportunityCoverage,
+  KeywordOpportunityDecision,
   KeywordOpportunityEnvelope,
   KeywordOpportunityFunnel,
+  KeywordOpportunityIncomplete,
+  KeywordOpportunityIncompleteReason,
   KeywordOpportunityLane,
-  KeywordOpportunityResult,
+  KeywordOpportunityResultV2,
   KeywordOpportunityRow,
+  KeywordOpportunitySerpIntentEvidence,
   KeywordOpportunitySerpEvidence,
+  KeywordOpportunitySignals,
   KeywordOpportunityValidation,
   KeywordOpportunityWithheld,
+  KeywordOpportunityWithheldReason,
 } from "./types.ts";
 
 /**
@@ -48,8 +61,31 @@ export interface KeywordOpportunityObservation {
   readonly propositionIndex: number | null;
   readonly validation: KeywordOpportunityValidation;
   readonly serp: KeywordOpportunitySerpEvidence;
+  /** Present on v2 observations; absent only while a v1 producer migrates. */
+  readonly serpIntent?: KeywordOpportunitySerpIntentEvidence | null;
+  readonly signals?: KeywordOpportunitySignals;
+  readonly aiOverview?: KeywordOpportunityAiOverviewObservation | null;
   readonly coverage: KeywordOpportunityCoverage;
   readonly supportingPageUrl: string | null;
+}
+
+/**
+ * Cross the public result boundary by allow-listing fields. Do not replace
+ * this projection with a spread: report input deliberately retains private
+ * provider markdown for interpretation and discounting.
+ */
+function publicAiOverviewEvidence(
+  observation: KeywordOpportunityAiOverviewObservation | null | undefined,
+): KeywordOpportunityAiOverviewEvidence | null {
+  if (observation === null || observation === undefined) return null;
+  return {
+    availability: observation.availability,
+    loadedAsync: observation.loadedAsync,
+    answerAssessment: observation.answerAssessment,
+    reason: observation.reason,
+    modelId: observation.modelId,
+    promptVersion: observation.promptVersion,
+  };
 }
 
 export interface KeywordOpportunityReportInput {
@@ -77,7 +113,7 @@ export interface KeywordOpportunityReportInput {
  * volume would delete 87% of them, so they qualify on having a crawled page
  * that answers them and are labelled as carrying no demand data.
  */
-function isShown(observation: KeywordOpportunityObservation): boolean {
+function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   if (isKeywordAlreadyCovered(observation.coverage)) return false;
   if (observation.lane === "geo") {
     return observation.supportingPageUrl !== null;
@@ -86,6 +122,110 @@ function isShown(observation: KeywordOpportunityObservation): boolean {
     observation.validation.availability === "available" &&
     isKeywordWinnable(observation.serp)
   );
+}
+
+function hasObservedExistingPage(
+  coverage: KeywordOpportunityCoverage,
+): boolean {
+  return isKeywordAlreadyCovered(coverage);
+}
+
+type KeywordOpportunityClassification =
+  | {
+      readonly disposition: "eligible";
+      readonly decision: KeywordOpportunityDecision | null;
+    }
+  | {
+      readonly disposition: "excluded";
+      readonly decision: KeywordOpportunityDecision | null;
+      readonly reason: KeywordOpportunityWithheldReason;
+    }
+  | {
+      readonly disposition: "incomplete";
+      readonly decision: KeywordOpportunityDecision;
+      readonly reason: KeywordOpportunityIncompleteReason;
+      readonly signals: KeywordOpportunitySignals;
+    };
+
+/**
+ * Classify v2 evidence while retaining a narrow legacy path for old bundles.
+ * New producers always supply `signals`; their unknowns therefore reach the
+ * incomplete section instead of inheriting the old binary shown/withheld gate.
+ */
+function classifyObservation(
+  observation: KeywordOpportunityObservation,
+  unavailableStages: readonly string[],
+): KeywordOpportunityClassification {
+  if (observation.signals === undefined) {
+    return isLegacyShown(observation)
+      ? { disposition: "eligible", decision: null }
+      : {
+          disposition: "excluded",
+          decision: null,
+          reason: withheldReason(observation, unavailableStages),
+        };
+  }
+
+  const signalDecision = classifyKeywordOpportunitySignals(
+    observation.signals,
+  );
+  const makeDecision = (
+    disposition: KeywordOpportunityDecision["disposition"],
+    basis: KeywordOpportunityDecision["basis"],
+    positiveSignals = signalDecision.positiveSignals,
+  ): KeywordOpportunityDecision => ({
+    disposition,
+    basis,
+    positiveSignals,
+    discounts: keywordOpportunityDecisionDiscounts(observation.aiOverview),
+  });
+
+  if (hasObservedExistingPage(observation.coverage)) {
+    return {
+      disposition: "excluded",
+      decision: makeDecision("excluded", "existing_page_observed"),
+      reason: "already_covered",
+    };
+  }
+
+  if (observation.validation.availability === "explicit_zero") {
+    return {
+      disposition: "excluded",
+      decision: makeDecision("excluded", "volume_priced_at_zero", []),
+      reason: "volume_priced_at_zero",
+    };
+  }
+
+  if (observation.serp.status !== "complete") {
+    return {
+      disposition: "incomplete",
+      decision: makeDecision("incomplete", "serp_evidence_unavailable"),
+      reason: "serp_evidence_unavailable",
+      signals: observation.signals,
+    };
+  }
+
+  if (signalDecision.disposition === "incomplete") {
+    return {
+      disposition: "incomplete",
+      decision: makeDecision("incomplete", signalDecision.basis),
+      reason: signalDecision.incompleteReason,
+      signals: observation.signals,
+    };
+  }
+
+  if (signalDecision.disposition === "excluded") {
+    return {
+      disposition: "excluded",
+      decision: makeDecision("excluded", signalDecision.basis),
+      reason: "all_signals_not_observed",
+    };
+  }
+
+  return {
+    disposition: "eligible",
+    decision: makeDecision("eligible", signalDecision.basis),
+  };
 }
 
 /**
@@ -147,16 +287,17 @@ function countFunnel(
     explicitZero: availability("explicit_zero"),
     providerNoData: availability("provider_no_data"),
     // Read off the stage list, which is the fact, rather than inferred from
-    // the rows, which are a lossy projection of it: a run where every
-    // candidate happened to match a crawled page carries no
-    // `gsc_query_sample_not_read` row at all, and inferring from the rows
-    // would hand back a confident zero for a sample nobody fetched.
-    alreadyCovered: input.unavailableStages.includes(KEYWORD_STAGE_GSC_COVERAGE)
-      ? null
-      : observations.filter((o) => isKeywordAlreadyCovered(o.coverage)).length,
-    serpSampled: observations.filter(
-      (o) => o.serp.verdict !== "no_serp_evidence",
-    ).length,
+    // the rows, which are a lossy projection of it. A failed read has no
+    // universe, while a truncated read is missing its low-click tail; neither
+    // can support a confident count of all already-covered candidates.
+    alreadyCovered:
+      input.unavailableStages.includes(KEYWORD_STAGE_GSC_COVERAGE) ||
+      input.unavailableStages.includes(KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED)
+        ? null
+        : observations.filter((o) => hasObservedExistingPage(o.coverage))
+            .length,
+    serpSampled: observations.filter((o) => o.serp.status === "complete")
+      .length,
     winnableEvidence: observations.filter((o) => isKeywordWinnable(o.serp))
       .length,
     shown: shown.length,
@@ -172,6 +313,7 @@ function countFunnel(
 function nextSteps(
   input: KeywordOpportunityReportInput,
   shownCount: number,
+  incompleteCount: number,
 ): readonly string[] {
   const steps: string[] = [];
   if (!input.context.contextSufficient) {
@@ -180,7 +322,7 @@ function nextSteps(
   if (shownCount < KEYWORD_OPPORTUNITY_MIN_ROWS) {
     steps.push("add_seed_keywords", "try_another_market");
   }
-  if (input.unavailableStages.length > 0) {
+  if (input.unavailableStages.length > 0 || incompleteCount > 0) {
     steps.push("rerun_when_stage_recovers");
   }
   return steps;
@@ -197,56 +339,96 @@ function nextSteps(
 function resolveAvailability(
   input: KeywordOpportunityReportInput,
   shownCount: number,
+  incompleteCount: number,
 ): KeywordOpportunityAvailability {
   if (shownCount < KEYWORD_OPPORTUNITY_MIN_ROWS) return "insufficient_evidence";
-  if (input.unavailableStages.length > 0) return "partial";
+  if (input.unavailableStages.length > 0 || incompleteCount > 0) return "partial";
   return "available";
 }
 
 /** Assemble the finished result from observations that are already judged. */
 export function buildKeywordOpportunityResult(
   input: KeywordOpportunityReportInput,
-): KeywordOpportunityResult {
-  const shown = input.observations.filter(isShown);
-  const clusters = clusterKeywords(shown.map((o) => o.keyword));
+): KeywordOpportunityResultV2 {
+  const eligible: Array<{
+    readonly observation: KeywordOpportunityObservation;
+    readonly decision: KeywordOpportunityDecision | null;
+  }> = [];
+  const withheld: KeywordOpportunityWithheld[] = [];
+  const incomplete: KeywordOpportunityIncomplete[] = [];
+
+  for (const observation of input.observations) {
+    const classification = classifyObservation(
+      observation,
+      input.unavailableStages,
+    );
+    if (classification.disposition === "eligible") {
+      eligible.push({ observation, decision: classification.decision });
+    } else if (classification.disposition === "excluded") {
+      withheld.push({
+        keyword: observation.keyword,
+        discoveryBasis: observation.discoveryBasis,
+        reason: classification.reason,
+        ...(classification.decision === null
+          ? {}
+          : { decision: classification.decision }),
+      });
+    } else {
+      incomplete.push({
+        keyword: observation.keyword,
+        lane: observation.lane,
+        discoveryBasis: observation.discoveryBasis,
+        validation: observation.validation,
+        coverage: observation.coverage,
+        serp: observation.serp,
+        serpIntent: observation.serpIntent ?? null,
+        signals: classification.signals,
+        aiOverview: publicAiOverviewEvidence(observation.aiOverview),
+        reason: classification.reason,
+        decision: classification.decision,
+      });
+    }
+  }
+
+  const shown = eligible.map(({ observation }) => observation);
+  const clusters = clusterKeywords(shown.map((row) => row.keyword));
   const clusterIds = keywordClusterIndex(clusters);
-
-  const rows: KeywordOpportunityRow[] = shown.map((observation) => ({
-    keyword: observation.keyword,
-    lane: observation.lane,
-    discoveryBasis: observation.discoveryBasis,
-    questionForm: observation.questionForm,
-    propositionIndex: observation.propositionIndex,
-    validation: observation.validation,
-    serp: observation.serp,
-    coverage: observation.coverage,
-    supportingPageUrl: observation.supportingPageUrl,
-    nextChecks: keywordNextChecks(observation),
-    // Clusters are built from exactly these keywords, so the lookup always
-    // hits; the null is the contract's shape for a row that predates
-    // clustering, not a case this path can produce.
-    clusterId: clusterIds.get(observation.keyword) ?? null,
-  }));
-
-  const withheld: KeywordOpportunityWithheld[] = input.observations
-    .filter((observation) => !isShown(observation))
-    .map((observation) => ({
+  const rows: KeywordOpportunityRow[] = eligible.map(
+    ({ observation, decision }) => ({
       keyword: observation.keyword,
+      lane: observation.lane,
       discoveryBasis: observation.discoveryBasis,
-      reason: withheldReason(observation, input.unavailableStages),
-    }));
+      questionForm: observation.questionForm,
+      propositionIndex: observation.propositionIndex,
+      validation: observation.validation,
+      serp: observation.serp,
+      ...(decision === null
+        ? {}
+        : {
+            serpIntent: observation.serpIntent ?? null,
+            signals: observation.signals,
+            aiOverview: publicAiOverviewEvidence(observation.aiOverview),
+            decision,
+          }),
+      coverage: observation.coverage,
+      supportingPageUrl: observation.supportingPageUrl,
+      nextChecks: keywordNextChecks(observation),
+      clusterId: clusterIds.get(observation.keyword) ?? null,
+    }),
+  );
 
   return {
-    availability: resolveAvailability(input, rows.length),
+    availability: resolveAvailability(input, rows.length, incomplete.length),
     marketCode: input.marketCode,
     languageCode: input.languageCode,
     context: input.context,
     rows,
     withheld,
+    incomplete,
     clusters,
     funnel: countFunnel(input, shown),
     unavailableStages: input.unavailableStages,
-    nextStepSuggestions: nextSteps(input, rows.length),
+    nextStepSuggestions: nextSteps(input, rows.length, incomplete.length),
   };
 }
 

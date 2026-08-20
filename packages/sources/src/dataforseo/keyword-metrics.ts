@@ -1,5 +1,5 @@
 // @input  -- three DataForSEO live endpoints, reached through an injected fetch
-// @output -- keyword metrics, one sampled page one, domain ranks, and what never came back
+// @output -- keyword metrics, typed page-one evidence, domain ranks, and what never came back
 // @pos    -- the only place provider silence becomes a countable set and cost is summed
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -57,6 +57,25 @@ export const MAX_DATAFORSEO_SERP_ORGANIC_DEPTH = 100;
 
 /** Highest value on DataForSEO's 0-1000 domain rank scale. */
 export const MAX_DATAFORSEO_DOMAIN_RANK = 1_000;
+
+/** Remote SERP text is untrusted and must not escape the provider boundary unbounded. */
+const MAX_DATAFORSEO_SERP_TITLE_CHARS = 512;
+const MAX_DATAFORSEO_SERP_URL_CHARS = 2_048;
+const MAX_DATAFORSEO_SERP_AI_OVERVIEW_MARKDOWN_CHARS = 65_536;
+const MAX_DATAFORSEO_SERP_ITEM_TYPES = 100;
+const MAX_DATAFORSEO_SERP_ITEMS = 500;
+const MAX_DATAFORSEO_SERP_REFERENCES = 100;
+const MAX_DATAFORSEO_SERP_COMMUNITY_ITEMS = 100;
+
+const DATAFORSEO_SERP_COMMUNITY_ITEM_TYPES = [
+  "discussions_and_forums",
+  "forum",
+  "video",
+  "twitter",
+] as const;
+
+export type DataForSeoSerpCommunityItemType =
+  (typeof DATAFORSEO_SERP_COMMUNITY_ITEM_TYPES)[number];
 
 const DATAFORSEO_KEYWORD_MAIN_INTENTS = [
   "informational",
@@ -134,6 +153,8 @@ export interface DataForSeoSerpOrganicRequest {
   readonly languageCode: string;
   /** Defaults to page one (10). */
   readonly depth?: number;
+  /** Ask the paid Live endpoint to load an asynchronous AI Overview. */
+  readonly loadAsyncAiOverview?: boolean;
 }
 
 export interface DataForSeoSerpOrganicRow {
@@ -149,8 +170,35 @@ export interface DataForSeoSerpOrganicRow {
    * "Google showed nothing extra" would be adding a claim this does not carry.
    */
   readonly sitelinkCount: number;
+  /** The result title, or null when the provider omitted it. */
+  readonly title: string | null;
   /** The result's own URL, or null when the provider did not give one. */
   readonly url: string | null;
+}
+
+export interface DataForSeoSerpAiOverviewReference {
+  readonly source: string | null;
+  readonly domain: string | null;
+  readonly title: string | null;
+  readonly url: string | null;
+}
+
+export interface DataForSeoSerpAiOverview {
+  /** Provider markdown only; omitted content stays null rather than empty text. */
+  readonly markdown: string | null;
+  /** Provider `asynchronous_ai_overview`, or null when it was not reported. */
+  readonly isAsync: boolean | null;
+  readonly references: readonly DataForSeoSerpAiOverviewReference[];
+}
+
+export interface DataForSeoSerpCommunityItem {
+  /** The provider's top-level community block type; never an inferred page type. */
+  readonly type: DataForSeoSerpCommunityItemType;
+  /** `rank_absolute` when present, otherwise `rank_group`. */
+  readonly position: number;
+  readonly title: string | null;
+  readonly url: string | null;
+  readonly domain: string | null;
 }
 
 export interface DataForSeoSerpOrganicResponse {
@@ -159,10 +207,14 @@ export interface DataForSeoSerpOrganicResponse {
   readonly rows: readonly DataForSeoSerpOrganicRow[];
   /**
    * Item types present on the sampled page, e.g. `ai_overview` or
-   * `people_also_ask`. `null` means the provider reported none, so a caller
-   * must not read the absence of `ai_overview` as "no AI overview shown".
+   * `people_also_ask`. `null` means the provider did not report the list, so a
+   * caller must not read the absence of `ai_overview` as "no AI overview shown".
    */
   readonly itemTypes: readonly string[] | null;
+  /** Null means no AI Overview block was supplied, not an empty answer. */
+  readonly aiOverview: DataForSeoSerpAiOverview | null;
+  /** Null means community block availability was not reported; [] means none. */
+  readonly communityItems: readonly DataForSeoSerpCommunityItem[] | null;
   /**
    * Organic items dropped because their rank or domain was unusable.
    *
@@ -365,6 +417,81 @@ function nullableStringArray(
     }
     return entry.trim();
   });
+}
+
+function nullableBoundedString(
+  value: unknown,
+  maximum: number,
+  context: string,
+): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") {
+    throw invalidResponse(`${context} did not contain a string.`);
+  }
+  if (value.trim() === "") return null;
+  if (Array.from(value).length > maximum) {
+    throw invalidResponse(
+      `${context} exceeded the ${maximum} character limit.`,
+    );
+  }
+  return value;
+}
+
+function nullableBoundedStringArray(
+  value: unknown,
+  maximumItems: number,
+  maximumChars: number,
+  context: string,
+): readonly string[] | null {
+  const values = optionalBoundedArray(value, maximumItems, context);
+  if (values === null) return null;
+  return values.map((entry, index) => {
+    const parsed = nullableBoundedString(
+      entry,
+      maximumChars,
+      `${context}[${index}]`,
+    );
+    if (parsed === null) {
+      throw invalidResponse(`${context}[${index}] was not a non-empty string.`);
+    }
+    return parsed.trim();
+  });
+}
+
+function optionalBoundedArray(
+  value: unknown,
+  maximumItems: number,
+  context: string,
+): readonly unknown[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) {
+    throw invalidResponse(`${context} was not an array.`);
+  }
+  if (value.length > maximumItems) {
+    throw invalidResponse(
+      `${context} exceeded the ${maximumItems} item limit.`,
+    );
+  }
+  return value;
+}
+
+function nullableBoolean(value: unknown, context: string): boolean | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "boolean") {
+    throw invalidResponse(`${context} did not contain a boolean.`);
+  }
+  return value;
+}
+
+function nullablePositiveInteger(
+  value: unknown,
+  context: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw invalidResponse(`${context} did not contain a positive integer.`);
+  }
+  return value as number;
 }
 
 function nullableMainIntent(
@@ -643,6 +770,226 @@ interface SerpOrganicItems {
   readonly unresolvedItemCount: number;
 }
 
+function isSerpCommunityItemType(
+  value: unknown,
+): value is DataForSeoSerpCommunityItemType {
+  return (
+    typeof value === "string" &&
+    DATAFORSEO_SERP_COMMUNITY_ITEM_TYPES.includes(
+      value as DataForSeoSerpCommunityItemType,
+    )
+  );
+}
+
+function communityPosition(item: JsonRecord, context: string): number {
+  const absolute = nullablePositiveInteger(
+    item.rank_absolute,
+    `${context}.rank_absolute`,
+  );
+  if (absolute !== null) return absolute;
+  const group = nullablePositiveInteger(
+    item.rank_group,
+    `${context}.rank_group`,
+  );
+  if (group !== null) return group;
+  throw invalidResponse(`${context} did not contain a reportable position.`);
+}
+
+function nullableProviderDomain(
+  value: unknown,
+  context: string,
+): string | null {
+  const bounded = nullableBoundedString(value, 253, context);
+  if (bounded === null) return null;
+  const direct = domainKey(bounded);
+  if (direct !== null) return direct;
+  try {
+    const parsed = new URL(`http://${bounded}`);
+    const normalized = domainKey(parsed.hostname);
+    if (
+      normalized !== null &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.port === "" &&
+      parsed.pathname === "/" &&
+      parsed.search === "" &&
+      parsed.hash === ""
+    ) {
+      return normalized;
+    }
+  } catch {
+    // Fall through to one bounded provider-contract error below.
+  }
+  throw invalidResponse(`${context} did not contain a valid hostname.`);
+}
+
+interface SerpCommunityItems {
+  readonly items: readonly DataForSeoSerpCommunityItem[];
+  readonly blockReported: boolean;
+}
+
+function collectSerpCommunityItems(
+  items: readonly unknown[],
+): SerpCommunityItems {
+  const collected: DataForSeoSerpCommunityItem[] = [];
+  let blockReported = false;
+
+  for (const [index, value] of items.entries()) {
+    const context = `DataForSEO serp-organic item ${index}`;
+    const block = asRecord(value, context);
+    if (!isSerpCommunityItemType(block.type)) continue;
+    blockReported = true;
+    const type = block.type;
+    const nested = optionalBoundedArray(
+      block.items,
+      MAX_DATAFORSEO_SERP_COMMUNITY_ITEMS,
+      `${context}.items`,
+    );
+    const candidates = nested ?? [block];
+    if (candidates.length === 0) continue;
+    const position = communityPosition(block, context);
+    for (const [candidateIndex, candidateValue] of candidates.entries()) {
+      const candidateContext =
+        nested === null ? context : `${context}.items[${candidateIndex}]`;
+      const candidate =
+        nested === null
+          ? block
+          : asRecord(candidateValue, candidateContext);
+      if (nested !== null && candidate.type !== `${type}_element`) {
+        throw invalidResponse(
+          `${candidateContext}.type did not match ${type}_element.`,
+        );
+      }
+      const title = nullableBoundedString(
+        candidate.title,
+        MAX_DATAFORSEO_SERP_TITLE_CHARS,
+        `${candidateContext}.title`,
+      );
+      const url = nullableBoundedString(
+        candidate.url,
+        MAX_DATAFORSEO_SERP_URL_CHARS,
+        `${candidateContext}.url`,
+      );
+      const domain = nullableProviderDomain(
+        candidate.domain,
+        `${candidateContext}.domain`,
+      );
+      // A container label is not a concrete result.
+      if (url === null && domain === null) continue;
+      if (collected.length >= MAX_DATAFORSEO_SERP_COMMUNITY_ITEMS) {
+        throw invalidResponse(
+          `DataForSEO serp-organic community items exceeded the ${MAX_DATAFORSEO_SERP_COMMUNITY_ITEMS} item limit.`,
+        );
+      }
+      collected.push({ type, position, title, url, domain });
+    }
+  }
+
+  return { items: collected, blockReported };
+}
+
+function parseSerpAiOverview(
+  items: readonly unknown[],
+): DataForSeoSerpAiOverview | null {
+  const blocks: { readonly item: JsonRecord; readonly index: number }[] = [];
+  for (const [index, value] of items.entries()) {
+    const item = asRecord(value, `DataForSEO serp-organic item ${index}`);
+    if (item.type === "ai_overview") blocks.push({ item, index });
+  }
+  if (blocks.length === 0) return null;
+  if (blocks.length > 1) {
+    throw invalidResponse(
+      "DataForSEO serp-organic result contained more than one AI Overview block.",
+    );
+  }
+
+  const block = blocks[0];
+  if (block === undefined) return null;
+  const context = `DataForSEO serp-organic item ${block.index}`;
+  const references: DataForSeoSerpAiOverviewReference[] = [];
+  const referenceKeys = new Set<string>();
+  const appendReferences = (value: unknown, referenceContext: string): void => {
+    const values = optionalBoundedArray(
+      value,
+      MAX_DATAFORSEO_SERP_REFERENCES,
+      referenceContext,
+    );
+    if (values === null) return;
+    for (const [index, entry] of values.entries()) {
+      const itemContext = `${referenceContext}[${index}]`;
+      const reference = asRecord(entry, itemContext);
+      const source = nullableBoundedString(
+        reference.source,
+        MAX_DATAFORSEO_SERP_TITLE_CHARS,
+        `${itemContext}.source`,
+      );
+      const domain = nullableProviderDomain(
+        reference.domain,
+        `${itemContext}.domain`,
+      );
+      const title = nullableBoundedString(
+        reference.title,
+        MAX_DATAFORSEO_SERP_TITLE_CHARS,
+        `${itemContext}.title`,
+      );
+      const url = nullableBoundedString(
+        reference.url,
+        MAX_DATAFORSEO_SERP_URL_CHARS,
+        `${itemContext}.url`,
+      );
+      if (
+        source === null &&
+        domain === null &&
+        title === null &&
+        url === null
+      ) {
+        continue;
+      }
+      const key =
+        url !== null
+          ? `url:${url}`
+          : domain !== null
+            ? `domain:${domain}`
+            : source !== null
+              ? `source:${source}`
+              : `title:${title}`;
+      if (referenceKeys.has(key)) continue;
+      if (references.length >= MAX_DATAFORSEO_SERP_REFERENCES) {
+        throw invalidResponse(
+          `DataForSEO serp-organic AI Overview references exceeded the ${MAX_DATAFORSEO_SERP_REFERENCES} item limit.`,
+        );
+      }
+      referenceKeys.add(key);
+      references.push({ source, domain, title, url });
+    }
+  };
+  appendReferences(block.item.references, `${context}.references`);
+  const nestedItems = optionalBoundedArray(
+    block.item.items,
+    MAX_DATAFORSEO_SERP_ITEMS,
+    `${context}.items`,
+  );
+  if (nestedItems !== null) {
+    for (const [index, value] of nestedItems.entries()) {
+      const itemContext = `${context}.items[${index}]`;
+      const item = asRecord(value, itemContext);
+      appendReferences(item.references, `${itemContext}.references`);
+    }
+  }
+  return {
+    markdown: nullableBoundedString(
+      block.item.markdown,
+      MAX_DATAFORSEO_SERP_AI_OVERVIEW_MARKDOWN_CHARS,
+      `${context}.markdown`,
+    ),
+    isAsync: nullableBoolean(
+      block.item.asynchronous_ai_overview,
+      `${context}.asynchronous_ai_overview`,
+    ),
+    references,
+  };
+}
+
 /**
  * Keep only organic results, in provider order, and count what was unusable.
  *
@@ -670,7 +1017,16 @@ function collectSerpOrganicRows(
       rankGroup,
       domain,
       sitelinkCount: Array.isArray(item.links) ? item.links.length : 0,
-      url: typeof item.url === "string" && item.url !== "" ? item.url : null,
+      title: nullableBoundedString(
+        item.title,
+        MAX_DATAFORSEO_SERP_TITLE_CHARS,
+        `DataForSEO serp-organic item ${index}.title`,
+      ),
+      url: nullableBoundedString(
+        item.url,
+        MAX_DATAFORSEO_SERP_URL_CHARS,
+        `DataForSEO serp-organic item ${index}.url`,
+      ),
     });
   }
   return { rows, unresolvedItemCount };
@@ -683,17 +1039,29 @@ function parseSerpOrganicResponse(
 ): DataForSeoSerpOrganicResponse {
   const task = parseLiveTask(payload, "DataForSEO serp-organic");
   const items = resultItems(task.result, "DataForSEO serp-organic");
+  if (items.length > MAX_DATAFORSEO_SERP_ITEMS) {
+    throw invalidResponse(
+      `DataForSEO serp-organic result items exceeded the ${MAX_DATAFORSEO_SERP_ITEMS} item limit.`,
+    );
+  }
   const collected = collectSerpOrganicRows(items, depth);
+  const itemTypes =
+    task.result === null
+      ? null
+      : nullableBoundedStringArray(
+          task.result.item_types,
+          MAX_DATAFORSEO_SERP_ITEM_TYPES,
+          100,
+          "DataForSEO serp-organic result item_types",
+        );
+  const community = collectSerpCommunityItems(items);
   return {
     keyword,
     rows: collected.rows,
-    itemTypes:
-      task.result === null
-        ? null
-        : nullableStringArray(
-            task.result.item_types,
-            "DataForSEO serp-organic result item_types",
-          ),
+    itemTypes,
+    aiOverview: parseSerpAiOverview(items),
+    communityItems:
+      itemTypes !== null || community.blockReported ? community.items : null,
     unresolvedItemCount: collected.unresolvedItemCount,
     costUsd: task.costUsd,
     providerStatusCode: task.providerStatusCode,
@@ -790,9 +1158,17 @@ function normalizeKeywordOverviewRequest(
   };
 }
 
+interface NormalizedSerpOrganicRequest {
+  readonly keyword: string;
+  readonly locationCode: number;
+  readonly languageCode: string;
+  readonly depth: number;
+  readonly loadAsyncAiOverview: boolean;
+}
+
 function normalizeSerpOrganicRequest(
   request: DataForSeoSerpOrganicRequest,
-): Required<DataForSeoSerpOrganicRequest> {
+): NormalizedSerpOrganicRequest {
   if (typeof request.keyword !== "string" || request.keyword.trim() === "") {
     throw invalidConfiguration(
       "DataForSEO serp-organic keyword must be a non-empty string.",
@@ -808,11 +1184,20 @@ function normalizeSerpOrganicRequest(
       `DataForSEO serp-organic depth must be an integer from 1 to ${MAX_DATAFORSEO_SERP_ORGANIC_DEPTH}.`,
     );
   }
+  if (
+    request.loadAsyncAiOverview !== undefined &&
+    typeof request.loadAsyncAiOverview !== "boolean"
+  ) {
+    throw invalidConfiguration(
+      "DataForSEO serp-organic loadAsyncAiOverview must be a boolean.",
+    );
+  }
   return {
     keyword: request.keyword.trim(),
     locationCode: normalizeLocationCode(request.locationCode, "serp-organic"),
     languageCode: normalizeLanguageCode(request.languageCode, "serp-organic"),
     depth,
+    loadAsyncAiOverview: request.loadAsyncAiOverview === true,
   };
 }
 
@@ -985,6 +1370,9 @@ export function createDataForSeoKeywordMetricsClient(
           language_code: normalized.languageCode,
           device: "desktop",
           depth: normalized.depth,
+          ...(normalized.loadAsyncAiOverview
+            ? { load_async_ai_overview: true }
+            : {}),
         },
         "serp-organic",
         (payload) =>

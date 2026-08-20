@@ -1,13 +1,25 @@
 // @input  -- the request's market, language and candidate list
-// @output -- the three DataForSEO seams the orchestration calls, each booking its own cost
+// @output -- typed DataForSEO seams with enriched SERP evidence and booked cost
 // @pos    -- the only place provider transport meets the run's cost accumulator
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
+  bulkTrafficEstimation,
+  createDomainRegistrationResolver,
   createDataForSeoKeywordMetricsClient,
+  labsLanguageForMarket,
+  normalizeRdapDomain,
+  normalizeTrafficDomain,
+  SourceError,
+  type BulkTrafficEstimationOptions,
+  type BulkTrafficEstimationResult,
   type DataForSeoKeywordMetricsClient,
+  type DomainRegistrationEvidence,
 } from "@sf/sources";
-import type { KeywordOpportunityProviderRow } from "@sf/public-tools";
+import type {
+  KeywordOpportunityProviderRow,
+  KeywordOpportunitySerpFailureReason,
+} from "@sf/public-tools";
 import type { KeywordCostAccumulator } from "./keyword-cost-guard.ts";
 import type { KeywordSerpSampleResult } from "./keyword-opportunity-handler.ts";
 
@@ -54,6 +66,47 @@ export function keywordLocationCode(marketCode: string): number {
  */
 const DOMAINS_PER_SERP = 10;
 
+/** Maximum simultaneous page-one reads inside one keyword request. */
+export const KEYWORD_SERP_CONCURRENCY = 10;
+
+/** Maximum simultaneous registry reads inside one keyword request. */
+export const MAX_KEYWORD_RDAP_CONCURRENCY = 10;
+
+const STAGE_WIDE_SERP_ERROR_CODES: ReadonlySet<SourceError["code"]> = new Set([
+  "AUTH_REQUIRED",
+  "PERMISSION_DENIED",
+  "INVALID_CONFIGURATION",
+]);
+
+function isStageWideSerpError(error: unknown): error is SourceError {
+  return (
+    error instanceof SourceError &&
+    STAGE_WIDE_SERP_ERROR_CODES.has(error.code)
+  );
+}
+
+function serpFailureReason(error: unknown): KeywordOpportunitySerpFailureReason {
+  return error instanceof SourceError && error.code === "TIMEOUT"
+    ? "transport_outcome_unknown"
+    : "provider_unavailable";
+}
+
+function unavailableSerpSample(
+  keyword: string,
+  failureReason: KeywordOpportunitySerpFailureReason,
+): KeywordSerpSampleResult {
+  return {
+    keyword,
+    status: "unavailable",
+    failureReason,
+    observedAt: null,
+    results: [],
+    pageItemTypes: null,
+    aiOverview: null,
+    communityItems: null,
+  };
+}
+
 export interface KeywordProviderSeams {
   readonly validateVolumes: (input: {
     readonly keywords: readonly string[];
@@ -68,6 +121,43 @@ export interface KeywordProviderSeams {
   readonly resolveDomainRanks: (
     domains: readonly string[],
   ) => Promise<ReadonlyMap<string, number>>;
+  readonly resolveDomainTraffic: (input: {
+    readonly domains: readonly string[];
+    readonly marketCode: string;
+  }) => Promise<ReadonlyMap<string, number | null> | null>;
+  readonly resolveDomainRegistrations: (
+    domains: readonly string[],
+  ) => Promise<ReadonlyMap<string, DomainRegistrationEvidence>>;
+}
+
+type TrafficEstimator = (
+  options: BulkTrafficEstimationOptions,
+) => Promise<BulkTrafficEstimationResult | null>;
+
+interface DomainInput {
+  /** Stable map/cache identity: normalized when valid, raw when invalid. */
+  readonly key: string;
+  /** Value passed to the source adapter. */
+  readonly lookup: string;
+  readonly valid: boolean;
+}
+
+function distinctDomainInputs(
+  domains: readonly string[],
+  normalize: (domain: string) => string | null,
+): readonly DomainInput[] {
+  const seen = new Set<string>();
+  const distinct: DomainInput[] = [];
+  for (const domain of domains) {
+    const normalized = normalize(domain);
+    const valid = normalized !== null;
+    const key = normalized ?? domain;
+    const dedupeKey = `${valid ? "valid" : "invalid"}:${key}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    distinct.push({ key, lookup: key, valid });
+  }
+  return distinct;
 }
 
 /**
@@ -85,6 +175,11 @@ export function createKeywordProviderSeams(options: {
   readonly client?: DataForSeoKeywordMetricsClient;
   readonly login?: string;
   readonly password?: string;
+  readonly estimateTraffic?: TrafficEstimator;
+  readonly resolveRegistration?: (
+    domain: string,
+  ) => Promise<DomainRegistrationEvidence>;
+  readonly now?: () => Date;
 }): KeywordProviderSeams {
   let cached: DataForSeoKeywordMetricsClient | null = options.client ?? null;
   // Built on first use, not at module load: a route file that constructs its
@@ -97,6 +192,43 @@ export function createKeywordProviderSeams(options: {
     });
     return cached;
   };
+  const registrationResolver = createDomainRegistrationResolver(
+    options.now === undefined ? {} : { now: options.now },
+  );
+  const registrationPromises = new Map<
+    string,
+    Promise<DomainRegistrationEvidence>
+  >();
+  const resolveRegistration = (
+    domain: string,
+  ): Promise<DomainRegistrationEvidence> => {
+    let pending = registrationPromises.get(domain);
+    if (pending === undefined) {
+      pending = Promise.resolve().then(
+        () =>
+          options.resolveRegistration?.(domain) ??
+          registrationResolver.resolve(domain),
+      );
+      registrationPromises.set(domain, pending);
+      void pending.catch(() => {
+        if (registrationPromises.get(domain) === pending) {
+          registrationPromises.delete(domain);
+        }
+      });
+    }
+    return pending;
+  };
+
+  const unavailableRegistration = (
+    domain: string,
+  ): DomainRegistrationEvidence => ({
+    domain: normalizeRdapDomain(domain),
+    availability: "unavailable",
+    registeredAt: null,
+    observedAt: (options.now?.() ?? new Date()).toISOString(),
+    sourceHost: null,
+    reason: "registry_unavailable",
+  });
 
   return {
     validateVolumes: async ({ keywords, marketCode, languageCode }) => {
@@ -121,30 +253,108 @@ export function createKeywordProviderSeams(options: {
 
     sampleSerp: async ({ keywords, marketCode, languageCode }) => {
       const locationCode = keywordLocationCode(marketCode);
-      const samples: KeywordSerpSampleResult[] = [];
-      // Sequential. The provider's per-minute limit is the binding constraint
-      // at this volume, and a throttled call is indistinguishable downstream
-      // from a page one that simply had no weak site on it.
-      for (const keyword of keywords) {
-        const response = await client().serpOrganic({
-          keyword,
-          locationCode,
-          languageCode,
-        });
-        options.costs.record("serp_organic", response.costUsd);
-        // Position and item types travel with the domains. Both are already
-        // parsed by the provider client and cost nothing extra; this seam used
-        // to flatten each row to its domain, which is how the SERP position of
-        // the weakest holder and the page's AI Overview marker were silently
-        // lost between provider and report.
-        samples.push({
-          keyword,
-          results: response.rows.slice(0, DOMAINS_PER_SERP).map((row) => ({
-            domain: row.domain,
-            position: row.rankGroup,
-          })),
-          pageItemTypes: response.itemTypes,
-        });
+      const plan = Object.freeze(
+        keywords.map((keyword, index) => Object.freeze({ index, keyword })),
+      );
+      const samples: KeywordSerpSampleResult[] = new Array(plan.length);
+      const abortController = new AbortController();
+      let stageError: SourceError | null = null;
+      let rejectStageFailure!: (error: SourceError) => void;
+      const stageFailure = new Promise<never>((_resolve, reject) => {
+        rejectStageFailure = reject;
+      });
+      // The promise can reject while the current wave is still constructing.
+      // Attach a handler immediately; each wave also races the original promise
+      // so the caller still receives the exact first stage-wide error.
+      void stageFailure.catch(() => {});
+
+      const runItem = async (item: (typeof plan)[number]): Promise<void> => {
+        try {
+          const response = await client().serpOrganic(
+            {
+              keyword: item.keyword,
+              locationCode,
+              languageCode,
+              loadAsyncAiOverview: true,
+            },
+            abortController.signal,
+          );
+          // A resolved provider call is billable even when it reports no
+          // usable SERP. Thrown calls have no response cost to book here.
+          options.costs.record("serp_organic", response.costUsd);
+          // A provider that ignores abort may still answer after the run has
+          // already failed. Its real cost remains booked, but its late evidence
+          // must not mutate an outcome the caller can no longer receive.
+          if (stageError !== null) return;
+          const hasUsableShape =
+            response.rows.length > 0 ||
+            response.itemTypes !== null ||
+            response.aiOverview !== null ||
+            response.communityItems !== null;
+          if (!hasUsableShape) {
+            samples[item.index] = unavailableSerpSample(
+              item.keyword,
+              "provider_no_data",
+            );
+            return;
+          }
+          // Position and item types travel with the domains. Both are already
+          // parsed by the provider client and cost nothing extra.
+          samples[item.index] = {
+            keyword: item.keyword,
+            status: "complete",
+            failureReason: null,
+            observedAt: (options.now?.() ?? new Date()).toISOString(),
+            results: response.rows.slice(0, DOMAINS_PER_SERP).map((row) => ({
+              domain: row.domain,
+              position: row.rankGroup,
+              title: row.title,
+              url: row.url,
+            })),
+            pageItemTypes: response.itemTypes,
+            aiOverview: response.aiOverview,
+            communityItems: response.communityItems,
+          };
+        } catch (error) {
+          if (isStageWideSerpError(error)) {
+            if (stageError === null) {
+              stageError = error;
+              abortController.abort(error);
+              rejectStageFailure(error);
+            }
+            return;
+          }
+          // A sibling's stage-wide failure owns the final outcome. Its abort
+          // commonly arrives here as TIMEOUT and must not be mistaken for a
+          // query-specific result.
+          if (stageError !== null || abortController.signal.aborted) return;
+          samples[item.index] = unavailableSerpSample(
+            item.keyword,
+            serpFailureReason(error),
+          );
+        }
+      };
+
+      // A fixed wave is the fail-fast boundary. Replenishing a worker as soon
+      // as one query succeeds can dispatch keyword 11 while a slower sibling
+      // is about to report bad credentials. No next wave starts until every
+      // call in the current one has settled and its stage-wide status is known.
+      for (
+        let waveStart = 0;
+        waveStart < plan.length;
+        waveStart += KEYWORD_SERP_CONCURRENCY
+      ) {
+        const wave = plan.slice(
+          waveStart,
+          waveStart + KEYWORD_SERP_CONCURRENCY,
+        );
+        const waveCompletion = Promise.all(wave.map(runItem));
+        // Promise.race keeps its handlers attached after it settles. The extra
+        // rejection handler also protects against a future runItem regression:
+        // a stubborn sibling may reject long after stageFailure won the race.
+        void waveCompletion.catch(() => {});
+        await Promise.race([waveCompletion, stageFailure]);
+        if (stageError !== null) throw stageError;
       }
       return samples;
     },
@@ -159,6 +369,65 @@ export function createKeywordProviderSeams(options: {
       // — which is the honest reading — while a zero would read as "the
       // weakest possible site already ranks here".
       return new Map(response.rows.map((row) => [row.target, row.rank]));
+    },
+
+    resolveDomainTraffic: async ({ domains, marketCode }) => {
+      const inputs = distinctDomainInputs(domains, normalizeTrafficDomain);
+      if (inputs.some((input) => !input.valid)) return null;
+      const distinct = inputs.map((input) => input.lookup);
+      if (distinct.length === 0) return new Map<string, number | null>();
+      const languageCode = labsLanguageForMarket(marketCode);
+      if (languageCode === null) return null;
+      const response = await (options.estimateTraffic ?? bulkTrafficEstimation)({
+        login: options.login ?? process.env["DATAFORSEO_LOGIN"] ?? "",
+        password: options.password ?? process.env["DATAFORSEO_PASSWORD"] ?? "",
+        targets: distinct,
+        marketCode: marketCode.trim().toUpperCase(),
+        locationCode: keywordLocationCode(marketCode),
+        languageCode,
+        onCost: (costUsd) => options.costs.record("bulk_traffic", costUsd),
+      });
+      if (response === null) return null;
+      const traffic = new Map(
+        response.rows.map((row) => [row.normalizedTarget, row.organicEtv]),
+      );
+      return new Map(
+        distinct.map((domain) => [domain, traffic.get(domain) ?? null]),
+      );
+    },
+
+    resolveDomainRegistrations: async (domains) => {
+      const distinct = distinctDomainInputs(domains, normalizeRdapDomain);
+      const entries: (readonly [string, DomainRegistrationEvidence])[] =
+        new Array(distinct.length);
+      let nextIndex = 0;
+      const worker = async (): Promise<void> => {
+        while (nextIndex < distinct.length) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const input = distinct[index];
+          if (input === undefined) return;
+          let evidence: DomainRegistrationEvidence;
+          try {
+            evidence = await resolveRegistration(input.lookup);
+          } catch {
+            evidence = unavailableRegistration(input.lookup);
+          }
+          entries[index] = [input.key, evidence];
+        }
+      };
+      await Promise.all(
+        Array.from(
+          {
+            length: Math.min(
+              MAX_KEYWORD_RDAP_CONCURRENCY,
+              distinct.length,
+            ),
+          },
+          worker,
+        ),
+      );
+      return new Map(entries);
     },
   };
 }

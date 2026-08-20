@@ -88,7 +88,7 @@
       },
       "hiddenKeywords": {
         "label": "关键词机会地图",
-        "description": "先读你的站点，再给出「有实测搜索量、且第一页已经有弱站」的词，以及你的页面已经能回答的问题。"
+        "description": "先读你的站点，再为除明确核价为零以外的每个候选词检查第一页是否有年轻域名、低流量域名或社区结果证据。"
       }
     }
   },
@@ -2218,7 +2218,7 @@
       "rereadSite": "重新读取站点",
       "reading": "正在读取站点…",
       "readingTitle": "正在读取你的站点",
-      "readingBody": "抓取最多十四个页面并从中读出定位。通常二十秒左右。这一步不产生任何费用。",
+      "readingBody": "抓取最多 20 个页面的有限上下文并从中读出定位；这不是全站完整抓取。这一步不产生任何费用。",
       "confirmTitle": "我们从你站点上读到的",
       "confirmBody": "读了 {pages} 个页面，其中 {productPages} 个看起来是产品页。候选词就是从下面这些陈述生成的，所以在花掉搜索数据预算之前，值得先确认它们说的是不是你的业务。",
       "confirmHint": "这些如果不准，关键词也不会准。可以在上面补种子词后重新读取；如果没问题，就直接跑。",
@@ -2228,22 +2228,24 @@
       "startOver": "重新开始",
       "running": "正在运行…",
       "runningTitle": "正在生成机会地图",
-      "runningBody": "给候选词核价、读取你的 Search Console 查询，并对通过的词逐个打开搜索结果第一页。通常需要两分钟左右——第一页抽样是刻意串行的，避免把数据源打爆。",
+      "runningBody": "给候选词核价、读取你的 Search Console 证据，并对除明确核价为零以外的每个候选词检查第一页；按每波最多 10 个并行执行。用时取决于候选词数量和本次数据源响应。",
       "runningStatus": "仍在运行，已用时 {seconds} 秒。",
       "elapsed": "已用时 {seconds} 秒",
       "statusDone": "完成，{count} 条机会。",
       "cooldown": "还有 {seconds} 秒可重试。",
       "exportCsv": "导出 CSV",
-      "commonChecksIntro": "对每一行都适用的检查：",
+      "commonChecksIntro": "每一行仍需你决定：",
       "retryWithSeeds": "把这些词填入种子再跑一次",
       "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
+      "contextBoundary": "候选词生成使用最多 20 个页面的有限上下文，并不代表全站完整抓取。",
+      "contextStopped": "上下文边界：{reason}",
       "funnelIntro": "本次运行每一步各看到了多少。这些计数会重叠，是有意的：GEO 泳道本来就不以需求量为门槛，所以一个数据源没有数据的词照样可能出现在结果里。把它读成「证据花在了哪里」，不是「总数被切成了几块」。",
       "notMeasured": "未检查",
       "emptyTitle": "没有候选词进入上面的表格",
       "emptyBody": "本次运行生成的候选词，没有一个进入上面两张表。上面的计数写明每一步各看到了什么，下面的清单逐条列出每个词具体撞在哪一道墙上。这是关于这个市场公开数据的结论，不是对站点的判决。",
       "emptyBodyPartial": "本次运行有一部分没跑完，所以有些候选词根本没被判过，而不是判过之后被筛掉。上面的计数说明哪几道闸口真的跑了；在缺失的那一步恢复之前，这里的空清单不能当成「没有东西可找」的证据。",
       "clustersTitle": "词面相近的词——合并前需人工核实",
-      "clustersIntro": "词面重合到可以由同一个页面服务的词。这里只列两个词以上的组，所以它隐含的页面数是「这些组，加上每个单独成立的词各一页」。分组只看词面，所以这是建议而不是站点结构：要证明两个词该共用一个页面，需要本次运行没有抓取的第一页重合度。",
+      "clustersIntro": "措辞重叠到可能共用一个页面的词。这里只列至少两个词的组。分组只基于词面重合，不能证明第一页结果重合，所以它是待复核的建议，不是站点结构。",
       "funnel": {
         "generated": "已生成",
         "deduplicated": "去重后",
@@ -2255,10 +2257,21 @@
         "winnableEvidence": "第一页有弱站",
         "shown": "已展示"
       },
-      "weakestHint": "「最弱排名」指当前占据第一页的域名里权重最低的那个，用数据源的 0–1000 标度；数字下方标出它是哪个域名、排在第几位，方便你亲自打开那一页核对。0 是数据源对「没有该域名外链数据」的记法，不是测出来的弱。这只是一个代理信号，不是对整个第一页难度的判定——数字低说明已经有小站进去了，这是证据，不是承诺。",
-      "geoHint": "这些刻意不带需求数据。问句形式几乎都没有可测量的搜索量，所以判据是「你站上是否已经有页面回答它」。",
-      "withheldTitle": "被拦下的，以及原因",
-      "withheldIntro": "每一条都撞在某一道具体的墙上。原因写明是哪一道，因为它们对应的下一步动作不同。",
+      "weakestHint": "最弱排名只是第一页的一项原始事实，不再单独作为判定规则。机会判定会分别报告三项信号：年轻域名、低自然搜索流量域名或社区结果。任何一项必需证据不可用，候选词都会留在「检测未完成」。",
+      "geoHint": "这些是用同一套三项第一页信号判定的问句候选词。只有观测到支持页面时才会展示；数据源没有返回需求量时，不会声称存在需求。",
+      "eligibleTitle": "符合条件的机会",
+      "eligibleIntro": "至少观测到一项必需的机会信号。AI Overview 的答案完整度只会降低排序，绝不会排除候选词。",
+      "withheldTitle": "已排除",
+      "withheldIntro": "这些候选词已收到排除判定。每一项精确原因都会保留，不会和缺失证据混为一谈。",
+      "incompleteTitle": "检测未完成",
+      "incompleteIntro": "这些候选词已经进入检测，但有一项必需证据没有完成。它们并未被否决；缺失的证据会在下面逐项写明。",
+      "sectionCount": "{count} 个候选词",
+      "incompleteRetryTitle": "重试建议",
+      "incompleteRetry": "缺失的证据源恢复后，按原条件重试本次运行。在恢复前重试，很可能得到同一个缺口。",
+      "withheldGuidanceTitle": "下一步",
+      "withheldGuidance": "数据源明确核价为零，是本次快照的完整结果。三项信号均为阴性可能随第一页变化；应稍后复核，不要把它当成证据缺失。",
+      "providerIntentMissing": "未返回",
+      "inferenceUnavailable": "不可用",
       "nextStepsTitle": "下次跑之前可以做什么",
       "whereNextTitle": "接下来去哪里",
       "whereNextBody": "无需连接 Search Console 即可检查网站基础；Agent 抓取开始前必须验证账号。",
@@ -2267,26 +2280,99 @@
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
+        "providerIntent": "数据源意图",
+        "serpIntent": "SERP 解读意图",
         "volume": "搜索量",
         "difficulty": "KD",
         "weakest": "最弱排名",
+        "signals": "三项信号证据",
         "aiOverview": "AI Overview",
         "supportingPage": "回答它的页面",
         "coverage": "你的覆盖情况",
-        "nextChecks": "动手前先查"
+        "nextChecks": "动手前先查",
+        "remainingDecisions": "仍需决定"
       },
       "aio": {
-        "shown": "第一页有",
-        "notShown": "未观测到"
+        "shown": "第一页已观测到",
+        "notShown": "第一页未观测到",
+        "providerLabel": "数据源可用性",
+        "assessmentLabel": "答案评估",
+        "discountLabel": "排序折扣"
+      },
+      "intents": {
+        "informational": "信息型",
+        "navigational": "导航型",
+        "commercial": "商业调研型",
+        "transactional": "交易型",
+        "mixed": "混合型"
+      },
+      "signalNames": {
+        "young_domain": "年轻域名",
+        "low_organic_traffic_domain": "低自然搜索流量域名",
+        "community_result": "社区结果"
+      },
+      "signalStates": {
+        "observed": "已观测到",
+        "not_observed": "未观测到",
+        "unavailable": "不可用"
+      },
+      "communitySources": {
+        "provider_item_type": "数据源结果类型",
+        "domain_fallback": "域名回退识别"
+      },
+      "signalEvidence": {
+        "youngObserved": "{domain} · 注册于 {date} · 站龄 {months} 个月",
+        "lowTrafficObserved": "{domain} · ETV {etv} · 阈值 {threshold}",
+        "communityObserved": "{source} · {domain} · 第 {position} 位",
+        "titleUnavailable": "结果标题未返回"
+      },
+      "aioAvailability": {
+        "observed": "第一页已观测到",
+        "not_observed": "第一页未观测到",
+        "unavailable": "数据源证据不可用"
+      },
+      "aioAssessments": {
+        "complete": "完整回答",
+        "partial": "部分回答",
+        "not_answered": "未回答该查询",
+        "unavailable": "不可用"
+      },
+      "discounts": {
+        "ai_overview_answer_discount": "AI Overview 已完整回答查询"
+      },
+      "evidenceReasons": {
+        "legacy_result_unreported": "较早版本的结果没有报告这项证据",
+        "run_observation_invalid": "运行观测时间无效",
+        "domain_registration_stage_unavailable": "域名注册信息阶段不可用",
+        "organic_result_domains_unavailable": "自然结果域名不可用",
+        "domain_registration_evidence_incomplete": "域名注册信息证据不完整",
+        "site_rank_tier_unavailable": "站点权重层级不可用",
+        "domain_traffic_stage_unavailable": "域名流量阶段不可用",
+        "domain_traffic_evidence_incomplete": "域名流量证据不完整",
+        "community_item_availability_unreported": "社区结果类型可用性未报告",
+        "serp_unavailable": "第一页证据不可用",
+        "content_unavailable": "AI Overview 内容不可用",
+        "not_assessed": "AI Overview 答案尚未评估",
+        "item_types_unreported": "第一页结果类型未报告",
+        "serp_evidence_unavailable": "第一页证据不可用",
+        "interpretation_unavailable": "SERP 解读不可用"
+      },
+      "contextStops": {
+        "completed": "已读取所有符合条件的上下文页面",
+        "max_urls": "已触及 20 页上下文上限；后续符合条件的页面没有读取",
+        "max_requests": "已触及请求数上限；本次上下文不完整",
+        "max_wall_clock": "已触及抓取时间边界；本次上下文不完整",
+        "max_total_bytes": "已触及响应字节边界；本次上下文不完整",
+        "aborted": "上下文抓取在完成前停止"
       },
       "lane": {
         "seo": {
-          "title": "有实测需求的搜索词",
-          "intro": "每一条都有数据源给出的搜索量，且第一页上至少已经有一个弱站排进去了。这两件事都不说明你一定能排上，只说明这次尝试没有被明显堵死。"
+          "title": "搜索式机会",
+          "intro": "至少观测到一项第一页机会信号的非问句候选词。数据源没有返回搜索量或意图时会保持空白；两者都不会从 SERP 推断出来。"
         },
         "geo": {
-          "title": "你站点已经能回答的问题",
-          "intro": "真人会输入、或会拿去问助手的说法，并对应到你已有的页面。这些不声称任何搜索量。"
+          "title": "问句式机会",
+          "intro": "真人会输入、或会拿去问助手，并通过同一套第一页信号规则的说法。只有有限上下文观测到支持页面时，才会展示对应 URL。"
         }
       },
       "coverage": {
@@ -2294,7 +2380,11 @@
         "observed_exact_weak": "已在服务，第一页之后",
         "related_coverage_unverified": "有页面看着相关，未核实",
         "not_observed_in_gsc_query_sample": "不在你的查询样本里",
-        "gsc_query_sample_not_read": "未检查"
+        "gsc_query_sample_not_read": "未检查",
+        "possible_existing_page": "Sitemap 中有疑似相关页面，需核对",
+        "not_observed_in_bounded_inventory": "本次有限 Sitemap 页面库中未发现",
+        "inventory_unavailable": "Sitemap 页面库不可用",
+        "inventory_truncated": "只检查了部分 Sitemap 页面库"
       },
       "checks": {
         "read_page_one_intent": "打开第一页，看清那些结果到底在回答什么",
@@ -2312,7 +2402,14 @@
         "page_one_ranks_unresolved": "第一页打开了，但数据源解析不出其中域名的权重——这是数据缺口，不是判定，重跑会撞上同一个缺口",
         "serp_sample_budget_exhausted": "本次的第一页抽样预算没轮到它",
         "serp_sample_unavailable": "第一页抽样没跑成",
-        "no_supporting_page": "爬到的页面里没有能回答它的"
+        "no_supporting_page": "爬到的页面里没有能回答它的",
+        "all_signals_not_observed": "三项机会信号均已检查，本次都未观测到"
+      },
+      "incomplete": {
+        "serp_evidence_unavailable": "第一页证据不可用",
+        "young_domain_signal_unavailable": "域名注册时间证据不可用",
+        "low_organic_traffic_signal_unavailable": "自然搜索流量或站点权重层级证据不可用",
+        "community_result_signal_unavailable": "社区结果证据不可用"
       },
       "availability": {
         "available": "完整运行。",
@@ -2322,7 +2419,9 @@
       },
       "stages": {
         "gsc_coverage": "你的 Search Console 查询",
+        "gsc_coverage_truncated": "Search Console 覆盖读取的后续数据行",
         "serp_sample": "第一页抽样",
+        "serp_sample_partial": "部分候选词的第一页抽样",
         "serp_sample_cost_capped": "第一页抽样（触及本次成本上限后停止）"
       },
       "nextSteps": {
@@ -2998,7 +3097,7 @@
           {
             "href": "/tools/low-competition-keywords",
             "name": "关键词机会地图",
-            "blurb": "有实测搜索量、且第一页已经有弱站的词。"
+            "blurb": "除明确核价为零以外、且第一页出现年轻域名、低流量域名或社区结果的候选词。"
           },
           {
             "href": "/tools/seo-quick-wins",

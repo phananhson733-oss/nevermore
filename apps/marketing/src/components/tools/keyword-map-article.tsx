@@ -14,9 +14,9 @@ import { localePath } from "../../lib/locale-path";
  * The copy is long-form prose with structure, and the two languages do not
  * map sentence-for-sentence. What both versions share is the constraint the
  * file header states: nothing in here describes a capability the tool does
- * not have. The selection method (reading page one, judging intent and page
- * types) is presented as the reader's method that the tool feeds — never as
- * something the tool performs.
+ * not have. The tool's bounded SERP interpretation is identified as an LLM
+ * inference with provenance; reading the ranking pages and making the final
+ * commercial/page-type decisions remain the reader's work.
  */
 
 const H2 =
@@ -228,7 +228,7 @@ function EnArticle() {
 
         <h3 className={H3}>A bounded crawl, confirmed by you</h3>
         <p className={P}>
-          The run starts by fetching up to fourteen of your pages, product pages
+          The run starts by fetching up to twenty of your pages, product pages
           first, and reading the site&apos;s positioning off them. It then stops
           and shows you what it understood — every statement with the URL it
           came from — before anything is spent. This gate exists because the
@@ -262,20 +262,26 @@ function EnArticle() {
           passing.
         </p>
 
-        <h3 className={H3}>Twenty real page ones, not a difficulty model</h3>
+        <h3 className={H3}>
+          Every candidate except an explicit-zero term gets a real page one
+        </h3>
         <p className={P}>
-          For up to twenty surviving terms per run, the map opens the actual
-          search results page and looks up the authority of the domains in its
-          top ten — a domain the provider has no data on stays unresolved rather
-          than being scored zero, and the verdict rests on the ranks that did
-          resolve. A term is called winnable on one observation only: a
-          low-authority domain — at or below 200 on the provider&apos;s 0–1000
-          scale — already holds a page-one place. The row names that domain and
-          the position it holds, and records whether the provider observed an AI
-          Overview on the page. The cap and the per-run cost ceiling are what
-          keep the tool free; the terms they cut are listed, not hidden, and a
-          button hands them to the seed field so the next run&apos;s candidate
-          generation is steered toward exactly that gap.
+          Every deduplicated candidate except one the provider explicitly priced
+          at zero is attempted. Page-one reads run in ordered parallel waves of
+          up to ten, so a provider gap stays attached to that keyword rather than
+          silently shortening the plan. Each completed page reports three raw
+          opportunity signals separately: a domain registered within 24 months,
+          a domain whose estimated organic traffic is below the requesting
+          site&apos;s tier threshold, or a community result. One observed signal
+          makes a candidate eligible; any unavailable required signal leaves it
+          incomplete; only three completed negatives exclude it.
+        </p>
+        <p className={P}>
+          The provider&apos;s keyword intent and the model&apos;s interpretation of
+          the organic top ten are different columns with different provenance.
+          AI Overview availability is also a provider fact, while whether its
+          returned answer fully addresses the query is an LLM assessment. A
+          complete answer lowers ordering; it does not exclude the keyword.
         </p>
       </section>
 
@@ -283,12 +289,12 @@ function EnArticle() {
         <h2 className={H2}>The boundaries it will not cross</h2>
         <p className={P}>
           The weakest rank answers one narrow question — how weak is the weakest
-          current holder — and the map deliberately treats it as a proxy signal
-          rather than a verdict. It does not read the pages that rank, does not
-          classify the query&apos;s intent, does not judge what kind of page
-          wins, and does not model how much traffic an AI Overview absorbs.
-          Those judgements need eyes on the page, which is why every row ships
-          with a checklist instead of a confidence score.
+          current holder — and remains raw context rather than the decision rule.
+          The model interprets the bounded organic-result evidence, but it does
+          not fetch and read every ranking page or model how many clicks an AI
+          Overview absorbs. That is why its inferred intent and answer assessment
+          carry model provenance, and why every row retains the decisions a
+          reader still needs to make.
         </p>
         <p className={P}>
           The same discipline runs through the rest of the output. Term groups
@@ -316,12 +322,13 @@ function EnArticle() {
           trail of what was withheld and why.
         </p>
         <p className={P}>
-          The reading half stays yours on purpose. Whether the weak site that
-          broke through is defended or abandoned, whether the query means what
-          your page would mean, whether the demand is your buyer — the tool has
-          not read those pages and will not pretend it has. Treat every row as a
-          place worth looking, walk the checks printed on it, and spend your
-          writing budget only on what survives your own eyes.
+          The final reading stays yours on purpose. Whether the weak site that
+          broke through is defended or abandoned, whether the inferred intent
+          matches the page you can actually build, whether the demand is your
+          buyer — the tool has not read those ranking pages and will not pretend
+          it has. Treat every row as a place worth looking, walk the remaining
+          decisions printed on it, and spend your writing budget only on what
+          survives your own eyes.
         </p>
       </section>
 
@@ -338,7 +345,7 @@ function ZhArticle() {
 
         <h3 className={H3}>有边界的抓取，由你确认</h3>
         <p className={P}>
-          运行从抓取你站点的至多十四个页面开始，产品页优先，并从中读出站点的定位。然后它会停下来，把读到的内容摆给你——每条陈述都带着来源
+          运行从抓取你站点的至多二十个页面开始，产品页优先，并从中读出站点的定位。然后它会停下来，把读到的内容摆给你——每条陈述都带着来源
           URL——在花掉任何钱之前。这道确认门存在的原因是：候选词就是从这份读取里生成的，读错了词就会错，而只有你能看出读没读错。种子词一栏最多接受十个你自己的说法，它们会和抓取结果一起进入生成器——当买家用的词你的站点没有写出来时，用它。
         </p>
 
@@ -356,22 +363,25 @@ function ZhArticle() {
           会匿名化相当比例的查询，所以「不在样本里」只被当作「未观测到」，绝不当作「不存在」的证明——而当这一步读取彻底失败时，每一行都会写明「没查」，而不是悄悄放行。
         </p>
 
-        <h3 className={H3}>二十个真实第一页，而不是一个难度模型</h3>
+        <h3 className={H3}>除明确核价为零外，每个候选词都检查真实第一页</h3>
         <p className={P}>
-          对每次运行至多二十个通过的词，地图会打开真实的搜索结果页，逐个查询前十名域名的权重——数据源没有数据的域名保持「未解析」而不会被记成零，判定只建立在成功解析的权重上。一个词被称为可赢只基于一条观测：一个低权重域名——在数据源
-          0–1000 标度上不超过
-          200——已经占住了第一页的位置。那一行会写明是哪个域名、排在第几位，并记录数据源是否在那一页上观测到
-          AI
-          Overview。抽样上限和单次成本上限是这个工具能免费的原因；被上限切掉的词会被列出来而不是藏起来，清单下的按钮会把它们填入种子，让下一轮候选词生成朝着这个缺口收窄。
+          去重候选词中，除数据源明确核价为零的词以外，每一个都会尝试读取第一页。读取按固定顺序、每波最多十个并行执行；数据源缺口会留在对应关键词上，不会悄悄缩短计划。每个完成的第一页分别报告三项原始机会信号：注册不超过
+          24
+          个月的域名、自然搜索预估流量低于当前站点层级阈值的域名、或社区结果。观测到任一信号即可进入机会区；任何一项必需证据不可用，就留在「检测未完成」；只有三项都完成且均为阴性才会排除。
+        </p>
+        <p className={P}>
+          数据源返回的关键词意图，和模型对自然结果前十名的解读，会分列展示并保留各自来源。AI
+          Overview
+          是否出现也是数据源事实；它返回的答案是否完整回答查询，则是带模型来源的评估。完整回答只会降低排序，不会排除关键词。
         </p>
       </section>
 
       <section className={SECTION}>
         <h2 className={H2}>它刻意不越过的边界</h2>
         <p className={P}>
-          「最弱排名」只回答一个很窄的问题——当前占位者里最弱的有多弱——地图刻意把它当作代理信号，而不是判定。它没有读那些排在前面的页面，不分类查询意图，不判断赢家是哪类页面，也不建模
+          「最弱排名」只回答一个很窄的问题——当前占位者里最弱的有多弱——它仍是原始上下文，不再单独作为判定规则。模型会解读有限的自然结果证据，但不会抓取并通读每一个排名页面，也不建模
           AI Overview
-          会吸走多少流量。这些判断需要眼睛看页面，所以每一行带的是检查清单，而不是置信分。
+          会吸走多少点击。所以推断意图和答案评估都带着模型来源，每一行也保留仍需读者亲自作出的决定。
         </p>
         <p className={P}>
           同样的纪律贯穿其余输出。词组分组只看词面——措辞重合到可能共用一个页面——并被明确标注为建议，因为要证明两个词该共用页面，需要本次运行没有抓取的第一页重合度。运行测不到的数字，在表格里和
@@ -387,7 +397,7 @@ function ZhArticle() {
           我们自己的选词方法从难度分止步的地方开始：打开第一页，读清那些结果实际在回答什么，看清每个位置被谁占着、答案框是不是已经把点击拿走。这张地图把其中可测量的一段自动化了——核价需求、打开页面、找出最弱占位者——并把它看到的一切交给你：域名、排位、页面元素，以及每个词被拦下的完整台账。
         </p>
         <p className={P}>
-          「读页面」的那一半刻意留给你。攻进去的那个弱站是守得住还是已经废弃、这条查询的意图和你的页面是不是一回事、这波需求是不是你的买家——工具没有读过那些页面，也不会假装读过。把每一行当成一个值得去看的地方，把行上印着的检查逐条走完，写作预算只花在通过你自己眼睛的词上。
+          最后的阅读刻意留给你。攻进去的那个弱站是守得住还是已经废弃、推断意图和你真正能做的页面是不是一回事、这波需求是不是你的买家——工具没有读过那些排名页面，也不会假装读过。把每一行当成一个值得去看的地方，把行上保留的决定逐条走完，写作预算只花在通过你自己眼睛的词上。
         </p>
       </section>
 
