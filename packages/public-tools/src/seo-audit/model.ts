@@ -1562,7 +1562,13 @@ function buildRecords(
           "too_many_similar_pages_to_compare_them_all_exactly",
       )
         ? "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly"
-        : "similarity_measured_on_collected_paragraphs_after_chrome",
+        : htmlPages.some(
+              (page) =>
+                similarityByUrl.get(page.url)?.unscored ===
+                "most_of_this_page_is_text_repeated_across_the_site",
+            )
+          ? "some_pages_are_mostly_text_repeated_across_the_site_so_chrome_and_duplication_cannot_be_separated"
+          : "similarity_measured_on_collected_paragraphs_after_chrome",
     }),
     record({
       id: "faq_schema_question_not_on_page",

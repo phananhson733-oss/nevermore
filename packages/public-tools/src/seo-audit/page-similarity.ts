@@ -99,7 +99,11 @@ const SIGNATURE_SIZE = 64;
  * drop genuine duplicates before they were ever measured. Everything that
  * clears this floor is then compared exactly, and the estimate is discarded.
  */
-const CANDIDATE_FLOOR = 0.3;
+export function couldReachThreshold(left: number, right: number): boolean {
+  const smaller = Math.min(left, right);
+  const larger = Math.max(left, right);
+  return larger > 0 && smaller / larger >= NEAR_DUPLICATE_SIMILARITY;
+}
 
 /**
  * Exact comparisons one page will spend before it stops.
@@ -153,7 +157,8 @@ export type PageSimilarityGap =
   | "too_few_pages_to_separate_chrome_from_duplication"
   | "too_little_distinctive_text_to_compare"
   | "excluded_because_the_page_declares_pagination"
-  | "too_many_similar_pages_to_compare_them_all_exactly";
+  | "too_many_similar_pages_to_compare_them_all_exactly"
+  | "most_of_this_page_is_text_repeated_across_the_site";
 
 export interface PageSimilarity {
   readonly url: string;
@@ -344,6 +349,35 @@ function chromeParagraphs(
   );
 }
 
+/**
+ * How much of a page's own text the chrome filter is about to remove.
+ *
+ * The per-paragraph ceiling is not enough on its own. An article body copied
+ * across four of five pages and split into three paragraphs is three separate
+ * blocks, each under half the page and each repeated widely — so each passed
+ * the test individually and all three were deleted, leaving only the tails to
+ * compare. A five-page site with two shared 150-token body paragraphs and
+ * distinct 30-token tails has a true overlap around 83% and was published as
+ * distinct.
+ *
+ * Combined, those blocks are the page. That does not prove they are content
+ * rather than furniture — a short page under a heavy footer produces the same
+ * sum and the blocks really are furniture. It proves this method cannot tell
+ * which, and a page it cannot tell about is one it must not score.
+ */
+function chromeShareOfPage(
+  page: PageSimilarityInput,
+  chrome: ReadonlySet<string>,
+): number {
+  const normalized = page.paragraphs.map(normalize).filter((p) => p !== "");
+  const total = normalized.reduce((sum, p) => sum + p.length, 0);
+  if (total === 0) return 0;
+  const removed = normalized
+    .filter((p) => chrome.has(p))
+    .reduce((sum, p) => sum + p.length, 0);
+  return removed / total;
+}
+
 function distinctiveShinglesOf(
   page: PageSimilarityInput,
   chrome: ReadonlySet<string>,
@@ -388,18 +422,20 @@ export function measurePageSimilarity(
   const prepared = pages.map((page) => {
     const shingles = distinctiveShinglesOf(page, chrome);
     const excludedBySequence = page.partOfASequence && sequenceExemptionApplies;
+    const mostlyRepeated =
+      chromeShareOfPage(page, chrome) > CHROME_MAX_PAGE_SHARE;
+    const gap = excludedBySequence
+      ? ("excluded_because_the_page_declares_pagination" as const)
+      : mostlyRepeated
+        ? ("most_of_this_page_is_text_repeated_across_the_site" as const)
+        : shingles.size < MIN_SHINGLES
+          ? ("too_little_distinctive_text_to_compare" as const)
+          : null;
     return {
       url: page.url,
       size: shingles.size,
-      unscored: excludedBySequence
-        ? ("excluded_because_the_page_declares_pagination" as const)
-        : shingles.size < MIN_SHINGLES
-          ? ("too_little_distinctive_text_to_compare" as const)
-          : null,
-      signature:
-        excludedBySequence || shingles.size < MIN_SHINGLES
-          ? null
-          : signatureOf(shingles),
+      unscored: gap,
+      signature: gap === null ? signatureOf(shingles) : null,
     };
   });
 
@@ -421,9 +457,12 @@ export function measurePageSimilarity(
       if (other === index) continue;
       const candidate = prepared[other];
       if (candidate === undefined || candidate.signature === null) continue;
-      const estimate = agreement(page.signature, candidate.signature);
-      if (estimate >= CANDIDATE_FLOOR)
-        candidates.push({ index: other, estimate });
+      // Admission is arithmetic; only the ordering is estimated.
+      if (!couldReachThreshold(page.size, candidate.size)) continue;
+      candidates.push({
+        index: other,
+        estimate: agreement(page.signature, candidate.signature),
+      });
     }
     // Highest estimate first, so a truncated run spends its comparisons on the
     // pages most likely to be duplicates rather than on whichever crawled first.

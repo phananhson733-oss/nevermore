@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  couldReachThreshold,
   measurePageSimilarity,
   NEAR_DUPLICATE_SIMILARITY,
   type PageSimilarityInput,
@@ -277,4 +278,103 @@ describe("a truncated search cannot claim a page is clean", () => {
       NEAR_DUPLICATE_SIMILARITY,
     );
   });
+});
+
+/**
+ * Two holes a pre-merge review found in the rewrite above, both of the class
+ * the rewrite existed to close: a page reported as distinct on evidence that
+ * had been thrown away before anything was compared.
+ */
+describe("what gets thrown away before the comparison", () => {
+  it("refuses a page whose text is mostly blocks repeated across the site", () => {
+    // Each paragraph individually clears the per-paragraph ceiling, so all of
+    // them were deleted as furniture and the tails scored near zero. Combined
+    // they are the page. This method cannot tell that from a short page under
+    // a heavy footer, and a page it cannot tell about must not be scored.
+    const bodyA = words("shared_a", 1, 150);
+    const bodyB = words("shared_b", 1, 150);
+    const pages = [
+      ...Array.from({ length: 4 }, (_, i) =>
+        page(`https://acme.test/copy${i}`, [
+          bodyA,
+          bodyB,
+          words(`tail${i}_`, 1, 30),
+        ]),
+      ),
+      page("https://acme.test/other", [words("other", 1, 400)]),
+    ];
+
+    const find = measure(pages);
+    expect(find("https://acme.test/copy0")?.similarity).toBeNull();
+    expect(find("https://acme.test/copy0")?.unscored).toBe(
+      "most_of_this_page_is_text_repeated_across_the_site",
+    );
+    // The page that shares nothing is still judged, and is still clean.
+    expect(find("https://acme.test/other")?.similarity).toBe(0);
+  });
+
+  it("admits candidates by arithmetic, so no estimate can hide a duplicate", () => {
+    // A 64-slot MinHash agreement used to decide which pairs were ever
+    // compared exactly. A genuine near-duplicate whose estimate landed low was
+    // therefore neither measured nor counted as skipped, and the page returned
+    // a scored zero. Admission is now `J <= min/max`, which is arithmetic: a
+    // pair it excludes cannot reach the bar whatever any signature says.
+    const find = measure([
+      page("https://acme.test/a", [words("t", 1, 30)]),
+      page("https://acme.test/b", [`${words("t", 1, 28)} u1 u2`]),
+      ...filler(3),
+    ]);
+
+    expect(find("https://acme.test/a")?.similarity).toBeCloseTo(24 / 28, 10);
+  });
+
+  it("excludes a pair too different in size to reach the bar", () => {
+    // 30 shingles against 300 caps the overlap at 0.1, well under the rail —
+    // excluded without a comparison, and correctly so.
+    const find = measure([
+      page("https://acme.test/short", [words("s", 1, 34)]),
+      page("https://acme.test/long", [words("s", 1, 304)]),
+      ...filler(3),
+    ]);
+
+    expect(find("https://acme.test/short")?.similarity).toBe(0);
+    expect(find("https://acme.test/short")?.unscored).toBeNull();
+  });
+});
+
+describe("the admission bound itself", () => {
+  it("is the arithmetic ceiling on Jaccard, not an estimate", () => {
+    // |A ∩ B| <= min(|A|,|B|) and |A ∪ B| >= max(|A|,|B|), so J <= min/max.
+    // Exactly at the rail is admitted, because the bound is a ceiling and the
+    // pair may sit on it.
+    expect(couldReachThreshold(70, 100)).toBe(true);
+    expect(couldReachThreshold(100, 70)).toBe(true);
+    expect(couldReachThreshold(69, 100)).toBe(false);
+    expect(couldReachThreshold(100, 100)).toBe(true);
+  });
+
+  it("admits nothing against an empty side", () => {
+    expect(couldReachThreshold(0, 0)).toBe(false);
+    expect(couldReachThreshold(0, 50)).toBe(false);
+  });
+
+  it("moves with the published threshold rather than a constant of its own", () => {
+    const justUnder = Math.floor(100 * NEAR_DUPLICATE_SIMILARITY) - 1;
+    expect(couldReachThreshold(justUnder, 100)).toBe(false);
+    expect(couldReachThreshold(Math.ceil(100 * NEAR_DUPLICATE_SIMILARITY), 100)).toBe(true);
+  });
+
+  /*
+   * What this file cannot test, stated rather than implied.
+   *
+   * The defect this bound replaced was a MinHash floor deciding which pairs
+   * were ever compared exactly. Reintroducing one would not turn this suite
+   * red: the failure it causes is probabilistic, so a fixture either happens
+   * to have a low agreement or it does not, and a search over forty thousand
+   * constructed pairs found no case where a genuine 70% pair's 64-slot
+   * agreement fell below 0.3. The absence of such a fixture is exactly why a
+   * probabilistic filter must not sit upstream of a published clean verdict —
+   * the failure is rare, silent, and unreproducible on demand. The protection
+   * here is the arithmetic above; there is no test that can stand in for it.
+   */
 });
