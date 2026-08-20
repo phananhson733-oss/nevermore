@@ -2,6 +2,7 @@
 // @output -- the versioned core_8 query set, and the legacy eight-question list
 // @pos    -- the deterministic question generator the visitor confirms before paying
 
+import { geoCategoryStem } from "./geo-category-stem.ts";
 import { canonicalGeoAssetTypes, type GeoAssetType } from "./geo-asset-type.ts";
 import { normalizeGeoText } from "./geo-canonical.ts";
 import {
@@ -176,20 +177,6 @@ function trimTo(value: string, limit: number): string {
   return (lastSpace > limit / 3 ? cut.slice(0, lastSpace) : cut).trim();
 }
 
-const PRODUCT_NOUN =
-  /\s*\b(tool|tools|software|platform|platforms|app|apps)$/iu;
-
-/**
- * The three noun phrases the templates need, with the visitor's own noun removed.
- *
- * A visitor who answers "what do you sell" with "SEO tools" would otherwise be
- * asked about "SEO tools tools", and one who answers "software" about "software
- * software". Stripping repeats because "SEO tools software" carries two.
- *
- * When the visitor typed nothing but a product noun there is no modifier left,
- * and the template's own noun is then the whole phrase: "What are the top tools
- * right now?" rather than "top tools tools".
- */
 function categoryPhrases(value: string): {
   /** The bare modifier: "seo". Empty when the visitor typed only a noun. */
   readonly stem: string;
@@ -197,12 +184,11 @@ function categoryPhrases(value: string): {
   readonly singular: string;
   readonly software: string;
 } {
-  let stem = clean(value);
-  let previous = "";
-  while (stem !== previous) {
-    previous = stem;
-    stem = stem.replace(PRODUCT_NOUN, "").trim();
-  }
+  // The noun list lives in a leaf both this generator and the confirm gate
+  // import, so the gate can refuse exactly the categories that would land here
+  // with nothing left. The branch below is now unreachable for a confirmed
+  // context and is kept as a backstop rather than a behaviour.
+  const stem = geoCategoryStem(clean(value));
   if (stem.length === 0) {
     return {
       stem: "",

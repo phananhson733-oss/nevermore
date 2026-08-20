@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_VALUE_DEPTH_PENALTY_STEP,
   PAGE_VALUE_FOREIGN_LOCALE_PENALTY,
+  PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE,
   PAGE_VALUE_MIN_CRAWLABLE_SCORE,
   PAGE_VALUE_OFF_TOPIC_PENALTY,
   PAGE_VALUE_PRODUCT_SCORE_THRESHOLD,
   pageValueBreakdown,
+  pageValueIsContextCandidate,
   pageValueIsCrawlable,
   pageValueIsProductPage,
   pageValueScore,
@@ -55,7 +57,7 @@ describe("off-topic sections", () => {
     const blog = pageValueBreakdown("/blog", EN);
     expect(blog.offTopicPenalty).toBe(PAGE_VALUE_OFF_TOPIC_PENALTY);
     expect(blog.score).toBe(-6);
-    expect(pageValueIsCrawlable(blog.score)).toBe(false);
+    expect(pageValueIsContextCandidate(blog)).toBe(false);
   });
 
   it("charges the penalty once, however many segments hit it", () => {
@@ -147,16 +149,79 @@ describe("depth", () => {
 });
 
 describe("thresholds", () => {
+  it("preserves the public numeric crawlable-score predicate", () => {
+    expect(PAGE_VALUE_MIN_CRAWLABLE_SCORE).toBe(0);
+    expect(pageValueIsCrawlable(0)).toBe(true);
+    expect(pageValueIsCrawlable(-1)).toBe(false);
+  });
+
+  it("exposes a distinct context-candidate predicate", () => {
+    expect(pageValueIsContextCandidate).toBeTypeOf("function");
+  });
+
   it("counts the about tier and up as product pages", () => {
     expect(PAGE_VALUE_PRODUCT_SCORE_THRESHOLD).toBe(7);
     expect(pageValueIsProductPage(pageValueScore("/about", EN))).toBe(true);
     expect(pageValueIsProductPage(pageValueScore("/faq", EN))).toBe(false);
   });
 
-  it("admits an unrecognised shallow path but not a negative one", () => {
-    expect(PAGE_VALUE_MIN_CRAWLABLE_SCORE).toBe(0);
-    expect(pageValueIsCrawlable(0)).toBe(true);
-    expect(pageValueIsCrawlable(-1)).toBe(false);
+  it("admits paths whose only penalty is their depth", () => {
+    const depthTwo = pageValueBreakdown("/story-generators/fantasy", EN);
+    const depthThree = pageValueBreakdown(
+      "/rpg-tools/npc-generator/free",
+      EN,
+    );
+
+    expect(depthTwo).toMatchObject({
+      sectionScore: 0,
+      offTopicPenalty: 0,
+      foreignLocalePenalty: 0,
+      depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP,
+      score: PAGE_VALUE_DEPTH_PENALTY_STEP,
+    });
+    expect(pageValueIsContextCandidate(depthTwo)).toBe(true);
+    expect(depthThree).toMatchObject({
+      sectionScore: 0,
+      offTopicPenalty: 0,
+      foreignLocalePenalty: 0,
+      depthPenalty: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+      score: PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+    });
+    expect(pageValueIsContextCandidate(depthThree)).toBe(true);
+  });
+
+  it.each([
+    ["blog", "/blog/post"],
+    ["legal", "/privacy"],
+    ["foreign locale", "/fr/story-generators/fantasy"],
+  ])("keeps %s paths out of context candidates", (_label, path) => {
+    expect(pageValueIsContextCandidate(pageValueBreakdown(path, EN))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ["an off-topic section under about", "/about/careers", "offTopicPenalty"],
+    ["an off-topic section under faq", "/faq/news", "offTopicPenalty"],
+    ["a foreign-locale about page", "/fr/about", "foreignLocalePenalty"],
+    ["a foreign-locale pricing page", "/fr/pricing", "foreignLocalePenalty"],
+  ] as const)(
+    "rejects %s even when its total score reaches the crawlable floor",
+    (_label, path, penalty) => {
+      const scored = pageValueBreakdown(path, EN);
+
+      expect(scored.score).toBeGreaterThanOrEqual(
+        PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE,
+      );
+      expect(scored[penalty]).toBeLessThan(0);
+      expect(pageValueIsContextCandidate(scored)).toBe(false);
+    },
+  );
+
+  it("sets the context-candidate floor to the maximum depth-only penalty", () => {
+    expect(PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE).toBe(
+      PAGE_VALUE_DEPTH_PENALTY_STEP * 2,
+    );
   });
 
   it("sums exactly the four reported terms", () => {

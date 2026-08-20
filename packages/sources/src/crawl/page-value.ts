@@ -18,8 +18,9 @@
  * Why a signed score and not an allow-list: an allow-list of known section
  * names cannot rank two admitted candidates against each other, and it silently
  * drops every site that names its sections something else. A score lets an
- * unrecognised shallow path (0) still be crawled after the recognised ones, and
- * lets a recognised-but-buried path lose to a shallow unknown one.
+ * unrecognised path carrying only the capped depth penalty still be crawled
+ * after the recognised ones, and lets a recognised-but-buried path lose to a
+ * shallow unknown one.
  *
  * Everything here is a path heuristic. A high score is a claim about where the
  * product is *usually* described, never a claim about what the page contains.
@@ -215,8 +216,12 @@ export const PAGE_VALUE_FOREIGN_LOCALE_PENALTY = -8;
 /** Charged once at depth 2 and once more at depth 3+; deeper is not charged again. */
 export const PAGE_VALUE_DEPTH_PENALTY_STEP = -2;
 
-/** Scores below this are not worth a request; the caller must not fetch them. */
+/** Scores below this are not worth a request under the public score predicate. */
 export const PAGE_VALUE_MIN_CRAWLABLE_SCORE = 0;
+
+/** The lowest context-candidate score produced by depth alone. */
+export const PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE =
+  PAGE_VALUE_DEPTH_PENALTY_STEP * 2;
 
 /**
  * At or above this, a page is counted as a product page in the crawl summary.
@@ -303,7 +308,7 @@ function depthPenaltyFor(depth: number): number {
  * Score one path and show the work.
  *
  * Pure by construction: no clock, no network, no module state. The caller sorts
- * by `score` and refuses anything under `PAGE_VALUE_MIN_CRAWLABLE_SCORE`.
+ * by `score` and uses the full breakdown to enforce crawl eligibility.
  */
 export function pageValueBreakdown(
   path: string,
@@ -355,7 +360,18 @@ export function pageValueIsProductPage(score: number): boolean {
   return score >= PAGE_VALUE_PRODUCT_SCORE_THRESHOLD;
 }
 
-/** Whether a candidate is worth a request at all. */
+/** Whether a score meets the public crawlable-score floor. */
 export function pageValueIsCrawlable(score: number): boolean {
   return score >= PAGE_VALUE_MIN_CRAWLABLE_SCORE;
+}
+
+/** Whether a context candidate is relevant and in the requested language. */
+export function pageValueIsContextCandidate(
+  value: PageValueBreakdown,
+): boolean {
+  return (
+    value.offTopicPenalty === 0 &&
+    value.foreignLocalePenalty === 0 &&
+    value.score >= PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE
+  );
 }

@@ -266,7 +266,18 @@ export const GEO_TEMPLATES: readonly GeoTemplateEntry[] = [
         searchedSamples: 3,
       },
     ],
-    limitations: ["software_category_only", "single_seed_grandfathered"],
+    // The same reasoning already recorded on `brand_comparison`, which was not
+    // applied here. Both seeds substituted `rivalList` with a name the model
+    // certainly knows — "semrush", then "semrush and ahrefs". A visitor's own
+    // competitor is usually not one of those, and this is the only retrieval
+    // probe with no currency cue in its wording to fall back on
+    // (`timeSensitive: false`), so the substituted name is doing more work here
+    // than anywhere else.
+    limitations: [
+      "software_category_only",
+      "single_seed_grandfathered",
+      "substituted_name_differs_from_seed",
+    ],
   },
   {
     ...COMMON,

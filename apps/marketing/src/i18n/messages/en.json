@@ -3585,7 +3585,8 @@
         "unknown_query": "That question is no longer part of the set.",
         "template_unavailable": "No calibrated wording is available for one of the slots.",
         "placeholder_rejected": "One of your values does not fit the calibrated wording. Shorten it to a plain noun phrase.",
-        "question_not_payable": "A question is longer than the provider accepts. Shorten it."
+        "question_not_payable": "A question is longer than the provider accepts. Shorten it.",
+        "category_has_no_subject": "\"Tools\", \"software\" and \"platform\" are kinds of product, not categories. Every question is built as your category followed by \"tools\", so a bare product noun renders \"What are the top tools right now?\" — a question with no subject. Name the field you are in, such as \"SEO reporting\" or \"AI visibility tracking\"."
       },
       "slots": {
         "category_discovery": "Category discovery",
@@ -3614,7 +3615,12 @@
         "promptedBrand": "Contains your brand",
         "measured": "Measured wording",
         "demoted": "Edited · not measured",
-        "triggerClause": "Registered current-evidence clause: “{clause}”."
+        "triggerClause": "Registered current-evidence clause: “{clause}”.",
+        "calibration": {
+          "software_category_only": "This wording was only calibrated on software categories.",
+          "single_seed_grandfathered": "Calibrated on few samples (3-6), recorded under the earlier bar and carried forward.",
+          "substituted_name_differs_from_seed": "Calibration substituted a name the model almost certainly knows. With your own name, this wording has not been measured."
+        }
       },
       "plan": {
         "title": "What this run will do",

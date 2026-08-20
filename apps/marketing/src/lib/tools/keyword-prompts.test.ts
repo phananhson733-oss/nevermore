@@ -192,6 +192,7 @@ describe("extractKeywordPropositions", () => {
       retryCount: 0,
     });
     expect(requests[0].system).toBe(KEYWORD_SYSTEM_PROMPT);
+    expect(requests[0]).not.toHaveProperty("timeoutMs");
   });
 
   it("discards a proposition whose evidence URL was never crawled", async () => {
@@ -334,6 +335,23 @@ describe("buildCandidateUserPrompt", () => {
 });
 
 describe("expandKeywordCandidates", () => {
+  it("uses a 90-second request deadline", async () => {
+    const { client, requests } = recorder([
+      candidateReply([
+        {
+          keyword: "insurance claim software",
+          basis: "traditional_expansion",
+          questionForm: false,
+          propositionIndex: null,
+        },
+      ]),
+    ]);
+
+    await expandKeywordCandidates(EXPANSION, { client });
+
+    expect(requests[0].timeoutMs).toBe(90_000);
+  });
+
   it("keeps both lanes with their labels and question flags", async () => {
     const { client } = recorder([
       candidateReply([

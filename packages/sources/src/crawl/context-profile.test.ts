@@ -15,6 +15,7 @@ import {
   page,
   run,
   ORIGIN,
+  type Route,
 } from "./__tests__/context-profile-fake-site.ts";
 
 describe("context profile budget", () => {
@@ -128,7 +129,7 @@ describe("page-value ordering", () => {
     expect(site.requested).not.toContain(`${ORIGIN}/a/b/c/d`);
   });
 
-  it("prefers the target market's locale pages", async () => {
+  it("excludes pages from a non-target locale", async () => {
     const site = fakeSite(
       marketingSite({
         "/": { body: page("Acme", ["/en/pricing", "/de/preise"]) },
@@ -141,8 +142,8 @@ describe("page-value ordering", () => {
     expect(result.pages.map((entry) => entry.path)).toEqual([
       "/",
       "/de/preise",
-      "/en/pricing",
     ]);
+    expect(site.requested).not.toContain(`${ORIGIN}/en/pricing`);
   });
 });
 
@@ -370,6 +371,72 @@ describe("transport wiring", () => {
 });
 
 describe("frontier edge cases", () => {
+  it("replenishes failed candidates without claiming max_urls when the tail is exhausted", async () => {
+    const tail = Array.from(
+      { length: 13 },
+      (_unused, index) => `/tools/t${index.toString().padStart(2, "0")}`,
+    );
+    const routes: Record<string, Route> = {
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { status: 404 },
+      "/": {
+        body: page("Acme", [
+          "/pricing",
+          "/features",
+          "/product",
+          "/about",
+          "/customers",
+          ...tail,
+        ]),
+      },
+      "/pricing": { status: 404 },
+      "/features": { status: 500 },
+      "/product": { error: { kind: "error", code: "timeout" } },
+      "/about": { status: 403 },
+      "/customers": { status: 429 },
+    };
+    for (const path of tail) routes[path] = { body: page(path) };
+    const site = fakeSite(routes);
+    const result = await run(site);
+
+    expect(result.pagesFetched).toBe(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls);
+    expect(result.pages.at(-1)?.path).toBe("/tools/t12");
+    expect(result.stopReason).toBeNull();
+    expect(result.botProtectionResponses).toBe(1);
+    expect(result.rateLimitedResponses).toBe(1);
+    expect(site.requested).toContain(`${ORIGIN}/tools/t12`);
+  });
+
+  it("fills the page budget from custom depth-two product paths in a 34-URL sitemap", async () => {
+    const customPaths = Array.from(
+      { length: 31 },
+      (_unused, index) =>
+        `/story-generators/custom-${index.toString().padStart(2, "0")}`,
+    );
+    const sitemapPaths = ["/pricing", "/features", "/product", ...customPaths];
+    const sitemap = sitemapPaths
+      .map((path) => `<url><loc>${ORIGIN}${path}</loc></url>`)
+      .join("");
+    const routes: Record<string, Route> = {
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { body: `<urlset>${sitemap}</urlset>` },
+      "/": { body: page("AI Story Generator") },
+      "/pricing": { status: 404 },
+      "/features": { status: 500 },
+      "/product": { error: { kind: "error", code: "timeout" } },
+    };
+    for (const path of customPaths) routes[path] = { body: page(path) };
+    const site = fakeSite(routes);
+    const result = await run(site);
+
+    expect(sitemapPaths).toHaveLength(34);
+    expect(result.pagesFetched).toBe(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls);
+    expect(
+      result.pages.filter((entry) => entry.path.startsWith("/story-generators/")),
+    ).toHaveLength(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls - 1);
+    expect(result.stopReason).toBe("max_urls");
+  });
+
   it("breaks a score tie by URL so two runs rank the same", async () => {
     const site = fakeSite(
       marketingSite({
