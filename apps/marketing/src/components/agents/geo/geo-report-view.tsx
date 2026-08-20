@@ -720,10 +720,31 @@ export function GeoReportView({
           role="alert"
           className="rounded-card border border-brand-accent-2/50 bg-brand-panel-sunken px-4 py-3 text-[12.5px] leading-[1.6] text-brand-accent-2"
         >
-          {t("results.degradedBanner", {
-            failed: coverage.triggerFailedProbes,
-            mixed: coverage.degradedProbes,
-          })}
+          {/*
+            Two facts, not one sentence, and each printed only when it happened.
+            The lumped version said "0 probes never searched, 4 searched
+            sometimes. This is an instrumentation failure" — a zero-valued
+            clause, and a claim about cause on a run where nothing failed. Only
+            `trigger_failed` is defined as an instrument failure; a probe that
+            searched on two tries out of three is the surface being
+            non-deterministic, which is the reason three samples are taken.
+          */}
+          {coverage.triggerFailedProbes > 0 && (
+            <span className="block">
+              {t("results.degradedFailed", {
+                failed: coverage.triggerFailedProbes,
+              })}
+            </span>
+          )}
+          {coverage.degradedProbes > 0 && (
+            <span
+              className={
+                coverage.triggerFailedProbes > 0 ? "mt-2 block" : "block"
+              }
+            >
+              {t("results.degradedMixed", { mixed: coverage.degradedProbes })}
+            </span>
+          )}
         </p>
       )}
 

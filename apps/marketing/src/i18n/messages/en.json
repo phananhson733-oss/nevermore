@@ -3643,7 +3643,6 @@
         "searched": "Searched",
         "notSearched": "No web search",
         "recommendationNotEvaluated": "Recommendation not evaluated",
-        "degradedBanner": "Degraded run: {failed} retrieval probes never triggered a web search and {mixed} triggered it only sometimes. That is an instrumentation failure, not a finding about your site, and those samples are excluded from the citation counts.",
         "probeSummary": "Probes: {valid} valid · {failed} never searched · {mixed} mixed · {unavailable} no answer",
         "snapshotEyebrow": "Current ChatGPT snapshot",
         "overviewTitle": "What this run reached",
@@ -3662,7 +3661,9 @@
         "boundaryNoScore": "No overall number",
         "coverageDetails": "See the per-mode detail",
         "questionsEyebrow": "Question by question",
-        "sampleDetails": "Open this question's full evidence"
+        "sampleDetails": "Open this question's full evidence",
+        "degradedFailed": "{failed} retrieval probes never triggered a web search. Their wording was calibrated to reach the live web, so this is an instrument problem rather than a finding about your site — their samples are excluded from the citation counts entirely.",
+        "degradedMixed": "{mixed} retrieval probes triggered a web search on some samples and not others. The samples that did not search are out of the citation denominator; the question was still measured, just fewer times than planned — the denominator on each question below is the count that actually applied. Why the same question searches on one try and not the next is not something this run can establish."
       },
       "identity": {
         "collector": "Collector",
