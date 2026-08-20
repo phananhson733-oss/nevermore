@@ -10,6 +10,45 @@ import {
 
 const SEO_AGENT_INTENT_KEY = pendingAgentIntentKey("seo");
 
+interface ClipboardCapture {
+  readonly writes: () => Promise<readonly string[]>;
+}
+
+async function installClipboardCapture(page: Page): Promise<ClipboardCapture> {
+  // Reading the real system clipboard is permission-sensitive in headless
+  // Chromium. Capture exactly what the page hands to writeText instead.
+  await page.addInitScript(() => {
+    const writes: string[] = [];
+    (
+      window as unknown as {
+        __seoAiClipboardWrites: string[];
+      }
+    ).__seoAiClipboardWrites = writes;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          writes.push(text);
+        },
+      },
+    });
+  });
+
+  return {
+    writes: () =>
+      page.evaluate(
+        () =>
+          [
+            ...(
+              window as unknown as {
+                __seoAiClipboardWrites: string[];
+              }
+            ).__seoAiClipboardWrites,
+          ] as readonly string[],
+      ),
+  };
+}
+
 function profileRefreshEnvelope(agent: AgentKind) {
   const sourceUrls = Array.from(
     { length: 14 },
@@ -378,7 +417,14 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   page,
 }) => {
   await mockSession(page, true);
+  const clipboard = await installClipboardCapture(page);
+  let auditPosts = 0;
+  const browserRequests: string[] = [];
+  page.on("request", (request) => {
+    browserRequests.push(request.url());
+  });
   await page.route("**/api/agents/seo/audit", async (route) => {
+    auditPosts += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -406,6 +452,33 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(page.getByTestId("agent-selected-solution")).toContainText(
     "technical seo audit",
   );
+
+  const aiAction = page.getByTestId("agent-ai-action-copy");
+  const primaryCopy = aiAction.getByRole("button", {
+    name: "Copy text for AI",
+    exact: true,
+  });
+  const advancedCopy = aiAction.getByTestId("agent-ai-copy-advanced");
+  await expect(primaryCopy).toBeVisible();
+  await expect(primaryCopy).toBeEnabled();
+  await expect(advancedCopy.getByText("Advanced copy options")).toBeVisible();
+  await expect(advancedCopy).not.toHaveAttribute("open", "");
+
+  expect(auditPosts).toBe(1);
+  const requestsBeforeCopy = browserRequests.length;
+  await primaryCopy.click();
+  await expect(aiAction.getByText("Copied Code Agent")).toBeVisible();
+
+  const writes = await clipboard.writes();
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toContain("seo_ai_action_copy.v1");
+  expect(writes[0]).toContain('"audience": "code_agent"');
+  expect(writes[0]).toContain(
+    "Inspect the supplied repository before choosing files.",
+  );
+  expect(auditPosts).toBe(1);
+  expect(browserRequests).toHaveLength(requestsBeforeCopy);
+  await expect(advancedCopy).not.toHaveAttribute("open", "");
 
   await page.getByTestId("diagnosis-scope-page").click();
   await expect(page.getByText("9 groups · 49 checks")).toBeVisible();
@@ -475,6 +548,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await expect(page.getByTestId("agent-selected-solution")).toHaveCount(
     0,
   );
+  await expect(page.getByTestId("agent-ai-action-copy")).toHaveCount(0);
   expect(
     await page.evaluate(
       (intentKey) => sessionStorage.getItem(intentKey),
