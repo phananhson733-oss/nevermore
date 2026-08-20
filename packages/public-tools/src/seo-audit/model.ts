@@ -1715,9 +1715,15 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       // by this list against a rail that reports a Blocker below 70%. A site
       // whose sitemap index lost four of five children to timeouts published
       // a measured 100% over the ninth of its pages that replied.
+      // Both lists have to fit, because the census divides by the declared one
+      // and every other consumer groups by the subject one. They are separate
+      // populations now — `/x` and `/x/` are one subject and two declarations —
+      // so the declared list is the one that can be longer, and it is the one
+      // A1 counts.
       sitemapUrlsComplete:
         raw.sitemap.complete &&
-        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
+        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP &&
+        raw.sitemap.declaredUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
     records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
     pages,

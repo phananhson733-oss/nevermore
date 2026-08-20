@@ -22,6 +22,7 @@ describe("parseSitemapXml entity decoding", () => {
     ).toEqual({
       isIndex: false,
       locs: ["https://example.com/a?x=1&y=2"],
+      isSitemap: true,
     });
   });
 
@@ -167,7 +168,9 @@ describe("collectSitemap exact fetch identities", () => {
       // that asks a provider about an exact URL needs this and not the
       // subject: Google answers about `/docs` and `/docs/` separately.
       subjectUrls: ["https://example.com/docs"],
-      declaredUrls: ["https://example.com/docs/"],
+      // Both spellings, because both were declared and a provider that answers
+      // per exact URL is owed both. This list is not parallel to the subjects.
+      declaredUrls: ["https://example.com/docs", "https://example.com/docs/"],
       complete: true,
     });
     expect(onMember).toHaveBeenCalledTimes(2);
@@ -352,5 +355,94 @@ describe("collectSitemap reports whether it degraded", () => {
 
     expect(projection.complete).toBe(true);
     expect(projection.urlCount).toBe(1);
+  });
+});
+
+/**
+ * Three holes a pre-merge review found in the first attempt at this, each
+ * reproduced against the changed source before being fixed.
+ */
+describe("what the collector certifies and what it declares", () => {
+  const urlset = (urls: readonly string[]) =>
+    `<urlset>${urls.map((u) => `<url><loc>${u}</loc></url>`).join("")}</urlset>`;
+  const index = (children: readonly string[]) =>
+    `<sitemapindex>${children
+      .map((u) => `<sitemap><loc>${u}</loc></sitemap>`)
+      .join("")}</sitemapindex>`;
+  const collect = (docs: Readonly<Record<string, string>>) =>
+    collectSitemap("https://acme.test", ["https://acme.test/sitemap.xml"], {
+      fetchText: async (url: string) => docs[url] ?? null,
+    });
+
+  it("does not certify a population when a child answered 200 with an HTML page", async () => {
+    // The transport cannot report this: the status was fine. Parsing used to
+    // map an unreadable body to the same value as a valid empty sitemap, so a
+    // whole child's worth of members went missing with no trace and the
+    // survivors were certified complete.
+    const projection = await collect({
+      "https://acme.test/sitemap.xml": index([
+        "https://acme.test/a.xml",
+        "https://acme.test/b.xml",
+      ]),
+      "https://acme.test/a.xml": urlset(["https://acme.test/one"]),
+      "https://acme.test/b.xml": "<!doctype html><html><body>404</body></html>",
+    });
+
+    expect(projection.complete).toBe(false);
+    expect(projection.urlCount).toBe(1);
+  });
+
+  it("still accepts a genuinely empty sitemap as complete", async () => {
+    const projection = await collect({
+      "https://acme.test/sitemap.xml": "<urlset></urlset>",
+    });
+
+    expect(projection.complete).toBe(true);
+    expect(projection.urlCount).toBe(0);
+  });
+
+  it("declares both spellings when the sitemap declares both", async () => {
+    // `/x` and `/x/` are one aggregation subject and two pages to a provider
+    // that answers per exact URL. Keeping one spelling per subject dropped one
+    // of the two — the same loss the completeness flag beside it reports.
+    const projection = await collect({
+      "https://acme.test/sitemap.xml": urlset([
+        "https://acme.test/x",
+        "https://acme.test/x/",
+      ]),
+    });
+
+    expect(projection.subjectUrls).toEqual(["https://acme.test/x"]);
+    expect(projection.declaredUrls).toEqual([
+      "https://acme.test/x",
+      "https://acme.test/x/",
+    ]);
+  });
+
+  it("keeps the query exactly as the sitemap wrote it", async () => {
+    // Canonicalisation deletes tracking parameters and sorts the query, which
+    // produces a URL the sitemap did not declare — under a field whose name
+    // promises the one that was.
+    const projection = await collect({
+      "https://acme.test/sitemap.xml": urlset([
+        "https://acme.test/p/?b=2&amp;utm_source=sitemap&amp;a=1",
+      ]),
+    });
+
+    expect(projection.declaredUrls).toEqual([
+      "https://acme.test/p/?b=2&utm_source=sitemap&a=1",
+    ]);
+  });
+
+  it("drops an off-origin declaration without calling that a degradation", async () => {
+    const projection = await collect({
+      "https://acme.test/sitemap.xml": urlset([
+        "https://acme.test/one",
+        "https://cdn.other.test/two",
+      ]),
+    });
+
+    expect(projection.declaredUrls).toEqual(["https://acme.test/one"]);
+    expect(projection.complete).toBe(true);
   });
 });

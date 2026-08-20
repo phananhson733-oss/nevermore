@@ -115,8 +115,11 @@ export interface CrawlSitemapProjection {
    * form asks about a URL the sitemap never declared, and on any site that
    * ends its paths with a slash the answer comes back about the wrong page.
    *
-   * Same order as `subjectUrls`, one entry each, first declaration winning
-   * when two spellings share a subject.
+   * A separate population, not a parallel array: `/x` and `/x/` are one
+   * subject and two declarations, so this list can be longer than
+   * `subjectUrls` and the two are not index-aligned. Deduplicated by exact
+   * string, sorted, resolved to absolute and otherwise untouched — no query
+   * sorting, no tracking-parameter removal, no trailing-slash rule.
    */
   readonly declaredUrls: readonly string[];
 }

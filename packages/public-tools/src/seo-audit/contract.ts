@@ -213,10 +213,10 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
       SITEMAP_URLS_PUBLISHED_CAP,
       CRAWL_PROJECTION_LIMITS.maxUrlChars,
     ) &&
-    // One declared identity per member. A payload where these drift apart is
-    // one where the census would ask about a URL belonging to a different row.
-    (value.sitemapDeclaredUrls as readonly string[]).length ===
-      (value.sitemapUrls as readonly string[]).length &&
+    // Deliberately no equal-length check. These are two populations, not a
+    // pair: `/x` and `/x/` collapse to one subject and stay two declarations,
+    // so requiring them to match would force the collector to drop one.
+
     typeof value.sitemapUrlsComplete === "boolean"
   );
 }
