@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
+import { isPagePerformanceRecord } from "./contract.ts";
 import {
   buildPagePerformanceRecords,
   buildPageWeightRecords,
@@ -145,5 +146,93 @@ describe("page performance records", () => {
     expect(decide(raw({ lcp: 2_000 }), "8.1")?.measurement?.en).toContain(
       "2000 ms",
     );
+  });
+});
+
+describe("image weight record", () => {
+  it("keeps a page whose images are all under budget wire-valid", () => {
+    // The id names a defect — an image over budget — so a fully weighed page
+    // with none of them is `not_observed`, never `observed` with zero affected
+    // rows: that combination violates the wire contract and refused the whole
+    // audit for exactly the pages whose images are all lean.
+    const [record] = buildImageWeightRecords(
+      [
+        {
+          url: "https://acme.test/a.webp",
+          transferredBytes: 40_000,
+          complete: true,
+        },
+        {
+          url: "https://acme.test/b.webp",
+          transferredBytes: 90_000,
+          complete: true,
+        },
+      ],
+      undefined,
+      true,
+    );
+
+    expect(record?.state).toBe("not_observed");
+    expect(record?.tested).toBe(2);
+    expect(record?.affected).toBe(0);
+    expect(record?.observations).toEqual([]);
+    expect(record === undefined ? false : isPagePerformanceRecord(record)).toBe(
+      true,
+    );
+  });
+
+  it("still names the over-budget image and stays wire-valid", () => {
+    const [record] = buildImageWeightRecords(
+      [
+        {
+          url: "https://acme.test/hero.png",
+          transferredBytes: 400_000,
+          complete: true,
+        },
+        {
+          url: "https://acme.test/b.webp",
+          transferredBytes: 90_000,
+          complete: true,
+        },
+      ],
+      undefined,
+      true,
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(2);
+    expect(record?.affected).toBe(1);
+    expect(record?.observations.map((entry) => entry.url)).toEqual([
+      "https://acme.test/hero.png",
+    ]);
+    expect(record === undefined ? false : isPagePerformanceRecord(record)).toBe(
+      true,
+    );
+  });
+
+  it("keeps every branch of all three builders wire-valid", () => {
+    const cases = [
+      ...[
+        buildImageWeightRecords(null, undefined, true),
+        buildImageWeightRecords([], undefined, true),
+        buildImageWeightRecords(
+          [{ url: URL, transferredBytes: 10_000, complete: true }],
+          undefined,
+          false,
+        ),
+        buildImageWeightRecords(
+          [{ url: URL, transferredBytes: 10_000, complete: false }],
+          undefined,
+          false,
+        ),
+        buildPageWeightRecords(null),
+        buildPageWeightRecords({ url: URL, totalTransferBytes: 1_000_000 }),
+        buildPagePerformanceRecords(raw()),
+        buildPagePerformanceRecords(null, "no_field_data"),
+      ],
+    ].flat();
+    for (const record of cases) {
+      expect(isPagePerformanceRecord(record), record.id).toBe(true);
+    }
   });
 });

@@ -307,7 +307,11 @@ export function buildImageWeightRecords(
     {
       id: "image_over_transfer_budget",
       category: "page_performance",
-      state: "observed",
+      // The id names a defect, so a fully weighed page with no image over
+      // budget is `not_observed` — measured and clean. `observed` with zero
+      // affected rows violates the wire contract and refused the whole audit
+      // for exactly the pages whose images are all within budget.
+      state: over.length === 0 ? "not_observed" : "observed",
       unit: "pages",
       population: "target_page",
       targetTested: true,
