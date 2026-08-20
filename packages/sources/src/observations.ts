@@ -94,6 +94,34 @@ export interface CrawlSitemapProjection {
   readonly fetched: boolean;
   readonly urlCount: number;
   readonly subjectUrls: readonly string[];
+  /**
+   * Every sitemap this site referenced was read to the end.
+   *
+   * False when a child would not fetch, or when a depth, document or member
+   * cap stopped the walk. The collector degrades to fewer members rather than
+   * erroring, which means `subjectUrls.length` cannot distinguish a small
+   * sitemap from a truncated one — anything that divides by this list needs
+   * this flag to know whether it holds a population or a sample.
+   */
+  readonly complete: boolean;
+  /**
+   * The identities the sitemap actually declared, one per member.
+   *
+   * `subjectUrls` is an aggregation key: it has the non-root trailing slash
+   * removed so that `/x` and `/x/` collapse into one subject, which is what
+   * this product wants everywhere it groups pages. It is the wrong thing to
+   * hand a provider that answers about exact URLs — Google's URL Inspection
+   * treats `/x` and `/x/` as two different pages, so asking about the stripped
+   * form asks about a URL the sitemap never declared, and on any site that
+   * ends its paths with a slash the answer comes back about the wrong page.
+   *
+   * A separate population, not a parallel array: `/x` and `/x/` are one
+   * subject and two declarations, so this list can be longer than
+   * `subjectUrls` and the two are not index-aligned. Deduplicated by exact
+   * string, sorted, resolved to absolute and otherwise untouched — no query
+   * sorting, no tracking-parameter removal, no trailing-slash rule.
+   */
+  readonly declaredUrls: readonly string[];
 }
 
 // ---------------------------------------------------------------------------

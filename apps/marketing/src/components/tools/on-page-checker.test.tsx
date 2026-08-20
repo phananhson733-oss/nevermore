@@ -910,6 +910,7 @@ describe("On-Page checker report depth", () => {
               sitemapReferencesObserved: 1,
               sitemapFetched: true,
               sitemapUrls: [],
+              sitemapDeclaredUrls: [],
               sitemapUrlsComplete: true,
             },
             records: [

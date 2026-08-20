@@ -2068,6 +2068,7 @@ describeDb("collection runner (spec §13)", () => {
     expect(raw.sitemap).toMatchObject({
       fetched: true,
       subjectUrls: [`${seed.siteOrigin}/`, `${seed.siteOrigin}/about`],
+      declaredUrls: [`${seed.siteOrigin}/`, `${seed.siteOrigin}/about`],
     });
 
     // The provider-level raw object is not enough for URL-first review. Every
@@ -2406,6 +2407,8 @@ describeDb("collection runner (spec §13)", () => {
           fetched: true,
           urlCount: 1,
           subjectUrls: [foreignPage],
+          declaredUrls: [foreignPage],
+          complete: true,
         },
         availability: "available",
         capturedAt,

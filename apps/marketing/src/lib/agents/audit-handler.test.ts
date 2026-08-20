@@ -62,7 +62,7 @@ function record(
 const upstreamPayload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v17",
+    schemaVersion: "seo_audit.sitewide.v18",
     mode: "public_preview",
     scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
@@ -92,6 +92,7 @@ const upstreamPayload = {
       sitemapReferencesObserved: 1,
       sitemapFetched: false,
       sitemapUrls: [],
+      sitemapDeclaredUrls: [],
       sitemapUrlsComplete: true,
     },
     records: RECORD_SPECS.map(([id, category], index) =>
@@ -368,6 +369,49 @@ describe("handleAgentAuditRequest", () => {
     );
 
     expect(seen[0]?.url).toBe(landed);
+  });
+
+  it("censuses the URLs the sitemap declared, not the aggregation subjects", async () => {
+    // URL Inspection answers about exact URLs. `sitemapUrls` beside the list
+    // below is the aggregation subject, with the non-root trailing slash
+    // removed so `/blog` and `/blog/` group together — right everywhere this
+    // product groups pages, wrong for the one call that asks Google about a
+    // page. Sending the subject asked about a URL the sitemap never declared,
+    // and on any site that ends its paths with a slash the answer came back
+    // about a different page, reporting a healthy site at Blocker.
+    const seen: { urls: readonly string[]; complete: boolean }[] = [];
+    await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                siteResources: {
+                  ...upstreamPayload.result.siteResources,
+                  sitemapFetched: true,
+                  sitemapUrls: ["https://acme.test/blog"],
+                  sitemapDeclaredUrls: ["https://acme.test/blog/"],
+                  sitemapUrlsComplete: true,
+                },
+              },
+            },
+          }),
+        readSearchPerformance: async (input) => {
+          seen.push({
+            urls: input.sitemapUrls,
+            complete: input.sitemapUrlsComplete,
+          });
+          return null;
+        },
+      }),
+    );
+
+    expect(seen[0]?.urls).toEqual(["https://acme.test/blog/"]);
+    expect(seen[0]?.complete).toBe(true);
   });
 
   it("asks PageSpeed about the URL the crawl landed on, not the one it requested", async () => {
@@ -713,7 +757,7 @@ describe("handleAgentAuditRequest", () => {
           persistence: "none",
           source: {
             tool: "seo_audit",
-            schemaVersion: "seo_audit.sitewide.v17",
+            schemaVersion: "seo_audit.sitewide.v18",
             completedAt: "2026-08-12T09:00:00.000Z",
             cache: { status: "miss", capturedAt: null },
           },

@@ -87,8 +87,19 @@ export type AgentAuditIssueRule =
       readonly recordId: string;
       readonly kind: "aggregate-max";
       readonly label: string;
-      /** Aggregate at or below this passes. */
-      readonly passAtOrBelow: number;
+      /**
+       * The pass bound, in the inclusivity the published sentence uses.
+       *
+       * Two spellings because the catalogue has two. "500 ms or less" and
+       * "At most 3 clicks" are inclusive; "Below 5%" and "Below 2 MB" are not,
+       * and a rule that can only express the first kind has to be talked into
+       * the second — 8.5 did it by subtracting a byte, and A2 did not do it at
+       * all, so a site at exactly five percent passed a check whose printed
+       * rule says below five. The sentence a reader is shown decides which of
+       * these the rule uses; exactly one must be set.
+       */
+      readonly passAtOrBelow?: number;
+      readonly passBelow?: number;
       /** Aggregate above this takes the full failure result. */
       readonly failAbove?: number;
     }

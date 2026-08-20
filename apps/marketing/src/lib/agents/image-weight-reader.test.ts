@@ -1,67 +1,53 @@
-// @input  -- a stubbed per-image weigher, succeeding and failing
-// @output -- proof the reader bounds what it fetches and never fakes a pass
-// @pos    -- unit coverage for the only subresource fetch this product makes
+// @input  -- stubbed single-image transports, healthy and hostile
+// @output -- proof the run-level byte ceiling holds and that only images count
+// @pos    -- unit coverage for the only subresource fetch the Agent audit makes
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createImageWeightReader } from "./image-weight-reader.ts";
+import {
+  createImageWeightReader,
+  type WeighOutcome,
+} from "./image-weight-reader.ts";
 
-const url = (i: number) => `https://acme.test/img/${i}.webp`;
+const KB = 1024;
+const MB = 1024 * KB;
 
-describe("image weight reader", () => {
-  it("weighs the images it was given", async () => {
-    const read = createImageWeightReader({
-      weighImage: async (u) => ({
-        url: u,
-        transferredBytes: 1_000,
-        complete: true,
-      }),
-    });
-    const result = await read({ sources: [url(1), url(2)]} );
+const image = (url: string, bytes: number, complete = true): WeighOutcome => ({
+  spentBytes: bytes,
+  measured: { url, transferredBytes: bytes, complete },
+});
+
+/** Bytes arrived, nothing measurable came back — a 404 body, or an HTML page. */
+const spentNothingUsable = (bytes: number): WeighOutcome => ({
+  spentBytes: bytes,
+  measured: null,
+});
+
+const sources = (count: number, prefix = "https://cdn.test/i") =>
+  Array.from({ length: count }, (_, i) => `${prefix}${i}.jpg`);
+
+function reader(weighImage: (url: string) => Promise<WeighOutcome>) {
+  const seen: string[] = [];
+  const spy = vi.fn(async (url: string) => {
+    seen.push(url);
+    return weighImage(url);
+  });
+  return { seen, spy, read: createImageWeightReader({ weighImage: spy }) };
+}
+
+describe("what counts as a measured image", () => {
+  it("weighs the images the page declared", async () => {
+    const { read } = reader(async (url) => image(url, 40 * KB));
+    const result = await read({ sources: sources(3) });
 
     expect(result.status).toBe("ok");
-    expect(result.status === "ok" && result.images).toHaveLength(2);
+    expect(result.status === "ok" && result.images).toHaveLength(3);
     expect(result.status === "ok" && result.complete).toBe(true);
   });
 
-  it("stops at the measured ceiling however many the page declares", async () => {
-    // A page can declare three hundred. Fetching all of them would spend more
-    // requests on one page's decoration than the crawl spends on the site, for
-    // a check whose published severity is a Tip.
-    const seen: string[] = [];
-    const read = createImageWeightReader({
-      weighImage: async (u) => {
-        seen.push(u);
-        return { url: u, transferredBytes: 10, complete: true };
-      },
-    });
-    await read({
-      sources: Array.from({ length: 300 }, (_, i) => url(i)),
-    });
-
-    expect(seen.length).toBeLessThanOrEqual(25);
-  });
-
-  it("reports an incomplete sample rather than a clean one", async () => {
-    // Twenty-five is the cap; a page with more images has not been fully
-    // measured, and "nothing over budget" would be a claim about the images
-    // that happened to be first in document order.
-    const read = createImageWeightReader({
-      weighImage: async (u) => ({ url: u, transferredBytes: 10, complete: true }),
-    });
-    const result = await read({
-      sources: Array.from({ length: 40 }, (_, i) => url(i)),
-    });
-
-    expect(result.status === "ok" && result.complete).toBe(false);
-  });
-
   it("says nothing was fetched rather than reporting a clean page", async () => {
-    // Every fetch failing means we learned nothing. An empty affected list
-    // would read as "no image is over budget", which is a claim about files
-    // that never arrived.
-    const read = createImageWeightReader({ weighImage: async () => null });
-    const result = await read({ sources: [url(1)]} );
+    const { read } = reader(async () => spentNothingUsable(0));
+    const result = await read({ sources: sources(3) });
 
     expect(result).toEqual({
       status: "unavailable",
@@ -69,12 +55,62 @@ describe("image weight reader", () => {
     });
   });
 
-  it("separates a page with no images from a page whose images failed", async () => {
-    const read = createImageWeightReader({ weighImage: async () => null });
-
-    expect(await read({ sources: []} )).toEqual({
+  it("says the page declared none when it declared none", async () => {
+    const { read } = reader(async (url) => image(url, 1));
+    expect(await read({ sources: [] })).toEqual({
       status: "unavailable",
       reason: "no_images_declared",
     });
+  });
+});
+
+describe("the run-level byte ceiling", () => {
+  it("stops the run once the declared images have cost enough", async () => {
+    // The page chooses these URLs, so the ceiling is what keeps the cost of a
+    // run fixed no matter what it declares.
+    const { seen, read } = reader(async (url) => image(url, 1 * MB));
+    await read({ sources: sources(25) });
+
+    // Four at a time, stopping at the first batch boundary past three
+    // megabytes: eight fetched, not twenty-five.
+    expect(seen.length).toBeLessThanOrEqual(8);
+  });
+
+  it("charges bytes that produced no measurement", async () => {
+    // The defect this exists to prevent: the ledger moved only on success,
+    // while the transport reads the bounded body before the status is
+    // inspected. Twenty-five 200 KB error bodies transferred five megabytes
+    // against a three-megabyte cap that never saw a byte.
+    const { seen, read } = reader(async () => spentNothingUsable(200 * KB));
+    await read({ sources: sources(25) });
+
+    expect(seen.length).toBeLessThan(25);
+  });
+
+  it("does not call a truncated run complete", async () => {
+    const { read } = reader(async (url) => image(url, 1 * MB));
+    const result = await read({ sources: sources(25) });
+
+    // Some images were never looked at, so "no image is over budget" is not a
+    // claim this run may make.
+    expect(result.status === "ok" && result.complete).toBe(false);
+  });
+
+  it("does not call a count-capped run complete either", async () => {
+    const { read } = reader(async (url) => image(url, 1 * KB));
+    const result = await read({ sources: sources(40) });
+
+    expect(result.status === "ok" && result.images).toHaveLength(25);
+    expect(result.status === "ok" && result.complete).toBe(false);
+  });
+
+  it("does not call a run with a dropped image complete", async () => {
+    const { read } = reader(async (url) =>
+      url.endsWith("i1.jpg") ? spentNothingUsable(2 * KB) : image(url, 4 * KB),
+    );
+    const result = await read({ sources: sources(4) });
+
+    expect(result.status === "ok" && result.images).toHaveLength(3);
+    expect(result.status === "ok" && result.complete).toBe(false);
   });
 });

@@ -86,6 +86,14 @@ export async function readAgentSearchPerformance(
      * census over part of a population is a sample again, and this one's bias
      * runs toward calling a failing site healthy.
      */
+    /**
+     * The URLs the sitemap declared, spelled as it declared them.
+     *
+     * NOT the aggregation subject. URL Inspection answers about exact URLs, so
+     * sending the subject form asked Google about `/x` for a sitemap that
+     * declared `/x/` — a different page to Google, and typically an excluded
+     * one, which reported a healthy trailing-slash site at Blocker.
+     */
     readonly sitemapUrls?: readonly string[];
     readonly sitemapUrlsComplete?: boolean;
   },
@@ -147,6 +155,7 @@ export async function readAgentSearchPerformance(
 async function readIndexCoverage(input: {
   readonly property: string;
   readonly accessToken: string;
+  /** As declared by the sitemap, because the provider answers per exact URL. */
   readonly sitemapUrls: readonly string[];
   readonly sitemapUrlsComplete: boolean;
   readonly inspect: SearchPerformanceDependencies["inspectIndexStatus"];

@@ -191,6 +191,7 @@ const report: SeoAuditReport = {
     sitemapReferencesObserved: 1,
     sitemapFetched: false,
     sitemapUrls: [],
+    sitemapDeclaredUrls: [],
     sitemapUrlsComplete: true,
   },
   records,

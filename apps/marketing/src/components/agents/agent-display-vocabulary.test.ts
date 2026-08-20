@@ -50,6 +50,7 @@ function rawFromPages(
       fetched: true,
       urlCount: pages.length,
       subjectUrls: pages.map((page) => page.url),
+      declaredUrls: pages.map((page) => page.url),
     },
     pages: pages.map((page, index) => {
       const parsed = parsePage(page.html, page.url);

@@ -180,6 +180,8 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "crawl_incomplete_inlinks_unreliable",
   "faq_match_against_collected_paragraphs_only",
   "similarity_measured_on_collected_paragraphs_after_chrome",
+  "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly",
+  "some_pages_are_mostly_text_repeated_across_the_site_so_chrome_and_duplication_cannot_be_separated",
   "uncollected_link_targets_not_classified",
   "static_html_json_ld_only",
   "no_sitemap_collected_membership_not_testable",
@@ -190,6 +192,7 @@ export const SEO_AUDIT_LIMITATION_CODES: readonly string[] = [
   "redirect_destination_status_not_observed_for_every_redirect",
   "soft_404_needs_both_a_not_found_phrase_and_a_body_below_the_published_floor",
   "hreflang_targets_outside_this_crawl_were_not_classified",
+  "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps",
   "utf8_bytes_of_the_delivered_html_no_rendering_performed",
   "declared_in_the_head_markup_no_lab_run_and_no_network_timing",
   "first_image_in_document_order_with_a_declared_size_no_viewport_is_available",
@@ -222,5 +225,6 @@ export const SEARCH_PERFORMANCE_LIMITATION_CODES: readonly string[] = [
   "one_impression_weighted_average_per_query_over_the_reported_window_only",
   "search_console_returned_a_position_this_run_cannot_band_for_this_url",
   "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+  "no_brand_term_long_enough_to_match_on_could_be_derived_from_this_property",
   "brand_terms_derived_from_the_property_and_matched_as_substrings",
 ];

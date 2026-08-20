@@ -64,6 +64,17 @@ export const CRAWL_PROJECTION_LIMITS = {
   maxTitleChars: 512,
   maxMetaDescriptionChars: 2_048,
   maxRobotsDirectives: 32,
+  /**
+   * Alternates kept per page, with its own number rather than the robots one.
+   *
+   * The alternates list was bounded by `maxRobotsDirectives` — a cap belonging
+   * to an unrelated projection that happens to be small. D6 and 1.7 publish
+   * "100% valid targets", and a forty-locale cluster with a broken alternate
+   * at position thirty-five reported clean, because the list stopped at
+   * thirty-two and nothing downstream knew. Large international clusters are
+   * normal; this is sized for them.
+   */
+  maxHreflangAlternates: 128,
   maxRobotsDirectiveChars: 128,
   maxH1: 20,
   maxH1Chars: 512,

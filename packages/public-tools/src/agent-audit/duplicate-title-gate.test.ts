@@ -48,7 +48,7 @@ function d1(pages: readonly CrawlPageRecord[]) {
     requestedUrl: "https://acme.test/",
     pages,
     robots: { fetched: true, groups: [], sitemaps: [] },
-    sitemap: { fetched: true, urlCount: 0, subjectUrls: [] },
+    sitemap: { fetched: true, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: true },
     availability: "available",
     capturedAt: "2026-08-18T00:00:00.000Z",
     sourceWindow: { start: null, end: null },

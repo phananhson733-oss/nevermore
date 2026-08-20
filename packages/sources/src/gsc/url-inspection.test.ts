@@ -2,9 +2,12 @@
 // @output -- proof the census is all-or-nothing and stays under the site rate
 // @pos    -- unit coverage for the producer behind A1
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { inspectUrlIndexStatus } from "./url-inspection.ts";
+import { inspectUrlIndexStatus, maxCensusUrls } from "./url-inspection.ts";
+
+/** Mirrors the module's CONCURRENCY; the pacing assertion is written in batches. */
+const CONCURRENCY_FOR_TEST = 5;
 
 const SITE = "sc-domain:acme.test";
 const urls = (n: number) =>
@@ -158,5 +161,94 @@ describe("URL Inspection census", () => {
     );
 
     expect(result.status).toBe("unavailable");
+  });
+});
+
+describe("a census that cannot finish never starts", () => {
+  it("refuses up front, without spending a single call", async () => {
+    // The shape this replaces: a 500-URL sitemap against a 60-second budget
+    // paced at five URLs a second covered about three hundred, then hit the
+    // wall-clock guard and returned unavailable — having spent three hundred
+    // calls of a quota that is per SITE and shared with every other tool the
+    // customer points at the property. Repeat audits drained the ceiling for a
+    // rate that was never going to be published.
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("the census should not have started");
+    });
+
+    const result = await inspectUrlIndexStatus({
+      siteUrl: SITE,
+      accessToken: "token",
+      urls: urls(500),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      now: () => 0,
+      sleep: async () => {},
+    });
+
+    expect(result).toEqual({
+      status: "unavailable",
+      reason: "census_larger_than_one_run",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("accepts a census that fits", async () => {
+    const { result } = await run(
+      Array.from({ length: maxCensusUrls(60_000) }, () => respond("PASS")),
+    );
+
+    expect(result.status).toBe("ok");
+  });
+
+  it("derives its ceiling from the budget rather than a second constant", () => {
+    // The two numbers used to be independent, which is how a 500-URL
+    // publication cap came to sit above a budget that covers about three
+    // hundred. Doubling the budget has to double the reach or this is a
+    // hard-coded number wearing a function's clothes.
+    expect(maxCensusUrls(120_000)).toBe(maxCensusUrls(60_000) * 2);
+    expect(maxCensusUrls(0)).toBe(0);
+    expect(maxCensusUrls(Number.NaN)).toBe(0);
+  });
+});
+
+describe("the pacing gate stops rather than un-pacing", () => {
+  it("returns unavailable instead of firing the tail flat out", async () => {
+    // Skipping the pause left the loop running, because the top-of-loop guard
+    // only trips once the budget is already spent. The final window fired
+    // batches back to back — roughly 1500 a minute against a 600-a-minute
+    // per-site ceiling shared with the customer's other tools — and then
+    // returned unavailable anyway.
+    //
+    // Reaching that branch needs the budget nearly spent while batches are
+    // still fast, which is what a slow first batch on a real network produces:
+    // the up-front ceiling sizes the census against ideal pacing, so latency
+    // is exactly what pushes a run past it mid-flight.
+    const calls: number[] = [];
+    let clock = 0;
+    let call = 0;
+    const result = await inspectUrlIndexStatus({
+      siteUrl: SITE,
+      accessToken: "token",
+      urls: urls(20),
+      budgetMs: 4_000,
+      fetchImpl: (async () => {
+        calls.push(clock);
+        clock += call < CONCURRENCY_FOR_TEST ? 700 : 10;
+        call += 1;
+        return respond("PASS");
+      }) as unknown as typeof fetch,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    expect(result).toEqual({
+      status: "unavailable",
+      reason: "provider_unavailable",
+    });
+    // It stopped rather than sprinting: nothing was sent after the budget could
+    // no longer accommodate a paced batch.
+    expect(calls.length).toBeLessThanOrEqual(CONCURRENCY_FOR_TEST * 2);
   });
 });

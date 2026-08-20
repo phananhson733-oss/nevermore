@@ -837,9 +837,34 @@ const crawlSitemapProjectionSchema = z
     subjectUrls: z
       .array(boundedCrawlUrl)
       .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
+    /**
+     * Optional here, and required on the write path, because this schema reads
+     * frozen observations the database already holds.
+     *
+     * Runs that predate the flag recorded no completeness fact, and rejecting
+     * them would make every historical snapshot un-replayable. Absent is not
+     * "complete": a reader that needs the guarantee has to treat a missing flag
+     * as a missing measurement, which is the same rule this codebase applies to
+     * every other number it did not observe.
+     */
+    complete: z.boolean().optional(),
+    /** Optional for the same reason `complete` is: older rows predate it. */
+    declaredUrls: z
+      .array(boundedCrawlUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls)
+      .optional(),
   })
   .strict()
-  .refine((value) => value.urlCount === value.subjectUrls.length);
+  .refine(
+    (value) =>
+      value.urlCount === value.subjectUrls.length &&
+      // Two shapes, not four. A row predating these fields has neither; a row
+      // written since has both. Accepting them independently let
+      // `{complete: true, declaredUrls: undefined}` through — a completeness
+      // assertion surviving without the population it certifies, which is the
+      // half-migrated shape no producer can emit and no reader should trust.
+      (value.complete === undefined) === (value.declaredUrls === undefined),
+  );
 
 const gscWindowMetricsSchema = z
   .object({
@@ -930,12 +955,7 @@ const keywordGapProjectionSchema = z
     searchVolume: finiteNonnegative.nullable(),
     keywordDifficulty: z.number().int().min(0).max(100).nullable(),
     providerSearchIntent: z
-      .enum([
-        "informational",
-        "navigational",
-        "commercial",
-        "transactional",
-      ])
+      .enum(["informational", "navigational", "commercial", "transactional"])
       .nullable(),
     currentUrl: absoluteHttpUrlSchema.nullable(),
     currentRank: finiteNonnegative.nullable(),
@@ -1129,9 +1149,10 @@ function readFrozenDiagnosticManifest(
     throw new Error("frozen ICP manifest does not match its run");
   }
 
-  const governance = executor.governance === "required"
-    ? parseGovernanceProjectionV1(manifest["governance"])
-    : undefined;
+  const governance =
+    executor.governance === "required"
+      ? parseGovernanceProjectionV1(manifest["governance"])
+      : undefined;
   const contextProjection =
     executor.contextProjection === "required"
       ? parseContextProjectionV1(manifest["contextProjection"])
@@ -1224,29 +1245,21 @@ function exactDataForSeoCollectionIdentity(
     run.operation === "keyword_gap_import" &&
     run.method_version === DATAFORSEO_METHOD_VERSION;
   const composite =
-    snapshot.dataset_key ===
-      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
-    snapshot.schema_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
-    snapshot.method_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
     run.operation === "search_landscape" &&
-    run.method_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+    run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
   const compositeV2 =
     snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY &&
-    snapshot.schema_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
-    snapshot.method_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    snapshot.schema_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
     run.operation === "search_landscape" &&
     run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
   const compositeV3 =
     snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY &&
-    snapshot.schema_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
-    snapshot.method_version ===
-      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    snapshot.schema_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
     run.operation === "search_landscape" &&
     run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
   return legacy || composite || compositeV2 || compositeV3;

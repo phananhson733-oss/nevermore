@@ -208,6 +208,15 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
       SITEMAP_URLS_PUBLISHED_CAP,
       CRAWL_PROJECTION_LIMITS.maxUrlChars,
     ) &&
+    isBoundedStringList(
+      value.sitemapDeclaredUrls,
+      SITEMAP_URLS_PUBLISHED_CAP,
+      CRAWL_PROJECTION_LIMITS.maxUrlChars,
+    ) &&
+    // Deliberately no equal-length check. These are two populations, not a
+    // pair: `/x` and `/x/` collapse to one subject and stay two declarations,
+    // so requiring them to match would force the collector to drop one.
+
     typeof value.sitemapUrlsComplete === "boolean"
   );
 }
@@ -618,7 +627,7 @@ export function isSeoAuditPayload(value: unknown): value is SeoAuditPayload {
   const { run, result } = value;
   return (
     run.tool === "seo_audit" &&
-    run.schemaVersion === "seo_audit.sitewide.v17" &&
+    run.schemaVersion === "seo_audit.sitewide.v18" &&
     run.mode === "public_preview" &&
     run.scope === "discoverable_same_origin_static_html_audit" &&
     run.persistence === "none" &&

@@ -36,13 +36,21 @@ describe("v2 Agent audit catalog", () => {
     for (const check of all) {
       if (check.engine !== "needs-integration") continue;
       expect(check.evidenceRecordIds).toEqual([]);
-      // Two different sentences, and the difference matters to a reader
-      // planning work: "no detector reads it yet" promises a later release,
-      // while "outside what this run can observe" is a boundary they can plan
-      // around. Every unwired check must say exactly one of them.
-      expect(check.dataSource.en).toMatch(
-        /no detector reads it yet|Outside what a bounded anonymous crawl can observe/,
-      );
+      // The difference matters to a reader planning work: "no detector reads
+      // it yet" promises a later release, while a named source is a boundary
+      // they can plan around — and for the undecided five that source has to
+      // be the real one. A single sentence covering all of them told four
+      // checks that a bounded anonymous crawl was the blocker when the blocker
+      // was an API this product already calls or a provider it already pays.
+      const named = UNMEASURABLE_HERE[check.id] !== undefined;
+      if (named) {
+        expect(check.dataSource.en).not.toMatch(/anonymous crawl/i);
+        expect(check.dataSource.en).not.toMatch(/no detector reads it yet/);
+      } else {
+        expect(check.dataSource.en).toMatch(/no detector reads it yet/);
+      }
+      // Never the sentence that means a detector ran and matched nothing.
+      expect(check.dataSource.en).not.toBe("Bounded crawl");
     }
     // Impression shares only exist in Search Console, whatever supplies the URLs.
     for (const id of ["A1", "A2", "A3", "E1", "E2", "E3", "E4", "E5"]) {
@@ -251,5 +259,63 @@ describe("v2 Agent audit catalog", () => {
         "1.8",
       ].sort(),
     );
+  });
+});
+
+/**
+ * The inclusivity a rule executes is the inclusivity its sentence prints.
+ *
+ * This exists because fixing one instance is not fixing the class. 8.5 was
+ * published as "Below 2 MB" and executed as "at or below", and the fix — one
+ * byte subtracted from the bound — went in beside A2, which had the identical
+ * defect and the identical shape and was not touched. Both are now expressed
+ * directly, and this walks the whole catalogue so the next one cannot be a
+ * judgement call about whether anybody remembered to look.
+ */
+describe("published bounds and executed bounds agree on their edges", () => {
+  const EXCLUSIVE = /\b(?:Below|Under|Less than|Fewer than)\b/i;
+  const INCLUSIVE = /\b(?:or less|At most|or fewer|No more than|or below)\b/i;
+
+  const aggregates = [...SITE_AUDIT_GROUPS, ...PAGE_AUDIT_GROUPS]
+    .flatMap((group) => group.checks)
+    .flatMap((check) =>
+      check.issueRules
+        .filter((rule) => rule.kind === "aggregate-max")
+        .map((rule) => ({ id: check.id, threshold: check.threshold.en, rule })),
+    );
+
+  it("covers the checks this guard is supposed to reach", () => {
+    // A guard over an empty list is not a guard. If the rule table stops using
+    // `aggregate-max`, this number moves and someone reads this comment.
+    expect(aggregates.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("uses an exclusive bound wherever the sentence says below", () => {
+    for (const entry of aggregates) {
+      if (!EXCLUSIVE.test(entry.threshold)) continue;
+      expect(
+        { id: entry.id, passBelow: entry.rule.passBelow },
+        `${entry.id} publishes "${entry.threshold}"`,
+      ).toEqual({ id: entry.id, passBelow: expect.any(Number) });
+    }
+  });
+
+  it("uses an inclusive bound wherever the sentence says at most", () => {
+    for (const entry of aggregates) {
+      if (!INCLUSIVE.test(entry.threshold)) continue;
+      expect(
+        { id: entry.id, passAtOrBelow: entry.rule.passAtOrBelow },
+        `${entry.id} publishes "${entry.threshold}"`,
+      ).toEqual({ id: entry.id, passAtOrBelow: expect.any(Number) });
+    }
+  });
+
+  it("never leaves a rule with both bounds or neither", () => {
+    for (const entry of aggregates) {
+      const set = [entry.rule.passAtOrBelow, entry.rule.passBelow].filter(
+        (bound) => bound !== undefined,
+      );
+      expect(set, `${entry.id}`).toHaveLength(1);
+    }
   });
 });

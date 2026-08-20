@@ -60,15 +60,11 @@ const crawlProjectionSchema = z
     fetchUrl: boundedUrl,
     status: z.number().int().min(100).max(599).nullable(),
     finalStatus: z.number().int().min(100).max(599).nullable(),
-    redirectChain: z
-      .array(boundedUrl)
-      .max(CRAWL_BUDGET.maxRedirects),
+    redirectChain: z.array(boundedUrl).max(CRAWL_BUDGET.maxRedirects),
     canonicalTarget: boundedUrl.nullable(),
     robotsIndexable: z.boolean(),
     robotsDirectives: z
-      .array(
-        z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
-      )
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars))
       .max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectives),
     title: nullableString(CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: nullableString(
@@ -87,9 +83,7 @@ const crawlProjectionSchema = z
     jsonLd: z
       .object({
         types: z
-          .array(
-            z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
-          )
+          .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars))
           .max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
         errorCount: nonnegativeInteger.max(
           CRAWL_PROJECTION_LIMITS.maxJsonLdBlocks,
@@ -135,9 +129,7 @@ const crawlPageExtractSchema = z
   })
   .strict();
 
-const robotsRule = z
-  .string()
-  .max(CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars);
+const robotsRule = z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars);
 const robotsSchema = z
   .object({
     fetched: z.boolean(),
@@ -158,9 +150,7 @@ const robotsSchema = z
           .strict(),
       )
       .max(CRAWL_PROJECTION_LIMITS.maxRobotsGroups),
-    sitemaps: z
-      .array(boundedUrl)
-      .max(CRAWL_PROJECTION_LIMITS.maxSitemaps),
+    sitemaps: z.array(boundedUrl).max(CRAWL_PROJECTION_LIMITS.maxSitemaps),
   })
   .strict();
 const sitemapSchema = z
@@ -170,9 +160,26 @@ const sitemapSchema = z
     subjectUrls: z
       .array(boundedUrl)
       .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
+    /**
+     * Whether the collector read every sitemap this site referenced.
+     *
+     * Required rather than optional: this schema validates what a collection
+     * run just produced, so every write carries it, and an optional boolean
+     * would default the one fact that says "this list is a population" to the
+     * answer nobody measured.
+     */
+    complete: z.boolean(),
+    /** One declared identity per member; see CrawlSitemapProjection. */
+    declaredUrls: z
+      .array(boundedUrl)
+      .max(CRAWL_PROJECTION_LIMITS.maxSitemapUrls),
   })
   .strict()
-  .refine((value) => value.urlCount === value.subjectUrls.length);
+  .refine(
+    (value) =>
+      value.urlCount === value.subjectUrls.length &&
+      value.declaredUrls.length === value.subjectUrls.length,
+  );
 const providerUsageSchema = z
   .record(
     z.string().min(1).max(MAX_PROVIDER_USAGE_KEY_CHARS),
@@ -235,10 +242,7 @@ function invalidCrawlRaw(): never {
 }
 
 function invalidCrawlPageExtract(): never {
-  throw new SourceError(
-    "INVALID_RESPONSE",
-    CRAWL_PAGE_EXTRACT_INVALID_MESSAGE,
-  );
+  throw new SourceError("INVALID_RESPONSE", CRAWL_PAGE_EXTRACT_INVALID_MESSAGE);
 }
 
 function originIdentity(value: string): {

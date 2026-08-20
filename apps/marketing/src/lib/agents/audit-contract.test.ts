@@ -27,7 +27,7 @@ const success = {
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v17",
+        schemaVersion: "seo_audit.sitewide.v18",
         completedAt: "2026-08-12T09:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -56,6 +56,7 @@ const success = {
         sitemapReferencesObserved: 1,
         sitemapFetched: true,
         sitemapUrls: [],
+        sitemapDeclaredUrls: [],
         sitemapUrlsComplete: true,
       },
       records: RECORD_SPECS.map(([id, category], index) => ({

@@ -91,12 +91,25 @@ export interface BulkTrafficEstimationResult {
   readonly rows: readonly DomainTrafficRow[];
   /** Targets the provider returned nothing usable for. */
   readonly unresolvedTargets: readonly string[];
-  readonly costUsd: number;
+  /**
+   * What the provider said this call cost, or null when it did not say.
+   *
+   * Null rather than zero for the same reason every other number here is:
+   * this feeds the seam that exists to reconcile the invoice, and a response
+   * whose shape moved would otherwise report a paid call as free. An
+   * unreconcilable invoice is a worse outcome than a loud gap.
+   */
+  readonly costUsd: number | null;
 }
 
+/** The provider's own success code. Anything else is not a result. */
+const LABS_SUCCESS_STATUS = 20_000;
+
 interface LabsResponse {
+  readonly status_code?: unknown;
   readonly cost?: unknown;
   readonly tasks?: readonly {
+    readonly status_code?: unknown;
     readonly result?: readonly {
       readonly items?: readonly {
         readonly target?: unknown;
@@ -133,6 +146,14 @@ export async function bulkTrafficEstimation(
 ): Promise<BulkTrafficEstimationResult | null> {
   const targets = [...new Set(options.targets)].filter((t) => t.trim() !== "");
   if (targets.length === 0) return null;
+  // No credential, no request. Without this the empty-string default that every
+  // caller falls back to still produces a well-formed Basic header, so a test
+  // that injects a fake SERP client but forgets this one reaches the live paid
+  // endpoint — silently on a machine that has the real credentials in its
+  // environment. The guard belongs here rather than in each caller because it
+  // is the callers forgetting that is the failure mode.
+  if (options.login.trim() === "" || options.password.trim() === "")
+    return null;
 
   const controller = new AbortController();
   const timer = setTimeout(
@@ -162,7 +183,23 @@ export async function bulkTrafficEstimation(
     );
     if (!response.ok) return null;
     const body = (await response.json()) as LabsResponse;
-    const items = body.tasks?.[0]?.result?.[0]?.items ?? [];
+    // HTTP 200 is not provider success. DataForSEO answers authorization
+    // failures, exhausted balance, rate limiting and malformed task parameters
+    // with a 200 carrying an error `status_code`, and the tasks array then has
+    // no `result`. Reading only `response.ok` turns every one of those into
+    // "the provider sized zero domains", which 9.3 would go on to read as a
+    // page one where nothing could be measured — a provider outage wearing a
+    // measurement's clothes. The envelope and the task each carry their own
+    // code and either can fail alone, so both are checked.
+    const task = body.tasks?.[0];
+    if (
+      body.status_code !== LABS_SUCCESS_STATUS ||
+      task === undefined ||
+      task.status_code !== LABS_SUCCESS_STATUS
+    ) {
+      return null;
+    }
+    const items = task.result?.[0]?.items ?? [];
 
     const rows: DomainTrafficRow[] = [];
     const seen = new Set<string>();
@@ -182,7 +219,12 @@ export async function bulkTrafficEstimation(
     return {
       rows,
       unresolvedTargets: targets.filter((t) => !seen.has(t.toLowerCase())),
-      costUsd: typeof body.cost === "number" ? body.cost : 0,
+      costUsd:
+        typeof body.cost === "number" &&
+        Number.isFinite(body.cost) &&
+        body.cost >= 0
+          ? body.cost
+          : null,
     };
   } catch {
     return null;

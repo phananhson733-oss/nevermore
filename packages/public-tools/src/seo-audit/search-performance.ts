@@ -523,9 +523,17 @@ function nonBrandClickShareRecord(
       tested: 0,
       affected: 0,
       observations: [],
+      // Three sentences, because there are three reasons and only one of them
+      // is about the site. A property whose brand is under three characters —
+      // hp.com, 3m.com — loses every term to the length filter and was being
+      // told "no clicks were reported in the window" on a property with
+      // millions of them: a statement about their search performance, made
+      // because of a decision in this function.
       limitation: raw.queriesTruncated
         ? "query_rows_hit_the_row_cap_so_the_reported_total_is_short"
-        : "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
+        : terms.length === 0
+          ? "no_brand_term_long_enough_to_match_on_could_be_derived_from_this_property"
+          : "no_clicks_were_reported_in_the_window_so_there_is_no_split_to_publish",
     };
   }
   return {

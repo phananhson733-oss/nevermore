@@ -249,7 +249,10 @@ function headingShapeFor(
     h2: preset.h2,
     h3: preset.h3,
     substanceWords: preset.substanceWords,
-    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? [],
+    // Null, not `[]`. An absent extract is a measurement this run did not
+    // carry; an empty array is a page with no H3 on it. Collapsing them
+    // published the second sentence whenever the first was true.
+    wordsUnderEachH3: result.targetPageExtract?.wordsUnderEachH3 ?? null,
   };
 }
 
@@ -433,6 +436,11 @@ function projectSiteResources(
     // list here does not read as "we could not measure" — it reads as "this
     // site declares no sitemap URLs", which is a statement about the site.
     sitemapUrls: [...siteResources.sitemapUrls],
+    // The same members as the sitemap spelled them. A1's census sends these to
+    // a provider that answers per exact URL, so dropping them here would leave
+    // the census asking about the trailing-slash-stripped aggregation subject,
+    // which is a different page to Google.
+    sitemapDeclaredUrls: [...siteResources.sitemapDeclaredUrls],
     sitemapUrlsComplete: siteResources.sitemapUrlsComplete,
   };
 }
@@ -636,8 +644,12 @@ export async function handleAgentAuditRequest(
         // that ranks. This comment described that failure while the line below
         // it caused it.
         targetPageUrl: landedTargetUrl(result),
-        // A1's denominator: the pages this site declares it wants indexed.
-        sitemapUrls: result.siteResources.sitemapUrls,
+        // A1's denominator: the pages this site declares it wants indexed,
+        // spelled the way it declared them. `sitemapUrls` beside it is the
+        // aggregation subject with the trailing slash removed, and URL
+        // Inspection answers about exact URLs — asking about the stripped form
+        // asks Google about a page the sitemap never listed.
+        sitemapUrls: result.siteResources.sitemapDeclaredUrls,
         sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
         // The visitor's own spelling, not the lowercase identity: it is echoed
         // back in the evidence, and the match lowercases both sides anyway.
@@ -682,8 +694,22 @@ export async function handleAgentAuditRequest(
       pagePerformanceGap = "provider_unavailable";
     }
     try {
-      const sources = result.targetPageExtract?.declared?.images.sources ?? [];
-      const weighed = await dependencies.readImageWeights?.({ sources });
+      // Undefined when the run carried no extract at all, which is a different
+      // fact from a page that declared no images — and `?? []` was turning the
+      // first into the second, so a missing projection published "the page
+      // declared no images to weigh", an assertion about the page.
+      const sources = result.targetPageExtract?.declared?.images.sources;
+      // Only when a reader exists to have been stopped. With none configured
+      // the honest sentence is still the one about no reader, and saying the
+      // run did not carry the images would blame the crawl for a wiring gap.
+      if (sources === undefined && dependencies.readImageWeights !== undefined) {
+        imageWeightLimitation =
+          "this_run_did_not_carry_the_target_pages_declared_images";
+      }
+      const weighed =
+        sources === undefined
+          ? undefined
+          : await dependencies.readImageWeights?.({ sources });
       if (weighed?.status === "ok") {
         imageWeights = weighed.images;
         imageWeightsComplete = weighed.complete;

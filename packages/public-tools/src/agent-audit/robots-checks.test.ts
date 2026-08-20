@@ -69,6 +69,8 @@ function raw(overrides: {
       fetched: overrides.sitemapFetched ?? true,
       urlCount: (overrides.sitemapUrls ?? []).length,
       subjectUrls: overrides.sitemapUrls ?? [],
+      declaredUrls: overrides.sitemapUrls ?? [],
+      complete: true,
     },
     availability: "available",
     capturedAt: "2026-08-18T00:00:00.000Z",

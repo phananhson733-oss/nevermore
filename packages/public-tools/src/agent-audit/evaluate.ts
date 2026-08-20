@@ -232,7 +232,14 @@ function issueSeverity(
     // limit": there is no number to compare, which is a gap, not a pass.
     if (aggregate === null) return "unmeasured";
     if (rule.kind === "aggregate-max") {
-      if (aggregate <= rule.passAtOrBelow) return "none";
+      const passes =
+        rule.passAtOrBelow !== undefined
+          ? aggregate <= rule.passAtOrBelow
+          : rule.passBelow !== undefined
+            ? aggregate < rule.passBelow
+            : // Neither bound set is a catalogue defect, not a passing site.
+              false;
+      if (passes) return "none";
       if (rule.failAbove === undefined || aggregate > rule.failAbove) {
         return "full";
       }

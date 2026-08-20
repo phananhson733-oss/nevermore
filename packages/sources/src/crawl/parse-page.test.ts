@@ -795,3 +795,107 @@ describe("parsePage on-page facts", () => {
     expect(page.onPage.externalLinks.total).toBe(0);
   });
 });
+
+describe("the render-blocking region", () => {
+  const blocking = (html: string) => parsePage(html, BASE).onPage.renderBlocking;
+
+  it("reads an explicit head", () => {
+    expect(
+      blocking(
+        `<html><head><link rel=stylesheet href=/a.css><script src=/a.js></script></head><body>x`,
+      ),
+    ).toEqual({ stylesheets: 1, scripts: 1, measured: true });
+  });
+
+  it("reads a minified document that dropped its optional head tags", () => {
+    // `<head>` and `</head>` are both optional in HTML5 and html-minifier's
+    // removeOptionalTags strips them by default. Matching only the explicit
+    // element and falling back to an empty string reported zero blocking
+    // resources for a document carrying two — a detector failing toward a pass
+    // on a site doing exactly the thing it looks for.
+    expect(
+      blocking(
+        `<!doctype html><html><title>x</title><link rel=stylesheet href=/app.css><script src=/app.js></script><body>hi`,
+      ),
+    ).toEqual({ stylesheets: 1, scripts: 1, measured: true });
+  });
+
+  it("says it could not measure rather than reporting a zero", () => {
+    // No head element and no body either: a truncated or non-HTML document.
+    // Guessing where the head ended would invent a measurement.
+    expect(blocking(`<p>just a fragment</p>`)).toEqual({
+      stylesheets: 0,
+      scripts: 0,
+      measured: false,
+    });
+  });
+
+  it("still ignores what does not block the first paint", () => {
+    expect(
+      blocking(
+        `<html><head><link rel=stylesheet media=print href=/p.css><script defer src=/d.js></script><script type=module src=/m.js></script></head><body>x`,
+      ),
+    ).toEqual({ stylesheets: 0, scripts: 0, measured: true });
+  });
+});
+
+describe("hreflang alternates", () => {
+  const alternates = (html: string) => parsePage(html, BASE).onPage;
+
+  it("keeps an alternate whose rel carries surrounding whitespace", () => {
+    // `rel=" alternate"` is a valid declaration, and an untrimmed exact match
+    // dropped it — toward a clean result, since a dropped alternate is one
+    // fewer target that can be found broken.
+    const page = alternates(
+      `<html><head><link rel=" alternate" hreflang="fr" href="/fr/"></head><body>x`,
+    );
+
+    expect(page.hreflangAlternates).toEqual([
+      { lang: "fr", href: "https://example.com/fr/" },
+    ]);
+  });
+
+  it("carries a large international cluster without cutting it", () => {
+    const links = Array.from(
+      { length: 40 },
+      (_, i) => `<link rel="alternate" hreflang="l${i}" href="/l${i}/">`,
+    ).join("");
+    const page = alternates(`<html><head>${links}</head><body>x`);
+
+    // The list used to stop at 32, a cap borrowed from the robots projection,
+    // so a forty-locale cluster with a break at position thirty-five published
+    // "100% valid targets" over the first thirty-two.
+    expect(page.hreflangAlternates).toHaveLength(40);
+    expect(page.hreflangAlternatesTruncated).toBe(false);
+  });
+
+  it("does not claim truncation at exactly the cap", () => {
+    // The flag used to be set on retaining the last alternate it was allowed
+    // to keep, without establishing that another existed — so a page declaring
+    // exactly the cap was told the crawl had dropped some of its alternates.
+    // That is a sentence about the site the run had not established.
+    const exactly = CRAWL_PROJECTION_LIMITS.maxHreflangAlternates;
+    const links = Array.from(
+      { length: exactly },
+      (_, i) => `<link rel="alternate" hreflang="l${i}" href="/l${i}/">`,
+    ).join("");
+    const page = alternates(`<html><head>${links}</head><body>x`);
+
+    expect(page.hreflangAlternates).toHaveLength(exactly);
+    expect(page.hreflangAlternatesTruncated).toBe(false);
+  });
+
+  it("says so when its own cap does cut the list", () => {
+    const over = CRAWL_PROJECTION_LIMITS.maxHreflangAlternates + 5;
+    const links = Array.from(
+      { length: over },
+      (_, i) => `<link rel="alternate" hreflang="l${i}" href="/l${i}/">`,
+    ).join("");
+    const page = alternates(`<html><head>${links}</head><body>x`);
+
+    expect(page.hreflangAlternates).toHaveLength(
+      CRAWL_PROJECTION_LIMITS.maxHreflangAlternates,
+    );
+    expect(page.hreflangAlternatesTruncated).toBe(true);
+  });
+});

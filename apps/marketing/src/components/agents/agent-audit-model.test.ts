@@ -29,7 +29,7 @@ const data: AgentAuditSuccessData = {
     persistence: "none",
     source: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
@@ -58,6 +58,7 @@ const data: AgentAuditSuccessData = {
       sitemapReferencesObserved: 0,
       sitemapFetched: false,
       sitemapUrls: [],
+      sitemapDeclaredUrls: [],
       sitemapUrlsComplete: true,
     },
     records: [],
@@ -200,7 +201,7 @@ describe("buildAgentAuditViewModel", () => {
     expect(model.provenance).toMatchObject({
       availability: "unavailable",
       sourceTool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       persistence: "none",
     });
   });

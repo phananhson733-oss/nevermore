@@ -177,7 +177,7 @@ function auditData({
       persistence: "none",
       source: {
         tool: "seo_audit",
-        schemaVersion: "seo_audit.sitewide.v17",
+        schemaVersion: "seo_audit.sitewide.v18",
         completedAt: "2026-08-13T00:00:00.000Z",
         cache: { status: "miss", capturedAt: null },
       },
@@ -207,6 +207,7 @@ function auditData({
         sitemapReferencesObserved: availability === "unavailable" ? 0 : 1,
         sitemapFetched: availability !== "unavailable",
         sitemapUrls: [],
+        sitemapDeclaredUrls: [],
         sitemapUrlsComplete: true,
       },
       records,

@@ -8,11 +8,15 @@ import type { SeoAuditRecord } from "./types.ts";
 /**
  * What Google said about one declared URL.
  *
- * Only the typed fields. `coverageState` is not here on purpose: it is the
- * only field that separates "discovered, not indexed" from the other exclusion
- * reasons, and the API types it as a bare localized string with no
- * enumeration. Reading it would let a Google wording change turn A3 into a
- * silent, permanent pass — so A3 stays unbuilt rather than built on sand.
+ * Only the typed fields. `coverageState` is not here on purpose: the API types
+ * it as a bare string with no enumeration, so a detector keyed on its wording
+ * would turn A3 into a silent pass the moment Google rephrased it.
+ *
+ * It is not, however, the only field that separates "discovered, not indexed"
+ * from the other exclusion reasons — Google defines that state as found but
+ * not yet crawled, and `lastCrawlTime` is a typed timestamp documented as
+ * absent when a URL was never crawled successfully. A3 is unbuilt, not
+ * unbuildable, and the boundary it publishes now says so.
  */
 export interface IndexCoverageEntry {
   readonly url: string;
@@ -26,7 +30,8 @@ export type IndexCoverageGap =
   | "no_sitemap_urls_declared"
   | "quota_exhausted"
   | "not_authorized"
-  | "provider_unavailable";
+  | "provider_unavailable"
+  | "census_larger_than_one_run";
 
 const GAP_LIMITATION: Readonly<Record<IndexCoverageGap, string>> = {
   source_not_configured: "no_index_status_source_was_configured_for_this_run",
@@ -36,6 +41,8 @@ const GAP_LIMITATION: Readonly<Record<IndexCoverageGap, string>> = {
   quota_exhausted: "the_propertys_url_inspection_quota_was_already_spent",
   not_authorized: "this_grant_does_not_cover_url_inspection_for_this_property",
   provider_unavailable: "the_index_status_source_did_not_finish_this_run",
+  census_larger_than_one_run:
+    "this_sitemap_declares_more_urls_than_one_run_can_ask_google_about",
 };
 
 /**

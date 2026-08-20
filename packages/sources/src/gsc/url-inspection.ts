@@ -42,14 +42,37 @@ const BATCH_INTERVAL_MS = Math.ceil(
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
+ * How many URLs a census of the given length of time can actually cover.
+ *
+ * Pacing is `CONCURRENCY` URLs every `BATCH_INTERVAL_MS`, so the budget buys a
+ * fixed number of batches and nothing else. Exported because the caller sizes
+ * its own population cap against it: the two numbers used to be independent —
+ * a 500-URL publication cap and a 60-second budget that covers about 300 — and
+ * every site between them spent three hundred calls of a quota shared with the
+ * customer's other tools, then returned unavailable.
+ */
+export function maxCensusUrls(budgetMs: number): number {
+  if (!Number.isFinite(budgetMs) || budgetMs <= 0) return 0;
+  return Math.floor(budgetMs / BATCH_INTERVAL_MS) * CONCURRENCY;
+}
+
+/**
  * Google's verdict enumeration, as the discovery document types it.
  *
  * Every one of these is a real enum in the API. `coverageState` — the field
- * that would name "Discovered, currently not indexed" — is deliberately NOT
- * read: the discovery document types it as a bare string with no enumeration,
- * it is a localized UI label, and Google reworded these labels wholesale in
- * the 2023 Page Indexing rework. A detector keyed on it fails silently toward
- * "indexed", which is the direction that hides a broken site.
+ * whose wording names "Discovered, currently not indexed" — is deliberately
+ * NOT read: the discovery document types it as a bare string with no
+ * enumeration while every sibling here carries a full one, so a detector keyed
+ * on its wording breaks silently toward "indexed", the direction that hides a
+ * broken site.
+ *
+ * Two things this comment used to claim, and should not have. The field is not
+ * localized in the sense that mattered: `languageCode` on the request is set
+ * by the caller and defaults to en-US, so the wording does not follow the
+ * property owner's locale. And no specific rewording event supports the risk —
+ * the Coverage report was renamed Page indexing, which is not the same as the
+ * API's strings changing. The untyped premise carries this on its own; the
+ * embellishments did not survive checking.
  */
 export type UrlIndexVerdict =
   | "VERDICT_UNSPECIFIED"
@@ -69,7 +92,9 @@ export interface UrlIndexStatus {
 export type UrlInspectionFailureReason =
   | "quota_exhausted"
   | "not_authorized"
-  | "provider_unavailable";
+  | "provider_unavailable"
+  /** More URLs than this run's wall-clock budget can pace. Nothing was spent. */
+  | "census_larger_than_one_run";
 
 export type UrlInspectionResult =
   | {
@@ -135,6 +160,14 @@ export async function inspectUrlIndexStatus(
   const now = options.now ?? (() => Date.now());
   const startedAt = now();
   const budgetMs = options.budgetMs ?? 60_000;
+
+  // Decided before anything is spent. Discovering mid-run that the census
+  // cannot finish costs the property hundreds of calls against a per-site
+  // ceiling shared with everything else the customer points at it, and buys a
+  // result that was never going to be publishable.
+  if (options.urls.length > maxCensusUrls(budgetMs)) {
+    return { status: "unavailable", reason: "census_larger_than_one_run" };
+  }
 
   const statuses: UrlIndexStatus[] = [];
   let unanswered = 0;
@@ -202,15 +235,17 @@ export async function inspectUrlIndexStatus(
     );
     const elapsed = now() - batchStartedAt;
     const pause = BATCH_INTERVAL_MS - elapsed;
-    // Only sleep if the wait itself still leaves budget to do something after
-    // it. Sleeping right up to the ceiling burns the run's remaining time and
-    // then returns unavailable anyway, having spent the quota on the batches
-    // before it for nothing.
-    if (
-      pause > 0 &&
-      start + CONCURRENCY < options.urls.length &&
-      now() - startedAt + pause < budgetMs
-    ) {
+    if (pause > 0 && start + CONCURRENCY < options.urls.length) {
+      // A pause that does not fit is the end of the run, not a pause to skip.
+      // Skipping it used to leave the loop running: the top-of-loop guard only
+      // trips once the budget is already spent, so the last second fired
+      // batches back to back at roughly 1500 a minute against a 600-a-minute
+      // per-site ceiling shared with the customer's other tools — and then
+      // returned unavailable anyway. Overrunning someone else's quota to fail
+      // faster is not a trade worth making.
+      if (now() - startedAt + pause >= budgetMs) {
+        return { status: "unavailable", reason: "provider_unavailable" };
+      }
       await (options.sleep ?? defaultSleep)(pause);
     }
   }

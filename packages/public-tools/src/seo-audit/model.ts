@@ -1,9 +1,9 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
-import { measurePageSimilarity } from "./page-similarity.ts";
 import {
-  SOFT_404_BODY_FLOOR_UNITS,
-  softNotFoundVerdict,
-} from "./soft-404.ts";
+  measurePageSimilarity,
+  NEAR_DUPLICATE_SIMILARITY,
+} from "./page-similarity.ts";
+import { SOFT_404_BODY_FLOOR_UNITS, softNotFoundVerdict } from "./soft-404.ts";
 import { CRAWL_PROJECTION_LIMITS, type ParsedOnPageFacts } from "@sf/sources";
 import {
   searchCrawlerMayFetch,
@@ -236,9 +236,7 @@ function imageExtension(src: string | null): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
-function readableFormats(
-  assets: ParsedOnPageFacts | null,
-): readonly string[] {
+function readableFormats(assets: ParsedOnPageFacts | null): readonly string[] {
   return assets?.imageFormats ?? [];
 }
 
@@ -305,23 +303,24 @@ function isOriginRoot(url: string): boolean {
  * from this table is not judged — assuming a type is complete because we have
  * no opinion about it would report every unlisted type as correct.
  */
-const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
-  product: ["name"],
-  offer: ["price", "priceCurrency"],
-  article: ["headline"],
-  blogposting: ["headline"],
-  newsarticle: ["headline"],
-  faqpage: ["mainEntity"],
-  question: ["name", "acceptedAnswer"],
-  howto: ["name", "step"],
-  recipe: ["name", "recipeIngredient", "recipeInstructions"],
-  event: ["name", "startDate", "location"],
-  jobposting: ["title", "datePosted", "hiringOrganization"],
-  breadcrumblist: ["itemListElement"],
-  softwareapplication: ["name"],
-  organization: ["name"],
-  localbusiness: ["name", "address"],
-};
+const REQUIRED_JSON_LD_PROPERTIES: Readonly<Record<string, readonly string[]>> =
+  {
+    product: ["name"],
+    offer: ["price", "priceCurrency"],
+    article: ["headline"],
+    blogposting: ["headline"],
+    newsarticle: ["headline"],
+    faqpage: ["mainEntity"],
+    question: ["name", "acceptedAnswer"],
+    howto: ["name", "step"],
+    recipe: ["name", "recipeIngredient", "recipeInstructions"],
+    event: ["name", "startDate", "location"],
+    jobposting: ["title", "datePosted", "hiringOrganization"],
+    breadcrumblist: ["itemListElement"],
+    softwareapplication: ["name"],
+    organization: ["name"],
+    localbusiness: ["name", "address"],
+  };
 
 /**
  * Smallest declared edge that could plausibly be the image a reader came for.
@@ -362,12 +361,33 @@ function buildRecords(
     onPageByUrl.get(page.url) ?? null;
   const hreflangTargetsOf = (page: SeoAuditPage) =>
     onPageOf(page)?.hreflangAlternates ?? [];
+  /** Alternates this run fetched and found answering 4xx or 5xx. */
+  const brokenHreflangTargetsOf = (page: SeoAuditPage) =>
+    hreflangTargetsOf(page).filter((alternate) => {
+      const target = collectedBySubject.get(
+        subjectUrlOf(alternate.href) ?? alternate.href,
+      );
+      return (
+        target !== undefined &&
+        target.finalStatus !== null &&
+        target.finalStatus >= 400
+      );
+    });
+  /** Any page whose alternates list was cut short by the crawl's own cap. */
+  const anyHreflangTruncated = (): boolean =>
+    raw.pages.some((entry) => entry.onPage?.hreflangAlternatesTruncated === true);
   /** JSON-LD nodes whose type this run has a reviewed opinion about. */
   const judgedJsonLdNodes = (page: SeoAuditPage) =>
-    (onPageOf(page)?.jsonLdProperties ?? []).filter(
-      (node) =>
-        REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !== undefined,
-    ).map((node) => ({ type: node.type.trim().toLowerCase(), keys: node.keys }));
+    (onPageOf(page)?.jsonLdProperties ?? [])
+      .filter(
+        (node) =>
+          REQUIRED_JSON_LD_PROPERTIES[node.type.trim().toLowerCase()] !==
+          undefined,
+      )
+      .map((node) => ({
+        type: node.type.trim().toLowerCase(),
+        keys: node.keys,
+      }));
   /**
    * Lowercased, punctuation-free, whitespace-collapsed.
    *
@@ -408,9 +428,6 @@ function buildRecords(
       raw.projection.headings.length < CRAWL_PROJECTION_LIMITS.maxHeadings
     );
   };
-
-  /** The published bar: at or above this, two pages compete with each other. */
-  const NEAR_DUPLICATE_THRESHOLD = 0.7;
 
   const htmlPages = pages.filter(
     (page) =>
@@ -473,7 +490,8 @@ function buildRecords(
     raw.robots.groups.length >= CRAWL_PROJECTION_LIMITS.maxRobotsGroups ||
     raw.robots.groups.some(
       (group) =>
-        group.disallow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
+        group.disallow.length >=
+          CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup ||
         group.allow.length >= CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup,
     );
   const robotsReadable = raw.robots.fetched && !robotsTruncated;
@@ -489,7 +507,9 @@ function buildRecords(
   // enqueues the seed at depth 0 and never lowers it, so the ONE page the
   // page-scope check is about could never fail — and any page reached first
   // from the seed was judged while the seed itself was not.
-  const belowRootHtmlPages = htmlPages.filter((page) => !isOriginRoot(page.url));
+  const belowRootHtmlPages = htmlPages.filter(
+    (page) => !isOriginRoot(page.url),
+  );
   // A page with no images cannot fail an image check, and counting it as
   // tested would report a text-only site as fully covered rather than as not
   // applicable.
@@ -1016,7 +1036,8 @@ function buildRecords(
             reviewed_range: `${TITLE_LENGTH.min}-${TITLE_LENGTH.max}`,
           }),
         ),
-      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
+      limitation:
+        "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "meta_description_length_outside_range",
@@ -1041,7 +1062,8 @@ function buildRecords(
             reviewed_range: `${DESCRIPTION_LENGTH.min}-${DESCRIPTION_LENGTH.max}`,
           }),
         ),
-      limitation: "display_width_approximation_rendered_pixel_width_not_measured",
+      limitation:
+        "display_width_approximation_rendered_pixel_width_not_measured",
     }),
     record({
       id: "page_without_outbound_internal_link",
@@ -1168,7 +1190,8 @@ function buildRecords(
             observed_click_depth: page.depth,
           }),
         ),
-      limitation: "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
+      limitation:
+        "breadcrumb_markup_presence_only_not_compared_to_visible_trail",
     }),
     record({
       // D4 and 5.1 read the same condition at two scales. `alt=""` counts as
@@ -1206,9 +1229,7 @@ function buildRecords(
       unit: "site_resource",
       population: "site_resource",
       tested: pagesWithImages.length,
-      ...(pagesWithImages.length === 0
-        ? { state: "unverified" as const }
-        : {}),
+      ...(pagesWithImages.length === 0 ? { state: "unverified" as const } : {}),
       observations:
         pagesWithImages.length === 0
           ? []
@@ -1245,7 +1266,9 @@ function buildRecords(
             modern_format_share: Number(
               (1 - legacyFormatShare(onPageOf(page))).toFixed(4),
             ),
-            legacy_format_share: Number(legacyFormatShare(onPageOf(page)).toFixed(4)),
+            legacy_format_share: Number(
+              legacyFormatShare(onPageOf(page)).toFixed(4),
+            ),
             images_with_readable_format: readable.length,
             images_on_page: onPageOf(page)?.images.total ?? 0,
           });
@@ -1270,9 +1293,12 @@ function buildRecords(
         })
         .map((page) =>
           pageObservation(page, {
-            open_graph_title: (onPageOf(page)?.openGraph.title ?? null) !== null,
-            open_graph_description: (onPageOf(page)?.openGraph.description ?? null) !== null,
-            open_graph_image: (onPageOf(page)?.openGraph.image ?? null) !== null,
+            open_graph_title:
+              (onPageOf(page)?.openGraph.title ?? null) !== null,
+            open_graph_description:
+              (onPageOf(page)?.openGraph.description ?? null) !== null,
+            open_graph_image:
+              (onPageOf(page)?.openGraph.image ?? null) !== null,
           }),
         ),
       limitation: "static_html_meta_tags_only",
@@ -1304,7 +1330,11 @@ function buildRecords(
       category: "indexability",
       tested: htmlPages.length,
       observations: htmlPages.flatMap((page) => {
-        const verdict = softNotFoundVerdict(page, onPageOf(page)?.textMetrics ?? null, rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null);
+        const verdict = softNotFoundVerdict(
+          page,
+          onPageOf(page)?.textMetrics ?? null,
+          rawByUrl.get(page.url)?.projection.bodyExcerpt ?? null,
+        );
         return verdict === null
           ? []
           : [
@@ -1328,20 +1358,22 @@ function buildRecords(
       id: "hreflang_target_http_error",
       category: "indexability",
       population: "conditional_subset",
+      // Truncation costs the clean verdict and nothing else. The published
+      // rule is "no alternate returns 4xx or 5xx", a claim about all of them,
+      // so a clean retained prefix cannot stand for the set — it used to make
+      // the record `not_observed`, which the evaluator awards a full-score
+      // PASS with the truncation note sitting beside the pass rather than
+      // preventing it. A broken alternate found inside the prefix needs no
+      // full population, so those pages stay tested: the first attempt at this
+      // dropped them too, and turned a found Blocker into "not tested".
       tested: htmlPages.filter(
-        (page) => hreflangTargetsOf(page).length > 0,
+        (page) =>
+          hreflangTargetsOf(page).length > 0 &&
+          (onPageOf(page)?.hreflangAlternatesTruncated !== true ||
+            brokenHreflangTargetsOf(page).length > 0),
       ),
       observations: htmlPages.flatMap((page) => {
-        const broken = hreflangTargetsOf(page).filter((alternate) => {
-          const target = collectedBySubject.get(
-            subjectUrlOf(alternate.href) ?? alternate.href,
-          );
-          return (
-            target !== undefined &&
-            target.finalStatus !== null &&
-            target.finalStatus >= 400
-          );
-        });
+        const broken = brokenHreflangTargetsOf(page);
         return broken.length === 0
           ? []
           : [
@@ -1357,7 +1389,13 @@ function buildRecords(
               }),
             ];
       }),
-      limitation: "hreflang_targets_outside_this_crawl_were_not_classified",
+      // A truncated list is a different gap from an unfetched target, and the
+      // published rule ("no alternate returns 4xx or 5xx") is a claim about
+      // all of them. Naming the truncation takes precedence, because the other
+      // sentence would let a prefix stand in for the set.
+      limitation: anyHreflangTruncated()
+        ? "a_page_declared_more_hreflang_alternates_than_this_crawl_keeps"
+        : "hreflang_targets_outside_this_crawl_were_not_classified",
     }),
     record({
       // 4.4. Published as a rendering-weight hint with no threshold, so this
@@ -1412,11 +1450,19 @@ function buildRecords(
       // readable without running anything.
       id: "render_blocking_head_resource",
       category: "structure",
-      population: "every_collected_page",
-      tested: htmlPages,
+      // Narrower than every collected page now: a document whose head region
+      // could not be located is not a page with nothing blocking its render.
+      population: "conditional_subset",
+      // Only pages whose head region could actually be located. `<head>` and
+      // `</head>` are optional in HTML5 and minifiers strip them, and a page
+      // whose head could not be found used to contribute a zero — which reads
+      // as "nothing blocks rendering here" about a document nobody parsed.
+      tested: htmlPages.filter(
+        (page) => onPageOf(page)?.renderBlocking?.measured === true,
+      ),
       observations: htmlPages.flatMap((page) => {
         const blocking = onPageOf(page)?.renderBlocking;
-        if (blocking === undefined) return [];
+        if (blocking === undefined || !blocking.measured) return [];
         const total = blocking.stylesheets + blocking.scripts;
         return total === 0
           ? []
@@ -1503,13 +1549,14 @@ function buildRecords(
       // Tested population: pages with enough distinctive text left to score.
       population: "conditional_subset",
       tested: htmlPages.filter(
-        (page) => similarityByUrl.get(page.url)?.similarity !== null &&
+        (page) =>
+          similarityByUrl.get(page.url)?.similarity !== null &&
           similarityByUrl.get(page.url) !== undefined,
       ),
       observations: htmlPages.flatMap((page) => {
         const measured = similarityByUrl.get(page.url);
         const score = measured?.similarity ?? null;
-        if (score === null || score < NEAR_DUPLICATE_THRESHOLD) return [];
+        if (score === null || score < NEAR_DUPLICATE_SIMILARITY) return [];
         return [
           pageObservation(page, {
             similarity_to_nearest_page: Math.round(score * 100) / 100,
@@ -1520,7 +1567,24 @@ function buildRecords(
           }),
         ];
       }),
-      limitation: "similarity_measured_on_collected_paragraphs_after_chrome",
+      // Names the gap when there is one, rather than always describing the
+      // method. A page dropped because the exact pass ran out of comparisons
+      // is a different fact from a page with too little text, and both are
+      // different from "everything was measured" — reporting one sentence for
+      // all three told a reader the run was complete when it was not.
+      limitation: htmlPages.some(
+        (page) =>
+          similarityByUrl.get(page.url)?.unscored ===
+          "too_many_similar_pages_to_compare_them_all_exactly",
+      )
+        ? "some_pages_had_too_many_similar_siblings_to_compare_them_all_exactly"
+        : htmlPages.some(
+              (page) =>
+                similarityByUrl.get(page.url)?.unscored ===
+                "most_of_this_page_is_text_repeated_across_the_site",
+            )
+          ? "some_pages_are_mostly_text_repeated_across_the_site_so_chrome_and_duplication_cannot_be_separated"
+          : "similarity_measured_on_collected_paragraphs_after_chrome",
     }),
     record({
       id: "faq_schema_question_not_on_page",
@@ -1661,12 +1725,27 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
       robotsGroupsObserved: raw.robots.groups.length,
       sitemapReferencesObserved: raw.robots.sitemaps.length,
       sitemapFetched: raw.sitemap.fetched,
-      sitemapUrls: raw.sitemap.subjectUrls.slice(
+      sitemapUrls: raw.sitemap.subjectUrls.slice(0, SITEMAP_URLS_PUBLISHED_CAP),
+      sitemapDeclaredUrls: raw.sitemap.declaredUrls.slice(
         0,
         SITEMAP_URLS_PUBLISHED_CAP,
       ),
+      // Two separate facts, and the length alone was only ever the first.
+      // "The survivors fit inside the publication cap" says nothing about the
+      // children that never answered, the caps that stopped the walk, or the
+      // members that were dropped on the way here — and index coverage divides
+      // by this list against a rail that reports a Blocker below 70%. A site
+      // whose sitemap index lost four of five children to timeouts published
+      // a measured 100% over the ninth of its pages that replied.
+      // Both lists have to fit, because the census divides by the declared one
+      // and every other consumer groups by the subject one. They are separate
+      // populations now — `/x` and `/x/` are one subject and two declarations —
+      // so the declared list is the one that can be longer, and it is the one
+      // A1 counts.
       sitemapUrlsComplete:
-        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
+        raw.sitemap.complete &&
+        raw.sitemap.subjectUrls.length <= SITEMAP_URLS_PUBLISHED_CAP &&
+        raw.sitemap.declaredUrls.length <= SITEMAP_URLS_PUBLISHED_CAP,
     },
     records: buildRecords(raw, pages, inspectedTarget?.subjectUrl ?? null),
     pages,
@@ -1677,7 +1756,7 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v17",
+      schemaVersion: "seo_audit.sitewide.v18",
       scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },

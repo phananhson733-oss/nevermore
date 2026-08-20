@@ -380,7 +380,7 @@ function validProjectionFor(
         sitemaps: [],
       };
     case "crawl.sitemap.v1":
-      return { fetched: true, urlCount: 0, subjectUrls: [] };
+      return { fetched: true, urlCount: 0, subjectUrls: [], declaredUrls: [], complete: true };
     case "gsc.page.v1":
       return {
         current28d: { clicks: 1, impressions: 10, position: 2 },
@@ -3757,5 +3757,50 @@ describe("dataForSeoTargetForOrigin", () => {
     ["https://example.com.", "example.com"],
   ])("normalizes %s to %s exactly like the adapter", (origin, expected) => {
     expect(dataForSeoTargetForOrigin(origin)).toBe(expected);
+  });
+});
+
+/**
+ * The historical sitemap reader accepts two shapes and no others.
+ *
+ * Rows written before these fields existed carry neither; rows written since
+ * carry both. Making them independently optional admitted a third shape no
+ * producer can emit — a completeness assertion surviving without the
+ * population it certifies, which is precisely the claim the flag exists to
+ * make impossible.
+ */
+describe("half-migrated sitemap observations are refused", () => {
+  const SITEMAP = OBSERVATION_FIXTURES.find(
+    (fixture) => fixture.metricKey === "crawl.sitemap.v1",
+  )!;
+  const withValue = (value: unknown) =>
+    runObservationValidationFixture(
+      "crawl",
+      availableObservationRow(SITEMAP, { value_json: value as never }),
+    );
+  const base = { fetched: true, urlCount: 0, subjectUrls: [] };
+
+  it("accepts a row that predates both fields", async () => {
+    const result = await withValue(base);
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a row that carries both", async () => {
+    const result = await withValue({
+      ...base,
+      declaredUrls: [],
+      complete: true,
+    });
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a completeness claim with no declared population behind it", async () => {
+    const result = await withValue({ ...base, complete: true });
+    expect(result.contextBuild).not.toHaveBeenCalled();
+  });
+
+  it("refuses declared identities with no completeness fact beside them", async () => {
+    const result = await withValue({ ...base, declaredUrls: [] });
+    expect(result.contextBuild).not.toHaveBeenCalled();
   });
 });

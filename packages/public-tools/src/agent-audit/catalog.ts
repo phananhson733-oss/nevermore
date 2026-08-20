@@ -190,49 +190,65 @@ const BLOCKER_CAPABLE = new Set([
 export const UNMEASURABLE_HERE: Readonly<
   Record<string, AgentAuditLocalizedText>
 > = {
-  // Not a budget or an authorization problem, so connecting Search Console
-  // does not move either one: Google publishes no API for the Crawl Stats
-  // report at all. The Search Console API exposes exactly eleven methods —
-  // sites, sitemaps, searchanalytics.query, urlInspection and the
-  // mobile-friendly test — and none of them return crawl volume. The BigQuery
-  // bulk export carries search performance only.
+  // These five say why a check produces nothing, and a reader acts on that
+  // sentence — so each has to separate "no evidence exists" from "we have not
+  // built it". The earlier wording collapsed the two, and for three of the
+  // five the collapse was in the wrong direction: the evidence is already in
+  // this product's hands.
+  //
+  // What is genuinely absent is a Crawl Stats API. The report's own request
+  // totals, purposes and Googlebot breakdowns appear in no discovery document
+  // and no BigQuery export.
   B4: l(
-    "Google publishes no API for crawl statistics, so the only crawl volume this product could chart is its own — a number about our crawler, not Google's.",
-    "Google 没有为抓取统计提供任何 API，因此本产品唯一能记录的抓取量是它自己的——那是关于我们爬虫的数字，不是 Google 的。",
+    "Google publishes no API for its crawl statistics, so the totals that report shows cannot be reconstructed. A lower bound on Google's own successful crawls is derivable from the index inspections this product already makes, and is not built yet.",
+    "Google 没有为抓取统计提供 API，因此该报表展示的总量无法重建。Google 自身成功抓取的下限可以从本产品已在调用的索引检查中推导，但尚未实现。",
   ),
+  // Google defines the two purposes by whether a URL had ever been crawled
+  // before, which is a question the typed `lastCrawlTime` answers directly
+  // across two censuses. What cannot be reproduced is the Crawl Stats request
+  // ratio itself: it counts requests, including ones that never reach the
+  // origin, while this would count URL transitions.
   B5: l(
-    "Separating discovery crawls from refresh crawls needs server logs or the Crawl Stats report, and Google publishes no API for the latter.",
-    "区分发现型抓取与刷新型抓取需要服务器日志或抓取统计报表，而后者 Google 没有提供 API。",
+    "Google's discovery and refresh labels exist only in the Crawl Stats report, which has no API, so that ratio cannot be reproduced. Whether a URL was crawled for the first time or recrawled is observable from successive index inspections, and is not built yet.",
+    "Google 的「发现」与「刷新」标签只存在于没有 API 的抓取统计报表中，因此该比例无法复现。某个 URL 是首次被抓还是重新抓取，可以从连续的索引检查中观察，但尚未实现。",
   ),
-  // The impressions half is trivially available. The classification half is
-  // not obtainable at any budget: every page-observable proxy misclassifies in
-  // a direction that corrupts a published threshold. Article/BlogPosting
-  // over-covers so hard that a purely evergreen blog classifies near 100% and
-  // trips the ">60% is Warning" rail; narrowing to NewsArticle under-covers so
-  // hard that pricing, event, seasonal and "best X of 2026" pages — all
-  // genuinely time-sensitive, none of them declaring it — fall out.
+  // The honest objection is not evidence, it is definition. "Time-sensitive"
+  // fuses demand-perishable content (news, events — measurable from impression
+  // decay) with fact-perishable content (pricing, specs — flat demand, stale
+  // contents). No signal separates a concept that has not been separated. And
+  // the published 60% rail would flag a news publisher for publishing news, so
+  // measurement is not the only thing between this check and shipping.
   E5: l(
-    "Whether content is time-sensitive is a claim about its subject, and no fact on the page asserts it. Every available proxy misreads a correct site in one direction or the other.",
-    "内容是否具有时效性是关于主题的判断，页面上没有任何事实能证实它。所有可用的替代信号都会在某一个方向上误判一个本来正常的站点。",
+    "Time-sensitivity is two properties under one name — content whose demand decays and content whose facts expire — and no single signal separates them. The published rail would also flag a news publisher for publishing news.",
+    "「时效性」把两件事合成了一个名字：需求会衰减的内容，和事实会过期的内容。没有任何单一信号能把它们分开。而且这条公布的阈值会因为一家新闻站在做新闻就判它有问题。",
   ),
-  // Blocked by typing, not by quota. `coverageState` is the only field that
-  // carries this distinction and the discovery document types it as a bare
-  // string with no enum, while every sibling field (verdict, indexingState,
-  // pageFetchState) carries a full one. It is a localized UI label, and Google
-  // reworded these labels wholesale in the 2023 Page Indexing rework. A
-  // detector keyed on it does not break loudly — it reports 0%, which is a
-  // pass, in the exact direction that hides a broken site.
+  // `coverageState` is genuinely untyped: the discovery document gives it
+  // `type: string` with no enum while `verdict`, `indexingState`,
+  // `pageFetchState` and `robotsTxtState` all carry full enumerations. What
+  // was wrong was calling it the only field that names this state. Google
+  // defines "Discovered - currently not indexed" as found but not yet
+  // crawled, and `lastCrawlTime` — a typed timestamp, documented as absent
+  // when a URL was never crawled successfully — answers exactly that. It is
+  // already parsed a few lines from the comment that said it could not be.
+  //
+  // The earlier sentence also called the field localized. The request's
+  // `languageCode` is set by the caller and defaults to en-US, so the wording
+  // does not follow the property owner's locale.
   A3: l(
-    "The only field naming \"discovered, currently not indexed\" is an untyped, localized UI label with no enumeration, so a detector keyed on it fails silently toward a pass whenever Google rewords it.",
-    "唯一能表达「已发现但尚未编入索引」的字段是没有枚举的本地化界面文案，一旦 Google 改写措辞，依赖它的检测器就会静默地滑向「通过」。",
+    "Google's own labelled field for this state is an untyped string with no enumeration, so no detector should key on its wording. The state it names — found but not yet crawled — is derivable from the typed crawl timestamp this product already reads, and is not built yet.",
+    "Google 用来表达该状态的字段是没有枚举的无类型字符串，因此不应有检测器依赖它的措辞。它所指的状态——已发现但尚未抓取——可以从本产品已在读取的、带类型的抓取时间戳推导，但尚未实现。",
   ),
-  // Mechanically buildable now that the fetch budget is authorized, and still
-  // wrong: the top ten for a query routinely mixes intents, so a pricing page
-  // measured against a median built from long-form guides is reported as thin
-  // for being exactly the right length for what it is.
+  // Buildable, and deliberately not built. The provider this product already
+  // pays exposes the body text of an arbitrary URL, so ten competitors cost
+  // roughly a tenth of a cent per report. The objection is what to do with
+  // the number: the top ten routinely mixes intents, so a median built from
+  // long-form guides reports a correctly short pricing page as thin. That is
+  // a false Warning rather than a false pass, which this product tolerates
+  // elsewhere — so the honest statement is that it needs an agreement gate,
+  // not that the evidence does not exist.
   "4.1": l(
-    "The body text of the top ten results is never fetched, so there is no median to compare this page against.",
-    "本工具从不抓取前十名结果的正文，因此没有可供本页面对比的中位数。",
+    "The body text of the top ten results is not fetched. It is available from the provider this audit already uses, and is not built yet: a median across results serving different intents reports a correctly short page as thin, so this needs a way to tell a comparable result set from a mixed one.",
+    "本工具不抓取前十名结果的正文。该数据可以从本次审计已在使用的供应商获得，但尚未实现：把满足不同意图的结果混在一起取中位数，会把一个长度本就该短的页面误报为内容单薄，因此需要先能判断这十个结果是否可比。",
   ),
 };
 
@@ -324,11 +340,18 @@ const EVIDENCE: Readonly<Record<string, readonly string[]>> = {
   C3: ["average_click_depth"],
   B1: ["fetch_without_direct_page"],
   B2: ["server_error_response"],
-  // C5 stays unwired on purpose. A link-following crawl reaches a page either
-  // by an internal link or from the sitemap, so any collected page that is in
-  // neither was discovered from a page the budget dropped. The filter would
-  // report a budget artefact as a lost page, and a check that fires only when
-  // it is wrong is worse than one that says it is not integrated.
+  // C5 is wired — see the entry fifty lines above. This comment used to say it
+  // stayed unwired on purpose and was left behind when that changed, which is
+  // the more dangerous half of a stale comment: it explains, convincingly, why
+  // the code does something the code no longer does.
+  //
+  // The concern it recorded was real. A link-following crawl reaches a page by
+  // an internal link or from the sitemap, so a collected page in neither was
+  // discovered from a page the budget dropped, and reporting that as a lost
+  // page reports a budget artefact. It is handled inside the detector rather
+  // than by refusing to run: `discoveryJudgeable` requires `stopReason` to be
+  // null and the outlink lists to be untruncated, so the check produces
+  // nothing at all on any run that could have manufactured the artefact.
   // Site-wide Schema coverage is the same measurement as the page-level
   // "is there any JSON-LD" check, read as a share instead of a verdict, so it
   // reuses the record rather than crawling for it twice.
@@ -467,7 +490,11 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "abandoned_url_impression_share",
       kind: "aggregate-max",
       label: "abandoned_url_impression_share",
-      passAtOrBelow: 0.05,
+      // Published as "Below 5%", so exactly five percent is on the failing
+      // side. The share is `goneImpressions / totalImpressions`, a ratio of
+      // two integers, so exactly 0.05 is not a measure-zero curiosity — fifty
+      // abandoned impressions in a thousand hits it exactly.
+      passBelow: 0.05,
       failAbove: 0.2,
     },
   ],
@@ -476,10 +503,11 @@ const ISSUE_RULES: Readonly<Record<string, readonly AgentAuditIssueRule[]>> = {
       recordId: "page_total_transfer_bytes",
       kind: "aggregate-max",
       label: "total_transfer_bytes",
-      // The published sentence is "Below 2MB", so exactly 2MB is on the
-      // failing side. `passAtOrBelow` compares with <=, so the pass mark is
-      // one byte under the budget rather than the budget itself.
-      passAtOrBelow: PAGE_WEIGHT_BUDGET_BYTES - 1,
+      // Published as "Below 2 MB", so exactly 2 MB is on the failing side.
+      // This used to be written as `PAGE_WEIGHT_BUDGET_BYTES - 1` because the
+      // rule could only express an inclusive bound; the bound now says what
+      // the sentence says.
+      passBelow: PAGE_WEIGHT_BUDGET_BYTES,
     },
   ],
   "8.1": [
@@ -606,6 +634,25 @@ function authority(id: string): AgentAuditThresholdAuthority {
  * of real visits over 28 days, while the lab run is one load on one emulated
  * device right now.
  */
+/**
+ * Where an undecided check's answer would have to come from.
+ *
+ * Every entry in `UNMEASURABLE_HERE` used to render "Outside what a bounded
+ * anonymous crawl can observe", which is wrong for four of the five. B4, B5 and
+ * A3 are statements about the Search Console API — an authorized source this
+ * product holds and already calls — and 4.1 is about a paid provider it already
+ * pays. Naming the anonymous crawl as the blocker both misattributes the
+ * limitation and tells a reader that connecting Search Console would not help,
+ * when for three of them it is exactly what does.
+ */
+const UNDECIDED_SOURCE: Readonly<Record<string, AgentAuditLocalizedText>> = {
+  B4: l("Search Console API, which does not carry it", "Search Console API，其中不含该数据"),
+  B5: l("Search Console API, which does not carry it", "Search Console API，其中不含该数据"),
+  A3: l("Authorized search source, not yet read this way", "已授权搜索来源，尚未以此方式读取"),
+  E5: l("No source: the measure is not defined", "无来源：该指标本身未被定义清楚"),
+  "4.1": l("Paid SERP provider, not yet integrated", "付费 SERP 供应商，尚未接入"),
+};
+
 const EXTERNALLY_MEASURED: Readonly<Record<string, AgentAuditLocalizedText>> = {
   "8.1": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
   "8.2": l("Chrome UX Report field data", "Chrome 用户体验报告实测数据"),
@@ -1047,24 +1094,22 @@ function makeCheck(seed: CheckSeed, scope: AgentAuditScope): AgentAuditCheckDefi
       EXTERNALLY_MEASURED[id] !== undefined && ready
       ? EXTERNALLY_MEASURED[id]
       : l(
-      UNMEASURABLE_HERE[id] !== undefined
-        ? "Outside what a bounded anonymous crawl can observe"
-        : engine(id, ready) === "access-required"
+      UNDECIDED_SOURCE[id]?.en ??
+      (engine(id, ready) === "access-required"
         ? "Authorized search source required"
         : engine(id, ready) === "not-integrated"
           ? "Required engine not integrated"
           : ready
             ? "Bounded crawl"
-            : "Crawl collects the material; no detector reads it yet",
-      UNMEASURABLE_HERE[id] !== undefined
-        ? "超出有边界匿名抓取可观测的范围"
-        : engine(id, ready) === "access-required"
+            : "Crawl collects the material; no detector reads it yet"),
+      UNDECIDED_SOURCE[id]?.zh ??
+      (engine(id, ready) === "access-required"
         ? "需要授权搜索来源"
         : engine(id, ready) === "not-integrated"
           ? "所需引擎尚未接入"
           : ready
             ? "有边界抓取"
-            : "抓取已采到原料，尚无检测器读取",
+            : "抓取已采到原料，尚无检测器读取"),
     ),
     scoreWeight: id === "2.3" || id === "6.1" ? 2 : 1,
     scored,

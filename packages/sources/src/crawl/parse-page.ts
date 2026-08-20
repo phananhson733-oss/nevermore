@@ -184,6 +184,14 @@ export interface ParsedOnPageFacts {
     readonly lang: string;
     readonly href: string;
   }[];
+  /**
+   * The alternates list was cut short by its cap.
+   *
+   * D6 and 1.7 publish "100% valid targets", which is a claim about all of
+   * them. A page declaring more alternates than one crawl keeps has not been
+   * fully read, and a clean verdict over the prefix is not the same sentence.
+   */
+  readonly hreflangAlternatesTruncated: boolean;
   readonly images: ParsedImageFacts;
   /**
    * The file extension of each image reference, in document order.
@@ -215,6 +223,14 @@ export interface ParsedOnPageFacts {
   readonly renderBlocking: {
     readonly stylesheets: number;
     readonly scripts: number;
+    /**
+     * A head region was found to count them in.
+     *
+     * False for a document with no `<head>` and no `<body>` — both tags are
+     * optional in HTML5 and minifiers strip them — where zero counted
+     * resources means nobody looked, not nothing blocking.
+     */
+    readonly measured: boolean;
   };
   /**
    * The first image in document order, and what it declares about itself.
@@ -887,11 +903,39 @@ function withoutComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, " ");
 }
 
+/**
+ * The part of the document a render-blocking resource can sit in.
+ *
+ * `<head>` and `</head>` are both optional tags in HTML5, and minifiers strip
+ * them by default — `html-minifier`'s `removeOptionalTags` does. Matching only
+ * an explicit element and falling back to the empty string reported "0
+ * render-blocking stylesheets or synchronous scripts" for a minified document
+ * carrying two of them, which is the disqualifying direction: a detector
+ * failing toward a pass on a site doing the thing it looks for.
+ *
+ * So: the explicit element when there is one, everything before `<body` when
+ * there is not, and null when neither exists so the caller can say it could
+ * not measure rather than report a zero.
+ */
+function renderBlockingRegion(html: string): string | null {
+  const explicit = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(html)?.[1];
+  if (explicit !== undefined) return explicit;
+  const body = /<body\b/i.exec(html);
+  if (body !== null) return html.slice(0, body.index);
+  // An opening `<head>` with no close and no `<body>` is a truncated or
+  // non-HTML document; guessing where the head ended would invent a
+  // measurement.
+  return null;
+}
+
 function collectRenderBlocking(html: string): {
   readonly stylesheets: number;
   readonly scripts: number;
+  /** False when no head region could be identified, so zero is not a pass. */
+  readonly measured: boolean;
 } {
-  const head = /<head\b[^>]*>([\s\S]*?)<\/head\s*>/i.exec(html)?.[1] ?? "";
+  const head = renderBlockingRegion(html);
+  if (head === null) return { stylesheets: 0, scripts: 0, measured: false };
   let stylesheets = 0;
   for (const match of head.matchAll(openingTagPattern("link", "gi"))) {
     const tag = match[0];
@@ -912,7 +956,7 @@ function collectRenderBlocking(html: string): {
     if ((attr(tag, "type") ?? "").trim().toLowerCase() === "module") continue;
     scripts += 1;
   }
-  return { stylesheets, scripts };
+  return { stylesheets, scripts, measured: true };
 }
 
 /** The first image in document order, and what it declares about itself. */
@@ -1117,15 +1161,31 @@ function collectExternalLinkFacts(
   };
 }
 
-/** The same alternates, with the target each one points at. */
+/**
+ * The same alternates, with the target each one points at.
+ *
+ * Reports whether the cap cut the list short, because D6 and 1.7 publish
+ * "100% valid targets" over whatever they were handed and a truncated list
+ * makes that sentence a claim about a prefix.
+ */
 function collectHreflangAlternates(
   html: string,
   pageUrl: string,
-): readonly { readonly lang: string; readonly href: string }[] {
+): {
+  readonly alternates: readonly {
+    readonly lang: string;
+    readonly href: string;
+  }[];
+  readonly truncated: boolean;
+} {
   const out: { lang: string; href: string }[] = [];
+  let truncated = false;
   for (const match of html.matchAll(openingTagPattern("link", "gi"))) {
     const tag = match[0];
-    if (attr(tag, "rel")?.toLowerCase() !== "alternate") continue;
+    // Trimmed: `rel=" alternate"` is a valid declaration, and an exact match
+    // against the untrimmed value silently dropped it — toward a clean result,
+    // since a dropped alternate is one fewer target to find broken.
+    if (attr(tag, "rel")?.trim().toLowerCase() !== "alternate") continue;
     const lang = attr(tag, "hreflang")?.trim();
     const href = attr(tag, "href")?.trim();
     if (!lang || !href) continue;
@@ -1139,13 +1199,20 @@ function collectHreflangAlternates(
       continue;
     }
     if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
+    // Checked before adding, not after. Setting the flag on retaining the last
+    // one it was allowed to keep meant a page declaring exactly the cap was
+    // told the crawl had dropped some of its alternates, which is a sentence
+    // about the site that the run had not established.
+    if (out.length >= CRAWL_PROJECTION_LIMITS.maxHreflangAlternates) {
+      truncated = true;
+      break;
+    }
     out.push({
       lang: boundChars(lang, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
       href: resolved,
     });
-    if (out.length >= CRAWL_PROJECTION_LIMITS.maxRobotsDirectives) break;
   }
-  return out;
+  return { alternates: out, truncated };
 }
 
 /**
@@ -1242,6 +1309,7 @@ function collectOnPageFacts(
   rawHtml: string,
 ): ParsedOnPageFacts {
   const jsonLd = collectJsonLdProperties(withoutComments(rawHtml));
+  const hreflang = collectHreflangAlternates(markup, pageUrl);
   return {
     lang: normalisedAttributeText(
       attr(htmlTag, "lang"),
@@ -1258,7 +1326,8 @@ function collectOnPageFacts(
     faviconDeclared: collectFaviconDeclared(markup),
     partOfASequence: collectSequenceMembership(markup),
     hreflang: collectHreflang(markup),
-    hreflangAlternates: collectHreflangAlternates(markup, pageUrl),
+    hreflangAlternates: hreflang.alternates,
+    hreflangAlternatesTruncated: hreflang.truncated,
     images: collectImageFacts(markup),
     imageFormats: collectImageFormats(markup),
     imageSources: collectImageSources(markup, pageUrl),
