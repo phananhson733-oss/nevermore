@@ -446,17 +446,15 @@ describe("AgentRecommendations", () => {
     expect(states).not.toContain("needs-supplement");
     expect(states).not.toContain("source-gated");
 
-    const solution =
-      host.querySelector<HTMLElement>("#tech-selected-solution")?.textContent ??
-      "";
-    expect(solution).toContain(
+    const context = textOf("agent-stage4-context");
+    expect(context).toContain(
       [
         PROFILE_OPTIONS.pageType.homepage,
         PROFILE_OPTIONS.device.mobile,
         PROFILE_OPTIONS.auditScope["site-first"],
       ].join(" · "),
     );
-    expect(solution).not.toContain("site-first");
+    expect(context).not.toContain("site-first");
 
     const row =
       host.querySelector<HTMLElement>(
@@ -587,15 +585,16 @@ describe("AgentRecommendations", () => {
     expect(solution).toContain("404");
   });
 
-  it("exposes the 39/61 desktop grid with Stage 03 before Stage 04 in DOM order", () => {
+  it("keeps Stage 03 before Stage 04 in DOM order without the old 39/61 desktop split", () => {
     render("seo", "seo:page:2.3");
     const row = host.querySelector('[data-testid="agent-recommendation-row"]');
     const stages = [...(row?.children ?? [])].map((child) =>
       child.getAttribute("data-stage"),
     );
 
-    expect(row?.className).toContain("minmax(260px,0.39fr)");
-    expect(row?.className).toContain("minmax(0,0.61fr)");
+    expect(row?.getAttribute("data-layout")).toBe("vertical");
+    expect(row?.className).not.toContain("minmax(260px,0.39fr)");
+    expect(row?.className).not.toContain("minmax(0,0.61fr)");
     expect(stages).toEqual(["03", "04"]);
   });
 });

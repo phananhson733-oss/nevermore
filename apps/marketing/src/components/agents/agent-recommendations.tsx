@@ -31,6 +31,7 @@ import type {
 
 import type { AgentKind } from "./agent-types";
 import type { AgentProfileDraft } from "./agent-profile";
+import { AgentAiActionCopy } from "./agent-ai-action-copy";
 import { AgentEvidenceDetails } from "./agent-evidence-details";
 import {
   rankAgentRecommendations,
@@ -127,20 +128,20 @@ function DetailSection({
   icon: Icon,
   label,
   children,
+  testId,
 }: {
   readonly icon: typeof AlertTriangle;
   readonly label: string;
   readonly children: React.ReactNode;
+  readonly testId?: string;
 }) {
   return (
-    <section>
-      <h4 className="flex items-center gap-2 text-[12.5px] font-semibold text-text-dark-primary">
+    <section data-testid={testId}>
+      <h4 className="flex items-center gap-2 text-[14px] leading-[1.4] font-semibold text-text-dark-primary">
         <Icon aria-hidden="true" className="size-3.5 text-brand-accent" />
         {label}
       </h4>
-      <div className="mt-2 text-[12px] leading-[1.65] text-text-dark-secondary">
-        {children}
-      </div>
+      <div className="mt-2 min-w-0 text-text-dark-secondary">{children}</div>
     </section>
   );
 }
@@ -189,6 +190,20 @@ function SelectedSolution({
     measurement,
     evidenceRecords: recommendation.evidenceRecords,
   });
+  const resolvedRecommendation = t(
+    template.recommendationKey.replace("recommendations.", ""),
+  );
+  const resolvedApplicableContext = t(
+    template.applicableContextKey.replace("recommendations.", ""),
+  );
+  const resolvedValidation = template.validationKeys.map((key) =>
+    t(key.replace("recommendations.", "")),
+  );
+  const resolvedImpact = t(
+    template.impactSurfaceKey.replace("recommendations.", ""),
+  );
+  const resolvedRisks = t(template.risksKey.replace("recommendations.", ""));
+  const resolvedLimits = t(template.limitsKey.replace("recommendations.", ""));
   const draftKind = draftKindFor(template.kind);
   const contextFacts =
     recommendation.agent === "seo"
@@ -212,178 +227,267 @@ function SelectedSolution({
       id={`${recommendation.agent}-selected-solution`}
       data-stage="04"
       data-testid="agent-selected-solution"
-      className="rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-6"
+      aria-labelledby={`${recommendation.agent}-stage4-title`}
+      className="relative w-full overflow-hidden rounded-card border border-brand-border-card bg-brand-panel"
     >
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-brand-border pb-5">
-        <div>
-          <p className="font-mono text-[10.5px] tracking-[0.12em] text-brand-accent-text uppercase">
-            {t("stage4")}
-          </p>
-          <h3 className="mt-2 text-[18px] font-semibold text-text-dark-primary">
-            {localized(check.title, locale)}
-          </h3>
-          <p className="mt-2 text-[11.5px] text-text-dark-secondary">
-            {t("stage4Body")}
-          </p>
-        </div>
-        <span
-          data-testid="agent-solution-boundary"
-          className={`rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.08em] uppercase ${
-            gated
-              ? "border-brand-warning/30 bg-brand-warning/10 text-brand-warning"
-              : "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
-          }`}
+      <span
+        data-testid="agent-stage4-accent"
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-0.5 bg-brand-gradient"
+      />
+      <header
+        data-testid="agent-stage4-header"
+        className="border-b border-brand-border px-[18px] py-[22px] md:px-8 md:pt-[30px] md:pb-[26px]"
+      >
+        <div
+          data-testid="agent-stage4-header-layout"
+          className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
         >
-          {gated ? t("unavailableInvestigation") : t("previewOnly")}
-        </span>
-      </header>
-
-      <div className="mt-5 grid gap-5">
-        <DetailSection icon={AlertTriangle} label={t("issueLabel")}>
-          <p>{localized(check.impact, locale)}</p>
-          <p
-            data-testid="agent-solution-recommendation"
-            className="mt-2 text-text-dark-primary"
-          >
-            {t(template.recommendationKey.replace("recommendations.", ""))}
-          </p>
-        </DetailSection>
-
-        <DetailSection icon={FileSearch} label={t("evidenceLabel")}>
-          <div className="mb-3 grid gap-2 sm:grid-cols-2">
-            <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
-              <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
-                {t("measuredLabel")}
-              </span>
-              <p className="mt-1 text-[11px] text-text-dark-primary">
-                {measurement ?? t("evidenceUnavailable")}
+          <div className="flex min-w-0 items-start gap-[15px]">
+            <span
+              data-testid="agent-stage4-index"
+              className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-full border border-brand-accent/40 bg-brand-accent/[0.08] font-mono text-[11px] leading-none font-semibold text-brand-accent-text"
+            >
+              04
+            </span>
+            <div className="min-w-0">
+              <p
+                data-testid="agent-stage4-eyebrow"
+                className="font-mono !text-[10px] !leading-[1.2] tracking-[0.13em] text-brand-accent-text uppercase"
+              >
+                {t("stage4")}
               </p>
-            </div>
-            <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
-              <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
-                {t("sourceLabel")}
-              </span>
-              <p className="mt-1 text-[11px] text-text-dark-primary">
-                {localized(check.dataSource, locale)}
+              <h3
+                id={`${recommendation.agent}-stage4-title`}
+                data-testid="agent-stage4-title"
+                className="mt-3 text-[26px] leading-[1.14] font-semibold tracking-[-0.035em] text-text-dark-primary md:text-[32px]"
+              >
+                {t("stage4Title")}
+              </h3>
+              <p className="mt-3 !text-[13px] !leading-[1.65] text-text-dark-secondary">
+                {t("stage4Body")}
               </p>
             </div>
           </div>
-          <AgentEvidenceDetails
-            key={`${check.scope}:${check.id}`}
-            check={evaluated}
-            records={recommendation.evidenceRecords}
-            targetUrl={targetUrl}
-            locale={locale}
-          />
-        </DetailSection>
-
-        <DetailSection icon={Braces} label={t("fixLabel")}>
-          <p className="mb-3">{localized(check.howToFix, locale)}</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap rounded-row border border-brand-border-dashed bg-brand-panel-sunken p-4 font-mono text-[10.5px] leading-[1.7] text-text-dark-strong">
-            {gated
-              ? `${t("unavailableInvestigation")}\n\n${template.preview}`
-              : template.preview}
-          </pre>
-          {/*
-            The preview above prints what this run measured and then a slot for
-            every sentence the owner still has to write. For the two shapes a
-            model can fill truthfully, offer to fill them — on request, so one
-            report is one call per solution the reader actually opens.
-          */}
-          {gated || draftKind === null ? null : (
-            <AgentSolutionDraft
-              // Keyed so a draft cannot outlive the solution it was asked for:
-              // without it React reuses the instance across a switch and the
-              // previous kind's draft stays on screen under the new one.
-              key={`${profile.targetUrl}:${check.id}:${draftKind}`}
-              kind={draftKind}
-              targetUrl={profile.targetUrl}
-              extract={targetPageExtract}
-              targetQuery={profile.targetQuery}
-              pageType={pageTypeLabel}
-            />
-          )}
-        </DetailSection>
-
-        <DetailSection icon={Gauge} label={t("contextLabel")}>
-          <p>
-            {t(template.applicableContextKey.replace("recommendations.", ""))}
-          </p>
-          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-            {contextFacts.map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-row border border-brand-border bg-brand-panel-sunken p-3"
-              >
-                <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
-                  {label}
-                </dt>
-                <dd className="mt-1 break-words text-[11px] text-text-dark-primary">
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p
-            data-testid="agent-solution-states"
-            className="mt-2 font-mono text-[10.5px] text-text-dark-faint"
+          <span
+            data-testid="agent-solution-boundary"
+            className={`rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.08em] uppercase ${
+              gated
+                ? "border-brand-warning/30 bg-brand-warning/10 text-brand-warning"
+                : "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
+            }`}
           >
-            {t("statesLabel")}:{" "}
-            {axisLabel(
-              diagnosisT,
-              "results",
-              RESULT_MESSAGE_KEY[evaluated.result],
-              String(evaluated.result),
-            )}{" "}
-            ·{" "}
-            {axisLabel(
-              diagnosisT,
-              "engines",
-              ENGINE_MESSAGE_KEY[evaluated.engine],
-              String(evaluated.engine),
-            )}{" "}
-            ·{" "}
-            {axisLabel(
-              diagnosisT,
-              "truth",
-              TRUTH_MESSAGE_KEY[evaluated.truth],
-              String(evaluated.truth),
-            )}
-          </p>
-        </DetailSection>
+            {gated ? t("unavailableInvestigation") : t("previewOnly")}
+          </span>
+        </div>
+      </header>
 
-        <DetailSection icon={CheckCircle2} label={t("validationLabel")}>
-          <ol
-            data-testid="agent-solution-validation"
-            className="grid gap-2 pl-5 [list-style:decimal]"
+      <div
+        data-testid="agent-stage4-body"
+        className="grid gap-5 px-[18px] py-[22px] md:px-8 md:py-[30px] lg:grid-cols-2"
+      >
+        <div className="grid min-w-0 gap-5">
+          <DetailSection
+            icon={AlertTriangle}
+            label={t("issueLabel")}
+            testId="agent-stage4-issue"
           >
-            {template.validationKeys.map((key) => (
-              <li key={key}>{t(key.replace("recommendations.", ""))}</li>
-            ))}
-          </ol>
-        </DetailSection>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <DetailSection icon={Gauge} label={t("impactLabel")}>
-            <p data-testid="agent-solution-impact">
-              {t(template.impactSurfaceKey.replace("recommendations.", ""))}
+            <h5
+              data-testid="agent-stage4-issue-title"
+              className="text-[18px] leading-[1.25] font-semibold text-text-dark-primary md:text-[19px]"
+            >
+              {localized(check.title, locale)}
+            </h5>
+            <p className="mt-3 !text-[13px] !leading-[1.65]">
+              {localized(check.impact, locale)}
+            </p>
+            <p
+              data-testid="agent-solution-recommendation"
+              className="mt-3 !text-[13px] !leading-[1.65] text-text-dark-primary"
+            >
+              {resolvedRecommendation}
             </p>
           </DetailSection>
-          <DetailSection icon={ShieldAlert} label={t("risksLabel")}>
-            <p data-testid="agent-solution-risks">
-              {t(template.risksKey.replace("recommendations.", ""))}
+
+          <DetailSection
+            icon={FileSearch}
+            label={t("evidenceLabel")}
+            testId="agent-stage4-evidence"
+          >
+            <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
+                <span
+                  data-testid="agent-stage4-evidence-label"
+                  className="font-mono text-[10px] leading-[1.3] tracking-[0.08em] text-text-dark-faint uppercase"
+                >
+                  {t("measuredLabel")}
+                </span>
+                <p
+                  data-testid="agent-stage4-evidence-value"
+                  className="mt-1 !text-[12px] !leading-[1.65] text-text-dark-primary"
+                >
+                  {measurement ?? t("evidenceUnavailable")}
+                </p>
+              </div>
+              <div className="rounded-row border border-brand-border bg-brand-panel-sunken p-3">
+                <span className="font-mono text-[10px] leading-[1.3] tracking-[0.08em] text-text-dark-faint uppercase">
+                  {t("sourceLabel")}
+                </span>
+                <p className="mt-1 !text-[12px] !leading-[1.65] text-text-dark-primary">
+                  {localized(check.dataSource, locale)}
+                </p>
+              </div>
+            </div>
+            <AgentEvidenceDetails
+              key={`${check.scope}:${check.id}`}
+              check={evaluated}
+              records={recommendation.evidenceRecords}
+              targetUrl={targetUrl}
+              locale={locale}
+              className="[&_p]:!leading-[1.65] [&_dd]:!leading-[1.65]"
+            />
+          </DetailSection>
+
+          <DetailSection icon={Braces} label={t("fixLabel")}>
+            <p className="mb-3 !text-[13px] !leading-[1.65]">
+              {localized(check.howToFix, locale)}
             </p>
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-row border border-brand-border-dashed bg-brand-panel-sunken p-4 font-mono text-[12px] leading-[1.65] text-text-dark-strong">
+              {gated
+                ? `${t("unavailableInvestigation")}\n\n${template.preview}`
+                : template.preview}
+            </pre>
+            {gated || draftKind === null ? null : (
+              <div
+                data-testid="agent-stage4-draft"
+                className="[&_p]:!leading-[1.65] [&_dd]:!leading-[1.65]"
+              >
+                <AgentSolutionDraft
+                  key={`${profile.targetUrl}:${check.id}:${draftKind}`}
+                  kind={draftKind}
+                  targetUrl={profile.targetUrl}
+                  extract={targetPageExtract}
+                  targetQuery={profile.targetQuery}
+                  pageType={pageTypeLabel}
+                />
+              </div>
+            )}
           </DetailSection>
         </div>
 
-        <DetailSection icon={CircleHelp} label={t("limitsLabel")}>
-          <p data-testid="agent-solution-limits">
-            {t(template.limitsKey.replace("recommendations.", ""))}
-          </p>
-          <p className="mt-2 rounded-row border border-brand-warning/25 bg-brand-warning/[0.06] p-3 text-brand-warning">
-            {t("previewBoundary")}
-          </p>
-        </DetailSection>
+        <div className="grid min-w-0 gap-5">
+          <DetailSection
+            icon={Gauge}
+            label={t("contextLabel")}
+            testId="agent-stage4-context"
+          >
+            <p className="!text-[13px] !leading-[1.65]">
+              {resolvedApplicableContext}
+            </p>
+            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+              {contextFacts.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-row border border-brand-border bg-brand-panel-sunken p-3"
+                >
+                  <dt className="font-mono text-[10px] leading-[1.3] tracking-[0.08em] text-text-dark-faint uppercase">
+                    {label}
+                  </dt>
+                  <dd className="mt-1 break-words !text-[12px] !leading-[1.65] text-text-dark-primary">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p
+              data-testid="agent-solution-states"
+              className="mt-2 font-mono !text-[10.5px] !leading-[1.65] text-text-dark-faint"
+            >
+              {t("statesLabel")}:{" "}
+              {axisLabel(
+                diagnosisT,
+                "results",
+                RESULT_MESSAGE_KEY[evaluated.result],
+                String(evaluated.result),
+              )}{" "}
+              ·{" "}
+              {axisLabel(
+                diagnosisT,
+                "engines",
+                ENGINE_MESSAGE_KEY[evaluated.engine],
+                String(evaluated.engine),
+              )}{" "}
+              ·{" "}
+              {axisLabel(
+                diagnosisT,
+                "truth",
+                TRUTH_MESSAGE_KEY[evaluated.truth],
+                String(evaluated.truth),
+              )}
+            </p>
+          </DetailSection>
+
+          <DetailSection icon={CheckCircle2} label={t("validationLabel")}>
+            <ol
+              data-testid="agent-solution-validation"
+              className="grid gap-2 pl-5 [list-style:decimal] [&_li]:!text-[13px] [&_li]:!leading-[1.65]"
+            >
+              {resolvedValidation.map((entry) => (
+                <li key={entry}>{entry}</li>
+              ))}
+            </ol>
+          </DetailSection>
+
+          <DetailSection icon={Gauge} label={t("impactLabel")}>
+            <p
+              data-testid="agent-solution-impact"
+              className="!text-[13px] !leading-[1.65]"
+            >
+              {resolvedImpact}
+            </p>
+          </DetailSection>
+
+          <DetailSection icon={ShieldAlert} label={t("risksLabel")}>
+            <p
+              data-testid="agent-solution-risks"
+              className="!text-[13px] !leading-[1.65]"
+            >
+              {resolvedRisks}
+            </p>
+          </DetailSection>
+
+          <DetailSection icon={CircleHelp} label={t("limitsLabel")}>
+            <p
+              data-testid="agent-solution-limits"
+              className="!text-[13px] !leading-[1.65]"
+            >
+              {resolvedLimits}
+            </p>
+            <p className="mt-2 rounded-row border border-brand-warning/25 bg-brand-warning/[0.06] p-3 !text-[13px] !leading-[1.65] text-brand-warning">
+              {t("previewBoundary")}
+            </p>
+          </DetailSection>
+
+          {recommendation.agent === "seo" ? (
+            <AgentAiActionCopy
+              locale={locale === "zh" ? "zh" : "en"}
+              selectedCheck={evaluated}
+              evidenceRecords={recommendation.evidenceRecords}
+              targetUrl={targetUrl}
+              profile={profile}
+              solution={template}
+              className="[&_p]:!leading-[1.65]"
+              content={{
+                recommendation: resolvedRecommendation,
+                applicableContext: resolvedApplicableContext,
+                validation: resolvedValidation,
+                impact: resolvedImpact,
+                risks: resolvedRisks,
+                limits: resolvedLimits,
+              }}
+            />
+          ) : null}
+        </div>
       </div>
     </article>
   );
@@ -458,7 +562,8 @@ export function AgentRecommendations({
   return (
     <div
       data-testid="agent-recommendation-row"
-      className={`grid gap-5 min-[981px]:grid-cols-[minmax(260px,0.39fr)_minmax(0,0.61fr)] min-[981px]:items-start ${className}`}
+      data-layout="vertical"
+      className={`grid gap-5 ${className}`}
     >
       <section
         data-stage="03"
