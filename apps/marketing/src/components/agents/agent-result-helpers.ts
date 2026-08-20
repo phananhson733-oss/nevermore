@@ -94,7 +94,9 @@ const RESULT_PRIORITY: Readonly<Record<string, AgentRecommendationPriority>> = {
   tip: "P2",
 };
 
-function comparableUrl(value: string | null | undefined): string | null {
+export function comparableUrl(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   try {
     const parsed = new URL(value);

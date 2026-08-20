@@ -246,6 +246,8 @@ export function AgentResults({
 
       <AgentDiagnosis
         model={model}
+        records={allAgentAuditRecords(data)}
+        targetUrl={data.result.targetUrl}
         scope={scope}
         selectedGroupId={selectedGroupIds[scope]}
         selectedCheckId={selectedCheckIds[scope]}

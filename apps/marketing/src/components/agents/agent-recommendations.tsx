@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type {
-  SeoAuditEvidenceValue,
   SeoAuditRecord,
   SeoAuditTargetPageExtract,
 } from "@sf/public-tools";
@@ -32,6 +31,7 @@ import type {
 
 import type { AgentKind } from "./agent-types";
 import type { AgentProfileDraft } from "./agent-profile";
+import { AgentEvidenceDetails } from "./agent-evidence-details";
 import {
   rankAgentRecommendations,
   type RankedAgentRecommendation,
@@ -115,11 +115,6 @@ function localized(
   return value[locale === "zh" ? "zh" : "en"];
 }
 
-function evidenceValue(value: SeoAuditEvidenceValue): string {
-  if (value === null) return "—";
-  return String(value);
-}
-
 const EMPTY_EVIDENCE_COPY: Readonly<
   Record<Exclude<EvidencePresence, "observed">, readonly [string, string]>
 > = {
@@ -127,81 +122,6 @@ const EMPTY_EVIDENCE_COPY: Readonly<
   "not-observed": ["evidenceNotObservedTitle", "evidenceNotObservedBody"],
   "not-captured": ["evidenceNoObservationTitle", "evidenceNoObservationBody"],
 };
-
-function EvidenceList({
-  records,
-  presence,
-}: {
-  readonly records: readonly SeoAuditRecord[];
-  readonly presence: EvidencePresence;
-}) {
-  const auditT = useTranslations("tools.seoAudit");
-  const t = useTranslations("agents.workbench.recommendations");
-
-  const hasObservations = records.some(
-    (record) => record.observations.length > 0,
-  );
-
-  if (!hasObservations) {
-    const [titleKey, bodyKey] =
-      EMPTY_EVIDENCE_COPY[presence === "observed" ? "not-captured" : presence];
-    const gated = presence === "source-gated";
-    return (
-      <div
-        data-testid="agent-evidence-empty"
-        data-presence={presence === "observed" ? "not-captured" : presence}
-        className={`rounded-row border p-4 ${
-          gated
-            ? "border-brand-warning/25 bg-brand-warning/[0.06]"
-            : "border-brand-border bg-brand-panel-sunken"
-        }`}
-      >
-        <p
-          className={`flex items-center gap-2 text-[12px] font-semibold ${
-            gated ? "text-brand-warning" : "text-text-dark-primary"
-          }`}
-        >
-          <CircleHelp aria-hidden="true" className="size-3.5" />
-          {t(titleKey)}
-        </p>
-        <p className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-          {t(bodyKey)}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-2.5">
-      {records.flatMap((record) =>
-        record.observations.slice(0, 3).map((observation, index) => (
-          <article
-            key={`${record.id}:${observation.url ?? "site"}:${index}`}
-            className="rounded-row border border-brand-border bg-brand-panel-sunken p-3.5"
-          >
-            <p className="break-all font-mono text-[10.5px] text-brand-accent-text">
-              {observation.url ?? auditT("siteLevelObservation")}
-            </p>
-            {observation.values.length > 0 ? (
-              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-                {observation.values.map((entry) => (
-                  <div key={entry.label} className="min-w-0">
-                    <dt className="font-mono text-[10.5px] tracking-[0.08em] text-text-dark-faint uppercase">
-                      {auditT(`evidence.${entry.label}`)}
-                    </dt>
-                    <dd className="mt-1 break-all font-mono text-[10.5px] text-text-dark-primary">
-                      {evidenceValue(entry.value)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
-          </article>
-        )),
-      )}
-    </div>
-  );
-}
 
 function DetailSection({
   icon: Icon,
@@ -228,11 +148,13 @@ function DetailSection({
 function SelectedSolution({
   recommendation,
   locale,
+  targetUrl,
   profile,
   targetPageExtract,
 }: {
   readonly recommendation: RankedAgentRecommendation;
   readonly locale: string;
+  readonly targetUrl: string;
   readonly profile: AgentProfileDraft;
   readonly targetPageExtract: SeoAuditTargetPageExtract | null;
 }) {
@@ -346,9 +268,12 @@ function SelectedSolution({
               </p>
             </div>
           </div>
-          <EvidenceList
+          <AgentEvidenceDetails
+            key={`${check.scope}:${check.id}`}
+            check={evaluated}
             records={recommendation.evidenceRecords}
-            presence={presence}
+            targetUrl={targetUrl}
+            locale={locale}
           />
         </DetailSection>
 
@@ -609,6 +534,7 @@ export function AgentRecommendations({
       <SelectedSolution
         recommendation={selected}
         locale={locale}
+        targetUrl={targetUrl}
         profile={profile}
         targetPageExtract={targetPageExtract}
       />

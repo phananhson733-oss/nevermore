@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import type { SeoAuditRecord } from "@sf/public-tools";
 import { gscAuthorizeHref } from "../tools/gsc-connect-panel";
 
 import type {
@@ -29,6 +30,7 @@ import type {
   AgentAuditPolicyOverride,
   AgentAuditPolicyOverrides,
 } from "./agent-audit-model";
+import { AgentEvidenceDetails } from "./agent-evidence-details";
 
 /**
  * Fewest scored checks a scope must contribute before a 0-100 health number is
@@ -414,6 +416,8 @@ function PolicyEditor({
 
 export interface AgentDiagnosisProps {
   readonly model: AgentAuditViewModel;
+  readonly records?: readonly SeoAuditRecord[];
+  readonly targetUrl?: string;
   readonly scope: AgentAuditScope;
   readonly selectedGroupId: string | null;
   readonly selectedCheckId: string | null;
@@ -431,6 +435,8 @@ export interface AgentDiagnosisProps {
 
 export function AgentDiagnosis({
   model,
+  records,
+  targetUrl,
   scope,
   selectedGroupId,
   selectedCheckId,
@@ -463,6 +469,12 @@ export function AgentDiagnosis({
   const activePolicy = activeCheck
     ? policyOverrides[activeCheck.id]
     : undefined;
+  const activeEvaluatedCheck = activeCheck
+    ? model.evaluatedChecks.find(
+        (check) =>
+          check.check.scope === scope && check.check.id === activeCheck.id,
+      ) ?? null
+    : null;
   const axisPrefix = `${model.agent}-diagnosis-axis`;
   const scoredChecks = countScoredChecks(activeScope);
   const healthReportable =
@@ -910,6 +922,16 @@ export function AgentDiagnosis({
                 {activeCheck.boundary}
               </DetailFact>
             </dl>
+            {activeEvaluatedCheck && records ? (
+              <AgentEvidenceDetails
+                key={`${scope}:${activeEvaluatedCheck.check.id}`}
+                check={activeEvaluatedCheck}
+                records={records}
+                targetUrl={targetUrl}
+                locale={model.locale}
+                className="mt-5"
+              />
+            ) : null}
             {onSavePolicy && onResetCheckPolicy ? (
               <PolicyEditor
                 key={`${scope}:${activeCheck.id}:${policyOverrides[activeCheck.id]?.threshold ?? ""}:${policyOverrides[activeCheck.id]?.weight ?? ""}`}
