@@ -179,6 +179,7 @@ describe("Agent Stage 04 design contract", () => {
     const issueTitle = host.querySelector('[data-testid="agent-stage4-issue-title"]');
     const index = host.querySelector('[data-testid="agent-stage4-index"]');
     const accent = host.querySelector('[data-testid="agent-stage4-accent"]');
+    const boundary = host.querySelector('[data-testid="agent-solution-boundary"]');
 
     expect(stage4).not.toBeNull();
     expect(stage4?.className).toContain("w-full");
@@ -208,6 +209,8 @@ describe("Agent Stage 04 design contract", () => {
     expect(stage4HeaderLayout?.className ?? "").toContain(
       "md:grid-cols-[minmax(0,1fr)_auto]",
     );
+    expect(boundary?.className).toContain("justify-self-start");
+    expect(boundary?.className).toContain("md:justify-self-end");
     expect(stage4Body?.className).toContain("lg:grid-cols-2");
     expect(stage4Body?.className).toContain("px-[18px]");
     expect(stage4Body?.className).toContain("py-[22px]");

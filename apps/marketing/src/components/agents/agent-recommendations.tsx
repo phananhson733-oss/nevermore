@@ -271,7 +271,7 @@ function SelectedSolution({
           </div>
           <span
             data-testid="agent-solution-boundary"
-            className={`rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.08em] uppercase ${
+            className={`justify-self-start rounded border px-2.5 py-1 font-mono text-[10.5px] tracking-[0.08em] uppercase md:justify-self-end ${
               gated
                 ? "border-brand-warning/30 bg-brand-warning/10 text-brand-warning"
                 : "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
