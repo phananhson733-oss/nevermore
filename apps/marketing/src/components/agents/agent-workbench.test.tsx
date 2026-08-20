@@ -81,6 +81,9 @@ const { AgentWorkbench } = await import("./agent-workbench");
 
 type AgentKind = "seo" | "tech";
 
+const AUDIT_CONTRACT_HEADER = "x-gengrowth-agent-audit-contract";
+const AUDIT_CONTRACT_SEARCH_CONSOLE_7 = "search-console-7";
+
 function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
   return {
     data: {
@@ -1853,12 +1856,16 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       pageType: "guide",
     });
     const bodies: string[] = [];
+    const auditContracts: (string | null)[] = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
         bodies.push(String(init?.body));
+        auditContracts.push(
+          new Headers(init?.headers).get(AUDIT_CONTRACT_HEADER),
+        );
         return Response.json(
           successEnvelope("seo", "astrologywiki.com/chart"),
         );
@@ -1872,6 +1879,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     await flushAsyncWork();
 
     expect(bodies).toHaveLength(1);
+    expect(auditContracts).toEqual([AUDIT_CONTRACT_SEARCH_CONSOLE_7]);
     expect(JSON.parse(String(bodies[0]))).toEqual({
       url: "astrologywiki.com/chart",
       // Order is the visitor's, and the wire treats it as significant.
@@ -1972,12 +1980,16 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
   it("carries the confirmed direct SEO context and one target query into the request", async () => {
     const bodies: string[] = [];
+    const auditContracts: (string | null)[] = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
         bodies.push(String(init?.body));
+        auditContracts.push(
+          new Headers(init?.headers).get(AUDIT_CONTRACT_HEADER),
+        );
         return Response.json({ error: { code: "scan_failed" } }, { status: 502 });
       },
     );
@@ -1990,6 +2002,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     await flushAsyncWork();
 
     expect(bodies.length).toBeGreaterThan(0);
+    expect(auditContracts).toEqual([AUDIT_CONTRACT_SEARCH_CONSOLE_7]);
     for (const body of bodies) {
       expect(JSON.parse(body)).toEqual({
         url: "astrologywiki.com",

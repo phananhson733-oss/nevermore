@@ -8,8 +8,12 @@ import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
-import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
-import { isAgentAuditSuccessEnvelope } from "../../lib/agents/audit-contract";
+import {
+  AGENT_AUDIT_CONTRACT_HEADER,
+  AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7,
+  isAgentAuditSuccessEnvelope,
+  type AgentAuditSuccessData,
+} from "../../lib/agents/audit-contract";
 import {
   isAgentProfileSearchEnvelope,
   type AgentProfileSearchData,
@@ -232,6 +236,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           headers: {
             "content-type": "application/json",
             accept: "application/json",
+            [AGENT_AUDIT_CONTRACT_HEADER]:
+              AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7,
           },
           body: JSON.stringify({
             url: confirmedProfile.targetUrl,

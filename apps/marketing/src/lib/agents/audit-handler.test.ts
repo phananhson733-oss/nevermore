@@ -106,21 +106,34 @@ const upstreamPayload = {
   },
 } satisfies SeoAuditPayload;
 
-function request(accept = "application/json"): Request {
+const AUDIT_CONTRACT_HEADER = "x-gengrowth-agent-audit-contract";
+const AUDIT_CONTRACT_CORE = "core";
+const AUDIT_CONTRACT_SEARCH_CONSOLE_7 = "search-console-7";
+
+function request(
+  accept = "application/json",
+  contract?: string,
+): Request {
   return new Request("https://gengrowth.ai/api/agents/seo/audit", {
     method: "POST",
     headers: {
       accept,
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
+      ...(contract === undefined ? {} : { [AUDIT_CONTRACT_HEADER]: contract }),
     },
     body: JSON.stringify({ url: "acme.test" }),
   });
 }
 
+function currentRequest(accept = "application/json"): Request {
+  return request(accept, AUDIT_CONTRACT_SEARCH_CONSOLE_7);
+}
+
 function keywordRequest(
   targetQueries: readonly string[],
   pageRole?: string,
+  contract?: string,
 ): Request {
   return new Request("https://gengrowth.ai/api/agents/seo/audit", {
     method: "POST",
@@ -128,6 +141,7 @@ function keywordRequest(
       accept: "application/json",
       "content-type": "application/json",
       "x-real-ip": "203.0.113.9",
+      ...(contract === undefined ? {} : { [AUDIT_CONTRACT_HEADER]: contract }),
     },
     body: JSON.stringify({
       url: "acme.test",
@@ -135,6 +149,17 @@ function keywordRequest(
       ...(pageRole === undefined ? {} : { pageRole }),
     }),
   });
+}
+
+function currentKeywordRequest(
+  targetQueries: readonly string[],
+  pageRole?: string,
+): Request {
+  return keywordRequest(
+    targetQueries,
+    pageRole,
+    AUDIT_CONTRACT_SEARCH_CONSOLE_7,
+  );
 }
 
 /** An upstream payload whose target page actually carries readable text. */
@@ -282,12 +307,52 @@ describe("handleAgentAuditRequest", () => {
     ],
   };
 
+  it("serves a legacy core audit without reading Search Console when the capability marker is missing", async () => {
+    const readSearchPerformance = vi.fn(async () => searchRegion);
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ readSearchPerformance }),
+    );
+    const body = (await response.json()) as AgentAuditSuccessEnvelope;
+
+    expect(response.status).toBe(200);
+    expect(readSearchPerformance).not.toHaveBeenCalled();
+    expect("searchPerformance" in body.data.result).toBe(false);
+    expect("searchPerformanceUnavailable" in body.data.result).toBe(false);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+    expect(response.headers.get(AUDIT_CONTRACT_HEADER)).toBe(
+      AUDIT_CONTRACT_CORE,
+    );
+    expect(response.headers.get("vary")).toBe(AUDIT_CONTRACT_HEADER);
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+  });
+
+  it("treats an unknown audit capability as legacy instead of guessing compatibility", async () => {
+    const readSearchPerformance = vi.fn(async () => searchRegion);
+    const response = await handleAgentAuditRequest(
+      request("application/json", "search-console-8"),
+      "seo",
+      dependencies({ readSearchPerformance }),
+    );
+    const body = (await response.json()) as AgentAuditSuccessEnvelope;
+
+    expect(response.status).toBe(200);
+    expect(readSearchPerformance).not.toHaveBeenCalled();
+    expect("searchPerformance" in body.data.result).toBe(false);
+    expect("searchPerformanceUnavailable" in body.data.result).toBe(false);
+    expect(response.headers.get(AUDIT_CONTRACT_HEADER)).toBe(
+      AUDIT_CONTRACT_CORE,
+    );
+    expect(response.headers.get("vary")).toBe(AUDIT_CONTRACT_HEADER);
+  });
+
   it("delivers the real seven-record Search Console region through the handler, wire guard, and display seam", async () => {
     // Crosses the actual producer composition. Calling only
     // `buildSearchPerformanceRecords` misses A1, which is exactly how the
     // six-record consumer stayed green while production emitted seven.
     const response = await handleAgentAuditRequest(
-      request(),
+      currentRequest(),
       "seo",
       dependencies({
         delegate: async () =>
@@ -369,6 +434,9 @@ describe("handleAgentAuditRequest", () => {
       ids,
       wireAccepted: isAgentAuditSuccessEnvelope(body),
       displayAccepted: supportsAgentDisplayVocabulary(body.data, "seo"),
+      servedContract: response.headers.get(AUDIT_CONTRACT_HEADER),
+      vary: response.headers.get("vary"),
+      cacheControl: response.headers.get("cache-control"),
     }).toEqual({
       status: 200,
       ids: [
@@ -382,6 +450,9 @@ describe("handleAgentAuditRequest", () => {
       ],
       wireAccepted: true,
       displayAccepted: true,
+      servedContract: AUDIT_CONTRACT_SEARCH_CONSOLE_7,
+      vary: AUDIT_CONTRACT_HEADER,
+      cacheControl: "no-store, private",
     });
   });
 
@@ -416,7 +487,7 @@ describe("handleAgentAuditRequest", () => {
       jsonLdErrorCount: 0,
     };
     await handleAgentAuditRequest(
-      keywordRequest(["acme"]),
+      currentKeywordRequest(["acme"]),
       "seo",
       dependencies({
         delegate: async () =>
@@ -606,7 +677,7 @@ describe("handleAgentAuditRequest", () => {
     // own hand-written list did not know, so the whole envelope was refused —
     // and every test that read the records rather than the envelope passed.
     const response = await handleAgentAuditRequest(
-      keywordRequest(["acme"]),
+      currentKeywordRequest(["acme"]),
       "seo",
       dependencies({
         readSearchPerformance: async () => searchRegion,
@@ -644,7 +715,7 @@ describe("handleAgentAuditRequest", () => {
 
   it("attaches the visitor's search region beside the crawl ledger", async () => {
     const response = await handleAgentAuditRequest(
-      request(),
+      currentRequest(),
       "seo",
       dependencies({ readSearchPerformance: async () => searchRegion }),
     );
@@ -661,7 +732,7 @@ describe("handleAgentAuditRequest", () => {
 
   it("omits the region entirely when nothing covers the host", async () => {
     const response = await handleAgentAuditRequest(
-      request(),
+      currentRequest(),
       "seo",
       dependencies({ readSearchPerformance: async () => null }),
     );
@@ -671,11 +742,12 @@ describe("handleAgentAuditRequest", () => {
 
     expect(response.status).toBe(200);
     expect("searchPerformance" in body.data.result).toBe(false);
+    expect("searchPerformanceUnavailable" in body.data.result).toBe(false);
   });
 
   it("finishes the audit when the Search Console read throws", async () => {
     const response = await handleAgentAuditRequest(
-      request(),
+      currentRequest(),
       "seo",
       dependencies({
         readSearchPerformance: async () => {
@@ -692,6 +764,7 @@ describe("handleAgentAuditRequest", () => {
     // authorization they need, which is a state the visitor can act on.
     expect(response.status).toBe(200);
     expect("searchPerformance" in body.data.result).toBe(false);
+    expect(body.data.result.searchPerformanceUnavailable).toBe(true);
   });
 
   it("returns auth_required before reading the body or invoking the audit", async () => {

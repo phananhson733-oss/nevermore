@@ -48,6 +48,9 @@ import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
 import { buildKeywordEvidence } from "@sf/public-tools";
 import { readSerpLandscape } from "../tools/serp-landscape.ts";
 import {
+  AGENT_AUDIT_CONTRACT_CORE,
+  AGENT_AUDIT_CONTRACT_HEADER,
+  AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7,
   AGENT_SERP_SHAPE_VERSION,
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_KEYWORD_CHECKS_VERSION,
@@ -57,7 +60,9 @@ import {
   type AgentAuditSuccessData,
   type AgentSearchPerformance,
   type AgentKind,
+  type AgentAuditServedContract,
   type SerpLandscape,
+  supportsSearchConsole7,
 } from "./audit-contract.ts";
 
 export interface AgentAuditHandlerDependencies {
@@ -396,8 +401,15 @@ function cacheProvenanceOf(headers: Headers): CacheProvenance | null {
   return { status: "hit", capturedAt, explicitStatus: true };
 }
 
-function successHeaders(cache: CacheProvenance): Headers {
-  const headers = new Headers({ "Cache-Control": "no-store, private" });
+function successHeaders(
+  cache: CacheProvenance,
+  servedContract: AgentAuditServedContract,
+): Headers {
+  const headers = new Headers({
+    "Cache-Control": "no-store, private",
+    [AGENT_AUDIT_CONTRACT_HEADER]: servedContract,
+    Vary: AGENT_AUDIT_CONTRACT_HEADER,
+  });
   if (cache.explicitStatus) headers.set("X-Crawl-Cache", cache.status);
   if (cache.status === "hit") {
     headers.set("X-Crawl-Captured-At", cache.capturedAt);
@@ -575,6 +587,7 @@ export async function handleAgentAuditRequest(
   if (!dependencies.isSameOriginPost(request)) {
     return errorResponse("invalid_origin", 403);
   }
+  const searchConsole7 = supportsSearchConsole7(request);
 
   // Both layers need the body: this one to build the keyword region, the
   // delegate to run the crawl. A body can only be read once, so this reads a
@@ -623,32 +636,34 @@ export async function handleAgentAuditRequest(
   // fixed by authorizing.
   let searchPerformance: AgentSearchPerformance | null = null;
   let searchUnavailable = false;
-  try {
-    searchPerformance =
-      (await dependencies.readSearchPerformance?.({
-        siteOrigin: result.siteOrigin,
-        pages: result.pages,
-        // The URL the crawl LANDED on — `finalUrl`, not `inspectedTargetUrl`.
-        //
-        // `inspectedTargetUrl` is the URL the crawl requested, so on any site
-        // that redirects (trailing slash, http to https) the equality filter
-        // was sent the pre-redirect form, matched nothing, and 9.5 published
-        // "Search Console reported no impressions for this URL" about a page
-        // that ranks. This comment described that failure while the line below
-        // it caused it.
-        targetPageUrl: landedTargetUrl(result),
-        // A1's denominator: the pages this site declares it wants indexed.
-        sitemapUrls: result.siteResources.sitemapUrls,
-        sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
-        // The visitor's own spelling, not the lowercase identity: it is echoed
-        // back in the evidence, and the match lowercases both sides anyway.
-        targetQueries: (input.value.targetQueries ?? []).map(
-          (query) => query.displayQuery,
-        ),
-      })) ?? null;
-  } catch {
-    searchPerformance = null;
-    searchUnavailable = true;
+  if (searchConsole7) {
+    try {
+      searchPerformance =
+        (await dependencies.readSearchPerformance?.({
+          siteOrigin: result.siteOrigin,
+          pages: result.pages,
+          // The URL the crawl LANDED on — `finalUrl`, not `inspectedTargetUrl`.
+          //
+          // `inspectedTargetUrl` is the URL the crawl requested, so on any site
+          // that redirects (trailing slash, http to https) the equality filter
+          // was sent the pre-redirect form, matched nothing, and 9.5 published
+          // "Search Console reported no impressions for this URL" about a page
+          // that ranks. This comment described that failure while the line below
+          // it caused it.
+          targetPageUrl: landedTargetUrl(result),
+          // A1's denominator: the pages this site declares it wants indexed.
+          sitemapUrls: result.siteResources.sitemapUrls,
+          sitemapUrlsComplete: result.siteResources.sitemapUrlsComplete,
+          // The visitor's own spelling, not the lowercase identity: it is echoed
+          // back in the evidence, and the match lowercases both sides anyway.
+          targetQueries: (input.value.targetQueries ?? []).map(
+            (query) => query.displayQuery,
+          ),
+        })) ?? null;
+    } catch {
+      searchPerformance = null;
+      searchUnavailable = true;
+    }
   }
 
   // Never lets PageSpeed decide whether the audit succeeded. Every way it can
@@ -853,6 +868,14 @@ export async function handleAgentAuditRequest(
   dependencies.reportFirstRun?.(dependencies.reportAs);
   return Response.json(
     { data: projected },
-    { status: upstream.status, headers: successHeaders(cache) },
+    {
+      status: upstream.status,
+      headers: successHeaders(
+        cache,
+        searchConsole7
+          ? AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7
+          : AGENT_AUDIT_CONTRACT_CORE,
+      ),
+    },
   );
 }

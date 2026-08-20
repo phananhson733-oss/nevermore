@@ -43,6 +43,30 @@ import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
 export { isCanonicalIsoTimestamp };
 
+/**
+ * Browser/server capability negotiation for optional per-visitor audit data.
+ *
+ * The core representation deliberately has its own response value: an old or
+ * unknown client receives a complete audit without a Search Console region,
+ * never a truncated version of the current seven-record ledger.
+ */
+export const AGENT_AUDIT_CONTRACT_HEADER =
+  "x-gengrowth-agent-audit-contract" as const;
+export const AGENT_AUDIT_CONTRACT_CORE = "core" as const;
+export const AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7 =
+  "search-console-7" as const;
+
+export type AgentAuditServedContract =
+  | typeof AGENT_AUDIT_CONTRACT_CORE
+  | typeof AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7;
+
+export function supportsSearchConsole7(request: Request): boolean {
+  return (
+    request.headers.get(AGENT_AUDIT_CONTRACT_HEADER) ===
+    AGENT_AUDIT_CONTRACT_SEARCH_CONSOLE_7
+  );
+}
+
 export interface SerpLandscapeRow {
   readonly position: number;
   /** Sitelinks shown under this result; zero also covers "not described". */
