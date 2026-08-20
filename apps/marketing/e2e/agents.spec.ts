@@ -419,9 +419,18 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await mockSession(page, true);
   const clipboard = await installClipboardCapture(page);
   let auditPosts = 0;
-  const browserRequests: string[] = [];
+  const copySensitiveRequests: string[] = [];
   page.on("request", (request) => {
-    browserRequests.push(request.url());
+    const pathname = new URL(request.url()).pathname;
+    if (
+      pathname.startsWith("/api/agents/") ||
+      pathname.startsWith("/api/tools/") ||
+      pathname.startsWith("/api/credits/") ||
+      pathname === "/api/url-check" ||
+      pathname === "/api/trial"
+    ) {
+      copySensitiveRequests.push(`${request.method()} ${pathname}`);
+    }
   });
   await page.route("**/api/agents/seo/audit", async (route) => {
     auditPosts += 1;
@@ -465,9 +474,18 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(advancedCopy).not.toHaveAttribute("open", "");
 
   expect(auditPosts).toBe(1);
-  const requestsBeforeCopy = browserRequests.length;
+  expect(copySensitiveRequests).toContain("POST /api/agents/seo/audit");
+  const requestsBeforeCopy = [...copySensitiveRequests];
+  // A delayed session refresh is unrelated background traffic. It must not
+  // weaken the narrower guarantee that copying starts no agent, provider, or
+  // credit-affecting request.
+  const backgroundSessionRefresh = page.evaluate(async () => {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    return response.ok;
+  });
   await primaryCopy.click();
   await expect(aiAction.getByText("Copied Code Agent")).toBeVisible();
+  expect(await backgroundSessionRefresh).toBe(true);
 
   const writes = await clipboard.writes();
   expect(writes).toHaveLength(1);
@@ -477,7 +495,7 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
     "Inspect the supplied repository before choosing files.",
   );
   expect(auditPosts).toBe(1);
-  expect(browserRequests).toHaveLength(requestsBeforeCopy);
+  expect(copySensitiveRequests).toEqual(requestsBeforeCopy);
   await expect(advancedCopy).not.toHaveAttribute("open", "");
 
   await page.getByTestId("diagnosis-scope-page").click();
