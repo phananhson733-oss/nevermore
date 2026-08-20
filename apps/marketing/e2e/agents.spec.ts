@@ -1,11 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { AGENT_PROFILE_REFRESH_FIELD_PATHS } from "../src/lib/agents/profile-refresh-contract";
+import { pendingAgentIntentKey } from "../src/components/agents/agent-intent";
 
 import {
   agentEnvelope,
   type AgentKind,
 } from "./fixtures/agent-envelope";
+
+const SEO_AGENT_INTENT_KEY = pendingAgentIntentKey("seo");
 
 function profileRefreshEnvelope(agent: AgentKind) {
   const sourceUrls = Array.from(
@@ -364,8 +367,9 @@ test("signed-out SEO submission opens registration without an audit POST", async
   await expect(page.getByRole("heading", { name: "Sign in to GenGrowth" })).toBeVisible();
   expect(auditPosts).toBe(0);
   expect(
-    await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
+    await page.evaluate(
+      (intentKey) => sessionStorage.getItem(intentKey),
+      SEO_AGENT_INTENT_KEY,
     ),
   ).toContain('"purpose":"run_confirmed_profile"');
 });
@@ -436,9 +440,9 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   });
 
   await page.goto("/");
-  await page.evaluate(() => {
+  await page.evaluate((intentKey) => {
     sessionStorage.setItem(
-      "gengrowth:agent-intent:seo:v3",
+      intentKey,
       JSON.stringify({
         agent: "seo",
         purpose: "prepare_profile",
@@ -447,7 +451,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
         expiresAt: Date.now() + 10 * 60 * 1_000,
       }),
     );
-  });
+  }, SEO_AGENT_INTENT_KEY);
   await page.goto("/zh/agents/tech");
 
   const input = page.getByLabel("目标 URL");
@@ -472,8 +476,9 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
     0,
   );
   expect(
-    await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
+    await page.evaluate(
+      (intentKey) => sessionStorage.getItem(intentKey),
+      SEO_AGENT_INTENT_KEY,
     ),
   ).toContain("seo-only.example");
 });
