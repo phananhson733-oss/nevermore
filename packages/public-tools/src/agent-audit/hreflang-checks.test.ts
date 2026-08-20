@@ -3,6 +3,7 @@
 // @pos    -- coverage for the checks the merge with main unlocked
 
 import { describe, expect, it } from "vitest";
+import { CRAWL_PROJECTION_LIMITS } from "@sf/sources";
 import { parsePage } from "@sf/sources/crawl-page";
 import type { CrawlPageRecord } from "@sf/sources";
 
@@ -158,5 +159,42 @@ describe("4.4 / 6.5 — the display-only metrics", () => {
 
     expect(read("external_links")).toBe(2);
     expect(read("external_links_nofollow")).toBe(1);
+  });
+});
+
+describe("a truncated alternates list cannot yield a clean verdict", () => {
+  const overCap = CRAWL_PROJECTION_LIMITS.maxHreflangAlternates + 5;
+  const many = Array.from(
+    { length: overCap },
+    (_, i) => [`l${i}`, `${TARGET}?v=${i}`] as [string, string],
+  );
+
+  it("leaves the tested population rather than passing with a caveat", () => {
+    // D6 and 1.7 publish "no alternate returns 4xx or 5xx", which is a claim
+    // about all of them. A clean retained prefix used to make the record
+    // not_observed — a full-score PASS — with the truncation note sitting
+    // beside the pass rather than preventing it.
+    const result = check([page(TARGET, withAlternates(many))], "page", "1.7");
+
+    expect(result?.result).not.toBe("pass");
+  });
+
+  it("still fails on a broken alternate inside the prefix", () => {
+    // Positive evidence needs no full population: one broken target that was
+    // actually fetched is decisive whatever was dropped after it.
+    const broken: [string, string][] = [
+      ["fr", "https://acme.test/fr/guide"],
+      ...many,
+    ];
+    const result = check(
+      [
+        page(TARGET, withAlternates(broken)),
+        page("https://acme.test/fr/guide", PLAIN, 404),
+      ],
+      "page",
+      "1.7",
+    );
+
+    expect(result?.result).toBe("blocker");
   });
 });

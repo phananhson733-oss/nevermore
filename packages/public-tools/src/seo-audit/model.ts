@@ -361,6 +361,18 @@ function buildRecords(
     onPageByUrl.get(page.url) ?? null;
   const hreflangTargetsOf = (page: SeoAuditPage) =>
     onPageOf(page)?.hreflangAlternates ?? [];
+  /** Alternates this run fetched and found answering 4xx or 5xx. */
+  const brokenHreflangTargetsOf = (page: SeoAuditPage) =>
+    hreflangTargetsOf(page).filter((alternate) => {
+      const target = collectedBySubject.get(
+        subjectUrlOf(alternate.href) ?? alternate.href,
+      );
+      return (
+        target !== undefined &&
+        target.finalStatus !== null &&
+        target.finalStatus >= 400
+      );
+    });
   /** Any page whose alternates list was cut short by the crawl's own cap. */
   const anyHreflangTruncated = (): boolean =>
     raw.pages.some((entry) => entry.onPage?.hreflangAlternatesTruncated === true);
@@ -1346,18 +1358,22 @@ function buildRecords(
       id: "hreflang_target_http_error",
       category: "indexability",
       population: "conditional_subset",
-      tested: htmlPages.filter((page) => hreflangTargetsOf(page).length > 0),
+      // Truncation costs the clean verdict and nothing else. The published
+      // rule is "no alternate returns 4xx or 5xx", a claim about all of them,
+      // so a clean retained prefix cannot stand for the set — it used to make
+      // the record `not_observed`, which the evaluator awards a full-score
+      // PASS with the truncation note sitting beside the pass rather than
+      // preventing it. A broken alternate found inside the prefix needs no
+      // full population, so those pages stay tested: the first attempt at this
+      // dropped them too, and turned a found Blocker into "not tested".
+      tested: htmlPages.filter(
+        (page) =>
+          hreflangTargetsOf(page).length > 0 &&
+          (onPageOf(page)?.hreflangAlternatesTruncated !== true ||
+            brokenHreflangTargetsOf(page).length > 0),
+      ),
       observations: htmlPages.flatMap((page) => {
-        const broken = hreflangTargetsOf(page).filter((alternate) => {
-          const target = collectedBySubject.get(
-            subjectUrlOf(alternate.href) ?? alternate.href,
-          );
-          return (
-            target !== undefined &&
-            target.finalStatus !== null &&
-            target.finalStatus >= 400
-          );
-        });
+        const broken = brokenHreflangTargetsOf(page);
         return broken.length === 0
           ? []
           : [

@@ -78,12 +78,18 @@ describe("weigh, as production calls it", () => {
     });
   });
 
-  it("accepts an image served with no content type at all", async () => {
-    // Plenty of origins do. Refusing them would report "cannot judge" about
-    // sites whose images are fine.
+  it("refuses a response that never said it was an image", async () => {
+    // This test previously asserted the opposite, on the argument that plenty
+    // of origins omit the header. That locked in the hole beside it: a missing
+    // image route answering 200 with a small HTML fallback and no type was
+    // measured as a healthy image. Nothing here can read the bytes, so an
+    // unstated type is "could not establish that this is an image".
     fetchPublicResource.mockResolvedValue(ok({ contentType: null }));
 
-    expect((await read(["https://cdn.test/a.jpg"])).status).toBe("ok");
+    expect(await read(["https://cdn.test/a.jpg"])).toEqual({
+      status: "unavailable",
+      reason: "no_image_could_be_fetched",
+    });
   });
 
   it("refuses a non-2xx even when it arrived with a body", async () => {
@@ -108,10 +114,32 @@ describe("weigh, as production calls it", () => {
     expect(fetchPublicResource.mock.calls.length).toBeLessThan(25);
   });
 
-  it("survives a transport that throws", async () => {
+  it("survives a transport that throws, and charges what it may have cost", async () => {
     fetchPublicResource.mockRejectedValue(new Error("socket hang up"));
+    const sources = Array.from(
+      { length: 25 },
+      (_, i) => `https://cdn.test/x${i}.jpg`,
+    );
 
-    expect((await read(["https://cdn.test/a.jpg"])).status).toBe("unavailable");
+    expect((await read(sources)).status).toBe("unavailable");
+    // A throw carries no byte count, and the body prefix it may already have
+    // pulled is real. Charging zero is how error bodies used to pass the cap
+    // without it seeing a byte.
+    expect(fetchPublicResource.mock.calls.length).toBeLessThan(25);
+  });
+
+  it("keeps the whole run under the ceiling it states, in-flight reads included", async () => {
+    // Checking only what has already been spent let a run just under the
+    // ceiling launch a full concurrent batch and finish above it.
+    fetchPublicResource.mockResolvedValue(ok({ bytes: 200 * 1024 }));
+    const sources = Array.from(
+      { length: 25 },
+      (_, i) => `https://cdn.test/i${i}.jpg`,
+    );
+    await read(sources);
+
+    const transferred = fetchPublicResource.mock.calls.length * 200 * 1024;
+    expect(transferred).toBeLessThanOrEqual(3 * 1024 * 1024);
   });
 
   it("asks for no more of a body than the published budget", async () => {

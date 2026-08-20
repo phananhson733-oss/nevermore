@@ -869,6 +869,22 @@ describe("hreflang alternates", () => {
     expect(page.hreflangAlternatesTruncated).toBe(false);
   });
 
+  it("does not claim truncation at exactly the cap", () => {
+    // The flag used to be set on retaining the last alternate it was allowed
+    // to keep, without establishing that another existed — so a page declaring
+    // exactly the cap was told the crawl had dropped some of its alternates.
+    // That is a sentence about the site the run had not established.
+    const exactly = CRAWL_PROJECTION_LIMITS.maxHreflangAlternates;
+    const links = Array.from(
+      { length: exactly },
+      (_, i) => `<link rel="alternate" hreflang="l${i}" href="/l${i}/">`,
+    ).join("");
+    const page = alternates(`<html><head>${links}</head><body>x`);
+
+    expect(page.hreflangAlternates).toHaveLength(exactly);
+    expect(page.hreflangAlternatesTruncated).toBe(false);
+  });
+
   it("says so when its own cap does cut the list", () => {
     const over = CRAWL_PROJECTION_LIMITS.maxHreflangAlternates + 5;
     const links = Array.from(

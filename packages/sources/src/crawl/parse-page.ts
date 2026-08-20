@@ -1199,14 +1199,18 @@ function collectHreflangAlternates(
       continue;
     }
     if (resolved.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) continue;
-    out.push({
-      lang: boundChars(lang, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
-      href: resolved,
-    });
+    // Checked before adding, not after. Setting the flag on retaining the last
+    // one it was allowed to keep meant a page declaring exactly the cap was
+    // told the crawl had dropped some of its alternates, which is a sentence
+    // about the site that the run had not established.
     if (out.length >= CRAWL_PROJECTION_LIMITS.maxHreflangAlternates) {
       truncated = true;
       break;
     }
+    out.push({
+      lang: boundChars(lang, CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
+      href: resolved,
+    });
   }
   return { alternates: out, truncated };
 }

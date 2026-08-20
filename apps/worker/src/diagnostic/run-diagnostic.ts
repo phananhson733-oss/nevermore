@@ -858,8 +858,12 @@ const crawlSitemapProjectionSchema = z
   .refine(
     (value) =>
       value.urlCount === value.subjectUrls.length &&
-      (value.declaredUrls === undefined ||
-        value.declaredUrls.length === value.subjectUrls.length),
+      // Two shapes, not four. A row predating these fields has neither; a row
+      // written since has both. Accepting them independently let
+      // `{complete: true, declaredUrls: undefined}` through — a completeness
+      // assertion surviving without the population it certifies, which is the
+      // half-migrated shape no producer can emit and no reader should trust.
+      (value.complete === undefined) === (value.declaredUrls === undefined),
   );
 
 const gscWindowMetricsSchema = z

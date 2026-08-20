@@ -89,9 +89,16 @@ async function weigh(url: string): Promise<WeighOutcome> {
       maxBodyBytes: IMAGE_TRANSFER_BUDGET_BYTES,
     });
   } catch {
-    return { spentBytes: 0, measured: null };
+    // An attempt that reached the transport and then threw may have pulled a
+    // body prefix before it died, and the failure carries no byte count — so
+    // the ledger charges the most it could have cost. Over-charging is the
+    // direction a ceiling may err in; charging zero is how five megabytes of
+    // error bodies passed a three-megabyte cap without it seeing a byte.
+    return { spentBytes: IMAGE_TRANSFER_BUDGET_BYTES, measured: null };
   }
-  if (result.kind !== "ok") return { spentBytes: 0, measured: null };
+  if (result.kind !== "ok") {
+    return { spentBytes: IMAGE_TRANSFER_BUDGET_BYTES, measured: null };
+  }
   // Every byte that arrived counts against the run, whatever the response
   // turned out to be. The transport reads the bounded body before the status
   // is inspected, so a page pointing twenty-five `<img>` at a host that answers
@@ -130,15 +137,23 @@ export interface WeighOutcome {
 }
 
 /**
- * Whether the response the origin actually served is an image.
+ * Whether the origin said it served an image.
  *
- * A missing type is accepted: plenty of origins serve images without one, and
- * refusing them would report "cannot judge" on sites whose images are fine. A
- * type that is present and says something else is refused, because that is the
- * origin telling us it sent something other than an image.
+ * A missing type is NOT accepted, and the first version of this guard had it
+ * the other way round on the argument that plenty of origins omit the header
+ * and refusing them would report "cannot judge" about sites whose images are
+ * fine. That trades the rule this product is built on for coverage: a missing
+ * image route answering 200 with a small HTML fallback and no `Content-Type`
+ * was measured as a healthy image, and if every declared source did it the set
+ * read complete and 5.2 passed a page on which no image was ever served.
+ *
+ * Nothing here can check the bytes — the transport returns a length, not a
+ * body — so an unstated type is genuinely "could not establish that this is an
+ * image", and that is what it now reports. Losing coverage on origins that
+ * omit the header is the acceptable direction; the other one is not.
  */
 function isImageContentType(contentType: string | null): boolean {
-  if (contentType === null) return true;
+  if (contentType === null) return false;
   return /^\s*image\//i.test(contentType);
 }
 
@@ -166,7 +181,14 @@ async function weighAll(
   let spent = 0;
   let stoppedAtBudget = false;
   for (let start = 0; start < urls.length; start += CONCURRENCY) {
-    if (spent >= MAX_RUN_TRANSFER_BYTES) {
+    // Reserve what the batch about to launch could cost. Checking only what
+    // has already been spent let a run sitting just under the ceiling start
+    // four more reads and finish above it, so the stated number was never the
+    // real bound. The concurrent worst case is subtracted up front instead.
+    if (
+      spent + CONCURRENCY * IMAGE_TRANSFER_BUDGET_BYTES >
+      MAX_RUN_TRANSFER_BYTES
+    ) {
       stoppedAtBudget = true;
       break;
     }
