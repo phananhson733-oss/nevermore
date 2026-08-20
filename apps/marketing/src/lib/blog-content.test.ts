@@ -155,7 +155,10 @@ describe("repository-backed blog content", () => {
     // 73 → 74 on 2026-08-18: main added another post in the GEO Agent series
     // and again did not move this number, so the count was red on main before
     // this branch merged it. Bumped here rather than left red.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(75);
+    // 75 → 76 on 2026-08-20: 641107fa added the babylovegrowth alternatives
+    // post, same pattern again. A count nobody updates with the content it
+    // counts is red on main until the next unrelated branch notices.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(76);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
