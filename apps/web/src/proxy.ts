@@ -15,6 +15,8 @@ import { buildContentSecurityPolicy } from "../security-headers.ts";
 const PUBLIC_PAGES = ["/login", "/auth/callback"];
 /** Public API prefixes (health checks) that bypass auth. */
 const PUBLIC_API_PREFIXES = ["/api/mvp/health"];
+/** Crawler-facing files that must resolve without a session. */
+const PUBLIC_FILES = ["/robots.txt"];
 
 function requestHeaderOverrides(nonce: string, csp: string): Headers {
   const headers = new Headers();
@@ -66,6 +68,14 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     )
   ) {
+    return secure(nextWithOverrides(request, overrides), csp);
+  }
+
+  // Crawlers arrive without a session. Gating /robots.txt behind auth answers
+  // them with a redirect to /login, which Google reads as "this host has no
+  // crawl policy" and then follows the login HTML into every build asset it
+  // references. Like health, it must also survive an auth outage.
+  if (PUBLIC_FILES.includes(pathname)) {
     return secure(nextWithOverrides(request, overrides), csp);
   }
 

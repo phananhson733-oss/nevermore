@@ -60,5 +60,11 @@ export function buildSecurityHeaders(): SecurityHeader[] {
       key: "Strict-Transport-Security",
       value: "max-age=31536000; includeSubDomains",
     },
+    // Nothing on the product subdomain belongs in a search index: every page
+    // is behind auth except /login. Without this, /login is indexable and the
+    // subdomain's build assets show up in Search Console as coverage problems.
+    // Pages stay crawlable (see `src/app/robots.ts`) precisely so crawlers can
+    // read this header - a blocked URL is one whose noindex is never seen.
+    { key: "X-Robots-Tag", value: "noindex" },
   ];
 }
