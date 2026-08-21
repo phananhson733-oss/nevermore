@@ -417,6 +417,84 @@ describe("buildGeoAiReportCopy", () => {
     expect(markdown).toContain('"taskKind": "collect_missing_input"');
   });
 
+  /*
+   * The brief is fenced JSON with no prose to disambiguate a field name.
+   *
+   * `basis.observed` counts samples that cited the customer on every row but
+   * the avoid row, where it counts samples that cited somebody else. The screen
+   * gives that row its own sentence; a receiving AI reading `{observed: 6,
+   * evaluable: 6}` under "do not build a new page" would otherwise conclude the
+   * site was cited six times — the opposite of why the row exists.
+   */
+  it("labels whose citations each candidate's basis counted", async () => {
+    const run = await wholeRun();
+    const markdown = markdownOf(run);
+
+    const avoid = run.plan.candidates.filter(
+      (candidate) => candidate.kind === "avoid",
+    );
+    const counted = run.plan.candidates.filter(
+      (candidate) => candidate.kind !== "avoid" && candidate.reasonCounts,
+    );
+    expect(avoid.length).toBeGreaterThan(0);
+    expect(counted.length).toBeGreaterThan(0);
+
+    /*
+     * Each label tied to its own row, not merely present somewhere.
+     *
+     * Asserting that both strings appear passes just as well when the table is
+     * inverted, because inverting a two-valued table leaves both values on the
+     * page. The packet's version of this test was re-pinned to `kind` after the
+     * review caught exactly that; this one had the same hole one file over, in
+     * the same round.
+     */
+    type BriefRow = {
+      readonly actionId: string;
+      readonly basisObservedCounts: string | null;
+    };
+    // The brief is several fenced blocks, so take the one carrying solutions.
+    const blocks = [...markdown.matchAll(/```json\n([\s\S]*?)\n```/g)].map(
+      (match) => JSON.parse(match[1]!) as unknown,
+    );
+    const solutions = blocks.find(
+      (value): value is { readonly candidates: readonly BriefRow[] } =>
+        Boolean(
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          "candidates" in value,
+        ),
+    );
+    expect(solutions, "no solutions block in the brief").toBeDefined();
+
+    for (const candidate of run.plan.candidates) {
+      const row = solutions!.candidates.find(
+        (entry) => entry.actionId === candidate.actionId,
+      );
+      expect(row, `no brief row for ${candidate.actionId}`).toBeDefined();
+      expect(row!.basisObservedCounts).toBe(
+        candidate.reasonCounts === null
+          ? null
+          : candidate.kind === "avoid"
+            ? "samples_citing_someone_else"
+            : "samples_citing_target",
+      );
+    }
+  });
+
+  it("says when the confirmed page's query string did not survive export", async () => {
+    const run = await wholeRun();
+    const markdown = markdownOf(run);
+
+    // The fixture's confirmed page is `/pricing?utm_source=deck`. A query
+    // string can be what selects the resource, and no rule tells an identifier
+    // from a tracking tag — so the export says it shortened the URL, the same
+    // disclosure every exported citation carries.
+    expect(run.context.targetUrl).toContain("?");
+    expect(markdown).toContain('"targetUrlQueryRemoved": true');
+    expect(markdown).toContain('"targetUrl": "https://acme.test/pricing"');
+  });
+
   it("explains a zero-candidate result instead of shipping an empty list", async () => {
     const run = await wholeRun({ cited: true });
     const markdown = markdownOf(run);

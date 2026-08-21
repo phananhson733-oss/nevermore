@@ -39,7 +39,7 @@
       },
       "geo": {
         "label": "GEO Agent",
-        "description": "See whether AI answers cite your site, sampled three times per question."
+        "description": "See whether AI answers cite your site, with each retrieval probe sampled three times."
       },
       "tech": {
         "label": "Technical focus",
@@ -3552,7 +3552,7 @@
       },
       "geo": {
         "title": "GEO Agent",
-        "description": "Ask a real AI assistant your buyers' questions three times each and see which sources it cited.",
+        "description": "Ask a real AI assistant eight buyer questions — the five retrieval probes three times each — and see which sources it cited.",
         "scope": "Buyer questions · Repeated sampling · Citations",
         "cta": "Open GEO Agent"
       },
@@ -3572,9 +3572,9 @@
       "subtitle": "Eight buyer questions against real ChatGPT answers: five retrieval probes asked three times each, three natural buyer questions asked once. You confirm every fact and every question before anything runs, and the report keeps the retrieval numbers and the natural-demand numbers apart.",
       "heroCta": "Run GEO Agent",
       "accountBoundaryTitle": "Account access gate",
-      "accountBoundaryBody": "A verified Supabase session is required to run. Each run makes 18 billed provider calls, so it is not available anonymously.",
+      "accountBoundaryBody": "A verified Supabase session is required to run. A run makes up to 18 billed provider calls — fewer if you edit a probe, or if the run stops at its time or spending ceiling — so it is not available anonymously.",
       "dataBoundaryTitle": "Report contents are not stored",
-      "dataBoundaryBody": "The report is returned to this page and never written down: no account history, no server copy of the assistant's answer. Minimal billing and quota metadata is kept by the existing credits system. Leaving the page ends the report, so copy anything you need before you go.",
+      "dataBoundaryBody": "The report is returned to this page: no account history, no server copy of the assistant's answer. Where the browser allows it, the report can be restored in this same tab for up to fifteen minutes, so switching language usually does not lose what you paid for. Minimal billing, quota and abuse-prevention metadata is kept server-side. Treat the report itself as temporary: nothing about it reaches your account, and it may be gone the next time you look — so copy anything you need before you go.",
       "howEyebrow": "How it works",
       "howTitle": "From buyer questions to observed citations",
       "howBody": "Every number in the report is recomputed from the samples underneath it, and a sample that observed nothing is reported as exactly that rather than counted as a zero.",
@@ -3585,7 +3585,7 @@
       "step3Title": "Sample by mode, not uniformly",
       "step3Body": "Retrieval probes are asked three times, because one sample cannot tell a site that is not cited apart from a run that happened not to cite it. Natural buyer questions are asked once: repeating a question the assistant answers from memory mostly repeats the same non-observation.",
       "step4Title": "Read it with its denominator",
-      "step4Body": "Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a probe that failed to trigger a search is excluded as an instrumentation failure rather than counted against you. Copy what you need before you leave — the report is not saved.",
+      "step4Body": "Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a probe that failed to trigger a search is excluded as an instrumentation failure rather than counted against you. Copy what you need before you leave — the report is never saved to your account.",
       "finalBoundary": "This report observes what one assistant answered at one moment. It is not a ranking, not a forecast, and not a measure of traffic.",
       "workbench": {
         "contextTitle": "Confirm what this site is",
@@ -3612,6 +3612,7 @@
         "back": "Back",
         "run": "Run {calls} provider calls",
         "running": "Asking the assistant…",
+        "runBlocked": "{count, plural, one {One question cannot be measured as written, so the run is paused. Its reason is beside it above.} other {# questions cannot be measured as written, so the run is paused. Each reason is beside its own question above.}}",
         "runningHint": "This takes about two minutes. The calls run concurrently and the plan does not change once it has started.",
         "signInRequired": "Sign in to run"
       },
@@ -3679,7 +3680,7 @@
         "unknown_query": "That question is no longer part of the set.",
         "template_unavailable": "No calibrated wording is available for one of the slots.",
         "placeholder_rejected": "One of your values does not fit the calibrated wording. Shorten it to a plain noun phrase.",
-        "question_not_payable": "A question is longer than the provider accepts. Shorten it.",
+        "question_not_payable": "A question is empty, or longer than the provider accepts. Give it some words, or shorten it — the run stays paused until it can be measured.",
         "category_has_no_subject": "\"Tools\", \"software\" and \"platform\" are kinds of product, not categories. Every question is built as your category followed by \"tools\", so a bare product noun renders \"What are the top tools right now?\" — a question with no subject. Name the field you are in, such as \"SEO reporting\" or \"AI visibility tracking\"."
       },
       "slots": {
@@ -3734,7 +3735,7 @@
         "sampledAt": "Sampled {date}",
         "identityTitle": "Run identity",
         "coverageNote": "Each block below is counted against its own denominator, and only the first states anything about the run as a whole. Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a sample that observed nothing is excluded rather than counted as a zero.",
-        "notStored": "Report contents, provider answers and evidence are not stored server-side. Minimal billing, quota and abuse-prevention metadata is retained by the existing credits system. There is no paired recheck in this version.",
+        "notStored": "Report contents, provider answers and evidence are not stored server-side; where the browser allows it, this report can be restored in this same tab for up to fifteen minutes. Minimal billing, quota and abuse-prevention metadata is retained server-side. There is no paired recheck in this version.",
         "questionsTitle": "Question by question",
         "empty": "No question produced a usable sample in this run.",
         "sampleLabel": "Sample {index}",
@@ -3754,6 +3755,7 @@
         "observed": "Observed",
         "noSearch": "Never searched",
         "noSearchScope": "Retrieval probes only",
+        "observedScope": "Includes answers written without a search",
         "unavailableSamples": "Unavailable",
         "boundaryUnavailable": "Unavailable is not zero",
         "boundaryNoSearch": "Never searched is not the same as not cited",
@@ -3858,6 +3860,7 @@
         "sentinel_cohort_not_full_coverage": "Eight questions are a reproducible sentinel cohort, not the complete question space.",
         "degraded_retrieval_trigger": "At least one retrieval probe did not reach the live web, so this run is degraded.",
         "partial_run": "Some planned calls produced no usable answer; they are excluded rather than counted as zero.",
+        "cost_ceiling_reached": "This run reached its own spending ceiling. It may have stopped short of the full plan because of it, or crossed the ceiling with every call already out — this line cannot tell you which, and a sample missing below may have failed for its own reasons.",
         "cost_incomplete": "The provider did not price every call, so the run total is incomplete rather than understated.",
         "outside_calibrated_market": "The market asked in was not the market the wording was calibrated in.",
         "recommendation_not_evaluated": "Whether the assistant recommended you was not evaluated. Not evaluated is not the same as not recommended."
@@ -3881,9 +3884,11 @@
         "geo_prompt_too_long": "One question is longer than the provider accepts. Shorten it — nothing was billed.",
         "geo_plan_size_mismatch": "The run plan did not match the confirmed question set. Nothing was billed.",
         "geo_budget_exhausted": "The GEO Agent has reached today's run budget. Try again tomorrow.",
+        "geo_brand_stance_mismatch": "A question's brand label did not match its own text, which this page should never send. Reload and generate the questions again — nothing was billed.",
         "geo_budget_unavailable": "The run budget cannot be checked right now. Try again shortly.",
         "geo_provider_unavailable": "The answer provider is unavailable. Nothing was billed.",
         "geo_report_invalid": "The report did not pass its own consistency check, so it was not shown.",
+        "geo_time_budget_exhausted": "The request ran out of time before its first provider call. Nothing was billed — start the run again.",
         "unknown": "The run could not be completed. Nothing was saved."
       },
       "assetTypes": {
@@ -3913,7 +3918,7 @@
       },
       "sources": {
         "title": "Who these answers actually cited",
-        "note": "Counted from the same evidence listed above, against the same denominator. Hosts only — this run cannot tell you what any of these pages is, only that the answer linked to it.",
+        "note": "Counted from the same evidence listed above, against the same denominator. Grouped by host, with the URLs observed on each one click down — this run cannot tell you what any of those pages is, only that the answer linked to it.",
         "empty": "No citation-evaluable sample cited anything, so there is no source pattern to read.",
         "colDomain": "Host",
         "colSamples": "Samples",
@@ -3924,7 +3929,7 @@
         "questionShare": "{cited} of {total}",
         "targetAbsent": "{host} is not among them.",
         "targetPresent": "{host} is among them.",
-        "showUrls": "Show the {count} URLs on this host",
+        "showUrls": "{count, plural, one {Show the one URL on this host} other {Show the # URLs on this host}}",
         "mode": {
           "retrieval_probe": "Retrieval probes · asked three times each",
           "natural_demand": "Natural-demand questions · asked once each"
@@ -3959,12 +3964,12 @@
         "requiresReview": "Requires human review",
         "noGuarantee": "Being cited is not being recommended, and doing this does not guarantee a future citation. Recommendation was not evaluated in this run.",
         "copyTitle": "Copy report for AI",
-        "copyIntro": "Copies the whole report as an implementation brief you can hand straight to an AI. Every value sits inside a JSON fence and is labelled untrusted input.",
+        "copyIntro": "Copies this report as an implementation brief you can hand straight to an AI: every count with its denominator, and the most-cited domains per question. What stays on this screen is the evidence underneath — each citation's exact URL, and the title and answer annotation where the provider gave them. Every value sits inside a JSON fence and is labelled untrusted input.",
         "copyForAi": "Copy report for AI",
         "preview": "See exactly what gets copied",
-        "copied": "The whole report was copied.",
+        "copied": "The brief was copied.",
         "copyFailed": "Could not reach the clipboard. Select the text below and copy it.",
-        "copyIsNotApproval": "Copying is not approval and not publication. Nothing about this run has been sent anywhere.",
+        "copyIsNotApproval": "Copying is not approval and not publication. This brief grants nobody permission to change your site, open a pull request, deploy or publish anything.",
         "refusalTitle": "This report cannot be turned into a copyable brief right now",
         "refusal": {
           "context_report_mismatch": "The confirmed facts on this page and this report are not from the same run, so they must not be handed over together.",

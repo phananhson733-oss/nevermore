@@ -39,7 +39,7 @@
       },
       "geo": {
         "label": "GEO Agent",
-        "description": "看 AI 的回答会不会引用你的站点，每个问题采样三次。"
+        "description": "看 AI 的回答会不会引用你的站点，其中每个检索探针采样三次。"
       },
       "tech": {
         "label": "技术焦点",
@@ -3552,7 +3552,7 @@
       },
       "geo": {
         "title": "GEO Agent",
-        "description": "把买家真正会问的问题各问三遍，看 AI 的回答引用了谁。",
+        "description": "把八个买家问题真实地问一次 AI 助手——其中五个检索探针各问三遍——看它引用了谁。",
         "scope": "买家问题 · 重复采样 · 引用",
         "cta": "打开 GEO Agent"
       },
@@ -3572,9 +3572,9 @@
       "subtitle": "八个买家问题对真实 ChatGPT 回答：五个检索探针各问三次，三个自然买家问题各问一次。运行前每一项事实和每一句问题都由你确认，报告把检索数据和自然需求数据分开呈现。",
       "heroCta": "运行 GEO Agent",
       "accountBoundaryTitle": "账号访问门",
-      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每轮发起 18 次计费的 provider 调用，因此不对匿名访客开放。",
+      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。每轮最多发起 18 次计费的 provider 调用——编辑过探针、或本轮触到时间/花费上限，都会更少——因此不对匿名访客开放。",
       "dataBoundaryTitle": "报告内容不落库",
-      "dataBoundaryBody": "报告只回到本页，不写入任何地方：没有账号历史，服务端也不保留助手的回答。既有积分系统仍保留最少量的计费与配额元数据。离开页面报告即结束，走之前请先复制需要的内容。",
+      "dataBoundaryBody": "报告只回到本页：没有账号历史，服务端也不保留助手的回答。在浏览器允许的情况下，报告可以在同一个标签页里恢复，最长十五分钟，所以切换语言通常不会丢掉已经付费的结果。服务端保留最少量的计费、配额与防滥用元数据。报告本身请当成临时的：它的内容不会进入你的账号，下次再看可能就没了——走之前请先复制需要的内容。",
       "howEyebrow": "工作方式",
       "howTitle": "从买家问题到观察到的引用",
       "howBody": "报告里的每个数字都由其下方的样本重新推导；什么都没观察到的样本会如实记为「没观察到」，不会当作 0 计入。",
@@ -3585,7 +3585,7 @@
       "step3Title": "按模式采样，而不是一刀切",
       "step3Body": "检索探针问三次：一次样本无法区分「站点没被引用」和「这一轮恰好没引用」。自然买家问题只问一次：助手凭记忆回答的问题重复问，多半只是重复同一个「没观察到」。",
       "step4Title": "连着分母一起读",
-      "step4Body": "检索与自然需求绝不共用一个数字，入题品牌与未入题品牌的提及也绝不共用一个数字；没能触发联网搜索的探针按仪器故障剔除，而不是记在你头上。走之前先复制——报告不会保存。",
+      "step4Body": "检索与自然需求绝不共用一个数字，入题品牌与未入题品牌的提及也绝不共用一个数字；没能触发联网搜索的探针按仪器故障剔除，而不是记在你头上。走之前先复制——报告不会存进你的账号。",
       "finalBoundary": "这份报告只观察了某一个助手在某一刻的回答。它不是排名、不是预测，也不衡量流量。",
       "workbench": {
         "contextTitle": "确认这个站点是什么",
@@ -3612,6 +3612,7 @@
         "back": "返回",
         "run": "运行 {calls} 次 provider 调用",
         "running": "正在提问…",
+        "runBlocked": "{count, plural, other {有 # 句问题按当前写法无法测量，运行已暂停。各自的原因就在上面那句问题旁边。}}",
         "runningHint": "大约需要两分钟。调用并发执行，计划一旦开始就不再变化。",
         "signInRequired": "登录后运行"
       },
@@ -3679,7 +3680,7 @@
         "unknown_query": "该问题已不在本组问题里。",
         "template_unavailable": "其中一个槽位没有可用的已标定措辞。",
         "placeholder_rejected": "你填的某个值放不进已标定的措辞。请缩短成一个普通名词短语。",
-        "question_not_payable": "有一句问题超过 provider 接受的长度，请缩短。",
+        "question_not_payable": "有一句问题是空的，或者超过了 provider 接受的长度。请补上内容或缩短它——在它可被测量之前，运行会一直暂停。",
         "category_has_no_subject": "「工具」「软件」「平台」是一类产品，不是品类。每个问题都会拼成「你的品类 + tools」，只填产品名词会生成「What are the top tools right now?」——一个没有主语的问题。请填你所在的领域，比如「SEO 报告」「AI 可见度追踪」。"
       },
       "slots": {
@@ -3734,7 +3735,7 @@
         "sampledAt": "采样于 {date}",
         "identityTitle": "运行身份",
         "coverageNote": "下面每一块都按各自的分母计数，只有第一块是关于整轮的陈述。检索与自然需求绝不共用一个数字，入题与未入题的提及也绝不共用一个数字；什么都没观察到的样本被剔除，而不是记作 0。",
-        "notStored": "报告内容、provider 回答与证据都不在服务端留存。既有积分系统仍保留最少量的计费、配额与防滥用元数据。本版本没有配对复检。",
+        "notStored": "报告内容、provider 回答与证据都不在服务端留存；在浏览器允许的情况下，这份报告可以在同一个标签页里恢复，最长十五分钟。服务端保留最少量的计费、配额与防滥用元数据。本版本没有配对复检。",
         "questionsTitle": "逐题结果",
         "empty": "本轮没有任何一题产出可用样本。",
         "sampleLabel": "样本 {index}",
@@ -3754,6 +3755,7 @@
         "observed": "已观测",
         "noSearch": "未联网检索",
         "noSearchScope": "仅统计检索探针",
+        "observedScope": "含未经联网检索写出的回答",
         "unavailableSamples": "不可用",
         "boundaryUnavailable": "不可用不等于 0",
         "boundaryNoSearch": "未联网检索不等于未被引用",
@@ -3858,6 +3860,7 @@
         "sentinel_cohort_not_full_coverage": "八个问题是一组可复现的哨兵问题，不是完整的问题空间。",
         "degraded_retrieval_trigger": "至少有一个检索探针没有触达实时网页，因此本轮为降级运行。",
         "partial_run": "部分计划内调用没有产出可用回答；它们被剔除而不是记作 0。",
+        "cost_ceiling_reached": "本轮触到了自己的花费上限。它可能因此没跑完整个计划，也可能是在所有调用都已发出之后才越过上限——这一条判断不了是哪种，下面缺失的采样也可能有它自己的原因。",
         "cost_incomplete": "provider 没有给出每一次调用的价格，因此总额不完整，而不是被低估。",
         "outside_calibrated_market": "提问所用的市场不是措辞被标定的市场。",
         "recommendation_not_evaluated": "本轮未评估助手是否推荐了你。「未评估」不等于「未推荐」。"
@@ -3881,9 +3884,11 @@
         "geo_prompt_too_long": "有一句问题超过 provider 接受的长度，请缩短——没有产生任何计费。",
         "geo_plan_size_mismatch": "运行计划与已确认的问题集不一致。没有产生任何计费。",
         "geo_budget_exhausted": "GEO Agent 已用完今天的运行预算，请明天再试。",
+        "geo_brand_stance_mismatch": "有问题的品牌标注与它自己的文本对不上，本页面本不该发出这样的请求。请刷新后重新生成问题——没有产生任何计费。",
         "geo_budget_unavailable": "当前无法检查运行预算，请稍后再试。",
         "geo_provider_unavailable": "回答 provider 不可用。没有产生任何计费。",
         "geo_report_invalid": "报告没有通过自身一致性检查，因此未予展示。",
+        "geo_time_budget_exhausted": "这次请求在发出第一次 provider 调用之前就用完了时间。没有产生任何计费——请重新发起运行。",
         "unknown": "本次运行未能完成。没有保存任何内容。"
       },
       "assetTypes": {
@@ -3913,7 +3918,7 @@
       },
       "sources": {
         "title": "这些回答实际在引谁",
-        "note": "按上面同一批证据、同一个分母统计。只到域名——本轮无法判断这些页面各自是什么，只知道回答链接到了它。",
+        "note": "按上面同一批证据、同一个分母统计。先按域名归组，展开可看该域名下观察到的 URL——本轮无法判断这些页面各自是什么，只知道回答链接到了它。",
         "empty": "没有任何可评估引用样本引用了内容，因此没有来源模式可读。",
         "colDomain": "域名",
         "colSamples": "样本",
@@ -3959,12 +3964,12 @@
         "requiresReview": "需人工复核",
         "noGuarantee": "被引用不等于被推荐，做完这件事也不保证之后会被引用。本轮没有评估过推荐。",
         "copyTitle": "复制报告给 AI",
-        "copyIntro": "把整份报告复制成一段可以直接交给 AI 的实施说明。所有数据都封在 JSON 围栏里，并明确标注为不可信输入。",
+        "copyIntro": "把这份报告复制成一段可以直接交给 AI 的实施说明：每个计数连同它的分母，以及每题引用最多的那几个域名。留在这个屏幕上的是底下的证据——每条引用的确切 URL，以及 provider 给出时的标题与回答内标注。所有数据都封在 JSON 围栏里，并明确标注为不可信输入。",
         "copyForAi": "复制报告给 AI",
         "preview": "先看看要复制的内容",
-        "copied": "整份报告已复制。",
+        "copied": "实施说明已复制。",
         "copyFailed": "无法访问剪贴板。请选中下面的内容自行复制。",
-        "copyIsNotApproval": "复制不等于批准，也不等于发布。本轮没有向任何地方发送过任何东西。",
+        "copyIsNotApproval": "复制不等于批准，也不等于发布。这份说明不授予任何人改动你的站点、开 PR、部署或发布任何内容的权限。",
         "refusalTitle": "这份报告现在无法生成可复制版本",
         "refusal": {
           "context_report_mismatch": "页面上的确认信息和这份报告不是同一次运行的，不能拼在一起交出去。",
@@ -4059,7 +4064,7 @@
           "page_inventory_not_collected": "没有盘点你已有哪些页面。",
           "source_pattern_not_explained": "本轮只能说这些答案引了谁，说不了为什么是它们。"
         },
-        "problemsEyebrow": "从观测到诊断",
+        "problemsEyebrow": "基于观测到的事实",
         "solutionsEyebrow": "报告的一部分"
       }
     },

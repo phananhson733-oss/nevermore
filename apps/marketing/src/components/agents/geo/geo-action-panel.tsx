@@ -19,6 +19,9 @@ import {
   deriveGeoSolutionPresentations,
   type GeoSolutionPresentationV1,
 } from "../../../lib/agents/geo-solution-presentation";
+// Relative, like the other i18n consumers here: the shared Vitest config maps
+// `@/` to apps/web only.
+import { routing } from "../../../i18n/routing";
 
 const BUTTON_CLASS =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-brand-accent/50 bg-brand-panel px-5 text-[13.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
@@ -200,11 +203,25 @@ function SolutionCard({
  * The two locales the brief is written in.
  *
  * Narrowed here rather than at the call site: the route's locale is a string,
- * and a third locale added to the site must fail this function rather than
- * silently produce an English brief under a Chinese heading.
+ * and a third locale added to the site must fail rather than silently produce
+ * an English brief under a Chinese heading.
+ *
+ * The failure is a build failure, not a thrown error. `routing.locales` is the
+ * site's list, and the assignment below stops compiling the day a third entry
+ * joins it — which is when somebody has to decide what the brief says. Throwing
+ * instead would have moved that decision to a visitor's screen, taking down a
+ * report they had already paid eighteen provider calls for.
  */
+const GEO_COPY_LOCALES = {
+  en: "en",
+  zh: "zh",
+} as const satisfies Record<
+  (typeof routing.locales)[number],
+  GeoAiReportCopyLocale
+>;
+
 function geoCopyLocale(locale: string): GeoAiReportCopyLocale {
-  return locale === "zh" ? "zh" : "en";
+  return locale === "zh" ? "zh" : GEO_COPY_LOCALES.en;
 }
 
 export function GeoActionPanel({
@@ -357,9 +374,7 @@ export function GeoActionPanel({
               <summary className="cursor-pointer text-[12.5px] text-text-dark-secondary">
                 {t("solutions.preview")}
               </summary>
-              <pre
-                className="mt-2 max-h-96 w-full max-w-full overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[10.5px] leading-[1.5] text-text-dark-secondary"
-              >
+              <pre className="mt-2 max-h-96 w-full max-w-full overflow-auto rounded-row border border-brand-border-card bg-brand-panel p-3 font-mono text-[10.5px] leading-[1.5] text-text-dark-secondary">
                 {markdown}
               </pre>
             </details>

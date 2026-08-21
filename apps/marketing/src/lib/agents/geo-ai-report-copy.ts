@@ -4,6 +4,7 @@
 
 import {
   GEO_ACTION_TASK_KIND,
+  GEO_OBSERVED_SUBJECT,
   sanitizeGeoExportUrl,
 } from "./geo-action-handoff.ts";
 import type { GeoActionPlanV1 } from "./geo-action-mapping.ts";
@@ -28,8 +29,17 @@ import {
   type GeoModeSourcesV1,
 } from "./geo-source-landscape.ts";
 
+/**
+ * v2: three fields that change how the numbers underneath them read.
+ *
+ * `basisObservedCounts` names whose citations a row's ratio counted — the avoid
+ * row counts somebody else's — and `targetUrlQueryRemoved` /
+ * `targetPageQueryRemoved` say a URL was shortened on the way out. This is the
+ * document that actually reaches an assistant, so its version had more claim to
+ * a bump than the packet's did.
+ */
 export const GEO_AI_REPORT_COPY_SCHEMA_VERSION =
-  "geo_ai_report_copy.v1" as const;
+  "geo_ai_report_copy.v2" as const;
 
 /**
  * The brief's own cap, not the selected-action packet's.
@@ -302,6 +312,12 @@ export function buildGeoAiReportCopy(
     // AI the site root as "the confirmed page" is how work lands on the wrong
     // one. Found by cross-model review, 2026-08-19.
     targetUrlFragmentRemoved: targetFragmentRemoved,
+    // Same reasoning as the fragment, and the same reason every citation in
+    // this brief carries the flag: a query string can select the resource, so
+    // `/product?id=42` exported as `/product` may not be the page that was
+    // confirmed. The receiver is told the URL was shortened rather than left to
+    // assume it is verbatim.
+    targetUrlQueryRemoved: target.queryRemoved,
     productName: context.productName,
     category: context.category,
     buyer: context.buyer,
@@ -371,28 +387,51 @@ export function buildGeoAiReportCopy(
   }));
 
   const solutions = {
-    candidates: plan.candidates.map((candidate) => ({
-      actionId: candidate.actionId,
-      kind: candidate.kind,
-      // The same verb the packet uses, from the same table. A receiver reading
-      // the machine half must never be told to build the entry that says not to.
-      taskKind: GEO_ACTION_TASK_KIND[candidate.kind],
-      assetType: candidate.assetType,
-      reason: candidate.reason,
-      basis: candidate.reasonCounts,
-      // Ids, not text. Every question's exact wording appears once, in its own
-      // section; repeating it per candidate would give a merged candidate five
-      // copies of the same string and put the size cap in reach of an ordinary
-      // report.
-      queryIds: [...candidate.queryIds],
-      targetPage:
+    candidates: plan.candidates.map((candidate) => {
+      const targetPage =
         candidate.targetUrl === null
           ? null
-          : sanitizeGeoExportUrl(candidate.targetUrl).safeUrl,
-      unknowns: [...candidate.unknowns],
-      limitations: [...candidate.limitations],
-      requiresHumanReview: true,
-    })),
+          : sanitizeGeoExportUrl(candidate.targetUrl);
+      return {
+        actionId: candidate.actionId,
+        kind: candidate.kind,
+        // The same verb the packet uses, from the same table. A receiver reading
+        // the machine half must never be told to build the entry that says not to.
+        taskKind: GEO_ACTION_TASK_KIND[candidate.kind],
+        assetType: candidate.assetType,
+        reason: candidate.reason,
+        basis: candidate.reasonCounts,
+        /*
+         * What `basis.observed` counts, in the row's own terms.
+         *
+         * For a "do" row it is the samples that cited the customer; for the
+         * avoid row it is the samples that cited somebody else and never them.
+         * The two are opposite readings of the same field name, and the screen
+         * disambiguates them with a sentence per reason that this fenced JSON
+         * does not have. Without the subject spelled out, an AI reading
+         * `{observed: 2, evaluable: 3}` under "do not build a new page" can
+         * conclude the site was cited twice — the opposite of why the row is
+         * there.
+         */
+        // From the same table the packet reads, not a second copy of the rule:
+        // two inline ternaries are two chances for one of them to drift. Null
+        // where there is no ratio to give a subject to.
+        basisObservedCounts:
+          candidate.reasonCounts === null
+            ? null
+            : GEO_OBSERVED_SUBJECT[candidate.kind],
+        // Ids, not text. Every question's exact wording appears once, in its own
+        // section; repeating it per candidate would give a merged candidate five
+        // copies of the same string and put the size cap in reach of an ordinary
+        // report.
+        queryIds: [...candidate.queryIds],
+        targetPage: targetPage?.safeUrl ?? null,
+        targetPageQueryRemoved: targetPage?.queryRemoved ?? false,
+        unknowns: [...candidate.unknowns],
+        limitations: [...candidate.limitations],
+        requiresHumanReview: true,
+      };
+    }),
     // Explained rather than left as an empty list: "every question already
     // cited you" and "nothing could be counted" are opposite findings and an
     // empty array looks identical for both.

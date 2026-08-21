@@ -112,12 +112,26 @@ function MetricTable({
  * as an instrument failure. It is counted over retrieval probes alone and
  * labelled that way, which is the only reading that is true.
  */
+/*
+ * The four numbers, and why they are not four slices of one pie.
+ *
+ * `attempted = observed + unavailable` is the split; `neverSearched` sits
+ * inside `observed` rather than beside it. An answer written from memory is an
+ * observation: it cannot show who was cited, because it cited nobody, but it
+ * still shows whether the customer was named. Subtracting those samples out of
+ * `observed` — as the approved mock did, where the four numbers summed to the
+ * attempted total — would report a working instrument as one that saw nothing
+ * on three of its samples, and would leave the mention counts underneath with
+ * no visible denominator to belong to. Each number carries its own scope line
+ * instead.
+ */
 function overviewCounts(coverage: GeoRunCoverageV3) {
   const probes = coverage.search.retrieval_probe;
   return {
     attempted: coverage.totals.scheduledSamples,
     observed: coverage.totals.answeredSamples,
-    neverSearched: probes.searchEvaluableSamples - probes.searchPerformedSamples,
+    neverSearched:
+      probes.searchEvaluableSamples - probes.searchPerformedSamples,
     unavailable: coverage.totals.unavailableSamples,
   };
 }
@@ -129,7 +143,9 @@ function overviewCounts(coverage: GeoRunCoverageV3) {
  * the first thing a reader needs in order to know how much weight the rest of
  * the page can carry.
  */
-function availabilityOf(coverage: GeoRunCoverageV3): "Full" | "Partial" | "None" {
+function availabilityOf(
+  coverage: GeoRunCoverageV3,
+): "Full" | "Partial" | "None" {
   if (coverage.totals.answeredSamples === 0) return "None";
   const degraded =
     coverage.triggerFailedProbes > 0 ||
@@ -433,6 +449,34 @@ function ModeSourceTable({
                           <Tag tone="accent">{t("sources.yours")}</Tag>
                         </span>
                       )}
+                      {/*
+                        Which pages on this host, one click down.
+                        The table aggregates to the host because that is the
+                        pattern worth reading first, but "acme.test was cited in
+                        3 of 3" does not say whether that was one page three
+                        times or three different pages. The URLs were derived
+                        and carried here from the start; only this disclosure
+                        was missing.
+                      */}
+                      {source.urls.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[11px] text-text-dark-tertiary">
+                            {t("sources.showUrls", {
+                              count: source.urls.length,
+                            })}
+                          </summary>
+                          <ul className="mt-1 grid gap-0.5">
+                            {source.urls.map((url) => (
+                              <li
+                                key={url}
+                                className="font-mono text-[10.5px] break-all text-text-dark-secondary"
+                              >
+                                {url}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-dark-secondary">
                       {t("sources.sampleShare", {
@@ -502,7 +546,8 @@ function sampleOutcomeKey(
   sample: GeoSampleV3,
   mode: GeoQuestionObservationV3["mode"],
 ): string {
-  if (sample.answerStatus !== "answered") return "answerStatus.no_usable_answer";
+  if (sample.answerStatus !== "answered")
+    return "answerStatus.no_usable_answer";
   if (mode === "retrieval_probe" && sample.webSearchPerformed !== true) {
     return "results.notSearched";
   }
@@ -776,21 +821,21 @@ export function GeoReportView({
           <summary className="cursor-pointer text-[12px] text-text-dark-secondary">
             {t("results.identityTitle")}
           </summary>
-        <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
-          {identity.map(([key, value]) => (
-            <div key={key} className="text-[11.5px] leading-[1.5]">
-              <dt className="inline text-text-dark-tertiary">
-                {t(`identity.${key}`)}:{" "}
-              </dt>
-              <dd className="inline font-mono text-[11px] text-text-dark-secondary">
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-          {t(`identity.${provenance.triggerCalibrationScope}`)}
-        </p>
+          <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            {identity.map(([key, value]) => (
+              <div key={key} className="text-[11.5px] leading-[1.5]">
+                <dt className="inline text-text-dark-tertiary">
+                  {t(`identity.${key}`)}:{" "}
+                </dt>
+                <dd className="inline font-mono text-[11px] text-text-dark-secondary">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+            {t(`identity.${provenance.triggerCalibrationScope}`)}
+          </p>
         </details>
         {/*
           Stays outside the disclosure. What is kept and what is not is a promise
@@ -834,7 +879,7 @@ export function GeoReportView({
           {(
             [
               ["attempted", overview.attempted, null],
-              ["observed", overview.observed, null],
+              ["observed", overview.observed, "results.observedScope"],
               ["noSearch", overview.neverSearched, "results.noSearchScope"],
               ["unavailableSamples", overview.unavailable, null],
             ] as const
@@ -891,36 +936,36 @@ export function GeoReportView({
             {t("results.coverageNote")}
           </p>
           <div className="mt-3 grid gap-4">
-          {/* Only the three mode-agnostic facts are stated about the whole run.
+            {/* Only the three mode-agnostic facts are stated about the whole run.
               A run-level "named in 4 of 18" would blend three prompted
               repetitions with one unprompted discovery, and a run-level
               "searched 15 of 18" would count three natural-demand questions
               that were never expected to search. */}
-          <MetricTable label={t("coverage.totals")} rows={totalsRows} />
-          <MetricTable
-            label={t("coverage.searchRetrieval")}
-            rows={searchRows(coverage.search.retrieval_probe)}
-          />
-          <MetricTable
-            label={t("coverage.searchNatural")}
-            rows={searchRows(coverage.search.natural_demand)}
-          />
-          <MetricTable
-            label={t("coverage.citationRetrieval")}
-            rows={citationRows(coverage.citation.retrieval_probe)}
-          />
-          <MetricTable
-            label={t("coverage.citationNatural")}
-            rows={citationRows(coverage.citation.natural_demand)}
-          />
-          <MetricTable
-            label={t("coverage.mentionUnprompted")}
-            rows={mentionRows(coverage.mention.unprompted)}
-          />
-          <MetricTable
-            label={t("coverage.mentionPrompted")}
-            rows={mentionRows(coverage.mention.prompted)}
-          />
+            <MetricTable label={t("coverage.totals")} rows={totalsRows} />
+            <MetricTable
+              label={t("coverage.searchRetrieval")}
+              rows={searchRows(coverage.search.retrieval_probe)}
+            />
+            <MetricTable
+              label={t("coverage.searchNatural")}
+              rows={searchRows(coverage.search.natural_demand)}
+            />
+            <MetricTable
+              label={t("coverage.citationRetrieval")}
+              rows={citationRows(coverage.citation.retrieval_probe)}
+            />
+            <MetricTable
+              label={t("coverage.citationNatural")}
+              rows={citationRows(coverage.citation.natural_demand)}
+            />
+            <MetricTable
+              label={t("coverage.mentionUnprompted")}
+              rows={mentionRows(coverage.mention.unprompted)}
+            />
+            <MetricTable
+              label={t("coverage.mentionPrompted")}
+              rows={mentionRows(coverage.mention.prompted)}
+            />
           </div>
         </details>
       </div>

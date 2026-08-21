@@ -40,7 +40,10 @@ vi.mock("../../auth/sign-in-dialog", () => ({
 
 const { GeoWorkbench } = await import("./geo-workbench");
 
-function setValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
+function setValue(
+  element: HTMLInputElement | HTMLSelectElement,
+  value: string,
+) {
   const prototype =
     element instanceof HTMLSelectElement
       ? HTMLSelectElement.prototype
@@ -106,10 +109,7 @@ describe("GeoWorkbench", () => {
       setValue(field("geo-category"), "seo");
       setValue(field("geo-buyer"), "ceo");
       setValue(field("geo-rivals"), "semrush");
-      setValue(
-        host.querySelector<HTMLSelectElement>("#geo-market")!,
-        market,
-      );
+      setValue(host.querySelector<HTMLSelectElement>("#geo-market")!, market);
     });
   }
 
@@ -303,12 +303,200 @@ describe("GeoWorkbench", () => {
     expect(host.textContent).toContain("Edited · not measured");
   });
 
+  /*
+   * A refused edit keeps the visitor's text.
+   *
+   * The input is controlled by the query set, so putting the last accepted set
+   * back on a refusal types the old question straight back into the box —
+   * emptying the field becomes impossible, one character at a time. This is
+   * what an earlier version of this fix did.
+   */
+  it("lets a question be cleared, even though empty text is refused", async () => {
+    await confirmContext();
+    const input = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+
+    await act(async () => {
+      setValue(input, "");
+    });
+    await flush();
+
+    const after = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+    expect(after.value).toBe("");
+  });
+
+  it("blocks the run and says why while a question is unpayable", async () => {
+    await confirmContext();
+    const input = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+
+    await act(async () => {
+      setValue(input, "");
+    });
+    await flush();
+
+    // The set on screen carries the empty text under the old sample plan, so
+    // the plan panel would otherwise offer to buy three samples of a question
+    // with no words in it. The server refuses such a set before billing; the
+    // page says so rather than silently correcting the text.
+    const run = button("Run 18 provider calls");
+    expect(run?.disabled).toBe(true);
+    // The reason covers both ways a question stops being payable — emptied and
+    // too long — because one refusal code carries both.
+    expect(host.textContent).toContain("A question is empty, or longer than");
+    // Beside its own question, not in the run-failure banner at the top: that
+    // banner takes focus, and this fires on a keystroke.
+    const reason = host.querySelector(
+      "#geo-q-core-category_discovery-rejection",
+    );
+    expect(reason).not.toBeNull();
+    expect(
+      host
+        .querySelector("#geo-q-core-category_discovery")
+        ?.getAttribute("aria-describedby"),
+    ).toBe("geo-q-core-category_discovery-rejection");
+  });
+
+  it("leaves focus in the field a refused keystroke came from", async () => {
+    await confirmContext();
+    const input = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+    input.focus();
+
+    await act(async () => {
+      setValue(input, "");
+    });
+    await flush();
+
+    // Routing this refusal through the workbench banner scrolled to the top and
+    // focused the alert, so clearing a field threw the visitor out of it — and
+    // did it again on every further keystroke.
+    expect(document.activeElement).toBe(
+      host.querySelector("#geo-q-core-category_discovery"),
+    );
+  });
+
+  it("keeps the run blocked while a second question is still refused", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-constraint_fit")!,
+        "",
+      );
+    });
+    await flush();
+
+    // Fix one of the two.
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "Which seo tools do enterprise teams trust?",
+      );
+    });
+    await flush();
+
+    // A flat reason list showed one message for two refusals and cleared it as
+    // soon as either was fixed, leaving a dead button and nothing to read.
+    expect(
+      host.querySelector("#geo-q-core-constraint_fit-rejection"),
+    ).not.toBeNull();
+    expect(
+      host.querySelector("#geo-q-core-category_discovery-rejection"),
+    ).toBeNull();
+    const run = [...host.querySelectorAll("button")].find((node) =>
+      node.textContent?.includes("provider calls"),
+    ) as HTMLButtonElement | undefined;
+    expect(run?.disabled).toBe(true);
+  });
+
+  it("gives the disabled run button a reason a screen reader can reach", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+
+    // A disabled button announces "unavailable" and nothing else, so what is
+    // blocking it travels with it. The reasons themselves stay beside their own
+    // questions rather than being repeated here.
+    const run = button("Run 18 provider calls")!;
+    expect(run.getAttribute("aria-describedby")).toBe("geo-run-blocked");
+    const reason = host.querySelector("#geo-run-blocked");
+    expect(reason?.textContent).toContain("cannot be measured as written");
+  });
+
+  it("forgets a refusal when the question set is rebuilt", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+
+    // Back to the review step and forward again, on the same mounted component
+    // — the path a visitor takes. Question ids come from the slot alone, so the
+    // rebuilt set has the very same ids. A refusal kept across the rebuild
+    // disabled the run for a question with nothing visibly wrong with it, and
+    // no message anywhere to say why.
+    await act(async () => {
+      button("Back")!.click();
+    });
+    await act(async () => {
+      button("Confirm and generate the questions")!.click();
+    });
+    await flush();
+
+    expect(
+      host.querySelector("#geo-q-core-category_discovery-rejection"),
+    ).toBeNull();
+    expect(button("Run 18 provider calls")?.disabled).toBe(false);
+  });
+
+  it("re-enables the run once the question is payable again", async () => {
+    await confirmContext();
+    const input = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+
+    await act(async () => {
+      setValue(input, "");
+    });
+    await flush();
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "Which seo tools do enterprise teams trust?",
+      );
+    });
+    await flush();
+
+    expect(button("Run 16 provider calls")?.disabled).toBe(false);
+  });
+
   it("warns before charging when the market is outside the calibration", async () => {
     await confirmContext("DE");
 
-    expect(host.textContent).toContain(
-      "calibrated with US market settings",
-    );
+    expect(host.textContent).toContain("calibrated with US market settings");
     expect(host.textContent).toContain("DE");
   });
 
@@ -579,7 +767,9 @@ describe("GeoWorkbench", () => {
   });
 
   it("shows the form again rather than presenting an expired report as current", async () => {
-    await storeFinishedRun(new Date(Date.now() - 16 * 60 * 1_000).toISOString());
+    await storeFinishedRun(
+      new Date(Date.now() - 16 * 60 * 1_000).toISOString(),
+    );
     render();
     await flush();
 

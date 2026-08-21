@@ -38,7 +38,11 @@ const CONTEXT_INPUT: GeoContextInputV1 = {
   targetUrl: "https://acme.test/",
   productName: "Acme Analytics",
   brandAliases: [
-    { alias: "Acme Analytics", source: "profile_product_name", confirmed: true },
+    {
+      alias: "Acme Analytics",
+      source: "profile_product_name",
+      confirmed: true,
+    },
   ],
   category: "seo",
   categoryConfirmed: true,
@@ -54,8 +58,8 @@ const CONTEXT_INPUT: GeoContextInputV1 = {
   targetQueryLanguage: "en",
   sourceProfileVersion: "geo-context.local.v1",
   sourceSummary: [
-      { field: "category", source: "user_edit", limitationCode: null },
-    ],
+    { field: "category", source: "user_edit", limitationCode: null },
+  ],
 };
 
 const SAMPLING: GeoSamplingContext = {
@@ -373,10 +377,9 @@ describe("buildGeoActionHandoff", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     for (const entry of result.packet.evidence) {
-      expect([
-        "provider_answer_annotation",
-        "provider_answer_text",
-      ]).toContain(entry.evidenceBasis);
+      expect(["provider_answer_annotation", "provider_answer_text"]).toContain(
+        entry.evidenceBasis,
+      );
     }
   });
 
@@ -433,7 +436,8 @@ describe("buildGeoActionHandoff", () => {
       // Each sample says whether it was counted, so a receiver can find the one
       // the ratio rests on instead of associating failed calls with a negative.
       expect(
-        observation.samples.filter((sample) => sample.countedInCitations).length,
+        observation.samples.filter((sample) => sample.countedInCitations)
+          .length,
       ).toBe(observation.outcome.evaluable);
     }
     const serialized = serializeGeoActionHandoff(result.packet);
@@ -452,7 +456,9 @@ describe("buildGeoActionHandoff", () => {
     expect(packet.nonGoals).toContain("do_not_request_or_write_reviews");
     expect(packet.unknowns).toContain("page_inventory_not_collected");
     expect(packet.safetyBoundaries).toContain("packet_confers_no_authority");
-    expect(packet.acceptanceCriteria).toContain("human_reviewed_before_any_change");
+    expect(packet.acceptanceCriteria).toContain(
+      "human_reviewed_before_any_change",
+    );
     // Citation and recommendation are outcomes nobody controls; they are never
     // acceptance criteria.
     expect(JSON.stringify(packet.acceptanceCriteria)).not.toContain(
@@ -535,9 +541,11 @@ describe("checkGeoPacketBounds", () => {
         kind: "external_data" as const,
         reason: "needs_more_evidence" as const,
         reasonCounts: null,
+        reasonCountsObserve: "samples_citing_target" as const,
         queryIds: [],
         evidenceIds: [],
         targetUrl: null,
+        targetUrlQueryRemoved: false,
         limitations: [],
       })),
     };
@@ -636,9 +644,9 @@ describe("binding, selection and traceability", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(
-      result.packet.evidence.some((entry) => entry.queryRemoved),
-    ).toBe(true);
+    expect(result.packet.evidence.some((entry) => entry.queryRemoved)).toBe(
+      true,
+    );
   });
 });
 
@@ -783,8 +791,184 @@ describe("selection and evidence integrity", () => {
 
       for (const action of result.packet.selectedActions) {
         if (action.reasonCounts === null) continue;
+        // The subject travels with the ratio. `observed` counts samples that
+        // cited the customer on every row but the avoid row, where it counts
+        // samples that cited somebody else — printing one sentence for both
+        // told a reader the avoid row's 2 of 3 meant the site was cited twice.
+        const subject =
+          action.reasonCountsObserve === "samples_citing_someone_else"
+            ? "cited another site and not this one"
+            : "cited this site";
         expect(markdown).toContain(
-          `observed in ${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples`,
+          `${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples ${subject}`,
+        );
+      }
+    });
+
+    it("does not print an avoid row as a prohibition on the asset it recommends", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      // The fixture has an avoid row, asserted before the loop that only runs
+      // for avoid rows. A mapping change that stopped producing one would
+      // otherwise leave the body below unexecuted and this test green forever.
+      expect(
+        result.packet.selectedActions.some((action) => action.kind === "avoid"),
+      ).toBe(true);
+      for (const action of result.packet.selectedActions) {
+        if (action.kind !== "avoid") continue;
+        /*
+         * An avoid candidate's `assetType` is a carrier value, not a
+         * recommendation — the mapping that builds this row says it "does not
+         * say what is". The shared `{heading} — {assetType}` line rendered "Do
+         * not — existing page enhancement", banning the one thing the row
+         * argues for; naming it as an alternative instead recommended
+         * something nothing measured. The row prints its reason and no asset,
+         * which is what the screen half already does.
+         */
+        expect(markdown).not.toContain(`Do not — ${action.assetType}`);
+        // The asset does not appear on this row at all: it is a carrier value,
+        // so naming it as a recommendation was the second wrong line here.
+        const heading = markdown
+          .split("\n")
+          .find((line) => line.includes(`Do not: ${action.reason}`));
+        expect(heading).toBeDefined();
+        expect(heading).not.toContain(action.assetType);
+        expect(markdown).toContain(`Do not: ${action.reason}`);
+      }
+    });
+
+    /*
+     * The subject is pinned to `kind`, which is what the mapping inverts on.
+     *
+     * The first version of this test read `action.reasonCountsObserve` to build
+     * the sentence it expected — the same field the serializer reads. Setting
+     * that field the wrong way round for every row changed the rendered line
+     * and the expectation together, and the suite stayed green. Deriving the
+     * expectation from `kind` is what makes the assertion able to fail.
+     */
+    it("says whose citations an avoid row counted, keyed on kind", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      const avoid = result.packet.selectedActions.filter(
+        (action) => action.kind === "avoid" && action.reasonCounts !== null,
+      );
+      const others = result.packet.selectedActions.filter(
+        (action) => action.kind !== "avoid" && action.reasonCounts !== null,
+      );
+      expect(avoid.length).toBeGreaterThan(0);
+      expect(others.length).toBeGreaterThan(0);
+
+      for (const action of avoid) {
+        expect(action.reasonCountsObserve).toBe("samples_citing_someone_else");
+        expect(markdown).toContain(
+          `${action.reasonCounts!.observed} of ${action.reasonCounts!.evaluable} citation-evaluable samples cited another site and not this one`,
+        );
+      }
+      for (const action of others) {
+        expect(action.reasonCountsObserve).toBe("samples_citing_target");
+        expect(markdown).toContain(
+          `${action.reasonCounts!.observed} of ${action.reasonCounts!.evaluable} citation-evaluable samples cited this site`,
+        );
+      }
+    });
+
+    it("gives no observed-subject to a row that carries no ratio", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+
+      const rowsWithoutRatio = result.packet.selectedActions.filter(
+        (action) => action.reasonCounts === null,
+      );
+      expect(rowsWithoutRatio.length).toBeGreaterThan(0);
+      for (const action of rowsWithoutRatio) {
+        // A subject for a count that does not exist labels nothing.
+        expect(action.reasonCountsObserve).toBeNull();
+      }
+    });
+
+    it("says in the readable half that a page URL lost its query string", async () => {
+      const report = await dirtyReport();
+      const plan = deriveGeoActionPlan(
+        report,
+        "https://acme.test/product?id=42",
+      );
+      const result = await buildGeoActionHandoff({
+        report,
+        context: await context(),
+        candidates: plan.candidates,
+        selectedActionIds: plan.candidates.map(
+          (candidate) => candidate.actionId,
+        ),
+        now: CLOCK,
+      });
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      const disclosed = result.packet.selectedActions.filter(
+        (action) => action.targetUrlQueryRemoved,
+      );
+      expect(disclosed.length).toBeGreaterThan(0);
+      // The JSON half carries the flag; a person reading the other half would
+      // otherwise take the shortened URL for the page that was confirmed.
+      expect(markdown).toContain("query string removed on export");
+      for (const action of result.packet.selectedActions) {
+        if (action.targetUrl === null) continue;
+        const line = markdown
+          .split("\n")
+          .find((entry) => entry.includes(`- Page: ${action.targetUrl}`));
+        expect(line).toBeDefined();
+        expect(line!.includes("query string removed on export")).toBe(
+          action.targetUrlQueryRemoved,
+        );
+      }
+    });
+
+    it("discloses a dropped query string on the action's own page URL", async () => {
+      const report = await dirtyReport();
+      // A confirmed page that is not the site root and carries a query string:
+      // `?id=42` can be what selects the resource, so exporting `/product`
+      // silently hands the receiver a URL that may not be the page at all.
+      const plan = deriveGeoActionPlan(
+        report,
+        "https://acme.test/product?id=42",
+      );
+      const withUrl = plan.candidates.filter(
+        (candidate) => candidate.targetUrl !== null,
+      );
+      expect(withUrl.length).toBeGreaterThan(0);
+      expect(
+        withUrl.some(
+          (candidate) =>
+            sanitizeGeoExportUrl(candidate.targetUrl!).queryRemoved,
+        ),
+      ).toBe(true);
+
+      const result = await buildGeoActionHandoff({
+        report,
+        context: await context(),
+        candidates: plan.candidates,
+        selectedActionIds: plan.candidates.map(
+          (candidate) => candidate.actionId,
+        ),
+        now: CLOCK,
+      });
+      if (!result.ok) throw new Error("expected a packet");
+
+      for (const action of result.packet.selectedActions) {
+        const source = plan.candidates.find(
+          (candidate) => candidate.actionId === action.actionId,
+        )!;
+        // The flag says what the export did to the URL, and the exported URL is
+        // the sanitized one — the receiver must be able to tell a shortened
+        // link from a verbatim one.
+        expect(action.targetUrlQueryRemoved).toBe(
+          source.targetUrl === null
+            ? false
+            : sanitizeGeoExportUrl(source.targetUrl).queryRemoved,
         );
       }
     });

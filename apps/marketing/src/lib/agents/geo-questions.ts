@@ -32,7 +32,6 @@ import {
   type GeoTemplatePlaceholderName,
 } from "./geo-template-registry.ts";
 
-
 /**
  * Why these are templates rather than a model call.
  *
@@ -577,11 +576,21 @@ export async function buildGeoCoreQuerySet(
  * therefore cannot stay a retrieval probe: its citation counts were only
  * meaningful because somebody paid to measure that exact string. It becomes a
  * custom natural-demand question instead, sampled once, and the UI says so.
+ *
+ * The brand stance is derived again from the edited text rather than carried
+ * over, which is why this needs the confirmed context. The stance is a property
+ * of the words, not of the question's history: an edit that adds or removes the
+ * customer's own name or a competitor's changes it. Carrying the old label
+ * forward did not mislabel the run — `geo-run-handler` derives the stance
+ * itself and refuses any set whose labels disagree with its text — it made the
+ * edited set unrunnable, refused before billing with nothing the visitor could
+ * do about it.
  */
 export async function editGeoQueryText(
   set: GeoQuerySetV1,
   queryId: string,
   text: string,
+  context: GeoContextSnapshotV1,
 ): Promise<GeoQuerySetBuildResult> {
   const normalized = normalizeGeoText(text);
   const target = set.queries.find((query) => query.queryId === queryId);
@@ -600,6 +609,11 @@ export async function editGeoQueryText(
       ? {
           ...query,
           text: normalized,
+          brandStance: deriveGeoBrandStance(
+            normalized,
+            context.brandAliases,
+            context.directCompetitors,
+          ),
           mode: "natural_demand" as const,
           samplesPlanned: geoSamplesForMode("natural_demand"),
           source: "user_edit" as const,

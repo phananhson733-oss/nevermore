@@ -21,6 +21,9 @@ import {
   confirmGeoQuerySet,
   editGeoQueryText,
 } from "../../../lib/agents/geo-questions";
+// The list itself, not a copy kept here. Its own module because the handler
+// that raises these codes pulls `node:net` in through a package barrel.
+import { GEO_RUN_ERROR_CODES } from "../../../lib/agents/geo-run-errors";
 import {
   geoPlannedCallCount,
   type GeoQuerySetV1,
@@ -129,6 +132,23 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
 
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [rejections, setRejections] = useState<readonly string[]>([]);
+  /**
+   * Why each refused question cannot run, keyed by question id.
+   *
+   * The refused text stays on screen — it is what the visitor typed — so the
+   * set held in `querySet` is not the set that would run. The run button reads
+   * this to stay out of the way until every question is payable again, and
+   * each reason renders beside its own question.
+   *
+   * Keyed, and never routed through the run-failure banner. A flat list showed
+   * one reason for two refused questions and cleared it the moment either was
+   * fixed; the banner additionally moves focus to the top of the page, which
+   * on a per-keystroke refusal threw the visitor out of the field they were
+   * typing in.
+   */
+  const [queryRejections, setQueryRejections] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const [signInOpen, setSignInOpen] = useState(false);
 
   // Concurrency control lives in refs so a second submit cannot start a second
@@ -145,6 +165,13 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
    * a sibling Agent workbench needed for the same reason.
    */
   const querySetRef = useRef<GeoQuerySetV1 | null>(null);
+  /**
+   * The confirmed context, readable from the same callbacks, for the same
+   * reason. An edit re-derives the brand stance from the names in this
+   * snapshot, and reading the state directly would derive every edit against
+   * the context of the first render — which is `null`.
+   */
+  const contextRef = useRef<GeoContextSnapshotV1 | null>(null);
   /**
    * The banner that says why a run stopped.
    *
@@ -178,6 +205,10 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     querySetRef.current = querySet;
   }, [querySet]);
 
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
+
   /**
    * Put a finished report back after a same-tab navigation.
    *
@@ -195,6 +226,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     const restored = restoreGeoReportSession(geoSessionStorage(), new Date());
     if (restored === null) return;
     setContext(restored.context);
+    contextRef.current = restored.context;
     setQuerySet(restored.querySet);
     querySetRef.current = restored.querySet;
     setReport(restored.report);
@@ -225,22 +257,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const errorMessage = useCallback(
     (code: string | null): string | null => {
       if (code === null) return null;
-      const known = [
-        "auth_required",
-        "auth_unavailable",
-        "invalid_request",
-        "geo_client_outdated",
-        "geo_context_invalid",
-        "geo_query_set_invalid",
-        "geo_query_set_unconfirmed",
-        "geo_query_set_mismatch",
-        "geo_prompt_too_long",
-        "geo_plan_size_mismatch",
-        "geo_budget_exhausted",
-        "geo_budget_unavailable",
-        "geo_provider_unavailable",
-        "geo_report_invalid",
-      ];
+      /*
+       * The handler's own list, not a copy of it kept here.
+       *
+       * A hand-written list drifts silently in one direction only: a code the
+       * server raises but this list omits falls through to the generic "the run
+       * could not be completed", which is the least useful sentence available
+       * and was what two real refusals showed. Reading the exported list means
+       * a new code arrives with a specific message or fails the parity test.
+       */
+      const known: readonly string[] = GEO_RUN_ERROR_CODES;
       return t(`errors.${known.includes(code) ? code : "unknown"}`);
     },
     [t],
@@ -256,6 +282,11 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const handleProposeContext = useCallback(() => {
     setErrorCode(null);
     setRejections([]);
+    // Refusals belong to the questions that are on screen. Question ids are
+    // derived from the slot alone, so a rebuilt set collides with them exactly
+    // — a refusal kept across the rebuild would disable the run for a question
+    // the visitor cannot see anything wrong with.
+    setQueryRejections({});
     setAliases(proposeGeoAliasCandidates(url.trim(), productName.trim()));
     setCategoryConfirmed(false);
     setStage("review");
@@ -274,6 +305,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const handleConfirmContext = useCallback(async () => {
     setErrorCode(null);
     setRejections([]);
+    // Same reason as the propose step: this rebuilds the whole set below.
+    setQueryRejections({});
     const competitors = splitList(rivals);
     const confirmed = await confirmGeoContext(
       {
@@ -319,6 +352,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       return;
     }
     setContext(confirmed.snapshot);
+    contextRef.current = confirmed.snapshot;
     setQuerySet(built.querySet);
     setStage("queries");
   }, [
@@ -344,7 +378,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
    */
   const handleQueryEdit = useCallback((queryId: string, text: string) => {
     const current = querySetRef.current;
-    if (current === null) return;
+    const snapshot = contextRef.current;
+    if (current === null || snapshot === null) return;
 
     // Shown immediately so typing does not lag behind the caret; the awaited
     // result replaces it with the properly re-fingerprinted, demoted set.
@@ -357,8 +392,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     querySetRef.current = optimistic;
     setQuerySet(optimistic);
 
-    void editGeoQueryText(current, queryId, text).then((result) => {
-      if (!mounted.current || !result.ok) return;
+    void editGeoQueryText(current, queryId, text, snapshot).then((result) => {
+      if (!mounted.current) return;
       // A slower keystroke's result must not overwrite a faster one. The
       // fingerprint is async, so results can land out of order.
       const latest = querySetRef.current;
@@ -366,6 +401,31 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         (query) => query.queryId === queryId && query.text === text,
       );
       if (stillCurrent !== true) return;
+      if (!result.ok) {
+        /*
+         * A refused edit keeps the visitor's text and blocks the run.
+         *
+         * The text stays because this is a controlled input: emptying the field
+         * is a refused edit, and putting the accepted set back would type the
+         * old question back into the box the moment it was cleared — the field
+         * could never be emptied at all.
+         *
+         * The run is blocked because the optimistic set carries the new text
+         * under the old sample plan, so the plan panel would otherwise count
+         * three samples for a question with no text and the button would offer
+         * to buy them. The server refuses such a set before billing, so no
+         * money was ever at stake; the count on screen was simply not the count
+         * that would run. Saying so is better than silently correcting it.
+         */
+        const code = result.rejections[0]?.code ?? "question_not_payable";
+        setQueryRejections((current) => ({ ...current, [queryId]: code }));
+        return;
+      }
+      setQueryRejections((current) => {
+        if (!(queryId in current)) return current;
+        const { [queryId]: _cleared, ...rest } = current;
+        return rest;
+      });
       querySetRef.current = result.querySet;
       setQuerySet(result.querySet);
     });
@@ -736,6 +796,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
               querySet={querySet}
               context={context}
               disabled={stage === "running"}
+              rejections={queryRejections}
               onEdit={handleQueryEdit}
             />
             <GeoRunPlan querySet={querySet} context={context} />
@@ -744,7 +805,20 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
               <button
                 type="button"
                 className={PRIMARY_BUTTON_CLASS}
-                disabled={stage === "running"}
+                // A question the builder refused is still on screen in the
+                // visitor's own words, but it is not part of a set anything can
+                // be bought against.
+                disabled={
+                  stage === "running" || Object.keys(queryRejections).length > 0
+                }
+                // A disabled button reads as "unavailable" and nothing more, so
+                // the count of what is blocking it travels with it. The reasons
+                // themselves are beside their own questions.
+                aria-describedby={
+                  Object.keys(queryRejections).length > 0
+                    ? "geo-run-blocked"
+                    : undefined
+                }
                 onClick={() => {
                   void handleRun();
                 }}
@@ -773,6 +847,13 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
             </div>
             {stage === "running" && (
               <p className={HINT_CLASS}>{t("workbench.runningHint")}</p>
+            )}
+            {Object.keys(queryRejections).length > 0 && (
+              <p id="geo-run-blocked" className={HINT_CLASS}>
+                {t("workbench.runBlocked", {
+                  count: Object.keys(queryRejections).length,
+                })}
+              </p>
             )}
           </section>
         )}

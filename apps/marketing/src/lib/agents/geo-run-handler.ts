@@ -8,6 +8,7 @@ import {
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
 import { hasLoneSurrogate, normalizeGeoText } from "./geo-canonical.ts";
+import type { GeoRunErrorCode } from "./geo-run-errors.ts";
 import {
   consumeGeoDailyBudget,
   createGeoCostAccumulator,
@@ -97,7 +98,16 @@ export const DEFAULT_DEPENDENCIES: GeoRunHandlerDependencies = {
   runId: () => globalThis.crypto.randomUUID(),
 };
 
-function errorResponse(code: string, status: number): Response {
+/**
+ * The code is typed, not free text.
+ *
+ * `string` let this route invent codes nobody had a message for, which the
+ * workbench then folded into the generic "the run could not be completed" —
+ * the worst sentence available, shown for refusals that had something specific
+ * to say. Typecheck now refuses a code that is not in the shared list, and the
+ * parity test refuses a listed code that has no message in both locales.
+ */
+function errorResponse(code: GeoRunErrorCode, status: number): Response {
   return Response.json(
     { error: { code } },
     { status, headers: { "Cache-Control": "no-store, private" } },
@@ -142,6 +152,12 @@ export type GeoRunRejection =
   | "geo_prompt_too_long"
   | "geo_plan_size_mismatch"
   | "geo_brand_stance_mismatch";
+
+/*
+ * Every code this route can return is listed in `geo-run-errors.ts`, which the
+ * workbench also reads. A code raised here but missing there fails the parity
+ * test rather than reaching a visitor as a generic failure.
+ */
 
 /**
  * Validate everything before a single call is billed.
@@ -325,9 +341,12 @@ function buildRunLimitations(
   }
   if (coverage.totals.unavailableSamples > 0) limitations.push("partial_run");
   if (!provenance.costComplete) limitations.push("cost_incomplete");
-  // A run that hit its own spend ceiling stopped issuing calls, and the reader
-  // is entitled to know that the missing samples are a budget decision rather
-  // than a provider failure. Without this the only record was a server log.
+  // Recorded because the reader is entitled to know the ceiling was reached at
+  // all; without this the only record was a server log. It does not say a
+  // sample is missing, and it does not attribute one: `capped` is also set by a
+  // settlement that overran after the last call was already admitted, and
+  // `partial_run` above covers gaps this flag knows nothing about. The message
+  // for this code says exactly that much and no more.
   if (costCeilingReached) limitations.push("cost_ceiling_reached");
   if (provenance.triggerCalibrationScope === "outside_calibrated_market") {
     limitations.push("outside_calibrated_market");
