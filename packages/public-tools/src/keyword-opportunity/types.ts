@@ -81,7 +81,17 @@ export type KeywordOpportunitySerpStatus = "complete" | "unavailable";
 export type KeywordOpportunitySerpFailureReason =
   | "provider_unavailable"
   | "provider_no_data"
-  | "transport_outcome_unknown";
+  | "transport_outcome_unknown"
+  /**
+   * The run's time budget ended before this term was ever sent.
+   *
+   * Distinct from `provider_unavailable`, which claims the provider was asked
+   * and could not answer. Nobody asked. Reporting this one as a provider
+   * failure points the reader at the provider's status page for a term the
+   * run simply never reached, and it is the only one of these a plain re-run
+   * is likely to resolve.
+   */
+  | "budget_exhausted";
 
 export interface KeywordOpportunityOrganicResult {
   readonly position: number;
@@ -209,8 +219,7 @@ export type KeywordOpportunityDecisionBasis =
   | "serp_evidence_unavailable"
   | "signal_evidence_unavailable";
 
-export type KeywordOpportunityDecisionDiscount =
-  | "ai_overview_answer_discount";
+export type KeywordOpportunityDecisionDiscount = "ai_overview_answer_discount";
 
 export type KeywordOpportunityIncompleteReason =
   | "serp_evidence_unavailable"
@@ -274,8 +283,7 @@ export interface KeywordOpportunityAiOverviewEvidence {
  * `KeywordOpportunityAiOverviewEvidence` before an envelope crosses the
  * public-tool boundary.
  */
-export interface KeywordOpportunityAiOverviewObservation
-  extends KeywordOpportunityAiOverviewEvidence {
+export interface KeywordOpportunityAiOverviewObservation extends KeywordOpportunityAiOverviewEvidence {
   readonly markdown: string | null;
 }
 
@@ -649,8 +657,7 @@ export interface KeywordOpportunityCluster {
 export const KEYWORD_STAGE_GSC_COVERAGE = "gsc_coverage";
 
 /** A successful GSC coverage read whose bounded paging omitted later rows. */
-export const KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED =
-  "gsc_coverage_truncated";
+export const KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED = "gsc_coverage_truncated";
 
 /** Paging facts for one bounded Search Console coverage read. */
 export interface KeywordCoveragePaging {

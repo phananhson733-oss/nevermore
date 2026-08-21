@@ -1187,6 +1187,15 @@ export async function expandKeywordCandidates(
         brandTokens,
         cap: Math.max(0, Math.floor(input.cap)),
       }),
+    // The route passed a budget in and this lane was the one ignoring it. Its
+    // ninety seconds is per attempt, so an unusable-but-slow first reply makes
+    // three minutes here alone — spent before any later stage can read a clock.
+    options.deadlineAt === undefined
+      ? undefined
+      : {
+          deadlineAt: options.deadlineAt,
+          now: options.now ?? (() => Date.now()),
+        },
   );
   return { candidates: result.value, usage: result.usage };
 }
