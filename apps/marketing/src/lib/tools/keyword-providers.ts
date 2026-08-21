@@ -69,6 +69,9 @@ const DOMAINS_PER_SERP = 10;
 /** Maximum simultaneous page-one reads inside one keyword request. */
 export const KEYWORD_SERP_CONCURRENCY = 10;
 
+/** Race winner meaning the run's clock ran out, not that a wave finished. */
+const DEADLINE = Symbol("keyword-serp-deadline");
+
 /** Maximum simultaneous registry reads inside one keyword request. */
 export const MAX_KEYWORD_RDAP_CONCURRENCY = 10;
 
@@ -80,12 +83,13 @@ const STAGE_WIDE_SERP_ERROR_CODES: ReadonlySet<SourceError["code"]> = new Set([
 
 function isStageWideSerpError(error: unknown): error is SourceError {
   return (
-    error instanceof SourceError &&
-    STAGE_WIDE_SERP_ERROR_CODES.has(error.code)
+    error instanceof SourceError && STAGE_WIDE_SERP_ERROR_CODES.has(error.code)
   );
 }
 
-function serpFailureReason(error: unknown): KeywordOpportunitySerpFailureReason {
+function serpFailureReason(
+  error: unknown,
+): KeywordOpportunitySerpFailureReason {
   return error instanceof SourceError && error.code === "TIMEOUT"
     ? "transport_outcome_unknown"
     : "provider_unavailable";
@@ -180,6 +184,19 @@ export function createKeywordProviderSeams(options: {
     domain: string,
   ) => Promise<DomainRegistrationEvidence>;
   readonly now?: () => Date;
+  /**
+   * Absolute epoch-ms mark past which page-one sampling stops.
+   *
+   * Set by the route, which is the only layer that knows when the request
+   * started. Sampling is the stage whose call count scales with the candidate
+   * cap and whose waves are serial: 150 keywords is fifteen waves, each one as
+   * slow as the slowest of its ten calls, each call allowed thirty seconds. A
+   * timeout is per-keyword rather than stage-wide, so one straggler per wave
+   * produces the full 450-second path instead of failing fast — more than the
+   * whole route budget, before any later stage gets to consult a clock.
+   * Omitted callers sample unbounded, as before.
+   */
+  readonly deadlineAt?: number;
 }): KeywordProviderSeams {
   let cached: DataForSeoKeywordMetricsClient | null = options.client ?? null;
   // Built on first use, not at module load: a route file that constructs its
@@ -258,6 +275,11 @@ export function createKeywordProviderSeams(options: {
       );
       const samples: KeywordSerpSampleResult[] = new Array(plan.length);
       const abortController = new AbortController();
+      // Latched when the deadline ends the stage. Calls still in flight keep
+      // running — nothing here can cancel the provider — but their outcomes
+      // are no longer this stage's answer, and must not overwrite the one it
+      // already wrote for that keyword.
+      let abandoned = false;
       let stageError: SourceError | null = null;
       let rejectStageFailure!: (error: SourceError) => void;
       const stageFailure = new Promise<never>((_resolve, reject) => {
@@ -286,6 +308,12 @@ export function createKeywordProviderSeams(options: {
           // already failed. Its real cost remains booked, but its late evidence
           // must not mutate an outcome the caller can no longer receive.
           if (stageError !== null) return;
+          // Above the shape check, not below it: an answer that arrives after
+          // the stage stopped waiting must not replace the outcome already
+          // published for this keyword — including the empty-handed answer,
+          // which would turn "we stopped waiting" into "the provider had
+          // nothing", a fact this run never established.
+          if (abandoned) return;
           const hasUsableShape =
             response.rows.length > 0 ||
             response.itemTypes !== null ||
@@ -328,6 +356,10 @@ export function createKeywordProviderSeams(options: {
           // commonly arrives here as TIMEOUT and must not be mistaken for a
           // query-specific result.
           if (stageError !== null || abortController.signal.aborted) return;
+          // Same reasoning for the deadline: once the stage has stopped waiting
+          // and written this keyword's outcome, a late arrival must not
+          // overwrite it with a different one.
+          if (abandoned) return;
           samples[item.index] = unavailableSerpSample(
             item.keyword,
             serpFailureReason(error),
@@ -339,11 +371,35 @@ export function createKeywordProviderSeams(options: {
       // as one query succeeds can dispatch keyword 11 while a slower sibling
       // is about to report bad credentials. No next wave starts until every
       // call in the current one has settled and its stage-wide status is known.
+      /** Keywords the run never asked about, as opposed to ones it asked and lost. */
+      const strandUnasked = (from: number): void => {
+        for (const item of plan.slice(from)) {
+          samples[item.index] = unavailableSerpSample(
+            item.keyword,
+            "budget_exhausted",
+          );
+        }
+      };
+
       for (
         let waveStart = 0;
         waveStart < plan.length;
         waveStart += KEYWORD_SERP_CONCURRENCY
       ) {
+        const remainingMs =
+          options.deadlineAt === undefined
+            ? null
+            : options.deadlineAt - (options.now?.() ?? new Date()).getTime();
+        // Checked before dispatching rather than only after: a wave started
+        // with nothing left to spend still bills for ten provider calls whose
+        // answers arrive after the route has been killed.
+        if (
+          remainingMs !== null &&
+          (!Number.isFinite(remainingMs) || remainingMs <= 0)
+        ) {
+          strandUnasked(waveStart);
+          break;
+        }
         const wave = plan.slice(
           waveStart,
           waveStart + KEYWORD_SERP_CONCURRENCY,
@@ -353,8 +409,52 @@ export function createKeywordProviderSeams(options: {
         // rejection handler also protects against a future runItem regression:
         // a stubborn sibling may reject long after stageFailure won the race.
         void waveCompletion.catch(() => {});
-        await Promise.race([waveCompletion, stageFailure]);
+        let expire = (): void => {};
+        // Declining the next wave is not enough on its own: this one owns up to
+        // thirty seconds of the budget it was admitted with, and one straggler
+        // holds the other nine.
+        const waveDeadline: Promise<typeof DEADLINE> | null =
+          remainingMs === null
+            ? null
+            : new Promise<typeof DEADLINE>((resolve) => {
+                const timer = setTimeout(() => {
+                  // Latched here, synchronously, rather than after the race
+                  // resumes below. A provider continuation queued in the same
+                  // tick as this callback would otherwise run first and write
+                  // an outcome from after the mark.
+                  abandoned = true;
+                  resolve(DEADLINE);
+                }, remainingMs);
+                expire = () => {
+                  clearTimeout(timer);
+                };
+              });
+        let outcome: readonly void[] | typeof DEADLINE | never;
+        try {
+          outcome = await Promise.race(
+            waveDeadline === null
+              ? [waveCompletion, stageFailure]
+              : [waveCompletion, stageFailure, waveDeadline],
+          );
+        } finally {
+          // `stageFailure` rejecting skips straight past a bare cleanup call,
+          // leaving a timer alive for the rest of the budget on a warm process.
+          expire();
+        }
         if (stageError !== null) throw stageError;
+        if (outcome === DEADLINE) {
+          abandoned = true;
+          // This wave was asked and its answer never arrived, which is not the
+          // same fact as never asking. Whatever landed before the mark stays.
+          for (const item of wave) {
+            samples[item.index] ??= unavailableSerpSample(
+              item.keyword,
+              "transport_outcome_unknown",
+            );
+          }
+          strandUnasked(waveStart + KEYWORD_SERP_CONCURRENCY);
+          break;
+        }
       }
       return samples;
     },
@@ -378,15 +478,18 @@ export function createKeywordProviderSeams(options: {
       if (distinct.length === 0) return new Map<string, number | null>();
       const languageCode = labsLanguageForMarket(marketCode);
       if (languageCode === null) return null;
-      const response = await (options.estimateTraffic ?? bulkTrafficEstimation)({
-        login: options.login ?? process.env["DATAFORSEO_LOGIN"] ?? "",
-        password: options.password ?? process.env["DATAFORSEO_PASSWORD"] ?? "",
-        targets: distinct,
-        marketCode: marketCode.trim().toUpperCase(),
-        locationCode: keywordLocationCode(marketCode),
-        languageCode,
-        onCost: (costUsd) => options.costs.record("bulk_traffic", costUsd),
-      });
+      const response = await (options.estimateTraffic ?? bulkTrafficEstimation)(
+        {
+          login: options.login ?? process.env["DATAFORSEO_LOGIN"] ?? "",
+          password:
+            options.password ?? process.env["DATAFORSEO_PASSWORD"] ?? "",
+          targets: distinct,
+          marketCode: marketCode.trim().toUpperCase(),
+          locationCode: keywordLocationCode(marketCode),
+          languageCode,
+          onCost: (costUsd) => options.costs.record("bulk_traffic", costUsd),
+        },
+      );
       if (response === null) return null;
       const traffic = new Map(
         response.rows.map((row) => [row.normalizedTarget, row.organicEtv]),
@@ -419,10 +522,7 @@ export function createKeywordProviderSeams(options: {
       await Promise.all(
         Array.from(
           {
-            length: Math.min(
-              MAX_KEYWORD_RDAP_CONCURRENCY,
-              distinct.length,
-            ),
+            length: Math.min(MAX_KEYWORD_RDAP_CONCURRENCY, distinct.length),
           },
           worker,
         ),
