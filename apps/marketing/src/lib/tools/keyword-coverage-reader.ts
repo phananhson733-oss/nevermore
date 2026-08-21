@@ -82,9 +82,20 @@ export function createKeywordCoverageReader(options: {
    * on the first live run.
    */
   readonly fetchImpl?: typeof fetch;
-}): (
-  input: KeywordCoverageReadInput,
-) => Promise<KeywordCoverageRead> {
+  /**
+   * Absolute epoch-ms mark past which this read stops paging.
+   *
+   * Set by the route. Coverage was the last stage in this route with no view
+   * of the request's clock: two parallel lanes of up to four serial 15-second
+   * pages, each page with one retry, is roughly two minutes on a large
+   * property — enough to carry a slow run from inside its budget to the
+   * platform kill, where no envelope survives at all. Coverage is optional by
+   * contract (a rejected read marks the stage unavailable), so running out of
+   * budget degrades exactly like a network failure. Omitted callers page
+   * unbounded, as before.
+   */
+  readonly deadlineAt?: number;
+}): (input: KeywordCoverageReadInput) => Promise<KeywordCoverageRead> {
   const now = options.now ?? (() => new Date());
 
   return async ({ property, accessToken }) => {
@@ -104,6 +115,26 @@ export function createKeywordCoverageReader(options: {
         : { fetchImpl: options.fetchImpl }),
     });
 
+    // Armed before the first request. Aborting the sibling controller is the
+    // reader's own established stop: both lanes end promptly, the read
+    // rejects, and the handler records the stage unavailable — the same
+    // degradation a network failure produces, instead of the platform kill
+    // that produces nothing.
+    let expire = (): void => {};
+    if (options.deadlineAt !== undefined) {
+      const remainingMs = options.deadlineAt - now().getTime();
+      if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+        siblingController.abort();
+      } else {
+        const timer = setTimeout(() => {
+          siblingController.abort();
+        }, remainingMs);
+        expire = () => {
+          clearTimeout(timer);
+        };
+      }
+    }
+
     const endDate = shiftDays(now(), -FINALISATION_LAG_DAYS);
     const window = {
       startDate: isoDay(shiftDays(endDate, -(COVERAGE_WINDOW_DAYS - 1))),
@@ -112,10 +143,12 @@ export function createKeywordCoverageReader(options: {
     const [queryRead, queryPageRead] = await Promise.all([
       readQueryRows(client, window, undefined, COVERAGE_MAX_PAGES),
       readQueryPageRows(client, window),
-    ]).catch((error: unknown) => {
-      siblingController.abort();
-      throw error;
-    });
+    ])
+      .catch((error: unknown) => {
+        siblingController.abort();
+        throw error;
+      })
+      .finally(expire);
 
     return {
       queryRows: queryRead.rows.map((row) => ({

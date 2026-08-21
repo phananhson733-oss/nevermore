@@ -85,6 +85,72 @@ describe("createKeywordCoverageReader", () => {
     expect(captured[0]?.url).not.toContain("https://acme.com");
   });
 
+  it("rejects instead of paging when the run deadline has already passed", async () => {
+    // Coverage was the last stage in this route that could not see the
+    // request's clock: two lanes of up to four serial 15-second pages is
+    // roughly two minutes on a large property, enough to carry a slow run
+    // into the platform kill — where no envelope survives. A rejected read is
+    // already the stage's degradation contract, so out-of-budget uses it.
+    const captured: Captured[] = [];
+    const read = createKeywordCoverageReader({
+      now: () => NOW,
+      fetchImpl: recordingFetch(captured),
+      deadlineAt: NOW.getTime() - 1_000,
+    });
+
+    await expect(
+      read({ property: "sc-domain:acme.com", accessToken: "ya29.test" }),
+    ).rejects.toThrow();
+  });
+
+  it("stops a paging read at the run deadline instead of finishing the pages", async () => {
+    const captured: Captured[] = [];
+    // Every page fills to the row limit, so the pager would keep going; the
+    // fetch stand-in honours the abort signal the way the real transport does.
+    const fullPage = Array.from(
+      { length: GSC_ROW_LIMIT },
+      (_unused, index) => ({
+        keys: [`query ${String(index)}`],
+        impressions: 10,
+        position: 5,
+      }),
+    );
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      captured.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      });
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 40);
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          },
+          { once: true },
+        );
+      });
+      return new Response(JSON.stringify({ rows: fullPage }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const read = createKeywordCoverageReader({
+      now: () => NOW,
+      fetchImpl,
+      deadlineAt: NOW.getTime() + 60,
+    });
+
+    await expect(
+      read({ property: "sc-domain:acme.com", accessToken: "ya29.test" }),
+    ).rejects.toThrow();
+    // The deadline landed mid-paging: the first page(s) were asked, the full
+    // four-page march was not.
+    expect(captured.length).toBeGreaterThan(0);
+    expect(captured.length).toBeLessThan(8);
+  });
+
   it("asks for the finalised window the other connected tools use", async () => {
     // Three days of lag, 28 days wide. A window that runs to today would read
     // partial days as a drop in serving and mark terms uncovered.
@@ -98,7 +164,9 @@ describe("createKeywordCoverageReader", () => {
 
     expect(captured[0]?.body["endDate"]).toBe("2026-08-07");
     expect(captured[0]?.body["startDate"]).toBe("2026-07-11");
-    const start = new Date(`${String(captured[0]?.body["startDate"])}T00:00:00Z`);
+    const start = new Date(
+      `${String(captured[0]?.body["startDate"])}T00:00:00Z`,
+    );
     const end = new Date(`${String(captured[0]?.body["endDate"])}T00:00:00Z`);
     const days = (end.getTime() - start.getTime()) / 86_400_000 + 1;
     expect(days).toBe(COVERAGE_WINDOW_DAYS);
@@ -120,10 +188,7 @@ describe("createKeywordCoverageReader", () => {
             ]
           : [
               {
-                keys: [
-                  "dental billing",
-                  "https://acme.com/dental-billing",
-                ],
+                keys: ["dental billing", "https://acme.com/dental-billing"],
                 clicks: 3,
                 impressions: 32,
                 position: 5,
@@ -135,9 +200,7 @@ describe("createKeywordCoverageReader", () => {
     expect(
       await read({ property: "sc-domain:acme.com", accessToken: "ya29.test" }),
     ).toEqual({
-      queryRows: [
-        { query: "dental billing", impressions: 40, position: 6.5 },
-      ],
+      queryRows: [{ query: "dental billing", impressions: 40, position: 6.5 }],
       queryPageRows: [
         {
           query: "dental billing",
@@ -155,8 +218,9 @@ describe("createKeywordCoverageReader", () => {
     ]);
     expect(
       new Set(
-        captured.map(({ body }) =>
-          `${String(body["startDate"])}:${String(body["endDate"])}`,
+        captured.map(
+          ({ body }) =>
+            `${String(body["startDate"])}:${String(body["endDate"])}`,
         ),
       ),
     ).toEqual(new Set(["2026-07-11:2026-08-07"]));
@@ -250,35 +314,38 @@ describe("createKeywordCoverageReader", () => {
   it.each([
     { label: "query", failedDimensions: ["query"] },
     { label: "query-page", failedDimensions: ["query", "page"] },
-  ] as const)("rejects when the $label read fails", async ({ failedDimensions }) => {
-    const read = createKeywordCoverageReader({
-      now: () => NOW,
-      fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse(String(init?.body ?? "{}")) as Record<
-          string,
-          unknown
-        >;
-        const dimensions = Array.isArray(body["dimensions"])
-          ? body["dimensions"].map(String)
-          : [];
-        const failed =
-          dimensions.length === failedDimensions.length &&
-          dimensions.every(
-            (dimension, index) => dimension === failedDimensions[index],
+  ] as const)(
+    "rejects when the $label read fails",
+    async ({ failedDimensions }) => {
+      const read = createKeywordCoverageReader({
+        now: () => NOW,
+        fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+            string,
+            unknown
+          >;
+          const dimensions = Array.isArray(body["dimensions"])
+            ? body["dimensions"].map(String)
+            : [];
+          const failed =
+            dimensions.length === failedDimensions.length &&
+            dimensions.every(
+              (dimension, index) => dimension === failedDimensions[index],
+            );
+          return new Response(
+            failed
+              ? JSON.stringify({ error: { message: "forbidden" } })
+              : JSON.stringify({ rows: [] }),
+            { status: failed ? 403 : 200 },
           );
-        return new Response(
-          failed
-            ? JSON.stringify({ error: { message: "forbidden" } })
-            : JSON.stringify({ rows: [] }),
-          { status: failed ? 403 : 200 },
-        );
-      }) as typeof fetch,
-    });
+        }) as typeof fetch,
+      });
 
-    await expect(
-      read({ property: "sc-domain:acme.com", accessToken: "ya29.test" }),
-    ).rejects.toThrow();
-  });
+      await expect(
+        read({ property: "sc-domain:acme.com", accessToken: "ya29.test" }),
+      ).rejects.toThrow();
+    },
+  );
 
   it("aborts the sibling lane when one read fails before it can keep paging", async () => {
     let siblingCalls = 0;

@@ -1014,6 +1014,29 @@ export async function handleKeywordOpportunitiesRequest(
       (sample) => sample.status === "complete",
     );
     costSerpSampled = completeSamples.length;
+    if (completeSamples.length < attemptedSamples.length) {
+      // The one line that tells a budget gap apart from a provider outage.
+      // The per-row reasons carry the same facts into the payload, but the
+      // payload leaves with the visitor: when a run comes up short, this
+      // histogram is what an operator has. The 2026-08-21 partial run gave
+      // exactly one number — 46 rows short — and no way to tell whether the
+      // fix was more throughput or fewer requests, which are opposites.
+      const failureCounts: Record<string, number> = {};
+      for (const sample of attemptedSamples) {
+        if (sample.status === "complete") continue;
+        const reason = sample.failureReason ?? "unreported";
+        failureCounts[reason] = (failureCounts[reason] ?? 0) + 1;
+      }
+      console.info(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "serp_sample",
+          planned: attemptedSamples.length,
+          complete: completeSamples.length,
+          failures: failureCounts,
+        }),
+      );
+    }
     if (attemptedSamples.length > 0 && completeSamples.length === 0) {
       unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE);
     } else if (completeSamples.length < attemptedSamples.length) {

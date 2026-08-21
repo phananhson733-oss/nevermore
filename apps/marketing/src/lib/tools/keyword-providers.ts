@@ -367,94 +367,143 @@ export function createKeywordProviderSeams(options: {
         }
       };
 
-      // A fixed wave is the fail-fast boundary. Replenishing a worker as soon
-      // as one query succeeds can dispatch keyword 11 while a slower sibling
-      // is about to report bad credentials. No next wave starts until every
-      // call in the current one has settled and its stage-wide status is known.
-      /** Keywords the run never asked about, as opposed to ones it asked and lost. */
-      const strandUnasked = (from: number): void => {
-        for (const item of plan.slice(from)) {
-          samples[item.index] = unavailableSerpSample(
-            item.keyword,
-            "budget_exhausted",
-          );
+      // A replenishing pool, not fixed waves. Fixed waves were measured on
+      // 2026-08-21 against the live provider: per-call p50 was 5.3s but the
+      // slowest of each ten averaged 13.8s, and the wave barrier makes every
+      // call wait for that straggler — 15 waves took 207 of the run's 240
+      // seconds, which is exactly the partial report production produced that
+      // day. A pool pulls the next keyword the moment any worker frees, so
+      // throughput follows the average latency instead of the per-ten worst.
+      // The waves' fail-fast property is kept in this form: a stage-wide error
+      // latches `stageError` and no worker pulls past it. What is NOT bounded
+      // is cumulative dispatch before a *delayed* stage-wide error latches —
+      // fast successful siblings keep replenishing while a slow call is still
+      // on its way to reporting bad credentials, and in the worst case the
+      // whole plan is dispatched and then discarded by the rejection. That
+      // trade is taken knowingly: a delayed auth error alongside succeeding
+      // siblings means the credentials mostly work, the concurrent exposure
+      // stays capped at pool width, and the barrier that prevented it cost
+      // every clean run half its time budget.
+      const dispatched: boolean[] = new Array<boolean>(plan.length).fill(false);
+      let nextItem = 0;
+      const outOfBudget = (): boolean => {
+        if (options.deadlineAt === undefined) return false;
+        const remainingMs =
+          options.deadlineAt - (options.now?.() ?? new Date()).getTime();
+        // Fail closed on a non-finite mark, and do not dispatch a call that
+        // cannot plausibly answer in time: it bills for an answer that arrives
+        // after the stage has already published this keyword's outcome.
+        return !Number.isFinite(remainingMs) || remainingMs <= 0;
+      };
+      const worker = async (): Promise<void> => {
+        for (;;) {
+          if (stageError !== null || abandoned || outOfBudget()) return;
+          const index = nextItem;
+          if (index >= plan.length) return;
+          nextItem = index + 1;
+          const item = plan[index];
+          if (item === undefined) return;
+          dispatched[index] = true;
+          await runItem(item);
         }
       };
-
-      for (
-        let waveStart = 0;
-        waveStart < plan.length;
-        waveStart += KEYWORD_SERP_CONCURRENCY
-      ) {
-        const remainingMs =
-          options.deadlineAt === undefined
-            ? null
-            : options.deadlineAt - (options.now?.() ?? new Date()).getTime();
-        // Checked before dispatching rather than only after: a wave started
-        // with nothing left to spend still bills for ten provider calls whose
-        // answers arrive after the route has been killed.
-        if (
-          remainingMs !== null &&
-          (!Number.isFinite(remainingMs) || remainingMs <= 0)
-        ) {
-          strandUnasked(waveStart);
-          break;
-        }
-        const wave = plan.slice(
-          waveStart,
-          waveStart + KEYWORD_SERP_CONCURRENCY,
-        );
-        const waveCompletion = Promise.all(wave.map(runItem));
-        // Promise.race keeps its handlers attached after it settles. The extra
-        // rejection handler also protects against a future runItem regression:
-        // a stubborn sibling may reject long after stageFailure won the race.
-        void waveCompletion.catch(() => {});
-        let expire = (): void => {};
-        // Declining the next wave is not enough on its own: this one owns up to
-        // thirty seconds of the budget it was admitted with, and one straggler
-        // holds the other nine.
-        const waveDeadline: Promise<typeof DEADLINE> | null =
-          remainingMs === null
-            ? null
-            : new Promise<typeof DEADLINE>((resolve) => {
-                const timer = setTimeout(() => {
-                  // Latched here, synchronously, rather than after the race
-                  // resumes below. A provider continuation queued in the same
-                  // tick as this callback would otherwise run first and write
-                  // an outcome from after the mark.
-                  abandoned = true;
-                  resolve(DEADLINE);
-                }, remainingMs);
-                expire = () => {
-                  clearTimeout(timer);
-                };
-              });
-        let outcome: readonly void[] | typeof DEADLINE | never;
-        try {
-          outcome = await Promise.race(
-            waveDeadline === null
-              ? [waveCompletion, stageFailure]
-              : [waveCompletion, stageFailure, waveDeadline],
-          );
-        } finally {
-          // `stageFailure` rejecting skips straight past a bare cleanup call,
-          // leaving a timer alive for the rest of the budget on a warm process.
-          expire();
-        }
-        if (stageError !== null) throw stageError;
-        if (outcome === DEADLINE) {
+      let expire = (): void => {};
+      // Armed before the first dispatch, not after: the workers run
+      // synchronously up to their first await, and a deadline read only when
+      // they yield would see whatever they already spent — an answer that made
+      // it back before the mark must be kept, so the mark has to exist first.
+      // The workers' own budget checks stop new dispatches; the race below is
+      // what caps the wait on the calls already in flight, which own up to
+      // thirty seconds each.
+      const stageDeadline = ((): Promise<typeof DEADLINE> | null => {
+        const deadlineAt = options.deadlineAt;
+        if (deadlineAt === undefined) return null;
+        const startRemainingMs =
+          deadlineAt - (options.now?.() ?? new Date()).getTime();
+        if (!Number.isFinite(startRemainingMs) || startRemainingMs <= 0) {
           abandoned = true;
-          // This wave was asked and its answer never arrived, which is not the
-          // same fact as never asking. Whatever landed before the mark stays.
-          for (const item of wave) {
-            samples[item.index] ??= unavailableSerpSample(
-              item.keyword,
-              "transport_outcome_unknown",
-            );
-          }
-          strandUnasked(waveStart + KEYWORD_SERP_CONCURRENCY);
-          break;
+          return Promise.resolve(DEADLINE);
         }
+        return new Promise<typeof DEADLINE>((resolve) => {
+          const timer = setTimeout(() => {
+            // Latched here, synchronously, rather than after the race resumes
+            // below. A provider continuation queued in the same tick as this
+            // callback would otherwise run first and write an outcome from
+            // after the mark.
+            abandoned = true;
+            // Ends the calls themselves, not just the wait for them. The
+            // transport honors this signal, so up to ten abandoned requests
+            // stop spending sockets under the stages that still have budget —
+            // and a response that would otherwise land minutes later cannot
+            // book its cost after the run's one cost line has been written.
+            abortController.abort(
+              new SourceError("TIMEOUT", "keyword SERP sampling deadline"),
+            );
+            resolve(DEADLINE);
+          }, startRemainingMs);
+          expire = () => {
+            clearTimeout(timer);
+          };
+        });
+      })();
+      const poolCompletion = Promise.all(
+        Array.from(
+          { length: Math.min(KEYWORD_SERP_CONCURRENCY, plan.length) },
+          () => worker(),
+        ),
+      );
+      // Promise.race keeps its handlers attached after it settles. The extra
+      // rejection handler also protects against a future runItem regression:
+      // a stubborn worker may reject long after stageFailure won the race.
+      void poolCompletion.catch(() => {});
+      try {
+        await Promise.race(
+          stageDeadline === null
+            ? [poolCompletion, stageFailure]
+            : [poolCompletion, stageFailure, stageDeadline],
+        );
+      } finally {
+        // `stageFailure` rejecting skips straight past a bare cleanup call,
+        // leaving a timer alive for the rest of the budget on a warm process.
+        expire();
+      }
+      // Read through a closure on purpose: the latch is written inside
+      // `runItem`, which the outer control-flow analysis cannot see, so a
+      // direct read here is still narrowed to its initializer and `.code`
+      // below would not type-check. Inside a function body the declared type
+      // applies.
+      const stageFailed = ((): SourceError | null => stageError)();
+      if (stageFailed !== null) {
+        // The handler never receives the partial array on this path, so the
+        // counts have to leave from here or they leave with nobody. Without
+        // this line a provider-wide auth outage logs only the generic route
+        // failure — no planned, no completed-before-failure, no way to see how
+        // much was already spent when the stage died.
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "serp_sample",
+            failureReason: stageFailed.code,
+            planned: plan.length,
+            dispatched: dispatched.filter(Boolean).length,
+            complete: samples.filter((sample) => sample?.status === "complete")
+              .length,
+          }),
+        );
+        throw stageFailed;
+      }
+      // Two different unfinished facts, reported apart. A keyword that was
+      // dispatched and has no outcome was asked and never answered before the
+      // mark; one that was never dispatched was never asked, and saying the
+      // provider failed it would send a reader to a status page for a call
+      // that never happened.
+      for (const item of plan) {
+        samples[item.index] ??= unavailableSerpSample(
+          item.keyword,
+          dispatched[item.index]
+            ? "transport_outcome_unknown"
+            : "budget_exhausted",
+        );
       }
       return samples;
     },
