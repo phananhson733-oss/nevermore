@@ -97,12 +97,14 @@ describe("every GEO code a visitor can see has a sentence in both locales", () =
     );
 
     const raised = new Set<string>();
-    for (const match of source.matchAll(/errorResponse\(\s*"([a-z_]+)"/g)) {
+    for (const match of source.matchAll(
+      /errorResponse\(\s*"([A-Za-z0-9_]+)"/g,
+    )) {
       raised.add(match[1]!);
     }
     const union = source.split("export type GeoRunRejection")[1]?.split(";")[0];
     expect(union).toBeDefined();
-    for (const match of union!.matchAll(/"([a-z_]+)"/g)) {
+    for (const match of union!.matchAll(/"([A-Za-z0-9_]+)"/g)) {
       raised.add(match[1]!);
     }
 
@@ -126,7 +128,6 @@ describe("every GEO code a visitor can see has a sentence in both locales", () =
    */
   it("covers every refusal code the confirm and edit steps can produce", async () => {
     const { readFile } = await import("node:fs/promises");
-    const codes = new Set<string>();
 
     const context = await readFile(
       new URL("./geo-context.ts", import.meta.url),
@@ -136,9 +137,11 @@ describe("every GEO code a visitor can see has a sentence in both locales", () =
       .split("export type GeoContextRejection")[1]
       ?.split(";")[0];
     expect(contextUnion).toBeDefined();
-    for (const match of contextUnion!.matchAll(/"([a-z_]+)"/g)) {
-      codes.add(match[1]!);
-    }
+    const contextCodes = new Set(
+      [...contextUnion!.matchAll(/"([A-Za-z0-9_]+)"/g)].map(
+        (match) => match[1]!,
+      ),
+    );
 
     const questions = await readFile(
       new URL("./geo-questions.ts", import.meta.url),
@@ -148,12 +151,24 @@ describe("every GEO code a visitor can see has a sentence in both locales", () =
       .split("export type GeoQuerySetRejection")[1]
       ?.split("export type")[0];
     expect(questionUnion).toBeDefined();
-    for (const match of questionUnion!.matchAll(/code:\s*"([a-z_]+)"/g)) {
-      codes.add(match[1]!);
-    }
+    const questionCodes = new Set(
+      [...questionUnion!.matchAll(/code:\s*"([A-Za-z0-9_]+)"/g)].map(
+        (match) => match[1]!,
+      ),
+    );
 
-    // If the patterns stop matching, everything below becomes vacuous.
-    expect(codes.size).toBeGreaterThan(15);
+    /*
+     * Each side guarded on its own count, not on the total.
+     *
+     * A single floor over the merged set is met by the larger union alone, so
+     * the smaller one could extract nothing and this test would still pass —
+     * the exact vacuity the comment above claims to prevent. The character
+     * class is deliberately wider than today's codes for the same reason: a
+     * code with a digit in it would otherwise be skipped rather than checked.
+     */
+    expect(contextCodes.size).toBeGreaterThan(10);
+    expect(questionCodes.size).toBeGreaterThan(3);
+    const codes = new Set([...contextCodes, ...questionCodes]);
 
     for (const locale of ["en", "zh"] as const) {
       const messages = messagesAt(locale, "rejections");

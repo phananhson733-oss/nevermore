@@ -341,9 +341,12 @@ function buildRunLimitations(
   }
   if (coverage.totals.unavailableSamples > 0) limitations.push("partial_run");
   if (!provenance.costComplete) limitations.push("cost_incomplete");
-  // A run that hit its own spend ceiling stopped issuing calls, and the reader
-  // is entitled to know that the missing samples are a budget decision rather
-  // than a provider failure. Without this the only record was a server log.
+  // Recorded because the reader is entitled to know the ceiling was reached at
+  // all; without this the only record was a server log. It does not say a
+  // sample is missing, and it does not attribute one: `capped` is also set by a
+  // settlement that overran after the last call was already admitted, and
+  // `partial_run` above covers gaps this flag knows nothing about. The message
+  // for this code says exactly that much and no more.
   if (costCeilingReached) limitations.push("cost_ceiling_reached");
   if (provenance.triggerCalibrationScope === "outside_calibrated_market") {
     limitations.push("outside_calibrated_market");

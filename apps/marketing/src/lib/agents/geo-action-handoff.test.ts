@@ -828,7 +828,13 @@ describe("selection and evidence integrity", () => {
          * which is what the screen half already does.
          */
         expect(markdown).not.toContain(`Do not — ${action.assetType}`);
-        expect(markdown).not.toContain(`recommended instead`);
+        // The asset does not appear on this row at all: it is a carrier value,
+        // so naming it as a recommendation was the second wrong line here.
+        const heading = markdown
+          .split("\n")
+          .find((line) => line.includes(`Do not: ${action.reason}`));
+        expect(heading).toBeDefined();
+        expect(heading).not.toContain(action.assetType);
         expect(markdown).toContain(`Do not: ${action.reason}`);
       }
     });
@@ -881,6 +887,43 @@ describe("selection and evidence integrity", () => {
       for (const action of rowsWithoutRatio) {
         // A subject for a count that does not exist labels nothing.
         expect(action.reasonCountsObserve).toBeNull();
+      }
+    });
+
+    it("says in the readable half that a page URL lost its query string", async () => {
+      const report = await dirtyReport();
+      const plan = deriveGeoActionPlan(
+        report,
+        "https://acme.test/product?id=42",
+      );
+      const result = await buildGeoActionHandoff({
+        report,
+        context: await context(),
+        candidates: plan.candidates,
+        selectedActionIds: plan.candidates.map(
+          (candidate) => candidate.actionId,
+        ),
+        now: CLOCK,
+      });
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      const disclosed = result.packet.selectedActions.filter(
+        (action) => action.targetUrlQueryRemoved,
+      );
+      expect(disclosed.length).toBeGreaterThan(0);
+      // The JSON half carries the flag; a person reading the other half would
+      // otherwise take the shortened URL for the page that was confirmed.
+      expect(markdown).toContain("query string removed on export");
+      for (const action of result.packet.selectedActions) {
+        if (action.targetUrl === null) continue;
+        const line = markdown
+          .split("\n")
+          .find((entry) => entry.includes(`- Page: ${action.targetUrl}`));
+        expect(line).toBeDefined();
+        expect(line!.includes("query string removed on export")).toBe(
+          action.targetUrlQueryRemoved,
+        );
       }
     });
 

@@ -3574,7 +3574,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. A run makes up to 18 billed provider calls — fewer if you edit a probe, or if the run stops at its time or spending ceiling — so it is not available anonymously.",
       "dataBoundaryTitle": "Report contents are not stored",
-      "dataBoundaryBody": "The report is returned to this page: no account history, no server copy of the assistant's answer. Where the browser allows it, the report can be restored in this same tab for up to fifteen minutes, so switching language usually does not lose what you paid for. Minimal billing, quota and abuse-prevention metadata is kept server-side. Nothing here outlives the browser session that ran it, and nothing is written to your account — so copy anything you need before you go.",
+      "dataBoundaryBody": "The report is returned to this page: no account history, no server copy of the assistant's answer. Where the browser allows it, the report can be restored in this same tab for up to fifteen minutes, so switching language usually does not lose what you paid for. Minimal billing, quota and abuse-prevention metadata is kept server-side. Treat the report itself as temporary: nothing about it reaches your account, and it may be gone the next time you look — so copy anything you need before you go.",
       "howEyebrow": "How it works",
       "howTitle": "From buyer questions to observed citations",
       "howBody": "Every number in the report is recomputed from the samples underneath it, and a sample that observed nothing is reported as exactly that rather than counted as a zero.",
