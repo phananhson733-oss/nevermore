@@ -38,7 +38,11 @@ const CONTEXT_INPUT: GeoContextInputV1 = {
   targetUrl: "https://acme.test/",
   productName: "Acme Analytics",
   brandAliases: [
-    { alias: "Acme Analytics", source: "profile_product_name", confirmed: true },
+    {
+      alias: "Acme Analytics",
+      source: "profile_product_name",
+      confirmed: true,
+    },
   ],
   category: "seo",
   categoryConfirmed: true,
@@ -54,8 +58,8 @@ const CONTEXT_INPUT: GeoContextInputV1 = {
   targetQueryLanguage: "en",
   sourceProfileVersion: "geo-context.local.v1",
   sourceSummary: [
-      { field: "category", source: "user_edit", limitationCode: null },
-    ],
+    { field: "category", source: "user_edit", limitationCode: null },
+  ],
 };
 
 const SAMPLING: GeoSamplingContext = {
@@ -373,10 +377,9 @@ describe("buildGeoActionHandoff", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     for (const entry of result.packet.evidence) {
-      expect([
-        "provider_answer_annotation",
-        "provider_answer_text",
-      ]).toContain(entry.evidenceBasis);
+      expect(["provider_answer_annotation", "provider_answer_text"]).toContain(
+        entry.evidenceBasis,
+      );
     }
   });
 
@@ -433,7 +436,8 @@ describe("buildGeoActionHandoff", () => {
       // Each sample says whether it was counted, so a receiver can find the one
       // the ratio rests on instead of associating failed calls with a negative.
       expect(
-        observation.samples.filter((sample) => sample.countedInCitations).length,
+        observation.samples.filter((sample) => sample.countedInCitations)
+          .length,
       ).toBe(observation.outcome.evaluable);
     }
     const serialized = serializeGeoActionHandoff(result.packet);
@@ -452,7 +456,9 @@ describe("buildGeoActionHandoff", () => {
     expect(packet.nonGoals).toContain("do_not_request_or_write_reviews");
     expect(packet.unknowns).toContain("page_inventory_not_collected");
     expect(packet.safetyBoundaries).toContain("packet_confers_no_authority");
-    expect(packet.acceptanceCriteria).toContain("human_reviewed_before_any_change");
+    expect(packet.acceptanceCriteria).toContain(
+      "human_reviewed_before_any_change",
+    );
     // Citation and recommendation are outcomes nobody controls; they are never
     // acceptance criteria.
     expect(JSON.stringify(packet.acceptanceCriteria)).not.toContain(
@@ -535,9 +541,11 @@ describe("checkGeoPacketBounds", () => {
         kind: "external_data" as const,
         reason: "needs_more_evidence" as const,
         reasonCounts: null,
+        reasonCountsObserve: "samples_citing_target" as const,
         queryIds: [],
         evidenceIds: [],
         targetUrl: null,
+        targetUrlQueryRemoved: false,
         limitations: [],
       })),
     };
@@ -636,9 +644,9 @@ describe("binding, selection and traceability", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(
-      result.packet.evidence.some((entry) => entry.queryRemoved),
-    ).toBe(true);
+    expect(result.packet.evidence.some((entry) => entry.queryRemoved)).toBe(
+      true,
+    );
   });
 });
 
@@ -783,9 +791,35 @@ describe("selection and evidence integrity", () => {
 
       for (const action of result.packet.selectedActions) {
         if (action.reasonCounts === null) continue;
+        // The subject travels with the ratio. `observed` counts samples that
+        // cited the customer on every row but the avoid row, where it counts
+        // samples that cited somebody else — printing one sentence for both
+        // told a reader the avoid row's 2 of 3 meant the site was cited twice.
+        const subject =
+          action.reasonCountsObserve === "samples_citing_someone_else"
+            ? "cited another site and not this one"
+            : "cited this site";
         expect(markdown).toContain(
-          `observed in ${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples`,
+          `${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples ${subject}`,
         );
+      }
+    });
+
+    it("does not print an avoid row as a prohibition on the asset it recommends", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      for (const action of result.packet.selectedActions) {
+        if (action.kind !== "avoid") continue;
+        /*
+         * An avoid candidate's `assetType` is what it recommends keeping, so
+         * the shared `{heading} — {assetType}` line rendered "Do not — existing
+         * page enhancement": a ban on the one thing the row argues for.
+         */
+        expect(markdown).not.toContain(`Do not — ${action.assetType}`);
+        expect(markdown).toContain(`Do not: ${action.reason}`);
+        expect(markdown).toContain(`recommended instead: ${action.assetType}`);
       }
     });
   });

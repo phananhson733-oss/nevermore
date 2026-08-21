@@ -161,6 +161,18 @@ export interface GeoActionHandoffV2 {
     readonly queryIds: readonly string[];
     readonly evidenceIds: readonly string[];
     readonly targetUrl: string | null;
+    /** Same disclosure every exported evidence URL carries. */
+    readonly targetUrlQueryRemoved: boolean;
+    /**
+     * Which samples `reasonCounts.observed` counts, in this row's own terms.
+     *
+     * An avoid row counts the samples that cited somebody else; every other row
+     * counts the samples that cited the customer. The field name is shared, so
+     * the subject has to travel with it.
+     */
+    readonly reasonCountsObserve:
+      | "samples_citing_target"
+      | "samples_citing_someone_else";
     readonly limitations: readonly string[];
   }[];
   /** Rendered from fixed, versioned templates and enums only. */
@@ -526,26 +538,34 @@ export function buildGeoActionHandoff(
       sendOutreach: false,
       changeProduction: false,
     },
-    selectedActions: selected.map((candidate) => ({
-      actionId: candidate.actionId,
-      assetType: candidate.assetType,
-      kind: candidate.kind,
-      reason: candidate.reason,
-      reasonCounts: candidate.reasonCounts,
-      queryIds: [...candidate.queryIds],
-      // Exactly the records that reached the packet for this action, so a
-      // reader never sees a reference the packet does not contain.
-      evidenceIds: wanted
-        .filter((entry) => entry.actionId === candidate.actionId)
-        .map((entry) => entry.evidenceId),
-      // Sanitized like every other exported URL: it leaves the screen just as
-      // the evidence links do.
-      targetUrl:
+    selectedActions: selected.map((candidate) => {
+      const target =
         candidate.targetUrl === null
           ? null
-          : sanitizeGeoExportUrl(candidate.targetUrl).safeUrl,
-      limitations: [...candidate.limitations],
-    })),
+          : sanitizeGeoExportUrl(candidate.targetUrl);
+      return {
+        actionId: candidate.actionId,
+        assetType: candidate.assetType,
+        kind: candidate.kind,
+        reason: candidate.reason,
+        reasonCounts: candidate.reasonCounts,
+        reasonCountsObserve:
+          candidate.kind === "avoid"
+            ? ("samples_citing_someone_else" as const)
+            : ("samples_citing_target" as const),
+        queryIds: [...candidate.queryIds],
+        // Exactly the records that reached the packet for this action, so a
+        // reader never sees a reference the packet does not contain.
+        evidenceIds: wanted
+          .filter((entry) => entry.actionId === candidate.actionId)
+          .map((entry) => entry.evidenceId),
+        // Sanitized like every other exported URL: it leaves the screen just as
+        // the evidence links do, and says so when a query string was dropped.
+        targetUrl: target?.safeUrl ?? null,
+        targetUrlQueryRemoved: target?.queryRemoved ?? false,
+        limitations: [...candidate.limitations],
+      };
+    }),
     objective: OBJECTIVE_TEMPLATE.replace("{count}", String(selected.length)),
     confirmedContext: confirmedContextLines(input.context),
     tasks,
@@ -633,12 +653,35 @@ export function serializeGeoActionHandoffMarkdown(
   ];
 
   for (const action of packet.selectedActions) {
+    /*
+     * Whose citations the ratio counts, said in the line that prints it.
+     *
+     * `observed` is the samples that cited the customer on every row except the
+     * avoid row, where it is the samples that cited somebody else. One sentence
+     * for both readings would be wrong for one of them.
+     */
+    const subject =
+      action.reasonCountsObserve === "samples_citing_someone_else"
+        ? "cited another site and not this one"
+        : "cited this site";
     const counts =
       action.reasonCounts === null
         ? "no ratio applies to this item"
-        : `observed in ${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples`;
+        : `${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples ${subject}`;
+    /*
+     * An avoid row names what not to do, not an asset to build.
+     *
+     * Its `assetType` is the alternative it recommends keeping, so the shared
+     * `Do not — {assetType}` heading printed "Do not — existing page
+     * enhancement" — a prohibition on the very thing the row is arguing for.
+     * The reason carries the prohibition; the asset stays a separate line.
+     */
+    const heading =
+      action.kind === "avoid"
+        ? `**${KIND_HEADING[action.kind]}: ${action.reason}** (recommended instead: ${action.assetType})`
+        : `**${KIND_HEADING[action.kind]} — ${action.assetType}** (${action.reason})`;
     lines.push(
-      `- **${KIND_HEADING[action.kind]} — ${action.assetType}** (${action.reason})`,
+      `- ${heading}`,
       `  - Basis: ${counts}.`,
       `  - From ${action.queryIds.length} question(s): ${action.queryIds.join(", ")}.`,
     );

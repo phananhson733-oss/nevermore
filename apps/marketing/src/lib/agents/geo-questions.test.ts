@@ -12,6 +12,7 @@ import {
 } from "./geo-questions.ts";
 import {
   confirmGeoContext,
+  deriveGeoBrandStance,
   promptContainsTargetAlias,
   type GeoContextInputV1,
   type GeoContextSnapshotV1,
@@ -619,7 +620,7 @@ describe("buildGeoCoreQuerySet", () => {
 describe("editGeoQueryText", () => {
   const CLOCK = (): Date => new Date("2026-08-18T09:00:00.000Z");
 
-  async function set(): Promise<GeoQuerySetV1> {
+  async function context(): Promise<GeoContextSnapshotV1> {
     const snapshot = await confirmGeoContext(
       {
         targetUrl: "https://acme.test/",
@@ -645,13 +646,17 @@ describe("editGeoQueryText", () => {
         targetQueryLanguage: "en",
         sourceProfileVersion: "agent-profile.v3",
         sourceSummary: [
-      { field: "category", source: "user_edit", limitationCode: null },
-    ],
+          { field: "category", source: "user_edit", limitationCode: null },
+        ],
       },
       CLOCK,
     );
     if (!snapshot.ok) throw new Error(snapshot.rejections.join(","));
-    const built = await buildGeoCoreQuerySet(snapshot.snapshot, CLOCK);
+    return snapshot.snapshot;
+  }
+
+  async function set(): Promise<GeoQuerySetV1> {
+    const built = await buildGeoCoreQuerySet(await context(), CLOCK);
     if (!built.ok) throw new Error("expected a set");
     return built.querySet;
   }
@@ -665,6 +670,7 @@ describe("editGeoQueryText", () => {
       original,
       probe.queryId,
       "Which seo tools do enterprise teams trust?",
+      await context(),
     );
 
     expect(result.ok).toBe(true);
@@ -687,6 +693,7 @@ describe("editGeoQueryText", () => {
       original,
       original.queries[0]!.queryId,
       "Which seo tools do enterprise teams trust?",
+      await context(),
     );
 
     expect(result.ok).toBe(true);
@@ -704,6 +711,7 @@ describe("editGeoQueryText", () => {
       original,
       original.queries[0]!.queryId,
       "a".repeat(600),
+      await context(),
     );
 
     expect(result.ok).toBe(false);
@@ -713,13 +721,131 @@ describe("editGeoQueryText", () => {
   });
 
   it("refuses an unknown query id", async () => {
-    const result = await editGeoQueryText(await set(), "nope", "Anything?");
+    const result = await editGeoQueryText(
+      await set(),
+      "nope",
+      "Anything?",
+      await context(),
+    );
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.rejections).toEqual([
         { code: "unknown_query", queryId: "nope" },
       ]);
+    }
+  });
+
+  /*
+   * The stance travels with the text, because the server derives it again.
+   *
+   * `geo-run-handler` re-derives every question's brand stance from the text it
+   * was sent and refuses the whole run when the client's label disagrees. An
+   * edit that carried the old label forward therefore did not produce a
+   * mislabelled run — it produced an unrunnable one, refused before billing with
+   * an error the visitor could do nothing about.
+   */
+  it("re-derives the stance when an edit introduces the customer's own name", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const unbranded = original.queries.find(
+      (query) => query.brandStance === "unbranded",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      unbranded.queryId,
+      "Is Acme Analytics any good for seo?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === unbranded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("brand");
+  });
+
+  it("re-derives the stance when an edit removes the customer's own name", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const branded = original.queries.find(
+      (query) => query.brandStance === "brand",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      branded.queryId,
+      "Which seo tools do enterprise teams trust?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === branded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("unbranded");
+  });
+
+  it("re-derives the stance when an edit names a confirmed competitor", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const unbranded = original.queries.find(
+      (query) => query.brandStance === "unbranded",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      unbranded.queryId,
+      "Which seo tools are cheaper than semrush?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === unbranded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("mixed");
+  });
+
+  /*
+   * The guard the server applies, applied to the edited set here.
+   *
+   * Asserting the field alone would pass if the derivation drifted from the
+   * server's; this fails whenever an edit produces a set the run handler would
+   * refuse, whatever the reason.
+   */
+  it("produces a set whose every stance survives the server's own derivation", async () => {
+    const snapshot = await context();
+    const original = await set();
+
+    for (const text of [
+      "Is Acme Analytics any good for seo?",
+      "Which seo tools are cheaper than semrush?",
+      "How do teams pick between Acme Analytics and semrush?",
+      "Which seo tools do enterprise teams trust?",
+    ]) {
+      const result = await editGeoQueryText(
+        original,
+        original.queries[0]!.queryId,
+        text,
+        snapshot,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const edited = result.querySet.queries.find(
+        (query) => query.queryId === original.queries[0]!.queryId,
+      )!;
+      expect(edited.brandStance).toBe(
+        deriveGeoBrandStance(
+          edited.text,
+          snapshot.brandAliases,
+          snapshot.directCompetitors,
+        ),
+      );
     }
   });
 });

@@ -146,6 +146,13 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
    */
   const querySetRef = useRef<GeoQuerySetV1 | null>(null);
   /**
+   * The confirmed context, readable from the same callbacks, for the same
+   * reason. An edit re-derives the brand stance from the names in this
+   * snapshot, and reading the state directly would derive every edit against
+   * the context of the first render — which is `null`.
+   */
+  const contextRef = useRef<GeoContextSnapshotV1 | null>(null);
+  /**
    * The banner that says why a run stopped.
    *
    * It renders at the top of the workbench while the button that starts a run
@@ -178,6 +185,10 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     querySetRef.current = querySet;
   }, [querySet]);
 
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
+
   /**
    * Put a finished report back after a same-tab navigation.
    *
@@ -195,6 +206,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     const restored = restoreGeoReportSession(geoSessionStorage(), new Date());
     if (restored === null) return;
     setContext(restored.context);
+    contextRef.current = restored.context;
     setQuerySet(restored.querySet);
     querySetRef.current = restored.querySet;
     setReport(restored.report);
@@ -234,10 +246,12 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         "geo_query_set_invalid",
         "geo_query_set_unconfirmed",
         "geo_query_set_mismatch",
+        "geo_brand_stance_mismatch",
         "geo_prompt_too_long",
         "geo_plan_size_mismatch",
         "geo_budget_exhausted",
         "geo_budget_unavailable",
+        "geo_time_budget_exhausted",
         "geo_provider_unavailable",
         "geo_report_invalid",
       ];
@@ -319,6 +333,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       return;
     }
     setContext(confirmed.snapshot);
+    contextRef.current = confirmed.snapshot;
     setQuerySet(built.querySet);
     setStage("queries");
   }, [
@@ -344,7 +359,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
    */
   const handleQueryEdit = useCallback((queryId: string, text: string) => {
     const current = querySetRef.current;
-    if (current === null) return;
+    const snapshot = contextRef.current;
+    if (current === null || snapshot === null) return;
 
     // Shown immediately so typing does not lag behind the caret; the awaited
     // result replaces it with the properly re-fingerprinted, demoted set.
@@ -357,8 +373,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
     querySetRef.current = optimistic;
     setQuerySet(optimistic);
 
-    void editGeoQueryText(current, queryId, text).then((result) => {
-      if (!mounted.current || !result.ok) return;
+    void editGeoQueryText(current, queryId, text, snapshot).then((result) => {
+      if (!mounted.current) return;
       // A slower keystroke's result must not overwrite a faster one. The
       // fingerprint is async, so results can land out of order.
       const latest = querySetRef.current;
@@ -366,6 +382,22 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
         (query) => query.queryId === queryId && query.text === text,
       );
       if (stillCurrent !== true) return;
+      if (!result.ok) {
+        /*
+         * A refused edit puts the last accepted set back.
+         *
+         * The optimistic set carries the new text under the old fingerprint,
+         * sample plan and mode. Leaving it there after a refusal — emptying the
+         * field, or pasting something too long to pay for — left the plan panel
+         * counting three samples for a question with no text, and the run
+         * button offering to buy them. The server refuses such a set before
+         * billing, so no money was ever at stake; the count on screen was
+         * simply not the count that would run.
+         */
+        querySetRef.current = current;
+        setQuerySet(current);
+        return;
+      }
       querySetRef.current = result.querySet;
       setQuerySet(result.querySet);
     });
