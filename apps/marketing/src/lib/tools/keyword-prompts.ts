@@ -1219,15 +1219,22 @@ export function createKeywordLlmSeams(options: KeywordLlmSeamOptions = {}) {
     stage: KeywordLlmStage,
     run: () => Promise<T>,
   ): Promise<T> => {
+    // Only `run()` is guarded. Reporting the success inside the same `try`
+    // would let a throwing `onUsage` — which the callback contract permits,
+    // even though the sink here does not — be caught as if the stage itself
+    // had failed, reported a second time, and surfaced to the caller as a
+    // model failure that never happened.
+    let result: T;
     try {
-      const result = await run();
-      options.onUsage?.(stage, result.usage);
-      return result;
+      result = await run();
     } catch (error) {
-      if (error instanceof KeywordLlmError)
+      if (error instanceof KeywordLlmError) {
         options.onUsage?.(stage, error.usage);
+      }
       throw error;
     }
+    options.onUsage?.(stage, result.usage);
+    return result;
   };
   return {
     extractPropositions: async (
