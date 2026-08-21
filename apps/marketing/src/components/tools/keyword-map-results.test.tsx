@@ -222,6 +222,12 @@ function result(
       siteUrl: "https://acme.test",
       pagesFetched: 20,
       productPagesFetched: 3,
+      selection: {
+        eligibleCandidates: 28,
+        excludedCandidates: 8,
+        attemptedCandidates: 23,
+        truncatedCandidates: 5,
+      },
       propositions: [
         {
           statement: "Billing for dental clinics",
@@ -333,6 +339,19 @@ describe("keyword map results", () => {
 
       expect(markup).not.toContain("covered the whole site");
       expect(markup).not.toContain("已抓完整站");
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders exact eligible, excluded, attempted, and truncated L2 counts in %s",
+    (locale) => {
+      const markup = render(locale);
+      const expected =
+        locale === "en"
+          ? "28 eligible candidates, 8 excluded before page requests, 23 attempted, and 5 left unattempted after the 20-page limit"
+          : "28 个合格候选页，8 个在页面请求前排除，实际尝试 23 个，达到 20 页上限后还有 5 个未尝试";
+
+      expect(markup).toContain(expected);
     },
   );
 

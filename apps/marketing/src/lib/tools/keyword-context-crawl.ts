@@ -35,6 +35,7 @@ export function toKeywordContextCrawl(
     })),
     pagesFetched: result.pagesFetched,
     productPagesFetched: result.productPagesFetched,
+    ...(result.selection === undefined ? {} : { selection: result.selection }),
     ...(result.sitemapInventory === undefined
       ? {}
       : { sitemapInventory: result.sitemapInventory }),

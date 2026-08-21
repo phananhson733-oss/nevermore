@@ -10,6 +10,7 @@ import { Compass } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type {
   KeywordOpportunityErrorCode,
+  KeywordOpportunityContextSelection,
   KeywordOpportunityProposition,
   KeywordOpportunityResult,
 } from "@sf/public-tools/keyword-opportunity/types";
@@ -74,6 +75,7 @@ interface ContextState {
   readonly propositions: readonly KeywordOpportunityProposition[];
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
+  readonly selection?: KeywordOpportunityContextSelection;
   readonly contextSufficient: boolean;
 }
 
@@ -259,6 +261,7 @@ export function KeywordMapTool({
           propositions?: readonly KeywordOpportunityProposition[];
           pagesFetched?: number;
           productPagesFetched?: number;
+          selection?: KeywordOpportunityContextSelection;
           contextSufficient?: boolean;
         };
         error?: { code?: string };
@@ -274,6 +277,9 @@ export function KeywordMapTool({
         propositions: body.data.propositions ?? [],
         pagesFetched: body.data.pagesFetched ?? 0,
         productPagesFetched: body.data.productPagesFetched ?? 0,
+        ...(body.data.selection === undefined
+          ? {}
+          : { selection: body.data.selection }),
         contextSufficient: body.data.contextSufficient ?? false,
       });
       setPhase("confirm");
@@ -533,6 +539,16 @@ export function KeywordMapTool({
               productPages: context.productPagesFetched,
             })}
           </p>
+          {context.selection === undefined ? null : (
+            <p className="mt-1.5 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("contextSelection", {
+                eligible: context.selection.eligibleCandidates,
+                excluded: context.selection.excludedCandidates,
+                attempted: context.selection.attemptedCandidates,
+                truncated: context.selection.truncatedCandidates,
+              })}
+            </p>
+          )}
 
           {!context.contextSufficient ? (
             <p className="mt-3 text-[12.5px] leading-[1.6] text-brand-warning">

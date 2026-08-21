@@ -248,6 +248,7 @@ const COMMUNITY_FALLBACK_DOMAINS_V1 = [
   "quora.com",
   "stackexchange.com",
   "stackoverflow.com",
+  "medium.com",
   "news.ycombinator.com",
 ] as const;
 

@@ -123,6 +123,28 @@ function keyPaths(value: unknown, prefix = ""): string[] {
 }
 
 describe("keyword map copy", () => {
+  it("does not infer billing or refund state from the generic unknown error", () => {
+    const unknownEn = group("en", "errors")["unknown"];
+    const unknownZh = group("zh", "errors")["unknown"];
+    const readingEn = namespace("en")["readingBody"];
+    const readingZh = namespace("zh")["readingBody"];
+
+    expect(unknownEn).toBe(
+      "Something went wrong on our side. This run did not produce a usable report. Try again.",
+    );
+    expect(unknownZh).toBe(
+      "我们这边出了问题，本次没有产出可用报告。请重试。",
+    );
+    expect(String(unknownEn).toLowerCase()).not.toMatch(/charg|bill|refund/u);
+    expect(String(unknownZh)).not.toMatch(/计费|扣费|退款/u);
+    expect(readingEn).toBe(
+      "Fetching a bounded context of up to 20 pages and reading the positioning from them. This is not a whole-site crawl and does not call the search-data provider.",
+    );
+    expect(readingZh).toBe(
+      "抓取最多 20 个页面的有限上下文并从中读出定位；这不是全站完整抓取，也不会调用搜索数据源。",
+    );
+  });
+
   it.each(["en", "zh"] as const)(
     "renders every v2 evidence enum in %s",
     (locale) => {

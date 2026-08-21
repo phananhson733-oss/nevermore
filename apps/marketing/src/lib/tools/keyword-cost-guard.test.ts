@@ -357,6 +357,7 @@ describe("reportKeywordRunCost", () => {
 
     expect(report).toEqual({
       tool: "keyword_opportunity",
+      reportProduced: true,
       runCostUsd: 0.088,
       byEndpoint: {
         keyword_overview: 0.017,
@@ -378,6 +379,24 @@ describe("reportKeywordRunCost", () => {
     });
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "")).toEqual(report);
+  });
+
+  it("marks a failed run without erasing provider cost that already occurred", () => {
+    const costs = createKeywordCostAccumulator();
+    costs.record("serp_organic", 0.02);
+
+    const report = reportKeywordRunCost(
+      {
+        costs,
+        candidateCount: 6,
+        serpSampled: 6,
+        reportProduced: false,
+      },
+      () => undefined,
+    );
+
+    expect(report.reportProduced).toBe(false);
+    expect(report.runCostUsd).toBe(0.02);
   });
 
   /**
