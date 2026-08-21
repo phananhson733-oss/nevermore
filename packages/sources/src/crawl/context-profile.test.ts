@@ -60,17 +60,106 @@ describe("page-value ordering", () => {
 
     expect(result.pages.map((entry) => entry.path)).toEqual([
       "/",
-      "/pricing",
       "/features",
-      "/about",
       "/solutions/teams",
+      "/pricing",
     ]);
-    expect(result.productPagesFetched).toBe(4);
-    expect(result.pagesFetched).toBe(5);
+    expect(result.productPagesFetched).toBe(3);
+    expect(result.pagesFetched).toBe(4);
     expect(result.contextSufficient).toBe(true);
     expect(result.stopReason).toBeNull();
     expect(site.requested).not.toContain(`${ORIGIN}/blog/why-we-built-it`);
     expect(site.requested).not.toContain(`${ORIGIN}/careers`);
+  });
+
+  it("orders navigation, product, pricing, content lists, then shallow fallbacks", async () => {
+    const sitemap = [
+      "/sitemap-fallback",
+      "/pricing",
+      "/resources",
+      "/features",
+      "/about",
+    ]
+      .map((path) => `<url><loc>${ORIGIN}${path}</loc></url>`)
+      .join("");
+    const site = fakeSite({
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { body: `<urlset>${sitemap}</urlset>` },
+      "/": {
+        body: `<html><body>
+          <header><a href="/nav-unknown">Navigation</a></header>
+          <main><a href="/features">Features</a></main>
+          <footer><a href="/about">About</a></footer>
+        </body></html>`,
+      },
+      "/nav-unknown": { body: page("Navigation") },
+      "/features": { body: page("Features") },
+      "/pricing": { body: page("Pricing") },
+      "/resources": { body: page("Resources") },
+      "/sitemap-fallback": { body: page("Fallback") },
+      "/about": { body: page("About") },
+    });
+
+    const result = await run(site);
+
+    expect(result.pages.map((entry) => entry.path)).toEqual([
+      "/",
+      "/nav-unknown",
+      "/features",
+      "/pricing",
+      "/resources",
+      "/sitemap-fallback",
+    ]);
+    expect(result.sitemapInventory?.urls).toContain(`${ORIGIN}/about`);
+    expect(site.requested).not.toContain(`${ORIGIN}/about`);
+    expect(result.selection).toEqual({
+      eligibleCandidates: 5,
+      excludedCandidates: 1,
+      attemptedCandidates: 5,
+      truncatedCandidates: 0,
+    });
+  });
+
+  it("hard-excludes utility, auth, content-detail, and pagination URLs before requests", async () => {
+    const excluded = [
+      "/about",
+      "/contact-us",
+      "/privacy-policy",
+      "/sign-in",
+      "/blog/article",
+      "/resources/article",
+      "/pricing?page=2",
+      "/resources/page/2",
+    ];
+    const sitemap = [...excluded, "/pricing"]
+      .map((path) => `<url><loc>${ORIGIN}${path}</loc></url>`)
+      .join("");
+    const routes: Record<string, Route> = {
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { body: `<urlset>${sitemap}</urlset>` },
+      "/": { body: page("Acme", excluded) },
+      "/pricing": { body: page("Pricing") },
+    };
+    for (const path of excluded) {
+      routes[new URL(path, ORIGIN).pathname] = { body: page(path) };
+    }
+    const site = fakeSite(routes);
+
+    const result = await run(site);
+
+    expect(result.pages.map((entry) => entry.path)).toEqual(["/", "/pricing"]);
+    for (const path of excluded) {
+      expect(site.requested).not.toContain(`${ORIGIN}${path}`);
+    }
+    expect(result.sitemapInventory?.urls).toEqual(
+      expect.arrayContaining(excluded.map((path) => `${ORIGIN}${path}`)),
+    );
+    expect(result.selection).toMatchObject({
+      eligibleCandidates: 1,
+      excludedCandidates: excluded.length,
+      attemptedCandidates: 1,
+      truncatedCandidates: 0,
+    });
   });
 
   it("projects title, description, split headings, and bounded text", async () => {
@@ -188,7 +277,7 @@ describe("robots.txt citizenship", () => {
     const site = fakeSite(marketingSite({ "/robots.txt": { status: 404 } }));
     const result = await run(site);
 
-    expect(result.pagesFetched).toBe(5);
+    expect(result.pagesFetched).toBe(4);
   });
 
   it("fails closed when robots.txt is unreadable (RFC 9309 §2.3.1.4)", async () => {
@@ -260,8 +349,8 @@ describe("sitemap", () => {
 
     expect(result.pages.map((entry) => entry.path)).toEqual([
       "/",
-      "/pricing",
       "/features",
+      "/pricing",
     ]);
     expect(result.sitemapInventory).toEqual({
       urls: [
@@ -343,9 +432,8 @@ describe("sitemap", () => {
     expect(site.requested).not.toContain(`${ORIGIN}/sitemap-news.xml`);
     expect(result.pages.map((entry) => entry.path)).toEqual([
       "/",
-      "/pricing",
-      "/about",
       "/faq",
+      "/pricing",
     ]);
     expect(result.sitemapInventory).toEqual({
       urls: [
@@ -400,7 +488,7 @@ describe("sitemap", () => {
     );
     const result = await run(site);
 
-    expect(result.pagesFetched).toBe(5);
+    expect(result.pagesFetched).toBe(4);
     expect(result.sitemapInventory).toEqual({
       urls: [],
       fetched: true,
@@ -582,6 +670,32 @@ describe("transport wiring", () => {
 });
 
 describe("frontier edge cases", () => {
+  it("counts only eligible URLs left unattempted by the successful-page cap as truncated", async () => {
+    const links = Array.from(
+      { length: 22 },
+      (_unused, index) => `/tools/t${index.toString().padStart(2, "0")}`,
+    );
+    const routes: Record<string, Route> = {
+      "/robots.txt": { body: "" },
+      "/sitemap.xml": { status: 404 },
+      "/": { body: page("Acme", links) },
+    };
+    for (const path of links) routes[path] = { body: page(path) };
+    routes["/tools/t00"] = { status: 404 };
+    routes["/tools/t01"] = { status: 500 };
+
+    const result = await run(fakeSite(routes));
+
+    expect(result.pagesFetched).toBe(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls);
+    expect(result.stopReason).toBe("max_urls");
+    expect(result.selection).toEqual({
+      eligibleCandidates: 22,
+      excludedCandidates: 0,
+      attemptedCandidates: 21,
+      truncatedCandidates: 1,
+    });
+  });
+
   it("replenishes failed candidates until all 20 page slots succeed", async () => {
     const tail = Array.from(
       { length: 19 },
@@ -612,8 +726,9 @@ describe("frontier edge cases", () => {
 
     expect(result.pagesFetched).toBe(20);
     expect(result.pages.at(-1)?.path).toBe("/tools/t18");
-    expect(result.stopReason).toBeNull();
-    expect(result.botProtectionResponses).toBe(1);
+    expect(result.stopReason).toBe("max_urls");
+    expect(result.selection?.truncatedCandidates).toBe(1);
+    expect(result.botProtectionResponses).toBe(0);
     expect(result.rateLimitedResponses).toBe(1);
     expect(site.requested).toContain(`${ORIGIN}/tools/t12`);
   });

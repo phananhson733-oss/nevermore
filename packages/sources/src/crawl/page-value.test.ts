@@ -28,7 +28,6 @@ describe("pageValueScore tiers", () => {
     ["use cases", "/use-cases", 8],
     ["how it works", "/how-it-works", 8],
     ["german solutions", "/loesungen", 8],
-    ["about", "/about", 7],
     ["customers", "/customers", 7],
     ["integrations", "/integrations", 7],
     ["faq", "/faq", 6],
@@ -43,8 +42,8 @@ describe("pageValueScore tiers", () => {
     expect(pageValueScore("/pricing?utm_source=x#top", EN)).toBe(9);
   });
 
-  it("percent-decodes a segment before matching it", () => {
-    expect(pageValueScore("/%C3%BCber-uns", DE)).toBe(7);
+  it("percent-decodes an excluded about-equivalent without making it product-like", () => {
+    expect(pageValueScore("/%C3%BCber-uns", DE)).toBe(0);
   });
 
   it("scores a malformed percent escape rather than dropping the path", () => {
@@ -71,9 +70,9 @@ describe("off-topic sections", () => {
     expect(pageValueScore("/resources/blog/how-to", EN)).toBe(-10);
   });
 
-  it("recognises the german equivalents", () => {
-    expect(pageValueScore("/datenschutz", DE)).toBe(-6);
-    expect(pageValueScore("/karriere", DE)).toBe(-6);
+  it("leaves explicit utility/legal routes to the L2 classifier", () => {
+    expect(pageValueScore("/datenschutz", DE)).toBe(0);
+    expect(pageValueScore("/karriere", DE)).toBe(0);
   });
 });
 
@@ -159,9 +158,10 @@ describe("thresholds", () => {
     expect(pageValueIsContextCandidate).toBeTypeOf("function");
   });
 
-  it("counts the about tier and up as product pages", () => {
+  it("does not count an excluded about page as a product page", () => {
     expect(PAGE_VALUE_PRODUCT_SCORE_THRESHOLD).toBe(7);
-    expect(pageValueIsProductPage(pageValueScore("/about", EN))).toBe(true);
+    expect(pageValueIsProductPage(pageValueScore("/about", EN))).toBe(false);
+    expect(pageValueIsProductPage(pageValueScore("/customers", EN))).toBe(true);
     expect(pageValueIsProductPage(pageValueScore("/faq", EN))).toBe(false);
   });
 
@@ -192,7 +192,6 @@ describe("thresholds", () => {
 
   it.each([
     ["blog", "/blog/post"],
-    ["legal", "/privacy"],
     ["foreign locale", "/fr/story-generators/fantasy"],
   ])("keeps %s paths out of context candidates", (_label, path) => {
     expect(pageValueIsContextCandidate(pageValueBreakdown(path, EN))).toBe(
@@ -201,9 +200,17 @@ describe("thresholds", () => {
   });
 
   it.each([
-    ["an off-topic section under about", "/about/careers", "offTopicPenalty"],
+    [
+      "an off-topic section under customers",
+      "/customers/news",
+      "offTopicPenalty",
+    ],
     ["an off-topic section under faq", "/faq/news", "offTopicPenalty"],
-    ["a foreign-locale about page", "/fr/about", "foreignLocalePenalty"],
+    [
+      "a foreign-locale customer page",
+      "/fr/customers",
+      "foreignLocalePenalty",
+    ],
     ["a foreign-locale pricing page", "/fr/pricing", "foreignLocalePenalty"],
   ] as const)(
     "rejects %s even when its total score reaches the crawlable floor",

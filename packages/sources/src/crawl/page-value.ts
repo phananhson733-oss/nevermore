@@ -75,19 +75,14 @@ const SECTION_TIERS: readonly (readonly [number, readonly string[]])[] = [
     ],
   ],
   [
-    // Proof and reach: who the company is, who buys, what it plugs into. These
-    // describe the product obliquely, so they rank below the product pages but
-    // are still worth budget once those are exhausted.
+    // Proof and reach: who buys and what the product plugs into. Generic
+    // company/about pages are deliberately absent: the keyword L2 contract
+    // excludes them before ranking and they must not inflate product counts.
     7,
     [
-      "about",
-      "about-us",
       "customers",
       "integrations",
       "templates",
-      "ueber-uns",
-      "über-uns",
-      "unternehmen",
       "kunden",
       "referenzen",
       "integrationen",
@@ -116,10 +111,6 @@ const SECTION_SCORES: ReadonlyMap<string, number> = new Map(
 const OFF_TOPIC_SEGMENTS: ReadonlySet<string> = new Set([
   "blog",
   "news",
-  "careers",
-  "legal",
-  "privacy",
-  "terms",
   "changelog",
   "glossary",
   "tags",
@@ -134,14 +125,6 @@ const OFF_TOPIC_SEGMENTS: ReadonlySet<string> = new Set([
   "nachrichten",
   "neuigkeiten",
   "presse",
-  "karriere",
-  "jobs",
-  "stellenangebote",
-  "impressum",
-  "rechtliches",
-  "datenschutz",
-  "agb",
-  "nutzungsbedingungen",
   "glossar",
   "schlagworte",
   "kategorie",
@@ -225,8 +208,9 @@ export const PAGE_VALUE_MIN_CONTEXT_CANDIDATE_SCORE =
 
 /**
  * At or above this, a page is counted as a product page in the crawl summary.
- * Seven is the "about/customers/integrations" tier: the lowest tier whose pages
- * still speak about the company's own offer rather than about a topic.
+ * Seven is the customers/integrations tier: the lowest tier whose pages still
+ * speak about the company's own offer rather than about a topic. About pages
+ * are excluded by the separate L2 eligibility contract.
  */
 export const PAGE_VALUE_PRODUCT_SCORE_THRESHOLD = 7;
 

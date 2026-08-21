@@ -36,10 +36,13 @@ import {
 } from "./context-page.ts";
 import {
   pageValueBreakdown,
-  pageValueIsContextCandidate,
   pageValueIsProductPage,
   type PageValueBreakdown,
 } from "./page-value.ts";
+import {
+  classifyContextProfileCandidate,
+  type ContextProfileCandidateKind,
+} from "./context-profile-candidate.ts";
 import { parsePage } from "./parse-page.ts";
 import { isAllowedPublicToolEntryRedirect } from "./public-preview.ts";
 import {
@@ -260,6 +263,11 @@ export interface ContextProfileResult {
   readonly pagesFetched: number;
   /** Pages scoring at or above `PAGE_VALUE_PRODUCT_SCORE_THRESHOLD`. */
   readonly productPagesFetched: number;
+  /**
+   * L2 frontier accounting; the homepage itself is not a candidate. Optional
+   * only for an older injected/cached result crossing a deployment.
+   */
+  readonly selection?: ContextProfileSelectionSummary;
   readonly stopReason: ContextProfileStopReason | null;
   /** `pagesFetched >= CONTEXT_PROFILE_MIN_PAGES`. */
   readonly contextSufficient: boolean;
@@ -274,6 +282,17 @@ export interface ContextProfileResult {
   /** Redirects refused because an HTTPS journey tried to continue over HTTP. */
   readonly protocolDowngradesRejected: number;
   readonly capturedAt: string;
+}
+
+export interface ContextProfileSelectionSummary {
+  /** Unique same-origin candidates that survived the L2 eligibility contract. */
+  readonly eligibleCandidates: number;
+  /** Unique candidates rejected before they could issue a page request. */
+  readonly excludedCandidates: number;
+  /** Eligible candidates for which a page request was actually attempted. */
+  readonly attemptedCandidates: number;
+  /** Eligible candidates left unattempted only because 20 pages succeeded. */
+  readonly truncatedCandidates: number;
 }
 
 /**
@@ -343,6 +362,20 @@ interface Candidate {
   readonly url: string;
   readonly path: string;
   readonly value: PageValueBreakdown;
+  readonly kind: ContextProfileCandidateKind;
+  readonly source: CandidateSource;
+}
+
+type CandidateSource = "homepage_navigation" | "homepage_link" | "sitemap";
+
+interface CandidateInput {
+  readonly url: string;
+  readonly source: CandidateSource;
+}
+
+interface RankedCandidates {
+  readonly candidates: readonly Candidate[];
+  readonly excludedCandidates: number;
 }
 
 /**
@@ -472,6 +505,7 @@ export async function crawlSiteContextProfile(
   const request = async (
     url: string,
     maxBodyBytes: number,
+    onAdmitted?: () => void,
   ): Promise<PublicResourceResult | null> => {
     const stop = budgetStop(maxBodyBytes);
     if (stop) {
@@ -481,6 +515,7 @@ export async function crawlSiteContextProfile(
     const slot = Math.max(now(), state.nextRequestAt);
     state.nextRequestAt = slot + state.hostDelayMs;
     state.requestsSent += 1;
+    onAdmitted?.();
     state.bytesReserved += maxBodyBytes;
     try {
       const wait = slot - now();
@@ -572,6 +607,9 @@ export async function crawlSiteContextProfile(
   const homepageLinks = homepageParsed.internalFetchTargets.map(
     (target) => target.fetchUrl,
   );
+  const homepageNavigationLinks = new Set(
+    homepageParsed.navigationFetchTargets.map((target) => target.fetchUrl),
+  );
 
   // --- 4. Sitemap -----------------------------------------------------------
   const sitemapInventory = await readSitemap(
@@ -581,19 +619,37 @@ export async function crawlSiteContextProfile(
   );
 
   // --- 5. Rank the frontier -------------------------------------------------
-  const candidates = rankCandidates(
-    [...homepageLinks, ...sitemapInventory.urls, entry.finalUrl],
+  const ranked = rankCandidates(
+    [
+      ...[...homepageNavigationLinks].map((url) => ({
+        url,
+        source: "homepage_navigation" as const,
+      })),
+      ...homepageLinks.map((url) => ({
+        url,
+        source: "homepage_link" as const,
+      })),
+      ...sitemapInventory.urls.map((url) => ({
+        url,
+        source: "sitemap" as const,
+      })),
+    ],
     { origin, homepageUrl, targetLanguage, allowed },
   );
+  const candidates = ranked.candidates;
   const slots = Math.max(0, CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls - 1);
 
   // --- 6. Fetch ------------------------------------------------------------
+  let attemptedCandidates = 0;
   const fetchCandidate = async (
     candidate: Candidate,
   ): Promise<ContextProfilePage | null> => {
     const response = await request(
       candidate.url,
       CONTEXT_PROFILE_CRAWL_BUDGET.maxBodyBytes,
+      () => {
+        attemptedCandidates += 1;
+      },
     );
     if (response === null || response.kind !== "ok") return null;
     if (response.finalStatus === 403) {
@@ -643,6 +699,10 @@ export async function crawlSiteContextProfile(
   }
 
   const pages = [homepage, ...fetched];
+  const truncatedCandidates =
+    state.stopReason === "max_urls"
+      ? Math.max(0, candidates.length - candidateOffset)
+      : 0;
   return {
     origin,
     pages,
@@ -651,6 +711,12 @@ export async function crawlSiteContextProfile(
     productPagesFetched: pages.filter((page) =>
       pageValueIsProductPage(page.score),
     ).length,
+    selection: {
+      eligibleCandidates: candidates.length,
+      excludedCandidates: ranked.excludedCandidates,
+      attemptedCandidates,
+      truncatedCandidates,
+    },
     stopReason: state.stopReason,
     contextSufficient: pages.length >= CONTEXT_PROFILE_MIN_PAGES,
     requestsSent: state.requestsSent,
@@ -915,13 +981,14 @@ interface RankingContext {
  * tests meaningless.
  */
 function rankCandidates(
-  urls: readonly string[],
+  inputs: readonly CandidateInput[],
   context: RankingContext,
-): readonly Candidate[] {
+): RankedCandidates {
   const seen = new Set<string>([context.homepageUrl]);
   const candidates: Candidate[] = [];
-  for (const raw of urls) {
-    const fetchUrl = canonicalizeUrl(raw)?.fetchUrl;
+  let excludedCandidates = 0;
+  for (const input of inputs) {
+    const fetchUrl = canonicalizeUrl(input.url)?.fetchUrl;
     if (!fetchUrl || seen.has(fetchUrl)) continue;
     let parsed: URL;
     try {
@@ -931,19 +998,48 @@ function rankCandidates(
     }
     if (parsed.origin !== context.origin) continue;
     seen.add(fetchUrl);
-    const value = pageValueBreakdown(parsed.pathname, {
+    if (parsed.pathname === "/" || !context.allowed(parsed.pathname)) {
+      excludedCandidates += 1;
+      continue;
+    }
+    const classification = classifyContextProfileCandidate(fetchUrl, {
       targetLanguage: context.targetLanguage,
+      maxDepth: CONTEXT_PROFILE_CRAWL_BUDGET.maxDepth,
     });
-    if (value.depth === 0) continue;
-    if (value.depth > CONTEXT_PROFILE_CRAWL_BUDGET.maxDepth) continue;
-    if (!pageValueIsContextCandidate(value)) continue;
-    if (!context.allowed(parsed.pathname)) continue;
-    candidates.push({ url: fetchUrl, path: parsed.pathname, value });
+    if (!classification.eligible) {
+      excludedCandidates += 1;
+      continue;
+    }
+    candidates.push({
+      url: fetchUrl,
+      path: parsed.pathname,
+      value: classification.value,
+      kind: classification.kind,
+      source: input.source,
+    });
   }
-  return candidates.sort(
+  return {
+    excludedCandidates,
+    candidates: candidates.sort(
     (a, b) =>
+      candidatePriority(a) - candidatePriority(b) ||
       b.value.score - a.value.score ||
       a.value.depth - b.value.depth ||
       (a.url < b.url ? -1 : a.url > b.url ? 1 : 0),
-  );
+    ),
+  };
+}
+
+function candidatePriority(candidate: Candidate): number {
+  if (candidate.source === "homepage_navigation") return 0;
+  switch (candidate.kind) {
+    case "product":
+      return 1;
+    case "pricing":
+      return 2;
+    case "content_list":
+      return 3;
+    case "fallback":
+      return 4;
+  }
 }
