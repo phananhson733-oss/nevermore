@@ -2054,6 +2054,47 @@ describe("handleKeywordOpportunitiesRequest", () => {
     }
   });
 
+  it("keeps the enrichments that landed when a slower sibling runs out of budget", async () => {
+    const now = new Date(COMPLETED_AT);
+    // RDAP is the slow one by construction — one lookup per organic domain, ten
+    // in flight — so it is the sibling that decides whether the wave survives.
+    const resolveDomainRegistrations = vi.fn(
+      () =>
+        new Promise<ReadonlyMap<string, DomainRegistrationEvidence>>(() => {}),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const pending = handleKeywordOpportunitiesRequest(
+        body(),
+        deps({
+          expandCandidates: () => Promise.resolve([draft("slow sibling")]),
+          now: () => now,
+          responseDeadlineAt: now.getTime() + 30_000,
+          resolveDomainRegistrations,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      const response = await pending;
+      const parsed = (await response.json()) as OpportunitiesBody;
+      const incomplete = parsed.data.result.incomplete[0];
+
+      expect(response.status).toBe(200);
+      // Traffic resolved immediately and is kept. Racing the wave as one unit
+      // would have discarded it because a third resolver hung — strictly worse
+      // than the per-resolver failure isolation this wave already had, where
+      // one dead resolver never cost the other two their answers.
+      expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+        "observed",
+      );
+      // Only the resolver that ran out of budget reports unknown, and it says
+      // unknown rather than young.
+      expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["rank", "traffic", "registration"] as const)(
     "isolates a %s enrichment failure without discarding the completed SERP",
     async (failedStage) => {

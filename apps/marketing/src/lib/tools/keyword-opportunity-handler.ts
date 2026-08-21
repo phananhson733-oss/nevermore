@@ -1110,14 +1110,27 @@ export async function handleKeywordOpportunitiesRequest(
     // whole report lost. A null enrichment is already how this handler says
     // "not available", so running out of budget degrades the same way a
     // provider failure does.
-    const enrichmentBudgetMs =
+    const rawEnrichmentBudgetMs =
       dependencies.responseDeadlineAt === undefined
         ? null
         : dependencies.responseDeadlineAt - dependencies.now().getTime();
+    // Fail closed on a non-finite mark rather than handing `setTimeout` an
+    // Infinity it silently clamps to a near-zero delay. Production derives both
+    // marks from one `Date.now()`, but this is an injected seam.
+    const enrichmentBudgetMs =
+      rawEnrichmentBudgetMs === null || Number.isFinite(rawEnrichmentBudgetMs)
+        ? rawEnrichmentBudgetMs
+        : 0;
     const enrichmentAffordable =
       enrichmentBudgetMs === null ||
       enrichmentBudgetMs >= MIN_KEYWORD_ENRICHMENT_MS;
-    if (!enrichmentAffordable) {
+    // Whether there is any enrichment to do at all, independent of budget. The
+    // two are logged apart on purpose: saying the budget suppressed a wave that
+    // had no domains to resolve would put deadline pressure in the telemetry
+    // that was never there.
+    const enrichmentHasWork =
+      completeSamples.length > 0 && organicDomains.length > 0;
+    if (enrichmentHasWork && !enrichmentAffordable) {
       console.error(
         JSON.stringify({
           tool: "keyword_opportunity",
@@ -1126,69 +1139,81 @@ export async function handleKeywordOpportunitiesRequest(
         }),
       );
     }
-    if (
-      completeSamples.length > 0 &&
-      organicDomains.length > 0 &&
-      enrichmentAffordable
-    ) {
-      const enrichment = Promise.all([
-        dependencies.resolveDomainRanks(rankTargets).catch(() => {
-          console.error(
-            JSON.stringify({
-              tool: "keyword_opportunity",
-              stage: "domain_rank",
-              reason: "read_failed",
-            }),
-          );
-          return null;
-        }),
-        dependencies
-          .resolveDomainTraffic({
-            domains: trafficDomains,
-            marketCode: token.marketCode,
-          })
-          .catch(() => {
-            console.error(
-              JSON.stringify({
-                tool: "keyword_opportunity",
-                stage: "domain_traffic",
-                reason: "read_failed",
-              }),
-            );
-            return null;
-          }),
-        dependencies
-          .resolveDomainRegistrations(registrationDomains)
-          .catch(() => {
-            console.error(
-              JSON.stringify({
-                tool: "keyword_opportunity",
-                stage: "domain_registration",
-                reason: "read_failed",
-              }),
-            );
-            return null;
-          }),
-      ]);
-      // Admission alone is not a bound: the wave that was affordable when it
-      // started can still overrun. Losing the race abandons the results rather
-      // than cancelling the provider work — the function is about to end
-      // anyway, and an envelope with null enrichments beats no envelope.
-      const settled =
+    if (enrichmentHasWork && enrichmentAffordable) {
+      // One deadline, applied per resolver rather than to the wave as a whole.
+      // Racing the aggregate would let the slowest — RDAP, by construction —
+      // discard rank and traffic maps that had already resolved, which is worse
+      // than the per-resolver failure isolation this wave started with.
+      let expire = (): void => {};
+      const expired: Promise<null> =
         enrichmentBudgetMs === null
-          ? await enrichment
-          : await Promise.race([
-              enrichment,
-              new Promise<null>((resolve) => {
-                const timer = setTimeout(() => {
-                  resolve(null);
-                }, enrichmentBudgetMs);
-                // Never hold the function open for a timer whose only job is
-                // to give up waiting.
-                timer.unref?.();
+          ? new Promise<null>(() => {})
+          : new Promise<null>((resolve) => {
+              const timer = setTimeout(() => {
+                resolve(null);
+              }, enrichmentBudgetMs);
+              expire = () => {
+                clearTimeout(timer);
+              };
+            });
+      let expiredAny = false;
+      const bounded = async <T>(
+        resolver: Promise<T | null>,
+      ): Promise<T | null> => {
+        const settled = await Promise.race([resolver, expired]);
+        if (settled === null) expiredAny = true;
+        return settled;
+      };
+      const [ranks, traffic, registrations] = await Promise.all([
+        bounded(
+          dependencies.resolveDomainRanks(rankTargets).catch(() => {
+            console.error(
+              JSON.stringify({
+                tool: "keyword_opportunity",
+                stage: "domain_rank",
+                reason: "read_failed",
               }),
-            ]);
-      if (settled === null) {
+            );
+            return null;
+          }),
+        ),
+        bounded(
+          dependencies
+            .resolveDomainTraffic({
+              domains: trafficDomains,
+              marketCode: token.marketCode,
+            })
+            .catch(() => {
+              console.error(
+                JSON.stringify({
+                  tool: "keyword_opportunity",
+                  stage: "domain_traffic",
+                  reason: "read_failed",
+                }),
+              );
+              return null;
+            }),
+        ),
+        bounded(
+          dependencies
+            .resolveDomainRegistrations(registrationDomains)
+            .catch(() => {
+              console.error(
+                JSON.stringify({
+                  tool: "keyword_opportunity",
+                  stage: "domain_registration",
+                  reason: "read_failed",
+                }),
+              );
+              return null;
+            }),
+        ),
+      ]);
+      // Stop the clock the moment nothing is waiting on it. Left scheduled it
+      // would hold its closure for the rest of the budget on a warm instance,
+      // once per request.
+      expire();
+      if (expiredAny) {
         console.error(
           JSON.stringify({
             tool: "keyword_opportunity",
@@ -1196,12 +1221,13 @@ export async function handleKeywordOpportunitiesRequest(
             reason: "budget_expired",
           }),
         );
-      } else {
-        const [ranks, traffic, registrations] = settled;
-        domainRanks = ranks;
-        domainTraffic = traffic;
-        domainRegistrations = registrations;
       }
+      // Whatever did land is kept. Abandoning the wait does not cancel the
+      // provider work, but the function is ending anyway, and an envelope
+      // carrying the ranks that did resolve beats no envelope at all.
+      domainRanks = ranks;
+      domainTraffic = traffic;
+      domainRegistrations = registrations;
     }
     const siteDomainRank =
       siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);
