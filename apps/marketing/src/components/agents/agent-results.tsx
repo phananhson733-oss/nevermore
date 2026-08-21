@@ -305,7 +305,13 @@ export function AgentResults({
         onCheckChange={handleCheckChange}
       />
 
+      {/*
+        Keyed by scope: filter and open-row state belong to the issue list they
+        were chosen against. Carrying a "suggestions" filter into a scope whose
+        findings are all blockers would render an empty list over real issues.
+      */}
       <AgentIssueAccordion
+        key={scope}
         model={issueModel}
         locale={locale}
         profile={profile}

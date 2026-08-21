@@ -56,12 +56,25 @@ export type AgentIssueCopyMode = "repair" | "investigation";
  * would be a fabrication.
  */
 export interface AgentIssueAffectedTargets {
-  readonly mode: "urls" | "site-scope" | "unavailable";
-  /** Bounded display list; empty for site-scope and unavailable. */
+  /**
+   * `not-captured` is distinct from a measured zero: the run kept no
+   * observation that resolves to this issue's target, which is missing
+   * evidence rather than a clean population.
+   */
+  readonly mode: "urls" | "site-scope" | "unavailable" | "not-captured";
+  /** Bounded display list; empty for every mode but `urls`. */
   readonly urls: readonly string[];
   /** Full affected count, or null when the run could not measure it. */
   readonly totalCount: number | null;
   readonly overflowCount: number;
+  /**
+   * Whether the affected population is fully enumerated by its observations.
+   *
+   * A record publishes `affected` and `observations` separately and does not
+   * promise they match, so a population of 25 can arrive with 10 observations.
+   * False here means the count is a floor and the surface has to say so.
+   */
+  readonly enumerated: boolean;
 }
 
 export interface AgentIssue {
@@ -88,6 +101,8 @@ export interface AgentIssueCounts {
   readonly investigation: number;
   readonly passed: number;
   readonly excluded: number;
+  /** Checks quarantined because this build could not read one of their states. */
+  readonly quarantined: number;
 }
 
 export interface AgentIssueModel {
@@ -110,7 +125,10 @@ export interface AgentIssueModel {
 const RESULT_LANE: Readonly<
   Record<
     AgentAuditResultState,
-    { readonly lane: AgentIssueLane; readonly severity: AgentIssueSeverity | null }
+    {
+      readonly lane: AgentIssueLane;
+      readonly severity: AgentIssueSeverity | null;
+    }
   >
 > = {
   blocker: { lane: "actionable", severity: "blocker" },
@@ -167,17 +185,29 @@ function known<State extends string>(
  * producer, not a guarantee about this input.
  */
 function isRecognized(check: AgentAuditEvaluatedCheck): boolean {
-  return (
-    known(RESULT_LANE, String(check.result)) &&
-    known(ROW_TRUTH_RENDERABLE, String(check.truth)) &&
-    ROW_TRUTH_RENDERABLE[check.truth] === true &&
-    known(ENGINE_RENDERABLE, String(check.engine))
-  );
+  if (
+    !known(RESULT_LANE, String(check.result)) ||
+    !known(ROW_TRUTH_RENDERABLE, String(check.truth)) ||
+    ROW_TRUTH_RENDERABLE[check.truth] !== true ||
+    !known(ENGINE_RENDERABLE, String(check.engine))
+  ) {
+    return false;
+  }
+  // Each axis can be individually valid and still describe an impossible
+  // check. A failure verdict reached without observing anything is the case
+  // that matters: publishing it as actionable would turn "no data" into a
+  // finding and hand the reader a repair order for it.
+  const verdictReached = RESULT_LANE[check.result].severity !== null;
+  const nothingObserved =
+    String(check.truth) === "source-gated" ||
+    String(check.truth) === "unavailable";
+  return !(verdictReached && nothingObserved);
 }
 
 function isSourceGated(check: AgentAuditEvaluatedCheck): boolean {
   return (
-    String(check.result) === "excluded" && String(check.truth) === "source-gated"
+    String(check.result) === "excluded" &&
+    String(check.truth) === "source-gated"
   );
 }
 
@@ -190,6 +220,16 @@ const UNAVAILABLE_TARGETS: AgentIssueAffectedTargets = {
   urls: [],
   totalCount: null,
   overflowCount: 0,
+  enumerated: false,
+};
+
+/** No observation resolved to this issue — missing evidence, not a clean zero. */
+const NOT_CAPTURED_TARGETS: AgentIssueAffectedTargets = {
+  mode: "not-captured",
+  urls: [],
+  totalCount: null,
+  overflowCount: 0,
+  enumerated: false,
 };
 
 /**
@@ -198,15 +238,25 @@ const UNAVAILABLE_TARGETS: AgentIssueAffectedTargets = {
  * Sibling records observe the same population, so one URL seen in several
  * records is still one affected URL. An observation carrying no URL is a
  * site-level fact and is reported as scope, never expanded into a URL.
+ *
+ * The record's own `affected` is the authoritative population; its
+ * observations are what the run published about that population and may be
+ * fewer. Reporting the observation count as the total would silently shrink
+ * the finding, so the larger of the two is reported and `enumerated` says
+ * whether the list actually accounts for it.
  */
 function affectedTargets(
   records: readonly SeoAuditRecord[],
 ): AgentIssueAffectedTargets {
+  if (records.length === 0) return NOT_CAPTURED_TARGETS;
+
   const urls: string[] = [];
   const seen = new Set<string>();
   let siteLevel = 0;
+  let claimedAffected = 0;
 
   for (const record of records) {
+    claimedAffected = Math.max(claimedAffected, record.affected);
     for (const observation of record.observations) {
       if (observation.url === null) {
         siteLevel += 1;
@@ -219,17 +269,28 @@ function affectedTargets(
   }
 
   if (urls.length === 0) {
-    return siteLevel > 0
-      ? { mode: "site-scope", urls: [], totalCount: siteLevel, overflowCount: 0 }
-      : { mode: "urls", urls: [], totalCount: 0, overflowCount: 0 };
+    if (siteLevel > 0) {
+      return {
+        mode: "site-scope",
+        urls: [],
+        totalCount: Math.max(siteLevel, claimedAffected),
+        overflowCount: 0,
+        enumerated: claimedAffected <= siteLevel,
+      };
+    }
+    // Records exist but published no observation at all. Reporting 0 here
+    // would state a measured clean population the run never established.
+    return NOT_CAPTURED_TARGETS;
   }
 
   const shown = urls.slice(0, AGENT_ISSUE_URL_DISPLAY_LIMIT);
+  const total = Math.max(urls.length, claimedAffected);
   return {
     mode: "urls",
     urls: shown,
-    totalCount: urls.length,
-    overflowCount: urls.length - shown.length,
+    totalCount: total,
+    overflowCount: total - shown.length,
+    enumerated: claimedAffected <= urls.length,
   };
 }
 
@@ -261,7 +322,10 @@ export function buildAgentIssueModel({
     limit: Number.POSITIVE_INFINITY,
   });
   const rankedById = new Map(
-    analysis.ranked.map((recommendation) => [recommendation.id, recommendation]),
+    analysis.ranked.map((recommendation) => [
+      recommendation.id,
+      recommendation,
+    ]),
   );
 
   const actionable: AgentIssue[] = [];
@@ -344,6 +408,7 @@ export function buildAgentIssueModel({
 
   const severityCount = (severity: AgentIssueSeverity): number =>
     actionable.filter((issue) => issue.severity === severity).length;
+  const quarantined = excluded.filter((issue) => !issue.recognized).length;
 
   return {
     actionable: [...actionable, ...investigation],
@@ -356,7 +421,14 @@ export function buildAgentIssueModel({
       investigation: investigation.length,
       passed: passed.length,
       excluded: excluded.length,
+      quarantined,
     },
-    isClean: actionable.length + investigation.length === 0,
+    /**
+     * A quarantined check is a check this build could not read, which is not
+     * the same as a check that came back clean. Calling such a run clean would
+     * put a green pass over evidence nobody has looked at.
+     */
+    isClean:
+      actionable.length + investigation.length === 0 && quarantined === 0,
   };
 }

@@ -8738,7 +8738,9 @@
         "row": {
           "affectedUrls": "{count} 个受影响 URL",
           "affectedSite": "站点级范围",
-          "affectedUnavailable": "受影响范围不可得"
+          "affectedUnavailable": "受影响范围不可得",
+          "affectedNotCaptured": "未记录到具体目标",
+          "affectedUrlsAtLeast": "至少 {count} 个受影响 URL"
         },
         "investigationNote": "本次运行没有取得该来源的数据，因此没有对这一项得出任何结论。「不可得」不等于「没有问题」，也不等于 0。下面给出的是确认证据的调查路径，不是修复指令。",
         "sections": {
@@ -8752,13 +8754,17 @@
           "impact": "影响",
           "risks": "风险",
           "limits": "限制",
-          "boundary": "证据边界"
+          "boundary": "证据边界",
+          "whatWouldAnswer": "什么能回答它",
+          "requiredSource": "需要的数据来源"
         },
         "affected": {
           "unavailable": "本次运行无法取得受影响范围。不可得不等于 0。",
           "siteScope": "这是站点级观测，本次没有定位到具体 URL，因此不列出 URL。",
           "none": "本次没有记录到受影响的具体目标。",
-          "more": "以上为 {total} 个受影响 URL 中的前 {shown} 个，另有 {rest} 个未列出。"
+          "more": "以上为 {total} 个受影响 URL 中的前 {shown} 个，另有 {rest} 个未列出。",
+          "notCaptured": "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
+          "notEnumerated": "记录的受影响总数大于上面列出的观测条目，因此这份列表不是完整枚举。"
         },
         "evidence": {
           "none": "本次没有可展示的证据记录。",
@@ -8790,6 +8796,11 @@
         "excludedLane": {
           "title": "已排除的检查",
           "hint": "缺少所需输入或来源"
+        },
+        "investigationNextStep": "先确认该来源可得且覆盖本站，再重跑这一项；在此之前不要按结论修改站点。",
+        "quarantined": {
+          "title": "有检查项本次无法读取",
+          "body": "有 {count} 项检查带着本构建不认识的状态，已被隔离，不计入任何结论。它们既不是通过也不是失败——在弄清楚之前，本次运行不能被称为干净。"
         }
       }
     }

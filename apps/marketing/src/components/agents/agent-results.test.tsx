@@ -408,6 +408,39 @@ describe("AgentResults", () => {
     expect(lanedCheckCount()).toBe(31);
   });
 
+  it("does not carry a filter or an open row across a scope change", () => {
+    render("seo", { response: evidencedData });
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-issue-filter="investigation"]')
+        ?.click();
+      host
+        .querySelector<HTMLButtonElement>(
+          '[data-issue-control="expand-visible"]',
+        )
+        ?.click();
+    });
+    expect(host.querySelector("[data-issue-detail]")).not.toBeNull();
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnosis-scope-page"]',
+        )
+        ?.click();
+    });
+
+    // A filter chosen against the other scope's list could otherwise render an
+    // empty page over real findings.
+    expect(
+      host
+        .querySelector('[data-issue-filter="all"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(host.querySelector("[data-issue-detail]")).toBeNull();
+  });
+
   it("uses Tech defaults and keeps its issue identity independent", () => {
     render("tech", { response: evidencedData });
 

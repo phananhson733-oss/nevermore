@@ -286,6 +286,67 @@ describe("AgentIssueAccordion", () => {
     ).not.toBeNull();
   });
 
+  it("says a check could not be read instead of calling the run clean", () => {
+    render(
+      buildAgentIssueModel({
+        agent: "seo",
+        checks: [
+          check({ id: "3.1", result: "pass" }),
+          check({
+            id: "4.1",
+            result: "catastrophe",
+            evidenceRecordIds: ["r1"],
+          }),
+        ],
+        records: [record("r1", 2)],
+      }),
+    );
+
+    const notice = host.querySelector('[data-testid="agent-issues-quarantined"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.getAttribute("data-quarantined-count")).toBe("1");
+    // The green "nothing actionable" panel must not appear beside it.
+    expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
+  });
+
+  it("still gives an observed issue its repair preview", () => {
+    render(actionableModel());
+    click('[data-issue-control="expand-visible"]');
+
+    expect(
+      host.querySelectorAll("[data-issue-preview-shape]").length,
+    ).toBeGreaterThan(0);
+    expect(
+      host.querySelector('[data-issue-detail="seo:page:1.1"]')?.textContent,
+    ).toContain("Rewrite it");
+  });
+
+  it("gives a gated row a required source instead of a repair", () => {
+    render(
+      buildAgentIssueModel({
+        agent: "seo",
+        checks: [
+          check({
+            id: "9.1",
+            result: "excluded",
+            truth: "source-gated",
+            engine: "access-required",
+          }),
+        ],
+        records: [],
+      }),
+    );
+    click('[data-issue-control="expand-visible"]');
+
+    const detail = host.querySelector('[data-issue-detail="seo:page:9.1"]');
+    expect(detail?.textContent).toContain("Data source required");
+    // No fix text, no code preview, no validation steps for a check that
+    // reached no verdict.
+    expect(detail?.textContent).not.toContain("Rewrite it");
+    expect(host.querySelector("[data-issue-preview-shape]")).toBeNull();
+    expect(detail?.textContent).not.toContain("Validation steps");
+  });
+
   it("quarantines a check whose state this build cannot say", () => {
     render(
       buildAgentIssueModel({

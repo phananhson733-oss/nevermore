@@ -301,6 +301,89 @@ describe("buildAgentIssueModel", () => {
     expect(model.isClean).toBe(false);
   });
 
+  it("refuses to call a run clean while a check sits quarantined", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "3.1", result: "pass" }),
+        evaluatedCheck({
+          id: "4.1",
+          result: "catastrophe",
+          evidenceRecordIds: ["r1"],
+        }),
+      ],
+      records: [record({ id: "r1", affected: 3 })],
+    });
+
+    // A state this build cannot read is not a pass. Reporting clean here would
+    // put a green verdict over evidence nobody has looked at.
+    expect(model.isClean).toBe(false);
+    expect(model.counts.quarantined).toBe(1);
+  });
+
+  it("never publishes a failure verdict that observed nothing", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({
+          id: "5.1",
+          result: "warning",
+          truth: "source-gated",
+          engine: "access-required",
+          evidenceRecordIds: ["r1"],
+        }),
+        evaluatedCheck({
+          id: "5.2",
+          result: "blocker",
+          truth: "unavailable",
+          engine: "not-integrated",
+        }),
+      ],
+      records: [record({ id: "r1", affected: 2 })],
+    });
+
+    // Each axis is individually legal; the combination is not. Publishing it
+    // would turn "no data" into a finding with a repair order attached.
+    expect(model.actionable).toHaveLength(0);
+    expect(model.counts.quarantined).toBe(2);
+    expect(model.isClean).toBe(false);
+  });
+
+  it("reports the record's affected total, not the number of observations", () => {
+    const sparse = {
+      ...record({ id: "r1", affected: 4 }),
+      affected: 25,
+    } as unknown as SeoAuditRecord;
+
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "1.1", result: "warning", evidenceRecordIds: ["r1"] }),
+      ],
+      records: [sparse],
+    });
+
+    const affected = model.actionable[0]?.affected;
+    expect(affected?.totalCount).toBe(25);
+    expect(affected?.enumerated).toBe(false);
+    expect(affected?.urls).toHaveLength(4);
+    expect(affected?.overflowCount).toBe(21);
+  });
+
+  it("separates missing evidence from a measured population of zero", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "1.1", result: "warning", evidenceRecordIds: [] }),
+      ],
+      records: [],
+    });
+
+    const affected = model.actionable[0]?.affected;
+    expect(affected?.mode).toBe("not-captured");
+    expect(affected?.totalCount).toBeNull();
+  });
+
   it("orders blockers before warnings before suggestions", () => {
     const model = buildAgentIssueModel({
       agent: "seo",

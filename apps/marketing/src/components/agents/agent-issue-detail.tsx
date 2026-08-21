@@ -55,6 +55,13 @@ function AffectedTargets({ issue }: { readonly issue: AgentIssue }) {
       </p>
     );
   }
+  if (affected.mode === "not-captured") {
+    return (
+      <p data-affected-mode="not-captured" className="text-text-dark-primary">
+        {t("affected.notCaptured")}
+      </p>
+    );
+  }
   if (affected.mode === "site-scope") {
     return (
       <p data-affected-mode="site-scope" className="text-text-dark-primary">
@@ -82,6 +89,14 @@ function AffectedTargets({ issue }: { readonly issue: AgentIssue }) {
           </li>
         ))}
       </ul>
+      {affected.enumerated ? null : (
+        <p
+          data-affected-enumerated="false"
+          className="mt-2 text-[11.5px] text-text-dark-secondary"
+        >
+          {t("affected.notEnumerated")}
+        </p>
+      )}
       {affected.overflowCount > 0 ? (
         <p className="mt-2 text-[11.5px] text-text-dark-secondary">
           {t("affected.more", {
@@ -273,6 +288,7 @@ export function AgentIssueDetail({
   const templateT = useTranslations("agents.workbench");
   const profileT = useTranslations("agents.workbench.profile");
   const check = issue.check.check;
+  const investigation = issue.copyMode === "investigation";
   const localizedText = (value: { readonly en: string; readonly zh: string }) =>
     value[locale === "zh" ? "zh" : "en"];
 
@@ -362,26 +378,42 @@ export function AgentIssueDetail({
         </div>
 
         <div className="grid gap-3">
-          <Block label={t("sections.repair")}>
-            <p>{localizedText(check.howToFix)}</p>
-            <p className="mt-2 text-[11.5px] text-text-dark-secondary">
-              {templateT(template.recommendationKey)}
-            </p>
-            {/*
-              The preview prints what this run measured plus a slot for every
-              sentence the owner still has to write. It wraps rather than
-              widening the document, and scrolls inside its own box when a line
-              genuinely cannot break.
-            */}
-            <pre
-              data-issue-preview-shape={template.presentation}
-              className="mt-2.5 max-w-full overflow-x-auto rounded border border-brand-border-dashed bg-brand-panel-raised p-3 font-mono text-[10.5px] leading-[1.7] whitespace-pre-wrap text-text-dark-primary"
-            >
-              {issue.copyMode === "investigation"
-                ? `${recT("unavailableInvestigation")}\n\n${template.preview}`
-                : template.preview}
-            </pre>
-          </Block>
+          {/*
+            A gated check reached no verdict, so it gets no repair guidance at
+            all — not even relabelled as a "candidate direction". What it needs
+            is the source that would answer it; printing the fix beside a note
+            saying this is not a fix is the contradiction this replaces.
+          */}
+          {investigation ? (
+            <Block label={t("sections.whatWouldAnswer")}>
+              <p>
+                {t("sections.requiredSource")}:{" "}
+                {localizedText(check.dataSource)}
+              </p>
+              <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+                {t("investigationNextStep")}
+              </p>
+            </Block>
+          ) : (
+            <Block label={t("sections.repair")}>
+              <p>{localizedText(check.howToFix)}</p>
+              <p className="mt-2 text-[11.5px] text-text-dark-secondary">
+                {templateT(template.recommendationKey)}
+              </p>
+              {/*
+                The preview prints what this run measured plus a slot for every
+                sentence the owner still has to write. It wraps rather than
+                widening the document, and scrolls inside its own box when a
+                line genuinely cannot break.
+              */}
+              <pre
+                data-issue-preview-shape={template.presentation}
+                className="mt-2.5 max-w-full overflow-x-auto rounded border border-brand-border-dashed bg-brand-panel-raised p-3 font-mono text-[10.5px] leading-[1.7] whitespace-pre-wrap text-text-dark-primary"
+              >
+                {template.preview}
+              </pre>
+            </Block>
+          )}
 
           <Block label={recT("contextLabel")}>
             <dl className="grid gap-1.5">
@@ -401,34 +433,53 @@ export function AgentIssueDetail({
             </dl>
           </Block>
 
-          <Block label={t("sections.validation")}>
-            <ol className="grid list-decimal gap-1 pl-4">
-              {template.validationKeys.map((key) => (
-                <li key={key}>{templateT(key)}</li>
-              ))}
-            </ol>
-          </Block>
+          {/*
+            Validation steps verify a change, and the risk/limit lines describe
+            making one. Neither exists for a check that reached no verdict, so
+            the gated row states its own boundary instead of borrowing a
+            repair's.
+          */}
+          {investigation ? (
+            <Block label={t("sections.boundaries")}>
+              <p>
+                <span className="text-text-dark-faint">
+                  {t("sections.limits")}:{" "}
+                </span>
+                {localizedText(check.boundary)}
+              </p>
+            </Block>
+          ) : (
+            <>
+              <Block label={t("sections.validation")}>
+                <ol className="grid list-decimal gap-1 pl-4">
+                  {template.validationKeys.map((key) => (
+                    <li key={key}>{templateT(key)}</li>
+                  ))}
+                </ol>
+              </Block>
 
-          <Block label={t("sections.boundaries")}>
-            <p>
-              <span className="text-text-dark-faint">
-                {t("sections.impact")}:{" "}
-              </span>
-              {templateT(template.impactSurfaceKey)}
-            </p>
-            <p className="mt-1.5">
-              <span className="text-text-dark-faint">
-                {t("sections.risks")}:{" "}
-              </span>
-              {templateT(template.risksKey)}
-            </p>
-            <p className="mt-1.5">
-              <span className="text-text-dark-faint">
-                {t("sections.limits")}:{" "}
-              </span>
-              {templateT(template.limitsKey)}
-            </p>
-          </Block>
+              <Block label={t("sections.boundaries")}>
+                <p>
+                  <span className="text-text-dark-faint">
+                    {t("sections.impact")}:{" "}
+                  </span>
+                  {templateT(template.impactSurfaceKey)}
+                </p>
+                <p className="mt-1.5">
+                  <span className="text-text-dark-faint">
+                    {t("sections.risks")}:{" "}
+                  </span>
+                  {templateT(template.risksKey)}
+                </p>
+                <p className="mt-1.5">
+                  <span className="text-text-dark-faint">
+                    {t("sections.limits")}:{" "}
+                  </span>
+                  {templateT(template.limitsKey)}
+                </p>
+              </Block>
+            </>
+          )}
         </div>
       </div>
 

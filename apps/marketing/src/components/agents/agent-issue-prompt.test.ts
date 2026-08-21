@@ -273,6 +273,108 @@ describe("buildAgentIssuePrompt", () => {
     expect(text).toContain(RUN.schemaVersion);
   });
 
+  it("hands an investigation no repair guidance, not even relabelled", () => {
+    const text = buildAgentIssuePrompt({
+      issue: investigationIssue(),
+      locale: "zh",
+      run: RUN,
+    });
+
+    // The check's howToFix is a fix. Printing it under "candidate directions"
+    // is still printing a fix for something that reached no verdict.
+    expect(text).not.toContain("重写 Title");
+    expect(text).toContain("需要的数据来源");
+  });
+
+  it("states how many observation values it left out", () => {
+    const values = Array.from({ length: 9 }, (_, index) => ({
+      label: `label-${index}`,
+      value: `value-${index}`,
+    }));
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "2.1", result: "warning", evidenceRecordIds: ["r1"] }),
+      ],
+      records: [record({ id: "r1", affected: 1, values })],
+    });
+
+    const text = buildAgentIssuePrompt({
+      issue: model.actionable[0]!,
+      locale: "en",
+      run: RUN,
+    });
+
+    expect(text).toContain("label-5");
+    expect(text).not.toContain("label-6");
+    expect(text).toContain("3 further observation values not listed");
+  });
+
+  it("strips credentials and secret query values out of exported URLs", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "2.1", result: "warning", evidenceRecordIds: ["r1"] }),
+      ],
+      records: [
+        {
+          ...record({ id: "r1", affected: 1 }),
+          observations: [
+            {
+              url: "https://alice:hunter2@example.com/p?access_token=abcdef&page=2",
+              values: [
+                {
+                  label: "canonical",
+                  value: "https://example.com/x?session_id=zzz",
+                },
+              ],
+            },
+          ],
+        } as unknown as SeoAuditRecord,
+      ],
+    });
+
+    const text = buildAgentIssuePrompt({
+      issue: model.actionable[0]!,
+      locale: "en",
+      run: RUN,
+    });
+
+    expect(text).not.toContain("hunter2");
+    expect(text).not.toContain("abcdef");
+    expect(text).not.toContain("zzz");
+    // The finding itself survives redaction.
+    expect(text).toContain("example.com/p");
+    expect(text).toContain("page=2");
+  });
+
+  it("reports markup by shape instead of pasting it", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "2.1", result: "warning", evidenceRecordIds: ["r1"] }),
+      ],
+      records: [
+        record({
+          id: "r1",
+          affected: 1,
+          values: [
+            { label: "snippet", value: '<form action="/login"><input name="pw">' },
+          ],
+        }),
+      ],
+    });
+
+    const text = buildAgentIssuePrompt({
+      issue: model.actionable[0]!,
+      locale: "en",
+      run: RUN,
+    });
+
+    expect(text).not.toContain("<form");
+    expect(text).toContain("markup omitted");
+  });
+
   it("describes a site-level issue as site scope with no URL list", () => {
     const model = buildAgentIssueModel({
       agent: "tech",

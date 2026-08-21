@@ -520,9 +520,15 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   const details = page.locator("[data-issue-detail]");
   expect(await details.count()).toBeGreaterThan(0);
   await expect(details.first()).toContainText("站点");
+
+  // Every row this fixture produces is source-gated. A gated check reached no
+  // verdict, so it names the source that would answer it and is given no
+  // repair preview at all.
   await expect(
-    page.locator("[data-issue-preview-shape]").first(),
-  ).toContainText("HTTP/1.1 200 OK");
+    page.locator('[data-issue-lane="investigation"]').first(),
+  ).toBeVisible();
+  await expect(details.first()).toContainText("需要的数据来源");
+  await expect(page.locator("[data-issue-preview-shape]")).toHaveCount(0);
 
   // Expanding is where a 390px layout actually breaks: the detail carries
   // URLs, code previews, and evidence rows that a narrow column has to hold.

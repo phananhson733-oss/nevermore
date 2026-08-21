@@ -8738,7 +8738,9 @@
         "row": {
           "affectedUrls": "{count} affected URLs",
           "affectedSite": "Site-level scope",
-          "affectedUnavailable": "Affected population unavailable"
+          "affectedUnavailable": "Affected population unavailable",
+          "affectedNotCaptured": "No individual target recorded",
+          "affectedUrlsAtLeast": "At least {count} affected URLs"
         },
         "investigationNote": "This run obtained no data from that source, so it reached no conclusion for this check. Unavailable is not 'no problem', and it is not zero. What follows is the path to establish the evidence, not a repair instruction.",
         "sections": {
@@ -8752,13 +8754,17 @@
           "impact": "Impact",
           "risks": "Risks",
           "limits": "Limits",
-          "boundary": "Evidence boundary"
+          "boundary": "Evidence boundary",
+          "whatWouldAnswer": "What would answer this",
+          "requiredSource": "Data source required"
         },
         "affected": {
           "unavailable": "This run could not obtain the affected population. Unavailable is not zero.",
           "siteScope": "This is a site-level observation. It resolved to no individual URL, so none is listed.",
           "none": "No individual affected target was recorded this run.",
-          "more": "Listed {shown} of {total} affected URLs; {rest} more not listed."
+          "more": "Listed {shown} of {total} affected URLs; {rest} more not listed.",
+          "notCaptured": "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
+          "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration."
         },
         "evidence": {
           "none": "No evidence record is available to show.",
@@ -8790,6 +8796,11 @@
         "excludedLane": {
           "title": "Excluded checks",
           "hint": "missing required input or source"
+        },
+        "investigationNextStep": "Confirm the source is available and covers this site, then re-run this check. Do not change the site on this basis before then.",
+        "quarantined": {
+          "title": "Some checks could not be read this run",
+          "body": "{count} check(s) arrived in a state this build does not recognise and were quarantined; they count toward no conclusion. They are neither a pass nor a failure — until that is resolved, this run cannot be called clean."
         }
       }
     }

@@ -55,7 +55,10 @@ const LABELS = {
     repairTask: "任务",
     repairSteps: "参考修复方向",
     investigationTask: "调查任务",
-    investigationSteps: "候选调查方向（未经证据确认，不得据此直接修改站点）",
+    requiredSource: "需要的数据来源",
+    notCaptured: "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
+    affectedNotEnumerated: "注意：受影响总数来自记录的统计口径，上面列出的观测条目少于该总数，因此列表不是完整枚举。",
+    valuesOmitted: (rest: number) => `（另有 ${rest} 项观测值未列出）`,
     unavailableNote:
       "该检查项的受影响范围本次不可得。不可得不等于 0，请不要把它当作「没有问题」。",
     rules: [
@@ -101,8 +104,10 @@ const LABELS = {
     repairTask: "Task",
     repairSteps: "Suggested direction",
     investigationTask: "Investigation task",
-    investigationSteps:
-      "Candidate directions (unconfirmed by evidence; do not change the site on this basis)",
+    requiredSource: "Data source required",
+    notCaptured: "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
+    affectedNotEnumerated: "Note: the affected total comes from the record\u2019s own count and the listed observations are fewer, so the list is not a complete enumeration.",
+    valuesOmitted: (rest: number) => `(${rest} further observation values not listed)`,
     unavailableNote:
       "The affected population is unavailable for this check. Unavailable is not zero; do not read it as 'no problem'.",
     rules: [
@@ -135,12 +140,53 @@ function text(value: AgentAuditLocalizedText, locale: PromptLocale): string {
   return value[locale];
 }
 
-/** Keep a value reviewable, and say when it was cut rather than cutting silently. */
+/** Most observation values one record contributes before the rest are counted. */
+const VALUES_PER_RECORD = 6;
+
+/** Query parameters whose value is a secret wherever it appears. */
+const SECRET_PARAM =
+  /^(?:.*(?:token|secret|password|passwd|signature|sig|auth|key|credential|session)).*$/i;
+
+/**
+ * A URL safe to hand to a third party.
+ *
+ * Collected URLs are not guaranteed clean: a crawl can surface a link carrying
+ * userinfo or a session token in its query. Those are credentials, and the
+ * handoff must not export them even though they came from the site's own HTML.
+ * The path is preserved because it is the finding.
+ */
+export function redactUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return value;
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    parsed.username = "";
+    parsed.password = "";
+  }
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (SECRET_PARAM.test(key)) parsed.searchParams.set(key, "[redacted]");
+  }
+  return parsed.toString();
+}
+
+/**
+ * Keep a value reviewable, and say when it was cut rather than cutting
+ * silently. Markup is reported by shape instead of quoted: an observation may
+ * hold a fragment of the page, and pasting response markup into a prompt is
+ * outside what this handoff carries.
+ */
 function boundedValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   const raw = String(value);
-  if (raw.length <= AGENT_ISSUE_VALUE_CHAR_LIMIT) return raw;
-  return `${raw.slice(0, AGENT_ISSUE_VALUE_CHAR_LIMIT)}…`;
+  if (/<[a-z!/][^>]*>/i.test(raw)) {
+    return `[markup omitted, ${raw.length} chars]`;
+  }
+  const safe = /^https?:\/\//i.test(raw) ? redactUrl(raw) : raw;
+  if (safe.length <= AGENT_ISSUE_VALUE_CHAR_LIMIT) return safe;
+  return `${safe.slice(0, AGENT_ISSUE_VALUE_CHAR_LIMIT)}…`;
 }
 
 function evidenceLines(
@@ -150,17 +196,22 @@ function evidenceLines(
   const labels = LABELS[locale];
   return records.flatMap((record) => {
     const head = `- ${labels.evidenceRecord} ${record.id} · ${labels.evidenceTested} ${record.tested} · ${labels.evidenceAffected} ${record.affected}`;
-    const values = record.observations
-      .flatMap((observation) => observation.values)
-      .slice(0, 6)
-      .map(
-        (entry) => `    ${entry.label}: ${boundedValue(entry.value)}`,
-      );
+    const all = record.observations.flatMap(
+      (observation) => observation.values,
+    );
+    const values = all
+      .slice(0, VALUES_PER_RECORD)
+      .map((entry) => `    ${entry.label}: ${boundedValue(entry.value)}`);
+    // A bounded list that does not say it is bounded reads as the whole set.
+    const omitted =
+      all.length > VALUES_PER_RECORD
+        ? [`    ${labels.valuesOmitted(all.length - VALUES_PER_RECORD)}`]
+        : [];
     const limitation =
       record.limitation === null
         ? []
         : [`    ${labels.limitation}: ${record.limitation}`];
-    return [head, ...values, ...limitation];
+    return [head, ...values, ...omitted, ...limitation];
   });
 }
 
@@ -197,7 +248,7 @@ export function buildAgentIssuePrompt({
     lines.push(`${labels.severity}: ${labels.severities[issue.severity]}`);
   }
   if (targetUrl !== undefined) {
-    lines.push(`${labels.target}: ${targetUrl}`);
+    lines.push(`${labels.target}: ${redactUrl(targetUrl)}`);
   }
 
   lines.push(`${labels.rule}: ${text(check.threshold, lang)}`);
@@ -211,11 +262,16 @@ export function buildAgentIssuePrompt({
 
   if (investigation || issue.affected.mode === "unavailable") {
     lines.push(labels.unavailableNote, "");
+  } else if (issue.affected.mode === "not-captured") {
+    lines.push(labels.notCaptured, "");
   } else if (issue.affected.mode === "site-scope") {
     lines.push(labels.affectedSite, "");
   } else if (issue.affected.urls.length > 0) {
     lines.push(`${labels.affected}:`);
-    for (const url of issue.affected.urls) lines.push(`- ${url}`);
+    for (const url of issue.affected.urls) lines.push(`- ${redactUrl(url)}`);
+    if (!issue.affected.enumerated) {
+      lines.push(labels.affectedNotEnumerated);
+    }
     if (issue.affected.overflowCount > 0) {
       lines.push(
         labels.affectedMore(
@@ -235,15 +291,21 @@ export function buildAgentIssuePrompt({
 
   lines.push(`${labels.boundary}: ${text(check.boundary, lang)}`, "");
 
-  lines.push(
-    investigation ? `${labels.investigationTask}:` : `${labels.repairTask}:`,
-  );
-  lines.push(
-    investigation
-      ? `${labels.investigationSteps}: ${text(check.howToFix, lang)}`
-      : `${labels.repairSteps}: ${text(check.howToFix, lang)}`,
-  );
-  lines.push("");
+  if (investigation) {
+    // Deliberately no repair guidance, not even relabelled: this check has no
+    // verdict, and a fix printed under a different heading is still a fix.
+    lines.push(
+      `${labels.investigationTask}:`,
+      `${labels.requiredSource}: ${text(check.dataSource, lang)}`,
+      "",
+    );
+  } else {
+    lines.push(
+      `${labels.repairTask}:`,
+      `${labels.repairSteps}: ${text(check.howToFix, lang)}`,
+      "",
+    );
+  }
 
   for (const rule of investigation ? labels.investigationRules : labels.rules) {
     lines.push(`- ${rule}`);

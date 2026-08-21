@@ -59,8 +59,11 @@ function matchesFilter(issue: AgentIssue, filter: IssueFilter): boolean {
 /** The count a row states, or null when this run could not measure one. */
 function affectedLabelKey(issue: AgentIssue): string {
   if (issue.affected.mode === "unavailable") return "row.affectedUnavailable";
+  if (issue.affected.mode === "not-captured") return "row.affectedNotCaptured";
   if (issue.affected.mode === "site-scope") return "row.affectedSite";
-  return "row.affectedUrls";
+  return issue.affected.enumerated
+    ? "row.affectedUrls"
+    : "row.affectedUrlsAtLeast";
 }
 
 function IssueRow({
@@ -294,6 +297,27 @@ export function AgentIssueAccordion({
           ))}
         </div>
       </header>
+
+      {/*
+        A check this build cannot read is not a quiet exclusion. It is stated
+        up front, because the alternative is a reader concluding "nothing to do"
+        from a lane that was never evaluated.
+      */}
+      {model.counts.quarantined > 0 ? (
+        <div
+          data-testid="agent-issues-quarantined"
+          data-quarantined-count={model.counts.quarantined}
+          className="rounded-card border border-brand-warning/30 bg-brand-warning/[0.07] p-4 md:p-5"
+        >
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
+            <AlertTriangle aria-hidden="true" className="size-4 text-brand-warning" />
+            {t("quarantined.title")}
+          </p>
+          <p className="mt-2 text-[12.5px] leading-[1.65] text-text-dark-secondary">
+            {t("quarantined.body", { count: model.counts.quarantined })}
+          </p>
+        </div>
+      ) : null}
 
       {model.isClean ? (
         <div
