@@ -448,6 +448,13 @@ describe("expandKeywordCandidates", () => {
     await expandKeywordCandidates(EXPANSION, { client });
 
     expect(requests[0].timeoutMs).toBe(90_000);
+    // Pinned to the literal, not the constant. Reasoning and visible output
+    // share one pool and reasoning draws first; on 2026-08-21 both production
+    // attempts burned all of the previous 6_000 and returned zero visible
+    // content — 12_000 output tokens billed for an error page. The reply alone
+    // can need ~5k, so a revert here must fail this test rather than resurface
+    // as a paid empty-reply loop.
+    expect(requests[0].maxOutputTokens).toBe(16_000);
   });
 
   it("keeps both lanes with their labels and question flags", async () => {

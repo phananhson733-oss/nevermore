@@ -135,7 +135,21 @@ export const MAX_KEYWORD_WORDS = 12;
  * lever — a reply that stops early is billed in full and then discarded.
  */
 export const MAX_PROPOSITION_OUTPUT_TOKENS = 3_000;
-export const MAX_CANDIDATE_OUTPUT_TOKENS = 6_000;
+/**
+ * Expansion's pool is bigger again, and 6_000 was measured to be too small.
+ *
+ * On 2026-08-21 in production both expansion attempts burned exactly the full
+ * 6_000-token pool and returned zero visible content — 12_000 output tokens
+ * billed for nothing, twice, on one run. The reply alone can need ~5k (150
+ * candidates at ~25 tokens plus JSON), which left under 1k for reasoning; the
+ * observed reasoning demand on that prompt exceeded the entire pool before the
+ * first visible token. 16_000 leaves ~11k of reasoning headroom above the
+ * worst-case reply. The cap is still not a cost lever: a finished reply bills
+ * only what it used, and the failure mode this number prevents billed the
+ * whole cap and delivered nothing. At the observed ~600 tokens/second a
+ * capped-out attempt costs ~27s, well inside the 90-second attempt deadline.
+ */
+export const MAX_CANDIDATE_OUTPUT_TOKENS = 16_000;
 
 /** Independent version stamp for the optional SERP/AIO interpretation task. */
 export const KEYWORD_SERP_INTERPRETATION_PROMPT_VERSION =
