@@ -27,19 +27,34 @@ export const maxDuration = 300;
 /**
  * When the optional interpretation lane must stop spending the route's budget.
  *
- * Sixty seconds short of the platform ceiling, because past it the function is
- * killed outright: no error envelope, no cost line, and a visitor who waited
- * five minutes for nothing. The lane it bounds is the one whose call count
- * scales with the candidate cap, so it is also the one that gets there first —
- * a 2026-08-21 production run reached the ceiling with 150 candidates. The
- * remainder covers the domain enrichments and assembling the response.
+ * The lane it bounds is the one whose call count scales with the candidate cap
+ * — 150 candidates is 15 chunked model calls — so it is the one that reaches
+ * the ceiling first; a 2026-08-21 production run did, and was killed with no
+ * envelope and no cost line after the visitor had waited five minutes. What
+ * separates this from the mark below is the enrichment wave that follows it.
  */
 const KEYWORD_INTERPRETATION_DEADLINE_MS = 240_000;
 
+/**
+ * When the route must be assembling its answer rather than fetching more.
+ *
+ * Twenty seconds short of the platform ceiling, which covers building the
+ * observations and serializing them. Past the ceiling there is no response to
+ * degrade — the function is killed mid-flight — so the trailing optional work
+ * is bounded against this mark rather than trusted to finish. It is deliberately
+ * a second, later mark: an offset from the interpretation deadline alone would
+ * still let the stages before interpretation push the enrichments past 300s.
+ */
+const KEYWORD_RESPONSE_DEADLINE_MS = 280_000;
+
 export async function POST(request: Request): Promise<Response> {
-  // Taken once, at the top: the deadline belongs to the request, and every
-  // stage before interpretation has already spent part of it.
-  const deadlineAt = Date.now() + KEYWORD_INTERPRETATION_DEADLINE_MS;
+  // One instant, both marks. Taken at the top because a deadline belongs to the
+  // request: whatever the earlier stages spend is already gone by the time the
+  // later ones read it, which is the whole point of an absolute mark over a
+  // per-stage budget.
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + KEYWORD_INTERPRETATION_DEADLINE_MS;
+  const responseDeadlineAt = startedAt + KEYWORD_RESPONSE_DEADLINE_MS;
   // One accumulator per request, shared between provider adapters that book
   // actual spend and the handler that reports it. Initial v2 does not call the
   // accumulator's legacy admission helpers or the account-wide daily breaker.
@@ -62,5 +77,6 @@ export async function POST(request: Request): Promise<Response> {
     readCoverageQueries: createKeywordCoverageReader({}),
     extractClientIp,
     llmUsage: llmUsage.total,
+    responseDeadlineAt,
   });
 }

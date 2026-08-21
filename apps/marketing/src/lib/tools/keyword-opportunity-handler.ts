@@ -83,6 +83,15 @@ export const KEYWORD_CONTEXT_TTL_SECONDS = 600;
 /** Candidates sent for pricing in one run. The linear cost driver. */
 export const KEYWORD_CANDIDATE_CAP = 150;
 
+/**
+ * Least budget worth starting the optional domain enrichments with.
+ *
+ * Below this the wave cannot plausibly finish before the response deadline, so
+ * starting it only risks the envelope. It is a floor for admission, not a
+ * bound: the race that follows is what actually caps the wait.
+ */
+export const MIN_KEYWORD_ENRICHMENT_MS = 5_000;
+
 /** Seed terms a visitor may supply. */
 export const KEYWORD_MAX_SEEDS = 10;
 export const KEYWORD_MAX_SEED_LENGTH = 80;
@@ -328,6 +337,15 @@ export interface KeywordOpportunityDependencies {
   readonly interpretSerpEvidence?: (
     inputs: readonly KeywordSerpInterpretationInput[],
   ) => Promise<readonly KeywordSerpInterpretation[]>;
+  /**
+   * Absolute epoch-ms mark by which this request must be answering.
+   *
+   * Set by the route, the only layer that knows when the request started and
+   * what the platform kills it at. Omitted by tests and injected callers, which
+   * then run unbounded exactly as before. It bounds the optional trailing work
+   * only; the stages the report cannot be built without are not skippable.
+   */
+  readonly responseDeadlineAt?: number;
   /** Offline test seam. Resolves domains to provider ranks. */
   readonly resolveDomainRanks: (
     domains: readonly string[],
@@ -1084,8 +1102,36 @@ export async function handleKeywordOpportunitiesRequest(
       string,
       DomainRegistrationEvidence
     > | null = null;
-    if (completeSamples.length > 0 && organicDomains.length > 0) {
-      const [ranks, traffic, registrations] = await Promise.all([
+    // The enrichments are optional, unbounded, and last. RDAP alone resolves
+    // one entry per organic domain — several hundred after de-duplication — at
+    // ten in flight, so its worst case is dozens of rounds, not the single
+    // round `Promise.all` makes it look like. Past the response deadline the
+    // platform kills the function outright: no envelope, no cost line, and the
+    // whole report lost. A null enrichment is already how this handler says
+    // "not available", so running out of budget degrades the same way a
+    // provider failure does.
+    const enrichmentBudgetMs =
+      dependencies.responseDeadlineAt === undefined
+        ? null
+        : dependencies.responseDeadlineAt - dependencies.now().getTime();
+    const enrichmentAffordable =
+      enrichmentBudgetMs === null ||
+      enrichmentBudgetMs >= MIN_KEYWORD_ENRICHMENT_MS;
+    if (!enrichmentAffordable) {
+      console.error(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "domain_enrichment",
+          reason: "budget_exhausted",
+        }),
+      );
+    }
+    if (
+      completeSamples.length > 0 &&
+      organicDomains.length > 0 &&
+      enrichmentAffordable
+    ) {
+      const enrichment = Promise.all([
         dependencies.resolveDomainRanks(rankTargets).catch(() => {
           console.error(
             JSON.stringify({
@@ -1124,9 +1170,38 @@ export async function handleKeywordOpportunitiesRequest(
             return null;
           }),
       ]);
-      domainRanks = ranks;
-      domainTraffic = traffic;
-      domainRegistrations = registrations;
+      // Admission alone is not a bound: the wave that was affordable when it
+      // started can still overrun. Losing the race abandons the results rather
+      // than cancelling the provider work — the function is about to end
+      // anyway, and an envelope with null enrichments beats no envelope.
+      const settled =
+        enrichmentBudgetMs === null
+          ? await enrichment
+          : await Promise.race([
+              enrichment,
+              new Promise<null>((resolve) => {
+                const timer = setTimeout(() => {
+                  resolve(null);
+                }, enrichmentBudgetMs);
+                // Never hold the function open for a timer whose only job is
+                // to give up waiting.
+                timer.unref?.();
+              }),
+            ]);
+      if (settled === null) {
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "domain_enrichment",
+            reason: "budget_expired",
+          }),
+        );
+      } else {
+        const [ranks, traffic, registrations] = settled;
+        domainRanks = ranks;
+        domainTraffic = traffic;
+        domainRegistrations = registrations;
+      }
     }
     const siteDomainRank =
       siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);

@@ -1053,7 +1053,15 @@ async function completeValidated<T>(
     let attemptRequest = request;
     if (budget !== undefined) {
       const remainingMs = budget.deadlineAt - budget.now();
-      if (remainingMs < MIN_KEYWORD_LLM_ATTEMPT_MS) {
+      // `Number.isFinite` first, because every comparison against NaN is false:
+      // a NaN deadline would slip past a bare `<` guard and reach the client as
+      // `timeoutMs: NaN`, which it rejects as `not_configured` — a
+      // misconfiguration reported as a model failure. Both marks are finite in
+      // production; this seam is exported and takes the caller's word for them.
+      if (
+        !Number.isFinite(remainingMs) ||
+        remainingMs < MIN_KEYWORD_LLM_ATTEMPT_MS
+      ) {
         throw new KeywordLlmError(
           "timeout",
           "Run deadline reached before the request could be attempted.",
