@@ -21,6 +21,9 @@ import {
   confirmGeoQuerySet,
   editGeoQueryText,
 } from "../../../lib/agents/geo-questions";
+// The list itself, not a copy kept here. Its own module because the handler
+// that raises these codes pulls `node:net` in through a package barrel.
+import { GEO_RUN_ERROR_CODES } from "../../../lib/agents/geo-run-errors";
 import {
   geoPlannedCallCount,
   type GeoQuerySetV1,
@@ -129,6 +132,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
 
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [rejections, setRejections] = useState<readonly string[]>([]);
+  /**
+   * Questions whose current text the builder refused.
+   *
+   * The refused text stays on screen — it is what the visitor typed — so the
+   * set held here is not the set that would run. The run button reads this to
+   * stay out of the way until the question is payable again.
+   */
+  const [unpayableQueryIds, setUnpayableQueryIds] = useState<readonly string[]>(
+    [],
+  );
   const [signInOpen, setSignInOpen] = useState(false);
 
   // Concurrency control lives in refs so a second submit cannot start a second
@@ -237,24 +250,16 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const errorMessage = useCallback(
     (code: string | null): string | null => {
       if (code === null) return null;
-      const known = [
-        "auth_required",
-        "auth_unavailable",
-        "invalid_request",
-        "geo_client_outdated",
-        "geo_context_invalid",
-        "geo_query_set_invalid",
-        "geo_query_set_unconfirmed",
-        "geo_query_set_mismatch",
-        "geo_brand_stance_mismatch",
-        "geo_prompt_too_long",
-        "geo_plan_size_mismatch",
-        "geo_budget_exhausted",
-        "geo_budget_unavailable",
-        "geo_time_budget_exhausted",
-        "geo_provider_unavailable",
-        "geo_report_invalid",
-      ];
+      /*
+       * The handler's own list, not a copy of it kept here.
+       *
+       * A hand-written list drifts silently in one direction only: a code the
+       * server raises but this list omits falls through to the generic "the run
+       * could not be completed", which is the least useful sentence available
+       * and was what two real refusals showed. Reading the exported list means
+       * a new code arrives with a specific message or fails the parity test.
+       */
+      const known: readonly string[] = GEO_RUN_ERROR_CODES;
       return t(`errors.${known.includes(code) ? code : "unknown"}`);
     },
     [t],
@@ -384,20 +389,30 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
       if (stillCurrent !== true) return;
       if (!result.ok) {
         /*
-         * A refused edit puts the last accepted set back.
+         * A refused edit keeps the visitor's text and blocks the run.
          *
-         * The optimistic set carries the new text under the old fingerprint,
-         * sample plan and mode. Leaving it there after a refusal — emptying the
-         * field, or pasting something too long to pay for — left the plan panel
-         * counting three samples for a question with no text, and the run
-         * button offering to buy them. The server refuses such a set before
-         * billing, so no money was ever at stake; the count on screen was
-         * simply not the count that would run.
+         * The text stays because this is a controlled input: emptying the field
+         * is a refused edit, and putting the accepted set back would type the
+         * old question back into the box the moment it was cleared — the field
+         * could never be emptied at all.
+         *
+         * The run is blocked because the optimistic set carries the new text
+         * under the old sample plan, so the plan panel would otherwise count
+         * three samples for a question with no text and the button would offer
+         * to buy them. The server refuses such a set before billing, so no
+         * money was ever at stake; the count on screen was simply not the count
+         * that would run. Saying so is better than silently correcting it.
          */
-        querySetRef.current = current;
-        setQuerySet(current);
+        setUnpayableQueryIds((current) =>
+          current.includes(queryId) ? current : [...current, queryId],
+        );
+        setRejections(result.rejections.map((entry) => entry.code));
         return;
       }
+      setUnpayableQueryIds((current) =>
+        current.filter((entry) => entry !== queryId),
+      );
+      setRejections([]);
       querySetRef.current = result.querySet;
       setQuerySet(result.querySet);
     });
@@ -776,7 +791,10 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
               <button
                 type="button"
                 className={PRIMARY_BUTTON_CLASS}
-                disabled={stage === "running"}
+                // A question the builder refused is still on screen in the
+                // visitor's own words, but it is not part of a set anything can
+                // be bought against.
+                disabled={stage === "running" || unpayableQueryIds.length > 0}
                 onClick={() => {
                   void handleRun();
                 }}

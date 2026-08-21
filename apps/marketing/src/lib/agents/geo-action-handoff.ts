@@ -17,8 +17,18 @@ import type {
 import { isGeoSampleCitationEvaluable } from "./geo-report-derive.ts";
 import { GEO_MAX_URL_LENGTH } from "./geo-url.ts";
 
+/**
+ * v3: every row says whose citations its ratio counted, and whether the page
+ * URL lost a query string on the way out.
+ *
+ * Bumped rather than added quietly. `reasonCountsObserve` and
+ * `targetUrlQueryRemoved` are required fields, and a receiver written against
+ * v2 would read a `basis.observed` whose subject flips on the avoid row —
+ * concluding a site was cited when the row exists because it was not. The
+ * version is what lets such a receiver notice.
+ */
 export const GEO_ACTION_HANDOFF_SCHEMA_VERSION =
-  "geo_action_handoff.v2" as const;
+  "geo_action_handoff.v3" as const;
 
 /** Contractual bounds, checked before the packet can be copied. */
 export const GEO_MAX_SELECTED_ACTIONS = 5;
@@ -172,7 +182,8 @@ export interface GeoActionHandoffV2 {
      */
     readonly reasonCountsObserve:
       | "samples_citing_target"
-      | "samples_citing_someone_else";
+      | "samples_citing_someone_else"
+      | null;
     readonly limitations: readonly string[];
   }[];
   /** Rendered from fixed, versioned templates and enums only. */
@@ -549,10 +560,12 @@ export function buildGeoActionHandoff(
         kind: candidate.kind,
         reason: candidate.reason,
         reasonCounts: candidate.reasonCounts,
+        // Null where there is no ratio: a subject for a count that does not
+        // exist labels nothing.
         reasonCountsObserve:
-          candidate.kind === "avoid"
-            ? ("samples_citing_someone_else" as const)
-            : ("samples_citing_target" as const),
+          candidate.reasonCounts === null
+            ? null
+            : GEO_OBSERVED_SUBJECT[candidate.kind],
         queryIds: [...candidate.queryIds],
         // Exactly the records that reached the packet for this action, so a
         // reader never sees a reference the packet does not contain.
@@ -623,6 +636,30 @@ const KIND_HEADING: Readonly<Record<GeoActionKind, string>> = {
 };
 
 /**
+ * Which samples a row's `reasonCounts.observed` counts.
+ *
+ * One table rather than a ternary at each site. The avoid row counts the
+ * samples that cited somebody else; every other row counts the samples that
+ * cited the customer. Both the packet and the AI brief have to label this, and
+ * writing the inversion twice is two chances for one of them to drift — the
+ * same reason `GEO_ACTION_REASON_KIND` next door is a table.
+ */
+export const GEO_OBSERVED_SUBJECT: Readonly<
+  Record<GeoActionKind, "samples_citing_target" | "samples_citing_someone_else">
+> = {
+  do: "samples_citing_target",
+  external_data: "samples_citing_target",
+  avoid: "samples_citing_someone_else",
+};
+
+/** The same fact as a sentence, for the half of the packet a person reads. */
+function geoObservedSubject(kind: GeoActionKind): string {
+  return GEO_OBSERVED_SUBJECT[kind] === "samples_citing_someone_else"
+    ? "cited another site and not this one"
+    : "cited this site";
+}
+
+/**
  * The same packet, for a person.
  *
  * The JSON exists for an agent; a reader who is not going to paste it anywhere
@@ -659,26 +696,31 @@ export function serializeGeoActionHandoffMarkdown(
      * `observed` is the samples that cited the customer on every row except the
      * avoid row, where it is the samples that cited somebody else. One sentence
      * for both readings would be wrong for one of them.
+     *
+     * Read from `kind`, which is what the mapping actually keys the inversion
+     * on, rather than from the `reasonCountsObserve` field beside it. Reading
+     * the field would make the test that checks this line agree with whatever
+     * the field says — including a field set the wrong way round.
      */
-    const subject =
-      action.reasonCountsObserve === "samples_citing_someone_else"
-        ? "cited another site and not this one"
-        : "cited this site";
+    const subject = geoObservedSubject(action.kind);
     const counts =
       action.reasonCounts === null
         ? "no ratio applies to this item"
         : `${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples ${subject}`;
     /*
-     * An avoid row names what not to do, not an asset to build.
+     * An avoid row names what not to do, and names no asset at all.
      *
-     * Its `assetType` is the alternative it recommends keeping, so the shared
-     * `Do not — {assetType}` heading printed "Do not — existing page
-     * enhancement" — a prohibition on the very thing the row is arguing for.
-     * The reason carries the prohibition; the asset stays a separate line.
+     * Its `assetType` is a carrier value, not a recommendation: the mapping
+     * that builds this row says out loud that it "does not say what is, and
+     * this candidate does not pretend to". Printing it after "Do not —" banned
+     * the wrong thing; printing it after "recommended instead" recommended
+     * something nothing measured. The screen half of this product already
+     * renders the reason alone for exactly this row, and the two halves are
+     * not allowed to say different things.
      */
     const heading =
       action.kind === "avoid"
-        ? `**${KIND_HEADING[action.kind]}: ${action.reason}** (recommended instead: ${action.assetType})`
+        ? `**${KIND_HEADING[action.kind]}: ${action.reason}**`
         : `**${KIND_HEADING[action.kind]} — ${action.assetType}** (${action.reason})`;
     lines.push(
       `- ${heading}`,

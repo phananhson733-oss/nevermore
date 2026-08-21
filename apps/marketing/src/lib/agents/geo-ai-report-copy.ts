@@ -4,6 +4,7 @@
 
 import {
   GEO_ACTION_TASK_KIND,
+  GEO_OBSERVED_SUBJECT,
   sanitizeGeoExportUrl,
 } from "./geo-action-handoff.ts";
 import type { GeoActionPlanV1 } from "./geo-action-mapping.ts";
@@ -403,10 +404,13 @@ export function buildGeoAiReportCopy(
          * conclude the site was cited twice — the opposite of why the row is
          * there.
          */
+        // From the same table the packet reads, not a second copy of the rule:
+        // two inline ternaries are two chances for one of them to drift. Null
+        // where there is no ratio to give a subject to.
         basisObservedCounts:
-          candidate.kind === "avoid"
-            ? "samples_citing_someone_else"
-            : "samples_citing_target",
+          candidate.reasonCounts === null
+            ? null
+            : GEO_OBSERVED_SUBJECT[candidate.kind],
         // Ids, not text. Every question's exact wording appears once, in its own
         // section; repeating it per candidate would give a merged candidate five
         // copies of the same string and put the size cap in reach of an ordinary

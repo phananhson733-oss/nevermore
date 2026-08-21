@@ -12,11 +12,13 @@ import {
 } from "./geo-questions.ts";
 import {
   confirmGeoContext,
-  deriveGeoBrandStance,
   promptContainsTargetAlias,
   type GeoContextInputV1,
   type GeoContextSnapshotV1,
 } from "./geo-context.ts";
+// The gate a real run passes through, so an edit is checked against the thing
+// that refuses it rather than against a second copy of the derivation.
+import { validateGeoRunInput } from "./geo-run-handler.ts";
 import {
   geoPlannedCallCount,
   isGeoQuerySetConfirmed,
@@ -812,13 +814,16 @@ describe("editGeoQueryText", () => {
   });
 
   /*
-   * The guard the server applies, applied to the edited set here.
+   * The real gate, not a second copy of the derivation.
    *
-   * Asserting the field alone would pass if the derivation drifted from the
-   * server's; this fails whenever an edit produces a set the run handler would
-   * refuse, whatever the reason.
+   * Comparing the edited stance against `deriveGeoBrandStance` here would only
+   * prove that two callers of one function agree — it would pass even if the
+   * server refused every one of these sets. `validateGeoRunInput` is what
+   * actually stands between an edit and eighteen billed calls, so the edited
+   * set is put in front of it. A stance the edit failed to re-derive comes back
+   * as `geo_brand_stance_mismatch`, which is exactly what visitors hit.
    */
-  it("produces a set whose every stance survives the server's own derivation", async () => {
+  it("produces a set the run handler accepts, whatever the edit did to the names", async () => {
     const snapshot = await context();
     const original = await set();
 
@@ -836,16 +841,17 @@ describe("editGeoQueryText", () => {
       );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      const edited = result.querySet.queries.find(
-        (query) => query.queryId === original.queries[0]!.queryId,
-      )!;
-      expect(edited.brandStance).toBe(
-        deriveGeoBrandStance(
-          edited.text,
-          snapshot.brandAliases,
-          snapshot.directCompetitors,
-        ),
-      );
+
+      const confirmed = await confirmGeoQuerySet(result.querySet, CLOCK);
+      const validated = await validateGeoRunInput({
+        context: snapshot,
+        querySet: confirmed,
+      });
+
+      expect(
+        validated.ok ? null : validated.code,
+        `the handler refused an edit to "${text}"`,
+      ).toBeNull();
     }
   });
 });

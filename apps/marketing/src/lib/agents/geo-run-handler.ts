@@ -143,6 +143,12 @@ export type GeoRunRejection =
   | "geo_plan_size_mismatch"
   | "geo_brand_stance_mismatch";
 
+/*
+ * Every code this route can return is listed in `geo-run-errors.ts`, which the
+ * workbench also reads. A code raised here but missing there fails the parity
+ * test rather than reaching a visitor as a generic failure.
+ */
+
 /**
  * Validate everything before a single call is billed.
  *

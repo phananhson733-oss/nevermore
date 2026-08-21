@@ -417,6 +417,49 @@ describe("buildGeoAiReportCopy", () => {
     expect(markdown).toContain('"taskKind": "collect_missing_input"');
   });
 
+  /*
+   * The brief is fenced JSON with no prose to disambiguate a field name.
+   *
+   * `basis.observed` counts samples that cited the customer on every row but
+   * the avoid row, where it counts samples that cited somebody else. The screen
+   * gives that row its own sentence; a receiving AI reading `{observed: 6,
+   * evaluable: 6}` under "do not build a new page" would otherwise conclude the
+   * site was cited six times — the opposite of why the row exists.
+   */
+  it("labels whose citations each candidate's basis counted", async () => {
+    const run = await wholeRun();
+    const markdown = markdownOf(run);
+
+    const avoid = run.plan.candidates.filter(
+      (candidate) => candidate.kind === "avoid",
+    );
+    const counted = run.plan.candidates.filter(
+      (candidate) => candidate.kind !== "avoid" && candidate.reasonCounts,
+    );
+    expect(avoid.length).toBeGreaterThan(0);
+    expect(counted.length).toBeGreaterThan(0);
+
+    expect(markdown).toContain(
+      '"basisObservedCounts": "samples_citing_someone_else"',
+    );
+    expect(markdown).toContain(
+      '"basisObservedCounts": "samples_citing_target"',
+    );
+  });
+
+  it("says when the confirmed page's query string did not survive export", async () => {
+    const run = await wholeRun();
+    const markdown = markdownOf(run);
+
+    // The fixture's confirmed page is `/pricing?utm_source=deck`. A query
+    // string can be what selects the resource, and no rule tells an identifier
+    // from a tracking tag — so the export says it shortened the URL, the same
+    // disclosure every exported citation carries.
+    expect(run.context.targetUrl).toContain("?");
+    expect(markdown).toContain('"targetUrlQueryRemoved": true');
+    expect(markdown).toContain('"targetUrl": "https://acme.test/pricing"');
+  });
+
   it("explains a zero-candidate result instead of shipping an empty list", async () => {
     const run = await wholeRun({ cited: true });
     const markdown = markdownOf(run);

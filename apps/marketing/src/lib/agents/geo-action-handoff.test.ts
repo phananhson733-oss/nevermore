@@ -810,16 +810,123 @@ describe("selection and evidence integrity", () => {
       if (!result.ok) throw new Error("expected a packet");
       const markdown = serializeGeoActionHandoffMarkdown(result.packet);
 
+      // The fixture has an avoid row, asserted before the loop that only runs
+      // for avoid rows. A mapping change that stopped producing one would
+      // otherwise leave the body below unexecuted and this test green forever.
+      expect(
+        result.packet.selectedActions.some((action) => action.kind === "avoid"),
+      ).toBe(true);
       for (const action of result.packet.selectedActions) {
         if (action.kind !== "avoid") continue;
         /*
-         * An avoid candidate's `assetType` is what it recommends keeping, so
-         * the shared `{heading} — {assetType}` line rendered "Do not — existing
-         * page enhancement": a ban on the one thing the row argues for.
+         * An avoid candidate's `assetType` is a carrier value, not a
+         * recommendation — the mapping that builds this row says it "does not
+         * say what is". The shared `{heading} — {assetType}` line rendered "Do
+         * not — existing page enhancement", banning the one thing the row
+         * argues for; naming it as an alternative instead recommended
+         * something nothing measured. The row prints its reason and no asset,
+         * which is what the screen half already does.
          */
         expect(markdown).not.toContain(`Do not — ${action.assetType}`);
+        expect(markdown).not.toContain(`recommended instead`);
         expect(markdown).toContain(`Do not: ${action.reason}`);
-        expect(markdown).toContain(`recommended instead: ${action.assetType}`);
+      }
+    });
+
+    /*
+     * The subject is pinned to `kind`, which is what the mapping inverts on.
+     *
+     * The first version of this test read `action.reasonCountsObserve` to build
+     * the sentence it expected — the same field the serializer reads. Setting
+     * that field the wrong way round for every row changed the rendered line
+     * and the expectation together, and the suite stayed green. Deriving the
+     * expectation from `kind` is what makes the assertion able to fail.
+     */
+    it("says whose citations an avoid row counted, keyed on kind", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+      const markdown = serializeGeoActionHandoffMarkdown(result.packet);
+
+      const avoid = result.packet.selectedActions.filter(
+        (action) => action.kind === "avoid" && action.reasonCounts !== null,
+      );
+      const others = result.packet.selectedActions.filter(
+        (action) => action.kind !== "avoid" && action.reasonCounts !== null,
+      );
+      expect(avoid.length).toBeGreaterThan(0);
+      expect(others.length).toBeGreaterThan(0);
+
+      for (const action of avoid) {
+        expect(action.reasonCountsObserve).toBe("samples_citing_someone_else");
+        expect(markdown).toContain(
+          `${action.reasonCounts!.observed} of ${action.reasonCounts!.evaluable} citation-evaluable samples cited another site and not this one`,
+        );
+      }
+      for (const action of others) {
+        expect(action.reasonCountsObserve).toBe("samples_citing_target");
+        expect(markdown).toContain(
+          `${action.reasonCounts!.observed} of ${action.reasonCounts!.evaluable} citation-evaluable samples cited this site`,
+        );
+      }
+    });
+
+    it("gives no observed-subject to a row that carries no ratio", async () => {
+      const result = await packetFor(await dirtyReport());
+      if (!result.ok) throw new Error("expected a packet");
+
+      const rowsWithoutRatio = result.packet.selectedActions.filter(
+        (action) => action.reasonCounts === null,
+      );
+      expect(rowsWithoutRatio.length).toBeGreaterThan(0);
+      for (const action of rowsWithoutRatio) {
+        // A subject for a count that does not exist labels nothing.
+        expect(action.reasonCountsObserve).toBeNull();
+      }
+    });
+
+    it("discloses a dropped query string on the action's own page URL", async () => {
+      const report = await dirtyReport();
+      // A confirmed page that is not the site root and carries a query string:
+      // `?id=42` can be what selects the resource, so exporting `/product`
+      // silently hands the receiver a URL that may not be the page at all.
+      const plan = deriveGeoActionPlan(
+        report,
+        "https://acme.test/product?id=42",
+      );
+      const withUrl = plan.candidates.filter(
+        (candidate) => candidate.targetUrl !== null,
+      );
+      expect(withUrl.length).toBeGreaterThan(0);
+      expect(
+        withUrl.some(
+          (candidate) =>
+            sanitizeGeoExportUrl(candidate.targetUrl!).queryRemoved,
+        ),
+      ).toBe(true);
+
+      const result = await buildGeoActionHandoff({
+        report,
+        context: await context(),
+        candidates: plan.candidates,
+        selectedActionIds: plan.candidates.map(
+          (candidate) => candidate.actionId,
+        ),
+        now: CLOCK,
+      });
+      if (!result.ok) throw new Error("expected a packet");
+
+      for (const action of result.packet.selectedActions) {
+        const source = plan.candidates.find(
+          (candidate) => candidate.actionId === action.actionId,
+        )!;
+        // The flag says what the export did to the URL, and the exported URL is
+        // the sanitized one — the receiver must be able to tell a shortened
+        // link from a verbatim one.
+        expect(action.targetUrlQueryRemoved).toBe(
+          source.targetUrl === null
+            ? false
+            : sanitizeGeoExportUrl(source.targetUrl).queryRemoved,
+        );
       }
     });
   });

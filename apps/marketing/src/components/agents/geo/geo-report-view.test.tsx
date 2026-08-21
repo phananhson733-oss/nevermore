@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import en from "../../../i18n/messages/en.json";
 import zh from "../../../i18n/messages/zh.json";
+import { deriveGeoSourceLandscape } from "../../../lib/agents/geo-source-landscape";
 import type {
   GeoConfirmedAliasV1,
   GeoContextSnapshotV1,
@@ -500,11 +501,58 @@ describe("GeoReportView", () => {
       "Question by question",
       "What this cannot tell you",
     ];
-    for (const heading of order) {
-      expect(text).toContain(heading);
+
+    /*
+     * Matched against heading elements, not the page's whole text.
+     *
+     * Two of these strings appear twice on the page: "Copy report for AI" is
+     * the section heading and the button inside it, and "Question by question"
+     * is the eyebrow above its own title. A first-substring search over
+     * `textContent` would then keep passing after the real heading moved or
+     * was deleted, because the other copy still sits in roughly the right
+     * place.
+     */
+    const headings = [...host.querySelectorAll("h2, h3, h4")];
+    const nodes = order.map((title) => {
+      const node = headings.find(
+        (candidate) => candidate.textContent?.trim() === title,
+      );
+      expect(node, `no heading element reads "${title}"`).toBeDefined();
+      return node!;
+    });
+    for (let index = 1; index < nodes.length; index += 1) {
+      const previous = nodes[index - 1]!;
+      const current = nodes[index]!;
+      const relation = previous.compareDocumentPosition(current);
+      expect(
+        relation & Node.DOCUMENT_POSITION_FOLLOWING,
+        `"${order[index]}" must come after "${order[index - 1]}"`,
+      ).toBeTruthy();
     }
-    const positions = order.map((heading) => text.indexOf(heading));
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("lists the URLs observed on a cited host, one click down", async () => {
+    const report = await buildReport();
+    render(report);
+
+    // The table aggregates to the host, so "acme.test cited in 3 of 3" cannot
+    // say whether that was one page three times or three pages once. The
+    // disclosure that answers it had a contract field, a derivation and both
+    // translations for weeks, and no renderer.
+    const sources = deriveGeoSourceLandscape(report);
+    const withUrls = Object.values(sources.byMode)
+      .flatMap((mode) => mode.sources)
+      .filter((source) => source.urls.length > 0);
+    expect(withUrls.length).toBeGreaterThan(0);
+
+    const summaries = [...host.querySelectorAll("summary")].map((node) =>
+      node.textContent?.trim(),
+    );
+    expect(summaries).toContain("Show the one URL on this host");
+
+    for (const url of withUrls[0]!.urls) {
+      expect(host.textContent).toContain(url);
+    }
   });
 
   /*
@@ -692,8 +740,12 @@ describe("GeoReportView", () => {
     // as naming a persistence that does not happen.
     expect(host.textContent).toContain("retained server-side");
     expect(host.textContent).not.toContain("credits system");
-    // The tab-lifetime copy the restore feature made true.
-    expect(host.textContent).toContain("held in this browser tab");
+    // What the restore feature actually offers: eligibility to be restored in
+    // this tab, for up to fifteen minutes, where the browser permits storage.
+    // Not a retention promise — nothing deletes the report at fifteen minutes,
+    // and nothing guarantees the write succeeded.
+    expect(host.textContent).toContain("where the browser allows it");
+    expect(host.textContent).toContain("up to fifteen minutes");
   });
 
   it("avoids the words the contract cannot support", async () => {
