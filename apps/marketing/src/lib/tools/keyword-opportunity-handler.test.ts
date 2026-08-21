@@ -59,6 +59,12 @@ const CRAWL = {
   })),
   pagesFetched: 3,
   productPagesFetched: 1,
+  selection: {
+    eligibleCandidates: 28,
+    excludedCandidates: 8,
+    attemptedCandidates: 23,
+    truncatedCandidates: 5,
+  },
   stopReason: "budget_reached",
 };
 
@@ -116,6 +122,7 @@ const TOKEN: KeywordContextToken = {
   pages: PAGES,
   pagesFetched: 3,
   productPagesFetched: 1,
+  selection: CRAWL.selection,
   stopReason: "budget_reached",
   seeds: [],
   sub: SUB,
@@ -282,6 +289,12 @@ interface ContextBody {
     readonly propositions: readonly { readonly statement: string }[];
     readonly pagesFetched: number;
     readonly productPagesFetched: number;
+    readonly selection: {
+      readonly eligibleCandidates: number;
+      readonly excludedCandidates: number;
+      readonly attemptedCandidates: number;
+      readonly truncatedCandidates: number;
+    };
     readonly stopReason: string;
     readonly contextSufficient: boolean;
     readonly contextToken: string;
@@ -850,6 +863,7 @@ describe("handleKeywordContextRequest", () => {
     expect(body.data.propositions).toEqual(PROPOSITIONS);
     expect(body.data.pagesFetched).toBe(3);
     expect(body.data.productPagesFetched).toBe(1);
+    expect(body.data.selection).toEqual(CRAWL.selection);
     expect(body.data.stopReason).toBe("budget_reached");
     expect(body.data.contextSufficient).toBe(true);
 
@@ -862,6 +876,7 @@ describe("handleKeywordContextRequest", () => {
     expect(opened?.sub).toBe(SUB);
     expect(opened?.siteUrl).toBe(SITE_URL);
     expect(opened?.marketCode).toBe("GB");
+    expect(opened?.selection).toEqual(CRAWL.selection);
   });
 
   it("names the reason a site could not be read, with the status the sibling crawl tools use", async () => {
@@ -968,6 +983,64 @@ describe("handleKeywordContextRequest", () => {
 });
 
 describe("handleKeywordOpportunitiesRequest", () => {
+  function costReports(info: {
+    readonly mock: {
+      readonly calls: readonly (readonly unknown[])[];
+    };
+  }): Record<string, unknown>[] {
+    return info.mock.calls
+      .map((call) => {
+        try {
+          return JSON.parse(String(call[0])) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })
+      .filter((line) => line["tool"] === "keyword_opportunity" && "runCostUsd" in line);
+  }
+
+  it("emits exactly one successful cost record when a report is produced", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const response = await handleKeywordOpportunitiesRequest(body(), deps());
+
+    expect(response.status).toBe(200);
+    const reports = costReports(info);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.["reportProduced"]).toBe(true);
+  });
+
+  it("emits exactly one failed cost record after paid evidence but no report", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const costs = createKeywordCostAccumulator();
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        costs,
+        sampleSerp: () => {
+          costs.record("serp_organic", 0.02);
+          return Promise.reject(
+            new SourceError("AUTH_REQUIRED", "provider rejected credentials"),
+          );
+        },
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "keyword_source_unavailable" },
+    });
+    const reports = costReports(info);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      reportProduced: false,
+      runCostUsd: 0.02,
+      candidateCount: DRAFTS.length,
+      serpSampled: 0,
+    });
+  });
+
   function body(overrides: Record<string, unknown> = {}): Request {
     return request(
       { contextToken: contextToken(), ...overrides },

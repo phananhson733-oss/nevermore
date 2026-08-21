@@ -2218,7 +2218,7 @@
       "rereadSite": "Read my site again",
       "reading": "Reading your site…",
       "readingTitle": "Reading your site",
-      "readingBody": "Fetching a bounded context of up to 20 pages and reading the positioning from them. This is not a whole-site crawl. Nothing is charged for this step.",
+      "readingBody": "Fetching a bounded context of up to 20 pages and reading the positioning from them. This is not a whole-site crawl and does not call the search-data provider.",
       "confirmTitle": "What we read off your site",
       "confirmBody": "Read {pages} pages, {productPages} of which look like product pages. The candidate keywords are generated from these statements, so it is worth checking they describe your business before spending the search-data budget.",
       "confirmHint": "If these are wrong, the keywords will be too. Add seed terms above and read the site again, or run the map if they look right.",
@@ -2238,6 +2238,7 @@
       "retryWithSeeds": "Use these as seeds and run again",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
       "contextBoundary": "Candidate generation used a bounded context of up to 20 pages. It is not a whole-site crawl.",
+      "contextSelection": "L2 selection found {eligible} eligible candidates, {excluded} excluded before page requests, {attempted} attempted, and {truncated} left unattempted after the 20-page limit.",
       "contextStopped": "Context boundary: {reason}",
       "funnelIntro": "What each stage of the run saw. The counts overlap on purpose: the GEO lane is not gated on demand, so a term the provider had no data for can still be shown. Read it as where the evidence went, not as a division of the total.",
       "notMeasured": "not checked",
@@ -2448,7 +2449,7 @@
         "sv": "Swedish"
       },
       "errors": {
-        "unknown": "Something went wrong on our side. Nothing was charged for a run that produced no report.",
+        "unknown": "Something went wrong on our side. This run did not produce a usable report. Try again.",
         "invalid_input": "Check the site URL, market and language — one of them was not accepted.",
         "invalid_request": "That request was not understood. Reload the page and try again.",
         "payload_too_large": "Your site produced more context than one request can carry. Try a narrower starting URL.",

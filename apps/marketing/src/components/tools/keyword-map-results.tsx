@@ -330,6 +330,16 @@ function RunSummary({
         })}
       </p>
       <p className={SECTION_INTRO}>{t("contextBoundary")}</p>
+      {result.context.selection === undefined ? null : (
+        <p className={SECTION_INTRO}>
+          {t("contextSelection", {
+            eligible: result.context.selection.eligibleCandidates,
+            excluded: result.context.selection.excludedCandidates,
+            attempted: result.context.selection.attemptedCandidates,
+            truncated: result.context.selection.truncatedCandidates,
+          })}
+        </p>
+      )}
       {result.context.stopReason !== "completed" ? (
         <p className={SECTION_INTRO}>
           {t("contextStopped", {

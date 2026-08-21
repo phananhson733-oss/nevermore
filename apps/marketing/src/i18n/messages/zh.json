@@ -2218,7 +2218,7 @@
       "rereadSite": "重新读取站点",
       "reading": "正在读取站点…",
       "readingTitle": "正在读取你的站点",
-      "readingBody": "抓取最多 20 个页面的有限上下文并从中读出定位；这不是全站完整抓取。这一步不产生任何费用。",
+      "readingBody": "抓取最多 20 个页面的有限上下文并从中读出定位；这不是全站完整抓取，也不会调用搜索数据源。",
       "confirmTitle": "我们从你站点上读到的",
       "confirmBody": "读了 {pages} 个页面，其中 {productPages} 个看起来是产品页。候选词就是从下面这些陈述生成的，所以在花掉搜索数据预算之前，值得先确认它们说的是不是你的业务。",
       "confirmHint": "这些如果不准，关键词也不会准。可以在上面补种子词后重新读取；如果没问题，就直接跑。",
@@ -2238,6 +2238,7 @@
       "retryWithSeeds": "把这些词填入种子再跑一次",
       "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
       "contextBoundary": "候选词生成使用最多 20 个页面的有限上下文，并不代表全站完整抓取。",
+      "contextSelection": "L2 选页找到 {eligible} 个合格候选页，{excluded} 个在页面请求前排除，实际尝试 {attempted} 个，达到 20 页上限后还有 {truncated} 个未尝试。",
       "contextStopped": "上下文边界：{reason}",
       "funnelIntro": "本次运行每一步各看到了多少。这些计数会重叠，是有意的：GEO 泳道本来就不以需求量为门槛，所以一个数据源没有数据的词照样可能出现在结果里。把它读成「证据花在了哪里」，不是「总数被切成了几块」。",
       "notMeasured": "未检查",
@@ -2448,7 +2449,7 @@
         "sv": "瑞典语"
       },
       "errors": {
-        "unknown": "我们这边出了问题。没有产出报告的运行不会计费。",
+        "unknown": "我们这边出了问题，本次没有产出可用报告。请重试。",
         "invalid_input": "检查一下站点 URL、市场和语言——其中有一项没被接受。",
         "invalid_request": "这个请求没被理解。刷新页面重试。",
         "payload_too_large": "你的站点产生的上下文超过了单次请求能携带的量。试试换一个更窄的起始 URL。",

@@ -57,6 +57,11 @@ export interface ParsedPage {
   readonly internalOutlinks: readonly CrawlLinkProjection[];
   /** Ephemeral frontier inputs; never copied into `crawl.page.v1`. */
   readonly internalFetchTargets: readonly CrawlFetchTarget[];
+  /**
+   * Ephemeral header/nav/footer targets used only by the keyword context
+   * frontier. Kept beside, not inside, the frozen crawl.page.v1 projection.
+   */
+  readonly navigationFetchTargets: readonly CrawlFetchTarget[];
   /** Exact canonical-link fetch target paired with persisted `canonicalTarget`. */
   readonly canonicalFetchTarget: CrawlFetchTarget | null;
   readonly jsonLd: CrawlJsonLdProjection;
@@ -771,6 +776,20 @@ function collectInternalOutlinks(
   };
 }
 
+/**
+ * Keep only semantic navigation containers before reusing the exact same
+ * canonicalisation and same-origin rules as the full link frontier.
+ *
+ * This parser is intentionally dependency-free and shares the surrounding
+ * module's bounded-regex limitations. A header containing a nested nav is one
+ * matched block, so its links are collected once and deduplicated downstream.
+ */
+function navigationMarkup(html: string): string {
+  return [...html.matchAll(/<(header|nav|footer)\b[^>]*>[\s\S]*?<\/\1\s*>/gi)]
+    .map((match) => match[0])
+    .join("");
+}
+
 /** Robots directives (meta robots or X-Robots-Tag) → indexable boolean. */
 export function directivesIndexable(directives: readonly string[]): boolean {
   return !directives.some(
@@ -1367,6 +1386,11 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
   const bodyText = extractNormalisedBody(markup);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
   const outlinks = collectInternalOutlinks(markup, pageUrl, pageOrigin);
+  const navigationOutlinks = collectInternalOutlinks(
+    navigationMarkup(markup),
+    pageUrl,
+    pageOrigin,
+  );
   const htmlTag = firstTag(markup, openingTagPattern("html", "i"));
   const onPage = collectOnPageFacts(
     markup,
@@ -1390,6 +1414,7 @@ export function parsePage(rawHtml: string, pageUrl: string): ParsedPage {
     wordCount,
     internalOutlinks: outlinks.projections,
     internalFetchTargets: outlinks.fetchTargets,
+    navigationFetchTargets: navigationOutlinks.fetchTargets,
     canonicalFetchTarget,
     jsonLd: collectJsonLd(html),
     paragraphs: collectParagraphs(markup),

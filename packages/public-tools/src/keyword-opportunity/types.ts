@@ -498,10 +498,19 @@ export interface KeywordOpportunityProposition {
 }
 
 /** Everything read off the site before any keyword work happens. */
+export interface KeywordOpportunityContextSelection {
+  readonly eligibleCandidates: number;
+  readonly excludedCandidates: number;
+  readonly attemptedCandidates: number;
+  readonly truncatedCandidates: number;
+}
+
 export interface KeywordOpportunityContext {
   readonly siteUrl: string;
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
+  /** Optional only for results minted before the L2 selection contract. */
+  readonly selection?: KeywordOpportunityContextSelection;
   readonly propositions: readonly KeywordOpportunityProposition[];
   /** False when the crawl returned too little to reason about positioning. */
   readonly contextSufficient: boolean;

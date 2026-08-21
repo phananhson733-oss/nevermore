@@ -330,6 +330,8 @@ describe("community signal", () => {
     "stackexchange.com",
     "math.stackexchange.com",
     "stackoverflow.com",
+    "medium.com",
+    "publication.medium.com",
     "news.ycombinator.com",
   ])("recognises the conservative fallback domain %s", (domain) => {
     const built = evidence({
@@ -344,13 +346,13 @@ describe("community signal", () => {
     });
   });
 
-  it("does not classify Medium or suffix-spoofed domains as community", () => {
+  it("does not classify suffix-spoofed domains as community", () => {
     const built = evidence({
       sample: sample({
         results: [
-          result("medium.com", 1),
-          result("notreddit.com", 2),
-          result("reddit.com.evil.test", 3),
+          result("notreddit.com", 1),
+          result("reddit.com.evil.test", 2),
+          result("medium.com.evil.test", 3),
         ],
         communityItems: [],
       }),

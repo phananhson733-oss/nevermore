@@ -158,6 +158,36 @@ describe("parsePage", () => {
     ]);
   });
 
+  it("projects header, nav, and footer targets separately from body links", () => {
+    const page = parsePage(
+      `<body>
+        <header><a href="/header-link">Header</a></header>
+        <nav><a href="/nav-link">Nav</a></nav>
+        <main><a href="/body-link">Body</a></main>
+        <footer><a href="/footer-link">Footer</a></footer>
+      </body>`,
+      BASE,
+    );
+
+    expect(page.navigationFetchTargets.map((target) => target.fetchUrl)).toEqual(
+      [
+        "https://example.com/footer-link",
+        "https://example.com/header-link",
+        "https://example.com/nav-link",
+      ],
+    );
+    expect(
+      page.navigationFetchTargets.some(
+        (target) => target.fetchUrl === "https://example.com/body-link",
+      ),
+    ).toBe(false);
+    expect(
+      page.internalFetchTargets.some(
+        (target) => target.fetchUrl === "https://example.com/body-link",
+      ),
+    ).toBe(true);
+  });
+
   it("persists the exact canonical href instead of its slash-folded subject", () => {
     const slashCanonical = parsePage(
       `<html><head><link rel="canonical" href="/docs/"></head></html>`,

@@ -317,6 +317,8 @@ export function keywordBudgetRefusal(
 
 export interface KeywordCostReport {
   readonly tool: "keyword_opportunity";
+  /** Whether the HTTP run reached a usable keyword report. */
+  readonly reportProduced: boolean;
   readonly runCostUsd: number;
   readonly byEndpoint: Readonly<Record<KeywordCostEndpoint, number>>;
   readonly candidateCount: number;
@@ -341,6 +343,8 @@ export interface KeywordCostReportInput {
   readonly costs: KeywordCostAccumulator;
   readonly candidateCount: number;
   readonly serpSampled: number;
+  /** Defaults true for older direct callers; handlers set it explicitly. */
+  readonly reportProduced?: boolean;
   /** Absent only in tests that predate the model being counted. */
   readonly llm?: KeywordLlmUsage;
 }
@@ -361,6 +365,7 @@ export function reportKeywordRunCost(
 ): KeywordCostReport {
   const report: KeywordCostReport = {
     tool: "keyword_opportunity",
+    reportProduced: input.reportProduced ?? true,
     runCostUsd: input.costs.spent(),
     byEndpoint: input.costs.byEndpoint(),
     candidateCount: input.candidateCount,

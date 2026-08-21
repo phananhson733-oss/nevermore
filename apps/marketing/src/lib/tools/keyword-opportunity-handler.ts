@@ -38,7 +38,10 @@ import {
   normalizeTrafficDomain,
   type DomainRegistrationEvidence,
 } from "@sf/sources";
-import type { ContextProfileSitemapInventory } from "@sf/sources/crawl-context-profile";
+import type {
+  ContextProfileSelectionSummary,
+  ContextProfileSitemapInventory,
+} from "@sf/sources/crawl-context-profile";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import {
   reportKeywordRunCost,
@@ -184,6 +187,8 @@ export interface KeywordContextToken {
   readonly sitemapInventory?: ContextProfileSitemapInventory;
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
+  /** Optional while a token from the previous deployment remains live. */
+  readonly selection?: ContextProfileSelectionSummary;
   readonly stopReason: string;
   /**
    * The seed terms the visitor supplied at stage one.
@@ -265,6 +270,8 @@ export interface KeywordContextCrawlResult {
   }[];
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
+  /** Optional for older injected/cached results; production supplies it. */
+  readonly selection?: ContextProfileSelectionSummary;
   readonly stopReason: string;
   /** Optional for old injected results; production crawls always provide it. */
   readonly sitemapInventory?: ContextProfileSitemapInventory;
@@ -539,6 +546,7 @@ export async function handleKeywordContextRequest(
       propositions,
       pagesFetched: crawl.pagesFetched,
       productPagesFetched: crawl.productPagesFetched,
+      ...(crawl.selection === undefined ? {} : { selection: crawl.selection }),
       stopReason: crawl.stopReason,
       seeds: input.seeds,
       sub: identity.sub,
@@ -648,6 +656,9 @@ export async function handleKeywordContextRequest(
           propositions,
           pagesFetched: crawl.pagesFetched,
           productPagesFetched: crawl.productPagesFetched,
+          ...(crawl.selection === undefined
+            ? {}
+            : { selection: crawl.selection }),
           stopReason: crawl.stopReason,
           contextSufficient: crawl.pages.length >= 3,
           headingBudgetBytes: headingBudget,
@@ -762,6 +773,9 @@ export async function handleKeywordOpportunitiesRequest(
   }
 
   const unavailableStages: string[] = [];
+  let costCandidateCount = 0;
+  let costSerpSampled = 0;
+  let reportProduced = false;
   try {
     const drafts = await dependencies.expandCandidates({
       propositions: token.propositions,
@@ -788,6 +802,7 @@ export async function handleKeywordOpportunitiesRequest(
     // terms; `generated` below still reports what the generator produced, so
     // the gap to `deduplicated` covers both the duplicates and the cap.
     const candidates = [...unique.values()].slice(0, KEYWORD_CANDIDATE_CAP);
+    costCandidateCount = candidates.length;
 
     const providerRows = await dependencies.validateVolumes({
       keywords: candidates.map((candidate) => candidate.keyword),
@@ -969,6 +984,7 @@ export async function handleKeywordOpportunitiesRequest(
     const completeSamples = attemptedSamples.filter(
       (sample) => sample.status === "complete",
     );
+    costSerpSampled = completeSamples.length;
     if (attemptedSamples.length > 0 && completeSamples.length === 0) {
       unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE);
     } else if (completeSamples.length < attemptedSamples.length) {
@@ -1213,6 +1229,7 @@ export async function handleKeywordOpportunitiesRequest(
       siteUrl: token.siteUrl,
       pagesFetched: token.pagesFetched,
       productPagesFetched: token.productPagesFetched,
+      ...(token.selection === undefined ? {} : { selection: token.selection }),
       propositions: token.propositions,
       contextSufficient: token.pages.length >= 3,
       stopReason: token.stopReason,
@@ -1228,16 +1245,7 @@ export async function handleKeywordOpportunitiesRequest(
       completedAt: runObservedAt,
     });
 
-    // The run's only cost record. There is no ledger table and the provider
-    // gives no per-tool breakdown, so a run missing this line is invisible in
-    // the invoice.
-    reportKeywordRunCost({
-      costs: dependencies.costs,
-      candidateCount: candidates.length,
-      serpSampled: completeSamples.length,
-      llm: dependencies.llmUsage?.(),
-    });
-
+    reportProduced = true;
     return json({ data: payload }, 200);
   } catch (error) {
     if (error instanceof KeywordLlmError) {
@@ -1260,6 +1268,16 @@ export async function handleKeywordOpportunitiesRequest(
     return json(createPublicToolError("keyword_source_unavailable"), 502);
   } finally {
     gate.release();
+    // One record for every admitted stage-two run, including failures after a
+    // provider response or model reply already incurred cost. User-credit
+    // state is deliberately absent: this is provider/LLM observability only.
+    reportKeywordRunCost({
+      costs: dependencies.costs,
+      candidateCount: costCandidateCount,
+      serpSampled: costSerpSampled,
+      reportProduced,
+      llm: dependencies.llmUsage?.(),
+    });
   }
 }
 

@@ -123,7 +123,7 @@ describe("assertContextProfileSufficient", () => {
     );
     const result = await run(site);
 
-    expect(result.botProtectionResponses).toBe(4);
+    expect(result.botProtectionResponses).toBe(3);
     expect(await codeOf(Promise.reject(thrown(result)))).toBe(
       "bot_protection_blocked",
     );
@@ -140,7 +140,7 @@ describe("assertContextProfileSufficient", () => {
     );
     const result = await run(site);
 
-    expect(result.rateLimitedResponses).toBe(4);
+    expect(result.rateLimitedResponses).toBe(3);
     expect(await codeOf(Promise.reject(thrown(result)))).toBe(
       "rate_limited_by_target",
     );
@@ -157,7 +157,7 @@ describe("assertContextProfileSufficient", () => {
     );
     const result = await run(site);
 
-    expect(result.protocolDowngradesRejected).toBe(4);
+    expect(result.protocolDowngradesRejected).toBe(3);
     expect(await codeOf(Promise.reject(thrown(result)))).toBe(
       "protocol_downgrade_rejected",
     );
@@ -172,7 +172,7 @@ describe("budget exhaustion", () => {
     );
   }
 
-  it("stops at max_urls and keeps the highest-scoring candidates", async () => {
+  it("stops at max_urls and keeps product/tool candidates before pricing", async () => {
     const routes: Record<string, Route> = {
       "/robots.txt": { body: "" },
       "/sitemap.xml": { status: 404 },
@@ -185,7 +185,8 @@ describe("budget exhaustion", () => {
 
     expect(result.stopReason).toBe("max_urls");
     expect(result.pagesFetched).toBe(CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls);
-    expect(result.pages[1]?.path).toBe("/pricing");
+    expect(result.pages[1]?.path).toBe("/tools/t0");
+    expect(result.selection?.truncatedCandidates).toBeGreaterThan(0);
   });
 
   it("preserves a real budget stop reached while replenishing failed candidates", async () => {
@@ -211,6 +212,10 @@ describe("budget exhaustion", () => {
     const result = await run(site);
 
     expect(site.requested).toContain(`${ORIGIN}/tools/t13`);
+    const candidateRequests = site.requested.filter((url) =>
+      new URL(url).pathname.startsWith("/tools/"),
+    ).length;
+    expect(result.selection?.attemptedCandidates).toBe(candidateRequests);
     expect(result.pagesFetched).toBeLessThan(
       CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls,
     );
@@ -272,9 +277,9 @@ describe("budget exhaustion", () => {
     const site = fakeSite(marketingSite());
     const result = await run(site);
 
-    // Entry probe + robots.txt + sitemap.xml + homepage + four candidates.
+    // Entry probe + robots.txt + sitemap.xml + homepage + three eligible candidates.
     expect(result.requestsSent).toBe(site.requested.length);
-    expect(result.requestsSent).toBe(8);
+    expect(result.requestsSent).toBe(7);
     expect(result.bytesFetched).toBeGreaterThan(0);
   });
 
