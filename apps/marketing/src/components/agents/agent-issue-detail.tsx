@@ -367,6 +367,20 @@ export function AgentIssueDetail({
             <p className="mt-2 text-[11.5px] text-text-dark-secondary">
               {templateT(template.recommendationKey)}
             </p>
+            {/*
+              The preview prints what this run measured plus a slot for every
+              sentence the owner still has to write. It wraps rather than
+              widening the document, and scrolls inside its own box when a line
+              genuinely cannot break.
+            */}
+            <pre
+              data-issue-preview-shape={template.presentation}
+              className="mt-2.5 max-w-full overflow-x-auto rounded border border-brand-border-dashed bg-brand-panel-raised p-3 font-mono text-[10.5px] leading-[1.7] whitespace-pre-wrap text-text-dark-primary"
+            >
+              {issue.copyMode === "investigation"
+                ? `${recT("unavailableInvestigation")}\n\n${template.preview}`
+                : template.preview}
+            </pre>
           </Block>
 
           <Block label={recT("contextLabel")}>

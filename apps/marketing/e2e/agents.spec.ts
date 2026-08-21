@@ -2,10 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { AGENT_PROFILE_REFRESH_FIELD_PATHS } from "../src/lib/agents/profile-refresh-contract";
 
-import {
-  agentEnvelope,
-  type AgentKind,
-} from "./fixtures/agent-envelope";
+import { agentEnvelope, type AgentKind } from "./fixtures/agent-envelope";
 
 function profileRefreshEnvelope(agent: AgentKind) {
   const sourceUrls = Array.from(
@@ -234,7 +231,9 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   expect(auditPosts).toBe(0);
 
   const controls = [url, market, language, run];
-  const boxes = await Promise.all(controls.map((control) => control.boundingBox()));
+  const boxes = await Promise.all(
+    controls.map((control) => control.boundingBox()),
+  );
   expect(boxes.every(Boolean)).toBe(true);
   expect(boxes[0]?.y).toBeLessThan(boxes[1]?.y ?? 0);
   expect(boxes[1]?.y).toBeLessThan(boxes[2]?.y ?? 0);
@@ -299,7 +298,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   ).toContainText("10");
 
   await expect(
-    page.locator('[data-profile-refresh-source-preview] a'),
+    page.locator("[data-profile-refresh-source-preview] a"),
   ).toHaveCount(3);
   const sourceDetails = page.locator(
     "details[data-profile-refresh-source-details]",
@@ -307,7 +306,7 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await expect(sourceDetails).not.toHaveAttribute("open", "");
   await sourceDetails.locator("summary").click();
   await expect(
-    sourceDetails.locator('[data-profile-refresh-source]').last(),
+    sourceDetails.locator("[data-profile-refresh-source]").last(),
   ).toHaveAttribute("href", "https://astrologywiki.com/source-14");
   await expect(
     page.locator('[data-profile-competitor-count="provider"]'),
@@ -324,10 +323,10 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await expect(
     candidate.locator('[data-profile-competitor-action="indirect"]'),
   ).toHaveAttribute("aria-pressed", "true");
-  await candidate
-    .locator('[data-profile-competitor-action="direct"]')
-    .click();
-  await expect(candidate).toContainText("Manually adjusted · direct competitor");
+  await candidate.locator('[data-profile-competitor-action="direct"]').click();
+  await expect(candidate).toContainText(
+    "Manually adjusted · direct competitor",
+  );
   await expect(
     page.locator('[data-profile-competitor-count="confirmed"]'),
   ).toContainText("2");
@@ -389,7 +388,9 @@ test("signed-out SEO submission opens registration without an audit POST", async
   await page.getByRole("button", { name: "Accept context & run" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Sign in to GenGrowth" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Sign in to GenGrowth" }),
+  ).toBeVisible();
   expect(auditPosts).toBe(0);
   expect(
     await page.evaluate(() =>
@@ -440,13 +441,34 @@ test("signed-in SEO run renders bounded evidence and a truthful recommendation b
   await expect(page.locator("[data-policy-threshold]")).toHaveCount(0);
   await expect(page.locator("[data-policy-weight]")).toHaveCount(0);
   await expect(page.locator("[data-policy-action]")).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", {
-      name: "No evidence-backed recommendation is available",
-    }),
-  ).toBeVisible();
-  await expect(page.getByTestId("agent-recommendation-row")).toHaveCount(0);
-  await expect(page.getByTestId("agent-selected-solution")).toHaveCount(0);
+  const accordion = page.getByTestId("agent-issue-accordion");
+  await expect(accordion).toBeVisible();
+
+  // Every issue starts closed; the reader chooses what to open.
+  await expect(page.locator("[data-issue-detail]")).toHaveCount(0);
+  const rows = page.locator("[data-issue-row]");
+  expect(await rows.count()).toBeGreaterThan(0);
+
+  await rows.first().locator("summary").click();
+  await expect(page.locator("[data-issue-detail]")).toHaveCount(1);
+  await expect(page.locator("[data-issue-detail]").first()).toContainText(
+    "technical seo audit",
+  );
+  await expect(page.locator("[data-issue-copy]").first()).toBeVisible();
+
+  // Comparing two findings at once is the whole point of the accordion, so it
+  // is asserted in the scope that has more than one to compare.
+  await page.getByTestId("diagnosis-scope-site").click();
+  const siteRows = page.locator("[data-issue-row]");
+  expect(await siteRows.count()).toBeGreaterThan(1);
+  await expect(page.locator("[data-issue-detail]")).toHaveCount(0);
+
+  await siteRows.first().locator("summary").click();
+  await siteRows.nth(1).locator("summary").click();
+  await expect(page.locator("[data-issue-detail]")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Collapse all" }).click();
+  await expect(page.locator("[data-issue-detail]")).toHaveCount(0);
 });
 
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
@@ -479,7 +501,9 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
 
   const input = page.getByLabel("目标 URL");
   await expect(input).toHaveValue("");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
     await page.evaluate(() => document.documentElement.clientWidth),
   );
   await input.fill("astrologywiki.com");
@@ -490,10 +514,23 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
     "aria-pressed",
     "true",
   );
+  await expect(page.getByTestId("agent-issue-accordion")).toBeVisible();
+  await page.getByRole("button", { name: "展开当前筛选" }).click();
+
+  const details = page.locator("[data-issue-detail]");
+  expect(await details.count()).toBeGreaterThan(0);
+  await expect(details.first()).toContainText("站点");
   await expect(
-    page.getByRole("heading", { name: "暂无有证据支持的建议" }),
-  ).toBeVisible();
-  await expect(page.getByTestId("agent-selected-solution")).toHaveCount(0);
+    page.locator("[data-issue-preview-shape]").first(),
+  ).toContainText("HTTP/1.1 200 OK");
+
+  // Expanding is where a 390px layout actually breaks: the detail carries
+  // URLs, code previews, and evidence rows that a narrow column has to hold.
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
   expect(
     await page.evaluate(() =>
       sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
@@ -515,20 +552,17 @@ test("primary IA groups Tools under Resources without changing its URL", async (
 
   await page.goto("/");
   const primary = page.getByRole("navigation", { name: "Main navigation" });
-  await expect(primary.getByRole("link", { name: "Home", exact: true })).toHaveAttribute(
-    "href",
-    "/",
-  );
+  await expect(
+    primary.getByRole("link", { name: "Home", exact: true }),
+  ).toHaveAttribute("href", "/");
   await expect(primary.getByText("Agents", { exact: true })).toBeVisible();
-  await expect(primary.getByRole("link", { name: "Blog", exact: true })).toHaveAttribute(
-    "href",
-    "/blog",
-  );
+  await expect(
+    primary.getByRole("link", { name: "Blog", exact: true }),
+  ).toHaveAttribute("href", "/blog");
   await expect(primary.getByText("Resources", { exact: true })).toBeVisible();
-  await expect(primary.getByRole("link", { name: "Pricing", exact: true })).toHaveAttribute(
-    "href",
-    "/pricing",
-  );
+  await expect(
+    primary.getByRole("link", { name: "Pricing", exact: true }),
+  ).toHaveAttribute("href", "/pricing");
   await expect(primary.getByRole("link", { name: /Tools/ })).toHaveCount(0);
 
   await primary.getByText("Resources", { exact: true }).click();
@@ -548,8 +582,7 @@ test("primary IA groups Tools under Resources without changing its URL", async (
   await expect(resourceIndex.locator('a[href="/tools"]')).toHaveCount(1);
   await expect(resourceIndex.locator('a[href="/skills"]')).toHaveCount(1);
   await expect(resourceIndex.locator('a[href="#docs"]')).toHaveCount(1);
-  await expect(page.getByRole("link", { name: "Browse Tools" })).toHaveAttribute(
-    "href",
-    "/tools",
-  );
+  await expect(
+    page.getByRole("link", { name: "Browse Tools" }),
+  ).toHaveAttribute("href", "/tools");
 });
