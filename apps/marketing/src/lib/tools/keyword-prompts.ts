@@ -112,11 +112,28 @@ export const MAX_KEYWORD_WORDS = 12;
  * Output ceilings, per task.
  *
  * Extraction: 10 propositions x ~60 tokens plus JSON overhead. Expansion: up to
- * the candidate cap x ~25 tokens each. Both are ~2.5x the expected size so a
- * legitimate reply is never truncated mid-object (which would read as a schema
- * failure and burn the retry), while a runaway generation still stops.
+ * the candidate cap x ~25 tokens each. Both leave room for a legitimate reply
+ * never to be truncated mid-object (which would read as a schema failure and
+ * burn the retry), while a runaway generation still stops.
+ *
+ * Sized against the *budget*, not the reply. `max_completion_tokens` is the one
+ * pool a reasoning deployment draws from for both its hidden reasoning and its
+ * visible answer, and it reasons first — so a ceiling set to a multiple of the
+ * expected reply is not conservative, it is a coin flip on how long the model
+ * thinks. Extraction sat at 1_500 against a ~317-token observed reply and still
+ * returned nothing twice in a row on 2026-08-21, which the retry could only
+ * turn into a 502 after the crawl the visitor had already waited two minutes
+ * for.
+ *
+ * 3_000 is the sibling quick-wins draft's measured value on this same
+ * deployment, where the identical failure was counted rather than reasoned
+ * about: five of six replies came back empty at 400, one of six at 1_200, and
+ * eight of eight completed at 4_000. The reasoning tail that produces those
+ * numbers belongs to the model, not to the task, so the shorter reply here
+ * does not buy a lower ceiling. As that file also says, the cap is not a cost
+ * lever — a reply that stops early is billed in full and then discarded.
  */
-export const MAX_PROPOSITION_OUTPUT_TOKENS = 1_500;
+export const MAX_PROPOSITION_OUTPUT_TOKENS = 3_000;
 export const MAX_CANDIDATE_OUTPUT_TOKENS = 6_000;
 
 /** Independent version stamp for the optional SERP/AIO interpretation task. */
@@ -757,7 +774,10 @@ function hasExactKeys(
   );
 }
 
-function boundedNullable(value: string | null, maxChars: number): string | null {
+function boundedNullable(
+  value: string | null,
+  maxChars: number,
+): string | null {
   if (value === null) return null;
   const bounded = sanitizeForPrompt(value, maxChars);
   return bounded === "" ? null : bounded;
@@ -919,10 +939,7 @@ function parseSerpInterpretations(
     );
     const input = expected.get(key);
     if (input === undefined || parsed.has(key)) return null;
-    if (
-      input.aiOverviewMarkdown === null &&
-      rawAssessment !== "unavailable"
-    ) {
+    if (input.aiOverviewMarkdown === null && rawAssessment !== "unavailable") {
       return null;
     }
     const reason = sanitizeForPrompt(
@@ -1001,16 +1018,22 @@ async function completeValidated<T>(
     try {
       completion = await client.complete(request);
     } catch (error) {
-      const empty =
-        error instanceof KeywordLlmError && error.reason === "invalid_response";
-      // The last attempt rethrows rather than falling out of the loop, so the
-      // caller still sees `invalid_response` instead of the `schema_invalid`
-      // below — the two send an operator to different systems.
-      if (!empty) throw error;
-      if (attempt + 1 >= MAX_KEYWORD_LLM_ATTEMPTS) {
-        throw new KeywordLlmError(error.reason, error.message, spent(error.usage));
+      if (!(error instanceof KeywordLlmError)) throw error;
+      const empty = error.reason === "invalid_response";
+      // Carries the run's running total, not this attempt's. An earlier
+      // attempt that the provider answered was billed whatever it burned, and
+      // rethrowing the provider's own error would report only the last call —
+      // making a two-attempt failure look like a one-attempt one.
+      const total = spent(error.usage);
+      // Rethrowing rather than falling out of the loop keeps the caller seeing
+      // `invalid_response` instead of the `schema_invalid` below — the two send
+      // an operator to different systems. Anything that is not an empty reply
+      // is the provider rather than the model, and asking it again spends the
+      // visitor's latency budget to learn nothing.
+      if (!empty || attempt + 1 >= MAX_KEYWORD_LLM_ATTEMPTS) {
+        throw new KeywordLlmError(error.reason, error.message, total);
       }
-      usage = spent(error.usage);
+      usage = total;
       continue;
     }
     usage = spent(completion.usage);
@@ -1134,7 +1157,8 @@ export async function interpretKeywordSerpEvidence(
       usage = mergeKeywordLlmUsage(usage, result.usage);
       const observedAt = new Map(
         prepared.map(
-          (input) => [keywordVolumeKey(input.keyword), input.observedAt] as const,
+          (input) =>
+            [keywordVolumeKey(input.keyword), input.observedAt] as const,
         ),
       );
       interpretations.push(
@@ -1181,29 +1205,60 @@ export interface KeywordLlmSeamOptions extends KeywordPromptOptions {
  * declares, with usage routed to `onUsage` instead of the return value.
  */
 export function createKeywordLlmSeams(options: KeywordLlmSeamOptions = {}) {
-  const report = (stage: KeywordLlmStage, usage: KeywordLlmUsage): void => {
-    options.onUsage?.(stage, usage);
+  /**
+   * Run one stage and report what it spent, succeed or fail.
+   *
+   * Every stage goes through here rather than reporting for itself, so a stage
+   * added later cannot quietly opt out of the invoice. The failure branch is
+   * the point: reporting only on success made a run that burned two billed
+   * calls and then threw log `requestCount: 0`, which is how the expensive
+   * failures became the cheapest-looking lines in the cost log.
+   * `completeValidated` already attaches its running total to what it throws.
+   */
+  const billed = async <T extends { readonly usage: KeywordLlmUsage }>(
+    stage: KeywordLlmStage,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    // Only `run()` is guarded. Reporting the success inside the same `try`
+    // would let a throwing `onUsage` — which the callback contract permits,
+    // even though the sink here does not — be caught as if the stage itself
+    // had failed, reported a second time, and surfaced to the caller as a
+    // model failure that never happened.
+    let result: T;
+    try {
+      result = await run();
+    } catch (error) {
+      if (error instanceof KeywordLlmError) {
+        options.onUsage?.(stage, error.usage);
+      }
+      throw error;
+    }
+    options.onUsage?.(stage, result.usage);
+    return result;
   };
   return {
     extractPropositions: async (
       pages: readonly KeywordPromptPage[],
     ): Promise<readonly KeywordOpportunityProposition[]> => {
-      const result = await extractKeywordPropositions(pages, options);
-      report("extract_propositions", result.usage);
+      const result = await billed("extract_propositions", () =>
+        extractKeywordPropositions(pages, options),
+      );
       return result.propositions;
     },
     expandCandidates: async (
       input: KeywordExpansionInput,
     ): Promise<readonly KeywordCandidateDraft[]> => {
-      const result = await expandKeywordCandidates(input, options);
-      report("expand_candidates", result.usage);
+      const result = await billed("expand_candidates", () =>
+        expandKeywordCandidates(input, options),
+      );
       return result.candidates;
     },
     interpretSerpEvidence: async (
       inputs: readonly KeywordSerpInterpretationInput[],
     ): Promise<readonly KeywordSerpInterpretation[]> => {
-      const result = await interpretKeywordSerpEvidence(inputs, options);
-      report("interpret_serp_evidence", result.usage);
+      const result = await billed("interpret_serp_evidence", () =>
+        interpretKeywordSerpEvidence(inputs, options),
+      );
       return result.interpretations;
     },
   };

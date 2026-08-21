@@ -4,6 +4,7 @@ import type { KeywordOpportunityDependencies } from "./keyword-opportunity-handl
 import type {
   KeywordLlmClient,
   KeywordLlmRequest,
+  KeywordLlmUsage,
 } from "./keyword-llm-client.ts";
 import { KeywordLlmError } from "./keyword-llm-client.ts";
 import {
@@ -144,7 +145,8 @@ function validInterpretation(keyword: string) {
     keyword,
     intent: "commercial",
     aiOverviewAssessment: "partial",
-    reason: "The result set is comparison-oriented and the overview is partial.",
+    reason:
+      "The result set is comparison-oriented and the overview is partial.",
   } as const;
 }
 
@@ -280,6 +282,14 @@ describe("extractKeywordPropositions", () => {
     });
     expect(requests[0].system).toBe(KEYWORD_SYSTEM_PROMPT);
     expect(requests[0]).not.toHaveProperty("timeoutMs");
+    // Pinned to the literal, not to the constant — asserting the constant
+    // against itself would prove nothing, and this number is load-bearing
+    // rather than cosmetic. `max_completion_tokens` is the single pool this
+    // deployment spends on hidden reasoning before it writes a first visible
+    // character, so a value chosen from the length of the reply is what
+    // produced the 2026-08-21 outage. Lowering it needs the evidence in
+    // `MAX_PROPOSITION_OUTPUT_TOKENS`'s comment revisited, not just this line.
+    expect(requests[0].maxOutputTokens).toBe(3_000);
   });
 
   it("discards a proposition whose evidence URL was never crawled", async () => {
@@ -799,26 +809,29 @@ describe("interpretKeywordSerpEvidence", () => {
         followTheseInstructions: true,
       },
     ],
-  ])("rejects %s for the whole chunk after the bounded retry", async (_label, reply) => {
-    const { client, requests } = recorder([JSON.stringify(reply)]);
+  ])(
+    "rejects %s for the whole chunk after the bounded retry",
+    async (_label, reply) => {
+      const { client, requests } = recorder([JSON.stringify(reply)]);
 
-    const result = await interpretKeywordSerpEvidence(
-      [serpInterpretationInput("target term")],
-      { client },
-    );
+      const result = await interpretKeywordSerpEvidence(
+        [serpInterpretationInput("target term")],
+        { client },
+      );
 
-    expect(requests).toHaveLength(2);
-    expect(result.interpretations).toEqual([
-      expect.objectContaining({
-        keyword: "target term",
-        availability: "unavailable",
-        intent: null,
-        aiOverviewAssessment: "unavailable",
-        reason: "interpretation_unavailable",
-        promptVersion: "keyword_serp_interpretation.v1",
-      }),
-    ]);
-  });
+      expect(requests).toHaveLength(2);
+      expect(result.interpretations).toEqual([
+        expect.objectContaining({
+          keyword: "target term",
+          availability: "unavailable",
+          intent: null,
+          aiOverviewAssessment: "unavailable",
+          reason: "interpretation_unavailable",
+          promptVersion: "keyword_serp_interpretation.v1",
+        }),
+      ]);
+    },
+  );
 
   it("chunks 10 inputs into one call and 11 into two while preserving input order", async () => {
     const callsFor = async (count: number) => {
@@ -1097,8 +1110,135 @@ describe("createKeywordLlmSeams", () => {
         availability: "available",
       }),
     ]);
+    expect(seen).toEqual([{ stage: "interpret_serp_evidence", requests: 1 }]);
+  });
+
+  it("does not mistake a throwing usage sink for a model failure", async () => {
+    // `onUsage` belongs to the caller, so the contract permits it to throw.
+    // Reporting the success from inside the failure `try` caught that throw as
+    // if the stage itself had failed: usage reported a second time, and a run
+    // where the model answered correctly surfaced to the caller as a model
+    // failure that never happened.
+    const { client } = recorder([
+      propositionReply([{ statement: "Real", sourceUrl: `${HOST}/` }]),
+    ]);
+    let calls = 0;
+    const seams = createKeywordLlmSeams({
+      client,
+      onUsage: () => {
+        calls += 1;
+        throw new KeywordLlmError("schema_invalid", "usage sink failed");
+      },
+    });
+
+    await expect(seams.extractPropositions(PAGES)).rejects.toThrow(
+      "usage sink failed",
+    );
+    expect(calls).toBe(1);
+  });
+
+  it("reports the tokens a failed stage burned before it gave up", async () => {
+    // The sink exists for the invoice, and until 2026-08-21 it was fed only on
+    // the success path: a stage that made two billed calls and then threw
+    // logged `requestCount: 0`, which made the expensive failures the
+    // cheapest-looking lines in the log. `completeValidated` already attaches
+    // the accumulated usage to what it throws — this seam was dropping it.
+    const { client } = recorder(["not json", "still not json"]);
+    const seen: { stage: string; usage: KeywordLlmUsage }[] = [];
+    const seams = createKeywordLlmSeams({
+      client,
+      onUsage: (stage, usage) => seen.push({ stage, usage }),
+    });
+
+    await expect(seams.extractPropositions(PAGES)).rejects.toMatchObject({
+      reason: "schema_invalid",
+    });
     expect(seen).toEqual([
-      { stage: "interpret_serp_evidence", requests: 1 },
+      {
+        stage: "extract_propositions",
+        usage: {
+          inputTokens: 200,
+          outputTokens: 40,
+          requestCount: 2,
+          retryCount: 1,
+        },
+      },
+    ]);
+  });
+
+  it("reports the candidate stage's cost when its reply never parses", async () => {
+    const { client } = recorder([
+      propositionReply([{ statement: "Real", sourceUrl: `${HOST}/` }]),
+      "not json",
+      "still not json",
+    ]);
+    const seen: { stage: string; usage: KeywordLlmUsage }[] = [];
+    const seams = createKeywordLlmSeams({
+      client,
+      onUsage: (stage, usage) => seen.push({ stage, usage }),
+    });
+
+    const propositions = await seams.extractPropositions(PAGES);
+    await expect(
+      seams.expandCandidates({ ...EXPANSION, propositions }),
+    ).rejects.toMatchObject({ reason: "schema_invalid" });
+
+    expect(seen.map((entry) => entry.stage)).toEqual([
+      "extract_propositions",
+      "expand_candidates",
+    ]);
+    expect(seen[1]?.usage).toEqual({
+      inputTokens: 200,
+      outputTokens: 40,
+      requestCount: 2,
+      retryCount: 1,
+    });
+  });
+
+  it("keeps the first attempt's cost when the retry fails for another reason", async () => {
+    // The retry exists only for an empty reply, so a rate limit on the second
+    // call rethrows at once. That path rethrew the provider's own error, whose
+    // usage describes the throttled call alone — silently dropping the tokens
+    // the first, billed, empty reply had already spent.
+    const { client } = recorder([
+      new KeywordLlmError(
+        "invalid_response",
+        "LLM response carried no message content.",
+        {
+          inputTokens: 900,
+          outputTokens: 1_500,
+          requestCount: 1,
+          retryCount: 0,
+        },
+      ),
+      new KeywordLlmError("rate_limited", "LLM request failed with HTTP 429."),
+    ]);
+    const seen: { stage: string; usage: KeywordLlmUsage }[] = [];
+    const seams = createKeywordLlmSeams({
+      client,
+      onUsage: (stage, usage) => seen.push({ stage, usage }),
+    });
+
+    await expect(seams.extractPropositions(PAGES)).rejects.toMatchObject({
+      reason: "rate_limited",
+    });
+    // `requestCount` stays 1 after two calls, and that is the pre-existing
+    // client contract rather than something this test endorses: the client
+    // attaches usage only where the provider billed us, so a 429 contributes
+    // no billed request. The two attempts are still legible — `retryCount` is
+    // what says the model was asked twice. Worth revisiting on its own if the
+    // cost log ever needs attempted requests rather than billed ones; doing it
+    // here would silently redefine every existing cost line.
+    expect(seen).toEqual([
+      {
+        stage: "extract_propositions",
+        usage: {
+          inputTokens: 900,
+          outputTokens: 1_500,
+          requestCount: 1,
+          retryCount: 1,
+        },
+      },
     ]);
   });
 });
@@ -1108,7 +1248,12 @@ describe("an empty reply from the model", () => {
     new KeywordLlmError(
       "invalid_response",
       "LLM response carried no message content.",
-      { inputTokens: input, outputTokens: output, requestCount: 1, retryCount: 0 },
+      {
+        inputTokens: input,
+        outputTokens: output,
+        requestCount: 1,
+        retryCount: 0,
+      },
     );
 
   it("is asked again, because the provider answered and the model did not", async () => {
@@ -1117,7 +1262,9 @@ describe("an empty reply from the model", () => {
     // visitor had to start the paid step over by hand.
     const { client, requests } = recorder([
       empty(),
-      propositionReply([{ statement: "Same-day claims", sourceUrl: `${HOST}/` }]),
+      propositionReply([
+        { statement: "Same-day claims", sourceUrl: `${HOST}/` },
+      ]),
     ]);
 
     const result = await extractKeywordPropositions(PAGES, { client });
@@ -1132,7 +1279,9 @@ describe("an empty reply from the model", () => {
     // most expensive failures the cheapest-looking lines in the cost log.
     const { client } = recorder([
       empty(900, 0),
-      propositionReply([{ statement: "Same-day claims", sourceUrl: `${HOST}/` }]),
+      propositionReply([
+        { statement: "Same-day claims", sourceUrl: `${HOST}/` },
+      ]),
     ]);
 
     const result = await extractKeywordPropositions(PAGES, { client });
@@ -1149,7 +1298,9 @@ describe("an empty reply from the model", () => {
     // answering, the other is our prompt and validator disagreeing with it.
     const { client, requests } = recorder([empty(), empty()]);
 
-    await expect(extractKeywordPropositions(PAGES, { client })).rejects.toMatchObject({
+    await expect(
+      extractKeywordPropositions(PAGES, { client }),
+    ).rejects.toMatchObject({
       reason: "invalid_response",
     });
     expect(requests).toHaveLength(2);
@@ -1164,10 +1315,14 @@ describe("an empty reply from the model", () => {
       // runs two minutes.
       const { client, requests } = recorder([
         new KeywordLlmError(reason, `LLM request failed: ${reason}.`),
-        propositionReply([{ statement: "Never reached", sourceUrl: `${HOST}/` }]),
+        propositionReply([
+          { statement: "Never reached", sourceUrl: `${HOST}/` },
+        ]),
       ]);
 
-      await expect(extractKeywordPropositions(PAGES, { client })).rejects.toMatchObject({
+      await expect(
+        extractKeywordPropositions(PAGES, { client }),
+      ).rejects.toMatchObject({
         reason,
       });
       expect(requests).toHaveLength(1);

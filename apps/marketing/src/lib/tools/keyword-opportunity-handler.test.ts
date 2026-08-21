@@ -947,6 +947,39 @@ describe("handleKeywordContextRequest", () => {
         tool: "keyword_opportunity",
         stage: "context",
         code: "keyword_generation_unavailable",
+        reason: "network_error",
+      }),
+    );
+  });
+
+  it("names which model failure a stage-one 502 came from", async () => {
+    // The visitor-facing code collapses nine transport, config and schema
+    // failures into one string, which is correct for them and useless for an
+    // operator: an unreachable provider, a rate limit and a reply that spent
+    // its whole budget reasoning send three different people to three
+    // different systems. Stage two has logged `failureReason` since it was
+    // written; stage one did not, and on 2026-08-21 that cost a production
+    // triage the one fact that would have ended it.
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        extractPropositions: () =>
+          Promise.reject(
+            new KeywordLlmError(
+              "invalid_response",
+              "LLM response carried no message content.",
+            ),
+          ),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(logged).toContain(
+      JSON.stringify({
+        tool: "keyword_opportunity",
+        stage: "context",
+        code: "keyword_generation_unavailable",
+        reason: "invalid_response",
       }),
     );
   });
@@ -996,7 +1029,10 @@ describe("handleKeywordOpportunitiesRequest", () => {
           return {};
         }
       })
-      .filter((line) => line["tool"] === "keyword_opportunity" && "runCostUsd" in line);
+      .filter(
+        (line) =>
+          line["tool"] === "keyword_opportunity" && "runCostUsd" in line,
+      );
   }
 
   it("emits exactly one successful cost record when a report is produced", async () => {
@@ -1659,9 +1695,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const parsed = (await response.json()) as OpportunitiesBody;
 
     expect(parsed.data.result.unavailableStages).not.toContain("serp_sample");
-    expect(parsed.data.result.withheld.map((entry) => entry.reason)).not.toContain(
-      "serp_sample_budget_exhausted",
-    );
+    expect(
+      parsed.data.result.withheld.map((entry) => entry.reason),
+    ).not.toContain("serp_sample_budget_exhausted");
     expect(parsed.data.result.funnel["serpSampled"]).toBe(23);
   });
 
@@ -1827,9 +1863,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
       ]),
     );
     const resolveDomainRanks = vi.fn((domains: readonly string[]) =>
-      Promise.resolve(
-        new Map(domains.map((domain) => [domain, 100] as const)),
-      ),
+      Promise.resolve(new Map(domains.map((domain) => [domain, 100] as const))),
     );
     const resolveDomainTraffic = vi.fn(
       ({ domains }: { readonly domains: readonly string[] }) =>
@@ -1939,10 +1973,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
       "serp_sample_partial",
     );
     expect(parsed.data.result.funnel["serpSampled"]).toBe(0);
-    expect(parsed.data.result.incomplete.map((entry) => entry.keyword)).toEqual([
-      "failed alpha",
-      "failed beta",
-    ]);
+    expect(parsed.data.result.incomplete.map((entry) => entry.keyword)).toEqual(
+      ["failed alpha", "failed beta"],
+    );
     expect(resolveDomainRanks).not.toHaveBeenCalled();
     expect(resolveDomainTraffic).not.toHaveBeenCalled();
     expect(resolveDomainRegistrations).not.toHaveBeenCalled();
@@ -1966,18 +1999,16 @@ describe("handleKeywordOpportunitiesRequest", () => {
                 new Map(domains.map((domain) => [domain, 100] as const)),
               ),
       );
-      const resolveDomainRegistrations = vi.fn(
-        (domains: readonly string[]) =>
-          failedStage === "registration"
-            ? Promise.reject(new Error("registration unavailable"))
-            : Promise.resolve(
-                new Map(
-                  domains.map(
-                    (domain) =>
-                      [domain, availableRegistration(domain)] as const,
-                  ),
+      const resolveDomainRegistrations = vi.fn((domains: readonly string[]) =>
+        failedStage === "registration"
+          ? Promise.reject(new Error("registration unavailable"))
+          : Promise.resolve(
+              new Map(
+                domains.map(
+                  (domain) => [domain, availableRegistration(domain)] as const,
                 ),
               ),
+            ),
       );
       const response = await handleKeywordOpportunitiesRequest(
         body(),
@@ -2017,7 +2048,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
       deps({
         expandCandidates: () => Promise.resolve([draft("rank zero candidate")]),
         resolveDomainRanks: (domains) =>
-          Promise.resolve(new Map(domains.map((domain) => [domain, 0] as const))),
+          Promise.resolve(
+            new Map(domains.map((domain) => [domain, 0] as const)),
+          ),
       }),
     );
     const parsed = (await response.json()) as OpportunitiesBody;

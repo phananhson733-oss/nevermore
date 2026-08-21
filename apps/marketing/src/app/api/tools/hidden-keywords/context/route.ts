@@ -18,11 +18,17 @@ import { createKeywordProviderSeams } from "@/lib/tools/keyword-providers";
 
 export const runtime = "nodejs";
 /**
- * The crawl owns most of this: a 60s page budget plus one model call to read
- * the positioning off what came back. 120 leaves room for both and still
- * returns an envelope the surface can render rather than a platform timeout.
+ * Sized to the worst case the code below actually permits, not the typical
+ * run: a 60s crawl budget (`CONTEXT_PROFILE_CRAWL_BUDGET.maxWallClockMs`) and
+ * then up to two 45s model attempts (`KEYWORD_LLM_TIMEOUT_MS` x
+ * `MAX_KEYWORD_LLM_ATTEMPTS`, the retry an empty reply is allowed) is 150s,
+ * which the previous 120 could not hold. That gap defeated the point of the
+ * ceiling: a request over it is killed by the platform mid-flight, so the
+ * visitor gets an opaque timeout instead of the error envelope this handler
+ * builds, and the failure-reason and cost lines never reach the log at all.
+ * 180 clears the arithmetic with room for sealing and serialization.
  */
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 export async function POST(request: Request): Promise<Response> {
   // Stage one spends no provider money, but the accumulator is still built per

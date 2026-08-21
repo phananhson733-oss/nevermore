@@ -247,11 +247,7 @@ export interface KeywordSerpSampleResult {
   /** Concrete provider community results; null means availability unreported. */
   readonly communityItems?:
     | readonly {
-        readonly type:
-          | "discussions_and_forums"
-          | "forum"
-          | "video"
-          | "twitter";
+        readonly type: "discussions_and_forums" | "forum" | "video" | "twitter";
         readonly position: number;
         readonly title: string | null;
         readonly url: string | null;
@@ -679,8 +675,21 @@ export async function handleKeywordContextRequest(
     // travels in the code. But it travels with an honest status: this response
     // carries no report, and answering 200 made `response.ok` true for a
     // request that produced nothing.
+    //
+    // A model failure is the exception: nine transport, config and schema
+    // reasons collapse into the one code a visitor can act on, which leaves an
+    // operator nothing to act on at all. Stage two has logged `failureReason`
+    // since it was written; on 2026-08-21 stage one's silence turned a
+    // one-line answer into a production forensics run. Absent for a crawl
+    // failure, whose code already names it.
+    const reason = error instanceof KeywordLlmError ? error.reason : null;
     console.error(
-      JSON.stringify({ tool: "keyword_opportunity", stage: "context", code }),
+      JSON.stringify({
+        tool: "keyword_opportunity",
+        stage: "context",
+        code,
+        ...(reason === null ? {} : { reason }),
+      }),
     );
     return json(createPublicToolError(code), CONTEXT_ERROR_STATUS[code] ?? 502);
   } finally {
@@ -699,12 +708,9 @@ function parseOpportunitiesInput(
   return { contextToken: token };
 }
 
-const PROVIDER_INTENTS: ReadonlySet<KeywordOpportunityProviderIntent> = new Set([
-  "informational",
-  "navigational",
-  "commercial",
-  "transactional",
-]);
+const PROVIDER_INTENTS: ReadonlySet<KeywordOpportunityProviderIntent> = new Set(
+  ["informational", "navigational", "commercial", "transactional"],
+);
 
 function providerIntent(
   value: string | null,
@@ -942,45 +948,50 @@ export async function handleKeywordOpportunitiesRequest(
             languageCode: token.languageCode,
           });
     const returnedByKeyword = new Map(
-      returnedSamples.map((sample) => [keywordVolumeKey(sample.keyword), sample]),
+      returnedSamples.map((sample) => [
+        keywordVolumeKey(sample.keyword),
+        sample,
+      ]),
     );
-    const attemptedSamples = sampleTargets.map((row): KeywordSerpSampleResult => {
-      const returned = returnedByKeyword.get(
-        keywordVolumeKey(row.candidate.keyword),
-      );
-      if (returned === undefined) {
-        return {
-          keyword: row.candidate.keyword,
-          status: "unavailable",
-          failureReason: "provider_unavailable",
-          observedAt: null,
-          results: [],
-          pageItemTypes: null,
-          aiOverview: null,
-          communityItems: null,
-        };
-      }
-      // The optional branch is the ten-minute compatibility window for an
-      // injected/pre-v2 producer. Task 8A production outcomes always carry the
-      // status explicitly.
-      const status = returned.status ?? "complete";
-      return status === "complete"
-        ? {
-            ...returned,
+    const attemptedSamples = sampleTargets.map(
+      (row): KeywordSerpSampleResult => {
+        const returned = returnedByKeyword.get(
+          keywordVolumeKey(row.candidate.keyword),
+        );
+        if (returned === undefined) {
+          return {
             keyword: row.candidate.keyword,
-            status,
-            failureReason: null,
-            observedAt: returned.observedAt ?? runObservedAt,
-          }
-        : {
-            ...returned,
-            keyword: row.candidate.keyword,
-            status,
-            failureReason: returned.failureReason ?? "provider_unavailable",
+            status: "unavailable",
+            failureReason: "provider_unavailable",
             observedAt: null,
             results: [],
+            pageItemTypes: null,
+            aiOverview: null,
+            communityItems: null,
           };
-    });
+        }
+        // The optional branch is the ten-minute compatibility window for an
+        // injected/pre-v2 producer. Task 8A production outcomes always carry the
+        // status explicitly.
+        const status = returned.status ?? "complete";
+        return status === "complete"
+          ? {
+              ...returned,
+              keyword: row.candidate.keyword,
+              status,
+              failureReason: null,
+              observedAt: returned.observedAt ?? runObservedAt,
+            }
+          : {
+              ...returned,
+              keyword: row.candidate.keyword,
+              status,
+              failureReason: returned.failureReason ?? "provider_unavailable",
+              observedAt: null,
+              results: [],
+            };
+      },
+    );
     const completeSamples = attemptedSamples.filter(
       (sample) => sample.status === "complete",
     );
@@ -1120,7 +1131,10 @@ export async function handleKeywordOpportunitiesRequest(
     const siteDomainRank =
       siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);
     const samplesByKeyword = new Map(
-      attemptedSamples.map((sample) => [keywordVolumeKey(sample.keyword), sample]),
+      attemptedSamples.map((sample) => [
+        keywordVolumeKey(sample.keyword),
+        sample,
+      ]),
     );
 
     const observations: KeywordOpportunityObservation[] = priced.map((row) => {
@@ -1165,8 +1179,7 @@ export async function handleKeywordOpportunitiesRequest(
         availableInterpretation !== null
           ? {
               ...enriched.aiOverview,
-              answerAssessment:
-                availableInterpretation.aiOverviewAssessment,
+              answerAssessment: availableInterpretation.aiOverviewAssessment,
               reason: availableInterpretation.reason,
               modelId: availableInterpretation.modelId,
               promptVersion: availableInterpretation.promptVersion,
@@ -1290,11 +1303,7 @@ export async function handleKeywordOpportunitiesRequest(
  */
 export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
   KeywordOpportunityDependencies,
-  | "readIdentity"
-  | "resolveGrant"
-  | "openCrawlGate"
-  | "openGscGate"
-  | "now"
+  "readIdentity" | "resolveGrant" | "openCrawlGate" | "openGscGate" | "now"
 > = {
   readIdentity: async () => {
     const sub = identitySubFrom((await cookies()).get("gg_id")?.value);
