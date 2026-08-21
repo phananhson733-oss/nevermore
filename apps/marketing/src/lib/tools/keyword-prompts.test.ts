@@ -31,6 +31,7 @@ import {
   MAX_SERP_INTERPRETATION_URL_CHARS,
   QUESTION_FORM_SHARE,
   sanitizeForPrompt,
+  SERP_INTERPRETATION_CONCURRENCY,
   sanitizeKeyword,
   SITE_CONTENT_CLOSE,
   SITE_CONTENT_OPEN,
@@ -878,14 +879,35 @@ describe("interpretKeywordSerpEvidence", () => {
     const inputs = Array.from({ length: 11 }, (_unused, index) =>
       serpInterpretationInput(`term ${String(index)}`),
     );
-    const { client, requests } = recorder([
-      JSON.stringify({ interpretations: [] }),
-      JSON.stringify({ interpretations: [] }),
-      interpretationReply([validInterpretation("term 10")]),
-    ]);
+    // Routed by what the chunk asks about rather than by call order: chunks now
+    // overlap in flight, so "the second reply" no longer names a chunk.
+    const requests: KeywordLlmRequest[] = [];
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        requests.push(request);
+        const samples = promptEvidence(request.user).samples;
+        const isSecondChunk = samples.some(
+          (sample) => sample.keyword === "term 10",
+        );
+        return {
+          content: isSecondChunk
+            ? interpretationReply([validInterpretation("term 10")])
+            : JSON.stringify({ interpretations: [] }),
+          modelId: "gpt-response-model",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            requestCount: 1,
+            retryCount: 0,
+          },
+        };
+      },
+    };
 
     const result = await interpretKeywordSerpEvidence(inputs, { client });
 
+    // The first chunk is asked twice — once, then the bounded retry — and the
+    // second chunk once.
     expect(requests).toHaveLength(3);
     expect(result.interpretations.slice(0, 10)).toEqual(
       inputs.slice(0, 10).map((input) =>
@@ -960,6 +982,165 @@ describe("interpretKeywordSerpEvidence", () => {
       aiOverviewAssessment: "unavailable",
       reason: "ai_overview_markdown_unavailable",
     });
+  });
+
+  it("gives the lane the reasoning headroom the sister lanes measured", async () => {
+    const { client, requests } = recorder([
+      interpretationReply([validInterpretation("ceiling term")]),
+    ]);
+
+    await interpretKeywordSerpEvidence(
+      [serpInterpretationInput("ceiling term")],
+      { client },
+    );
+
+    // Pinned to the literal, not to the constant. `max_completion_tokens` is
+    // one pool shared by hidden reasoning and visible output, and reasoning
+    // draws first, so a ceiling sized to the reply length is a bet on how long
+    // the model thinks. The sister expansion lane measured the tail: 400 gave
+    // 5/6 empty replies, 1200 gave 1/6, 4000 gave 8/8 usable. Reverting this to
+    // 2000 must fail here rather than resurface as an empty-reply retry storm
+    // that doubles the chunk's latency against the run deadline.
+    expect(requests[0]?.maxOutputTokens).toBe(3_000);
+  });
+
+  it("sends no chunk once the run deadline has passed and degrades the rest", async () => {
+    const inputs = Array.from({ length: 61 }, (_unused, index) =>
+      serpInterpretationInput(`term ${String(index)}`),
+    );
+    const startedAt = 1_000;
+    const deadlineAt = startedAt + 90_000;
+    let clock = startedAt;
+    const startedClocks: number[] = [];
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        startedClocks.push(clock);
+        // Every chunk burns a third of the whole budget, so the run cannot
+        // finish all seven of them inside it.
+        clock += 30_000;
+        const samples = promptEvidence(request.user).samples;
+        return {
+          content: interpretationReply(
+            samples.map((sample) => validInterpretation(sample.keyword)),
+          ),
+          modelId: "gpt-response-model",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            requestCount: 1,
+            retryCount: 0,
+          },
+        };
+      },
+    };
+
+    const result = await interpretKeywordSerpEvidence(inputs, {
+      client,
+      now: () => clock,
+      deadlineAt,
+    });
+
+    // The platform kills the whole function at its ceiling, which returns no
+    // envelope at all. Interpretation is the optional lane, so it must run out
+    // of budget by degrading rather than by taking the report down with it.
+    expect(startedClocks.length).toBeLessThan(7);
+    expect(startedClocks.every((at) => at < deadlineAt)).toBe(true);
+    // Degraded, not dropped: the caller matches interpretations to candidates
+    // by keyword, and a short list would silently unpair them.
+    expect(result.interpretations).toHaveLength(inputs.length);
+    expect(result.interpretations.map((entry) => entry.keyword)).toEqual(
+      inputs.map((entry) => entry.keyword),
+    );
+    const degraded = result.interpretations.filter(
+      (entry) => entry.availability === "unavailable",
+    );
+    expect(degraded.length).toBeGreaterThan(0);
+    expect(degraded[0]).toMatchObject({
+      intent: null,
+      aiOverviewAssessment: "unavailable",
+      reason: "interpretation_unavailable",
+    });
+  });
+
+  it("shortens a chunk's own deadline to what the run budget still allows", async () => {
+    const startedAt = 1_000;
+    const deadlineAt = startedAt + 20_000;
+    const requests: KeywordLlmRequest[] = [];
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        requests.push(request);
+        return {
+          content: interpretationReply([validInterpretation("budget term")]),
+          modelId: "gpt-response-model",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            requestCount: 1,
+            retryCount: 0,
+          },
+        };
+      },
+    };
+
+    await interpretKeywordSerpEvidence(
+      [serpInterpretationInput("budget term")],
+      {
+        client,
+        now: () => startedAt,
+        deadlineAt,
+      },
+    );
+
+    // A chunk allowed to run its full 45 seconds against a 20-second remainder
+    // is how a deadline that exists on paper still gets the function killed.
+    expect(requests[0]?.timeoutMs).toBe(20_000);
+  });
+
+  it("runs chunks concurrently while keeping interpretations in input order", async () => {
+    const inputs = Array.from({ length: 61 }, (_unused, index) =>
+      serpInterpretationInput(`term ${String(index)}`),
+    );
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        inFlight += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        const samples = promptEvidence(request.user).samples;
+        // Yield so every chunk admitted this round overlaps in flight.
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight -= 1;
+        return {
+          content: interpretationReply(
+            samples.map((sample) => validInterpretation(sample.keyword)),
+          ),
+          modelId: "gpt-response-model",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            requestCount: 1,
+            retryCount: 0,
+          },
+        };
+      },
+    };
+
+    const result = await interpretKeywordSerpEvidence(inputs, { client });
+
+    // Seven chunks end to end is fifteen serial calls at the shipped cap, which
+    // is what spent the whole 300-second function budget in production.
+    expect(peakInFlight).toBe(SERP_INTERPRETATION_CONCURRENCY);
+    expect(peakInFlight).toBeLessThanOrEqual(SERP_INTERPRETATION_CONCURRENCY);
+    // Concurrency must not reorder the lane: the handler pairs these back to
+    // candidates positionally in places, so completion order cannot leak out.
+    expect(result.interpretations.map((entry) => entry.keyword)).toEqual(
+      inputs.map((entry) => entry.keyword),
+    );
+    expect(
+      result.interpretations.every(
+        (entry) => entry.availability === "available",
+      ),
+    ).toBe(true);
   });
 
   it("carries observed time, response model, prompt version, and a bounded plain-text reason", async () => {

@@ -24,7 +24,22 @@ export const runtime = "nodejs";
  */
 export const maxDuration = 300;
 
+/**
+ * When the optional interpretation lane must stop spending the route's budget.
+ *
+ * Sixty seconds short of the platform ceiling, because past it the function is
+ * killed outright: no error envelope, no cost line, and a visitor who waited
+ * five minutes for nothing. The lane it bounds is the one whose call count
+ * scales with the candidate cap, so it is also the one that gets there first —
+ * a 2026-08-21 production run reached the ceiling with 150 candidates. The
+ * remainder covers the domain enrichments and assembling the response.
+ */
+const KEYWORD_INTERPRETATION_DEADLINE_MS = 240_000;
+
 export async function POST(request: Request): Promise<Response> {
+  // Taken once, at the top: the deadline belongs to the request, and every
+  // stage before interpretation has already spent part of it.
+  const deadlineAt = Date.now() + KEYWORD_INTERPRETATION_DEADLINE_MS;
   // One accumulator per request, shared between provider adapters that book
   // actual spend and the handler that reports it. Initial v2 does not call the
   // accumulator's legacy admission helpers or the account-wide daily breaker.
@@ -32,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
   // Counted, not just offered: `onUsage` existed from the start and both
   // routes passed an empty object, so every run reported zero model calls.
   const llmUsage = createKeywordLlmUsageSink();
-  const llm = createKeywordLlmSeams({ onUsage: llmUsage.add });
+  const llm = createKeywordLlmSeams({ onUsage: llmUsage.add, deadlineAt });
 
   return handleKeywordOpportunitiesRequest(request, {
     ...DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES,
