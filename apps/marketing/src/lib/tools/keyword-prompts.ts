@@ -34,6 +34,7 @@ import {
 import {
   createKeywordLlmClient,
   EMPTY_KEYWORD_LLM_USAGE,
+  KEYWORD_LLM_TIMEOUT_MS,
   KeywordLlmError,
   mergeKeywordLlmUsage,
   type KeywordLlmClient,
@@ -147,8 +148,39 @@ export const MAX_SERP_INTERPRETATION_TITLE_CHARS = 200;
 export const MAX_SERP_INTERPRETATION_URL_CHARS = 2_048;
 export const MAX_SERP_INTERPRETATION_AIO_MARKDOWN_CHARS = 4_000;
 export const MAX_SERP_INTERPRETATION_REASON_CHARS = 300;
-export const MAX_SERP_INTERPRETATION_OUTPUT_TOKENS = 2_000;
+/**
+ * Sized for reasoning, not for the reply.
+ *
+ * `max_completion_tokens` is one pool shared by hidden reasoning and visible
+ * output, and reasoning draws from it first, so a ceiling sized to the visible
+ * reply is a bet on how long the model thinks. The expansion lane measured that
+ * tail on this deployment: 400 returned an empty reply 5 times in 6, 1200 once
+ * in 6, 4000 never. A chunk that comes back empty is retried, which doubles its
+ * latency against the run deadline below — the cheapest way to lose coverage.
+ */
+export const MAX_SERP_INTERPRETATION_OUTPUT_TOKENS = 3_000;
 export const SERP_INTERPRETATION_TEMPERATURE = 0.2;
+
+/**
+ * Chunks in flight at once.
+ *
+ * Interpretation is the only lane whose call count scales with the candidate
+ * cap: 150 candidates is 15 chunks, and end to end at the per-call deadline
+ * that exceeds the route's entire 300-second budget several times over. Four is
+ * deliberately modest — the deployment is shared with the sister tools, and the
+ * deadline below, not this number, is what guarantees the route returns.
+ */
+export const SERP_INTERPRETATION_CONCURRENCY = 4;
+
+/**
+ * Least remaining budget worth starting a model call with.
+ *
+ * Below this the call cannot plausibly return before the run deadline, so
+ * sending it spends money and latency on an answer nobody will wait for. The
+ * caller degrades instead. Applies to any deadline-bounded lane, not just
+ * interpretation — the guard lives in the shared call wrapper.
+ */
+export const MIN_KEYWORD_LLM_ATTEMPT_MS = 5_000;
 
 /** Expansion may emit 150 structured rows, so it owns a longer deadline. */
 export const KEYWORD_EXPANSION_LLM_TIMEOUT_MS = 90_000;
@@ -1001,6 +1033,7 @@ async function completeValidated<T>(
   client: KeywordLlmClient,
   request: KeywordLlmRequest,
   parse: (raw: unknown) => T | null,
+  budget?: { readonly deadlineAt: number; readonly now: () => number },
 ): Promise<{
   readonly value: T;
   readonly usage: KeywordLlmUsage;
@@ -1014,9 +1047,39 @@ async function completeValidated<T>(
         retryCount: used.retryCount + (attempt > 0 ? 1 : 0),
       });
 
+    // Recomputed per attempt, not once per call: the retry this loop exists
+    // for is exactly what turns one deadline-shaped call into two, and the
+    // second one has to fit in what the first one left.
+    let attemptRequest = request;
+    if (budget !== undefined) {
+      const remainingMs = budget.deadlineAt - budget.now();
+      // `Number.isFinite` first, because every comparison against NaN is false:
+      // a NaN deadline would slip past a bare `<` guard and reach the client as
+      // `timeoutMs: NaN`, which it rejects as `not_configured` — a
+      // misconfiguration reported as a model failure. Both marks are finite in
+      // production; this seam is exported and takes the caller's word for them.
+      if (
+        !Number.isFinite(remainingMs) ||
+        remainingMs < MIN_KEYWORD_LLM_ATTEMPT_MS
+      ) {
+        throw new KeywordLlmError(
+          "timeout",
+          "Run deadline reached before the request could be attempted.",
+          usage,
+        );
+      }
+      attemptRequest = {
+        ...request,
+        timeoutMs: Math.min(
+          request.timeoutMs ?? KEYWORD_LLM_TIMEOUT_MS,
+          Math.floor(remainingMs),
+        ),
+      };
+    }
+
     let completion: KeywordLlmCompletion;
     try {
-      completion = await client.complete(request);
+      completion = await client.complete(attemptRequest);
     } catch (error) {
       if (!(error instanceof KeywordLlmError)) throw error;
       const empty = error.reason === "invalid_response";
@@ -1063,6 +1126,17 @@ async function completeValidated<T>(
 export interface KeywordPromptOptions {
   /** Offline test seam. Defaults to an env-configured chat client. */
   readonly client?: KeywordLlmClient;
+  /**
+   * Absolute epoch-ms ceiling for the whole request this stage belongs to.
+   *
+   * Owned by the route, which is the only layer that knows when the request
+   * started and what the platform will kill it at. A stage-relative budget
+   * cannot make that promise: whatever the earlier stages spent is already
+   * gone by the time this one is reached.
+   */
+  readonly deadlineAt?: number;
+  /** Test seam for the clock. */
+  readonly now?: () => number;
 }
 
 /**
@@ -1130,18 +1204,43 @@ export async function interpretKeywordSerpEvidence(
     return { interpretations: [], usage: EMPTY_KEYWORD_LLM_USAGE };
   }
   const client = options.client ?? createKeywordLlmClient();
-  const interpretations: KeywordSerpInterpretation[] = [];
-  let usage = EMPTY_KEYWORD_LLM_USAGE;
+  const now = options.now ?? (() => Date.now());
+  const deadlineAt = options.deadlineAt;
 
+  const chunks: (readonly KeywordSerpInterpretationInput[])[] = [];
   for (
     let offset = 0;
     offset < inputs.length;
     offset += MAX_SERP_INTERPRETATION_BATCH_SIZE
   ) {
-    const chunk = inputs.slice(
-      offset,
-      offset + MAX_SERP_INTERPRETATION_BATCH_SIZE,
+    chunks.push(
+      inputs.slice(offset, offset + MAX_SERP_INTERPRETATION_BATCH_SIZE),
     );
+  }
+
+  // Filled by index rather than appended, so completion order cannot reorder
+  // the lane. Callers pair interpretations back to candidates by keyword and,
+  // in places, positionally.
+  const perChunk: (readonly KeywordSerpInterpretation[])[] = new Array<
+    readonly KeywordSerpInterpretation[]
+  >(chunks.length);
+  let usage = EMPTY_KEYWORD_LLM_USAGE;
+  let nextChunk = 0;
+  // Latched: once the budget is gone it does not come back, and re-reading the
+  // clock per worker would let a chunk admitted on a stale read start anyway.
+  let budgetSpent = false;
+
+  const runChunk = async (index: number): Promise<void> => {
+    const chunk = chunks[index]!;
+    const remainingMs = deadlineAt === undefined ? null : deadlineAt - now();
+    if (
+      budgetSpent ||
+      (remainingMs !== null && remainingMs < MIN_KEYWORD_LLM_ATTEMPT_MS)
+    ) {
+      budgetSpent = true;
+      perChunk[index] = unavailableSerpInterpretations(chunk);
+      return;
+    }
     try {
       const prepared = prepareSerpInterpretationBatch(chunk);
       const result = await completeValidated(
@@ -1153,6 +1252,7 @@ export async function interpretKeywordSerpEvidence(
           maxOutputTokens: MAX_SERP_INTERPRETATION_OUTPUT_TOKENS,
         },
         (raw) => parseSerpInterpretations(raw, prepared),
+        deadlineAt === undefined ? undefined : { deadlineAt, now },
       );
       usage = mergeKeywordLlmUsage(usage, result.usage);
       const observedAt = new Map(
@@ -1161,27 +1261,47 @@ export async function interpretKeywordSerpEvidence(
             [keywordVolumeKey(input.keyword), input.observedAt] as const,
         ),
       );
-      interpretations.push(
-        ...result.value.map(
-          (interpretation): AvailableKeywordSerpInterpretation => ({
-            ...interpretation,
-            availability: "available",
-            observedAt:
-              observedAt.get(keywordVolumeKey(interpretation.keyword)) ?? "",
-            modelId: result.modelId,
-            promptVersion: KEYWORD_SERP_INTERPRETATION_PROMPT_VERSION,
-          }),
-        ),
+      perChunk[index] = result.value.map(
+        (interpretation): AvailableKeywordSerpInterpretation => ({
+          ...interpretation,
+          availability: "available",
+          observedAt:
+            observedAt.get(keywordVolumeKey(interpretation.keyword)) ?? "",
+          modelId: result.modelId,
+          promptVersion: KEYWORD_SERP_INTERPRETATION_PROMPT_VERSION,
+        }),
       );
     } catch (error) {
       if (error instanceof KeywordLlmError) {
         usage = mergeKeywordLlmUsage(usage, error.usage);
       }
-      interpretations.push(...unavailableSerpInterpretations(chunk));
+      // Deliberately not latching the budget on a `timeout` reason. A chunk
+      // that exhausted the run budget and one the provider simply answered
+      // slowly raise the same reason, and only the first means the next chunk
+      // is hopeless. The clock read at the top of the next chunk already tells
+      // them apart, so treating them alike here would throw away a budget that
+      // is still there.
+      perChunk[index] = unavailableSerpInterpretations(chunk);
     }
-  }
+  };
 
-  return { interpretations, usage };
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = nextChunk;
+      if (index >= chunks.length) return;
+      nextChunk = index + 1;
+      await runChunk(index);
+    }
+  };
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(SERP_INTERPRETATION_CONCURRENCY, chunks.length) },
+      () => worker(),
+    ),
+  );
+
+  return { interpretations: perChunk.flat(), usage };
 }
 
 /** Which call a usage report came from. */

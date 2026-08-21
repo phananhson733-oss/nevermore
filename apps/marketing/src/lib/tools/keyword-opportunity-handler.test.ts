@@ -1981,6 +1981,120 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(resolveDomainRegistrations).not.toHaveBeenCalled();
   });
 
+  it("skips the enrichment wave when the response budget cannot afford it", async () => {
+    const resolveDomainRanks = vi.fn();
+    const resolveDomainTraffic = vi.fn();
+    const resolveDomainRegistrations = vi.fn();
+    const now = new Date(COMPLETED_AT);
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        now: () => now,
+        // Already past the mark: the earlier stages spent the whole budget.
+        responseDeadlineAt: now.getTime() - 1_000,
+        resolveDomainRanks,
+        resolveDomainTraffic,
+        resolveDomainRegistrations,
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    // RDAP resolves one lookup per organic domain at ten in flight, so its
+    // worst case is dozens of rounds. Started here it would run past the
+    // platform ceiling, and a killed function returns no envelope at all.
+    expect(resolveDomainRanks).not.toHaveBeenCalled();
+    expect(resolveDomainTraffic).not.toHaveBeenCalled();
+    expect(resolveDomainRegistrations).not.toHaveBeenCalled();
+    // The report still comes back — an envelope beats the platform kill, which
+    // returns nothing at all — and it says what it is rather than presenting a
+    // rank-blind judgement as a finished one. Authority is unknown, not zero.
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.availability).toBe("insufficient_evidence");
+    // Without the rank read there is no authority to judge page one against,
+    // so no candidate may be presented as winnable.
+    expect(parsed.data.result.rows).toEqual([]);
+    for (const entry of parsed.data.result.incomplete) {
+      expect(entry.serp.verdict).toBe("no_serp_evidence");
+    }
+  });
+
+  it("answers with an envelope when a started enrichment overruns the budget", async () => {
+    const now = new Date(COMPLETED_AT);
+    // Admitted with budget to spare, then never settles — the shape of a
+    // provider whose own ceiling is per request rather than per wave, which is
+    // what RDAP's ten-at-a-time worker pool is over several hundred domains.
+    const resolveDomainRanks = vi.fn(
+      () => new Promise<ReadonlyMap<string, number>>(() => {}),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const pending = handleKeywordOpportunitiesRequest(
+        body(),
+        deps({
+          now: () => now,
+          responseDeadlineAt: now.getTime() + 30_000,
+          resolveDomainRanks,
+        }),
+      );
+      // Past the wave's share of the budget while it is still in flight.
+      await vi.advanceTimersByTimeAsync(30_000);
+      const response = await pending;
+      const parsed = (await response.json()) as OpportunitiesBody;
+
+      expect(resolveDomainRanks).toHaveBeenCalled();
+      // Giving up on the wait is the whole point: a hung provider must not be
+      // able to hold the route past the platform ceiling, where the response
+      // stops existing.
+      expect(response.status).toBe(200);
+      expect(parsed.data.result.availability).toBe("insufficient_evidence");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the enrichments that landed when a slower sibling runs out of budget", async () => {
+    const now = new Date(COMPLETED_AT);
+    // RDAP is the slow one by construction — one lookup per organic domain, ten
+    // in flight — so it is the sibling that decides whether the wave survives.
+    const resolveDomainRegistrations = vi.fn(
+      () =>
+        new Promise<ReadonlyMap<string, DomainRegistrationEvidence>>(() => {}),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const pending = handleKeywordOpportunitiesRequest(
+        body(),
+        deps({
+          expandCandidates: () => Promise.resolve([draft("slow sibling")]),
+          now: () => now,
+          responseDeadlineAt: now.getTime() + 30_000,
+          resolveDomainRegistrations,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      const response = await pending;
+      const parsed = (await response.json()) as OpportunitiesBody;
+      const incomplete = parsed.data.result.incomplete[0];
+
+      expect(response.status).toBe(200);
+      // Traffic resolved immediately and is kept. Racing the wave as one unit
+      // would have discarded it because a third resolver hung — strictly worse
+      // than the per-resolver failure isolation this wave already had, where
+      // one dead resolver never cost the other two their answers.
+      expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+        "observed",
+      );
+      // Only the resolver that ran out of budget reports unknown, and it says
+      // unknown rather than young.
+      expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["rank", "traffic", "registration"] as const)(
     "isolates a %s enrichment failure without discarding the completed SERP",
     async (failedStage) => {

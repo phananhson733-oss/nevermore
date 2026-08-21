@@ -83,6 +83,15 @@ export const KEYWORD_CONTEXT_TTL_SECONDS = 600;
 /** Candidates sent for pricing in one run. The linear cost driver. */
 export const KEYWORD_CANDIDATE_CAP = 150;
 
+/**
+ * Least budget worth starting the optional domain enrichments with.
+ *
+ * Below this the wave cannot plausibly finish before the response deadline, so
+ * starting it only risks the envelope. It is a floor for admission, not a
+ * bound: the race that follows is what actually caps the wait.
+ */
+export const MIN_KEYWORD_ENRICHMENT_MS = 5_000;
+
 /** Seed terms a visitor may supply. */
 export const KEYWORD_MAX_SEEDS = 10;
 export const KEYWORD_MAX_SEED_LENGTH = 80;
@@ -328,6 +337,15 @@ export interface KeywordOpportunityDependencies {
   readonly interpretSerpEvidence?: (
     inputs: readonly KeywordSerpInterpretationInput[],
   ) => Promise<readonly KeywordSerpInterpretation[]>;
+  /**
+   * Absolute epoch-ms mark by which this request must be answering.
+   *
+   * Set by the route, the only layer that knows when the request started and
+   * what the platform kills it at. Omitted by tests and injected callers, which
+   * then run unbounded exactly as before. It bounds the optional trailing work
+   * only; the stages the report cannot be built without are not skippable.
+   */
+  readonly responseDeadlineAt?: number;
   /** Offline test seam. Resolves domains to provider ranks. */
   readonly resolveDomainRanks: (
     domains: readonly string[],
@@ -1084,46 +1102,129 @@ export async function handleKeywordOpportunitiesRequest(
       string,
       DomainRegistrationEvidence
     > | null = null;
-    if (completeSamples.length > 0 && organicDomains.length > 0) {
-      const [ranks, traffic, registrations] = await Promise.all([
-        dependencies.resolveDomainRanks(rankTargets).catch(() => {
-          console.error(
-            JSON.stringify({
-              tool: "keyword_opportunity",
-              stage: "domain_rank",
-              reason: "read_failed",
-            }),
-          );
-          return null;
+    // The enrichments are optional, unbounded, and last. RDAP alone resolves
+    // one entry per organic domain — several hundred after de-duplication — at
+    // ten in flight, so its worst case is dozens of rounds, not the single
+    // round `Promise.all` makes it look like. Past the response deadline the
+    // platform kills the function outright: no envelope, no cost line, and the
+    // whole report lost. A null enrichment is already how this handler says
+    // "not available", so running out of budget degrades the same way a
+    // provider failure does.
+    const rawEnrichmentBudgetMs =
+      dependencies.responseDeadlineAt === undefined
+        ? null
+        : dependencies.responseDeadlineAt - dependencies.now().getTime();
+    // Fail closed on a non-finite mark rather than handing `setTimeout` an
+    // Infinity it silently clamps to a near-zero delay. Production derives both
+    // marks from one `Date.now()`, but this is an injected seam.
+    const enrichmentBudgetMs =
+      rawEnrichmentBudgetMs === null || Number.isFinite(rawEnrichmentBudgetMs)
+        ? rawEnrichmentBudgetMs
+        : 0;
+    const enrichmentAffordable =
+      enrichmentBudgetMs === null ||
+      enrichmentBudgetMs >= MIN_KEYWORD_ENRICHMENT_MS;
+    // Whether there is any enrichment to do at all, independent of budget. The
+    // two are logged apart on purpose: saying the budget suppressed a wave that
+    // had no domains to resolve would put deadline pressure in the telemetry
+    // that was never there.
+    const enrichmentHasWork =
+      completeSamples.length > 0 && organicDomains.length > 0;
+    if (enrichmentHasWork && !enrichmentAffordable) {
+      console.error(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "domain_enrichment",
+          reason: "budget_exhausted",
         }),
-        dependencies
-          .resolveDomainTraffic({
-            domains: trafficDomains,
-            marketCode: token.marketCode,
-          })
-          .catch(() => {
+      );
+    }
+    if (enrichmentHasWork && enrichmentAffordable) {
+      // One deadline, applied per resolver rather than to the wave as a whole.
+      // Racing the aggregate would let the slowest — RDAP, by construction —
+      // discard rank and traffic maps that had already resolved, which is worse
+      // than the per-resolver failure isolation this wave started with.
+      let expire = (): void => {};
+      const expired: Promise<null> =
+        enrichmentBudgetMs === null
+          ? new Promise<null>(() => {})
+          : new Promise<null>((resolve) => {
+              const timer = setTimeout(() => {
+                resolve(null);
+              }, enrichmentBudgetMs);
+              expire = () => {
+                clearTimeout(timer);
+              };
+            });
+      let expiredAny = false;
+      const bounded = async <T>(
+        resolver: Promise<T | null>,
+      ): Promise<T | null> => {
+        const settled = await Promise.race([resolver, expired]);
+        if (settled === null) expiredAny = true;
+        return settled;
+      };
+      const [ranks, traffic, registrations] = await Promise.all([
+        bounded(
+          dependencies.resolveDomainRanks(rankTargets).catch(() => {
             console.error(
               JSON.stringify({
                 tool: "keyword_opportunity",
-                stage: "domain_traffic",
+                stage: "domain_rank",
                 reason: "read_failed",
               }),
             );
             return null;
           }),
-        dependencies
-          .resolveDomainRegistrations(registrationDomains)
-          .catch(() => {
-            console.error(
-              JSON.stringify({
-                tool: "keyword_opportunity",
-                stage: "domain_registration",
-                reason: "read_failed",
-              }),
-            );
-            return null;
-          }),
+        ),
+        bounded(
+          dependencies
+            .resolveDomainTraffic({
+              domains: trafficDomains,
+              marketCode: token.marketCode,
+            })
+            .catch(() => {
+              console.error(
+                JSON.stringify({
+                  tool: "keyword_opportunity",
+                  stage: "domain_traffic",
+                  reason: "read_failed",
+                }),
+              );
+              return null;
+            }),
+        ),
+        bounded(
+          dependencies
+            .resolveDomainRegistrations(registrationDomains)
+            .catch(() => {
+              console.error(
+                JSON.stringify({
+                  tool: "keyword_opportunity",
+                  stage: "domain_registration",
+                  reason: "read_failed",
+                }),
+              );
+              return null;
+            }),
+        ),
       ]);
+      // Stop the clock the moment nothing is waiting on it. Left scheduled it
+      // would hold its closure for the rest of the budget on a warm instance,
+      // once per request.
+      expire();
+      if (expiredAny) {
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "domain_enrichment",
+            reason: "budget_expired",
+          }),
+        );
+      }
+      // Whatever did land is kept. Abandoning the wait does not cancel the
+      // provider work, but the function is ending anyway, and an envelope
+      // carrying the ranks that did resolve beats no envelope at all.
       domainRanks = ranks;
       domainTraffic = traffic;
       domainRegistrations = registrations;
