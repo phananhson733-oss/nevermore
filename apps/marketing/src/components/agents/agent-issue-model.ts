@@ -113,6 +113,11 @@ export interface AgentIssueModel {
   readonly counts: AgentIssueCounts;
   /** No actionable row at all — stated, so the surface can say it in words. */
   readonly isClean: boolean;
+  /**
+   * The run reached no conclusion at all: nothing actionable and nothing
+   * passed. Distinct from clean, which requires something to have been judged.
+   */
+  readonly evaluatedNothing: boolean;
 }
 
 /**
@@ -427,8 +432,17 @@ export function buildAgentIssueModel({
      * A quarantined check is a check this build could not read, which is not
      * the same as a check that came back clean. Calling such a run clean would
      * put a green pass over evidence nobody has looked at.
+     *
+     * `passed > 0` carries the other half: a run where every check was excluded
+     * for want of a source reached no conclusion either, and "nothing
+     * actionable" over zero evaluated checks reads as a clean bill of health.
      */
     isClean:
-      actionable.length + investigation.length === 0 && quarantined === 0,
+      actionable.length + investigation.length === 0 &&
+      quarantined === 0 &&
+      passed.length > 0,
+    /** Nothing was actionable and nothing passed: the run concluded nothing. */
+    evaluatedNothing:
+      actionable.length + investigation.length === 0 && passed.length === 0,
   };
 }

@@ -8717,7 +8717,11 @@
         "filterEmpty": "No issues under this filter. Switch filters to see the other categories.",
         "clean": {
           "title": "This run found nothing actionable",
-          "body": "That does not mean the site has no problems — only that every check this run evaluated came back clean. The passed and excluded lists below state how far this run's coverage reached."
+          "body": "That does not mean the site has no problems — only that every check this run evaluated came back clean. The passed and excluded lists below state how far this run's coverage reached.",
+          "notEvaluated": {
+            "title": "This run evaluated nothing",
+            "body": "That is not 'no problems' — this run reached no conclusion at all. The excluded list below states why each check could not be evaluated."
+          }
         },
         "severity": {
           "blocker": "Blocker",
@@ -8764,7 +8768,8 @@
           "none": "No individual affected target was recorded this run.",
           "more": "Listed {shown} of {total} affected URLs; {rest} more not listed.",
           "notCaptured": "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
-          "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration."
+          "notEnumerated": "The record's affected total is larger than the observations listed above, so this list is not a complete enumeration.",
+          "siteScopeCounted": "Site-level observation; the record's affected count is {count}. This run resolved no individual URL, so none is listed."
         },
         "evidence": {
           "none": "No evidence record is available to show.",

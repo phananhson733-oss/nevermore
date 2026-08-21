@@ -63,10 +63,25 @@ function AffectedTargets({ issue }: { readonly issue: AgentIssue }) {
     );
   }
   if (affected.mode === "site-scope") {
+    // The record's own affected count survives here. Printing only the generic
+    // scope sentence threw away a population the evaluator did measure.
+    const counted = (affected.totalCount ?? 0) > 1;
     return (
-      <p data-affected-mode="site-scope" className="text-text-dark-primary">
-        {t("affected.siteScope")}
-      </p>
+      <div data-affected-mode="site-scope">
+        <p className="text-text-dark-primary">
+          {counted
+            ? t("affected.siteScopeCounted", { count: affected.totalCount ?? 0 })
+            : t("affected.siteScope")}
+        </p>
+        {affected.enumerated ? null : (
+          <p
+            data-affected-enumerated="false"
+            className="mt-2 text-[11.5px] text-text-dark-secondary"
+          >
+            {t("affected.notEnumerated")}
+          </p>
+        )}
+      </div>
     );
   }
   if (affected.urls.length === 0) {

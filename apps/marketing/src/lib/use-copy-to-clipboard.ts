@@ -36,7 +36,12 @@ export function useCopyToClipboard(): CopyToClipboard {
   const [fallbackText, setFallbackText] = useState<string | null>(null);
 
   async function copy(key: string, text: string): Promise<void> {
+    // These three describe one attempt, so they move together. Setting the key
+    // alone left the new key showing the previous key's failure text while the
+    // write was still in flight.
     setCopiedKey(key);
+    setStatus("idle");
+    setFallbackText(null);
     try {
       await navigator.clipboard.writeText(text);
       setStatus("done");

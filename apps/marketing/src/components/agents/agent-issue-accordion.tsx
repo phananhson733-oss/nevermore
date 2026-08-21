@@ -319,7 +319,20 @@ export function AgentIssueAccordion({
         </div>
       ) : null}
 
-      {model.isClean ? (
+      {model.evaluatedNothing ? (
+        <div
+          data-testid="agent-issues-not-evaluated"
+          className="rounded-card border border-brand-warning/30 bg-brand-warning/[0.07] p-5 md:p-6"
+        >
+          <p className="flex items-center gap-2 text-[13.5px] font-semibold text-text-dark-primary">
+            <AlertTriangle aria-hidden="true" className="size-4 text-brand-warning" />
+            {t("clean.notEvaluated.title")}
+          </p>
+          <p className="mt-2 text-[12.5px] leading-[1.65] text-text-dark-secondary">
+            {t("clean.notEvaluated.body")}
+          </p>
+        </div>
+      ) : model.isClean ? (
         <div
           data-testid="agent-issues-clean"
           className="rounded-card border border-brand-success/25 bg-brand-success/[0.06] p-5 md:p-6"

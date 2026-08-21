@@ -44,6 +44,7 @@ const LABELS = {
     measured: "本次测量",
     affected: "受影响 URL",
     affectedSite: "影响范围：站点级，本次观测未定位到具体 URL",
+    affectedSiteCount: (count: number) => `记录的受影响数为 ${count}`,
     affectedMore: (shown: number, total: number, rest: number) =>
       `以上为 ${total} 个受影响 URL 中的前 ${shown} 个，另有 ${rest} 个未列出`,
     evidence: "证据",
@@ -56,8 +57,10 @@ const LABELS = {
     repairSteps: "参考修复方向",
     investigationTask: "调查任务",
     requiredSource: "需要的数据来源",
-    notCaptured: "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
-    affectedNotEnumerated: "注意：受影响总数来自记录的统计口径，上面列出的观测条目少于该总数，因此列表不是完整枚举。",
+    notCaptured:
+      "本次运行没有记录到可归属于该问题的具体目标。这是证据缺失，不是「受影响 0 个」。",
+    affectedNotEnumerated:
+      "注意：受影响总数来自记录的统计口径，上面列出的观测条目少于该总数，因此列表不是完整枚举。",
     valuesOmitted: (rest: number) => `（另有 ${rest} 项观测值未列出）`,
     unavailableNote:
       "该检查项的受影响范围本次不可得。不可得不等于 0，请不要把它当作「没有问题」。",
@@ -93,6 +96,7 @@ const LABELS = {
     affected: "Affected URLs",
     affectedSite:
       "Scope: site level. This observation resolved to no individual URL.",
+    affectedSiteCount: (count: number) => `The record\u2019s affected count is ${count}`,
     affectedMore: (shown: number, total: number, rest: number) =>
       `Listed ${shown} of ${total} affected URLs; ${rest} more not listed`,
     evidence: "Evidence",
@@ -105,9 +109,12 @@ const LABELS = {
     repairSteps: "Suggested direction",
     investigationTask: "Investigation task",
     requiredSource: "Data source required",
-    notCaptured: "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
-    affectedNotEnumerated: "Note: the affected total comes from the record\u2019s own count and the listed observations are fewer, so the list is not a complete enumeration.",
-    valuesOmitted: (rest: number) => `(${rest} further observation values not listed)`,
+    notCaptured:
+      "This run kept no observation attributable to this issue. That is missing evidence, not an affected population of zero.",
+    affectedNotEnumerated:
+      "Note: the affected total comes from the record\u2019s own count and the listed observations are fewer, so the list is not a complete enumeration.",
+    valuesOmitted: (rest: number) =>
+      `(${rest} further observation values not listed)`,
     unavailableNote:
       "The affected population is unavailable for this check. Unavailable is not zero; do not read it as 'no problem'.",
     rules: [
@@ -143,33 +150,161 @@ function text(value: AgentAuditLocalizedText, locale: PromptLocale): string {
 /** Most observation values one record contributes before the rest are counted. */
 const VALUES_PER_RECORD = 6;
 
-/** Query parameters whose value is a secret wherever it appears. */
-const SECRET_PARAM =
-  /^(?:.*(?:token|secret|password|passwd|signature|sig|auth|key|credential|session)).*$/i;
+export const REDACTED = "[redacted]";
+
+/**
+ * Parameter names whose value is a secret.
+ *
+ * Matched on name segments, not as substrings: an SEO audit's most important
+ * query parameter is `keyword`, and a substring rule redacts it for containing
+ * "key" — corrupting the very evidence this handoff exists to carry. Splitting
+ * the name on separators keeps `keyword`, `design`, and `monkey` intact while
+ * still catching `api_key`, `x-auth-token`, and `reset.code`.
+ */
+const SECRET_NAMES: ReadonlySet<string> = new Set([
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "pwd",
+  "signature",
+  "sig",
+  "auth",
+  "key",
+  "apikey",
+  "credential",
+  "credentials",
+  "session",
+  "sessionid",
+  "phpsessid",
+  "jsessionid",
+  "sid",
+  "jwt",
+  "bearer",
+  "code",
+  "state",
+  "otp",
+  "ticket",
+  "access",
+  "refresh",
+  "nonce",
+]);
+
+function isSecretName(name: string): boolean {
+  const normalized = name.toLowerCase();
+  if (SECRET_NAMES.has(normalized.replaceAll(/[^a-z]/g, ""))) return true;
+  return normalized
+    .split(/[^a-z0-9]+/)
+    .some((segment) => SECRET_NAMES.has(segment));
+}
+
+/**
+ * A path segment long and dense enough to be a credential rather than a slug.
+ *
+ * Reset links, invite links, and share links carry their secret in the path,
+ * where no parameter name announces it. A readable slug ("birth-chart-
+ * calculator") has separators and vowels; a token does not.
+ */
+function looksLikeSecretSegment(segment: string): boolean {
+  return (
+    segment.length >= 24 &&
+    /^[A-Za-z0-9._~-]+$/.test(segment) &&
+    !/[-_.]/.test(segment.slice(1, -1))
+  );
+}
+
+/** Redact the `k=v` pairs of a fragment, which URL does not parse as a query. */
+function redactFragment(hash: string): string {
+  const body = hash.slice(1);
+  if (body === "" || !body.includes("=")) return hash;
+  const redacted = new URLSearchParams(body);
+  let touched = false;
+  for (const key of [...redacted.keys()]) {
+    if (isSecretName(key)) {
+      redacted.set(key, REDACTED);
+      touched = true;
+    }
+  }
+  return touched ? `#${decodeParams(redacted)}` : hash;
+}
+
+/** Serialize without percent-encoding the placeholder into unreadability. */
+function decodeParams(params: URLSearchParams): string {
+  return params.toString().replaceAll(encodeURIComponent(REDACTED), REDACTED);
+}
+
+function redactAbsolute(parsed: URL): string {
+  parsed.username = "";
+  parsed.password = "";
+
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (isSecretName(key)) {
+      parsed.searchParams.set(key, REDACTED);
+      continue;
+    }
+    // A benign name can still carry a whole credential-bearing URL —
+    // `?next=https%3A%2F%2Fidp%2F%3Ftoken%3D...` is a mainstream pattern.
+    const value = parsed.searchParams.get(key);
+    if (value !== null && /^https?:\/\//i.test(value)) {
+      parsed.searchParams.set(key, redactUrl(value));
+    }
+  }
+
+  parsed.pathname = parsed.pathname
+    .split("/")
+    .map((segment) => (looksLikeSecretSegment(segment) ? REDACTED : segment))
+    .join("/");
+
+  const query =
+    parsed.search === "" ? "" : `?${decodeParams(parsed.searchParams)}`;
+  return `${parsed.origin}${parsed.pathname}${query}${redactFragment(parsed.hash)}`;
+}
 
 /**
  * A URL safe to hand to a third party.
  *
  * Collected URLs are not guaranteed clean: a crawl can surface a link carrying
- * userinfo or a session token in its query. Those are credentials, and the
- * handoff must not export them even though they came from the site's own HTML.
- * The path is preserved because it is the finding.
+ * userinfo, a session token in its query, an OAuth token in its fragment, or a
+ * reset secret in its path. The handoff must not export any of those even
+ * though they came from the site's own HTML.
+ *
+ * Three shapes have to be handled because all three actually reach here: a
+ * submitted target may be scheme-less (the audit accepts `example.com/...`),
+ * an observation value may be a whitespace-joined list of URLs, and a value may
+ * not be a URL at all.
  */
 export function redactUrl(value: string): string {
-  let parsed: URL;
+  const trimmed = value.trim();
+  if (/\s/.test(trimmed)) {
+    return trimmed
+      .split(/(\s+)/)
+      .map((part) => (/\S/.test(part) ? redactUrl(part) : part))
+      .join("");
+  }
+
   try {
-    parsed = new URL(value);
+    return redactAbsolute(new URL(trimmed));
   } catch {
-    return value;
+    // Not absolute. The audit accepts scheme-less input, so retry as https
+    // before giving up; a bare path is still worth redacting.
+    try {
+      // A bare path needs a placeholder host to parse; strip the host back out
+      // afterwards so the value reads as it did on the page.
+      const rooted = trimmed.startsWith("/");
+      const viaHttps = redactAbsolute(
+        new URL(
+          `https://${rooted ? "placeholder.invalid" : ""}${rooted ? trimmed : `/${trimmed}`}`,
+        ),
+      );
+      const withoutHost = viaHttps.replace(
+        /^https:\/\/(?:placeholder\.invalid)?/,
+        "",
+      );
+      return rooted ? withoutHost : withoutHost.replace(/^\//, "");
+    } catch {
+      return trimmed;
+    }
   }
-  if (parsed.username !== "" || parsed.password !== "") {
-    parsed.username = "";
-    parsed.password = "";
-  }
-  for (const key of [...parsed.searchParams.keys()]) {
-    if (SECRET_PARAM.test(key)) parsed.searchParams.set(key, "[redacted]");
-  }
-  return parsed.toString();
 }
 
 /**
@@ -184,7 +319,10 @@ function boundedValue(value: unknown): string {
   if (/<[a-z!/][^>]*>/i.test(raw)) {
     return `[markup omitted, ${raw.length} chars]`;
   }
-  const safe = /^https?:\/\//i.test(raw) ? redactUrl(raw) : raw;
+  // Anything that could carry a credential in URL shape goes through the
+  // redactor, not just values that happen to start with a scheme: relative
+  // paths, protocol-relative URLs, and whitespace-joined lists all reach here.
+  const safe = /[?#/]|^\S+\.\S+/.test(raw) ? redactUrl(raw) : raw;
   if (safe.length <= AGENT_ISSUE_VALUE_CHAR_LIMIT) return safe;
   return `${safe.slice(0, AGENT_ISSUE_VALUE_CHAR_LIMIT)}…`;
 }
@@ -265,7 +403,12 @@ export function buildAgentIssuePrompt({
   } else if (issue.affected.mode === "not-captured") {
     lines.push(labels.notCaptured, "");
   } else if (issue.affected.mode === "site-scope") {
-    lines.push(labels.affectedSite, "");
+    lines.push(labels.affectedSite);
+    if ((issue.affected.totalCount ?? 0) > 1) {
+      lines.push(labels.affectedSiteCount(issue.affected.totalCount ?? 0));
+    }
+    if (!issue.affected.enumerated) lines.push(labels.affectedNotEnumerated);
+    lines.push("");
   } else if (issue.affected.urls.length > 0) {
     lines.push(`${labels.affected}:`);
     for (const url of issue.affected.urls) lines.push(`- ${redactUrl(url)}`);

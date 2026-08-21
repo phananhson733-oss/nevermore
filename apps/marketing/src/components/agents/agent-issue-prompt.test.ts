@@ -9,6 +9,7 @@ import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
 import {
   AGENT_ISSUE_VALUE_CHAR_LIMIT,
   buildAgentIssuePrompt,
+  redactUrl,
 } from "./agent-issue-prompt";
 import {
   AGENT_ISSUE_URL_DISPLAY_LIMIT,
@@ -164,8 +165,18 @@ describe("buildAgentIssuePrompt", () => {
 
     const listed = text.match(/https:\/\/example\.com\/r1-\d+/g) ?? [];
     expect(listed).toHaveLength(AGENT_ISSUE_URL_DISPLAY_LIMIT);
-    expect(text).toContain(String(affected));
-    expect(text).toContain("3");
+
+    // Pin the sentence, not a digit. Asserting toContain("13") passed even with
+    // the whole remainder line deleted, because the evidence row already prints
+    // "命中 13" and the URL list already contains "r1-3".
+    const en = buildAgentIssuePrompt({
+      issue: repairIssue(affected),
+      locale: "en",
+      run: RUN,
+    });
+    expect(en).toContain(
+      `Listed ${AGENT_ISSUE_URL_DISPLAY_LIMIT} of ${affected} affected URLs; 3 more not listed`,
+    );
   });
 
   it("asks an investigation issue to establish evidence rather than to repair", () => {
@@ -424,5 +435,62 @@ describe("buildAgentIssuePrompt", () => {
     });
 
     expect(text).toContain("JavaScript-rendered DOM was not inspected");
+  });
+});
+
+describe("redactUrl", () => {
+  /**
+   * Each row is a shape the crawl actually produces. The first implementation
+   * handled exactly one of them (absolute URL, userinfo, matching query key)
+   * and exported the credential verbatim for the other seven.
+   */
+  it.each([
+    ["a credential in the fragment", "https://x.test/cb#access_token=SECRET123"],
+    ["a scheme-less target", "example.com/cb#access_token=SECRET123"],
+    ["a relative path", "/checkout?access_token=SECRET123"],
+    ["a token in a path segment", "https://x.test/reset/aG9sZHRoaXNzZWNyZXR2YWx1ZTEyMzQ1"],
+    [
+      "a credential nested in an encoded parameter",
+      "https://x.test/?next=https%3A%2F%2Fidp%2F%3Ftoken%3DSECRET123",
+    ],
+    [
+      "the second URL of a whitespace-joined value",
+      "https://a.test/p1 https://user:pw@b.test/p2?session_id=SECRET123",
+    ],
+    ["an OAuth code and state", "https://x.test/cb?code=SECRET123&state=SECRET456"],
+    ["userinfo beside a query secret", "https://alice:pw@x.test/p?access_token=SECRET123"],
+  ])("strips %s", (_label, input) => {
+    const out = redactUrl(input);
+    expect(out).not.toMatch(/SECRET\d+/);
+    expect(out).not.toContain("pw@");
+    expect(out).toContain("[redacted]");
+  });
+
+  it("leaves ordinary SEO parameters intact", () => {
+    // A substring rule redacts `keyword` for containing "key" — which corrupts
+    // the single most important parameter an SEO audit reports on.
+    const out = redactUrl(
+      "https://x.test/p?keyword=seo+audit&design=v2&utm_source=news&page=2",
+    );
+
+    expect(out).toContain("keyword=seo");
+    expect(out).toContain("design=v2");
+    expect(out).toContain("utm_source=news");
+    expect(out).toContain("page=2");
+    expect(out).not.toContain("[redacted]");
+  });
+
+  it("leaves a readable slug path intact", () => {
+    const out = redactUrl("https://x.test/birth-chart-calculator/free-reading");
+    expect(out).toBe("https://x.test/birth-chart-calculator/free-reading");
+  });
+
+  it("keeps every URL of a whitespace-joined value readable", () => {
+    // `source_pages` evidence is a space-joined list; parsing only the first URL
+    // swallowed the rest into its path as %20-escaped text.
+    const out = redactUrl("https://a.test/x?ref=1 https://b.test/y?ref=2");
+    expect(out).toContain("https://a.test/x?ref=1");
+    expect(out).toContain("https://b.test/y?ref=2");
+    expect(out).not.toContain("%20");
   });
 });

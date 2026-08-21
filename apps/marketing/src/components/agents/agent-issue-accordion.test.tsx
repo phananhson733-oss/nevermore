@@ -115,10 +115,29 @@ describe("AgentIssueAccordion", () => {
     root = createRoot(host);
   });
 
+  let clipboardDescriptor: PropertyDescriptor | undefined;
+
+  function stubClipboard(writeText: () => Promise<void>) {
+    clipboardDescriptor ??= Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+  }
+
   afterEach(() => {
     act(() => root.unmount());
     host.remove();
     vi.restoreAllMocks();
+    // restoreAllMocks does not undo defineProperty, so without this every test
+    // declared after the clipboard-denial case inherits a rejecting clipboard.
+    if (clipboardDescriptor !== undefined) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+      clipboardDescriptor = undefined;
+    }
   });
 
   function render(model: ReturnType<typeof buildAgentIssueModel>) {
@@ -231,12 +250,7 @@ describe("AgentIssueAccordion", () => {
       )?.textContent ?? "";
     expect(previewText).toContain("Check 1.1");
 
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: vi.fn().mockRejectedValue(new Error("denied")),
-      },
-    });
+    stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
 
     await act(async () => {
       host
@@ -306,6 +320,55 @@ describe("AgentIssueAccordion", () => {
     expect(notice).not.toBeNull();
     expect(notice?.getAttribute("data-quarantined-count")).toBe("1");
     // The green "nothing actionable" panel must not appear beside it.
+    expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
+  });
+
+
+  it("renders the floor and the remainder when the affected list is bounded", () => {
+    const sparse = {
+      ...record("r1", 14),
+      affected: 25,
+    } as unknown as SeoAuditRecord;
+
+    render(
+      buildAgentIssueModel({
+        agent: "seo",
+        checks: [
+          check({ id: "1.1", result: "warning", evidenceRecordIds: ["r1"] }),
+        ],
+        records: [sparse],
+      }),
+    );
+
+    expect(host.querySelector("[data-issue-row]")?.textContent).toContain(
+      "At least 25 affected URLs",
+    );
+
+    click('[data-issue-control="expand-visible"]');
+    const detail = host.querySelector('[data-issue-detail="seo:page:1.1"]');
+    expect(detail?.querySelector('[data-affected-enumerated="false"]')).not.toBeNull();
+    expect(detail?.textContent).toContain("more not listed");
+  });
+
+  it("says a run evaluated nothing rather than showing it as clean", () => {
+    render(
+      buildAgentIssueModel({
+        agent: "seo",
+        checks: [
+          check({
+            id: "2.1",
+            result: "excluded",
+            truth: "unavailable",
+            engine: "not-integrated",
+          }),
+        ],
+        records: [],
+      }),
+    );
+
+    expect(
+      host.querySelector('[data-testid="agent-issues-not-evaluated"]'),
+    ).not.toBeNull();
     expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
   });
 

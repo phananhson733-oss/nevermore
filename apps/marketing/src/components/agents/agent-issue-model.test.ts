@@ -384,6 +384,74 @@ describe("buildAgentIssueModel", () => {
     expect(affected?.totalCount).toBeNull();
   });
 
+
+  it("treats a record that published no observation as missing evidence, not zero", () => {
+    // Distinct from "no records at all": this path reaches the guard that had
+    // no test, and a mutation returning {mode:"urls", totalCount:0} stayed green.
+    const silent = {
+      ...record({ id: "r1", affected: 0 }),
+      observations: [],
+    } as unknown as SeoAuditRecord;
+
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({ id: "1.1", result: "warning", evidenceRecordIds: ["r1"] }),
+      ],
+      records: [silent],
+    });
+
+    const affected = model.actionable[0]?.affected;
+    expect(affected?.mode).toBe("not-captured");
+    expect(affected?.totalCount).toBeNull();
+  });
+
+  it("keeps the record's affected count for a site-level observation", () => {
+    const wide = {
+      ...record({ id: "rs", affected: 1, siteLevel: true }),
+      affected: 25,
+    } as unknown as SeoAuditRecord;
+
+    const model = buildAgentIssueModel({
+      agent: "tech",
+      checks: [
+        evaluatedCheck({
+          id: "A1",
+          result: "blocker",
+          scope: "site",
+          primaryAgent: "tech",
+          evidenceRecordIds: ["rs"],
+        }),
+      ],
+      records: [wide],
+    });
+
+    const affected = model.actionable[0]?.affected;
+    expect(affected?.mode).toBe("site-scope");
+    expect(affected?.totalCount).toBe(25);
+    expect(affected?.enumerated).toBe(false);
+  });
+
+  it("does not call a run clean when nothing was evaluated at all", () => {
+    const model = buildAgentIssueModel({
+      agent: "seo",
+      checks: [
+        evaluatedCheck({
+          id: "2.1",
+          result: "excluded",
+          truth: "unavailable",
+          engine: "not-integrated",
+        }),
+      ],
+      records: [],
+    });
+
+    // Nothing actionable and nothing passed: the run concluded nothing, which
+    // is not the same as a clean bill of health.
+    expect(model.isClean).toBe(false);
+    expect(model.evaluatedNothing).toBe(true);
+  });
+
   it("orders blockers before warnings before suggestions", () => {
     const model = buildAgentIssueModel({
       agent: "seo",
