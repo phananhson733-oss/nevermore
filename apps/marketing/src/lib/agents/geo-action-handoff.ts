@@ -727,7 +727,15 @@ export function serializeGeoActionHandoffMarkdown(
       `  - Basis: ${counts}.`,
       `  - From ${action.queryIds.length} question(s): ${action.queryIds.join(", ")}.`,
     );
-    if (action.targetUrl !== null) lines.push(`  - Page: ${action.targetUrl}`);
+    if (action.targetUrl !== null) {
+      // The JSON half carries `targetUrlQueryRemoved`; a reader of this half
+      // would otherwise take a shortened URL for the page that was confirmed.
+      lines.push(
+        action.targetUrlQueryRemoved
+          ? `  - Page: ${action.targetUrl} (query string removed on export; may not be the exact resource)`
+          : `  - Page: ${action.targetUrl}`,
+      );
+    }
     if (action.limitations.length > 0) {
       lines.push(`  - Limitations: ${action.limitations.join(", ")}.`);
     }

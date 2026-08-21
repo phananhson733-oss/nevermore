@@ -439,12 +439,47 @@ describe("buildGeoAiReportCopy", () => {
     expect(avoid.length).toBeGreaterThan(0);
     expect(counted.length).toBeGreaterThan(0);
 
-    expect(markdown).toContain(
-      '"basisObservedCounts": "samples_citing_someone_else"',
+    /*
+     * Each label tied to its own row, not merely present somewhere.
+     *
+     * Asserting that both strings appear passes just as well when the table is
+     * inverted, because inverting a two-valued table leaves both values on the
+     * page. The packet's version of this test was re-pinned to `kind` after the
+     * review caught exactly that; this one had the same hole one file over, in
+     * the same round.
+     */
+    type BriefRow = {
+      readonly actionId: string;
+      readonly basisObservedCounts: string | null;
+    };
+    // The brief is several fenced blocks, so take the one carrying solutions.
+    const blocks = [...markdown.matchAll(/```json\n([\s\S]*?)\n```/g)].map(
+      (match) => JSON.parse(match[1]!) as unknown,
     );
-    expect(markdown).toContain(
-      '"basisObservedCounts": "samples_citing_target"',
+    const solutions = blocks.find(
+      (value): value is { readonly candidates: readonly BriefRow[] } =>
+        Boolean(
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          "candidates" in value,
+        ),
     );
+    expect(solutions, "no solutions block in the brief").toBeDefined();
+
+    for (const candidate of run.plan.candidates) {
+      const row = solutions!.candidates.find(
+        (entry) => entry.actionId === candidate.actionId,
+      );
+      expect(row, `no brief row for ${candidate.actionId}`).toBeDefined();
+      expect(row!.basisObservedCounts).toBe(
+        candidate.reasonCounts === null
+          ? null
+          : candidate.kind === "avoid"
+            ? "samples_citing_someone_else"
+            : "samples_citing_target",
+      );
+    }
   });
 
   it("says when the confirmed page's query string did not survive export", async () => {

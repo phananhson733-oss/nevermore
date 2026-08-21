@@ -133,15 +133,22 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [rejections, setRejections] = useState<readonly string[]>([]);
   /**
-   * Questions whose current text the builder refused.
+   * Why each refused question cannot run, keyed by question id.
    *
    * The refused text stays on screen — it is what the visitor typed — so the
-   * set held here is not the set that would run. The run button reads this to
-   * stay out of the way until the question is payable again.
+   * set held in `querySet` is not the set that would run. The run button reads
+   * this to stay out of the way until every question is payable again, and
+   * each reason renders beside its own question.
+   *
+   * Keyed, and never routed through the run-failure banner. A flat list showed
+   * one reason for two refused questions and cleared it the moment either was
+   * fixed; the banner additionally moves focus to the top of the page, which
+   * on a per-keystroke refusal threw the visitor out of the field they were
+   * typing in.
    */
-  const [unpayableQueryIds, setUnpayableQueryIds] = useState<readonly string[]>(
-    [],
-  );
+  const [queryRejections, setQueryRejections] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const [signInOpen, setSignInOpen] = useState(false);
 
   // Concurrency control lives in refs so a second submit cannot start a second
@@ -275,6 +282,11 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const handleProposeContext = useCallback(() => {
     setErrorCode(null);
     setRejections([]);
+    // Refusals belong to the questions that are on screen. Question ids are
+    // derived from the slot alone, so a rebuilt set collides with them exactly
+    // — a refusal kept across the rebuild would disable the run for a question
+    // the visitor cannot see anything wrong with.
+    setQueryRejections({});
     setAliases(proposeGeoAliasCandidates(url.trim(), productName.trim()));
     setCategoryConfirmed(false);
     setStage("review");
@@ -293,6 +305,8 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
   const handleConfirmContext = useCallback(async () => {
     setErrorCode(null);
     setRejections([]);
+    // Same reason as the propose step: this rebuilds the whole set below.
+    setQueryRejections({});
     const competitors = splitList(rivals);
     const confirmed = await confirmGeoContext(
       {
@@ -403,16 +417,15 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
          * money was ever at stake; the count on screen was simply not the count
          * that would run. Saying so is better than silently correcting it.
          */
-        setUnpayableQueryIds((current) =>
-          current.includes(queryId) ? current : [...current, queryId],
-        );
-        setRejections(result.rejections.map((entry) => entry.code));
+        const code = result.rejections[0]?.code ?? "question_not_payable";
+        setQueryRejections((current) => ({ ...current, [queryId]: code }));
         return;
       }
-      setUnpayableQueryIds((current) =>
-        current.filter((entry) => entry !== queryId),
-      );
-      setRejections([]);
+      setQueryRejections((current) => {
+        if (!(queryId in current)) return current;
+        const { [queryId]: _cleared, ...rest } = current;
+        return rest;
+      });
       querySetRef.current = result.querySet;
       setQuerySet(result.querySet);
     });
@@ -783,6 +796,7 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
               querySet={querySet}
               context={context}
               disabled={stage === "running"}
+              rejections={queryRejections}
               onEdit={handleQueryEdit}
             />
             <GeoRunPlan querySet={querySet} context={context} />
@@ -794,7 +808,17 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
                 // A question the builder refused is still on screen in the
                 // visitor's own words, but it is not part of a set anything can
                 // be bought against.
-                disabled={stage === "running" || unpayableQueryIds.length > 0}
+                disabled={
+                  stage === "running" || Object.keys(queryRejections).length > 0
+                }
+                // A disabled button reads as "unavailable" and nothing more, so
+                // the count of what is blocking it travels with it. The reasons
+                // themselves are beside their own questions.
+                aria-describedby={
+                  Object.keys(queryRejections).length > 0
+                    ? "geo-run-blocked"
+                    : undefined
+                }
                 onClick={() => {
                   void handleRun();
                 }}
@@ -823,6 +847,13 @@ export function GeoWorkbench({ locale }: { readonly locale: string }) {
             </div>
             {stage === "running" && (
               <p className={HINT_CLASS}>{t("workbench.runningHint")}</p>
+            )}
+            {Object.keys(queryRejections).length > 0 && (
+              <p id="geo-run-blocked" className={HINT_CLASS}>
+                {t("workbench.runBlocked", {
+                  count: Object.keys(queryRejections).length,
+                })}
+              </p>
             )}
           </section>
         )}

@@ -8,6 +8,7 @@ import {
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
 import { hasLoneSurrogate, normalizeGeoText } from "./geo-canonical.ts";
+import type { GeoRunErrorCode } from "./geo-run-errors.ts";
 import {
   consumeGeoDailyBudget,
   createGeoCostAccumulator,
@@ -97,7 +98,16 @@ export const DEFAULT_DEPENDENCIES: GeoRunHandlerDependencies = {
   runId: () => globalThis.crypto.randomUUID(),
 };
 
-function errorResponse(code: string, status: number): Response {
+/**
+ * The code is typed, not free text.
+ *
+ * `string` let this route invent codes nobody had a message for, which the
+ * workbench then folded into the generic "the run could not be completed" —
+ * the worst sentence available, shown for refusals that had something specific
+ * to say. Typecheck now refuses a code that is not in the shared list, and the
+ * parity test refuses a listed code that has no message in both locales.
+ */
+function errorResponse(code: GeoRunErrorCode, status: number): Response {
   return Response.json(
     { error: { code } },
     { status, headers: { "Cache-Control": "no-store, private" } },

@@ -80,6 +80,90 @@ describe("every GEO code a visitor can see has a sentence in both locales", () =
     }
   }
 
+  /*
+   * The direction that actually protects a visitor.
+   *
+   * Everything above checks that codes in the list have messages. It says
+   * nothing about a code the handler raises but nobody listed — which is how
+   * `geo_time_budget_exhausted` reached people as "the run could not be
+   * completed". Comparing the list against itself would prove nothing, so this
+   * reads the handler's source and pulls out the codes it can actually return.
+   */
+  it("lists every code the run handler can return", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL("./geo-run-handler.ts", import.meta.url),
+      "utf8",
+    );
+
+    const raised = new Set<string>();
+    for (const match of source.matchAll(/errorResponse\(\s*"([a-z_]+)"/g)) {
+      raised.add(match[1]!);
+    }
+    const union = source.split("export type GeoRunRejection")[1]?.split(";")[0];
+    expect(union).toBeDefined();
+    for (const match of union!.matchAll(/"([a-z_]+)"/g)) {
+      raised.add(match[1]!);
+    }
+
+    // If this ever finds nothing, the patterns above stopped matching and every
+    // assertion in this test became vacuous.
+    expect(raised.size).toBeGreaterThan(5);
+
+    const listed = new Set<string>(GEO_RUN_ERROR_CODES);
+    expect([...raised].filter((code) => !listed.has(code))).toEqual([]);
+    expect([...listed].filter((code) => !raised.has(code))).toEqual([]);
+  });
+
+  /*
+   * The refusal codes, which are types rather than tables.
+   *
+   * `GeoContextRejection` and `GeoQuerySetRejection` are unions, so there is
+   * nothing to walk at runtime — and the workbench renders both through
+   * `t('rejections.${code}')`, the same way it renders the codes above. Reading
+   * the source is what makes this cross to something other than the message
+   * file itself.
+   */
+  it("covers every refusal code the confirm and edit steps can produce", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const codes = new Set<string>();
+
+    const context = await readFile(
+      new URL("./geo-context.ts", import.meta.url),
+      "utf8",
+    );
+    const contextUnion = context
+      .split("export type GeoContextRejection")[1]
+      ?.split(";")[0];
+    expect(contextUnion).toBeDefined();
+    for (const match of contextUnion!.matchAll(/"([a-z_]+)"/g)) {
+      codes.add(match[1]!);
+    }
+
+    const questions = await readFile(
+      new URL("./geo-questions.ts", import.meta.url),
+      "utf8",
+    );
+    const questionUnion = questions
+      .split("export type GeoQuerySetRejection")[1]
+      ?.split("export type")[0];
+    expect(questionUnion).toBeDefined();
+    for (const match of questionUnion!.matchAll(/code:\s*"([a-z_]+)"/g)) {
+      codes.add(match[1]!);
+    }
+
+    // If the patterns stop matching, everything below becomes vacuous.
+    expect(codes.size).toBeGreaterThan(15);
+
+    for (const locale of ["en", "zh"] as const) {
+      const messages = messagesAt(locale, "rejections");
+      const missing = [...codes].filter(
+        (code) => typeof messages[code] !== "string",
+      );
+      expect(missing, `${locale} is missing refusal messages`).toEqual([]);
+    }
+  });
+
   it("keeps the workbench's fallback message, which is not a code", () => {
     // `unknown` is the deliberate catch-all for a code this build has never
     // heard of. It is not in the table and must not be reported as an orphan,

@@ -3574,7 +3574,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. A run makes up to 18 billed provider calls — fewer if you edit a probe, or if the run stops at its time or spending ceiling — so it is not available anonymously.",
       "dataBoundaryTitle": "Report contents are not stored",
-      "dataBoundaryBody": "The report is returned to this page: no account history, no server copy of the assistant's answer. Where the browser allows it, the report can be restored in this same tab for up to fifteen minutes, so switching language usually does not lose what you paid for. Minimal billing, quota and abuse-prevention metadata is kept server-side. Closing the tab ends the report, so copy anything you need before you go.",
+      "dataBoundaryBody": "The report is returned to this page: no account history, no server copy of the assistant's answer. Where the browser allows it, the report can be restored in this same tab for up to fifteen minutes, so switching language usually does not lose what you paid for. Minimal billing, quota and abuse-prevention metadata is kept server-side. Nothing here outlives the browser session that ran it, and nothing is written to your account — so copy anything you need before you go.",
       "howEyebrow": "How it works",
       "howTitle": "From buyer questions to observed citations",
       "howBody": "Every number in the report is recomputed from the samples underneath it, and a sample that observed nothing is reported as exactly that rather than counted as a zero.",
@@ -3585,7 +3585,7 @@
       "step3Title": "Sample by mode, not uniformly",
       "step3Body": "Retrieval probes are asked three times, because one sample cannot tell a site that is not cited apart from a run that happened not to cite it. Natural buyer questions are asked once: repeating a question the assistant answers from memory mostly repeats the same non-observation.",
       "step4Title": "Read it with its denominator",
-      "step4Body": "Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a probe that failed to trigger a search is excluded as an instrumentation failure rather than counted against you. Copy what you need before you close the tab — the report is never saved to your account.",
+      "step4Body": "Retrieval and natural demand never share a number, prompted and unprompted mentions never share a number, and a probe that failed to trigger a search is excluded as an instrumentation failure rather than counted against you. Copy what you need before you leave — the report is never saved to your account.",
       "finalBoundary": "This report observes what one assistant answered at one moment. It is not a ranking, not a forecast, and not a measure of traffic.",
       "workbench": {
         "contextTitle": "Confirm what this site is",
@@ -3612,6 +3612,7 @@
         "back": "Back",
         "run": "Run {calls} provider calls",
         "running": "Asking the assistant…",
+        "runBlocked": "{count, plural, one {One question cannot be measured as written, so the run is paused. Its reason is beside it above.} other {# questions cannot be measured as written, so the run is paused. Each reason is beside its own question above.}}",
         "runningHint": "This takes about two minutes. The calls run concurrently and the plan does not change once it has started.",
         "signInRequired": "Sign in to run"
       },
@@ -3859,7 +3860,7 @@
         "sentinel_cohort_not_full_coverage": "Eight questions are a reproducible sentinel cohort, not the complete question space.",
         "degraded_retrieval_trigger": "At least one retrieval probe did not reach the live web, so this run is degraded.",
         "partial_run": "Some planned calls produced no usable answer; they are excluded rather than counted as zero.",
-        "cost_ceiling_reached": "This run reached its own spending ceiling. Any planned sample missing below was stopped by that ceiling rather than by a provider failure; the ceiling can also be crossed once every call is already out, in which case nothing is missing.",
+        "cost_ceiling_reached": "This run reached its own spending ceiling. It may have stopped short of the full plan because of it, or crossed the ceiling with every call already out — this line cannot tell you which, and a sample missing below may have failed for its own reasons.",
         "cost_incomplete": "The provider did not price every call, so the run total is incomplete rather than understated.",
         "outside_calibrated_market": "The market asked in was not the market the wording was calibrated in.",
         "recommendation_not_evaluated": "Whether the assistant recommended you was not evaluated. Not evaluated is not the same as not recommended."

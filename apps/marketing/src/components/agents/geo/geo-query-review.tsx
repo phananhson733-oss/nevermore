@@ -48,11 +48,14 @@ function QueryRow({
   query,
   context,
   disabled,
+  rejection,
   onEdit,
 }: {
   readonly query: GeoQueryUnitV1;
   readonly context: GeoContextSnapshotV1;
   readonly disabled: boolean;
+  /** Why this question's current text cannot be run, if it cannot. */
+  readonly rejection: string | null;
   readonly onEdit: (queryId: string, text: string) => void;
 }) {
   const t = useTranslations("agents.geo");
@@ -69,8 +72,8 @@ function QueryRow({
   const calibrationGaps =
     query.templateId === null || query.templateVersion === null || !measured
       ? []
-      : (findGeoTemplate(query.templateId, query.templateVersion)?.limitations ??
-        []);
+      : (findGeoTemplate(query.templateId, query.templateVersion)
+          ?.limitations ?? []);
 
   return (
     <li className="grid gap-2 border-t border-brand-border-card py-3 first:border-t-0">
@@ -100,8 +103,28 @@ function QueryRow({
         value={query.text}
         maxLength={500}
         disabled={disabled}
+        aria-invalid={rejection !== null}
+        aria-describedby={
+          rejection === null ? undefined : `geo-q-${query.queryId}-rejection`
+        }
         onChange={(event) => onEdit(query.queryId, event.target.value)}
       />
+      {/*
+        Said here, beside the question it is about, and nowhere else.
+        Routing this through the workbench's run-failure banner moved focus to
+        the top of the page on the keystroke that caused it — so a visitor
+        clearing the field to retype was thrown out of the input, and every
+        further keystroke threw them out again. A refused edit is a local,
+        momentary fact about one question, not a terminal state of the run.
+      */}
+      {rejection !== null && (
+        <p
+          id={`geo-q-${query.queryId}-rejection`}
+          className="text-[11px] leading-[1.55] text-brand-accent-2"
+        >
+          {t(`rejections.${rejection}`)}
+        </p>
+      )}
       {query.retrievalTriggerClause !== null && (
         <p className="text-[11px] leading-[1.55] text-text-dark-tertiary">
           {t("queries.triggerClause", { clause: query.retrievalTriggerClause })}
@@ -134,11 +157,21 @@ export function GeoQueryReview({
   querySet,
   context,
   disabled,
+  rejections,
   onEdit,
 }: {
   readonly querySet: GeoQuerySetV1;
   readonly context: GeoContextSnapshotV1;
   readonly disabled: boolean;
+  /**
+   * Refusal codes by question id, for questions whose current text cannot run.
+   *
+   * Keyed rather than a flat list: two refused questions are two reasons, and a
+   * flat list showed only the most recent one — then cleared it entirely the
+   * moment any one of them was fixed, leaving the other still blocking the run
+   * with nothing on screen to say so.
+   */
+  readonly rejections: Readonly<Record<string, string>>;
   readonly onEdit: (queryId: string, text: string) => void;
 }) {
   const t = useTranslations("agents.geo");
@@ -161,6 +194,7 @@ export function GeoQueryReview({
             query={query}
             context={context}
             disabled={disabled}
+            rejection={rejections[query.queryId] ?? null}
             onEdit={onEdit}
           />
         ))}

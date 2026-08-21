@@ -29,8 +29,17 @@ import {
   type GeoModeSourcesV1,
 } from "./geo-source-landscape.ts";
 
+/**
+ * v2: three fields that change how the numbers underneath them read.
+ *
+ * `basisObservedCounts` names whose citations a row's ratio counted — the avoid
+ * row counts somebody else's — and `targetUrlQueryRemoved` /
+ * `targetPageQueryRemoved` say a URL was shortened on the way out. This is the
+ * document that actually reaches an assistant, so its version had more claim to
+ * a bump than the packet's did.
+ */
 export const GEO_AI_REPORT_COPY_SCHEMA_VERSION =
-  "geo_ai_report_copy.v1" as const;
+  "geo_ai_report_copy.v2" as const;
 
 /**
  * The brief's own cap, not the selected-action packet's.

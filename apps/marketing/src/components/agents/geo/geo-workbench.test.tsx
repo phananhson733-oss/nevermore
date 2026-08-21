@@ -348,6 +348,128 @@ describe("GeoWorkbench", () => {
     // The reason covers both ways a question stops being payable — emptied and
     // too long — because one refusal code carries both.
     expect(host.textContent).toContain("A question is empty, or longer than");
+    // Beside its own question, not in the run-failure banner at the top: that
+    // banner takes focus, and this fires on a keystroke.
+    const reason = host.querySelector(
+      "#geo-q-core-category_discovery-rejection",
+    );
+    expect(reason).not.toBeNull();
+    expect(
+      host
+        .querySelector("#geo-q-core-category_discovery")
+        ?.getAttribute("aria-describedby"),
+    ).toBe("geo-q-core-category_discovery-rejection");
+  });
+
+  it("leaves focus in the field a refused keystroke came from", async () => {
+    await confirmContext();
+    const input = host.querySelector<HTMLInputElement>(
+      "#geo-q-core-category_discovery",
+    )!;
+    input.focus();
+
+    await act(async () => {
+      setValue(input, "");
+    });
+    await flush();
+
+    // Routing this refusal through the workbench banner scrolled to the top and
+    // focused the alert, so clearing a field threw the visitor out of it — and
+    // did it again on every further keystroke.
+    expect(document.activeElement).toBe(
+      host.querySelector("#geo-q-core-category_discovery"),
+    );
+  });
+
+  it("keeps the run blocked while a second question is still refused", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-constraint_fit")!,
+        "",
+      );
+    });
+    await flush();
+
+    // Fix one of the two.
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "Which seo tools do enterprise teams trust?",
+      );
+    });
+    await flush();
+
+    // A flat reason list showed one message for two refusals and cleared it as
+    // soon as either was fixed, leaving a dead button and nothing to read.
+    expect(
+      host.querySelector("#geo-q-core-constraint_fit-rejection"),
+    ).not.toBeNull();
+    expect(
+      host.querySelector("#geo-q-core-category_discovery-rejection"),
+    ).toBeNull();
+    const run = [...host.querySelectorAll("button")].find((node) =>
+      node.textContent?.includes("provider calls"),
+    ) as HTMLButtonElement | undefined;
+    expect(run?.disabled).toBe(true);
+  });
+
+  it("gives the disabled run button a reason a screen reader can reach", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+
+    // A disabled button announces "unavailable" and nothing else, so what is
+    // blocking it travels with it. The reasons themselves stay beside their own
+    // questions rather than being repeated here.
+    const run = button("Run 18 provider calls")!;
+    expect(run.getAttribute("aria-describedby")).toBe("geo-run-blocked");
+    const reason = host.querySelector("#geo-run-blocked");
+    expect(reason?.textContent).toContain("cannot be measured as written");
+  });
+
+  it("forgets a refusal when the question set is rebuilt", async () => {
+    await confirmContext();
+
+    await act(async () => {
+      setValue(
+        host.querySelector<HTMLInputElement>("#geo-q-core-category_discovery")!,
+        "",
+      );
+    });
+    await flush();
+
+    // Back to the review step and forward again, on the same mounted component
+    // — the path a visitor takes. Question ids come from the slot alone, so the
+    // rebuilt set has the very same ids. A refusal kept across the rebuild
+    // disabled the run for a question with nothing visibly wrong with it, and
+    // no message anywhere to say why.
+    await act(async () => {
+      button("Back")!.click();
+    });
+    await act(async () => {
+      button("Confirm and generate the questions")!.click();
+    });
+    await flush();
+
+    expect(
+      host.querySelector("#geo-q-core-category_discovery-rejection"),
+    ).toBeNull();
+    expect(button("Run 18 provider calls")?.disabled).toBe(false);
   });
 
   it("re-enables the run once the question is payable again", async () => {
