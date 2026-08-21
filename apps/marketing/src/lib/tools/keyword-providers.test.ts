@@ -326,6 +326,55 @@ describe("createKeywordProviderSeams", () => {
     });
   });
 
+  it("ignores a late empty-handed answer that arrives after the deadline outcome", async () => {
+    const late = deferred<DataForSeoSerpOrganicResponse>();
+    const serpOrganic = vi.fn(() => late.promise);
+    const providers = createKeywordProviderSeams({
+      costs: createKeywordCostAccumulator(),
+      client: {
+        keywordOverview: vi.fn(),
+        serpOrganic,
+        bulkRanks: vi.fn(),
+      },
+      now: () => new Date(1_000),
+      deadlineAt: 1_000 + 50,
+    });
+
+    const pending = providers.sampleSerp({
+      keywords: ["slow"],
+      marketCode: "US",
+      languageCode: "en",
+    });
+    const result = await pending;
+    expect(result[0]).toMatchObject({
+      keyword: "slow",
+      failureReason: "transport_outcome_unknown",
+    });
+
+    // The provider finally answers — with nothing. Writing that now would
+    // convert "we stopped waiting" into "the provider had no data", a fact
+    // this run never established, and it would mutate an array the caller is
+    // already holding.
+    late.resolve({
+      keyword: "slow",
+      rows: [],
+      itemTypes: null,
+      aiOverview: null,
+      communityItems: null,
+      unresolvedItemCount: 0,
+      costUsd: 0.002,
+      providerStatusCode: 20_000,
+      taskStatusCode: 20_000,
+    });
+    await afterMicrotasks(5, null);
+
+    expect(result[0]).toMatchObject({
+      keyword: "slow",
+      status: "unavailable",
+      failureReason: "transport_outcome_unknown",
+    });
+  });
+
   it("gates 25 calls at ten workers and preserves the immutable input order", async () => {
     const keywords = Object.freeze(
       Array.from({ length: 25 }, (_, index) => `keyword ${String(index)}`),

@@ -308,6 +308,12 @@ export function createKeywordProviderSeams(options: {
           // already failed. Its real cost remains booked, but its late evidence
           // must not mutate an outcome the caller can no longer receive.
           if (stageError !== null) return;
+          // Above the shape check, not below it: an answer that arrives after
+          // the stage stopped waiting must not replace the outcome already
+          // published for this keyword — including the empty-handed answer,
+          // which would turn "we stopped waiting" into "the provider had
+          // nothing", a fact this run never established.
+          if (abandoned) return;
           const hasUsableShape =
             response.rows.length > 0 ||
             response.itemTypes !== null ||
@@ -322,7 +328,6 @@ export function createKeywordProviderSeams(options: {
           }
           // Position and item types travel with the domains. Both are already
           // parsed by the provider client and cost nothing extra.
-          if (abandoned) return;
           samples[item.index] = {
             keyword: item.keyword,
             status: "complete",
@@ -413,18 +418,29 @@ export function createKeywordProviderSeams(options: {
             ? null
             : new Promise<typeof DEADLINE>((resolve) => {
                 const timer = setTimeout(() => {
+                  // Latched here, synchronously, rather than after the race
+                  // resumes below. A provider continuation queued in the same
+                  // tick as this callback would otherwise run first and write
+                  // an outcome from after the mark.
+                  abandoned = true;
                   resolve(DEADLINE);
                 }, remainingMs);
                 expire = () => {
                   clearTimeout(timer);
                 };
               });
-        const outcome = await Promise.race(
-          waveDeadline === null
-            ? [waveCompletion, stageFailure]
-            : [waveCompletion, stageFailure, waveDeadline],
-        );
-        expire();
+        let outcome: readonly void[] | typeof DEADLINE | never;
+        try {
+          outcome = await Promise.race(
+            waveDeadline === null
+              ? [waveCompletion, stageFailure]
+              : [waveCompletion, stageFailure, waveDeadline],
+          );
+        } finally {
+          // `stageFailure` rejecting skips straight past a bare cleanup call,
+          // leaving a timer alive for the rest of the budget on a warm process.
+          expire();
+        }
         if (stageError !== null) throw stageError;
         if (outcome === DEADLINE) {
           abandoned = true;
