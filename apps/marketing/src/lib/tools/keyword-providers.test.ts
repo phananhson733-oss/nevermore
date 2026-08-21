@@ -326,6 +326,53 @@ describe("createKeywordProviderSeams", () => {
     });
   });
 
+  it("aborts an in-flight call at the deadline so nothing is billed after the report", async () => {
+    const costs = createKeywordCostAccumulator();
+    const serpOrganic = vi.fn(
+      (
+        _request: { readonly keyword: string },
+        signal?: AbortSignal,
+      ): Promise<DataForSeoSerpOrganicResponse> =>
+        new Promise((_resolve, reject) => {
+          // The real transport honours the shared signal; a call the stage has
+          // stopped waiting for must stop running, not linger for the rest of
+          // its 30-second timeout booking a cost into an accumulator whose one
+          // report has already been written.
+          signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new SourceError("TIMEOUT", "deadline abort"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    const providers = createKeywordProviderSeams({
+      costs,
+      client: {
+        keywordOverview: vi.fn(),
+        serpOrganic,
+        bulkRanks: vi.fn(),
+      },
+      now: () => new Date(1_000),
+      deadlineAt: 1_000 + 50,
+    });
+
+    const result = await providers.sampleSerp({
+      keywords: ["in flight"],
+      marketCode: "US",
+      languageCode: "en",
+    });
+
+    expect(result[0]).toMatchObject({
+      keyword: "in flight",
+      status: "unavailable",
+      failureReason: "transport_outcome_unknown",
+    });
+    // Thrown calls have no response to book.
+    expect(costs.byEndpoint().serp_organic).toBe(0);
+  });
+
   it("ignores a late empty-handed answer that arrives after the deadline outcome", async () => {
     const late = deferred<DataForSeoSerpOrganicResponse>();
     const serpOrganic = vi.fn(() => late.promise);

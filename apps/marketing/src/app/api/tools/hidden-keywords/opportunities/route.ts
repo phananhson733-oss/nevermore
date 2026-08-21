@@ -78,7 +78,7 @@ export async function POST(request: Request): Promise<Response> {
     // budget — interpretation degrading every chunk is already its contract.
     ...createKeywordProviderSeams({ costs, deadlineAt }),
     // Built here, from the token the handler resolved inside the gate.
-    readCoverageQueries: createKeywordCoverageReader({}),
+    readCoverageQueries: createKeywordCoverageReader({ deadlineAt }),
     extractClientIp,
     llmUsage: llmUsage.total,
     responseDeadlineAt,

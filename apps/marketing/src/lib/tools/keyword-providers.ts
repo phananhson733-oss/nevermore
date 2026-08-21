@@ -374,9 +374,16 @@ export function createKeywordProviderSeams(options: {
       // seconds, which is exactly the partial report production produced that
       // day. A pool pulls the next keyword the moment any worker frees, so
       // throughput follows the average latency instead of the per-ten worst.
-      // The waves' fail-fast property is kept where it matters: a stage-wide
-      // error latches `stageError`, and no worker pulls past it — at most the
-      // other in-flight calls are wasted, and thrown calls bill nothing.
+      // The waves' fail-fast property is kept in this form: a stage-wide error
+      // latches `stageError` and no worker pulls past it. What is NOT bounded
+      // is cumulative dispatch before a *delayed* stage-wide error latches —
+      // fast successful siblings keep replenishing while a slow call is still
+      // on its way to reporting bad credentials, and in the worst case the
+      // whole plan is dispatched and then discarded by the rejection. That
+      // trade is taken knowingly: a delayed auth error alongside succeeding
+      // siblings means the credentials mostly work, the concurrent exposure
+      // stays capped at pool width, and the barrier that prevented it cost
+      // every clean run half its time budget.
       const dispatched: boolean[] = new Array<boolean>(plan.length).fill(false);
       let nextItem = 0;
       const outOfBudget = (): boolean => {
@@ -424,6 +431,14 @@ export function createKeywordProviderSeams(options: {
             // callback would otherwise run first and write an outcome from
             // after the mark.
             abandoned = true;
+            // Ends the calls themselves, not just the wait for them. The
+            // transport honors this signal, so up to ten abandoned requests
+            // stop spending sockets under the stages that still have budget —
+            // and a response that would otherwise land minutes later cannot
+            // book its cost after the run's one cost line has been written.
+            abortController.abort(
+              new SourceError("TIMEOUT", "keyword SERP sampling deadline"),
+            );
             resolve(DEADLINE);
           }, startRemainingMs);
           expire = () => {
@@ -452,7 +467,31 @@ export function createKeywordProviderSeams(options: {
         // leaving a timer alive for the rest of the budget on a warm process.
         expire();
       }
-      if (stageError !== null) throw stageError;
+      // Read through a closure on purpose: the latch is written inside
+      // `runItem`, which the outer control-flow analysis cannot see, so a
+      // direct read here is still narrowed to its initializer and `.code`
+      // below would not type-check. Inside a function body the declared type
+      // applies.
+      const stageFailed = ((): SourceError | null => stageError)();
+      if (stageFailed !== null) {
+        // The handler never receives the partial array on this path, so the
+        // counts have to leave from here or they leave with nobody. Without
+        // this line a provider-wide auth outage logs only the generic route
+        // failure — no planned, no completed-before-failure, no way to see how
+        // much was already spent when the stage died.
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "serp_sample",
+            failureReason: stageFailed.code,
+            planned: plan.length,
+            dispatched: dispatched.filter(Boolean).length,
+            complete: samples.filter((sample) => sample?.status === "complete")
+              .length,
+          }),
+        );
+        throw stageFailed;
+      }
       // Two different unfinished facts, reported apart. A keyword that was
       // dispatched and has no outcome was asked and never answered before the
       // mark; one that was never dispatched was never asked, and saying the
