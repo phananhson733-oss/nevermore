@@ -72,7 +72,11 @@ export async function POST(request: Request): Promise<Response> {
     extractPropositions: llm.extractPropositions,
     expandCandidates: llm.expandCandidates,
     interpretSerpEvidence: llm.interpretSerpEvidence,
-    ...createKeywordProviderSeams({ costs }),
+    // Sampling shares the interpretation mark rather than getting one of its
+    // own. It runs first and it is the SERP facts the report is built from, so
+    // when the two cannot both fit, sampling is the one that should have the
+    // budget — interpretation degrading every chunk is already its contract.
+    ...createKeywordProviderSeams({ costs, deadlineAt }),
     // Built here, from the token the handler resolved inside the gate.
     readCoverageQueries: createKeywordCoverageReader({}),
     extractClientIp,

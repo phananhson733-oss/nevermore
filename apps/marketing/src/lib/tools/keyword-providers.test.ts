@@ -142,11 +142,7 @@ describe("createKeywordProviderSeams", () => {
             url: "https://publisher.test/agency-crm",
           },
         ],
-        pageItemTypes: [
-          "organic",
-          "ai_overview",
-          "discussions_and_forums",
-        ],
+        pageItemTypes: ["organic", "ai_overview", "discussions_and_forums"],
         aiOverview: {
           markdown: "## Answer",
           isAsync: true,
@@ -238,6 +234,98 @@ describe("createKeywordProviderSeams", () => {
     ]);
   });
 
+  it("dispatches no further wave once the run deadline has passed", async () => {
+    const keywords = Array.from(
+      { length: 25 },
+      (_unused, index) => `keyword ${String(index)}`,
+    );
+    let clock = 1_000;
+    const deadlineAt = clock + 60_000;
+    const serpOrganic = vi.fn(
+      async ({ keyword }: { readonly keyword: string }) => {
+        // The whole budget goes to the first wave of ten.
+        clock += 6_000;
+        return serpResponse(keyword);
+      },
+    );
+    const providers = createKeywordProviderSeams({
+      costs: createKeywordCostAccumulator(),
+      client: {
+        keywordOverview: vi.fn(),
+        serpOrganic,
+        bulkRanks: vi.fn(),
+      },
+      now: () => new Date(clock),
+      deadlineAt,
+    });
+
+    const result = await providers.sampleSerp({
+      keywords,
+      marketCode: "US",
+      languageCode: "en",
+    });
+
+    // Fifteen serial waves at the candidate cap, each as slow as the slowest
+    // of its ten calls, is more wall clock than the route has in total. The
+    // stage has to stop on its own or the platform stops the whole function.
+    expect(serpOrganic).toHaveBeenCalledTimes(KEYWORD_SERP_CONCURRENCY);
+    expect(result).toHaveLength(keywords.length);
+    expect(result.map((sample) => sample.keyword)).toEqual(keywords);
+    // What it did sample is kept.
+    expect(
+      result.slice(0, 10).every((sample) => sample.status === "complete"),
+    ).toBe(true);
+    // Nobody asked about the rest, so they may not say the provider failed.
+    for (const sample of result.slice(10)) {
+      expect(sample).toMatchObject({
+        status: "unavailable",
+        failureReason: "budget_exhausted",
+        observedAt: null,
+        results: [],
+      });
+    }
+  });
+
+  it("stops waiting on a wave that outlives the deadline it started under", async () => {
+    const keywords = ["fast", "hung"];
+    const fast = deferred<DataForSeoSerpOrganicResponse>();
+    const serpOrganic = vi.fn(({ keyword }: { readonly keyword: string }) =>
+      keyword === "fast"
+        ? fast.promise
+        : new Promise<DataForSeoSerpOrganicResponse>(() => {}),
+    );
+    const providers = createKeywordProviderSeams({
+      costs: createKeywordCostAccumulator(),
+      client: {
+        keywordOverview: vi.fn(),
+        serpOrganic,
+        bulkRanks: vi.fn(),
+      },
+      now: () => new Date(1_000),
+      deadlineAt: 1_000 + 50,
+    });
+
+    const pending = providers.sampleSerp({
+      keywords,
+      marketCode: "US",
+      languageCode: "en",
+    });
+    await vi.waitFor(() => expect(serpOrganic).toHaveBeenCalledTimes(2));
+    fast.resolve(serpResponse("fast"));
+    const result = await pending;
+
+    // Declining the next wave would not have been enough: one straggler holds
+    // the other nine for its full per-call timeout, and a timeout here is
+    // per-keyword rather than stage-wide, so the stage never fails fast.
+    expect(result[0]).toMatchObject({ keyword: "fast", status: "complete" });
+    // Asked and never answered is not the same fact as never asked.
+    expect(result[1]).toMatchObject({
+      keyword: "hung",
+      status: "unavailable",
+      failureReason: "transport_outcome_unknown",
+    });
+  });
+
   it("gates 25 calls at ten workers and preserves the immutable input order", async () => {
     const keywords = Object.freeze(
       Array.from({ length: 25 }, (_, index) => `keyword ${String(index)}`),
@@ -245,13 +333,15 @@ describe("createKeywordProviderSeams", () => {
     const gate = deferred<void>();
     let active = 0;
     let maxActive = 0;
-    const serpOrganic = vi.fn(async ({ keyword }: { readonly keyword: string }) => {
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await gate.promise;
-      active -= 1;
-      return serpResponse(keyword);
-    });
+    const serpOrganic = vi.fn(
+      async ({ keyword }: { readonly keyword: string }) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await gate.promise;
+        active -= 1;
+        return serpResponse(keyword);
+      },
+    );
     const providers = createKeywordProviderSeams({
       costs: createKeywordCostAccumulator(),
       client: {
@@ -289,10 +379,14 @@ describe("createKeywordProviderSeams", () => {
   it("returns input order when provider calls finish out of order", async () => {
     const keywords: readonly string[] = ["first", "second", "third"];
     const calls = new Map(
-      keywords.map((keyword) => [keyword, deferred<DataForSeoSerpOrganicResponse>()]),
+      keywords.map((keyword) => [
+        keyword,
+        deferred<DataForSeoSerpOrganicResponse>(),
+      ]),
     );
     const serpOrganic = vi.fn(
-      ({ keyword }: { readonly keyword: string }) => calls.get(keyword)!.promise,
+      ({ keyword }: { readonly keyword: string }) =>
+        calls.get(keyword)!.promise,
     );
     const providers = createKeywordProviderSeams({
       costs: createKeywordCostAccumulator(),
@@ -328,11 +422,13 @@ describe("createKeywordProviderSeams", () => {
       ["unavailable", new SourceError("UNAVAILABLE", "fixture")],
     ]);
     const keywords = ["ok one", ...failures.keys(), "ok two"];
-    const serpOrganic = vi.fn(async ({ keyword }: { readonly keyword: string }) => {
-      const failure = failures.get(keyword);
-      if (failure !== undefined) throw failure;
-      return serpResponse(keyword);
-    });
+    const serpOrganic = vi.fn(
+      async ({ keyword }: { readonly keyword: string }) => {
+        const failure = failures.get(keyword);
+        if (failure !== undefined) throw failure;
+        return serpResponse(keyword);
+      },
+    );
     const providers = createKeywordProviderSeams({
       costs: createKeywordCostAccumulator(),
       client: {
@@ -350,11 +446,13 @@ describe("createKeywordProviderSeams", () => {
     });
 
     expect(serpOrganic).toHaveBeenCalledTimes(keywords.length);
-    expect(result.map(({ keyword, status, failureReason }) => ({
-      keyword,
-      status,
-      failureReason,
-    }))).toEqual([
+    expect(
+      result.map(({ keyword, status, failureReason }) => ({
+        keyword,
+        status,
+        failureReason,
+      })),
+    ).toEqual([
       { keyword: "ok one", status: "complete", failureReason: null },
       {
         keyword: "rate limited",
@@ -522,16 +620,16 @@ describe("createKeywordProviderSeams", () => {
       marketCode: "US",
       languageCode: "en",
     });
-    await vi.waitFor(() =>
-      expect(costs.byEndpoint().serp_organic).toBe(0.002),
-    );
+    await vi.waitFor(() => expect(costs.byEndpoint().serp_organic).toBe(0.002));
     const callsBeforeAuth = serpOrganic.mock.calls.map(
       ([request]) => request.keyword,
     );
     authGate.resolve();
 
     await expect(pending).rejects.toBe(authError);
-    expect(callsBeforeAuth).toEqual(keywords.slice(0, KEYWORD_SERP_CONCURRENCY));
+    expect(callsBeforeAuth).toEqual(
+      keywords.slice(0, KEYWORD_SERP_CONCURRENCY),
+    );
     expect(serpOrganic).toHaveBeenCalledTimes(KEYWORD_SERP_CONCURRENCY);
     expect(
       serpOrganic.mock.calls.some(
@@ -686,23 +784,25 @@ describe("createKeywordProviderSeams", () => {
   it("records cost exactly once for each provider response and never for a thrown call", async () => {
     const costs = createKeywordCostAccumulator();
     const record = vi.spyOn(costs, "record");
-    const serpOrganic = vi.fn(async ({ keyword }: { readonly keyword: string }) => {
-      if (keyword === "throws") {
-        throw new SourceError("UNAVAILABLE", "fixture");
-      }
-      if (keyword === "no data") {
-        return serpResponse(keyword, {
-          rows: [],
-          itemTypes: null,
-          aiOverview: null,
-          communityItems: null,
-          costUsd: 0.004,
-          providerStatusCode: 40_102,
-          taskStatusCode: 40_102,
-        });
-      }
-      return serpResponse(keyword, { costUsd: 0.003 });
-    });
+    const serpOrganic = vi.fn(
+      async ({ keyword }: { readonly keyword: string }) => {
+        if (keyword === "throws") {
+          throw new SourceError("UNAVAILABLE", "fixture");
+        }
+        if (keyword === "no data") {
+          return serpResponse(keyword, {
+            rows: [],
+            itemTypes: null,
+            aiOverview: null,
+            communityItems: null,
+            costUsd: 0.004,
+            providerStatusCode: 40_102,
+            taskStatusCode: 40_102,
+          });
+        }
+        return serpResponse(keyword, { costUsd: 0.003 });
+      },
+    );
     const providers = createKeywordProviderSeams({
       costs,
       client: {
@@ -897,10 +997,10 @@ describe("createKeywordProviderSeams", () => {
       "WWW.Example.COM.",
       "other.com",
     ]);
-    const second = providers.resolveDomainRegistrations([
-      "news.example.com",
-    ]);
-    await vi.waitFor(() => expect(resolveRegistration).toHaveBeenCalledTimes(2));
+    const second = providers.resolveDomainRegistrations(["news.example.com"]);
+    await vi.waitFor(() =>
+      expect(resolveRegistration).toHaveBeenCalledTimes(2),
+    );
     release?.();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
@@ -1082,7 +1182,9 @@ describe("createKeywordProviderSeams", () => {
     const second = await providers.resolveDomainRegistrations(["retry.com"]);
     expect(second.get("retry.com")?.availability).toBe("available");
     expect(
-      resolveRegistration.mock.calls.filter(([domain]) => domain === "retry.com"),
+      resolveRegistration.mock.calls.filter(
+        ([domain]) => domain === "retry.com",
+      ),
     ).toHaveLength(2);
   });
 
