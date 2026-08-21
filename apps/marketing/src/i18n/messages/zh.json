@@ -8691,7 +8691,107 @@
         }
       },
       "evidenceRecords": "已测量证据记录",
-      "evidenceRecordsBoundary": "证据记录是本次运行采集到的测量条目；诊断区数的是检查项，两者口径不同，数字不能互相对照。"
+      "evidenceRecordsBoundary": "证据记录是本次运行采集到的测量条目；诊断区数的是检查项，两者口径不同，数字不能互相对照。",
+      "issues": {
+        "eyebrow": "结果阅读 · 问题优先",
+        "title": "先看问题，再决定展开多少证据",
+        "body": "每个问题都是一份独立的执行单元：摘要负责帮助判断优先级，展开后才呈现受影响 URL、证据链、修复位置、验证步骤和交给 AI 的任务文本。可以同时展开多个问题来比较。",
+        "summary": {
+          "blocker": "阻断项",
+          "warning": "警告",
+          "suggestion": "建议",
+          "investigation": "待调查",
+          "passed": "已通过"
+        },
+        "filters": {
+          "all": "全部问题",
+          "blocker": "阻断",
+          "warning": "警告",
+          "suggestion": "建议",
+          "investigation": "待调查"
+        },
+        "controls": {
+          "expandVisible": "展开当前筛选",
+          "collapseAll": "全部收起"
+        },
+        "filterEmpty": "当前筛选下没有问题。切换筛选可以查看其他类别。",
+        "clean": {
+          "title": "本次运行没有发现可行动的问题",
+          "body": "这不表示站点没有任何问题，只表示本次已评估的检查项都没有命中。下方的已通过与已排除清单说明了本次覆盖到什么程度。"
+        },
+        "severity": {
+          "blocker": "阻断",
+          "warning": "警告",
+          "suggestion": "建议"
+        },
+        "lane": {
+          "investigation": "来源受限"
+        },
+        "truth": {
+          "observed": "已观测",
+          "notObserved": "未观测到",
+          "partial": "部分观测",
+          "sourceGated": "来源受限",
+          "unavailable": "不可得"
+        },
+        "unrecognizedState": "未识别状态",
+        "row": {
+          "affectedUrls": "{count} 个受影响 URL",
+          "affectedSite": "站点级范围",
+          "affectedUnavailable": "受影响范围不可得"
+        },
+        "investigationNote": "本次运行没有取得该来源的数据，因此没有对这一项得出任何结论。「不可得」不等于「没有问题」，也不等于 0。下面给出的是确认证据的调查路径，不是修复指令。",
+        "sections": {
+          "rule": "判定规则",
+          "measured": "本次测量",
+          "affected": "受影响目标",
+          "evidence": "证据链",
+          "repair": "可落地解决方案",
+          "validation": "验证步骤",
+          "boundaries": "影响、风险与限制",
+          "impact": "影响",
+          "risks": "风险",
+          "limits": "限制",
+          "boundary": "证据边界"
+        },
+        "affected": {
+          "unavailable": "本次运行无法取得受影响范围。不可得不等于 0。",
+          "siteScope": "这是站点级观测，本次没有定位到具体 URL，因此不列出 URL。",
+          "none": "本次没有记录到受影响的具体目标。",
+          "more": "以上为 {total} 个受影响 URL 中的前 {shown} 个，另有 {rest} 个未列出。"
+        },
+        "evidence": {
+          "none": "本次没有可展示的证据记录。",
+          "counts": "已测 {tested} · 命中 {affected}",
+          "limitation": "证据限制",
+          "more": "另有 {rest} 条证据记录未展开。",
+          "state": {
+            "observed": "已观测",
+            "not_observed": "未观测到",
+            "unverified": "未验证"
+          }
+        },
+        "ai": {
+          "repairTitle": "把当前问题交给 AI",
+          "repairBody": "只包含这一个问题的受影响 URL、证据、修复边界和验收要求，不复制整份报告。",
+          "investigationTitle": "把调查任务交给 AI",
+          "investigationBody": "只要求梳理所需证据与安全的调查顺序，不要求它直接修改站点。",
+          "copyRepair": "复制文本给 AI",
+          "copyInvestigation": "复制调查任务给 AI",
+          "preview": "查看任务预览",
+          "copied": "已复制当前问题的任务文本。",
+          "copyFailed": "浏览器未允许自动复制，下方已给出完全相同的文本。",
+          "fallbackLabel": "浏览器未允许自动复制。下面是完全相同的只读任务文本，聚焦后会自动全选。"
+        },
+        "passedLane": {
+          "title": "已通过的检查",
+          "hint": "默认折叠"
+        },
+        "excludedLane": {
+          "title": "已排除的检查",
+          "hint": "缺少所需输入或来源"
+        }
+      }
     }
   },
   "playbooks": {

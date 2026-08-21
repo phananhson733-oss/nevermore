@@ -200,9 +200,9 @@ describe("AgentResults", () => {
     });
   }
 
-  function disclosure(): HTMLElement | null {
+  function accordion(): HTMLElement | null {
     return host.querySelector<HTMLElement>(
-      '[data-testid="agent-recommendation-disclosure"]',
+      '[data-testid="agent-issue-accordion"]',
     );
   }
 
@@ -260,15 +260,24 @@ describe("AgentResults", () => {
     expect(host.querySelector("[data-capture-landed]")).toBeNull();
   });
 
-  it("connects captured evidence to all four review stages without inventing a score", () => {
+  function issueRows(): readonly HTMLElement[] {
+    return [...host.querySelectorAll<HTMLElement>("[data-issue-row]")];
+  }
+
+  /** Every check in the active scope lands in exactly one lane. */
+  function lanedCheckCount(): number {
+    return (
+      issueRows().length + host.querySelectorAll("[data-quiet-issue]").length
+    );
+  }
+
+  it("connects captured evidence to the diagnosis and the issue list without inventing a score", () => {
     render("seo", { response: evidencedData });
 
     expect(host.textContent).toContain("Stage 02 · Captured report");
     expect(host.textContent).toContain("Stage 02 · Diagnosis");
-    expect(host.textContent).toContain("Stage 03 · Recommendations");
-    expect(host.textContent).toContain(
-      "Stage 04 · Selected solution & validation",
-    );
+    expect(host.textContent).toContain("Reading results · issue first");
+    expect(accordion()).not.toBeNull();
     expect(host.textContent).toContain("5 groups · 31 checks");
     expect(host.textContent).toContain("Page · 9 groups / 49 checks");
     expect(host.textContent).not.toContain("0/100");
@@ -334,15 +343,11 @@ describe("AgentResults", () => {
     ).toBe("true");
   });
 
-  it("keeps Recommendations and Selected Solution inside the active scope", () => {
+  it("keeps the issue list inside the active scope", () => {
     render("seo", { response: evidencedData });
 
-    expect(
-      host.querySelector('[data-testid^="agent-recommendation-seo:site:"]'),
-    ).not.toBeNull();
-    expect(
-      host.querySelector('[data-testid^="agent-recommendation-seo:page:"]'),
-    ).toBeNull();
+    expect(host.querySelector('[data-issue-row^="seo:site:"]')).not.toBeNull();
+    expect(host.querySelector('[data-issue-row^="seo:page:"]')).toBeNull();
 
     act(() => {
       host
@@ -352,23 +357,26 @@ describe("AgentResults", () => {
         ?.click();
     });
 
-    expect(
-      host.querySelector('[data-testid^="agent-recommendation-seo:site:"]'),
-    ).toBeNull();
-    expect(
-      host.querySelector('[data-testid^="agent-recommendation-seo:page:"]'),
-    ).not.toBeNull();
+    expect(host.querySelector('[data-issue-row^="seo:site:"]')).toBeNull();
+    expect(host.querySelector('[data-issue-row^="seo:page:"]')).not.toBeNull();
   });
 
-  it("discloses the ranked total behind the three displayed recommendations", () => {
+  /**
+   * The surface this replaced showed three recommendations and disclosed the
+   * rest as a number. Showing every issue removes that gap, so what has to be
+   * guarded now is the stronger property: no check is dropped on the way to a
+   * lane, and nothing is silently capped.
+   */
+  it("lands every check of the active scope in exactly one lane", () => {
     render("seo", { response: evidencedData });
 
-    expect(
-      host.querySelectorAll('[data-testid^="agent-recommendation-seo:site:"]'),
-    ).toHaveLength(3);
-    expect(disclosure()?.getAttribute("data-ranked-shown")).toBe("3");
-    expect(disclosure()?.getAttribute("data-ranked-total")).toBe("6");
-    expect(disclosure()?.getAttribute("data-source-gaps")).toBe("25");
+    const actionable = Number(
+      accordion()?.getAttribute("data-actionable-count"),
+    );
+    expect(issueRows()).toHaveLength(actionable);
+    // The replaced surface capped the list at three.
+    expect(actionable).toBeGreaterThan(3);
+    expect(lanedCheckCount()).toBe(31);
 
     act(() => {
       host
@@ -378,29 +386,29 @@ describe("AgentResults", () => {
         ?.click();
     });
 
-    expect(disclosure()?.getAttribute("data-ranked-shown")).toBe("3");
-    expect(disclosure()?.getAttribute("data-ranked-total")).toBe("6");
-    expect(disclosure()?.getAttribute("data-source-gaps")).toBe("41");
+    expect(issueRows()).toHaveLength(
+      Number(accordion()?.getAttribute("data-actionable-count")),
+    );
+    expect(lanedCheckCount()).toBe(49);
   });
 
-  it("shows the empty recommendation state when no check could be evaluated", () => {
+  it("offers investigation rows, not a verdict, when no check could be evaluated", () => {
     render("seo");
 
     expect(host.textContent).toContain("Unavailable");
-    expect(host.textContent).toContain(
-      "No evidence-backed recommendation is available",
-    );
+    // Nothing was observed, so no severity may appear...
+    expect(host.querySelector('[data-issue-severity="blocker"]')).toBeNull();
+    expect(host.querySelector('[data-issue-severity="warning"]')).toBeNull();
+    // ...but the gated checks are still open questions, not a clean run.
     expect(
-      host.querySelector('[data-testid^="agent-recommendation-seo:"]'),
-    ).toBeNull();
-    expect(
-      host.querySelector('[data-testid="agent-selected-solution"]'),
-    ).toBeNull();
-    expect(disclosure()?.getAttribute("data-ranked-total")).toBe("0");
-    expect(disclosure()?.getAttribute("data-source-gaps")).toBe("31");
+      host.querySelector('[data-issue-lane="investigation"]'),
+    ).not.toBeNull();
+    expect(host.querySelector('[data-testid="agent-issues-clean"]')).toBeNull();
+    expect(host.textContent).toContain("Affected population unavailable");
+    expect(lanedCheckCount()).toBe(31);
   });
 
-  it("uses Tech defaults and keeps its solution identity independent", () => {
+  it("uses Tech defaults and keeps its issue identity independent", () => {
     render("tech", { response: evidencedData });
 
     expect(
@@ -408,8 +416,19 @@ describe("AgentResults", () => {
         .querySelector('[data-testid="diagnosis-group-C"]')
         ?.getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(host.querySelector("#tech-selected-solution")).not.toBeNull();
-    expect(host.querySelector("#seo-selected-solution")).toBeNull();
+    expect(host.querySelector('[data-issue-row^="tech:"]')).not.toBeNull();
+    expect(host.querySelector('[data-issue-row^="seo:"]')).toBeNull();
+
+    // Rows open on request, so the applicable context is asserted where a
+    // reader would actually meet it.
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>(
+          '[data-issue-control="expand-visible"]',
+        )
+        ?.click();
+    });
+
     expect(host.textContent).toContain("Page · device · scope");
     expect(host.textContent).not.toContain("Primary CTA");
   });

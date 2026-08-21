@@ -8691,7 +8691,107 @@
         }
       },
       "evidenceRecords": "Evidence records measured",
-      "evidenceRecordsBoundary": "Evidence records are the measurements this run collected. Diagnosis counts checks, which is a different unit, so the two numbers are not comparable."
+      "evidenceRecordsBoundary": "Evidence records are the measurements this run collected. Diagnosis counts checks, which is a different unit, so the two numbers are not comparable.",
+      "issues": {
+        "eyebrow": "Reading results · issue first",
+        "title": "See the issues first, then decide how much evidence to open",
+        "body": "Each issue is a self-contained unit of work. The summary is there to help you judge priority; opening one reveals its affected URLs, evidence chain, repair location, validation steps, and the task text to hand an assistant. Several can stay open at once for comparison.",
+        "summary": {
+          "blocker": "Blockers",
+          "warning": "Warnings",
+          "suggestion": "Suggestions",
+          "investigation": "To investigate",
+          "passed": "Passed"
+        },
+        "filters": {
+          "all": "All issues",
+          "blocker": "Blockers",
+          "warning": "Warnings",
+          "suggestion": "Suggestions",
+          "investigation": "To investigate"
+        },
+        "controls": {
+          "expandVisible": "Expand current filter",
+          "collapseAll": "Collapse all"
+        },
+        "filterEmpty": "No issues under this filter. Switch filters to see the other categories.",
+        "clean": {
+          "title": "This run found nothing actionable",
+          "body": "That does not mean the site has no problems — only that every check this run evaluated came back clean. The passed and excluded lists below state how far this run's coverage reached."
+        },
+        "severity": {
+          "blocker": "Blocker",
+          "warning": "Warning",
+          "suggestion": "Suggestion"
+        },
+        "lane": {
+          "investigation": "Source gated"
+        },
+        "truth": {
+          "observed": "Observed",
+          "notObserved": "Not observed",
+          "partial": "Partial",
+          "sourceGated": "Source gated",
+          "unavailable": "Unavailable"
+        },
+        "unrecognizedState": "Unrecognised state",
+        "row": {
+          "affectedUrls": "{count} affected URLs",
+          "affectedSite": "Site-level scope",
+          "affectedUnavailable": "Affected population unavailable"
+        },
+        "investigationNote": "This run obtained no data from that source, so it reached no conclusion for this check. Unavailable is not 'no problem', and it is not zero. What follows is the path to establish the evidence, not a repair instruction.",
+        "sections": {
+          "rule": "Decision rule",
+          "measured": "Measured this run",
+          "affected": "Affected targets",
+          "evidence": "Evidence chain",
+          "repair": "Repair location",
+          "validation": "Validation steps",
+          "boundaries": "Impact, risks, and limits",
+          "impact": "Impact",
+          "risks": "Risks",
+          "limits": "Limits",
+          "boundary": "Evidence boundary"
+        },
+        "affected": {
+          "unavailable": "This run could not obtain the affected population. Unavailable is not zero.",
+          "siteScope": "This is a site-level observation. It resolved to no individual URL, so none is listed.",
+          "none": "No individual affected target was recorded this run.",
+          "more": "Listed {shown} of {total} affected URLs; {rest} more not listed."
+        },
+        "evidence": {
+          "none": "No evidence record is available to show.",
+          "counts": "tested {tested} · affected {affected}",
+          "limitation": "Evidence limitation",
+          "more": "{rest} further evidence records not expanded.",
+          "state": {
+            "observed": "Observed",
+            "not_observed": "Not observed",
+            "unverified": "Unverified"
+          }
+        },
+        "ai": {
+          "repairTitle": "Hand this issue to an assistant",
+          "repairBody": "Carries only this issue's affected URLs, evidence, repair boundary, and acceptance criteria — not the whole report.",
+          "investigationTitle": "Hand the investigation to an assistant",
+          "investigationBody": "Asks only for the evidence needed and a safe order to obtain it; it does not ask for a change to the site.",
+          "copyRepair": "Copy text for AI",
+          "copyInvestigation": "Copy investigation task",
+          "preview": "View task preview",
+          "copied": "Copied the task text for this issue.",
+          "copyFailed": "The browser did not allow copying; the identical text is shown below.",
+          "fallbackLabel": "The browser did not allow copying. Below is the identical read-only task text; focusing it selects all."
+        },
+        "passedLane": {
+          "title": "Passed checks",
+          "hint": "collapsed by default"
+        },
+        "excludedLane": {
+          "title": "Excluded checks",
+          "hint": "missing required input or source"
+        }
+      }
     }
   },
   "playbooks": {

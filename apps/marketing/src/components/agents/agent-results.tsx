@@ -16,10 +16,10 @@ import {
   type AgentDiagnosisContext,
 } from "./agent-audit-model";
 import { AgentDiagnosis } from "./agent-diagnosis";
+import { AgentIssueAccordion } from "./agent-issue-accordion";
+import { buildAgentIssueModel } from "./agent-issue-model";
 import type { AgentProfileDraft } from "./agent-profile";
-import { AgentRecommendations } from "./agent-recommendations";
 import {
-  analyzeAgentRecommendations,
   notCollectedUrlCount,
   summarizeAgentRecords,
 } from "./agent-result-helpers";
@@ -114,21 +114,27 @@ export function AgentResults({
   const [selectedCheckIds, setSelectedCheckIds] = useState<
     Record<AgentAuditScope, string | null>
   >({ site: null, page: null });
-  const [selectedRecommendationIds, setSelectedRecommendationIds] = useState<
-    Record<AgentAuditScope, string | null>
-  >({ site: null, page: null });
   const summary = summarizeAgentRecords(data.result.records);
   const notCollected = notCollectedUrlCount(data.result.coverage);
   const scopedChecks = useMemo(
     () => model.evaluatedChecks.filter((check) => check.check.scope === scope),
     [model, scope],
   );
-  const recommendationAnalysis = useMemo(
+  /**
+   * The same joined list the evaluator decided from. Handing the crawl ledger
+   * alone would show a search check that decided beside no evidence at all,
+   * because its record lives in the other list.
+   */
+  const joinedRecords = useMemo(() => allAgentAuditRecords(data), [data]);
+  const issueModel = useMemo(
     () =>
-      analyzeAgentRecommendations(agent, scopedChecks, data.result.records, {
+      buildAgentIssueModel({
+        agent,
+        checks: scopedChecks,
+        records: joinedRecords,
         targetUrl: data.result.targetUrl,
       }),
-    [agent, data.result.records, data.result.targetUrl, scopedChecks],
+    [agent, data.result.targetUrl, joinedRecords, scopedChecks],
   );
   /**
    * Evidence records are collected measurements, so they are labelled as
@@ -299,52 +305,17 @@ export function AgentResults({
         onCheckChange={handleCheckChange}
       />
 
-      <AgentRecommendations
-        agent={agent}
+      <AgentIssueAccordion
+        model={issueModel}
         locale={locale}
-        targetUrl={data.result.targetUrl}
-        evaluatedChecks={scopedChecks}
-        // The same joined list the evaluator decided from. Handing the crawl
-        // ledger alone would show a search check that decided beside no
-        // evidence at all, because its record lives in the other list.
-        records={allAgentAuditRecords(data)}
-        targetPageExtract={data.result.targetPageExtract}
         profile={profile}
-        selectedRecommendationId={selectedRecommendationIds[scope]}
-        onSelectRecommendation={(recommendationId) =>
-          setSelectedRecommendationIds((current) => ({
-            ...current,
-            [scope]: recommendationId,
-          }))
-        }
+        run={{
+          completedAt: data.run.source.completedAt,
+          sourceTool: data.run.source.tool,
+          schemaVersion: data.run.source.schemaVersion,
+        }}
+        targetPageExtract={data.result.targetPageExtract}
       />
-
-      {recommendationAnalysis.hiddenCount > 0 ||
-      recommendationAnalysis.dataSourceGaps.length > 0 ? (
-        <div
-          data-testid="agent-recommendation-disclosure"
-          data-ranked-shown={recommendationAnalysis.ranked.length}
-          data-ranked-total={recommendationAnalysis.rankedTotal}
-          data-source-gaps={recommendationAnalysis.dataSourceGaps.length}
-          className="rounded-row border border-brand-border bg-brand-panel-sunken px-4 py-3"
-        >
-          {recommendationAnalysis.hiddenCount > 0 ? (
-            <p className="text-[11.5px] leading-[1.6] text-text-dark-secondary">
-              {t("recommendations.rankedDisclosure", {
-                shown: recommendationAnalysis.ranked.length,
-                total: recommendationAnalysis.rankedTotal,
-              })}
-            </p>
-          ) : null}
-          {recommendationAnalysis.dataSourceGaps.length > 0 ? (
-            <p className="mt-1.5 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-              {t("recommendations.dataSourceGaps", {
-                count: recommendationAnalysis.dataSourceGaps.length,
-              })}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
       <p className="text-center font-mono text-[11px] tracking-[0.05em] text-text-dark-faint">
         {t("runBoundary", {
