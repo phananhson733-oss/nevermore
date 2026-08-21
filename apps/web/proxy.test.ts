@@ -69,4 +69,23 @@ describe("web proxy security boundary", () => {
       "https://app.signalframe.test/login?next=%2Fp%2Fproject-1%2Freport%3FoutputLocale%3Dzh-CN%26tab%3Dsummary",
     );
   });
+
+  it("serves robots.txt to crawlers instead of redirecting them to login", async () => {
+    // Googlebot has no session. When /robots.txt 307s to /login it never gets
+    // a crawl policy at all, falls back to "everything is allowed", and walks
+    // the /login HTML into every /_next/static asset it references.
+    mocks.updateSession.mockResolvedValue({
+      response: NextResponse.next(),
+      user: null,
+    });
+
+    const response = await proxy(
+      new NextRequest("https://app.signalframe.test/robots.txt"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    // Robots policy must survive an auth outage the same way health does.
+    expect(mocks.updateSession).not.toHaveBeenCalled();
+  });
 });

@@ -46,4 +46,11 @@ describe("web security headers", () => {
       buildContentSecurityPolicy(false, "bad'; script-src *"),
     ).toThrow(/nonce/i);
   });
+
+  it("marks the whole app subdomain noindex", () => {
+    // app.gengrowth.ai is a signed-in product surface with nothing worth
+    // ranking. Without this header /login is indexable, and Search Console
+    // reports the subdomain's build assets as real coverage problems.
+    expect(asRecord()["X-Robots-Tag"]).toBe("noindex");
+  });
 });
