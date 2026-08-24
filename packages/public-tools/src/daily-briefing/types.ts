@@ -140,6 +140,33 @@ export interface DailyBriefingAction {
   readonly page: string;
 }
 
+export type DailyBriefingPropertyChangeKind =
+  | "sitewide_click_decline"
+  | "sitewide_visibility_decline"
+  | "sitewide_visibility_gain";
+
+export interface DailyBriefingPropertyChange {
+  readonly kind: DailyBriefingPropertyChangeKind;
+  readonly evidence: "observed";
+  readonly query: null;
+  readonly page: null;
+  readonly current: DailyBriefingKpis;
+  readonly previous: DailyBriefingKpis;
+  readonly clickChange: number;
+  readonly clickChangeRatio: number | null;
+  readonly impressionChange: number;
+  readonly impressionChangeRatio: number | null;
+  readonly positionDelta: number | null;
+}
+
+export interface DailyBriefingPropertyFallback {
+  readonly change: DailyBriefingPropertyChange;
+  readonly action: {
+    readonly kind: DailyBriefingPropertyChangeKind;
+    readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
+  };
+}
+
 export type DailyBriefingLimitationCode =
   | "daily_data_incomplete"
   | "daily_rows_omitted"
@@ -158,6 +185,7 @@ export interface DailyBriefingResult {
   readonly cadence: DailyBriefingCadence;
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
+  readonly propertyFallback: DailyBriefingPropertyFallback | null;
   /** Rows in the observed query read that did not clear any signal threshold. */
   readonly filteredObservedRows: number;
   /** False when the count describes only a prefix or no query read happened. */

@@ -5,6 +5,9 @@ import {
   BRIEFING_MATERIAL_CHANGE_RATIO,
   BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE,
   BRIEFING_MIN_ROW_IMPRESSIONS,
+  BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE,
+  BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS,
+  BRIEFING_PROPERTY_POSITION_DELTA,
   BRIEFING_STABLE_POSITION_DELTA,
   BRIEFING_WINDOW_DAYS,
   DAILY_BRIEFING_ACTION_LIMIT,
@@ -49,6 +52,41 @@ function completeDateRows(
       clicks: Math.min(10, currentImpressions[index] ?? 0),
       impressions: currentImpressions[index] ?? 0,
       position: 7,
+    })),
+  ];
+}
+
+function distributedTotal(total: number, index: number): number {
+  return Math.floor(total / 7) + (index < total % 7 ? 1 : 0);
+}
+
+function propertyDateRows({
+  currentClicks,
+  currentImpressions,
+  currentPosition,
+  previousClicks,
+  previousImpressions,
+  previousPosition,
+}: {
+  readonly currentClicks: number;
+  readonly currentImpressions: number;
+  readonly currentPosition: number;
+  readonly previousClicks: number;
+  readonly previousImpressions: number;
+  readonly previousPosition: number;
+}) {
+  return [
+    ...PREVIOUS_DATES.map((date, index) => ({
+      date,
+      clicks: distributedTotal(previousClicks, index),
+      impressions: distributedTotal(previousImpressions, index),
+      position: previousPosition,
+    })),
+    ...CURRENT_DATES.map((date, index) => ({
+      date,
+      clicks: distributedTotal(currentClicks, index),
+      impressions: distributedTotal(currentImpressions, index),
+      position: currentPosition,
     })),
   ];
 }
@@ -145,6 +183,9 @@ describe("daily briefing contract and windows", () => {
     expect(BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE).toBe(3);
     expect(BRIEFING_STABLE_POSITION_DELTA).toBe(0.5);
     expect(DAILY_BRIEFING_ACTION_LIMIT).toBe(3);
+    expect(BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS).toBe(1_000);
+    expect(BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE).toBe(100);
+    expect(BRIEFING_PROPERTY_POSITION_DELTA).toBe(1);
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
@@ -584,6 +625,317 @@ describe("query changes and actions", () => {
       }),
     ]);
     expect(result.limitations).toContain("brand_terms_not_confirmed");
+  });
+});
+
+describe("property fallback", () => {
+  it("falls back to an observed property click decline when query signals are empty", () => {
+    const currentRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`astrology current ${index}`, 98, index === 0 ? 1 : 0, 12),
+    );
+    const previousRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`astrology previous ${index}`, 98, index === 0 ? 1 : 0, 10),
+    );
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(
+        currentRows,
+        currentRows.map((row, index) =>
+          queryPageRow(
+            row.query,
+            `https://astrologywiki.com/current-${index}`,
+            row.impressions,
+            row.clicks,
+            row.position,
+          ),
+        ),
+      ),
+      previousQueryEvidence: evidence(
+        previousRows,
+        previousRows.map((row, index) =>
+          queryPageRow(
+            row.query,
+            `https://astrologywiki.com/previous-${index}`,
+            row.impressions,
+            row.clicks,
+            row.position,
+          ),
+        ),
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.propertyFallback).toEqual({
+      change: {
+        kind: "sitewide_click_decline",
+        evidence: "observed",
+        query: null,
+        page: null,
+        current: {
+          clicks: 35,
+          impressions: 4_900,
+          ctr: 35 / 4_900,
+          position: 12,
+        },
+        previous: {
+          clicks: 70,
+          impressions: 7_000,
+          ctr: 70 / 7_000,
+          position: 10,
+        },
+        clickChange: -35,
+        clickChangeRatio: -0.5,
+        impressionChange: -2_100,
+        impressionChangeRatio: -0.3,
+        positionDelta: 2,
+      },
+      action: {
+        kind: "sitewide_click_decline",
+        destination: "traffic-drop-diagnosis",
+      },
+    });
+  });
+
+  it("includes the exact click-decline and weekly impression floor boundaries", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 17,
+        previousImpressions: 1_000,
+        currentImpressions: 1_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_click_decline",
+      clickChange: -3,
+      clickChangeRatio: -0.15,
+      positionDelta: 0,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+  });
+
+  it("prioritizes click decline when click and visibility declines both qualify", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 10,
+        previousImpressions: 2_000,
+        currentImpressions: 1_600,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change.kind).toBe(
+      "sitewide_click_decline",
+    );
+    expect(result.propertyFallback?.action.destination).toBe(
+      "traffic-drop-diagnosis",
+    );
+  });
+
+  it("falls through to visibility decline at the exact ratio and position boundaries", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 18,
+        previousImpressions: 2_000,
+        currentImpressions: 1_700,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_decline",
+      clickChange: -2,
+      clickChangeRatio: -0.1,
+      impressionChange: -300,
+      impressionChangeRatio: -0.15,
+      positionDelta: 1,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_visibility_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+  });
+
+  it("emits a visibility gain from an exact-boundary click gain", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 23,
+        previousImpressions: 2_000,
+        currentImpressions: 2_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_gain",
+      clickChange: 3,
+      clickChangeRatio: 0.15,
+      impressionChange: 0,
+      impressionChangeRatio: 0,
+      positionDelta: 0,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_visibility_gain",
+      destination: "seo-quick-wins",
+    });
+  });
+
+  it("emits a visibility gain from impression growth plus position improvement", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 20,
+        previousImpressions: 2_000,
+        currentImpressions: 2_300,
+        previousPosition: 10,
+        currentPosition: 9,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_gain",
+      clickChange: 0,
+      clickChangeRatio: 0,
+      impressionChange: 300,
+      impressionChangeRatio: 0.15,
+      positionDelta: -1,
+    });
+    expect(result.propertyFallback?.action.destination).toBe("seo-quick-wins");
+  });
+
+  it("preserves a missing click denominator while selecting visibility decline", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 0,
+        currentClicks: 0,
+        previousImpressions: 2_000,
+        currentImpressions: 1_700,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_decline",
+      clickChange: 0,
+      clickChangeRatio: null,
+      impressionChangeRatio: -0.15,
+      positionDelta: 1,
+    });
+  });
+
+  it.each([
+    { currentImpressions: 999, previousImpressions: 1_000 },
+    { currentImpressions: 1_000, previousImpressions: 999 },
+  ])(
+    "returns null when either weekly window is below the property floor (%o)",
+    ({ currentImpressions, previousImpressions }) => {
+      const result = report({
+        dateRows: propertyDateRows({
+          previousClicks: 20,
+          currentClicks: 10,
+          previousImpressions,
+          currentImpressions,
+          previousPosition: 10,
+          currentPosition: 12,
+        }),
+      }).result;
+
+      expect(result.weekly.evidence).toBe("observed");
+      expect(result.propertyFallback).toBeNull();
+    },
+  );
+
+  it("returns null when the weekly comparison is unavailable", () => {
+    const dateRows = propertyDateRows({
+      previousClicks: 70,
+      currentClicks: 35,
+      previousImpressions: 7_000,
+      currentImpressions: 4_900,
+      previousPosition: 10,
+      currentPosition: 12,
+    }).filter((row) => row.date !== "2026-08-20");
+    const result = report({ dateRows }).result;
+
+    expect(result.weekly.evidence).toBe("unavailable");
+    expect(result.propertyFallback).toBeNull();
+  });
+
+  it("returns null for a stable property", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 20,
+        previousImpressions: 2_000,
+        currentImpressions: 2_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback).toBeNull();
+  });
+
+  it("suppresses the property fallback when a query-page change is selected", () => {
+    const query = "workflow templates";
+    const page = "https://example.com/templates";
+    const currentRows = [queryRow(query, 200, 10, 5.2)];
+    const previousRows = [queryRow(query, 200, 20, 5)];
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(currentRows, [
+        queryPageRow(query, page, 200, 10, 5.2),
+      ]),
+      previousQueryEvidence: evidence(previousRows, [
+        queryPageRow(query, page, 200, 20, 5),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([
+      expect.objectContaining({
+        kind: "stable_position_click_decline",
+        query,
+        page,
+      }),
+    ]);
+    expect(result.actions).toEqual([
+      expect.objectContaining({
+        kind: "stable_position_click_decline",
+        destination: "traffic-drop-diagnosis",
+        query,
+        page,
+      }),
+    ]);
+    expect(result.propertyFallback).toBeNull();
   });
 });
 

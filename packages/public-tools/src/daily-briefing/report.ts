@@ -27,6 +27,8 @@ import type {
   DailyBriefingKpiDelta,
   DailyBriefingKpis,
   DailyBriefingLimitationCode,
+  DailyBriefingPropertyChangeKind,
+  DailyBriefingPropertyFallback,
   DailyBriefingQueryEvidence,
   DailyBriefingWindowCoverage,
   DailyBriefingWindows,
@@ -40,6 +42,9 @@ export const BRIEFING_MATERIAL_CHANGE_RATIO = 0.15;
 export const BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE = 3;
 export const BRIEFING_STABLE_POSITION_DELTA = 0.5;
 export const DAILY_BRIEFING_ACTION_LIMIT = 3;
+export const BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS = 1_000;
+export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
+export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
 const FIRST_OBSERVED_MIN_POSITION = 8;
 const FIRST_OBSERVED_MAX_POSITION = 21;
@@ -675,6 +680,90 @@ function selectChanges(
   };
 }
 
+function propertyFallbackFor(
+  weekly: DailyBriefingKpiComparison,
+): DailyBriefingPropertyFallback | null {
+  if (
+    weekly.evidence !== "observed" ||
+    weekly.current === null ||
+    weekly.previous === null ||
+    weekly.current.impressions < BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS ||
+    weekly.previous.impressions < BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS
+  ) {
+    return null;
+  }
+
+  const current = weekly.current;
+  const previous = weekly.previous;
+  const clickChange = current.clicks - previous.clicks;
+  const clickChangeRatio = ratio(previous.clicks, current.clicks);
+  const impressionChange = current.impressions - previous.impressions;
+  const impressionChangeRatio = ratio(
+    previous.impressions,
+    current.impressions,
+  );
+  const positionDelta =
+    current.position === null || previous.position === null
+      ? null
+      : current.position - previous.position;
+
+  let kind: DailyBriefingPropertyChangeKind | null = null;
+  let destination: DailyBriefingPropertyFallback["action"]["destination"] | null =
+    null;
+
+  if (
+    clickChange <= -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
+    clickChangeRatio !== null &&
+    clickChangeRatio <= -BRIEFING_MATERIAL_CHANGE_RATIO
+  ) {
+    kind = "sitewide_click_decline";
+    destination = "traffic-drop-diagnosis";
+  } else if (
+    impressionChange <= -BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE &&
+    impressionChangeRatio !== null &&
+    impressionChangeRatio <= -BRIEFING_MATERIAL_CHANGE_RATIO &&
+    positionDelta !== null &&
+    positionDelta >= BRIEFING_PROPERTY_POSITION_DELTA
+  ) {
+    kind = "sitewide_visibility_decline";
+    destination = "traffic-drop-diagnosis";
+  } else {
+    const clickGainClears =
+      clickChange >= BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
+      clickChangeRatio !== null &&
+      clickChangeRatio >= BRIEFING_MATERIAL_CHANGE_RATIO;
+    const impressionAndPositionGainClears =
+      impressionChange >= BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE &&
+      impressionChangeRatio !== null &&
+      impressionChangeRatio >= BRIEFING_MATERIAL_CHANGE_RATIO &&
+      positionDelta !== null &&
+      positionDelta <= -BRIEFING_PROPERTY_POSITION_DELTA;
+    if (clickGainClears || impressionAndPositionGainClears) {
+      kind = "sitewide_visibility_gain";
+      destination = "seo-quick-wins";
+    }
+  }
+
+  if (kind === null || destination === null) return null;
+
+  return {
+    change: {
+      kind,
+      evidence: "observed",
+      query: null,
+      page: null,
+      current,
+      previous,
+      clickChange,
+      clickChangeRatio,
+      impressionChange,
+      impressionChangeRatio,
+      positionDelta,
+    },
+    action: { kind, destination },
+  };
+}
+
 /** Build one report solely from supplied observations. */
 export function buildDailyBriefing(
   input: BuildDailyBriefingInput,
@@ -792,6 +881,8 @@ export function buildDailyBriefing(
       limitations.add("query_page_coverage_below_floor");
     }
   }
+  const propertyFallback =
+    changes.length === 0 ? propertyFallbackFor(weekly) : null;
 
   return createPublicToolResult(
     {
@@ -812,6 +903,7 @@ export function buildDailyBriefing(
           : "daily",
       changes,
       actions,
+      propertyFallback,
       filteredObservedRows,
       countComplete,
       coverage,
