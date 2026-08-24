@@ -90,7 +90,6 @@ but it never inserts a fake row into the query/page machine contract.
 
 ```ts
 type DailyBriefingPropertyChange = {
-  readonly scope: "property";
   readonly kind:
     | "sitewide_click_decline"
     | "sitewide_visibility_decline"
