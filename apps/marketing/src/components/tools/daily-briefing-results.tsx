@@ -306,6 +306,7 @@ export function DailyBriefingResults({
       written = writeToolHandoff(window.sessionStorage, Date.now(), {
         source: "daily-search-briefing",
         destination: action.destination,
+        scope: "query_page",
         property,
         query: action.query,
         page: action.page,

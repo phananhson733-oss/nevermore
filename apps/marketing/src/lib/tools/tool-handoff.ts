@@ -16,19 +16,33 @@ export interface ToolHandoffStorage {
   readonly removeItem: (key: string) => void;
 }
 
-export interface ToolHandoffPayload {
-  readonly source: "daily-search-briefing";
-  readonly destination: ToolHandoffDestination;
-  readonly property: string;
-  readonly query: string;
-  readonly page: string;
-  readonly evidenceId: string;
-}
+export type ToolHandoffPayload =
+  | {
+      readonly source: "daily-search-briefing";
+      readonly destination: ToolHandoffDestination;
+      readonly scope: "query_page";
+      readonly property: string;
+      readonly query: string;
+      readonly page: string;
+      readonly evidenceId: string;
+    }
+  | {
+      readonly source: "daily-search-briefing";
+      readonly destination: Exclude<
+        ToolHandoffDestination,
+        "on-page-seo-check"
+      >;
+      readonly scope: "property";
+      readonly property: string;
+      readonly query: null;
+      readonly page: null;
+      readonly evidenceId: string;
+    };
 
-export interface ToolHandoff extends ToolHandoffPayload {
+export type ToolHandoff = ToolHandoffPayload & {
   readonly createdAt: number;
   readonly expiresAt: number;
-}
+};
 
 const MAX_PROPERTY_LENGTH = 512;
 const MAX_QUERY_LENGTH = 512;
@@ -37,6 +51,7 @@ const MAX_EVIDENCE_ID_LENGTH = 256;
 const PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "source",
   "destination",
+  "scope",
   "property",
   "query",
   "page",
@@ -54,6 +69,12 @@ function isDestination(value: unknown): value is ToolHandoffDestination {
     value === "traffic-drop-diagnosis" ||
     value === "on-page-seo-check"
   );
+}
+
+function isPropertyDestination(
+  value: unknown,
+): value is Exclude<ToolHandoffDestination, "on-page-seo-check"> {
+  return value === "seo-quick-wins" || value === "traffic-drop-diagnosis";
 }
 
 function isFiniteTimestamp(value: unknown): value is number {
@@ -80,20 +101,44 @@ function hasExactKeys(
   return keys.length === expected.size && keys.every((key) => expected.has(key));
 }
 
+function hasValidPayloadFields(
+  value: Readonly<Record<string, unknown>>,
+): boolean {
+  if (
+    value.source !== "daily-search-briefing" ||
+    !nonEmptyString(value.property, MAX_PROPERTY_LENGTH) ||
+    !nonEmptyString(value.evidenceId, MAX_EVIDENCE_ID_LENGTH)
+  ) {
+    return false;
+  }
+
+  if (value.scope === "query_page") {
+    return (
+      isDestination(value.destination) &&
+      nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
+      nonEmptyString(value.page, MAX_PAGE_LENGTH)
+    );
+  }
+
+  if (value.scope === "property") {
+    return (
+      isPropertyDestination(value.destination) &&
+      value.query === null &&
+      value.page === null
+    );
+  }
+
+  return false;
+}
+
 function isToolHandoff(value: unknown): value is ToolHandoff {
   if (!isObject(value) || !hasExactKeys(value, HANDOFF_KEYS)) return false;
-  const candidate = value as Partial<ToolHandoff>;
   return (
-    candidate.source === "daily-search-briefing" &&
-    isDestination(candidate.destination) &&
-    nonEmptyString(candidate.property, MAX_PROPERTY_LENGTH) &&
-    nonEmptyString(candidate.query, MAX_QUERY_LENGTH) &&
-    nonEmptyString(candidate.page, MAX_PAGE_LENGTH) &&
-    nonEmptyString(candidate.evidenceId, MAX_EVIDENCE_ID_LENGTH) &&
-    isFiniteTimestamp(candidate.createdAt) &&
-    isFiniteTimestamp(candidate.expiresAt) &&
-    candidate.expiresAt > candidate.createdAt &&
-    candidate.expiresAt - candidate.createdAt <= TOOL_HANDOFF_TTL_MS
+    hasValidPayloadFields(value) &&
+    isFiniteTimestamp(value.createdAt) &&
+    isFiniteTimestamp(value.expiresAt) &&
+    value.expiresAt > value.createdAt &&
+    value.expiresAt - value.createdAt <= TOOL_HANDOFF_TTL_MS
   );
 }
 
@@ -106,26 +151,35 @@ export function writeToolHandoff(
     !Number.isFinite(now) ||
     !isObject(payload) ||
     !hasExactKeys(payload, PAYLOAD_KEYS) ||
-    payload.source !== "daily-search-briefing" ||
-    !isDestination(payload.destination) ||
-    !nonEmptyString(payload.property, MAX_PROPERTY_LENGTH) ||
-    !nonEmptyString(payload.query, MAX_QUERY_LENGTH) ||
-    !nonEmptyString(payload.page, MAX_PAGE_LENGTH) ||
-    !nonEmptyString(payload.evidenceId, MAX_EVIDENCE_ID_LENGTH)
+    !hasValidPayloadFields(payload)
   ) {
     return false;
   }
 
-  const handoff: ToolHandoff = {
-    source: payload.source,
-    destination: payload.destination,
-    property: payload.property.trim(),
-    query: payload.query.trim(),
-    page: payload.page.trim(),
-    evidenceId: payload.evidenceId.trim(),
-    createdAt: now,
-    expiresAt: now + TOOL_HANDOFF_TTL_MS,
-  };
+  const handoff: ToolHandoff =
+    payload.scope === "query_page"
+      ? {
+          source: payload.source,
+          destination: payload.destination,
+          scope: payload.scope,
+          property: payload.property.trim(),
+          query: payload.query.trim(),
+          page: payload.page.trim(),
+          evidenceId: payload.evidenceId.trim(),
+          createdAt: now,
+          expiresAt: now + TOOL_HANDOFF_TTL_MS,
+        }
+      : {
+          source: payload.source,
+          destination: payload.destination,
+          scope: payload.scope,
+          property: payload.property.trim(),
+          query: null,
+          page: null,
+          evidenceId: payload.evidenceId.trim(),
+          createdAt: now,
+          expiresAt: now + TOOL_HANDOFF_TTL_MS,
+        };
 
   try {
     storage.setItem(TOOL_HANDOFF_KEY, JSON.stringify(handoff));

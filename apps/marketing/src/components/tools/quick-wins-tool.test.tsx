@@ -52,6 +52,7 @@ const { QuickWinsTool } = await import("./quick-wins-tool.tsx");
 
 const PROPERTY_A = "sc-domain:a.example";
 const PROPERTY_B = "sc-domain:b.example";
+const PROPERTIES = [PROPERTY_A, PROPERTY_B] as const;
 const NOTICE =
   "Brought in from Daily Search Briefing. This tool has not been run again yet.";
 const originalFetch = globalThis.fetch;
@@ -62,10 +63,25 @@ function stageHandoff(property = PROPERTY_B): void {
     writeToolHandoff(sessionStorage, Date.now(), {
       source: "daily-search-briefing",
       destination: "seo-quick-wins",
+      scope: "query_page",
       property,
       query: "pricing automation",
       page: "https://b.example/pricing",
       evidenceId: "click-opportunity:pricing-automation",
+    }),
+  ).toBe(true);
+}
+
+function stagePropertyHandoff(property = PROPERTY_B): void {
+  expect(
+    writeToolHandoff(sessionStorage, Date.now(), {
+      source: "daily-search-briefing",
+      destination: "seo-quick-wins",
+      scope: "property",
+      property,
+      query: null,
+      page: null,
+      evidenceId: "sitewide-visibility-gain",
     }),
   ).toBe(true);
 }
@@ -89,11 +105,16 @@ afterEach(async () => {
 });
 
 async function renderTool(
-  properties: readonly string[] = [PROPERTY_A, PROPERTY_B],
+  properties: readonly string[] = PROPERTIES,
 ): Promise<HTMLElement> {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  await rerenderTool(properties);
+  return host;
+}
+
+async function rerenderTool(properties: readonly string[]): Promise<void> {
   await act(async () => {
     root?.render(
       <QuickWinsTool
@@ -105,7 +126,6 @@ async function renderTool(
       />,
     );
   });
-  return host;
 }
 
 async function change(
@@ -152,6 +172,34 @@ describe("Quick Wins Daily Briefing handoff", () => {
     expect(host.textContent).toContain(NOTICE);
     expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("imports property scope, resets property-owned state, and never auto-runs", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: { code: "gsc_unavailable" } },
+        { status: 502 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+    const brand = host.querySelector('input[type="text"]') as HTMLInputElement;
+    await change(brand, "alpha");
+    await click(buttonWith(host, "Find the gaps"));
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+
+    fetchMock.mockClear();
+    stagePropertyHandoff();
+    await rerenderTool([...PROPERTIES]);
+
+    expect((host.querySelector("select") as HTMLSelectElement).value).toBe(
+      PROPERTY_B,
+    );
+    expect(brand.value).toBe("");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain(NOTICE);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("ignores a property outside the granted list", async () => {

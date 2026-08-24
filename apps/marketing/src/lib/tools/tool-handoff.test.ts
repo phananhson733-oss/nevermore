@@ -27,10 +27,23 @@ function payload() {
   return {
     source: "daily-search-briefing" as const,
     destination: "on-page-seo-check" as const,
+    scope: "query_page" as const,
     property: "sc-domain:example.com",
     query: "pricing automation",
     page: "https://example.com/pricing",
     evidenceId: "first-observed:pricing-automation",
+  };
+}
+
+function propertyPayload() {
+  return {
+    source: "daily-search-briefing" as const,
+    destination: "traffic-drop-diagnosis" as const,
+    scope: "property" as const,
+    property: "sc-domain:example.com",
+    query: null,
+    page: null,
+    evidenceId: "sitewide-click-decline",
   };
 }
 
@@ -49,6 +62,7 @@ describe("tool handoff storage", () => {
     expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toEqual({
       source: "daily-search-briefing",
       destination: "on-page-seo-check",
+      scope: "query_page",
       property: "sc-domain:example.com",
       query: "pricing automation",
       page: "https://example.com/pricing",
@@ -57,6 +71,68 @@ describe("tool handoff storage", () => {
       expiresAt: now + TOOL_HANDOFF_TTL_MS,
     });
     expect(consumeToolHandoff(session, now + 2, "on-page-seo-check")).toBeNull();
+  });
+
+  it("writes one property-scoped handoff with no invented query or page", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(writeToolHandoff(session, now, propertyPayload())).toBe(true);
+
+    expect(
+      consumeToolHandoff(session, now + 1, "traffic-drop-diagnosis"),
+    ).toEqual({
+      source: "daily-search-briefing",
+      destination: "traffic-drop-diagnosis",
+      scope: "property",
+      property: "sc-domain:example.com",
+      query: null,
+      page: null,
+      evidenceId: "sitewide-click-decline",
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+  });
+
+  it.each([
+    ["a property query", { ...propertyPayload(), query: "invented query" }],
+    ["a property page", { ...propertyPayload(), page: "https://example.com" }],
+    [
+      "a property destination for On-Page",
+      { ...propertyPayload(), destination: "on-page-seo-check" },
+    ],
+    ["a null query/page query", { ...payload(), query: null }],
+    ["a blank query/page query", { ...payload(), query: "   " }],
+    ["a null query/page page", { ...payload(), page: null }],
+    ["a blank query/page page", { ...payload(), page: "   " }],
+    [
+      "a missing scope",
+      {
+        source: "daily-search-briefing",
+        destination: "traffic-drop-diagnosis",
+        property: "sc-domain:example.com",
+        query: null,
+        page: null,
+        evidenceId: "sitewide-click-decline",
+      },
+    ],
+    ["an unknown scope", { ...propertyPayload(), scope: "site" }],
+  ] as const)("rejects %s on write and removes it on consume", (_label, candidate) => {
+    const written = storage();
+    const stored = storage();
+
+    expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+    stored.setItem(
+      TOOL_HANDOFF_KEY,
+      JSON.stringify({
+        ...candidate,
+        createdAt: 1_000,
+        expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+      }),
+    );
+
+    expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
+    expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
   });
 
   it("leaves the payload untouched for a different destination", () => {

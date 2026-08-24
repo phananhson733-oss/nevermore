@@ -563,10 +563,12 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     expect(writeToolHandoffMock).toHaveBeenCalledOnce();
     const payload = writeToolHandoffMock.mock.calls[0]?.[2] as {
+      readonly scope: string;
       readonly evidenceId: string;
       readonly query: string;
       readonly page: string;
     };
+    expect(payload.scope).toBe("query_page");
     expect(payload.evidenceId).toBe("daily:0:click_opportunity");
     expect(payload.evidenceId.length).toBeLessThanOrEqual(256);
     expect(payload.query).toBe(longQuery);

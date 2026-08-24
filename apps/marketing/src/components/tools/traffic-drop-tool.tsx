@@ -1,4 +1,4 @@
-// @input  -- locale, GSC state, one local Daily Briefing handoff, diagnosis API
+// @input  -- locale, GSC state, one scope-aware Daily Briefing handoff, diagnosis API
 // @output -- property-owned prefill, connect/run/diagnosis states, analytics
 // @pos    -- primary client surface for /[locale]/tools/traffic-drop-diagnosis
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -185,6 +185,8 @@ export function TrafficDropTool({
         "traffic-drop-diagnosis",
       );
       if (handoff === null || !properties?.includes(handoff.property)) return;
+      // Both legal scopes select only a granted property here; neither starts
+      // the diagnosis or carries old answers across sites.
       selectProperty(handoff.property);
       setHandoffImported(true);
     } catch {
