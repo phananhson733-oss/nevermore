@@ -58,27 +58,33 @@ gates. Production must never pad a report with those values.
 - No persistence, scheduled monitoring, new provider, database, Worker, or
   authenticated Product dependency.
 
-## 3. Change contract
+## 3. Additive property fallback contract
 
-`DailyBriefingChange` becomes a discriminated union.
-
-### Query/page change
+The existing `DailyBriefingChange` and `DailyBriefingAction` query/page
+contracts remain byte-for-byte compatible. Property fallback is additive so
+existing consumers do not need to accept nullable query/page values.
 
 ```ts
-type DailyBriefingQueryChange = {
-  readonly scope: "query_page";
-  readonly kind:
-    | "click_opportunity"
-    | "stable_position_click_decline"
-    | "first_observed";
-  readonly query: string;
-  readonly page: string;
-  // Existing metrics and evidence fields remain.
+type DailyBriefingPropertyFallback = {
+  readonly change: DailyBriefingPropertyChange;
+  readonly action: DailyBriefingPropertyAction;
+};
+
+type DailyBriefingPropertyAction = {
+  readonly kind: PropertyChangeKind;
+  readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
 };
 ```
 
-All existing thresholds, ordering, page-coverage gates, and explanations remain
-unchanged.
+`DailyBriefingResult` adds:
+
+```ts
+readonly propertyFallback: DailyBriefingPropertyFallback | null;
+```
+
+It is non-null only when the existing selected query/page `changes` array is
+empty. The UI may present it in the same Artifact table and ranked action list,
+but it never inserts a fake row into the query/page machine contract.
 
 ### Property change
 
@@ -154,24 +160,8 @@ query, or cause.
 
 ## 5. Action and handoff contract
 
-`DailyBriefingAction` also becomes a discriminated union:
-
-```ts
-type DailyBriefingQueryAction = {
-  readonly scope: "query_page";
-  readonly query: string;
-  readonly page: string;
-  // Existing kind and destination.
-};
-
-type DailyBriefingPropertyAction = {
-  readonly scope: "property";
-  readonly query: null;
-  readonly page: null;
-  readonly kind: PropertyChangeKind;
-  readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
-};
-```
+Existing query/page actions remain unchanged. The additive property fallback
+action contains only kind and destination; it does not claim a query or page.
 
 The tab-scoped handoff becomes scope-aware while retaining exact-key,
 short-TTL, and fail-closed validation:
