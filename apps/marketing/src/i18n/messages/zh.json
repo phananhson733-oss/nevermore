@@ -31,7 +31,7 @@
     "agents": "Agents",
     "resources": "资源",
     "agentsMenu": {
-      "group": "网站审查 Agents",
+      "group": "网站审查",
       "viewAll": "查看全部 Agents",
       "seo": {
         "label": "SEO Agent",
@@ -41,9 +41,9 @@
         "label": "GEO Agent",
         "description": "看 AI 的回答会不会引用你的站点，每个问题采样三次。"
       },
-      "tech": {
-        "label": "技术焦点",
-        "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
+      "internalLinkAudit": {
+        "label": "内链审计",
+        "description": "无需登录即可抓取公开网站，查看内链图谱、点击深度与孤岛页证据。"
       }
     },
     "resourcesMenu": {
@@ -3266,7 +3266,7 @@
             "blurb": "同一次采集，读的是整个站：重复标题、断链、点击深度。"
           },
           {
-            "href": "/agents/tech",
+            "href": "/tools/internal-link-audit",
             "name": "内链审计",
             "blurb": "哪些页面没人链、链接从哪来、深度有多深。"
           },

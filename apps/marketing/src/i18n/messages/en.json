@@ -31,7 +31,7 @@
     "agents": "Agents",
     "resources": "Resources",
     "agentsMenu": {
-      "group": "Website review Agents",
+      "group": "Website audits",
       "viewAll": "View all Agents",
       "seo": {
         "label": "SEO Agent",
@@ -41,9 +41,9 @@
         "label": "GEO Agent",
         "description": "See whether AI answers cite your site, sampled three times per question."
       },
-      "tech": {
-        "label": "Technical focus",
-        "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
+      "internalLinkAudit": {
+        "label": "Internal Link Audit",
+        "description": "Run a public-site crawl without signing in to inspect the internal-link graph, click depth, and orphan-page evidence."
       }
     },
     "resourcesMenu": {
@@ -3266,7 +3266,7 @@
             "blurb": "The same crawl, read across the whole site: duplicate titles, broken links, click depth."
           },
           {
-            "href": "/agents/tech",
+            "href": "/tools/internal-link-audit",
             "name": "Internal Link Audit",
             "blurb": "Which pages nobody links to, where the links come from, and how deep they sit."
           },

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -11,32 +11,32 @@ import {
 } from "./navigation.ts";
 
 /**
- * The header Agents submenu against the route directories it can drift from.
+ * The header audit submenu against the exact destinations it intentionally
+ * promotes.
  *
- * A menu is a second copy of a route catalogue, and second copies rot. The
- * route directories are therefore the authority and the two lists are checked
- * in both directions.
+ * `/agents/tech` remains a compatibility route, but the primary menu promotes
+ * the restored public Internal Link Audit instead.
  */
 
 const AGENTS_ROUTE_DIR = fileURLToPath(
   new URL("../app/[locale]/agents", import.meta.url),
 );
+const LOCALE_APP_DIR = fileURLToPath(
+  new URL("../app/[locale]", import.meta.url),
+);
 const MESSAGES_DIR = fileURLToPath(
   new URL("../i18n/messages", import.meta.url),
 );
-
-function routedAgentSlugs(): string[] {
-  if (!existsSync(AGENTS_ROUTE_DIR)) return [];
-  return readdirSync(AGENTS_ROUTE_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-}
 
 function menuSlugs(): string[] {
   return agentsMenuGroups.flatMap((group) =>
     group.items.map((item) => item.slug),
   );
+}
+
+/** The concrete App Router page a locale-relative navigation href resolves to. */
+function routePage(href: string): string {
+  return `${LOCALE_APP_DIR}${href}/page.tsx`;
 }
 
 function readMessages(locale: string): Record<string, unknown> {
@@ -58,13 +58,46 @@ function lookup(messages: Record<string, unknown>, key: string): unknown {
     );
 }
 
-describe("Agents submenu", () => {
-  it("matches the routed Agent pages exactly", () => {
-    expect(menuSlugs().sort()).toEqual(routedAgentSlugs());
-    expect(menuSlugs().sort()).toEqual(["geo", "seo", "tech"]);
+describe("Website audits submenu", () => {
+  it("promotes the exact two Agents and public Internal Link Audit", () => {
+    expect(
+      agentsMenuGroups.flatMap((group) =>
+        group.items.map((item) => ({
+          slug: item.slug,
+          href: menuItemPath("/agents", item),
+        })),
+      ),
+    ).toEqual([
+      { slug: "seo", href: "/agents/seo" },
+      { slug: "geo", href: "/agents/geo" },
+      {
+        slug: "internal-link-audit",
+        href: "/tools/internal-link-audit",
+      },
+    ]);
+
+    expect(agentsMenuGroups[0]?.items[2]).toEqual({
+      slug: "internal-link-audit",
+      href: "/tools/internal-link-audit",
+      labelKey: "nav.agentsMenu.internalLinkAudit.label",
+      descriptionKey: "nav.agentsMenu.internalLinkAudit.description",
+      icon: "Wrench",
+    });
   });
 
-  it("does not repeat an Agent across groups", () => {
+  it("keeps the Tech Agent compatibility route without promoting it", () => {
+    expect(existsSync(`${AGENTS_ROUTE_DIR}/tech/page.tsx`)).toBe(true);
+    expect(menuSlugs()).not.toContain("tech");
+  });
+
+  it("points every promoted audit destination at a concrete route", () => {
+    for (const item of agentsMenuGroups.flatMap((group) => group.items)) {
+      const href = menuItemPath("/agents", item);
+      expect(existsSync(routePage(href)), href).toBe(true);
+    }
+  });
+
+  it("does not repeat a destination across groups", () => {
     const slugs = menuSlugs();
     expect(slugs).toHaveLength(new Set(slugs).size);
   });
@@ -121,9 +154,14 @@ describe("Resources submenu", () => {
     ]);
   });
 
-  it("uses exact destinations while preserving Agent slug routes", () => {
+  it("uses explicit destinations when an item crosses catalogue boundaries", () => {
     expect(menuItemPath("/agents", { slug: "seo" })).toBe("/agents/seo");
-    expect(menuItemPath("/agents", { slug: "tech" })).toBe("/agents/tech");
+    expect(
+      menuItemPath("/agents", {
+        slug: "internal-link-audit",
+        href: "/tools/internal-link-audit",
+      }),
+    ).toBe("/tools/internal-link-audit");
     expect(
       menuItemPath("/resources", {
         slug: "prompts",
@@ -173,5 +211,25 @@ describe("Navigation copy", () => {
       expect(typeof value, `${locale}: ${key} is not a string`).toBe("string");
       expect(value, `${locale}: ${key} is empty`).not.toBe("");
     }
+  });
+
+  it("labels the mixed menu as Website audits and names the public tool", () => {
+    const en = readMessages("en");
+    const zh = readMessages("zh");
+
+    expect(lookup(en, "nav.agentsMenu.group")).toBe("Website audits");
+    expect(lookup(zh, "nav.agentsMenu.group")).toBe("网站审查");
+    expect(lookup(en, "nav.agentsMenu.internalLinkAudit.label")).toBe(
+      "Internal Link Audit",
+    );
+    expect(lookup(zh, "nav.agentsMenu.internalLinkAudit.label")).toBe(
+      "内链审计",
+    );
+    expect(lookup(en, "nav.agentsMenu.internalLinkAudit.description")).toBe(
+      "Run a public-site crawl without signing in to inspect the internal-link graph, click depth, and orphan-page evidence.",
+    );
+    expect(lookup(zh, "nav.agentsMenu.internalLinkAudit.description")).toBe(
+      "无需登录即可抓取公开网站，查看内链图谱、点击深度与孤岛页证据。",
+    );
   });
 });

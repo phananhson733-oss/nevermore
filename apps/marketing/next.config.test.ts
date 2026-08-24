@@ -65,13 +65,20 @@ describe("marketing redirects", () => {
   it.each([
     ["/en/compare", "/blog#comparisons"],
     ["/en/tools/seo-audit", "/agents/seo"],
-    ["/en/tools/internal-link-audit", "/agents/tech"],
   ])(
     "sends the legacy hub %s straight to its final page",
     (source, destination) => {
       expect(redirects).toContainEqual({ source, destination, statusCode: 301 });
     },
   );
+
+  it("leaves the legacy Internal Link Audit path to locale routing", () => {
+    expect(
+      redirects.some(
+        (entry) => entry.source === "/en/tools/internal-link-audit",
+      ),
+    ).toBe(false);
+  });
 
   it("implements every reviewed target override as an explicit one-hop redirect", () => {
     for (const entry of LEGACY_EN_MIGRATION_ENTRIES) {

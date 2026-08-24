@@ -42,10 +42,9 @@ describe("the links this page adds at the bottom", () => {
   it.each(CATALOGUES)(
     "%s links the destination, not the shim that redirects to it",
     (_locale, items) => {
-      // `/tools/seo-audit` and `/tools/internal-link-audit` are still routed,
-      // and both are `permanentRedirect` shims for the Agent pages. Linking
-      // them works for a visitor and spends a hop on every crawl of this page,
-      // which is a strange thing for a page about on-page SEO to do.
+      // `/tools/seo-audit` remains a `permanentRedirect` shim, so this
+      // catalogue links straight to `/agents/seo`. The restored Internal Link
+      // Audit is an active public page and remains its own destination.
       for (const item of items) {
         const source = readFileSync(routeFile(item.href), "utf8");
         expect(source, item.href).not.toContain("permanentRedirect");
@@ -68,6 +67,18 @@ describe("the links this page adds at the bottom", () => {
       expect(item.blurb).not.toBe(enItems[index]?.blurb);
     }
   });
+
+  it.each(CATALOGUES)(
+    "%s links Internal Link Audit directly to the public tool",
+    (_locale, items) => {
+      const internalLinkAudit = items.find(
+        (item) =>
+          item.name === "Internal Link Audit" || item.name === "内链审计",
+      );
+
+      expect(internalLinkAudit?.href).toBe("/tools/internal-link-audit");
+    },
+  );
 
   it("does not link the page it is on", () => {
     for (const [, items] of CATALOGUES) {

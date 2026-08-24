@@ -51,7 +51,6 @@ const SITEMAP_MODULE = fileURLToPath(
 const REDIRECT_ONLY = new Set([
   "ab-test-calculator",
   "growth-roi-calculator",
-  "internal-link-audit",
   "seo-audit",
 ]);
 
@@ -74,6 +73,10 @@ function routedToolSlugs(): string[] {
 }
 
 describe("sitemap tool list", () => {
+  it("lists the restored Internal Link Audit", () => {
+    expect(SITEMAP_TOOLS).toContain("internal-link-audit");
+  });
+
   it("keeps every compatibility redirect out of the sitemap", () => {
     const listed = new Set<string>(SITEMAP_TOOLS);
     for (const slug of REDIRECT_ONLY) {

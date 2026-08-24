@@ -25,7 +25,6 @@ export function getMarketingRedirects() {
     ...[
       ["/en/compare", "/blog#comparisons"],
       ["/en/tools/seo-audit", "/agents/seo"],
-      ["/en/tools/internal-link-audit", "/agents/tech"],
     ].map(([source, destination]) => ({
       source,
       destination,

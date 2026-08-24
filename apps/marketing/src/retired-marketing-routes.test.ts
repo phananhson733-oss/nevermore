@@ -26,12 +26,19 @@ describe("getRetiredMarketingRouteDisposition", () => {
     ["/en/compare", { kind: "redirect", location: "/blog#comparisons" }],
     ["/zh/compare", { kind: "redirect", location: "/zh/blog#comparisons" }],
     ["/tools/seo-audit", { kind: "redirect", location: "/agents/seo" }],
-    ["/zh/tools/internal-link-audit", { kind: "redirect", location: "/zh/agents/tech" }],
   ] as const)("keeps exact redirect semantics for %s", (pathname, expected) => {
     expect(getRetiredMarketingRouteDisposition(pathname)).toEqual(expected);
   });
 
-  it.each(["/", "/contact", "/privacy", "/terms"])(
+  it.each([
+    "/",
+    "/contact",
+    "/privacy",
+    "/terms",
+    "/tools/internal-link-audit",
+    "/en/tools/internal-link-audit",
+    "/zh/tools/internal-link-audit",
+  ])(
     "leaves active route %s alone",
     (pathname) => {
       expect(getRetiredMarketingRouteDisposition(pathname)).toBeNull();

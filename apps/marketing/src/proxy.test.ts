@@ -229,14 +229,28 @@ describe("proxy retired marketing routes", () => {
     ["/tools/seo-audit", "https://gengrowth.ai/agents/seo"],
     ["/en/tools/seo-audit", "https://gengrowth.ai/agents/seo"],
     ["/zh/tools/seo-audit", "https://gengrowth.ai/zh/agents/seo"],
-    ["/tools/internal-link-audit", "https://gengrowth.ai/agents/tech"],
-    ["/en/tools/internal-link-audit", "https://gengrowth.ai/agents/tech"],
-    ["/zh/tools/internal-link-audit", "https://gengrowth.ai/zh/agents/tech"],
   ] as const)("keeps exact semantic redirect for %s", (path, location) => {
     const response = proxy(request(path));
     expect(response.status).toBe(308);
     expect(response.headers.get("location")).toBe(location);
     expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it.each([
+    "/tools/internal-link-audit",
+    "/zh/tools/internal-link-audit",
+  ])("keeps the restored Internal Link Audit active at %s", (path) => {
+    const response = proxy(request(path));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("permanently canonicalizes the genuine legacy /en Internal Link Audit URL", () => {
+    const response = proxy(request("/en/tools/internal-link-audit"));
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://gengrowth.ai/tools/internal-link-audit",
+    );
   });
 
   it.each(["/", "/contact", "/privacy", "/terms", "/cookies", "/copyright"])(

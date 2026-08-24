@@ -33,7 +33,6 @@ const RETIRED_ROUTE_EXACT = new Set([
 const REDIRECT_ROUTE_EXACT = {
   "/compare": "/blog#comparisons",
   "/tools/seo-audit": "/agents/seo",
-  "/tools/internal-link-audit": "/agents/tech",
 } as const;
 
 function splitLocalePath(pathname: string): {

@@ -473,26 +473,11 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   ).toContain("seo-only.example");
 });
 
-test("homepage chooses an exact Agent and retired audit pages redirect", async ({
-  page,
-}) => {
+test("retired SEO Audit redirects to SEO Agent", async ({ page }) => {
   await mockSession(page, false);
-
-  await page.goto("/");
-  const homepageUrl = page.getByLabel("Website host or URL");
-  const techButton = page.getByRole("button", { name: "Run Tech Agent" });
-  await homepageUrl.fill("acme.com");
-  await expect(homepageUrl).toHaveValue("acme.com");
-  await expect(techButton).toBeEnabled();
-  await techButton.click();
-  await expect(page).toHaveURL(/\/agents\/tech$/);
-  await expect(page.getByLabel("Target URL")).toHaveValue("acme.com");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await page.goto("/tools/seo-audit");
   await expect(page).toHaveURL(/\/agents\/seo$/);
-  await page.goto("/zh/tools/internal-link-audit");
-  await expect(page).toHaveURL(/\/zh\/agents\/tech$/);
 });
 
 test("primary IA groups Tools under Resources without changing its URL", async ({

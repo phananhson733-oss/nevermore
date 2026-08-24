@@ -1,14 +1,17 @@
 // @input  -- active Tools hub source
-// @output -- regression guard for six tool entries and their Agent execution boundary
-// @pos    -- keeps the supporting-tools hub complete without reviving retired audit runners
+// @output -- regression guard for seven tool entries and their public/Agent execution boundaries
+// @pos    -- keeps the supporting-tools hub complete and the Internal Link Audit public
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const HUB_PAGE = fileURLToPath(new URL("./page.tsx", import.meta.url));
+const TOOL_CARD = fileURLToPath(
+  new URL("../../../components/tools/tool-card.tsx", import.meta.url),
+);
 
-describe("Tools hub Agent boundary", () => {
+describe("Tools hub execution boundaries", () => {
   it("keeps all seven tool entries in their established order", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
     const slugs = [...source.matchAll(/slug: "([^"]+)"/g)].map(
@@ -24,13 +27,38 @@ describe("Tools hub Agent boundary", () => {
       "seo-audit",
       "low-competition-keywords",
     ]);
-    // Both entries open the same Agent; the technical one names a focus rather
-    // than a second product.
     expect(source).toContain(
-      'cta: { en: "Open the technical focus", zh: "打开技术焦点" }',
+      'cta: { en: "Run internal link audit", zh: "运行内链审计" }',
     );
     expect(source).toContain(
       'cta: { en: "Open SEO Agent", zh: "打开 SEO Agent" }',
+    );
+  });
+
+  it("describes Internal Link Audit as a standalone no-login public audit", () => {
+    const source = readFileSync(HUB_PAGE, "utf8");
+
+    expect(source).toContain(
+      'en: "Audit your public internal-link graph without signing in, with click-depth, orphan-page candidates, and source-link evidence."',
+    );
+    expect(source).toContain(
+      'zh: "无需登录即可审计公开网站的内链图谱，查看点击深度、孤岛页候选与来源链接证据。"',
+    );
+    expect(source).not.toContain(
+      "Review crawl, indexability, and internal-link evidence in the SEO Agent, opened on its technical focus. A verified account is required to run it.",
+    );
+    expect(source).not.toContain(
+      "在 SEO Agent 的技术焦点下检查抓取、可索引性与内链证据；运行时需要已验证账号。",
+    );
+  });
+
+  it("routes the Internal Link Audit slug through the public ToolCard path", () => {
+    const hubSource = readFileSync(HUB_PAGE, "utf8");
+    const cardSource = readFileSync(TOOL_CARD, "utf8");
+
+    expect(hubSource).toContain('slug: "internal-link-audit"');
+    expect(cardSource).toContain(
+      "<Link href={localePath(locale, `/tools/${slug}`)}",
     );
   });
 

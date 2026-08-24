@@ -250,10 +250,6 @@ const REPAIR_TARGET_OVERRIDES: Readonly<
   Partial<Record<string, readonly [string, LegacyEnDisposition]>>
 > = {
   "/en/compare": ["/blog#comparisons", "replacement_redirect"],
-  "/en/tools/internal-link-audit": [
-    "/agents/tech",
-    "replacement_redirect",
-  ],
   "/en/tools/seo-audit": ["/agents/seo", "replacement_redirect"],
   "/en/tools/hidden-keywords": [
     "/tools/low-competition-keywords",

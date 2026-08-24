@@ -30,6 +30,7 @@ vi.mock("../config/sitemap-tools", () => ({
     "seo-quick-wins",
     "traffic-drop-diagnosis",
     "low-competition-keywords",
+    "internal-link-audit",
   ],
 }));
 
@@ -65,8 +66,11 @@ describe("canonical marketing sitemap", () => {
     );
     expect(urls).toContain("https://gengrowth.ai/tools/seo-quick-wins");
     expect(urls).not.toContain("https://gengrowth.ai/tools/seo-audit");
-    expect(urls).not.toContain(
+    expect(urls).toContain(
       "https://gengrowth.ai/tools/internal-link-audit",
+    );
+    expect(urls).toContain(
+      "https://gengrowth.ai/zh/tools/internal-link-audit",
     );
     expect(urls.some((url) => url.startsWith("https://gengrowth.ai/en"))).toBe(
       false,

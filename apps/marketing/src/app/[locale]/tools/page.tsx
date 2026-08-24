@@ -1,6 +1,6 @@
 // @input  -- locale param, tools i18n namespace, shared ToolCard
 // @output -- Resources > Tools hub grouped by a visitor's current SEO/growth situation
-// @pos    -- Resources branch; URL-audit cards hand off to independent Agents
+// @pos    -- Resources branch; public tools run here while retired audits hand off to Agents
 import { ArrowRight, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
@@ -37,10 +37,10 @@ const DIAGNOSIS_TOOLS = [
     slug: "internal-link-audit",
     title: { en: "Internal Link Audit", zh: "内链审计" },
     description: {
-      en: "Review crawl, indexability, and internal-link evidence in the SEO Agent, opened on its technical focus. A verified account is required to run it.",
-      zh: "在 SEO Agent 的技术焦点下检查抓取、可索引性与内链证据；运行时需要已验证账号。",
+      en: "Audit your public internal-link graph without signing in, with click-depth, orphan-page candidates, and source-link evidence.",
+      zh: "无需登录即可审计公开网站的内链图谱，查看点击深度、孤岛页候选与来源链接证据。",
     },
-    cta: { en: "Open the technical focus", zh: "打开技术焦点" },
+    cta: { en: "Run internal link audit", zh: "运行内链审计" },
     category: "diagnosis",
   },
   {
