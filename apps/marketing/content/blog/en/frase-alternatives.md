@@ -46,7 +46,7 @@ Scalenut is the halfway house: its Plus tier at $89/month includes auto-publishi
 
 ### Where We Are Not an Alternative
 
-We do not research topics, draft articles, publish them, or rewrite decaying pages, so nothing on our side replaces either job. Our SEO agent runs a bounded crawl over same-origin static HTML and its page states plainly that it "does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact." It answers a narrower question — whether what you already published holds together — which is worth knowing before you pay any tool to produce more of it. What that scope deliberately excludes is the subject of [our piece on agentic seo](/blog/agentic-seo).
+We do not research topics, draft articles, publish them, or rewrite decaying pages, so nothing on our side replaces either job. Our SEO agent runs a bounded crawl of discoverable same-origin static HTML and its page states plainly that it "does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact." It answers a narrower question — whether what you already published holds together — which is worth knowing before you pay any tool to produce more of it. What that scope deliberately excludes is the subject of [our piece on agentic seo](/blog/agentic-seo).
 
 ## Common Misreadings When Comparing These Tools
 
@@ -126,7 +126,7 @@ If the job is checking pages you already published, that is what our agent does 
 
 ## Take Action
 
-Before you replace Frase, find out which of its two jobs was earning the fee. [Run our SEO agent over your site](https://gengrowth.ai/agents/seo) — Google sign-in requests identity only, and the report covers what is already published: metadata, heading structure, internal links, structured data. If the pages you already have are structurally sound, you are shopping for an editor. If they are thin, unlinked, or structurally broken, adding volume will not fix that — a loop scales whatever base it starts from.
+Before you replace Frase, find out which of its two jobs was earning the fee. [Run our SEO agent over your site](https://gengrowth.ai/agents/seo) — Google sign-in requests identity only, and the report covers what is already published: metadata, heading structure, and JSON-LD structured data. If the pages you already have are structurally sound, you are shopping for an editor. If they are thin, unlinked, or structurally broken, adding volume will not fix that — a loop scales whatever base it starts from.
 
 ## Sources
 
