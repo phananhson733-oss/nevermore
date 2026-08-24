@@ -103,6 +103,16 @@ describe("readQueryPageRows", () => {
     ]);
   });
 
+  it("forwards auto aggregation for a grouped query-page read", async () => {
+    const { client, calls } = clientReturning([
+      [qpRow("messi zodiac sign", "https://example.com/messi", 960, 0)],
+    ]);
+
+    await readQueryPageRows(client, WINDOW, undefined, 1, "auto");
+
+    expect(calls[0]?.aggregationType).toBe("auto");
+  });
+
   it("drops a row missing either key", async () => {
     const { client } = clientReturning([
       [
@@ -143,6 +153,58 @@ describe("readQueryPageRows", () => {
     expect(calls).toHaveLength(4);
     expect(result.rows).toHaveLength(GSC_ROW_LIMIT * 4);
     expect(result.paging).toEqual({ pagesFetched: 4, truncated: true });
+  });
+
+  it("accepts a one-page cap and marks an exactly full first page truncated", async () => {
+    const full = Array.from({ length: GSC_ROW_LIMIT }, (_, index) =>
+      qpRow(`query ${index}`, `https://example.com/${index}`),
+    );
+    const { client, calls } = clientReturning([
+      full,
+      [qpRow("not requested", "https://example.com/extra")],
+    ]);
+
+    const result = await readQueryPageRows(client, WINDOW, undefined, 1);
+
+    expect(calls).toHaveLength(1);
+    expect(result.rows).toHaveLength(GSC_ROW_LIMIT);
+    expect(result.paging).toEqual({ pagesFetched: 1, truncated: true });
+  });
+
+  it("clamps a cap below one to one page", async () => {
+    const full = Array.from({ length: GSC_ROW_LIMIT }, (_, index) =>
+      qpRow(`query ${index}`, `https://example.com/${index}`),
+    );
+    const { client, calls } = clientReturning([full]);
+
+    const result = await readQueryPageRows(client, WINDOW, undefined, 0);
+
+    expect(calls).toHaveLength(1);
+    expect(result.paging).toEqual({ pagesFetched: 1, truncated: true });
+  });
+
+  it("clamps a cap above the shared maximum", async () => {
+    const full = Array.from({ length: GSC_ROW_LIMIT }, (_, index) =>
+      qpRow(`query ${index}`, `https://example.com/${index}`),
+    );
+    const { client, calls } = clientReturning([full, full, full, full, full]);
+
+    const result = await readQueryPageRows(client, WINDOW, undefined, 99);
+
+    expect(calls).toHaveLength(4);
+    expect(result.paging).toEqual({ pagesFetched: 4, truncated: true });
+  });
+
+  it("fails a non-finite cap closed to one page", async () => {
+    const full = Array.from({ length: GSC_ROW_LIMIT }, (_, index) =>
+      qpRow(`query ${index}`, `https://example.com/${index}`),
+    );
+    const { client, calls } = clientReturning([full]);
+
+    const result = await readQueryPageRows(client, WINDOW, undefined, Number.NaN);
+
+    expect(calls).toHaveLength(1);
+    expect(result.paging).toEqual({ pagesFetched: 1, truncated: true });
   });
 });
 

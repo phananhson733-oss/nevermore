@@ -61,6 +61,14 @@ describe("readQueryRows", () => {
     });
   });
 
+  it("forwards an explicit aggregation type for query rows", async () => {
+    const { client, calls } = clientReturning([[rawRow("a")]], "byPage");
+
+    await readQueryRows(client, WINDOW, undefined, 1, "byPage");
+
+    expect(calls[0]?.aggregationType).toBe("byPage");
+  });
+
   it("stops paging as soon as a short page comes back", async () => {
     const { client, calls } = clientReturning([fullPage("p0"), [rawRow("last")]]);
 
@@ -203,5 +211,20 @@ describe("readPropertyTotals", () => {
     });
 
     expect(await readPropertyTotals(client, WINDOW)).toBeNull();
+  });
+
+  it("forwards an explicit aggregation type for property totals", async () => {
+    const calls: GscQueryRequest[] = [];
+    const client = async (request: GscQueryRequest): Promise<GscQueryResponse> => {
+      calls.push(request);
+      return {
+        rows: [{ keys: [], impressions: 100, clicks: 10, position: 5 }],
+        responseAggregationType: "byPage",
+      };
+    };
+
+    await readPropertyTotals(client, WINDOW, "byPage");
+
+    expect(calls[0]?.aggregationType).toBe("byPage");
   });
 });

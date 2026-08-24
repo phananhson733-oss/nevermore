@@ -5,6 +5,7 @@
 
 /** Dimensions this reader knows how to ask for. */
 export type GscDimension = "query" | "page" | "date";
+export type GscAggregationType = "auto" | "byPage" | "byProperty";
 
 export interface GscQueryRequest {
   readonly dimensions: readonly GscDimension[];
@@ -12,6 +13,7 @@ export interface GscQueryRequest {
   readonly endDate: string;
   readonly rowLimit: number;
   readonly startRow: number;
+  readonly aggregationType?: GscAggregationType;
 }
 
 export interface GscRawRow {
