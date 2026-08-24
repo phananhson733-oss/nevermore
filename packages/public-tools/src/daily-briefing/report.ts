@@ -30,6 +30,7 @@ import type {
   DailyBriefingPropertyChangeKind,
   DailyBriefingPropertyFallback,
   DailyBriefingQueryEvidence,
+  DailyBriefingSignalFunnel,
   DailyBriefingWindowCoverage,
   DailyBriefingWindows,
 } from "./types.ts";
@@ -46,6 +47,7 @@ export const BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS = 1_000;
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
+const BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS = 50;
 const FIRST_OBSERVED_MIN_POSITION = 8;
 const FIRST_OBSERVED_MAX_POSITION = 21;
 
@@ -247,6 +249,42 @@ function queryWindowsComparable(
     previousBasis !== undefined &&
     currentBasis === previousBasis
   );
+}
+
+function queryEvidenceBasisComparable(
+  evidence: DailyBriefingQueryEvidence | null,
+): boolean {
+  const queryBasis = evidence?.queryRead?.responseAggregationType;
+  const queryPageBasis = evidence?.queryPageRead?.responseAggregationType;
+  return (
+    queryBasis !== null &&
+    queryBasis !== undefined &&
+    queryPageBasis !== null &&
+    queryPageBasis !== undefined &&
+    queryBasis === queryPageBasis
+  );
+}
+
+function signalFunnelEvidence(
+  current: DailyBriefingQueryEvidence | null,
+  previous: DailyBriefingQueryEvidence | null,
+): DailyBriefingSignalFunnel["evidence"] {
+  if (
+    !queryEvidenceBasisComparable(current) ||
+    !queryEvidenceBasisComparable(previous) ||
+    !queryWindowsComparable(current, previous)
+  ) {
+    return "unavailable";
+  }
+  if (
+    current?.queryRead?.paging.truncated === true ||
+    current?.queryPageRead?.paging.truncated === true ||
+    previous?.queryRead?.paging.truncated === true ||
+    previous?.queryPageRead?.paging.truncated === true
+  ) {
+    return "partial";
+  }
+  return "observed";
 }
 
 function validQueryRows(rows: readonly GscQueryRow[]): readonly GscQueryRow[] {
@@ -452,7 +490,14 @@ function candidatesFor(
 ): {
   readonly currentRows: readonly GscQueryRow[];
   readonly candidates: readonly ChangeCandidate[];
-  readonly pageCoverageWithheld: boolean;
+  readonly observedQueryRows: number;
+  readonly observationCandidates: number;
+  readonly actionEligibleQueries: number;
+  readonly ctrBaselineRows: number | null;
+  readonly clickOpportunityCandidates: number | null;
+  readonly stableDeclineCandidates: number;
+  readonly firstObservedCandidates: number;
+  readonly pageAttributionWithheld: number;
 } {
   const currentAll = validQueryRows(currentEvidence.queryRead?.rows ?? []);
   const previousAll = validQueryRows(previousEvidence.queryRead?.rows ?? []);
@@ -503,7 +548,18 @@ function candidatesFor(
   );
 
   const declines: ChangeCandidate[] = [];
+  let observationCandidates = 0;
+  let actionEligibleQueries = 0;
   for (const current of currentRows) {
+    if (
+      current.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS &&
+      current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS
+    ) {
+      observationCandidates += 1;
+    }
+    if (current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS) {
+      actionEligibleQueries += 1;
+    }
     const previous = previousByQuery.get(current.query);
     if (
       previous === undefined ||
@@ -551,7 +607,7 @@ function candidatesFor(
     previousQueryPages.map((row) => `${row.query}\u0000${row.page}`),
   );
   const firstObserved: ChangeCandidate[] = [];
-  let pageCoverageWithheld = false;
+  const pageAttributionWithheld = new Set<string>();
 
   for (const pair of currentQueryPages) {
     const current = currentByQuery.get(pair.query);
@@ -580,7 +636,7 @@ function candidatesFor(
         previousCoverageRatio !== undefined &&
         previousCoverageRatio >= MIN_DIMENSION_COVERAGE);
     if (!currentCoverageSufficient || !previousCoverageSufficient) {
-      pageCoverageWithheld = true;
+      pageAttributionWithheld.add(`${pair.query}\u0000${pair.page}`);
       continue;
     }
 
@@ -613,7 +669,16 @@ function candidatesFor(
   return {
     currentRows,
     candidates: [...opportunities, ...declines, ...firstObserved],
-    pageCoverageWithheld,
+    observedQueryRows: currentRows.length,
+    observationCandidates,
+    actionEligibleQueries,
+    ctrBaselineRows: input.brandTermsConfirmed ? table.rows.length : null,
+    clickOpportunityCandidates: input.brandTermsConfirmed
+      ? opportunities.length
+      : null,
+    stableDeclineCandidates: declines.length,
+    firstObservedCandidates: firstObserved.length,
+    pageAttributionWithheld: pageAttributionWithheld.size,
   };
 }
 
@@ -629,12 +694,12 @@ function selectChanges(
 ): {
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
-  readonly pageCoverageWithheld: boolean;
+  readonly pageAttributionWithheld: number;
 } {
   const changes: DailyBriefingChange[] = [];
   const actions: DailyBriefingAction[] = [];
   const usedQueries = new Set<string>();
-  let pageCoverageWithheld = false;
+  const pageAttributionWithheld = new Set<string>();
   const kinds: readonly DailyBriefingChangeKind[] = [
     "click_opportunity",
     "stable_position_click_decline",
@@ -646,7 +711,9 @@ function selectChanges(
       if (candidate.kind !== kind || usedQueries.has(candidate.query)) continue;
       const page = candidate.page ?? pageForQuery(candidate.query, currentEvidence);
       if (page === null) {
-        pageCoverageWithheld = true;
+        pageAttributionWithheld.add(
+          `${candidate.kind}\u0000${candidate.query}\u0000${candidate.page ?? ""}`,
+        );
         continue;
       }
       usedQueries.add(candidate.query);
@@ -676,7 +743,7 @@ function selectChanges(
   return {
     changes: changes.slice(0, DAILY_BRIEFING_ACTION_LIMIT),
     actions: actions.slice(0, DAILY_BRIEFING_ACTION_LIMIT),
-    pageCoverageWithheld,
+    pageAttributionWithheld: pageAttributionWithheld.size,
   };
 }
 
@@ -784,6 +851,10 @@ export function buildDailyBriefing(
     currentEvidence,
     previousEvidence,
   );
+  const funnelEvidence = signalFunnelEvidence(
+    currentEvidence,
+    previousEvidence,
+  );
   const coverage: DailyBriefingCoverage = {
     current: coverageOf(currentEvidence),
     previous: coverageOf(previousEvidence),
@@ -852,6 +923,10 @@ export function buildDailyBriefing(
   let actions: readonly DailyBriefingAction[] = [];
   let filteredObservedRows = 0;
   let countComplete = false;
+  let observedSignalCounts: Omit<
+    DailyBriefingSignalFunnel,
+    "evidence" | "selectedQueryChanges" | "propertyFallbackShown"
+  > | null = null;
 
   if (
     currentEvidence !== null &&
@@ -874,15 +949,51 @@ export function buildDailyBriefing(
     const selected = selectChanges(candidateSet.candidates, currentEvidence);
     changes = selected.changes;
     actions = selected.actions;
+    observedSignalCounts = {
+      observedQueryRows: candidateSet.observedQueryRows,
+      observationCandidates: candidateSet.observationCandidates,
+      actionEligibleQueries: candidateSet.actionEligibleQueries,
+      ctrBaselineRows: candidateSet.ctrBaselineRows,
+      clickOpportunityCandidates: candidateSet.clickOpportunityCandidates,
+      stableDeclineCandidates: candidateSet.stableDeclineCandidates,
+      firstObservedCandidates: candidateSet.firstObservedCandidates,
+      pageAttributionWithheld:
+        candidateSet.pageAttributionWithheld +
+        selected.pageAttributionWithheld,
+    };
     if (
-      candidateSet.pageCoverageWithheld ||
-      selected.pageCoverageWithheld
+      candidateSet.pageAttributionWithheld > 0 ||
+      selected.pageAttributionWithheld > 0
     ) {
       limitations.add("query_page_coverage_below_floor");
     }
   }
   const propertyFallback =
     changes.length === 0 ? propertyFallbackFor(weekly) : null;
+  const signalFunnel: DailyBriefingSignalFunnel =
+    observedSignalCounts === null
+      ? {
+          evidence: funnelEvidence,
+          observedQueryRows:
+            funnelEvidence === "partial"
+              ? validQueryRows(currentEvidence?.queryRead?.rows ?? []).length
+              : null,
+          observationCandidates: null,
+          actionEligibleQueries: null,
+          ctrBaselineRows: null,
+          clickOpportunityCandidates: null,
+          stableDeclineCandidates: null,
+          firstObservedCandidates: null,
+          pageAttributionWithheld: null,
+          selectedQueryChanges: changes.length,
+          propertyFallbackShown: propertyFallback !== null,
+        }
+      : {
+          evidence: "observed",
+          ...observedSignalCounts,
+          selectedQueryChanges: changes.length,
+          propertyFallbackShown: propertyFallback !== null,
+        };
 
   return createPublicToolResult(
     {
@@ -904,6 +1015,7 @@ export function buildDailyBriefing(
       changes,
       actions,
       propertyFallback,
+      signalFunnel,
       filteredObservedRows,
       countComplete,
       coverage,

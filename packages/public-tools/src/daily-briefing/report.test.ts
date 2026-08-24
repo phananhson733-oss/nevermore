@@ -939,6 +939,213 @@ describe("property fallback", () => {
   });
 });
 
+describe("signal funnel", () => {
+  function ctrFunnelRows() {
+    return [
+      queryRow("ctr target", 100, 0, 9),
+      queryRow("below observation floor", 49, 4, 9),
+      queryRow("observation boundary", 50, 5, 9),
+      queryRow("observation ceiling", 99, 10, 9),
+      queryRow("eligible peer a", 190, 19, 9),
+      queryRow("eligible peer b", 190, 19, 9),
+    ];
+  }
+
+  it("reports complete mixed row floors and independent candidate lanes", () => {
+    const rows = ctrFunnelRows();
+    const page = "https://example.com/ctr-target";
+    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "observed",
+      observedQueryRows: 6,
+      observationCandidates: 2,
+      actionEligibleQueries: 3,
+      ctrBaselineRows: 1,
+      clickOpportunityCandidates: 1,
+      stableDeclineCandidates: 0,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 0,
+      selectedQueryChanges: 1,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("keeps 50 and 99 observation-only while 100 is action-eligible", () => {
+    const rows = [
+      queryRow("below", 49, 0, 30),
+      queryRow("fifty", 50, 0, 30),
+      queryRow("ninety nine", 99, 0, 30),
+      queryRow("one hundred", 100, 0, 30),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toMatchObject({
+      evidence: "observed",
+      observedQueryRows: 4,
+      observationCandidates: 2,
+      actionEligibleQueries: 1,
+    });
+  });
+
+  it("leaves CTR lanes unevaluated until brand terms are confirmed", () => {
+    const rows = ctrFunnelRows();
+    const page = "https://example.com/ctr-target";
+    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "observed",
+      observedQueryRows: 6,
+      observationCandidates: 2,
+      actionEligibleQueries: 3,
+      ctrBaselineRows: null,
+      clickOpportunityCandidates: null,
+      stableDeclineCandidates: 0,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 0,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("reports only the valid current prefix length for partial evidence", () => {
+    const rows = [
+      queryRow("valid prefix", 100, 10, 9),
+      queryRow("observation prefix", 50, 1, 9),
+      queryRow("invalid prefix", -1, -1, 9),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, [], { queryTruncated: true }),
+      previousQueryEvidence: evidence(rows.slice(0, 2), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "partial",
+      observedQueryRows: 2,
+      observationCandidates: null,
+      actionEligibleQueries: null,
+      ctrBaselineRows: null,
+      clickOpportunityCandidates: null,
+      stableDeclineCandidates: null,
+      firstObservedCandidates: null,
+      pageAttributionWithheld: null,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("uses null counts for missing and mixed aggregation evidence", () => {
+    const rows = [queryRow("mixed basis", 100, 10, 9)];
+    const missing = report().result.signalFunnel;
+    const mixed = report({
+      currentQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byProperty",
+        queryPageAggregation: "byProperty",
+        totalAggregation: "byProperty",
+      }),
+      previousQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byPage",
+        queryPageAggregation: "byPage",
+        totalAggregation: "byPage",
+      }),
+      brandTermsConfirmed: true,
+    }).result.signalFunnel;
+
+    for (const funnel of [missing, mixed]) {
+      expect(funnel).toEqual({
+        evidence: "unavailable",
+        observedQueryRows: null,
+        observationCandidates: null,
+        actionEligibleQueries: null,
+        ctrBaselineRows: null,
+        clickOpportunityCandidates: null,
+        stableDeclineCandidates: null,
+        firstObservedCandidates: null,
+        pageAttributionWithheld: null,
+        selectedQueryChanges: 0,
+        propertyFallbackShown: false,
+      });
+    }
+  });
+
+  it("reports a property fallback separately from selected query changes", () => {
+    const currentRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`current observation ${index}`, 98, 1, 12),
+    );
+    const previousRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`previous observation ${index}`, 98, 1, 10),
+    );
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(currentRows, []),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toMatchObject({
+      evidence: "observed",
+      observedQueryRows: 4,
+      observationCandidates: 4,
+      actionEligibleQueries: 0,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: true,
+    });
+  });
+
+  it("counts first-observed and selected-query page attribution rejects", () => {
+    const rows = ctrFunnelRows();
+    const firstObserved = queryRow("new uncovered pair", 200, 20, 13);
+    const currentRows = [...rows, firstObserved];
+    const targetPage = "https://example.com/ctr-target";
+    const currentPages = [
+      queryPageRow("ctr target", targetPage, 80, 0, 9),
+      queryPageRow(
+        firstObserved.query,
+        "https://example.com/new-uncovered",
+        159,
+        16,
+        13,
+      ),
+    ];
+    const previousPages = [queryPageRow("ctr target", targetPage, 80, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(rows, previousPages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.signalFunnel).toMatchObject({
+      clickOpportunityCandidates: 1,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 2,
+      selectedQueryChanges: 0,
+    });
+  });
+});
+
 describe("query evidence boundaries", () => {
   it("filters negative query and query-page metrics before coverage", () => {
     const query = "pricing automation";
