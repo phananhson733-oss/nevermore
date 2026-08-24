@@ -123,19 +123,93 @@ describe("openCrawlGate", () => {
     }
   });
 
-  it("treats www and apex of the same submission by exact host", async () => {
-    const store = fakeStore();
-    const deps = store.deps();
-    const first = await openCrawlGate("203.0.113.1", "https://ACME.com/", deps);
-    if (first.ok) first.release();
-    const second = await openCrawlGate(
-      "203.0.113.2",
+  it.each([
+    [
+      "apex then www",
+      "https://ACME.com/",
+      "https://WWW.AcMe.com/",
+      ["acme.com", "www.acme.com"],
+    ],
+    [
+      "www then apex",
+      "https://www.ACME.com/",
       "https://acme.com/",
-      deps,
-    );
-    if (second.ok) second.release();
+      ["www.acme.com", "acme.com"],
+    ],
+  ])(
+    "keeps exact cache probes but shares one target quota key for %s",
+    async (_order, firstUrl, secondUrl, expectedCacheKeys) => {
+      const store = fakeStore();
+      const deps = store.deps();
+      const cacheKeys: string[] = [];
+      const cacheProbe = async (key: string) => {
+        cacheKeys.push(key);
+        return null;
+      };
 
-    expect(store.hits.get("public-crawl:target:acme.com")).toBe(2);
+      const first = await openCrawlGate(
+        "203.0.113.1",
+        firstUrl,
+        deps,
+        cacheProbe,
+      );
+      if (first.ok) first.release();
+      const second = await openCrawlGate(
+        "203.0.113.2",
+        secondUrl,
+        deps,
+        cacheProbe,
+      );
+      if (second.ok) second.release();
+
+      expect(cacheKeys).toEqual(expectedCacheKeys);
+      expect(
+        [...store.hits.keys()].filter((key) =>
+          key.startsWith("public-crawl:target:"),
+        ),
+      ).toEqual(["public-crawl:target:acme.com"]);
+      expect(store.hits.get("public-crawl:target:acme.com")).toBe(2);
+    },
+  );
+
+  it("strips exactly one leading www label only from the target quota key", async () => {
+    const store = fakeStore();
+    const cacheProbe = vi.fn(async () => null);
+    const result = await openCrawlGate(
+      "203.0.113.9",
+      "https://WWW.www.AcMe.com/",
+      store.deps(),
+      cacheProbe,
+    );
+    if (result.ok) result.release();
+
+    expect(cacheProbe).toHaveBeenCalledWith("www.www.acme.com");
+    expect(store.hits.get("public-crawl:target:www.acme.com")).toBe(1);
+    expect(store.hits.has("public-crawl:target:acme.com")).toBe(false);
+  });
+
+  it("does not reuse an apex cache row for a www submission", async () => {
+    const store = fakeStore();
+    const cacheProbe = vi.fn(async (host: string) =>
+      host === "acme.com"
+        ? {
+            payload: { targetUrl: "https://acme.com/" },
+            capturedAt: "2026-08-24T12:00:00.000Z",
+          }
+        : null,
+    );
+
+    const result = await openCrawlGate(
+      "203.0.113.9",
+      "https://www.acme.com/",
+      store.deps(),
+      cacheProbe,
+    );
+
+    expect(result.ok && result.kind).toBe("crawl");
+    expect(cacheProbe).toHaveBeenCalledWith("www.acme.com");
+    expect(store.hits.get("public-crawl:target:acme.com")).toBe(1);
+    if (result.ok) result.release();
   });
 
   /**

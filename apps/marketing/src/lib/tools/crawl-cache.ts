@@ -1,5 +1,5 @@
 // @input  -- tool name, target host, payload; Supabase service-role client
-// @output -- readCrawlCache() / writeCrawlCache() / cacheCompletedCrawl()
+// @output -- cache I/O, completion guard, exact host and quota target keys
 // @pos    -- shared crawl-result cache for the anonymous public crawl tools
 // Once this file is updated, update the header comment and the folder _DIR.md
 import {
@@ -200,10 +200,29 @@ export async function cacheCompletedCrawl<TPayload>(options: {
   await options.cachePayload(options.normalizedUrl, options.payload);
 }
 
+/** Exact lowercased host identity used to isolate completed crawl reports. */
 export function targetHostOf(normalizedUrl: string): string | null {
   try {
     return new URL(normalizedUrl).hostname.toLowerCase();
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared anti-relay quota identity for an apex host and its `www` sibling.
+ *
+ * The crawler permits that one entry redirect, so separate target budgets
+ * would double the traffic allowance against the same origin family. Cache
+ * rows deliberately do not use this key: the two hosts may serve different
+ * content, and one host's completed report must never be returned for the
+ * other. Strip only one conventional label; do not broaden other subdomains or
+ * registrable domains into one bucket.
+ */
+export function canonicalCrawlTargetKey(
+  normalizedUrl: string,
+): string | null {
+  const host = targetHostOf(normalizedUrl);
+  if (host === null) return null;
+  return host.startsWith("www.") ? host.slice(4) : host;
 }
