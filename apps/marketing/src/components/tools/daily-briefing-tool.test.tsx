@@ -232,6 +232,31 @@ describe("DailyBriefingTool connection boundary", () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it("shows both approved result previews before the first run without mock evidence", async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const host = await renderTool();
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
+    expect(host.textContent).toContain("Changes above the noise threshold");
+    expect(host.textContent).toContain("Today's recommended actions");
+    expect(host.textContent).toContain("Run the briefing to generate");
+    expect(host.querySelector("[data-change]")).toBeNull();
+    expect(host.querySelector("[data-action-row]")).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("replaces both result previews after a successful run", async () => {
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const host = await renderTool();
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
+
+    await click(buttonWith(host, "Build today's briefing"));
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
+    expect(host.textContent).toContain("Daily briefing complete");
+  });
 });
 
 describe("DailyBriefingTool brand confirmation and request body", () => {

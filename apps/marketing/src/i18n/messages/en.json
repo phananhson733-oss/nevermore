@@ -1645,7 +1645,8 @@
         "unavailable": "Unavailable"
       },
       "changes": {
-        "title": "Changes worth checking today",
+        "title": "Changes above the noise threshold",
+        "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown.",
         "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
         "query": "Query",
         "page": "Page",
@@ -1669,10 +1670,15 @@
         }
       },
       "actions": {
-        "title": "Open the next focused tool",
+        "title": "Today's recommended actions",
+        "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool.",
         "empty": "No automated handoff is justified by the evidence available in this run.",
         "why": "Why this action appears",
         "evidence": "Evidence carried privately to the next tool"
+      },
+      "preview": {
+        "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
+        "actions": "Run the briefing to generate up to three actions tied to observed evidence."
       },
       "actionKinds": {
         "click_opportunity": {

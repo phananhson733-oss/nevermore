@@ -43,6 +43,14 @@ interface DailyBriefingResultsProps {
   readonly rateLimit: RateLimitFacts | null;
 }
 
+interface ResultPreviewSectionProps {
+  readonly id: string;
+  readonly title: string;
+  readonly intro: string;
+  readonly body: string;
+  readonly kind: "changes" | "actions";
+}
+
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
 
 const METRICS: readonly MetricKey[] = [
@@ -173,6 +181,60 @@ function matchingActions(
       return change ? [{ action, change }] : [];
     })
     .slice(0, 3);
+}
+
+function ResultPreviewSection({
+  id,
+  title,
+  intro,
+  body,
+  kind,
+}: ResultPreviewSectionProps) {
+  return (
+    <section
+      aria-labelledby={id}
+      data-result-preview={kind}
+      className="scroll-mt-8"
+    >
+      <h3
+        id={id}
+        className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+      >
+        {title}
+      </h3>
+      <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+        {intro}
+      </p>
+      <div className={`${CARD} mt-4`}>
+        <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+          {body}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export function DailyBriefingResultPreview() {
+  const t = useTranslations("tools.dailyBriefing");
+
+  return (
+    <div className="mt-8 space-y-8">
+      <ResultPreviewSection
+        id="daily-briefing-preview-changes"
+        kind="changes"
+        title={t("changes.title")}
+        intro={t("changes.intro")}
+        body={t("preview.changes")}
+      />
+      <ResultPreviewSection
+        id="daily-briefing-preview-actions"
+        kind="actions"
+        title={t("actions.title")}
+        intro={t("actions.intro")}
+        body={t("preview.actions")}
+      />
+    </div>
+  );
 }
 
 export function DailyBriefingResults({

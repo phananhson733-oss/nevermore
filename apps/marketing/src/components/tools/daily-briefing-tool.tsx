@@ -12,7 +12,10 @@ import type { DailyBriefingEnvelope } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "../../lib/tools/traffic-drop-session";
 import { formatPropertyLabel } from "../../lib/tools/property-label";
 import { trackMarketingEvent } from "../layout/google-analytics";
-import { DailyBriefingResults } from "./daily-briefing-results";
+import {
+  DailyBriefingResultPreview,
+  DailyBriefingResults,
+} from "./daily-briefing-results";
 import {
   GscConnectPanel,
   gscAuthorizeHref,
@@ -333,7 +336,9 @@ export function DailyBriefingTool({
           envelope={payload.envelope}
           rateLimit={payload.rateLimit}
         />
-      ) : null}
+      ) : (
+        <DailyBriefingResultPreview />
+      )}
 
       <GscDisconnect namespace={NAMESPACE} />
     </section>
