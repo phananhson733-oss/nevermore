@@ -44,7 +44,14 @@ export const DEFAULT_GSC_GATE_DEPENDENCIES: GscGateDependencies = {
 };
 
 export type GscGateResult =
-  | { readonly ok: true; readonly release: () => void }
+  | {
+      readonly ok: true;
+      readonly release: () => void;
+      /** Present on the production gate; optional for older injected callers. */
+      readonly remaining?: number;
+      /** Present on the production gate; optional for older injected callers. */
+      readonly limit?: number;
+    }
   | { readonly ok: false; readonly response: Response };
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
@@ -116,7 +123,12 @@ export async function openGscGate(
     );
   }
 
-  return { ok: true, release };
+  return {
+    ok: true,
+    release,
+    remaining: Math.max(0, GSC_IP_MAX - perIp.hits),
+    limit: GSC_IP_MAX,
+  };
 }
 
 /**

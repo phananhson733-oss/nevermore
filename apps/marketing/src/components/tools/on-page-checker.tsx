@@ -1,7 +1,7 @@
 "use client";
 
-// @input  -- one page URL, a comma-separated query line, a market, a language, a page role
-// @output -- keyword coverage for that page, its fixes, and a local list of recent checks
+// @input  -- page/query fields, optional Daily Briefing handoff, market and role
+// @output -- handoff prefill, page keyword coverage, fixes, local recent checks
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -57,7 +57,12 @@ import {
 import { buildCopyReport } from "../../lib/on-page-checker/copy-report";
 import { checkLabelKey } from "../../lib/on-page-checker/check-types.ts";
 import { pageVitals } from "../../lib/on-page-checker/vitals.ts";
-import { storePageFocusedAgentIntent } from "../agents/agent-intent";
+import { consumeToolHandoff } from "../../lib/tools/tool-handoff";
+import {
+  clearPendingAgentIntent,
+  readPendingAgentIntent,
+  storePageFocusedAgentIntent,
+} from "../agents/agent-intent";
 import { localePath } from "../../lib/locale-path";
 
 const PAGE_ROLES: readonly OnPageCheckerPageType[] = [
@@ -158,6 +163,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [queryNotice, setQueryNotice] = useState<string | null>(null);
   const [urlNotice, setUrlNotice] = useState<string | null>(null);
+  const [handoffImported, setHandoffImported] = useState(false);
   const [history, setHistory] = useState<readonly OnPageHistoryEntry[]>([]);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
   /**
@@ -207,29 +213,52 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
   useEffect(() => {
     const session = webStore("session");
     if (session) {
-      const draft = readOnPageDraft(session);
-      if (draft) {
-        setUrl(draft.url);
-        setQueryText(draft.targetQueries.join(", "));
-        // A draft outlives the list it was written against. Restoring a code
-        // this build no longer offers would leave the selector showing its
-        // first option while the state held something else, and the run would
-        // go to a market the visitor never saw named.
-        setCountry(
-          SERP_MARKET_OPTIONS.some((option) => option.code === draft.country)
-            ? draft.country
-            : DEFAULT_SERP_MARKET,
-        );
-        setLanguage(
-          SERP_LANGUAGE_OPTIONS.some((option) => option.code === draft.locale)
-            ? draft.locale
-            : DEFAULT_SERP_LANGUAGE,
-        );
-        setPageRole(draft.pageType);
-        // Consumed, not just read. It exists to survive one sign-in round trip;
-        // leaving it behind means every visit inside the TTL refills the form
-        // with someone's earlier URL, on a shared machine included.
+      const handoff = consumeToolHandoff(
+        session,
+        Date.now(),
+        "on-page-seo-check",
+      );
+      if (handoff) {
+        setUrl(handoff.page);
+        setQueryText(handoff.query);
+        setHandoffImported(true);
+        // The briefing is the newer explicit intent. The checker draft and its
+        // page-focused Agent intent are one handoff, so replace the pair rather
+        // than leaving the Agent half able to resurrect the older URL.
+        const pendingIntent = readPendingAgentIntent(session, "seo");
+        if (pendingIntent?.purpose === "page_focused_launch") {
+          clearPendingAgentIntent(session, "seo");
+        }
         clearOnPageDraft(session);
+      } else {
+        const draft = readOnPageDraft(session);
+        if (draft) {
+          setUrl(draft.url);
+          setQueryText(draft.targetQueries.join(", "));
+          // A draft outlives the list it was written against. Restoring a code
+          // this build no longer offers would leave the selector showing its
+          // first option while the state held something else, and the run would
+          // go to a market the visitor never saw named.
+          setCountry(
+            SERP_MARKET_OPTIONS.some(
+              (option) => option.code === draft.country,
+            )
+              ? draft.country
+              : DEFAULT_SERP_MARKET,
+          );
+          setLanguage(
+            SERP_LANGUAGE_OPTIONS.some(
+              (option) => option.code === draft.locale,
+            )
+              ? draft.locale
+              : DEFAULT_SERP_LANGUAGE,
+          );
+          setPageRole(draft.pageType);
+          // Consumed, not just read. It exists to survive one sign-in round trip;
+          // leaving it behind means every visit inside the TTL refills the form
+          // with someone's earlier URL, on a shared machine included.
+          clearOnPageDraft(session);
+        }
       }
     }
     const store = webStore("local");
@@ -257,6 +286,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     // One run at a time: a second click would start a second crawl and leave
     // whichever answer arrived last on screen.
     if (inFlight.current !== null) return;
+    setHandoffImported(false);
     setUrlNotice(null);
     setQueryNotice(null);
     setCopied("idle");
@@ -563,6 +593,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           {t("stages.target.title")}
         </h2>
 
+        {handoffImported ? (
+          <p
+            role="status"
+            className="mt-4 rounded-lg border border-brand-accent/25 bg-brand-accent/[0.08] px-4 py-3 text-[12.5px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("handoffNotice")}
+          </p>
+        ) : null}
+
         <div className="mt-5 grid gap-4">
           <div>
             <label
@@ -581,6 +620,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               onChange={(event) => {
                 setUrl(event.target.value);
                 setUrlNotice(null);
+                setHandoffImported(false);
               }}
               placeholder="example.com/pricing"
               value={url}
@@ -620,6 +660,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               onChange={(event) => {
                 setQueryText(event.target.value);
                 setQueryNotice(null);
+                setHandoffImported(false);
               }}
               placeholder={t("fields.queriesPlaceholder")}
               value={queryText}
@@ -704,7 +745,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 aria-describedby="onpage-market-scope"
                 id="onpage-country"
-                onChange={(event) => setCountry(event.target.value)}
+                onChange={(event) => {
+                  setCountry(event.target.value);
+                  setHandoffImported(false);
+                }}
                 value={country}
               >
                 {SERP_MARKET_OPTIONS.map((option) => (
@@ -725,7 +769,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 aria-describedby="onpage-market-scope"
                 id="onpage-language"
-                onChange={(event) => setLanguage(event.target.value)}
+                onChange={(event) => {
+                  setLanguage(event.target.value);
+                  setHandoffImported(false);
+                }}
                 value={language}
               >
                 {SERP_LANGUAGE_OPTIONS.map((option) => (
@@ -745,9 +792,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               <select
                 className="mt-1.5 w-full rounded-lg border border-brand-border-card bg-brand-bg px-3 py-2 text-[14.5px] text-text-dark-primary"
                 id="onpage-role"
-                onChange={(event) =>
-                  setPageRole(event.target.value as OnPageCheckerPageType)
-                }
+                onChange={(event) => {
+                  setPageRole(event.target.value as OnPageCheckerPageType);
+                  setHandoffImported(false);
+                }}
                 value={pageRole}
               >
                 {PAGE_ROLES.map((role) => (

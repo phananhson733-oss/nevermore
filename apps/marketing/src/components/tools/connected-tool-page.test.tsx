@@ -63,6 +63,16 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(markup).not.toContain("https://app.gengrowth.ai");
   });
 
+  it("returns the Daily Briefing to its own localized route", () => {
+    const enMarkup = render("en", "daily-search-briefing");
+    const zhMarkup = render("zh", "daily-search-briefing");
+
+    expect(enMarkup).toContain(oauthStart("/tools/daily-search-briefing"));
+    expect(zhMarkup).toContain(oauthStart("/zh/tools/daily-search-briefing"));
+    expect(enMarkup).not.toContain("https://app.gengrowth.ai");
+    expect(zhMarkup).not.toContain("https://app.gengrowth.ai");
+  });
+
   it("keeps the zh locale prefix in the return path", () => {
     const markup = render("zh", "seo-quick-wins");
     expect(markup).toContain(oauthStart("/zh/tools/seo-quick-wins"));
@@ -121,4 +131,3 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(after).not.toContain("URL Agents to use next");
   });
 });
-

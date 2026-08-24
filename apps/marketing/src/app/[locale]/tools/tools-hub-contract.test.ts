@@ -9,13 +9,14 @@ import { describe, expect, it } from "vitest";
 const HUB_PAGE = fileURLToPath(new URL("./page.tsx", import.meta.url));
 
 describe("Tools hub Agent boundary", () => {
-  it("keeps all six tool entries in their established order", () => {
+  it("keeps all seven tool entries in their established order", () => {
     const source = readFileSync(HUB_PAGE, "utf8");
     const slugs = [...source.matchAll(/slug: "([^"]+)"/g)].map(
       (match) => match[1],
     );
 
     expect(slugs).toEqual([
+      "daily-search-briefing",
       "seo-quick-wins",
       "internal-link-audit",
       "traffic-drop-diagnosis",

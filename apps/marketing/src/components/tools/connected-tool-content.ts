@@ -6,6 +6,7 @@
 // apps/web only, so an aliased import would not resolve from the unit project.
 
 export type ConnectedTool =
+  | "daily-search-briefing"
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
   | "low-competition-keywords";
@@ -18,6 +19,7 @@ export type ConnectedTool =
  * build with the missing name when a tool is added to the type and not here.
  */
 export const CONNECTED_TOOLS = [
+  "daily-search-briefing",
   "seo-quick-wins",
   "traffic-drop-diagnosis",
   "low-competition-keywords",
@@ -69,6 +71,83 @@ export interface ConnectedToolContent {
 }
 
 const EN: Record<ConnectedTool, ConnectedToolContent> = {
+  "daily-search-briefing": {
+    path: "/tools/daily-search-briefing",
+    eyebrow: "Daily Search Console triage",
+    title: "Run a Daily GSC Briefing Before You Start SEO Work",
+    description:
+      "Turn the latest complete Search Console history into a short morning brief: what changed, what held across the last full week, and which query or page deserves the next check.",
+    sourceLabel: "Requires a Google Search Console connection",
+    sourceDetail:
+      "GenGrowth requests read-only Search Console access. It cannot change your site, your rankings, or your Google account, and this briefing is recomputed on demand rather than stored.",
+    cta: "Connect Search Console",
+    trust:
+      "No scheduled jobs, no hidden scoring model, and no saved report history. Every run is rebuilt from the property you pick, and unavailable evidence stays explicit.",
+    workflowTitle: "How the daily briefing is built",
+    steps: [
+      {
+        name: "Connect Search Console",
+        text: "Read-only, revocable at any time from your Google account settings.",
+      },
+      {
+        name: "Read one complete reporting window first",
+        text: "The briefing waits for Search Console's finalized Pacific-time data and compares the latest complete day and the latest full seven days against their matching prior windows.",
+      },
+      {
+        name: "Attach query evidence only when it is strong enough",
+        text: "The date series is required. Query and query-page reads are optional attachments: if they are truncated, unavailable, or do not agree on aggregation, the KPI view still renders and the affected actions are withheld.",
+      },
+      {
+        name: "Show only the next few things worth checking",
+        text: "At most three evidence-backed changes and at most three next actions, ordered deterministically rather than by an opaque score.",
+      },
+    ],
+    outputTitle: "What the briefing gives you each run",
+    outputs: [
+      {
+        label: "Daily and weekly KPI context",
+        body: "Clicks, impressions, CTR and exposure-weighted average position for the latest complete day and the latest complete seven days, each against a comparable prior window.",
+      },
+      {
+        label: "Cadence that fits the sample",
+        body: "A daily read when the last full week has enough impressions to support it, and a weekly cadence when it does not.",
+      },
+      {
+        label: "Three classes of actionable change",
+        body: "Click opportunities, stable-position click declines, and first-observed query-page pairs — only when the evidence floor for that class is met.",
+      },
+      {
+        label: "Private handoff to the next tool",
+        body: "A same-tab handoff into the related GSC or on-page tool without leaking your property, query, or page into the URL.",
+      },
+      {
+        label: "Explicit manual checks",
+        body: "Manual Actions and Security Issues remain human checks because the API cannot read them. The briefing reminds you; it does not pretend to observe them.",
+      },
+    ],
+    faq: [
+      {
+        question: "Does this replace checking Search Console directly?",
+        answer:
+          "No. It shortens the first pass. The briefing is meant to answer what changed and where to look next; Search Console remains the place you confirm the detail and continue the investigation.",
+      },
+      {
+        question: "Why can a report show KPIs but no actions?",
+        answer:
+          "Because the KPI view comes from the required date series, while actions need stronger query and query-page evidence. If that evidence is missing, truncated, or contradictory, the briefing shows the KPI context and withholds the action rather than guessing.",
+      },
+      {
+        question: "Why does it sometimes switch from daily to weekly?",
+        answer:
+          "Small samples create ordinary movement that looks dramatic when read day by day. Below the weekly impression floor, the briefing downgrades itself to a weekly cadence so the output does not overstate noise as a daily signal.",
+      },
+      {
+        question: "Do you store the report or my Search Console data?",
+        answer:
+          "No. The Google authorization itself can persist in your browser so you do not reconnect every visit, but the report is recomputed on request and not saved as a server-side history.",
+      },
+    ],
+  },
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
     eyebrow: "Search performance evidence",
@@ -402,6 +481,83 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
 };
 
 const ZH: Record<ConnectedTool, ConnectedToolContent> = {
+  "daily-search-briefing": {
+    path: "/tools/daily-search-briefing",
+    eyebrow: "每日 Search Console 分诊",
+    title: "在开始 SEO 工作前先跑一遍每日 GSC 简报",
+    description:
+      "把最新完整的 Search Console 数据压成一份晨间简报：昨天和最近一周发生了什么变化，哪些变化值得今天优先检查。",
+    sourceLabel: "需要连接 Google Search Console",
+    sourceDetail:
+      "GenGrowth 仅请求 Search Console 只读权限。它不能修改站点、排名或 Google 账号，这份简报也是按需重算，而不是持久化保存。",
+    cta: "连接 Search Console",
+    trust:
+      "没有定时任务、没有隐藏评分模型、也没有服务端报告历史。每次运行都基于你选定的资源重新计算，不可得证据会明确显示不可得。",
+    workflowTitle: "每日简报是怎样生成的",
+    steps: [
+      {
+        name: "连接 Search Console",
+        text: "只读授权，可随时在你的 Google 账号设置里撤销。",
+      },
+      {
+        name: "先读完整结算的数据窗口",
+        text: "简报只使用 Search Console 已经完成结算的 Pacific 时区数据，并把最新完整日、最新完整七天分别与上一段可比窗口对比。",
+      },
+      {
+        name: "只有证据足够时才附加查询级解释",
+        text: "日期序列是必需证据。查询和 query-page 读取只是附加解释：一旦被截断、不可用或聚合口径不一致，KPI 仍会显示，但相关动作会被抑制。",
+      },
+      {
+        name: "只保留今天最值得继续查的几件事",
+        text: "最多三条证据支撑的变化、最多三条下一步动作，并按确定性规则排序，而不是黑盒评分。",
+      },
+    ],
+    outputTitle: "每次运行你会拿到什么",
+    outputs: [
+      {
+        label: "日级与周级 KPI 上下文",
+        body: "最新完整日与最新完整七天的 clicks、impressions、CTR 和按曝光加权的平均排名，并分别对比上一段可比窗口。",
+      },
+      {
+        label: "和样本量匹配的节奏",
+        body: "最近完整七天样本足够时给日级解读，不足时自动降级为周级节奏。",
+      },
+      {
+        label: "三类值得继续跟进的变化",
+        body: "点击机会、排名稳定但点击下滑、以及首次在本次比较中观察到的 query-page 组合；只有满足证据门槛时才会出现。",
+      },
+      {
+        label: "私有跳转到下一步工具",
+        body: "在同一标签页内把 property、query、page 交给相关 GSC 或 on-page 工具，不把这些私有值泄漏到 URL。",
+      },
+      {
+        label: "明确保留人工检查项",
+        body: "Manual Actions 和 Security Issues 仍然需要人工检查，因为 API 读不到它们。简报只会提醒，不会假装自己观察到了。",
+      },
+    ],
+    faq: [
+      {
+        question: "它能替代我直接看 Search Console 吗？",
+        answer:
+          "不能。它只是压缩第一轮分诊时间。简报负责回答“发生了什么、下一步先看哪里”，而 Search Console 仍然是你继续确认细节和展开调查的地方。",
+      },
+      {
+        question: "为什么有时有 KPI 但没有动作建议？",
+        answer:
+          "因为 KPI 来自必需的日期序列，而动作建议还需要更强的查询级和 query-page 证据。只要这些证据缺失、被截断或口径矛盾，简报就只展示 KPI 上下文，不会补猜动作。",
+      },
+      {
+        question: "为什么它有时会从日级切到周级？",
+        answer:
+          "样本量太小时，日级波动很容易把普通噪声读成异常。低于周级曝光门槛时，简报会主动降级成周级节奏，避免把噪声说成真正的日级信号。",
+      },
+      {
+        question: "你们会保存报告或我的 Search Console 数据吗？",
+        answer:
+          "不会。Google 授权本身可能会保存在你的浏览器里，方便下次不用重新连接；但这份报告是按请求重新计算的，不会作为服务端历史保存。",
+      },
+    ],
+  },
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
     eyebrow: "搜索表现证据",

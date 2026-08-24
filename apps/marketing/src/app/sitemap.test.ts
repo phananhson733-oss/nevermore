@@ -26,6 +26,7 @@ vi.mock("../lib/locale-path", () => ({
 
 vi.mock("../config/sitemap-tools", () => ({
   SITEMAP_TOOLS: [
+    "daily-search-briefing",
     "seo-quick-wins",
     "traffic-drop-diagnosis",
     "low-competition-keywords",
@@ -56,6 +57,12 @@ describe("canonical marketing sitemap", () => {
 
     expect(urls).toContain("https://gengrowth.ai/blog/english-post");
     expect(urls).toContain("https://gengrowth.ai/zh/blog/chinese-post");
+    expect(urls).toContain(
+      "https://gengrowth.ai/tools/daily-search-briefing",
+    );
+    expect(urls).toContain(
+      "https://gengrowth.ai/zh/tools/daily-search-briefing",
+    );
     expect(urls).toContain("https://gengrowth.ai/tools/seo-quick-wins");
     expect(urls).not.toContain("https://gengrowth.ai/tools/seo-audit");
     expect(urls).not.toContain(

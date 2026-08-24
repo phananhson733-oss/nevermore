@@ -1,19 +1,20 @@
-// @input  -- locale, GSC state, traffic-drop API, consent-gated event tracker
-// @output -- connect/run/diagnosis states plus tool_start/tool_complete analytics
+// @input  -- locale, GSC state, one local Daily Briefing handoff, diagnosis API
+// @output -- property-owned prefill, connect/run/diagnosis states, analytics
 // @pos    -- primary client surface for /[locale]/tools/traffic-drop-diagnosis
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, LineChart, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
-import { localePath } from "@/lib/locale-path";
-import { formatPropertyLabel } from "@/lib/tools/property-label";
-import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import { localePath } from "../../lib/locale-path";
+import { formatPropertyLabel } from "../../lib/tools/property-label";
+import { consumeToolHandoff } from "../../lib/tools/tool-handoff";
+import { trackMarketingEvent } from "../layout/google-analytics";
 import { gscAuthorizeHref } from "./gsc-connect-panel";
 import { GscDisconnect } from "./gsc-disconnect";
 import { TrafficDropResults } from "./traffic-drop-results";
@@ -149,6 +150,7 @@ export function TrafficDropTool({
     (brandCandidates?.[properties?.[0] ?? ""] ?? []).join(", "),
   );
   const [brandConfirmed, setBrandConfirmed] = useState(false);
+  const [handoffImported, setHandoffImported] = useState(false);
 
   const brandTerms = brandInput
     .split(",")
@@ -160,9 +162,9 @@ export function TrafficDropTool({
     setStale(true);
   }
 
-  function selectProperty(next: string) {
+  const selectProperty = useCallback((next: string) => {
     setProperty(next);
-    invalidate();
+    setStale(true);
     // Answers are assertions about ONE site's Search Console pages. Carrying
     // them across would let a visitor who cleared site A get an all-clear for
     // site B without ever opening B's pages — the same reasoning as the brand
@@ -173,7 +175,23 @@ export function TrafficDropTool({
     // brand, so the confirmation resets with them.
     setBrandInput((brandCandidates?.[next] ?? []).join(", "));
     setBrandConfirmed(false);
-  }
+  }, [brandCandidates]);
+
+  useEffect(() => {
+    try {
+      const handoff = consumeToolHandoff(
+        window.sessionStorage,
+        Date.now(),
+        "traffic-drop-diagnosis",
+      );
+      if (handoff === null || !properties?.includes(handoff.property)) return;
+      selectProperty(handoff.property);
+      setHandoffImported(true);
+    } catch {
+      // Storage access itself can be unavailable. The diagnosis form remains
+      // usable; only the optional local preselection is skipped.
+    }
+  }, [properties, selectProperty]);
 
   async function run() {
     // Narrowed rather than asserted: the button is disabled without both
@@ -182,6 +200,7 @@ export function TrafficDropTool({
     // guard and the payload cannot disagree about which site was inspected.
     const answers = answersFor(selfChecks, property);
     if (answers === null) return;
+    setHandoffImported(false);
     trackMarketingEvent("tool_start", { tool_name: "traffic_drop_diagnosis" });
 
     setLoading(true);
@@ -324,7 +343,10 @@ export function TrafficDropTool({
         <select
           id="traffic-drop-property"
           value={property}
-          onChange={(event) => selectProperty(event.target.value)}
+          onChange={(event) => {
+            selectProperty(event.target.value);
+            setHandoffImported(false);
+          }}
           className="h-12.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-3.5 font-mono text-[13px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
           {/* The value stays the property id; only the label is humanised. */}
@@ -335,6 +357,15 @@ export function TrafficDropTool({
           ))}
         </select>
       </div>
+
+      {handoffImported ? (
+        <p
+          role="status"
+          className="rounded-[10px] border border-brand-accent/25 bg-brand-accent/[0.08] px-4 py-3 text-[12.5px] leading-[1.6] text-text-dark-secondary"
+        >
+          {t("handoffNotice")}
+        </p>
+      ) : null}
 
       {/*
        * The gate. Both answers are required before anything runs: they decide
@@ -348,6 +379,7 @@ export function TrafficDropTool({
         onChange={(next) => {
           setSelfChecks(next);
           invalidate();
+          setHandoffImported(false);
         }}
       />
 
@@ -375,6 +407,7 @@ export function TrafficDropTool({
             // approved.
             setBrandConfirmed(false);
             invalidate();
+            setHandoffImported(false);
           }}
           placeholder={t("brandTerms.placeholder")}
           className="mt-3 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
@@ -387,6 +420,7 @@ export function TrafficDropTool({
             onChange={(event) => {
               setBrandConfirmed(event.target.checked);
               invalidate();
+              setHandoffImported(false);
             }}
             className="mt-0.5 size-4 shrink-0 accent-brand-accent"
           />
