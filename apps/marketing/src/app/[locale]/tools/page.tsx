@@ -12,6 +12,16 @@ import { GoogleOneTap } from "@/components/auth/google-one-tap";
 
 const DIAGNOSIS_TOOLS = [
   {
+    slug: "daily-search-briefing",
+    title: { en: "GSC Daily Briefing", zh: "GSC 每日简报" },
+    description: {
+      en: "Start the day with the latest complete Search Console changes, a seven-day check, and the next tool to open.",
+      zh: "用最新完整的 Search Console 变化、七天对比和下一步工具建议，先完成一天的 SEO 分诊。",
+    },
+    cta: { en: "Connect Search Console", zh: "连接 Search Console" },
+    category: "diagnosis",
+  },
+  {
     slug: "seo-quick-wins",
     // Naming table 2026-08-06: the card carries the formal name in both
     // locales; the search-phrase Title/H1 stay on the tool page itself.

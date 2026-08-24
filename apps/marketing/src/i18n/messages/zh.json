@@ -1555,6 +1555,178 @@
       "ctaBody": "更完整的项目保存工作流目前暂未开放；这份公共审计仍然保持匿名、无状态。",
       "ctaButton": "加入产品开放候补名单"
     },
+    "dailyBriefing": {
+      "connectTitle": "连接 Search Console，生成今天的简报",
+      "connectBody": "选择一个已验证站点，把最新完整的 Search Console 数据压缩成日常分诊简报。授权仅为只读，报告不会保存在我们的服务器上。",
+      "connectCta": "连接 Search Console",
+      "connectTrust": "只读授权 · 按需生成 · 可随时断开",
+      "connectPending": "当前环境尚未开放 Google 连接。",
+      "inviteOnlyTitle": "Search Console 授权仍为邀请制",
+      "inviteOnlyBody": "Google 同意屏幕仍处于测试状态，目前只有测试名单中的账号可以授权。",
+      "inviteOnlyCta": "已受邀则继续",
+      "inviteOnlyRequest": "申请加入内测",
+      "noPropertyTitle": "此次授权不含已验证站点",
+      "noPropertyBody": "连接已经成功，但这个 Google 账号没有提供本工具可运行的 Search Console 站点。请先验证站点，或换一个账号重新连接。",
+      "propertyLabel": "Search Console 站点",
+      "propertiesTruncated": "当前显示 {shown}/{total} 个已授权站点；其余名称没有放进浏览器授权 Cookie。若要选择缺失站点，请重新连接。",
+      "brand": {
+        "label": "本次运行的品牌词（可选）",
+        "hint": "请用逗号分隔。根据域名得到的只是候选词；即使正确列表为空，也需要单独确认。",
+        "placeholder": "品牌名, 品牌英文名",
+        "confirm": "我确认这就是本次运行的完整品牌词列表。",
+        "unconfirmed": "尚未确认。简报会省略依赖可信品牌拆分的 CTR 机会。",
+        "confirmed": "已为本次运行确认。编辑站点或列表会清除此确认。"
+      },
+      "run": "生成今日简报",
+      "rerun": "重新生成简报",
+      "running": "正在读取完整的 Search Console 窗口…",
+      "runComplete": "每日简报已生成，结果见下方。",
+      "reconnect": "重新连接 Search Console",
+      "disconnect": "断开 Search Console",
+      "disconnecting": "正在断开…",
+      "disconnectHint": "从当前浏览器移除授权，并在 Google 侧撤销。",
+      "disconnectRevokeFailed": "授权已经从当前浏览器移除，但 Google 没有确认撤销成功。如需确保失效，请到 Google 设置中移除。",
+      "disconnectFailed": "无法连接断开授权接口，因此没有做任何更改。请重试，或到 Google 账号中移除访问权限。",
+      "disconnectGoogleSettings": "打开 Google 第三方访问设置",
+      "errors": {
+        "gsc_unavailable": "无法读取这个站点的 Search Console 数据，未用估算值替代。",
+        "scan_in_progress": "已有一个 Search Console 任务正在运行，请稍等几秒再试。",
+        "invalid_request": "无法读取这次请求，请刷新页面后重试。",
+        "payload_too_large": "这次请求超过了工具接受的大小。",
+        "unsupported_media_type": "这次请求不是 JSON 格式。",
+        "rate_limited": "共享的 Search Console 每小时运行次数已用完，请在窗口重置后再试。",
+        "quota_unavailable": "当前无法核验共享用量限制，因此没有启动 Search Console 读取。",
+        "gsc_revoked": "当前浏览器已没有有效的 Search Console 授权，请重新连接后再运行。",
+        "gsc_temporarily_unavailable": "Google 暂时无法续期授权；连接状态没有被修改，请稍后重试。",
+        "unknown": "发生了错误。我们没有估算或保存任何结果，请重试。"
+      },
+      "facts": {
+        "dataThrough": "数据截至",
+        "timeBasis": "时间口径",
+        "timeBasisBody": "太平洋时间 · 最新完整日为 PT 当前日期减 3 天",
+        "cadence": "解读节奏",
+        "sharedRuns": "共享运行额度",
+        "daily": "每日",
+        "weekly": "按周",
+        "dailyReason": "完整七天窗口的曝光量足以支持日级上下文。",
+        "weeklyReason": "样本量或完整日对比不足，因此抑制日级解读。",
+        "quotaAvailable": "本小时共享额度还剩 {remaining}/{limit} 次。",
+        "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。"
+      },
+      "kpis": {
+        "title": "表现概览",
+        "clicks": "点击",
+        "impressions": "曝光",
+        "ctr": "CTR",
+        "averagePosition": "平均排名",
+        "latestDay": "最新完整日",
+        "currentSevenDays": "当前完整 7 天",
+        "change": "变化 {delta}",
+        "unavailable": "不可得",
+        "dailySuppressed": "当前节奏下不提供日级解读。",
+        "positionNote": "平均排名按曝光加权；负的变化表示数值上更靠前。"
+      },
+      "evidence": {
+        "title": "证据门槛与可观察覆盖",
+        "thresholdSummary": "单个查询词或查询词/页面至少需要 100 次曝光；点击变化同时至少达到 15% 和 3 次；平均排名变化不超过 0.5 才称为稳定。",
+        "filteredComplete": "有 {count} 条已读取查询记录没有通过任何信号门槛。",
+        "filteredPartial": "已读取前缀中有 {count} 条记录没有通过信号门槛。由于读取部分或不可得，这不是全站总数。",
+        "coverageTitle": "查询词到页面覆盖 · 当前窗口",
+        "coverageObserved": "{eligible} 个合格查询词中，有 {covered} 个能归因到承载至少 {floor} 可见曝光的页面。",
+        "coverageUnavailable": "可比的查询词到页面覆盖不可得，因此没有推断缺失页面。",
+        "anonymizationTitle": "Search Console 匿名化 · 当前窗口",
+        "anonymizationObserved": "站点总曝光中有 {impressions}、总点击中有 {clicks} 没有出现在可见查询记录里。",
+        "anonymizationUnavailable": "被隐藏占比不可得；它不等于 0。"
+      },
+      "evidenceStates": {
+        "observed": "已观察",
+        "not_observed": "在对比窗口未观察到",
+        "partial": "仅观察到读取前缀",
+        "unavailable": "不可得"
+      },
+      "changes": {
+        "title": "今天值得继续检查的变化",
+        "empty": "本次运行没有变化通过证据门槛。这不等于证明没有发生变化。",
+        "query": "查询词",
+        "page": "页面",
+        "current": "当前 7 天",
+        "previous": "前 7 天",
+        "firstObservedPrevious": "仅表示本次比较首次观察；上一窗口不按 0 处理，也不证明是新收录。",
+        "metrics": "点击 {clicks} · 曝光 {impressions} · CTR {ctr} · 平均排名 {position}"
+      },
+      "changeKinds": {
+        "click_opportunity": {
+          "title": "可见度增长没有转化成相称点击",
+          "body": "这个查询词通过了样本门槛，并低于该站点可用的留一法 CTR 基线。这是已测差距，不是可追回点击的预测。"
+        },
+        "stable_position_click_decline": {
+          "title": "平均排名稳定，但点击下降",
+          "body": "七天点击损失同时通过相对值和绝对值门槛，而平均排名仍在稳定范围内。数据不能据此确定唯一原因。"
+        },
+        "first_observed": {
+          "title": "本次比较首次观察到查询词/页面组合",
+          "body": "这个组合出现在当前可见记录中、没有出现在前一窗口的可见记录中。由于 Search Console 匿名化，这不是新收录的证据。"
+        }
+      },
+      "actions": {
+        "title": "打开下一步聚焦工具",
+        "empty": "当前可用证据不足以支持自动交接到其他工具。",
+        "why": "为何出现这项动作",
+        "evidence": "私密带到下一工具的证据"
+      },
+      "actionKinds": {
+        "click_opportunity": {
+          "title": "用站点自身曲线检查 CTR 差距",
+          "body": "打开 GSC Opportunity Finder，查看这个查询词的完整基线和限制。"
+        },
+        "stable_position_click_decline": {
+          "title": "检查点击损失是否持续",
+          "body": "打开 Traffic Drop Diagnosis，把这条证据放进更长历史，并区分可观察模式和不可得原因。"
+        },
+        "first_observed": {
+          "title": "按目标查询词检查页面",
+          "body": "打开 On-Page SEO Checker，预填页面和查询词，再核对公开 HTML 真正支持了什么。"
+        }
+      },
+      "actionDestinations": {
+        "seo-quick-wins": "打开 GSC Opportunity Finder",
+        "traffic-drop-diagnosis": "打开 Traffic Drop Diagnosis",
+        "on-page-seo-check": "打开 On-Page SEO Checker"
+      },
+      "handoffError": "无法写入标签页内的私密交接，因此已停止跳转。站点、查询词和页面都没有放进 URL。",
+      "manual": {
+        "title": "API 无法代查的两项检查",
+        "body": "Manual Actions 与 Security Issues 是两个独立的 Search Console 报告，没有公开读取 API。在这里标记只代表你在当前页面做过检查。",
+        "manualActions": "Manual Actions",
+        "securityIssues": "Security Issues",
+        "open": "在 Search Console 打开",
+        "unconfirmed": "本页尚未确认",
+        "checked": "本页已标记：未看到通知",
+        "markChecked": "标记本页已检查"
+      },
+      "limitations": {
+        "title": "本次运行附带的限制",
+        "empty": "本次运行没有返回额外机器限制；Search Console 匿名化和不持久化边界仍然存在。"
+      },
+      "limitationCodes": {
+        "daily_data_incomplete": "一个或多个必需完整日期缺失，因此依赖这些日期的日级和周级对比不可得。",
+        "daily_rows_omitted": "格式异常或超出窗口的日期记录被省略，没有修补，也没有填成 0。",
+        "query_evidence_unavailable": "查询级附件不可得。站点 KPI 上下文仍保留，但查询派生的变化与动作已抑制。",
+        "property_totals_unavailable": "可比站点总计不可得，因此无法计算查询报告隐藏了多少占比。",
+        "query_evidence_partial": "至少一个查询读取被截断。派生动作已抑制，记录数只描述已观察前缀。",
+        "query_page_coverage_below_floor": "能归因到单个页面的可见查询流量不足，因此页面和相关动作都被抑制。",
+        "aggregation_basis_mismatch": "Search Console 对被比较的读取采用了不同聚合口径，因此覆盖率和隐藏占比不可得。",
+        "anonymization_gap_uncomputable": "可见查询总计与站点总计无法生成可信的隐藏占比，因此不报告该比例。",
+        "brand_terms_not_confirmed": "品牌词列表未被显式确认，因此省略了依赖可信非品牌基线的 CTR 机会。"
+      },
+      "methodology": {
+        "title": "如何阅读这份简报",
+        "time": "日期使用 Search Console 的太平洋日历，并停在最新完整日，也就是 PT 当前日期的三天前。",
+        "position": "平均排名按曝光加权；它描述曝光发生的位置，不是某个固定排名。",
+        "anonymization": "Search Console 会出于隐私隐藏部分低量查询词。未观察到不等于 0、首次发生或刚被收录。",
+        "noPersistence": "报告与两项人工检查标记只存在当前页面状态中。刷新、重新运行、更换站点或关闭标签页都会清除。"
+      }
+    },
     "trafficDrop": {
       "title": "流量下降诊断",
       "description": "连接 Search Console，在你自己的数据上看清变化，每一个结论都附带证据。",
@@ -1573,6 +1745,7 @@
       "inviteOnlyRequest": "申请加入内测",
       "signedInNoGrant": "你已登录，但这个工具还需要 Search Console 的只读授权。",
       "propertyLabel": "站点",
+      "handoffNotice": "已从每日搜索简报带入；尚未在本工具重新运行。",
       "rerun": "重新分析",
       "running": "正在读取你的 Search Console 数据…",
       "dataThrough": "数据截至 {date}",
@@ -1995,6 +2168,7 @@
       "inviteOnlyCta": "申请使用",
       "signedInNoGrant": "你已登录，但还没有授权任何 Search Console 站点。",
       "propertyLabel": "Search Console 站点",
+      "handoffNotice": "已从每日搜索简报带入；尚未在本工具重新运行。",
       "propertiesTruncated": "你的授权覆盖 {total} 个站点，列表因长度被截断。重新连接可以选到没列出的站点。",
       "noPropertyTitle": "此次授权不含任何站点",
       "noPropertyBody": "连接成功了，但没有覆盖任何 Search Console 站点。请确认你使用的 Google 账号拥有已验证的站点。",
@@ -2477,6 +2651,7 @@
       "eyebrow": "工具 · 单个页面 · 一组关键词",
       "title": "这个页面真的覆盖了你想被搜到的词吗？",
       "intro": "提交一个页面和最多五个目标关键词，得到每个词在这一页的哪些位置出现、出现多少次，以及哪些事实是公开 HTML 里量不出来的。",
+      "handoffNotice": "已从每日搜索简报带入；尚未在本工具重新运行。",
       "stages": {
         "target": {
           "eyebrow": "阶段 01",

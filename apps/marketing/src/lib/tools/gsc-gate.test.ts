@@ -40,10 +40,44 @@ describe("openGscGate", () => {
       deps({ acquireSlot: () => ({ acquired: true, release }) }),
     );
 
-    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, remaining: 9, limit: 10 });
     if (!result.ok) return;
     result.release();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the remaining shared hourly budget on the allowed branch", async () => {
+    const result = await openGscGate(
+      IP,
+      deps({
+        quota: {
+          callQuota: async () => ({
+            allowed: true,
+            hits: 2,
+            reset_at: new Date().toISOString(),
+          }),
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, remaining: 8, limit: 10 });
+  });
+
+  it("never reports a negative remaining budget when allowed hits reach the cap", async () => {
+    const result = await openGscGate(
+      IP,
+      deps({
+        quota: {
+          callQuota: async () => ({
+            allowed: true,
+            hits: GSC_IP_MAX + 2,
+            reset_at: new Date().toISOString(),
+          }),
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, remaining: 0, limit: 10 });
   });
 
   it("refuses a second concurrent read with 409 before touching the quota", async () => {
@@ -62,6 +96,9 @@ describe("openGscGate", () => {
     if (result.ok) return;
     expect(result.response.status).toBe(409);
     expect(result.response.headers.get("Retry-After")).toBe("5");
+    await expect(result.response.json()).resolves.toEqual({
+      error: { code: "scan_in_progress" },
+    });
     expect(callQuota).not.toHaveBeenCalled();
   });
 
@@ -83,6 +120,9 @@ describe("openGscGate", () => {
     if (result.ok) return;
     expect(result.response.status).toBe(429);
     expect(Number(result.response.headers.get("Retry-After"))).toBeGreaterThan(0);
+    await expect(result.response.json()).resolves.toEqual({
+      error: { code: "rate_limited" },
+    });
   });
 
   it("fails CLOSED with 503 when the quota store cannot answer", async () => {
@@ -105,6 +145,9 @@ describe("openGscGate", () => {
     if (result.ok) return;
     expect(result.response.status).toBe(503);
     expect(result.response.headers.get("Retry-After")).toBe("60");
+    await expect(result.response.json()).resolves.toEqual({
+      error: { code: "quota_unavailable" },
+    });
   });
 
   it("releases the slot on every refusal path", async () => {

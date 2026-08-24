@@ -13,6 +13,7 @@
  * unlisted.
  */
 export const SITEMAP_TOOLS = [
+  "daily-search-briefing",
   "seo-quick-wins",
   "traffic-drop-diagnosis",
   "low-competition-keywords",

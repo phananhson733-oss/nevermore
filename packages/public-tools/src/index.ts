@@ -8,3 +8,4 @@ export * from "./site-baseline/index.ts";
 export * from "./quick-wins/index.ts";
 export * from "./gsc-analytics/index.ts";
 export * from "./keyword-opportunity/index.ts";
+export * from "./daily-briefing/index.ts";

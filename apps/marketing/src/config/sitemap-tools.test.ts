@@ -184,4 +184,13 @@ describe("connected tool paths", () => {
       expect(listed, `the hub has no card for /tools/${tool}`).toContain(tool);
     }
   });
+
+  it("keeps the Daily Search Briefing first in the diagnosis hub", () => {
+    const source = readFileSync(HUB_PAGE, "utf8");
+    const slugs = [...source.matchAll(/slug: "([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+
+    expect(slugs[0]).toBe("daily-search-briefing");
+  });
 });

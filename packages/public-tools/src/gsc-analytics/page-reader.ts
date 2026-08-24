@@ -5,7 +5,11 @@
 
 import type { GscQueryRow } from "../site-baseline/types.ts";
 import { GSC_MAX_PAGES, GSC_ROW_LIMIT, type ReadBudget } from "./reader.ts";
-import type { GscQueryClient, GscReadPaging } from "./types.ts";
+import type {
+  GscAggregationType,
+  GscQueryClient,
+  GscReadPaging,
+} from "./types.ts";
 import type { GscWindow } from "./window.ts";
 
 export { GSC_ROW_LIMIT };
@@ -60,13 +64,17 @@ async function readPaged<T>(
   dimensions: readonly ("query" | "page")[],
   map: (keys: readonly string[], row: { clicks: number; impressions: number; position: number }) => T | null,
   budget?: ReadBudget,
+  maxPages: number = GSC_MAX_PAGES,
+  aggregationType?: GscAggregationType,
 ): Promise<PagedRead<T>> {
   const rows: T[] = [];
   let pagesFetched = 0;
   let truncated = false;
   let responseAggregationType: string | null = null;
+  const requestedPages = Number.isFinite(maxPages) ? Math.trunc(maxPages) : 1;
+  const pageCap = Math.max(1, Math.min(GSC_MAX_PAGES, requestedPages));
 
-  for (let page = 0; page < GSC_MAX_PAGES; page += 1) {
+  for (let page = 0; page < pageCap; page += 1) {
     if (page > 0 && budget?.isExpired() === true) {
       truncated = true;
       break;
@@ -78,6 +86,7 @@ async function readPaged<T>(
       endDate: window.endDate,
       rowLimit: GSC_ROW_LIMIT,
       startRow: page * GSC_ROW_LIMIT,
+      ...(aggregationType === undefined ? {} : { aggregationType }),
     });
     pagesFetched += 1;
     // Freeze the first page's basis; a later page that disagrees makes the
@@ -94,7 +103,7 @@ async function readPaged<T>(
     }
 
     if (response.rows.length < GSC_ROW_LIMIT) break;
-    if (page === GSC_MAX_PAGES - 1) truncated = true;
+    if (page === pageCap - 1) truncated = true;
   }
 
   return { rows, paging: { pagesFetched, truncated }, responseAggregationType };
@@ -135,6 +144,8 @@ export function readQueryPageRows(
   client: GscQueryClient,
   window: GscWindow,
   budget?: ReadBudget,
+  maxPages: number = GSC_MAX_PAGES,
+  aggregationType?: GscAggregationType,
 ): Promise<PagedRead<GscQueryPageRow>> {
   return readPaged(
     client,
@@ -160,6 +171,8 @@ export function readQueryPageRows(
       };
     },
     budget,
+    maxPages,
+    aggregationType,
   );
 }
 

@@ -12,6 +12,10 @@ import {
   normalizeTargetQueries,
   type SeoAuditTargetPageExtract,
 } from "@sf/public-tools";
+import {
+  TOOL_HANDOFF_KEY,
+  writeToolHandoff,
+} from "../../lib/tools/tool-handoff.ts";
 
 /**
  * The mock resolves against the real English catalogue.
@@ -468,6 +472,173 @@ describe("On-Page checker result", () => {
 });
 
 describe("On-Page checker local state", () => {
+  const handoffNotice =
+    "Brought in from Daily Search Briefing. This tool has not been run again yet.";
+
+  function stageDailyBriefingHandoff(): void {
+    expect(
+      writeToolHandoff(sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: "on-page-seo-check",
+        property: "sc-domain:example.com",
+        query: "pricing automation",
+        page: "https://example.com/pricing",
+        evidenceId: "first-observed:pricing-automation",
+      }),
+    ).toBe(true);
+  }
+
+  it("prefers the one-time briefing inputs to an older draft without running or clearing history", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    sessionStorage.setItem(
+      "gengrowth:onpage-draft:v1",
+      JSON.stringify({
+        url: "https://old.example/draft",
+        targetQueries: ["old query"],
+        country: "GB",
+        locale: "en",
+        pageType: "guide",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    localStorage.setItem("gengrowth:onpage-history:v1", "[]");
+    stageDailyBriefingHandoff();
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("https://example.com/pricing");
+    expect(field(host, "onpage-query").value).toBe("pricing automation");
+    expect(host.textContent).toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBe("[]");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("replaces an older page-focused draft and intent as one pair while preserving history", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    sessionStorage.setItem(
+      "gengrowth:onpage-draft:v1",
+      JSON.stringify({
+        url: "https://old.example/draft",
+        targetQueries: ["old query"],
+        country: "GB",
+        locale: "en",
+        pageType: "guide",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    sessionStorage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "page_focused_launch",
+        url: "https://old.example/draft",
+        scope: "page",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    localStorage.setItem("gengrowth:onpage-history:v1", "[]");
+    stageDailyBriefingHandoff();
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("https://example.com/pricing");
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    expect(
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
+    ).toBeNull();
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBe("[]");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["url", "query"] as const)(
+    "clears the briefing notice when the visitor changes the imported %s",
+    async (input) => {
+      globalThis.fetch = vi.fn() as unknown as typeof fetch;
+      stageDailyBriefingHandoff();
+      const host = await render();
+      expect(host.textContent).toContain(handoffNotice);
+
+      await type(
+        field(host, input === "url" ? "onpage-url" : "onpage-query"),
+        input === "url" ? "https://example.com/changed" : "changed query",
+      );
+
+      expect(host.textContent).not.toContain(handoffNotice);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["market", "onpage-country", "GB"],
+    ["language", "onpage-language", "zh"],
+    ["page role", "onpage-role", "guide"],
+  ] as const)(
+    "clears the briefing notice when the visitor changes the imported %s",
+    async (_field, id, value) => {
+      globalThis.fetch = vi.fn() as unknown as typeof fetch;
+      stageDailyBriefingHandoff();
+      const host = await render();
+      expect(host.textContent).toContain(handoffNotice);
+
+      await select(host, id, value);
+
+      expect(host.textContent).not.toContain(handoffNotice);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("clears the briefing notice when a check actually starts", async () => {
+    let finishRequest!: (response: Response) => void;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    stageDailyBriefingHandoff();
+    const host = await render();
+    expect(host.textContent).toContain(handoffNotice);
+
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+
+    expect(host.textContent).not.toContain(handoffNotice);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishRequest(
+        Response.json(
+          { error: { code: "scan_failed" } },
+          { status: 502 },
+        ),
+      );
+      await Promise.resolve();
+    });
+  });
+
+  it("keeps the ordinary form usable when Web Storage methods throw", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("");
+    expect(field(host, "onpage-query").value).toBe("");
+    expect(host.textContent).not.toContain(handoffNotice);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("remembers a finished check and nothing else", async () => {
     globalThis.fetch = vi.fn(async () =>
       auditResponse(["pricing"]),

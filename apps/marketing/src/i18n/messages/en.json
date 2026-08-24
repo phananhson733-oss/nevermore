@@ -1555,6 +1555,178 @@
       "ctaBody": "The broader saved-project workflow is not currently open. This public audit remains anonymous and stateless.",
       "ctaButton": "Join the product-access waitlist"
     },
+    "dailyBriefing": {
+      "connectTitle": "Connect Search Console to build today's briefing",
+      "connectBody": "Choose one verified property and turn its latest complete Search Console data into a compact daily triage. Access is read-only, and the report is not stored on our servers.",
+      "connectCta": "Connect Search Console",
+      "connectTrust": "Read-only access · On-demand report · Disconnect anytime",
+      "connectPending": "The Google connection is not open in this environment yet.",
+      "inviteOnlyTitle": "Search Console access is still invite-only",
+      "inviteOnlyBody": "Google's consent screen is in testing, so only accounts on the tester list can authorize right now.",
+      "inviteOnlyCta": "Continue if invited",
+      "inviteOnlyRequest": "Ask to join the beta",
+      "noPropertyTitle": "No verified property in this grant",
+      "noPropertyBody": "The connection succeeded, but this Google account exposes no Search Console property this tool can run. Verify a property or reconnect with another account.",
+      "propertyLabel": "Search Console property",
+      "propertiesTruncated": "Showing {shown} of {total} granted properties. The remaining names did not fit in the browser grant cookie; reconnect to choose one that is missing.",
+      "brand": {
+        "label": "Brand terms for this run (optional)",
+        "hint": "Separate terms with commas. Domain-derived suggestions are only candidates; confirm the list separately, even if the correct list is empty.",
+        "placeholder": "acme, acme cloud",
+        "confirm": "I confirm this is the complete brand-term list for this run.",
+        "unconfirmed": "Not confirmed. The briefing will omit CTR opportunities that require a trusted brand split.",
+        "confirmed": "Confirmed for this run. Editing the property or list clears this confirmation."
+      },
+      "run": "Build today's briefing",
+      "rerun": "Rerun briefing",
+      "running": "Reading complete Search Console windows…",
+      "runComplete": "Daily briefing complete. Results are available below.",
+      "reconnect": "Connect Search Console again",
+      "disconnect": "Disconnect Search Console",
+      "disconnecting": "Disconnecting…",
+      "disconnectHint": "Removes the authorization from this browser and revokes it at Google.",
+      "disconnectRevokeFailed": "The authorization is out of this browser, but Google did not confirm that it was revoked. Remove it in Google settings to be certain.",
+      "disconnectFailed": "We could not reach the disconnect endpoint, so nothing changed. Try again or remove access in your Google account.",
+      "disconnectGoogleSettings": "Open Google's third-party access settings",
+      "errors": {
+        "gsc_unavailable": "We could not read Search Console for that property. Nothing was estimated in its place.",
+        "scan_in_progress": "Another Search Console run is in progress. Give it a few seconds, then try again.",
+        "invalid_request": "That request could not be read. Reload the page and try again.",
+        "payload_too_large": "That request was larger than this tool accepts.",
+        "unsupported_media_type": "That request did not arrive as JSON.",
+        "rate_limited": "The shared hourly Search Console run limit has been reached. Try again after the window resets.",
+        "quota_unavailable": "The shared usage limit cannot be checked right now, so no Search Console read was started.",
+        "gsc_revoked": "This browser no longer holds a valid Search Console authorization. Reconnect before running the briefing.",
+        "gsc_temporarily_unavailable": "Google could not renew the authorization just now. Nothing about the connection was changed; try again shortly.",
+        "unknown": "Something went wrong. Nothing was estimated or saved; try again."
+      },
+      "facts": {
+        "dataThrough": "Data through",
+        "timeBasis": "Time basis",
+        "timeBasisBody": "Pacific Time · latest complete day is PT current date minus 3 days",
+        "cadence": "Reading cadence",
+        "sharedRuns": "Shared run budget",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "dailyReason": "The complete seven-day window has enough impressions for day-level context.",
+        "weeklyReason": "Daily interpretation is suppressed because the sample or complete-day comparison is insufficient.",
+        "quotaAvailable": "{remaining} of {limit} shared runs remain this hour.",
+        "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero."
+      },
+      "kpis": {
+        "title": "Performance at a glance",
+        "clicks": "Clicks",
+        "impressions": "Impressions",
+        "ctr": "CTR",
+        "averagePosition": "Avg position",
+        "latestDay": "Latest complete day",
+        "currentSevenDays": "Current complete 7 days",
+        "change": "Change {delta}",
+        "unavailable": "Unavailable",
+        "dailySuppressed": "Day-level interpretation is unavailable for this cadence.",
+        "positionNote": "Average position is exposure-weighted; a negative change means a numerically better position."
+      },
+      "evidence": {
+        "title": "Evidence floor and observable coverage",
+        "thresholdSummary": "A query or query/page needs at least 100 impressions. A click movement needs at least 15% relative change and 3 absolute clicks. Position is considered stable only within 0.5.",
+        "filteredComplete": "{count} observed query rows were read but did not clear a signal threshold.",
+        "filteredPartial": "{count} rows in the observed prefix did not clear a signal threshold. The count is not property-wide because the read was partial or unavailable.",
+        "coverageTitle": "Query-to-page coverage · current window",
+        "coverageObserved": "{covered} of {eligible} eligible queries had a page carrying at least {floor} of their visible impressions.",
+        "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
+        "anonymizationTitle": "Search Console anonymization · current window",
+        "anonymizationObserved": "{impressions} of property impressions and {clicks} of property clicks are absent from visible query rows.",
+        "anonymizationUnavailable": "The withheld share is unavailable; it is not zero."
+      },
+      "evidenceStates": {
+        "observed": "Observed",
+        "not_observed": "Not observed in the comparison window",
+        "partial": "Observed prefix only",
+        "unavailable": "Unavailable"
+      },
+      "changes": {
+        "title": "Changes worth checking today",
+        "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
+        "query": "Query",
+        "page": "Page",
+        "current": "Current 7 days",
+        "previous": "Previous 7 days",
+        "firstObservedPrevious": "First observed in this comparison; the prior row is not treated as zero or as proof of new indexing.",
+        "metrics": "{clicks} clicks · {impressions} impressions · {ctr} CTR · avg position {position}"
+      },
+      "changeKinds": {
+        "click_opportunity": {
+          "title": "Visibility rose beyond the clicks it earned",
+          "body": "The query cleared the sample floor and trails a usable leave-one-out CTR baseline from this property. This is a measured gap, not a forecast of recoverable clicks."
+        },
+        "stable_position_click_decline": {
+          "title": "Clicks declined while average position held",
+          "body": "The weekly click loss cleared both materiality floors while average position stayed within the stable-position band. The data does not identify a single cause."
+        },
+        "first_observed": {
+          "title": "Query-page pair first observed in this comparison",
+          "body": "This pair appears in the current visible rows and not in the prior visible rows. Search Console anonymization means this is not proof of new indexing."
+        }
+      },
+      "actions": {
+        "title": "Open the next focused tool",
+        "empty": "No automated handoff is justified by the evidence available in this run.",
+        "why": "Why this action appears",
+        "evidence": "Evidence carried privately to the next tool"
+      },
+      "actionKinds": {
+        "click_opportunity": {
+          "title": "Inspect the CTR gap against your own site curve",
+          "body": "Open Opportunity Finder to examine this query with the full baseline and its limitations."
+        },
+        "stable_position_click_decline": {
+          "title": "Check whether the click loss is sustained",
+          "body": "Open Traffic Drop Diagnosis to place this evidence inside a longer history and separate observed patterns from unavailable causes."
+        },
+        "first_observed": {
+          "title": "Inspect the page against the target query",
+          "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
+        }
+      },
+      "actionDestinations": {
+        "seo-quick-wins": "Open GSC Opportunity Finder",
+        "traffic-drop-diagnosis": "Open Traffic Drop Diagnosis",
+        "on-page-seo-check": "Open On-Page SEO Checker"
+      },
+      "handoffError": "The private tab-scoped handoff could not be stored, so navigation was stopped. Your property, query, and page were not placed in the URL.",
+      "manual": {
+        "title": "Two checks the API cannot perform",
+        "body": "Manual Actions and Security Issues are separate Search Console reports with no public read API. Marking them here records only your current-page check.",
+        "manualActions": "Manual Actions",
+        "securityIssues": "Security Issues",
+        "open": "Open in Search Console",
+        "unconfirmed": "Not confirmed on this page",
+        "checked": "Marked on this page: no notification seen",
+        "markChecked": "Mark checked for this page"
+      },
+      "limitations": {
+        "title": "Limits attached to this run",
+        "empty": "No additional machine limitation was reported for this run. Search Console anonymization and the no-persistence boundary still apply."
+      },
+      "limitationCodes": {
+        "daily_data_incomplete": "One or more required complete dates were missing, so daily and weekly comparisons that depend on them are unavailable.",
+        "daily_rows_omitted": "Malformed or out-of-window date rows were omitted rather than repaired or filled with zeroes.",
+        "query_evidence_unavailable": "Query-level attachments were unavailable. Property KPI context remains, but query-derived changes and actions were withheld.",
+        "property_totals_unavailable": "Comparable property totals were unavailable, so the share hidden from the query report cannot be sized.",
+        "query_evidence_partial": "At least one query read was truncated. Derived actions were withheld and row counts describe only the observed prefix.",
+        "query_page_coverage_below_floor": "Too little of the visible query traffic could be attributed to one page, so the page and its action were withheld.",
+        "aggregation_basis_mismatch": "Search Console aggregated the compared reads on different bases. Coverage and withheld-share ratios are unavailable.",
+        "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
+        "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted."
+      },
+      "methodology": {
+        "title": "How to read this briefing",
+        "time": "Dates use Search Console's Pacific calendar and stop at the latest complete day, three days behind the current PT date.",
+        "position": "Average position is weighted by impressions. It describes where exposures occurred, not one fixed rank.",
+        "anonymization": "Search Console withholds some low-volume queries for privacy. Not observed never means zero, first ever, or newly indexed.",
+        "noPersistence": "This report and both manual-check marks live only in this page state. Refreshing, rerunning, changing property, or closing the tab clears them."
+      }
+    },
     "trafficDrop": {
       "title": "Traffic drop diagnosis",
       "description": "Connect Search Console and see what actually changed in your own data, with the evidence behind every claim.",
@@ -1573,6 +1745,7 @@
       "inviteOnlyRequest": "Ask to join the beta",
       "signedInNoGrant": "You are signed in, but this tool still needs read-only Search Console access.",
       "propertyLabel": "Property",
+      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
       "rerun": "Run again",
       "running": "Reading your Search Console data…",
       "dataThrough": "Data through {date}",
@@ -1995,6 +2168,7 @@
       "inviteOnlyCta": "Ask for access",
       "signedInNoGrant": "You are signed in, but no Search Console property has been granted yet.",
       "propertyLabel": "Search Console property",
+      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
       "propertiesTruncated": "Your grant covers {total} properties; the list was trimmed to fit. Reconnect to pick one that is missing.",
       "noPropertyTitle": "No properties in this grant",
       "noPropertyBody": "The connection succeeded but it covers no Search Console properties. Check that the Google account you used owns a verified property.",
@@ -2477,6 +2651,7 @@
       "eyebrow": "TOOL · ONE PAGE · ONE SET OF QUERIES",
       "title": "Does this page actually cover the words you want it found for?",
       "intro": "Submit one page and up to five target queries. You get where each query does and does not appear on that page, how often, and what is not measurable from public HTML.",
+      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
       "stages": {
         "target": {
           "eyebrow": "STAGE 01",

@@ -15,6 +15,7 @@ import { localePath } from "../../lib/locale-path";
  * marketing waitlist hand-off.
  */
 const GSC_CONNECT_PATHS: ReadonlySet<string> = new Set([
+  "/tools/daily-search-briefing",
   "/tools/seo-quick-wins",
   "/tools/traffic-drop-diagnosis",
   "/tools/low-competition-keywords",

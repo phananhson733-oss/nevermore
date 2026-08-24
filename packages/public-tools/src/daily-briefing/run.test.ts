@@ -1,0 +1,367 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { GSC_ROW_LIMIT } from "../gsc-analytics/reader.ts";
+import type {
+  GscQueryClient,
+  GscQueryRequest,
+  GscQueryResponse,
+  GscRawRow,
+} from "../gsc-analytics/types.ts";
+import { runDailyBriefing } from "./run.ts";
+
+const NOW = new Date("2026-08-24T20:00:00.000Z");
+const DATES = Array.from({ length: 14 }, (_, index) => {
+  const day = 8 + index;
+  return `2026-08-${String(day).padStart(2, "0")}`;
+});
+
+function dateRows(): readonly GscRawRow[] {
+  return DATES.map((date) => ({
+    keys: [date],
+    clicks: 10,
+    impressions: 200,
+    position: 8,
+  }));
+}
+
+function queryRows(): readonly GscRawRow[] {
+  return Array.from({ length: 5 }, (_, index) => ({
+    keys: [`baseline ${index}`],
+    clicks: 10,
+    impressions: 100,
+    position: 9,
+  }));
+}
+
+function queryPageRows(): readonly GscRawRow[] {
+  return Array.from({ length: 5 }, (_, index) => ({
+    keys: [`baseline ${index}`, `https://example.com/${index}`],
+    clicks: 10,
+    impressions: 100,
+    position: 9,
+  }));
+}
+
+function responseFor(
+  request: GscQueryRequest,
+  rows: {
+    readonly dates?: readonly GscRawRow[];
+    readonly queries?: readonly GscRawRow[];
+    readonly queryPages?: readonly GscRawRow[];
+  } = {},
+): GscQueryResponse {
+  if (request.dimensions.length === 0) {
+    return {
+      rows: [{ keys: [], clicks: 50, impressions: 500, position: 9 }],
+      responseAggregationType: "byPage",
+    };
+  }
+  if (request.dimensions[0] === "date") {
+    return {
+      rows: rows.dates ?? dateRows(),
+      responseAggregationType: "byProperty",
+    };
+  }
+  if (request.dimensions.length === 2) {
+    return {
+      rows: rows.queryPages ?? queryPageRows(),
+      responseAggregationType: "byPage",
+    };
+  }
+  return {
+    rows: rows.queries ?? queryRows(),
+    responseAggregationType: "byPage",
+  };
+}
+
+describe("runDailyBriefing read plan", () => {
+  it("uses one required 14-day read and six one-page optional attachments", async () => {
+    const calls: GscQueryRequest[] = [];
+    const client: GscQueryClient = async (request) => {
+      calls.push(request);
+      return responseFor(request);
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+    });
+
+    expect(calls).toHaveLength(7);
+    expect(calls.filter((call) => call.dimensions[0] === "date")).toEqual([
+      {
+        dimensions: ["date"],
+        startDate: "2026-08-08",
+        endDate: "2026-08-21",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+      },
+    ]);
+    expect(calls.filter((call) => call.dimensions.length === 1 && call.dimensions[0] === "query")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startDate: "2026-08-15",
+          endDate: "2026-08-21",
+          rowLimit: GSC_ROW_LIMIT,
+          startRow: 0,
+          aggregationType: "byPage",
+        }),
+        expect.objectContaining({
+          startDate: "2026-08-08",
+          endDate: "2026-08-14",
+          rowLimit: GSC_ROW_LIMIT,
+          startRow: 0,
+          aggregationType: "byPage",
+        }),
+      ]),
+    );
+    expect(calls.filter((call) => call.dimensions.length === 2)).toEqual([
+      expect.objectContaining({ aggregationType: "auto" }),
+      expect.objectContaining({ aggregationType: "auto" }),
+    ]);
+    expect(calls.filter((call) => call.dimensions.length === 0)).toEqual([
+      expect.objectContaining({ aggregationType: "byPage" }),
+      expect.objectContaining({ aggregationType: "byPage" }),
+    ]);
+    expect(envelope.result.weekly.evidence).toBe("observed");
+    expect(envelope.result.limitations).not.toContain("query_evidence_unavailable");
+  });
+
+  it("starts all optional attachments concurrently after the required read", async () => {
+    const optionalStarted: GscQueryRequest[] = [];
+    let release = (): void => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const client: GscQueryClient = async (request) => {
+      if (request.dimensions[0] === "date") return responseFor(request);
+      optionalStarted.push(request);
+      await blocked;
+      return responseFor(request);
+    };
+
+    const pending = runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+    });
+
+    await vi.waitFor(() => expect(optionalStarted).toHaveLength(6));
+    release();
+    await expect(pending).resolves.toBeDefined();
+  });
+
+  it("rejects when the required date read fails and does not start attachments", async () => {
+    const calls: GscQueryRequest[] = [];
+    const client: GscQueryClient = async (request) => {
+      calls.push(request);
+      throw new Error("date unavailable");
+    };
+
+    await expect(
+      runDailyBriefing({
+        client,
+        now: NOW,
+        brandTerms: [],
+        brandTermsConfirmed: true,
+      }),
+    ).rejects.toThrow("date unavailable");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.dimensions).toEqual(["date"]);
+  });
+
+  it("soft-fails any optional attachment while preserving the KPI envelope", async () => {
+    const client: GscQueryClient = async (request) => {
+      if (
+        request.dimensions.length === 2 &&
+        request.startDate === "2026-08-15"
+      ) {
+        throw new Error("query-page unavailable");
+      }
+      return responseFor(request);
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+    });
+
+    expect(envelope.result.weekly.evidence).toBe("observed");
+    expect(envelope.result.weekly.current?.clicks).toBe(70);
+    expect(envelope.result.changes).toEqual([]);
+    expect(envelope.result.coverage.current.evidence).toBe("unavailable");
+    expect(envelope.result.limitations).toContain("query_evidence_unavailable");
+  });
+
+  it("invokes the shared optional-read cancellation seam exactly once on failures", async () => {
+    const cancelOptionalReads = vi.fn();
+    const client: GscQueryClient = async (request) => {
+      if (
+        request.startDate === "2026-08-15" &&
+        (request.dimensions[0] === "query" || request.dimensions.length === 2)
+      ) {
+        throw new Error("optional read failed");
+      }
+      return responseFor(request);
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+      cancelOptionalReads,
+    });
+
+    expect(cancelOptionalReads).toHaveBeenCalledTimes(1);
+    expect(envelope.result.weekly.evidence).toBe("observed");
+    expect(envelope.result.coverage.current.evidence).toBe("unavailable");
+    expect(envelope.result.changes).toEqual([]);
+    expect(envelope.result.limitations).toContain("query_evidence_unavailable");
+  });
+
+  it("does not cancel delayed query evidence when only property totals fail", async () => {
+    const calls: GscQueryRequest[] = [];
+    const cancelOptionalReads = vi.fn();
+    let releaseQueryReads = (): void => undefined;
+    const queryReadsReleased = new Promise<void>((resolve) => {
+      releaseQueryReads = resolve;
+    });
+    const opportunityRows: readonly GscRawRow[] = [
+      { keys: ["pricing automation"], clicks: 0, impressions: 1_000, position: 9 },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        keys: [`baseline ${index}`],
+        clicks: 10,
+        impressions: 100,
+        position: 9,
+      })),
+    ];
+    const opportunityPages: readonly GscRawRow[] = [
+      {
+        keys: ["pricing automation", "https://example.com/pricing"],
+        clicks: 0,
+        impressions: 1_000,
+        position: 9,
+      },
+    ];
+    const client: GscQueryClient = async (request) => {
+      calls.push(request);
+      if (request.dimensions[0] === "date") return responseFor(request);
+      if (request.dimensions.length === 0) {
+        if (request.startDate === "2026-08-15") {
+          throw new Error("current totals unavailable");
+        }
+        return {
+          rows: [{ keys: [], clicks: 50, impressions: 1_500, position: 9 }],
+          responseAggregationType: "byPage",
+        };
+      }
+      await queryReadsReleased;
+      return {
+        rows:
+          request.dimensions.length === 2
+            ? opportunityPages
+            : opportunityRows,
+        responseAggregationType: "byPage",
+      };
+    };
+
+    const pending = runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+      cancelOptionalReads,
+    });
+
+    await vi.waitFor(() => expect(calls).toHaveLength(7));
+    releaseQueryReads();
+    const envelope = await pending;
+
+    expect(cancelOptionalReads).not.toHaveBeenCalled();
+    expect(envelope.result.actions[0]).toMatchObject({
+      kind: "click_opportunity",
+      query: "pricing automation",
+      page: "https://example.com/pricing",
+    });
+    expect(envelope.result.anonymization.current.evidence).toBe("unavailable");
+    expect(envelope.result.limitations).toContain("property_totals_unavailable");
+    expect(envelope.result.limitations).not.toContain("query_evidence_unavailable");
+  });
+
+  it("bounds full query and query-page reads to one page even after budget expiry", async () => {
+    const calls: GscQueryRequest[] = [];
+    const fullQueries = Array.from({ length: GSC_ROW_LIMIT }, (_, index) => ({
+      keys: [`query ${index}`],
+      clicks: 1,
+      impressions: 100,
+      position: 9,
+    }));
+    const fullQueryPages = Array.from({ length: GSC_ROW_LIMIT }, (_, index) => ({
+      keys: [`query ${index}`, `https://example.com/${index}`],
+      clicks: 1,
+      impressions: 100,
+      position: 9,
+    }));
+    const client: GscQueryClient = async (request) => {
+      calls.push(request);
+      return responseFor(request, {
+        queries: request.startDate === "2026-08-15" ? fullQueries : queryRows(),
+        queryPages:
+          request.startDate === "2026-08-15" ? fullQueryPages : queryPageRows(),
+      });
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+      budget: { isExpired: () => true },
+    });
+
+    expect(
+      calls.filter(
+        (call) =>
+          call.startDate === "2026-08-15" &&
+          (call.dimensions[0] === "query" || call.dimensions.length === 2),
+      ),
+    ).toHaveLength(2);
+    expect(calls.some((call) => call.startRow === GSC_ROW_LIMIT)).toBe(false);
+    expect(envelope.result.countComplete).toBe(false);
+    expect(envelope.result.limitations).toContain("query_evidence_partial");
+  });
+
+  it("omits malformed date keys without turning them into zero days", async () => {
+    const client: GscQueryClient = async (request) => {
+      if (request.dimensions[0] === "date") {
+        return responseFor(request, {
+          dates: [
+            ...dateRows(),
+            { keys: [], clicks: 999, impressions: 999, position: 1 },
+            { keys: ["2026-99-99"], clicks: 999, impressions: 999, position: 1 },
+          ],
+        });
+      }
+      return responseFor(request);
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+    });
+
+    expect(envelope.result.weekly.current).toMatchObject({
+      clicks: 70,
+      impressions: 1_400,
+    });
+    expect(envelope.result.weekly.evidence).toBe("observed");
+  });
+});

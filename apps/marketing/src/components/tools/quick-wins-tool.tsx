@@ -1,17 +1,18 @@
-// @input  -- locale, GSC state, quick-wins API, consent-gated event tracker
-// @output -- connect/run/evidence states plus tool_start/tool_complete analytics
+// @input  -- locale, GSC state, one local Daily Briefing handoff, quick-wins API
+// @output -- granted-property prefill, connect/run/evidence states, analytics
 // @pos    -- primary client surface for /[locale]/tools/seo-quick-wins
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { QuickWinsResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
-import { formatPropertyLabel } from "@/lib/tools/property-label";
-import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import { formatPropertyLabel } from "../../lib/tools/property-label";
+import { consumeToolHandoff } from "../../lib/tools/tool-handoff";
+import { trackMarketingEvent } from "../layout/google-analytics";
 import { GscConnectPanel, gscAuthorizeHref } from "./gsc-connect-panel";
 import { GscDisconnect } from "./gsc-disconnect";
 import { QuickWinsResults } from "./quick-wins-results";
@@ -66,8 +67,26 @@ export function QuickWinsTool({
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [result, setResult] = useState<QuickWinsResult | null>(null);
+  const [handoffImported, setHandoffImported] = useState(false);
+
+  useEffect(() => {
+    try {
+      const handoff = consumeToolHandoff(
+        window.sessionStorage,
+        Date.now(),
+        "seo-quick-wins",
+      );
+      if (handoff === null || !properties?.includes(handoff.property)) return;
+      setProperty(handoff.property);
+      setHandoffImported(true);
+    } catch {
+      // Storage access itself can be unavailable. The tool still works as a
+      // normal form; only the optional local handoff is lost.
+    }
+  }, [properties]);
 
   async function run(target: string) {
+    setHandoffImported(false);
     trackMarketingEvent("tool_start", { tool_name: "seo_quick_wins" });
     setLoading(true);
     setErrorCode(null);
@@ -137,7 +156,10 @@ export function QuickWinsTool({
           <span className={FIELD_LABEL}>{t("propertyLabel")}</span>
           <select
             value={property}
-            onChange={(event) => setProperty(event.target.value)}
+            onChange={(event) => {
+              setProperty(event.target.value);
+              setHandoffImported(false);
+            }}
             className={SELECT_FIELD}
           >
             {properties.map((candidate) => (
@@ -153,12 +175,24 @@ export function QuickWinsTool({
           <input
             type="text"
             value={brandInput}
-            onChange={(event) => setBrandInput(event.target.value)}
+            onChange={(event) => {
+              setBrandInput(event.target.value);
+              setHandoffImported(false);
+            }}
             placeholder={t("brandPlaceholder")}
             className={TEXT_FIELD}
           />
         </label>
       </div>
+
+      {handoffImported ? (
+        <p
+          role="status"
+          className="mt-3 rounded-[10px] border border-brand-accent/25 bg-brand-accent/[0.08] px-4 py-3 text-[12.5px] leading-[1.6] text-text-dark-secondary"
+        >
+          {t("handoffNotice")}
+        </p>
+      ) : null}
 
       <p className="mt-3 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("brandHint")}

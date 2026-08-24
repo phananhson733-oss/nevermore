@@ -8,6 +8,7 @@ import type {
   GscQueryClient,
   GscQueryResponse,
   GscReadPaging,
+  GscAggregationType,
 } from "./types.ts";
 import type { GscWindow } from "./window.ts";
 
@@ -66,6 +67,7 @@ export async function readQueryRows(
    * project quota sees. Clamped to the shared cap so this can only tighten.
    */
   maxPages: number = GSC_MAX_PAGES,
+  aggregationType?: GscAggregationType,
 ): Promise<QueryRowsRead> {
   const rows: GscQueryRow[] = [];
   let pagesFetched = 0;
@@ -88,6 +90,7 @@ export async function readQueryRows(
       endDate: window.endDate,
       rowLimit: GSC_ROW_LIMIT,
       startRow: page * GSC_ROW_LIMIT,
+      ...(aggregationType === undefined ? {} : { aggregationType }),
     });
     pagesFetched += 1;
     // Freeze the first page's basis; a later page that disagrees makes the
@@ -153,6 +156,7 @@ export interface PropertyTotals {
 export async function readPropertyTotals(
   client: GscQueryClient,
   window: GscWindow,
+  aggregationType?: GscAggregationType,
 ): Promise<PropertyTotals | null> {
   const response = await client({
     dimensions: [],
@@ -160,6 +164,7 @@ export async function readPropertyTotals(
     endDate: window.endDate,
     rowLimit: 1,
     startRow: 0,
+    ...(aggregationType === undefined ? {} : { aggregationType }),
   });
 
   const row = response.rows[0];

@@ -61,6 +61,19 @@ describe("createSearchAnalyticsClient", () => {
       startRow: 0,
       dataState: "final",
     });
+    expect(seenBody).not.toHaveProperty("aggregationType");
+  });
+
+  it("forwards an explicit aggregation type in the JSON body", async () => {
+    let seenBody: Record<string, unknown> = {};
+    const call = client(async (_url, init) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ rows: [], responseAggregationType: "byPage" });
+    });
+
+    await call({ ...REQUEST, aggregationType: "byPage" });
+
+    expect(seenBody["aggregationType"]).toBe("byPage");
   });
 
   it("sends the bearer token and never puts it in the URL", async () => {

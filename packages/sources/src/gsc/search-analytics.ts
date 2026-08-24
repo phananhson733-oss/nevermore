@@ -40,6 +40,10 @@ export const RETRYABLE_BACKOFF_BASE_MS = 400;
 export const RETRYABLE_BACKOFF_JITTER_MS = 600;
 
 export type SearchAnalyticsDimension = "query" | "page" | "date";
+export type SearchAnalyticsAggregationType =
+  | "auto"
+  | "byPage"
+  | "byProperty";
 
 /**
  * One equality filter, which is all the callers here need.
@@ -60,6 +64,7 @@ export interface SearchAnalyticsRequest {
   readonly endDate: string;
   readonly rowLimit: number;
   readonly startRow: number;
+  readonly aggregationType?: SearchAnalyticsAggregationType;
   /**
    * Narrows the rows to those matching every entry, or omitted for all rows.
    *
@@ -211,6 +216,9 @@ export function createSearchAnalyticsClient(
           rowLimit: request.rowLimit,
           startRow: request.startRow,
           dataState: GSC_DATA_STATE,
+          ...(request.aggregationType === undefined
+            ? {}
+            : { aggregationType: request.aggregationType }),
           ...(request.filters === undefined || request.filters.length === 0
             ? {}
             : {
