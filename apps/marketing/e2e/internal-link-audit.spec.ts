@@ -1,4 +1,10 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Route,
+} from "@playwright/test";
 
 const AUDIT_API_REQUEST = "POST /api/tools/internal-link-audit";
 const HEADER_PROFILE_REQUEST = "GET /api/auth/profile";
@@ -289,6 +295,14 @@ test("runs the no-login audit and renders the mocked v3 report", async ({
   ).toBeVisible();
   await expect(page.getByText(/No login required/)).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  const relatedAuditLink = page.getByRole("link", {
+    name: /Website Health Map/,
+  });
+  await expect(relatedAuditLink).toHaveAttribute("href", "/agents/seo");
+  await expect(relatedAuditLink).not.toHaveAttribute(
+    "href",
+    "/tools/seo-audit",
+  );
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run internal link audit" }).click();
 
@@ -390,6 +404,66 @@ test("runs the no-login audit and renders the mocked v3 report", async ({
     ),
   ).toBeVisible();
   expect(api.auditRequestCount).toBe(1);
+  await expectNoUnexpectedApiRequests(api);
+});
+
+test("canonicalizes the legacy English URL once and serves the standalone page", async ({
+  page,
+}) => {
+  const api = await installApiGuard(page);
+
+  const response = await page.goto("/en/tools/internal-link-audit");
+  expect(response).not.toBeNull();
+  expect(response?.status()).toBe(200);
+  await expect(page).toHaveURL(/\/tools\/internal-link-audit$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Internal Link Audit" }),
+  ).toBeVisible();
+
+  const redirectRequests: Request[] = [];
+  let request: Request | null = response?.request() ?? null;
+  while (request) {
+    redirectRequests.unshift(request);
+    request = request.redirectedFrom();
+  }
+  expect(
+    redirectRequests.map((redirectRequest) => {
+      const url = new URL(redirectRequest.url());
+      return `${url.pathname}${url.search}`;
+    }),
+  ).toEqual([
+    "/en/tools/internal-link-audit",
+    "/tools/internal-link-audit",
+  ]);
+  const legacyResponse = await redirectRequests[0]?.response();
+  expect(legacyResponse).not.toBeNull();
+  expect(legacyResponse?.status()).toBe(308);
+
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://gengrowth.ai/tools/internal-link-audit",
+  );
+  const jsonLdTypes = await page
+    .locator('script[type="application/ld+json"]')
+    .evaluateAll((scripts) =>
+      scripts.flatMap((script) => {
+        const data = JSON.parse(script.textContent ?? "{}") as {
+          "@type"?: string | string[];
+        };
+        const type = data["@type"];
+        return Array.isArray(type) ? type : type ? [type] : [];
+      }),
+    );
+  expect(jsonLdTypes).toEqual(
+    expect.arrayContaining([
+      "BreadcrumbList",
+      "HowTo",
+      "FAQPage",
+      "WebApplication",
+    ]),
+  );
+
+  expect(api.auditRequestCount).toBe(0);
   await expectNoUnexpectedApiRequests(api);
 });
 
