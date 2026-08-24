@@ -555,42 +555,55 @@ export function DailyBriefingResults({
           {t("actions.intro")}
         </p>
         {actions.length === 0 ? (
-          <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
-            {t("actions.empty")}
-          </p>
+          <div data-action-empty className={`${CARD} mt-4`}>
+            <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+              {t("actions.empty")}
+            </p>
+          </div>
         ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div data-actions-list className="mt-4 grid gap-3">
             {actions.map(({ action, change }, index) => {
               const target = destination(action);
               return (
                 <article
                   key={`action:${index}:${action.kind}`}
-                  className={`${CARD} flex min-w-0 flex-col`}
+                  data-action-row
+                  data-action-rank={index + 1}
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
                 >
-                  <p className={EYEBROW}>{t("actions.why")}</p>
-                  <h4 className="mt-2 text-[16px] font-semibold text-text-dark-primary">
-                    {t(`actionKinds.${action.kind}.title`)}
-                  </h4>
-                  <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
-                    {t(`actionKinds.${action.kind}.body`)}
-                  </p>
-                  <div className="mt-4 border-t border-brand-border pt-4">
-                    <p className={EYEBROW}>{t("actions.evidence")}</p>
-                    <p className="mt-2 break-words text-[12.5px] font-medium text-text-dark-primary">
-                      {change.query}
-                    </p>
-                    <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                      {change.page}
-                    </p>
-                    <p className="mt-2 text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                      {metricsLine(t, locale, change.current)}
-                    </p>
+                  <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-[16px] font-semibold text-text-dark-primary">
+                        {t(`actionKinds.${action.kind}.title`)}
+                      </h4>
+                      <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                        {t(`actionKinds.${action.kind}.body`)}
+                      </p>
+                      <div
+                        data-action-evidence
+                        className="mt-3 border-l border-brand-border pl-3"
+                      >
+                        <p className={EYEBROW}>{t("actions.evidence")}</p>
+                        <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                          {change.query}
+                        </p>
+                        <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {change.page}
+                        </p>
+                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {metricsLine(t, locale, change.current)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                   <Link
                     data-action-link
                     href={localePath(locale, target.path)}
                     onClick={(event) => handoff(event, action, index)}
-                    className="mt-5 inline-flex min-h-11 items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
                     {t(target.labelKey)}
                     <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />

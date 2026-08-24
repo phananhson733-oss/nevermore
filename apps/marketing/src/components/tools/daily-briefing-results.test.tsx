@@ -469,8 +469,21 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       },
     ];
     const host = await renderResults(envelope({ changes, actions }));
+    const list = host.querySelector("[data-actions-list]");
+    const rows = [...host.querySelectorAll("[data-action-row]")];
     const links = [...host.querySelectorAll<HTMLAnchorElement>("[data-action-link]")];
 
+    expect(list).not.toBeNull();
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.getAttribute("data-action-rank"))).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    for (const row of rows) {
+      expect(row.querySelector("[data-action-evidence]")).not.toBeNull();
+      expect(row.querySelectorAll("[data-action-link]")).toHaveLength(1);
+    }
     expect(links).toHaveLength(3);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/tools/seo-quick-wins",
@@ -479,6 +492,22 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     ]);
     expect(host.innerHTML).not.toContain("no%20matching%20change");
     expect(host.innerHTML).not.toContain("private.example");
+  });
+
+  it("keeps a full explanatory action panel when no action matches evidence", async () => {
+    const host = await renderResults(envelope({ changes: [], actions: [] }));
+    const section = host.querySelector('[data-result-section="actions"]');
+    const empty = section?.querySelector("[data-action-empty]");
+
+    expect(section).not.toBeNull();
+    expect(empty).not.toBeNull();
+    expect(empty?.tagName).toBe("DIV");
+    expect(empty?.className).toContain("border");
+    expect(empty?.textContent).toContain(
+      "No automated handoff is justified by the evidence available in this run",
+    );
+    expect(section?.querySelector("[data-actions-list]")).toBeNull();
+    expect(section?.querySelector("[data-action-link]")).toBeNull();
   });
 
   it("uses a bounded deterministic evidence id even for long private values", async () => {
