@@ -463,7 +463,7 @@ export function DailyBriefingResults({
               ))}
             </div>
             {shownChanges.map((change, index) => (
-              <article
+              <div
                 key={`change:${index}:${change.kind}`}
                 role="row"
                 data-change
@@ -535,7 +535,7 @@ export function DailyBriefingResults({
                     {t(`changeKinds.${change.kind}.body`)}
                   </p>
                 </div>
-              </article>
+              </div>
             ))}
           </div>
         )}

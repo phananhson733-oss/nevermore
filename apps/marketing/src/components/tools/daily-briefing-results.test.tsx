@@ -383,6 +383,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rows).toHaveLength(3);
     expect(table?.querySelectorAll('[role="row"]')).toHaveLength(4);
     for (const row of rows) {
+      expect(row.tagName).toBe("DIV");
       expect(row.getAttribute("role")).toBe("row");
       expect(row.querySelectorAll('[role="cell"]')).toHaveLength(5);
     }
