@@ -51,6 +51,12 @@ interface ResultPreviewSectionProps {
   readonly kind: "changes" | "actions";
 }
 
+interface NoiseSummaryProps {
+  readonly filtered: number;
+  readonly shown: number;
+  readonly complete: boolean;
+}
+
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
 
 const METRICS: readonly MetricKey[] = [
@@ -214,6 +220,32 @@ function ResultPreviewSection({
   );
 }
 
+function NoiseSummary({ filtered, shown, complete }: NoiseSummaryProps) {
+  const t = useTranslations("tools.dailyBriefing");
+
+  return (
+    <section
+      aria-labelledby="daily-briefing-noise"
+      data-result-section="noise"
+      className="rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft px-4 py-3"
+    >
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
+        <h3
+          id="daily-briefing-noise"
+          className={`${EYEBROW} shrink-0 text-brand-accent-text`}
+        >
+          {t("noise.label")}
+        </h3>
+        <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {complete
+            ? t("noise.complete", { filtered, shown })
+            : t("noise.partial", { filtered, shown })}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function DailyBriefingResultPreview() {
   const t = useTranslations("tools.dailyBriefing");
 
@@ -289,7 +321,10 @@ export function DailyBriefingResults({
         {t("runComplete")}
       </p>
 
-      <section aria-labelledby="daily-briefing-facts">
+      <section
+        aria-labelledby="daily-briefing-facts"
+        data-result-section="facts"
+      >
         <h3 id="daily-briefing-facts" className="sr-only">
           {t("facts.dataThrough")}
         </h3>
@@ -331,7 +366,10 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-kpis">
+      <section
+        aria-labelledby="daily-briefing-kpis"
+        data-result-section="kpis"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <h3
             id="daily-briefing-kpis"
@@ -363,67 +401,25 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-evidence" className={CARD}>
-        <h3
-          id="daily-briefing-evidence"
-          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("evidence.title")}
-        </h3>
-        <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">
-          {t("evidence.thresholdSummary")}
-        </p>
-        <p className="mt-3 border-l-2 border-brand-accent pl-3 text-[13px] leading-[1.6] text-text-dark-secondary">
-          {result.countComplete
-            ? t("evidence.filteredComplete", {
-                count: result.filteredObservedRows,
-              })
-            : t("evidence.filteredPartial", {
-                count: result.filteredObservedRows,
-              })}
-        </p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <EvidenceCard
-            title={t("evidence.coverageTitle")}
-            state={t(`evidenceStates.${currentCoverage.evidence}`)}
-            body={
-              currentCoverage.evidence === "observed" ||
-              currentCoverage.evidence === "partial"
-                ? t("evidence.coverageObserved", {
-                    covered: currentCoverage.coveredQueries,
-                    eligible: currentCoverage.eligibleQueries,
-                    floor: percent(currentCoverage.minimumQueryPageCoverage),
-                  })
-                : t("evidence.coverageUnavailable")
-            }
-          />
-          <EvidenceCard
-            title={t("evidence.anonymizationTitle")}
-            state={t(`evidenceStates.${currentAnonymization.evidence}`)}
-            body={
-              (currentAnonymization.evidence === "observed" ||
-                currentAnonymization.evidence === "partial") &&
-              currentAnonymization.missingImpressionShare !== null &&
-              currentAnonymization.missingClickShare !== null
-                ? t("evidence.anonymizationObserved", {
-                    impressions: percent(
-                      currentAnonymization.missingImpressionShare,
-                    ),
-                    clicks: percent(currentAnonymization.missingClickShare),
-                  })
-                : t("evidence.anonymizationUnavailable")
-            }
-          />
-        </div>
-      </section>
+      <NoiseSummary
+        filtered={result.filteredObservedRows}
+        shown={result.changes.length}
+        complete={result.countComplete}
+      />
 
-      <section aria-labelledby="daily-briefing-changes">
+      <section
+        aria-labelledby="daily-briefing-changes"
+        data-result-section="changes"
+      >
         <h3
           id="daily-briefing-changes"
           className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
         >
           {t("changes.title")}
         </h3>
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("changes.intro")}
+        </p>
         {result.changes.length === 0 ? (
           <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
             {t("changes.empty")}
@@ -480,13 +476,19 @@ export function DailyBriefingResults({
         )}
       </section>
 
-      <section aria-labelledby="daily-briefing-actions">
+      <section
+        aria-labelledby="daily-briefing-actions"
+        data-result-section="actions"
+      >
         <h3
           id="daily-briefing-actions"
           className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
         >
           {t("actions.title")}
         </h3>
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("actions.intro")}
+        </p>
         {actions.length === 0 ? (
           <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
             {t("actions.empty")}
@@ -544,7 +546,11 @@ export function DailyBriefingResults({
         ) : null}
       </section>
 
-      <section aria-labelledby="daily-briefing-manual" className={CARD}>
+      <section
+        aria-labelledby="daily-briefing-manual"
+        data-result-section="manual"
+        className={CARD}
+      >
         <h3
           id="daily-briefing-manual"
           className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
@@ -570,7 +576,68 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-limits">
+      <section
+        aria-labelledby="daily-briefing-evidence"
+        data-result-section="evidence"
+        className={CARD}
+      >
+        <h3
+          id="daily-briefing-evidence"
+          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+        >
+          {t("evidence.title")}
+        </h3>
+        <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">
+          {t("evidence.thresholdSummary")}
+        </p>
+        <p className="mt-3 border-l-2 border-brand-accent pl-3 text-[13px] leading-[1.6] text-text-dark-secondary">
+          {result.countComplete
+            ? t("evidence.filteredComplete", {
+                count: result.filteredObservedRows,
+              })
+            : t("evidence.filteredPartial", {
+                count: result.filteredObservedRows,
+              })}
+        </p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <EvidenceCard
+            title={t("evidence.coverageTitle")}
+            state={t(`evidenceStates.${currentCoverage.evidence}`)}
+            body={
+              currentCoverage.evidence === "observed" ||
+              currentCoverage.evidence === "partial"
+                ? t("evidence.coverageObserved", {
+                    covered: currentCoverage.coveredQueries,
+                    eligible: currentCoverage.eligibleQueries,
+                    floor: percent(currentCoverage.minimumQueryPageCoverage),
+                  })
+                : t("evidence.coverageUnavailable")
+            }
+          />
+          <EvidenceCard
+            title={t("evidence.anonymizationTitle")}
+            state={t(`evidenceStates.${currentAnonymization.evidence}`)}
+            body={
+              (currentAnonymization.evidence === "observed" ||
+                currentAnonymization.evidence === "partial") &&
+              currentAnonymization.missingImpressionShare !== null &&
+              currentAnonymization.missingClickShare !== null
+                ? t("evidence.anonymizationObserved", {
+                    impressions: percent(
+                      currentAnonymization.missingImpressionShare,
+                    ),
+                    clicks: percent(currentAnonymization.missingClickShare),
+                  })
+                : t("evidence.anonymizationUnavailable")
+            }
+          />
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="daily-briefing-limits"
+        data-result-section="limitations"
+      >
         <h3
           id="daily-briefing-limits"
           className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
@@ -599,7 +666,11 @@ export function DailyBriefingResults({
         )}
       </section>
 
-      <section aria-labelledby="daily-briefing-method" className={CARD}>
+      <section
+        aria-labelledby="daily-briefing-method"
+        data-result-section="methodology"
+        className={CARD}
+      >
         <h3
           id="daily-briefing-method"
           className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"

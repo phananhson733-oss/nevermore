@@ -185,6 +185,34 @@ async function click(element: HTMLElement) {
 }
 
 describe("DailyBriefingResults KPI and evidence facts", () => {
+  it("puts the noise summary and decision sections directly after KPIs", async () => {
+    const host = await renderResults(
+      envelope({
+        filteredObservedRows: 17,
+        countComplete: true,
+      }),
+    );
+    const order = [...host.querySelectorAll("[data-result-section]")].map(
+      (node) => node.getAttribute("data-result-section"),
+    );
+    const noise = host.querySelector('[data-result-section="noise"]');
+
+    expect(order).toEqual([
+      "facts",
+      "kpis",
+      "noise",
+      "changes",
+      "actions",
+      "manual",
+      "evidence",
+      "limitations",
+      "methodology",
+    ]);
+    expect(noise?.textContent).toContain("Noise filter on");
+    expect(noise?.textContent).toContain("17 observed query rows");
+    expect(noise?.textContent).toContain("0 changes cleared the threshold");
+  });
+
   it("renders four metric cards with latest-day and seven-day values", async () => {
     const host = await renderResults();
     const cards = [...host.querySelectorAll("[data-kpi]")];
@@ -270,9 +298,15 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
         },
       }),
     );
+    const noise = host.querySelector('[data-result-section="noise"]');
 
-    expect(host.textContent).toContain("17 rows in the observed prefix");
-    expect(host.textContent).toContain("not property-wide");
+    expect(noise).not.toBeNull();
+    expect(noise?.textContent).toContain("17 rows in the observed prefix");
+    expect(noise?.textContent).toContain("observed prefix");
+    expect(noise?.textContent).toContain("not property-wide");
+    expect(noise?.textContent).toContain(
+      "0 changes cleared the available evidence gates",
+    );
     expect(host.textContent).toContain(
       "Comparable query-to-page coverage is unavailable",
     );

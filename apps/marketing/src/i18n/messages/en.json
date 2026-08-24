@@ -1626,6 +1626,11 @@
         "dailySuppressed": "Day-level interpretation is unavailable for this cadence.",
         "positionNote": "Average position is exposure-weighted; a negative change means a numerically better position."
       },
+      "noise": {
+        "label": "Noise filter on",
+        "complete": "{filtered} observed query rows did not clear a signal threshold. {shown} changes cleared the threshold.",
+        "partial": "{filtered} rows in the observed prefix did not clear a signal threshold; this is not property-wide. {shown} changes cleared the available evidence gates."
+      },
       "evidence": {
         "title": "Evidence floor and observable coverage",
         "thresholdSummary": "A query or query/page needs at least 100 impressions. A click movement needs at least 15% relative change and 3 absolute clicks. Position is considered stable only within 0.5.",
