@@ -1686,6 +1686,7 @@
         "title": "Today's recommended actions",
         "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool.",
         "empty": "No automated handoff is justified by the evidence available in this run.",
+        "rank": "Rank {rank}",
         "why": "Why this action appears",
         "evidence": "Evidence carried privately to the next tool"
       },

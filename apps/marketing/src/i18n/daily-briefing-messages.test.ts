@@ -128,6 +128,7 @@ const REQUIRED_LEAF_PATHS = [
   "changes.notObserved",
   "actions.title",
   "actions.empty",
+  "actions.rank",
   "actions.why",
   "actions.evidence",
   "actionDestinations.seo-quick-wins",
@@ -243,6 +244,16 @@ describe("Daily Briefing message catalogs", () => {
         placeholders(enNoise[key]),
       );
     }
+  });
+
+  it("keeps EN and ZH action-rank placeholders aligned", () => {
+    const enActions = recordAt(daily(en), "actions");
+    const zhActions = recordAt(daily(zh), "actions");
+
+    expect(placeholders(enActions.rank)).toEqual(["rank"]);
+    expect(placeholders(zhActions.rank)).toEqual(
+      placeholders(enActions.rank),
+    );
   });
 
   it("keeps client copy in next-intl instead of an in-component locale table", () => {

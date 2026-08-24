@@ -480,7 +480,11 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "2",
       "3",
     ]);
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
+      const rank = row.querySelector("[data-action-rank-badge]");
+      expect(rank).not.toBeNull();
+      expect(rank?.getAttribute("aria-label")).toBe(`Rank ${index + 1}`);
+      expect(rank?.textContent?.trim()).toBe(String(index + 1));
       expect(row.querySelector("[data-action-evidence]")).not.toBeNull();
       expect(row.querySelectorAll("[data-action-link]")).toHaveLength(1);
     }
@@ -495,7 +499,22 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("keeps a full explanatory action panel when no action matches evidence", async () => {
-    const host = await renderResults(envelope({ changes: [], actions: [] }));
+    const source = change("click_opportunity", 1);
+    const unmatchedQuery = "private unmatched query";
+    const unmatchedPage = "https://private.example/unmatched-only";
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [
+          {
+            kind: source.kind,
+            destination: "seo-quick-wins",
+            query: unmatchedQuery,
+            page: unmatchedPage,
+          },
+        ],
+      }),
+    );
     const section = host.querySelector('[data-result-section="actions"]');
     const empty = section?.querySelector("[data-action-empty]");
 
@@ -508,6 +527,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     );
     expect(section?.querySelector("[data-actions-list]")).toBeNull();
     expect(section?.querySelector("[data-action-link]")).toBeNull();
+    expect(host.textContent).not.toContain(unmatchedQuery);
+    expect(host.innerHTML).not.toContain(unmatchedPage);
   });
 
   it("uses a bounded deterministic evidence id even for long private values", async () => {

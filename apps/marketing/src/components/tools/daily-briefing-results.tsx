@@ -572,7 +572,11 @@ export function DailyBriefingResults({
                   className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
                 >
                   <div className="flex min-w-0 flex-1 items-start gap-3.5">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text">
+                    <span
+                      data-action-rank-badge
+                      aria-label={t("actions.rank", { rank: index + 1 })}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
+                    >
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
