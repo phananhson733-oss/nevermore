@@ -1626,6 +1626,11 @@
         "dailySuppressed": "当前节奏下不提供日级解读。",
         "positionNote": "平均排名按曝光加权；负的变化表示数值上更靠前。"
       },
+      "noise": {
+        "label": "噪声过滤已开启",
+        "complete": "有 {filtered} 条已观察查询记录没有通过信号门槛；本次有 {shown} 项变化通过门槛。",
+        "partial": "已观察前缀中有 {filtered} 条记录没有通过门槛，这不是全站计数；本次有 {shown} 项变化通过当前可用证据门槛。"
+      },
       "evidence": {
         "title": "证据门槛与可观察覆盖",
         "thresholdSummary": "单个查询词或查询词/页面至少需要 100 次曝光；点击变化同时至少达到 15% 和 3 次；平均排名变化不超过 0.5 才称为稳定。",
@@ -1645,14 +1650,23 @@
         "unavailable": "不可得"
       },
       "changes": {
-        "title": "今天值得继续检查的变化",
+        "title": "超出噪声阈值的变化",
+        "intro": "对比最近完整 7 天与前 7 天，最多显示三条有证据支持的变化。",
         "empty": "本次运行没有变化通过证据门槛。这不等于证明没有发生变化。",
         "query": "查询词",
         "page": "页面",
         "current": "当前 7 天",
         "previous": "前 7 天",
         "firstObservedPrevious": "仅表示本次比较首次观察；上一窗口不按 0 处理，也不证明是新收录。",
-        "metrics": "点击 {clicks} · 曝光 {impressions} · CTR {ctr} · 平均排名 {position}"
+        "metrics": "点击 {clicks} · 曝光 {impressions} · CTR {ctr} · 平均排名 {position}",
+        "columns": {
+          "change": "变化",
+          "queryPage": "查询词 / 页面",
+          "clicks": "点击",
+          "position": "排名",
+          "interpretation": "解读"
+        },
+        "notObserved": "未观察到"
       },
       "changeKinds": {
         "click_opportunity": {
@@ -1669,10 +1683,16 @@
         }
       },
       "actions": {
-        "title": "打开下一步聚焦工具",
+        "title": "今日建议动作",
+        "intro": "最多三项，按确定性的证据顺序排列；每项都把证据私密带到下一工具。",
         "empty": "当前可用证据不足以支持自动交接到其他工具。",
+        "rank": "优先级 {rank}",
         "why": "为何出现这项动作",
         "evidence": "私密带到下一工具的证据"
+      },
+      "preview": {
+        "changes": "生成简报后，这里会显示最新完整对比窗口中有证据支持的变化。",
+        "actions": "生成简报后，这里会显示最多三项与已观察证据绑定的动作。"
       },
       "actionKinds": {
         "click_opportunity": {

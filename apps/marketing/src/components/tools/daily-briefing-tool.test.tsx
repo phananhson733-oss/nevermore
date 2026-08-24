@@ -232,6 +232,31 @@ describe("DailyBriefingTool connection boundary", () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it("shows both approved result previews before the first run without mock evidence", async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const host = await renderTool();
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
+    expect(host.textContent).toContain("Changes above the noise threshold");
+    expect(host.textContent).toContain("Today's recommended actions");
+    expect(host.textContent).toContain("Run the briefing to generate");
+    expect(host.querySelector("[data-change]")).toBeNull();
+    expect(host.querySelector("[data-action-row]")).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("replaces both result previews after a successful run", async () => {
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const host = await renderTool();
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
+
+    await click(buttonWith(host, "Build today's briefing"));
+
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
+    expect(host.textContent).toContain("Daily briefing complete");
+  });
 });
 
 describe("DailyBriefingTool brand confirmation and request body", () => {
@@ -287,6 +312,7 @@ describe("DailyBriefingTool brand confirmation and request body", () => {
     await click(buttonWith(host, "Build today's briefing"));
     await click(buttonWith(host, "Mark checked for this page"));
     expect(host.textContent).toContain("Marked on this page");
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
 
     await changeValue(
       host.querySelector('select[name="property"]') as HTMLSelectElement,
@@ -299,6 +325,7 @@ describe("DailyBriefingTool brand confirmation and request body", () => {
     ).toBe("example org");
     expect(host.textContent).not.toContain("Daily briefing complete");
     expect(host.textContent).not.toContain("Marked on this page");
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
   });
 
   it("clears an existing report and confirmation when brand terms are edited", async () => {
@@ -313,10 +340,31 @@ describe("DailyBriefingTool brand confirmation and request body", () => {
 
     await click(confirmation);
     await click(buttonWith(host, "Build today's briefing"));
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
+
     await changeValue(input, "example, example cloud");
 
     expect(confirmation.checked).toBe(false);
     expect(host.textContent).not.toContain("Daily briefing complete");
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
+  });
+
+  it("clears an existing report and restores previews when confirmation changes", async () => {
+    globalThis.fetch = vi.fn(async () => success()) as typeof fetch;
+    const host = await renderTool();
+    const confirmation = host.querySelector(
+      'input[name="brandTermsConfirmed"]',
+    ) as HTMLInputElement;
+
+    await click(confirmation);
+    await click(buttonWith(host, "Build today's briefing"));
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
+
+    await click(confirmation);
+
+    expect(confirmation.checked).toBe(false);
+    expect(host.textContent).not.toContain("Daily briefing complete");
+    expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
   });
 });
 

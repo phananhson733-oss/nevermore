@@ -43,6 +43,20 @@ interface DailyBriefingResultsProps {
   readonly rateLimit: RateLimitFacts | null;
 }
 
+interface ResultPreviewSectionProps {
+  readonly id: string;
+  readonly title: string;
+  readonly intro: string;
+  readonly body: string;
+  readonly kind: "changes" | "actions";
+}
+
+interface NoiseSummaryProps {
+  readonly filtered: number;
+  readonly shown: number;
+  readonly complete: boolean;
+}
+
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
 
 const METRICS: readonly MetricKey[] = [
@@ -156,6 +170,15 @@ function metricsLine(
   });
 }
 
+function comparison(
+  previous: number | null,
+  current: number,
+  format: (value: number) => string,
+  notObserved: string,
+): string {
+  return `${previous === null ? notObserved : format(previous)} → ${format(current)}`;
+}
+
 function matchingActions(
   envelope: DailyBriefingEnvelope,
 ): readonly {
@@ -175,6 +198,86 @@ function matchingActions(
     .slice(0, 3);
 }
 
+function ResultPreviewSection({
+  id,
+  title,
+  intro,
+  body,
+  kind,
+}: ResultPreviewSectionProps) {
+  return (
+    <section
+      aria-labelledby={id}
+      data-result-preview={kind}
+      className="scroll-mt-8"
+    >
+      <h3
+        id={id}
+        className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+      >
+        {title}
+      </h3>
+      <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+        {intro}
+      </p>
+      <div className={`${CARD} mt-4`}>
+        <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+          {body}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function NoiseSummary({ filtered, shown, complete }: NoiseSummaryProps) {
+  const t = useTranslations("tools.dailyBriefing");
+
+  return (
+    <section
+      aria-labelledby="daily-briefing-noise"
+      data-result-section="noise"
+      className="rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft px-4 py-3"
+    >
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
+        <h3
+          id="daily-briefing-noise"
+          className={`${EYEBROW} shrink-0 text-brand-accent-text`}
+        >
+          {t("noise.label")}
+        </h3>
+        <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {complete
+            ? t("noise.complete", { filtered, shown })
+            : t("noise.partial", { filtered, shown })}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export function DailyBriefingResultPreview() {
+  const t = useTranslations("tools.dailyBriefing");
+
+  return (
+    <div className="mt-8 space-y-8">
+      <ResultPreviewSection
+        id="daily-briefing-preview-changes"
+        kind="changes"
+        title={t("changes.title")}
+        intro={t("changes.intro")}
+        body={t("preview.changes")}
+      />
+      <ResultPreviewSection
+        id="daily-briefing-preview-actions"
+        kind="actions"
+        title={t("actions.title")}
+        intro={t("actions.intro")}
+        body={t("preview.actions")}
+      />
+    </div>
+  );
+}
+
 export function DailyBriefingResults({
   locale,
   property,
@@ -191,6 +294,7 @@ export function DailyBriefingResults({
   const actions = matchingActions(envelope);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
+  const shownChanges = result.changes.slice(0, 3);
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -227,7 +331,10 @@ export function DailyBriefingResults({
         {t("runComplete")}
       </p>
 
-      <section aria-labelledby="daily-briefing-facts">
+      <section
+        aria-labelledby="daily-briefing-facts"
+        data-result-section="facts"
+      >
         <h3 id="daily-briefing-facts" className="sr-only">
           {t("facts.dataThrough")}
         </h3>
@@ -269,7 +376,10 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-kpis">
+      <section
+        aria-labelledby="daily-briefing-kpis"
+        data-result-section="kpis"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <h3
             id="daily-briefing-kpis"
@@ -301,7 +411,258 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-evidence" className={CARD}>
+      <NoiseSummary
+        filtered={result.filteredObservedRows}
+        shown={shownChanges.length}
+        complete={result.countComplete}
+      />
+
+      <section
+        aria-labelledby="daily-briefing-changes"
+        data-result-section="changes"
+      >
+        <h3
+          id="daily-briefing-changes"
+          className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+        >
+          {t("changes.title")}
+        </h3>
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("changes.intro")}
+        </p>
+        {shownChanges.length === 0 ? (
+          <div data-change-empty className={`${CARD} mt-4`}>
+            <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+              {t("changes.empty")}
+            </p>
+          </div>
+        ) : (
+          <div
+            role="table"
+            aria-label={t("changes.title")}
+            className="mt-4 overflow-hidden rounded-[12px] border border-brand-border-card bg-brand-bg"
+          >
+            <div
+              role="row"
+              className="sr-only border-brand-border-card bg-brand-panel px-4 py-3 md:not-sr-only md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5"
+            >
+              {[
+                t("changes.columns.change"),
+                t("changes.columns.queryPage"),
+                t("changes.columns.clicks"),
+                t("changes.columns.position"),
+                t("changes.columns.interpretation"),
+              ].map((header) => (
+                <div
+                  key={header}
+                  role="columnheader"
+                  className={EYEBROW}
+                >
+                  {header}
+                </div>
+              ))}
+            </div>
+            {shownChanges.map((change, index) => (
+              <div
+                key={`change:${index}:${change.kind}`}
+                role="row"
+                data-change
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.change")}
+                  </span>
+                  <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
+                    <span className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
+                        {t(`changeKinds.${change.kind}.title`)}
+                      </h4>
+                      <p className="mt-1.5 font-mono text-[9.5px] leading-[1.4] tracking-[0.04em] text-brand-accent-text uppercase">
+                        {t(`evidenceStates.${change.evidence}`)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.queryPage")}
+                  </span>
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {change.query}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {change.page}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.clicks ?? null,
+                      change.current.clicks,
+                      (value) => number(locale, value),
+                      t("changes.notObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.position ?? null,
+                      change.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("changes.notObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`changeKinds.${change.kind}.body`)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section
+        aria-labelledby="daily-briefing-actions"
+        data-result-section="actions"
+      >
+        <h3
+          id="daily-briefing-actions"
+          className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+        >
+          {t("actions.title")}
+        </h3>
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("actions.intro")}
+        </p>
+        {actions.length === 0 ? (
+          <div data-action-empty className={`${CARD} mt-4`}>
+            <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+              {t("actions.empty")}
+            </p>
+          </div>
+        ) : (
+          <div data-actions-list className="mt-4 grid gap-3">
+            {actions.map(({ action, change }, index) => {
+              const target = destination(action);
+              return (
+                <article
+                  key={`action:${index}:${action.kind}`}
+                  data-action-row
+                  data-action-rank={index + 1}
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                    <span
+                      data-action-rank-badge
+                      aria-label={t("actions.rank", { rank: index + 1 })}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
+                    >
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-[16px] font-semibold text-text-dark-primary">
+                        {t(`actionKinds.${action.kind}.title`)}
+                      </h4>
+                      <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                        {t(`actionKinds.${action.kind}.body`)}
+                      </p>
+                      <div
+                        data-action-evidence
+                        className="mt-3 border-l border-brand-border pl-3"
+                      >
+                        <p className={EYEBROW}>{t("actions.evidence")}</p>
+                        <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                          {change.query}
+                        </p>
+                        <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {change.page}
+                        </p>
+                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {metricsLine(t, locale, change.current)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <Link
+                    data-action-link
+                    href={localePath(locale, target.path)}
+                    onClick={(event) => handoff(event, action, index)}
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                  >
+                    {t(target.labelKey)}
+                    <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {handoffFailed ? (
+          <p
+            role="alert"
+            className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-warning"
+          >
+            <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            {t("handoffError")}
+          </p>
+        ) : null}
+      </section>
+
+      <section
+        aria-labelledby="daily-briefing-manual"
+        data-result-section="manual"
+        className={CARD}
+      >
+        <h3
+          id="daily-briefing-manual"
+          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+        >
+          {t("manual.title")}
+        </h3>
+        <p className="mt-2 max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
+          {t("manual.body")}
+        </p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <ManualCheck
+            title={t("manual.manualActions")}
+            href="https://search.google.com/search-console/manual-actions"
+            checked={manualChecked}
+            onCheck={() => setManualChecked(true)}
+          />
+          <ManualCheck
+            title={t("manual.securityIssues")}
+            href="https://search.google.com/search-console/security-issues"
+            checked={securityChecked}
+            onCheck={() => setSecurityChecked(true)}
+          />
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="daily-briefing-evidence"
+        data-result-section="evidence"
+        className={CARD}
+      >
         <h3
           id="daily-briefing-evidence"
           className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
@@ -355,160 +716,10 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <section aria-labelledby="daily-briefing-changes">
-        <h3
-          id="daily-briefing-changes"
-          className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("changes.title")}
-        </h3>
-        {result.changes.length === 0 ? (
-          <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
-            {t("changes.empty")}
-          </p>
-        ) : (
-          <div className="mt-4 grid gap-3">
-            {result.changes.slice(0, 3).map((change, index) => (
-              <article
-                key={`change:${index}:${change.kind}`}
-                data-change
-                className={`${CARD} overflow-hidden`}
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0">
-                    <p className={EYEBROW}>
-                      {t(`evidenceStates.${change.evidence}`)}
-                    </p>
-                    <h4 className="mt-2 text-[16px] font-semibold text-text-dark-primary">
-                      {t(`changeKinds.${change.kind}.title`)}
-                    </h4>
-                    <p className="mt-2 max-w-3xl text-[13px] leading-[1.6] text-text-dark-secondary">
-                      {t(`changeKinds.${change.kind}.body`)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2.5 py-1 font-mono text-[10px] text-brand-accent-text">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                </div>
-                <dl className="mt-5 grid gap-3 md:grid-cols-2">
-                  <EvidenceIdentity
-                    label={t("changes.query")}
-                    value={change.query}
-                  />
-                  <EvidenceIdentity
-                    label={t("changes.page")}
-                    value={change.page}
-                  />
-                  <EvidenceIdentity
-                    label={t("changes.current")}
-                    value={metricsLine(t, locale, change.current)}
-                  />
-                  <EvidenceIdentity
-                    label={t("changes.previous")}
-                    value={
-                      change.previous === null
-                        ? t("changes.firstObservedPrevious")
-                        : metricsLine(t, locale, change.previous)
-                    }
-                  />
-                </dl>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="daily-briefing-actions">
-        <h3
-          id="daily-briefing-actions"
-          className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("actions.title")}
-        </h3>
-        {actions.length === 0 ? (
-          <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
-            {t("actions.empty")}
-          </p>
-        ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {actions.map(({ action, change }, index) => {
-              const target = destination(action);
-              return (
-                <article
-                  key={`action:${index}:${action.kind}`}
-                  className={`${CARD} flex min-w-0 flex-col`}
-                >
-                  <p className={EYEBROW}>{t("actions.why")}</p>
-                  <h4 className="mt-2 text-[16px] font-semibold text-text-dark-primary">
-                    {t(`actionKinds.${action.kind}.title`)}
-                  </h4>
-                  <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
-                    {t(`actionKinds.${action.kind}.body`)}
-                  </p>
-                  <div className="mt-4 border-t border-brand-border pt-4">
-                    <p className={EYEBROW}>{t("actions.evidence")}</p>
-                    <p className="mt-2 break-words text-[12.5px] font-medium text-text-dark-primary">
-                      {change.query}
-                    </p>
-                    <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                      {change.page}
-                    </p>
-                    <p className="mt-2 text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                      {metricsLine(t, locale, change.current)}
-                    </p>
-                  </div>
-                  <Link
-                    data-action-link
-                    href={localePath(locale, target.path)}
-                    onClick={(event) => handoff(event, action, index)}
-                    className="mt-5 inline-flex min-h-11 items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-                  >
-                    {t(target.labelKey)}
-                    <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />
-                  </Link>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {handoffFailed ? (
-          <p
-            role="alert"
-            className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-warning"
-          >
-            <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            {t("handoffError")}
-          </p>
-        ) : null}
-      </section>
-
-      <section aria-labelledby="daily-briefing-manual" className={CARD}>
-        <h3
-          id="daily-briefing-manual"
-          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("manual.title")}
-        </h3>
-        <p className="mt-2 max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-          {t("manual.body")}
-        </p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <ManualCheck
-            title={t("manual.manualActions")}
-            href="https://search.google.com/search-console/manual-actions"
-            checked={manualChecked}
-            onCheck={() => setManualChecked(true)}
-          />
-          <ManualCheck
-            title={t("manual.securityIssues")}
-            href="https://search.google.com/search-console/security-issues"
-            checked={securityChecked}
-            onCheck={() => setSecurityChecked(true)}
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="daily-briefing-limits">
+      <section
+        aria-labelledby="daily-briefing-limits"
+        data-result-section="limitations"
+      >
         <h3
           id="daily-briefing-limits"
           className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
@@ -537,7 +748,11 @@ export function DailyBriefingResults({
         )}
       </section>
 
-      <section aria-labelledby="daily-briefing-method" className={CARD}>
+      <section
+        aria-labelledby="daily-briefing-method"
+        data-result-section="methodology"
+        className={CARD}
+      >
         <h3
           id="daily-briefing-method"
           className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
@@ -686,23 +901,6 @@ function EvidenceCard({
         {body}
       </p>
     </article>
-  );
-}
-
-function EvidenceIdentity({
-  label,
-  value,
-}: {
-  readonly label: string;
-  readonly value: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3">
-      <dt className={EYEBROW}>{label}</dt>
-      <dd className="mt-2 break-all text-[12px] leading-[1.55] text-text-dark-primary">
-        {value}
-      </dd>
-    </div>
   );
 }
 

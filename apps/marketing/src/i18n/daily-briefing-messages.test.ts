@@ -99,6 +99,9 @@ const REQUIRED_LEAF_PATHS = [
   "kpis.unavailable",
   "kpis.dailySuppressed",
   "kpis.positionNote",
+  "noise.label",
+  "noise.complete",
+  "noise.partial",
   "evidence.title",
   "evidence.thresholdSummary",
   "evidence.filteredComplete",
@@ -117,8 +120,15 @@ const REQUIRED_LEAF_PATHS = [
   "changes.previous",
   "changes.firstObservedPrevious",
   "changes.metrics",
+  "changes.columns.change",
+  "changes.columns.queryPage",
+  "changes.columns.clicks",
+  "changes.columns.position",
+  "changes.columns.interpretation",
+  "changes.notObserved",
   "actions.title",
   "actions.empty",
+  "actions.rank",
   "actions.why",
   "actions.evidence",
   "actionDestinations.seo-quick-wins",
@@ -171,6 +181,13 @@ function leafPaths(value: unknown, prefix = ""): readonly string[] {
   );
 }
 
+function placeholders(value: unknown): readonly string[] {
+  expect(value).toEqual(expect.any(String));
+  return [...(value as string).matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g)]
+    .map((match) => match[1]!)
+    .sort();
+}
+
 describe("Daily Briefing message catalogs", () => {
   it("defines the namespace with identical EN and ZH leaf keys", () => {
     expect([...leafPaths(daily(en))].sort()).toEqual(
@@ -215,6 +232,28 @@ describe("Daily Briefing message catalogs", () => {
         expect.any(String),
       );
     }
+  });
+
+  it("keeps EN and ZH noise-summary placeholders aligned", () => {
+    const enNoise = recordAt(daily(en), "noise");
+    const zhNoise = recordAt(daily(zh), "noise");
+
+    for (const key of ["complete", "partial"] as const) {
+      expect(placeholders(enNoise[key])).toEqual(["filtered", "shown"]);
+      expect(placeholders(zhNoise[key])).toEqual(
+        placeholders(enNoise[key]),
+      );
+    }
+  });
+
+  it("keeps EN and ZH action-rank placeholders aligned", () => {
+    const enActions = recordAt(daily(en), "actions");
+    const zhActions = recordAt(daily(zh), "actions");
+
+    expect(placeholders(enActions.rank)).toEqual(["rank"]);
+    expect(placeholders(zhActions.rank)).toEqual(
+      placeholders(enActions.rank),
+    );
   });
 
   it("keeps client copy in next-intl instead of an in-component locale table", () => {
