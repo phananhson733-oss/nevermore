@@ -1626,6 +1626,11 @@
         "dailySuppressed": "Day-level interpretation is unavailable for this cadence.",
         "positionNote": "Average position is exposure-weighted; a negative change means a numerically better position."
       },
+      "noise": {
+        "label": "Noise filter on",
+        "complete": "{filtered} observed query rows did not clear a signal threshold. {shown} changes cleared the threshold.",
+        "partial": "{filtered} rows in the observed prefix did not clear a signal threshold; this is not property-wide. {shown} changes cleared the available evidence gates."
+      },
       "evidence": {
         "title": "Evidence floor and observable coverage",
         "thresholdSummary": "A query or query/page needs at least 100 impressions. A click movement needs at least 15% relative change and 3 absolute clicks. Position is considered stable only within 0.5.",
@@ -1645,14 +1650,23 @@
         "unavailable": "Unavailable"
       },
       "changes": {
-        "title": "Changes worth checking today",
+        "title": "Changes above the noise threshold",
+        "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown.",
         "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
         "query": "Query",
         "page": "Page",
         "current": "Current 7 days",
         "previous": "Previous 7 days",
         "firstObservedPrevious": "First observed in this comparison; the prior row is not treated as zero or as proof of new indexing.",
-        "metrics": "{clicks} clicks · {impressions} impressions · {ctr} CTR · avg position {position}"
+        "metrics": "{clicks} clicks · {impressions} impressions · {ctr} CTR · avg position {position}",
+        "columns": {
+          "change": "Change",
+          "queryPage": "Query / Page",
+          "clicks": "Clicks",
+          "position": "Position",
+          "interpretation": "Interpretation"
+        },
+        "notObserved": "Not observed"
       },
       "changeKinds": {
         "click_opportunity": {
@@ -1669,10 +1683,16 @@
         }
       },
       "actions": {
-        "title": "Open the next focused tool",
+        "title": "Today's recommended actions",
+        "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool.",
         "empty": "No automated handoff is justified by the evidence available in this run.",
+        "rank": "Rank {rank}",
         "why": "Why this action appears",
         "evidence": "Evidence carried privately to the next tool"
+      },
+      "preview": {
+        "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
+        "actions": "Run the briefing to generate up to three actions tied to observed evidence."
       },
       "actionKinds": {
         "click_opportunity": {
