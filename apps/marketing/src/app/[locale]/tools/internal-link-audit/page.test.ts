@@ -33,6 +33,13 @@ describe("Internal Link Audit page contract", () => {
     expect(SOURCE).not.toContain('import { siteConfig } from "@/config/site"');
   });
 
+  it("links the related website health map directly to the SEO Agent", () => {
+    expect(SOURCE).toContain('href={localePath(locale, "/agents/seo")}');
+    expect(SOURCE).not.toContain(
+      'href={localePath(locale, "/tools/seo-audit")}',
+    );
+  });
+
   it("does not redirect the canonical public tool to an Agent", () => {
     expect(SOURCE).not.toContain("permanentRedirect");
   });

@@ -398,7 +398,7 @@ export default async function InternalLinkAuditPage({
                 {content.relatedTitle}
               </h2>
               <Link
-                href={localePath(locale, "/tools/seo-audit")}
+                href={localePath(locale, "/agents/seo")}
                 className="mt-5 block rounded-row border border-brand-border bg-brand-panel-raised p-[18px] transition-colors hover:border-brand-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 <span className="flex items-center gap-2 text-[13.5px] font-semibold text-text-dark-primary">

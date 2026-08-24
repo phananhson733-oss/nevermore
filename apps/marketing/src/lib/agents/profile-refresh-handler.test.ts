@@ -537,6 +537,41 @@ describe("handleAgentProfileRefreshRequest", () => {
     expect(response.headers.get("cache-control")).toBe("no-store, private");
   });
 
+  it("writes a www profile refresh under its exact target host", async () => {
+    const normalizedUrl = "https://www.acme.test/pricing";
+    const writeCache = vi.fn(async () => undefined);
+    const response = await handleAgentProfileRefreshRequest(
+      request({
+        url: normalizedUrl,
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+        mode: "prefer_cache",
+      }),
+      "seo",
+      dependencies({
+        normalizeUrl: vi.fn(() => ({ ok: true as const, url: normalizedUrl })),
+        crawl: vi.fn(async () => contextResult()),
+        synthesize: vi.fn(async () => ({ fields: synthesisFields(), usage: {} })),
+        writeCache,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(writeCache).toHaveBeenCalledWith(
+      profileRefreshCacheNamespace("seo", {
+        normalizedUrl,
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+      }),
+      "www.acme.test",
+      expect.objectContaining({
+        request: expect.objectContaining({ targetHost: "www.acme.test" }),
+      }),
+    );
+  });
+
   it("marks the diagnosis available when all 14 readiness fields are available", async () => {
     const fields = synthesisFieldsForPaths(
       new Set(AGENT_PROFILE_REFRESH_READY_FIELD_PATHS),
@@ -600,6 +635,62 @@ describe("handleAgentProfileRefreshRequest", () => {
     expect(readCache).toHaveBeenCalledOnce();
     expect(crawl).not.toHaveBeenCalled();
     expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  it("reads a www profile refresh through its exact target host", async () => {
+    const normalizedUrl = "https://www.acme.test/pricing";
+    const cached = {
+      ...profileData("tech", "fresh"),
+      request: {
+        ...profileData("tech", "fresh").request,
+        normalizedUrl,
+        targetHost: "www.acme.test",
+      },
+    } satisfies AgentProfileRefreshData;
+    const readCache = vi.fn(async () => ({
+      payload: cached,
+      capturedAt: "2026-08-13T01:05:06.000Z",
+    }));
+    const openGate = vi.fn<AgentProfileRefreshHandlerDependencies["openGate"]>(
+      async (_ip, _url, cacheProbe) => {
+        const hit = await cacheProbe?.("www.acme.test");
+        if (!hit) throw new Error("expected an exact-host cache hit");
+        return {
+          ok: true,
+          kind: "cached",
+          payload: hit.payload,
+          capturedAt: hit.capturedAt,
+          release: vi.fn(),
+        };
+      },
+    );
+
+    const response = await handleAgentProfileRefreshRequest(
+      request({
+        url: normalizedUrl,
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+        mode: "prefer_cache",
+      }),
+      "tech",
+      dependencies({
+        normalizeUrl: vi.fn(() => ({ ok: true as const, url: normalizedUrl })),
+        readCache,
+        openGate,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(readCache).toHaveBeenCalledWith(
+      profileRefreshCacheNamespace("tech", {
+        normalizedUrl,
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+      }),
+      "www.acme.test",
+    );
   });
 
   it("bypasses completed-result cache in refresh mode but keeps crawl admission", async () => {

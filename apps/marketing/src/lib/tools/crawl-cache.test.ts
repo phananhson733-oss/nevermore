@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cacheCompletedCrawl,
+  canonicalCrawlTargetKey,
   readCrawlCache,
   targetHostOf,
   writeCrawlCache,
@@ -266,13 +267,23 @@ describe("cacheCompletedCrawl", () => {
   );
 });
 
-describe("targetHostOf", () => {
-  it("lowercases the host", () => {
-    expect(targetHostOf("https://ACME.com/path")).toBe("acme.com");
+describe("crawl target host identity", () => {
+  it("keeps the exact lowercased host for cache isolation", () => {
+    expect(targetHostOf("https://WWW.AcMe.com/path")).toBe("www.acme.com");
   });
 
-  it("returns null for an unparseable value", () => {
+  it("strips one www label only for the shared target quota", () => {
+    expect(canonicalCrawlTargetKey("https://WWW.AcMe.com/path")).toBe(
+      "acme.com",
+    );
+    expect(canonicalCrawlTargetKey("https://WWW.www.AcMe.com/path")).toBe(
+      "www.acme.com",
+    );
+  });
+
+  it("returns null for unparseable values", () => {
     expect(targetHostOf("not a url")).toBeNull();
+    expect(canonicalCrawlTargetKey("not a url")).toBeNull();
   });
 });
 

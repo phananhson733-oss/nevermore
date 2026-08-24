@@ -14,7 +14,11 @@ import {
   acquirePublicCrawlSlot,
   type PublicToolSlot,
 } from "./public-tool-request.ts";
-import type { CachedCrawl } from "./crawl-cache.ts";
+import {
+  canonicalCrawlTargetKey,
+  targetHostOf,
+  type CachedCrawl,
+} from "./crawl-cache.ts";
 
 /**
  * One admission point for /api/tools/seo-audit and
@@ -82,14 +86,6 @@ function json(
   });
 }
 
-function targetHost(normalizedUrl: string): string | null {
-  try {
-    return new URL(normalizedUrl).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
 export async function openCrawlGate(
   clientIp: string,
   normalizedUrl: string,
@@ -101,8 +97,9 @@ export async function openCrawlGate(
    */
   cacheProbe?: (targetHost: string) => Promise<CachedCrawl | null>,
 ): Promise<CrawlGateResult> {
-  const host = targetHost(normalizedUrl);
-  if (!host) {
+  const exactHost = targetHostOf(normalizedUrl);
+  const targetKey = canonicalCrawlTargetKey(normalizedUrl);
+  if (!exactHost || !targetKey) {
     return {
       ok: false,
       response: json(createPublicToolError("invalid_url"), 400),
@@ -163,7 +160,7 @@ export async function openCrawlGate(
   // site already answers the question. A hit sends no traffic to the target,
   // so it must not consume the target's budget either.
   if (cacheProbe) {
-    const cached = await cacheProbe(host);
+    const cached = await cacheProbe(exactHost);
     if (cached) {
       return {
         ok: true,
@@ -176,7 +173,7 @@ export async function openCrawlGate(
   }
 
   const perTarget = await consumePublicToolQuota(
-    crawlTargetBucket(host),
+    crawlTargetBucket(targetKey),
     CRAWL_TARGET_MAX,
     CRAWL_TARGET_WINDOW_SECONDS,
     dependencies.quota,
