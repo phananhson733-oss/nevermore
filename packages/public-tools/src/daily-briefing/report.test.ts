@@ -5,6 +5,9 @@ import {
   BRIEFING_MATERIAL_CHANGE_RATIO,
   BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE,
   BRIEFING_MIN_ROW_IMPRESSIONS,
+  BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE,
+  BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS,
+  BRIEFING_PROPERTY_POSITION_DELTA,
   BRIEFING_STABLE_POSITION_DELTA,
   BRIEFING_WINDOW_DAYS,
   DAILY_BRIEFING_ACTION_LIMIT,
@@ -49,6 +52,41 @@ function completeDateRows(
       clicks: Math.min(10, currentImpressions[index] ?? 0),
       impressions: currentImpressions[index] ?? 0,
       position: 7,
+    })),
+  ];
+}
+
+function distributedTotal(total: number, index: number): number {
+  return Math.floor(total / 7) + (index < total % 7 ? 1 : 0);
+}
+
+function propertyDateRows({
+  currentClicks,
+  currentImpressions,
+  currentPosition,
+  previousClicks,
+  previousImpressions,
+  previousPosition,
+}: {
+  readonly currentClicks: number;
+  readonly currentImpressions: number;
+  readonly currentPosition: number;
+  readonly previousClicks: number;
+  readonly previousImpressions: number;
+  readonly previousPosition: number;
+}) {
+  return [
+    ...PREVIOUS_DATES.map((date, index) => ({
+      date,
+      clicks: distributedTotal(previousClicks, index),
+      impressions: distributedTotal(previousImpressions, index),
+      position: previousPosition,
+    })),
+    ...CURRENT_DATES.map((date, index) => ({
+      date,
+      clicks: distributedTotal(currentClicks, index),
+      impressions: distributedTotal(currentImpressions, index),
+      position: currentPosition,
     })),
   ];
 }
@@ -145,6 +183,9 @@ describe("daily briefing contract and windows", () => {
     expect(BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE).toBe(3);
     expect(BRIEFING_STABLE_POSITION_DELTA).toBe(0.5);
     expect(DAILY_BRIEFING_ACTION_LIMIT).toBe(3);
+    expect(BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS).toBe(1_000);
+    expect(BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE).toBe(100);
+    expect(BRIEFING_PROPERTY_POSITION_DELTA).toBe(1);
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
@@ -584,6 +625,524 @@ describe("query changes and actions", () => {
       }),
     ]);
     expect(result.limitations).toContain("brand_terms_not_confirmed");
+  });
+});
+
+describe("property fallback", () => {
+  it("falls back to an observed property click decline when query signals are empty", () => {
+    const currentRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`astrology current ${index}`, 98, index === 0 ? 1 : 0, 12),
+    );
+    const previousRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`astrology previous ${index}`, 98, index === 0 ? 1 : 0, 10),
+    );
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(
+        currentRows,
+        currentRows.map((row, index) =>
+          queryPageRow(
+            row.query,
+            `https://astrologywiki.com/current-${index}`,
+            row.impressions,
+            row.clicks,
+            row.position,
+          ),
+        ),
+      ),
+      previousQueryEvidence: evidence(
+        previousRows,
+        previousRows.map((row, index) =>
+          queryPageRow(
+            row.query,
+            `https://astrologywiki.com/previous-${index}`,
+            row.impressions,
+            row.clicks,
+            row.position,
+          ),
+        ),
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.propertyFallback).toEqual({
+      change: {
+        kind: "sitewide_click_decline",
+        evidence: "observed",
+        query: null,
+        page: null,
+        current: {
+          clicks: 35,
+          impressions: 4_900,
+          ctr: 35 / 4_900,
+          position: 12,
+        },
+        previous: {
+          clicks: 70,
+          impressions: 7_000,
+          ctr: 70 / 7_000,
+          position: 10,
+        },
+        clickChange: -35,
+        clickChangeRatio: -0.5,
+        impressionChange: -2_100,
+        impressionChangeRatio: -0.3,
+        positionDelta: 2,
+      },
+      action: {
+        kind: "sitewide_click_decline",
+        destination: "traffic-drop-diagnosis",
+      },
+    });
+  });
+
+  it("includes the exact click-decline and weekly impression floor boundaries", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 17,
+        previousImpressions: 1_000,
+        currentImpressions: 1_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_click_decline",
+      clickChange: -3,
+      clickChangeRatio: -0.15,
+      positionDelta: 0,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+  });
+
+  it("prioritizes click decline when click and visibility declines both qualify", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 10,
+        previousImpressions: 2_000,
+        currentImpressions: 1_600,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change.kind).toBe(
+      "sitewide_click_decline",
+    );
+    expect(result.propertyFallback?.action.destination).toBe(
+      "traffic-drop-diagnosis",
+    );
+  });
+
+  it("falls through to visibility decline at the exact ratio and position boundaries", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 18,
+        previousImpressions: 2_000,
+        currentImpressions: 1_700,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_decline",
+      clickChange: -2,
+      clickChangeRatio: -0.1,
+      impressionChange: -300,
+      impressionChangeRatio: -0.15,
+      positionDelta: 1,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_visibility_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+  });
+
+  it("emits a visibility gain from an exact-boundary click gain", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 23,
+        previousImpressions: 2_000,
+        currentImpressions: 2_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_gain",
+      clickChange: 3,
+      clickChangeRatio: 0.15,
+      impressionChange: 0,
+      impressionChangeRatio: 0,
+      positionDelta: 0,
+    });
+    expect(result.propertyFallback?.action).toEqual({
+      kind: "sitewide_visibility_gain",
+      destination: "seo-quick-wins",
+    });
+  });
+
+  it("emits a visibility gain from impression growth plus position improvement", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 20,
+        previousImpressions: 2_000,
+        currentImpressions: 2_300,
+        previousPosition: 10,
+        currentPosition: 9,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_gain",
+      clickChange: 0,
+      clickChangeRatio: 0,
+      impressionChange: 300,
+      impressionChangeRatio: 0.15,
+      positionDelta: -1,
+    });
+    expect(result.propertyFallback?.action.destination).toBe("seo-quick-wins");
+  });
+
+  it("preserves a missing click denominator while selecting visibility decline", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 0,
+        currentClicks: 0,
+        previousImpressions: 2_000,
+        currentImpressions: 1_700,
+        previousPosition: 10,
+        currentPosition: 11,
+      }),
+    }).result;
+
+    expect(result.propertyFallback?.change).toMatchObject({
+      kind: "sitewide_visibility_decline",
+      clickChange: 0,
+      clickChangeRatio: null,
+      impressionChangeRatio: -0.15,
+      positionDelta: 1,
+    });
+  });
+
+  it.each([
+    { currentImpressions: 999, previousImpressions: 1_000 },
+    { currentImpressions: 1_000, previousImpressions: 999 },
+  ])(
+    "returns null when either weekly window is below the property floor (%o)",
+    ({ currentImpressions, previousImpressions }) => {
+      const result = report({
+        dateRows: propertyDateRows({
+          previousClicks: 20,
+          currentClicks: 10,
+          previousImpressions,
+          currentImpressions,
+          previousPosition: 10,
+          currentPosition: 12,
+        }),
+      }).result;
+
+      expect(result.weekly.evidence).toBe("observed");
+      expect(result.propertyFallback).toBeNull();
+    },
+  );
+
+  it("returns null when the weekly comparison is unavailable", () => {
+    const dateRows = propertyDateRows({
+      previousClicks: 70,
+      currentClicks: 35,
+      previousImpressions: 7_000,
+      currentImpressions: 4_900,
+      previousPosition: 10,
+      currentPosition: 12,
+    }).filter((row) => row.date !== "2026-08-20");
+    const result = report({ dateRows }).result;
+
+    expect(result.weekly.evidence).toBe("unavailable");
+    expect(result.propertyFallback).toBeNull();
+  });
+
+  it("returns null for a stable property", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 20,
+        currentClicks: 20,
+        previousImpressions: 2_000,
+        currentImpressions: 2_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyFallback).toBeNull();
+  });
+
+  it("suppresses the property fallback when a query-page change is selected", () => {
+    const query = "workflow templates";
+    const page = "https://example.com/templates";
+    const currentRows = [queryRow(query, 200, 10, 5.2)];
+    const previousRows = [queryRow(query, 200, 20, 5)];
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(currentRows, [
+        queryPageRow(query, page, 200, 10, 5.2),
+      ]),
+      previousQueryEvidence: evidence(previousRows, [
+        queryPageRow(query, page, 200, 20, 5),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([
+      expect.objectContaining({
+        kind: "stable_position_click_decline",
+        query,
+        page,
+      }),
+    ]);
+    expect(result.actions).toEqual([
+      expect.objectContaining({
+        kind: "stable_position_click_decline",
+        destination: "traffic-drop-diagnosis",
+        query,
+        page,
+      }),
+    ]);
+    expect(result.propertyFallback).toBeNull();
+  });
+});
+
+describe("signal funnel", () => {
+  function ctrFunnelRows() {
+    return [
+      queryRow("ctr target", 100, 0, 9),
+      queryRow("below observation floor", 49, 4, 9),
+      queryRow("observation boundary", 50, 5, 9),
+      queryRow("observation ceiling", 99, 10, 9),
+      queryRow("eligible peer a", 190, 19, 9),
+      queryRow("eligible peer b", 190, 19, 9),
+    ];
+  }
+
+  it("reports complete mixed row floors and independent candidate lanes", () => {
+    const rows = ctrFunnelRows();
+    const page = "https://example.com/ctr-target";
+    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "observed",
+      observedQueryRows: 6,
+      observationCandidates: 2,
+      actionEligibleQueries: 3,
+      ctrBaselineRows: 1,
+      clickOpportunityCandidates: 1,
+      stableDeclineCandidates: 0,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 0,
+      selectedQueryChanges: 1,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("keeps 50 and 99 observation-only while 100 is action-eligible", () => {
+    const rows = [
+      queryRow("below", 49, 0, 30),
+      queryRow("fifty", 50, 0, 30),
+      queryRow("ninety nine", 99, 0, 30),
+      queryRow("one hundred", 100, 0, 30),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toMatchObject({
+      evidence: "observed",
+      observedQueryRows: 4,
+      observationCandidates: 2,
+      actionEligibleQueries: 1,
+    });
+  });
+
+  it("leaves CTR lanes unevaluated until brand terms are confirmed", () => {
+    const rows = ctrFunnelRows();
+    const page = "https://example.com/ctr-target";
+    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "observed",
+      observedQueryRows: 6,
+      observationCandidates: 2,
+      actionEligibleQueries: 3,
+      ctrBaselineRows: null,
+      clickOpportunityCandidates: null,
+      stableDeclineCandidates: 0,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 0,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("reports only the valid current prefix length for partial evidence", () => {
+    const rows = [
+      queryRow("valid prefix", 100, 10, 9),
+      queryRow("observation prefix", 50, 1, 9),
+      queryRow("invalid prefix", -1, -1, 9),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, [], { queryTruncated: true }),
+      previousQueryEvidence: evidence(rows.slice(0, 2), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toEqual({
+      evidence: "partial",
+      observedQueryRows: 2,
+      observationCandidates: null,
+      actionEligibleQueries: null,
+      ctrBaselineRows: null,
+      clickOpportunityCandidates: null,
+      stableDeclineCandidates: null,
+      firstObservedCandidates: null,
+      pageAttributionWithheld: null,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: false,
+    });
+  });
+
+  it("uses null counts for missing and mixed aggregation evidence", () => {
+    const rows = [queryRow("mixed basis", 100, 10, 9)];
+    const missing = report().result.signalFunnel;
+    const mixed = report({
+      currentQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byProperty",
+        queryPageAggregation: "byProperty",
+        totalAggregation: "byProperty",
+      }),
+      previousQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byPage",
+        queryPageAggregation: "byPage",
+        totalAggregation: "byPage",
+      }),
+      brandTermsConfirmed: true,
+    }).result.signalFunnel;
+
+    for (const funnel of [missing, mixed]) {
+      expect(funnel).toEqual({
+        evidence: "unavailable",
+        observedQueryRows: null,
+        observationCandidates: null,
+        actionEligibleQueries: null,
+        ctrBaselineRows: null,
+        clickOpportunityCandidates: null,
+        stableDeclineCandidates: null,
+        firstObservedCandidates: null,
+        pageAttributionWithheld: null,
+        selectedQueryChanges: 0,
+        propertyFallbackShown: false,
+      });
+    }
+  });
+
+  it("reports a property fallback separately from selected query changes", () => {
+    const currentRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`current observation ${index}`, 98, 1, 12),
+    );
+    const previousRows = Array.from({ length: 4 }, (_, index) =>
+      queryRow(`previous observation ${index}`, 98, 1, 10),
+    );
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(currentRows, []),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.signalFunnel).toMatchObject({
+      evidence: "observed",
+      observedQueryRows: 4,
+      observationCandidates: 4,
+      actionEligibleQueries: 0,
+      selectedQueryChanges: 0,
+      propertyFallbackShown: true,
+    });
+  });
+
+  it("counts first-observed and selected-query page attribution rejects", () => {
+    const rows = ctrFunnelRows();
+    const firstObserved = queryRow("new uncovered pair", 200, 20, 13);
+    const currentRows = [...rows, firstObserved];
+    const targetPage = "https://example.com/ctr-target";
+    const currentPages = [
+      queryPageRow("ctr target", targetPage, 80, 0, 9),
+      queryPageRow(
+        firstObserved.query,
+        "https://example.com/new-uncovered",
+        159,
+        16,
+        13,
+      ),
+    ];
+    const previousPages = [queryPageRow("ctr target", targetPage, 80, 0, 9)];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(rows, previousPages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.signalFunnel).toMatchObject({
+      clickOpportunityCandidates: 1,
+      firstObservedCandidates: 0,
+      pageAttributionWithheld: 2,
+      selectedQueryChanges: 0,
+    });
   });
 });
 

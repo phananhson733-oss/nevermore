@@ -140,6 +140,49 @@ export interface DailyBriefingAction {
   readonly page: string;
 }
 
+export type DailyBriefingPropertyChangeKind =
+  | "sitewide_click_decline"
+  | "sitewide_visibility_decline"
+  | "sitewide_visibility_gain";
+
+export interface DailyBriefingPropertyChange {
+  readonly kind: DailyBriefingPropertyChangeKind;
+  readonly evidence: "observed";
+  readonly query: null;
+  readonly page: null;
+  readonly current: DailyBriefingKpis;
+  readonly previous: DailyBriefingKpis;
+  readonly clickChange: number;
+  readonly clickChangeRatio: number | null;
+  readonly impressionChange: number;
+  readonly impressionChangeRatio: number | null;
+  readonly positionDelta: number | null;
+}
+
+export interface DailyBriefingPropertyFallback {
+  readonly change: DailyBriefingPropertyChange;
+  readonly action: {
+    readonly kind: DailyBriefingPropertyChangeKind;
+    readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
+  };
+}
+
+export interface DailyBriefingSignalFunnel {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly observedQueryRows: number | null;
+  /** Current query rows with 50–99 impressions; never action-eligible. */
+  readonly observationCandidates: number | null;
+  /** Current query rows at the existing 100-impression action floor. */
+  readonly actionEligibleQueries: number | null;
+  readonly ctrBaselineRows: number | null;
+  readonly clickOpportunityCandidates: number | null;
+  readonly stableDeclineCandidates: number | null;
+  readonly firstObservedCandidates: number | null;
+  readonly pageAttributionWithheld: number | null;
+  readonly selectedQueryChanges: number;
+  readonly propertyFallbackShown: boolean;
+}
+
 export type DailyBriefingLimitationCode =
   | "daily_data_incomplete"
   | "daily_rows_omitted"
@@ -158,6 +201,8 @@ export interface DailyBriefingResult {
   readonly cadence: DailyBriefingCadence;
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
+  readonly propertyFallback: DailyBriefingPropertyFallback | null;
+  readonly signalFunnel: DailyBriefingSignalFunnel;
   /** Rows in the observed query read that did not clear any signal threshold. */
   readonly filteredObservedRows: number;
   /** False when the count describes only a prefix or no query read happened. */

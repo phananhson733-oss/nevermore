@@ -14,6 +14,8 @@ import {
   type DailyBriefingChange,
   type DailyBriefingEnvelope,
   type DailyBriefingLimitationCode,
+  type DailyBriefingPropertyFallback,
+  type DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import en from "../../i18n/messages/en.json";
 
@@ -118,7 +120,65 @@ function envelope(
 ): DailyBriefingEnvelope {
   return {
     ...BASE_ENVELOPE,
-    result: { ...BASE_ENVELOPE.result, ...overrides },
+    result: {
+      ...BASE_ENVELOPE.result,
+      propertyFallback: null,
+      ...overrides,
+    },
+  };
+}
+
+function signalFunnel(
+  overrides: Partial<DailyBriefingSignalFunnel> = {},
+): DailyBriefingSignalFunnel {
+  return {
+    evidence: "observed",
+    observedQueryRows: 540,
+    observationCandidates: 18,
+    actionEligibleQueries: 2,
+    ctrBaselineRows: 0,
+    clickOpportunityCandidates: 0,
+    stableDeclineCandidates: 0,
+    firstObservedCandidates: 0,
+    pageAttributionWithheld: 0,
+    selectedQueryChanges: 0,
+    propertyFallbackShown: false,
+    ...overrides,
+  };
+}
+
+function propertyFallback(
+  overrides: Partial<DailyBriefingPropertyFallback> = {},
+): DailyBriefingPropertyFallback {
+  return {
+    change: {
+      kind: "sitewide_click_decline",
+      evidence: "observed",
+      query: null,
+      page: null,
+      current: {
+        clicks: 35,
+        impressions: 4_109,
+        ctr: 35 / 4_109,
+        position: 15.1,
+      },
+      previous: {
+        clicks: 49,
+        impressions: 5_285,
+        ctr: 49 / 5_285,
+        position: 13.2,
+      },
+      clickChange: -14,
+      clickChangeRatio: -14 / 49,
+      impressionChange: -1_176,
+      impressionChangeRatio: -1_176 / 5_285,
+      positionDelta: 1.9,
+    },
+    action: {
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    },
+    ...overrides,
   };
 }
 
@@ -139,7 +199,7 @@ afterEach(async () => {
 });
 
 async function renderResults(
-  report: DailyBriefingEnvelope = BASE_ENVELOPE,
+  report: DailyBriefingEnvelope = envelope(),
   rateLimit: { readonly remaining: number | null; readonly limit: number } | null = {
     remaining: 7,
     limit: 10,
@@ -188,8 +248,10 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
   it("puts the noise summary and decision sections directly after KPIs", async () => {
     const host = await renderResults(
       envelope({
-        filteredObservedRows: 17,
-        countComplete: true,
+        signalFunnel: signalFunnel({
+          observedQueryRows: 17,
+          actionEligibleQueries: 2,
+        }),
       }),
     );
     const order = [...host.querySelectorAll("[data-result-section]")].map(
@@ -209,27 +271,29 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
       "methodology",
     ]);
     expect(noise?.textContent).toContain("Noise filter on");
-    expect(noise?.textContent).toContain("17 observed query rows");
-    expect(noise?.textContent).toContain("0 changes cleared the threshold");
+    expect(noise?.textContent).toContain("17 visible queries");
+    expect(noise?.textContent).toContain("2 reached the action sample floor");
+    expect(noise?.textContent).toContain("0 query/page signals");
+    expect(noise?.textContent).toContain("0 property-level fallbacks shown");
   });
 
   it("reports the number of changes actually shown after the three-row cap", async () => {
     const host = await renderResults(
       envelope({
-        countComplete: true,
         changes: [
           change("click_opportunity", 1),
           change("stable_position_click_decline", 2),
           change("first_observed", 3),
           change("first_observed", 4),
         ],
+        signalFunnel: signalFunnel({ selectedQueryChanges: 3 }),
       }),
     );
     const noise = host.querySelector('[data-result-section="noise"]');
 
     expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
-    expect(noise?.textContent).toContain("3 changes cleared the threshold");
-    expect(noise?.textContent).not.toContain("4 changes cleared the threshold");
+    expect(noise?.textContent).toContain("3 query/page signals");
+    expect(noise?.textContent).not.toContain("4 query/page signals");
   });
 
   it("renders four metric cards with latest-day and seven-day values", async () => {
@@ -305,8 +369,17 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     };
     const host = await renderResults(
       envelope({
-        filteredObservedRows: 17,
-        countComplete: false,
+        signalFunnel: signalFunnel({
+          evidence: "partial",
+          observedQueryRows: 17,
+          observationCandidates: null,
+          actionEligibleQueries: null,
+          ctrBaselineRows: null,
+          clickOpportunityCandidates: null,
+          stableDeclineCandidates: null,
+          firstObservedCandidates: null,
+          pageAttributionWithheld: null,
+        }),
         coverage: {
           ...BASE_ENVELOPE.result.coverage,
           current: currentCoverage,
@@ -320,16 +393,110 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     const noise = host.querySelector('[data-result-section="noise"]');
 
     expect(noise).not.toBeNull();
-    expect(noise?.textContent).toContain("17 rows in the observed prefix");
+    expect(noise?.textContent).toContain("17 visible rows in the observed prefix");
     expect(noise?.textContent).toContain("observed prefix");
     expect(noise?.textContent).toContain("not property-wide");
     expect(noise?.textContent).toContain(
-      "0 changes cleared the available evidence gates",
+      "downstream candidate counts are unavailable",
     );
+    expect(noise?.textContent).not.toContain("0 query/page signals");
     expect(host.textContent).toContain(
       "Comparable query-to-page coverage is unavailable",
     );
     expect(host.textContent).toContain("withheld share is unavailable");
+  });
+
+  it("renders the observed signal funnel and labels 50–99 impressions observation-only", async () => {
+    const host = await renderResults(
+      envelope({
+        signalFunnel: signalFunnel({
+          observedQueryRows: 540,
+          observationCandidates: 18,
+          actionEligibleQueries: 2,
+          ctrBaselineRows: null,
+          selectedQueryChanges: 0,
+          propertyFallbackShown: true,
+        }),
+        propertyFallback: propertyFallback(),
+      }),
+    );
+    const noise = host.querySelector('[data-result-section="noise"]');
+    const funnel = host.querySelector("[data-signal-funnel]");
+
+    expect(noise?.textContent).toContain(
+      "540 visible queries → 2 reached the action sample floor → 0 query/page signals; 1 property-level fallback shown",
+    );
+    expect(noise?.textContent).toContain("18 queries had 50–99 impressions");
+    expect(noise?.textContent).toContain("observation-only");
+    expect(noise?.textContent).toContain("cannot trigger an action");
+    expect(funnel?.textContent).toContain("Independent signal paths");
+    expect(funnel?.textContent).toContain("not additive");
+    expect(funnel?.textContent).toContain("CTR baseline");
+    expect(funnel?.textContent).toContain("Not evaluated");
+    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+  });
+
+  it("keeps unavailable funnel counts unavailable rather than rendering null as zero", async () => {
+    const host = await renderResults(
+      envelope({
+        signalFunnel: signalFunnel({
+          evidence: "unavailable",
+          observedQueryRows: null,
+          observationCandidates: null,
+          actionEligibleQueries: null,
+          ctrBaselineRows: null,
+          clickOpportunityCandidates: null,
+          stableDeclineCandidates: null,
+          firstObservedCandidates: null,
+          pageAttributionWithheld: null,
+        }),
+      }),
+    );
+    const noise = host.querySelector('[data-result-section="noise"]');
+    const funnel = host.querySelector("[data-signal-funnel]");
+
+    expect(noise?.textContent).toContain("Visible-query signal funnel unavailable");
+    expect(noise?.textContent).toContain("no zeroes were inferred");
+    expect(noise?.textContent).not.toContain("null");
+    expect(noise?.textContent).not.toMatch(/\b0\b/);
+    expect(funnel?.textContent).not.toContain("null");
+    expect(funnel?.textContent).not.toMatch(/\b0\b/);
+    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+  });
+
+  it("reports independent signal lanes without implying they add up", async () => {
+    const host = await renderResults(
+      envelope({
+        signalFunnel: signalFunnel({
+          ctrBaselineRows: 1,
+          clickOpportunityCandidates: 2,
+          stableDeclineCandidates: 3,
+          firstObservedCandidates: 4,
+          pageAttributionWithheld: 5,
+        }),
+      }),
+    );
+    const funnel = host.querySelector("[data-signal-funnel]");
+
+    expect(funnel?.textContent).toContain("These lanes are independent");
+    expect(funnel?.textContent).toContain("do not add the counts together");
+    expect(
+      funnel?.querySelector('[data-signal-lane="ctr-baseline"]')?.textContent,
+    ).toContain("1");
+    expect(
+      funnel?.querySelector('[data-signal-lane="click-opportunity"]')
+        ?.textContent,
+    ).toContain("2");
+    expect(
+      funnel?.querySelector('[data-signal-lane="stable-decline"]')?.textContent,
+    ).toContain("3");
+    expect(
+      funnel?.querySelector('[data-signal-lane="first-observed"]')?.textContent,
+    ).toContain("4");
+    expect(
+      funnel?.querySelector('[data-signal-lane="page-attribution"]')
+        ?.textContent,
+    ).toContain("5");
   });
 });
 
@@ -354,6 +521,218 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     for (const code of LIMITATIONS) {
       expect(host.textContent).not.toContain(code);
     }
+  });
+
+  it("renders one property fallback in the existing table without synthetic query/page evidence", async () => {
+    const fallback = propertyFallback();
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        propertyFallback: fallback,
+        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+      }),
+    );
+    const table = host.querySelector('[role="table"]');
+    const row = host.querySelector<HTMLElement>(
+      "[data-change][data-property-change]",
+    );
+    const cells = [
+      ...(row?.querySelectorAll<HTMLElement>('[role="cell"]') ?? []),
+    ];
+
+    expect(table).not.toBeNull();
+    expect(host.querySelectorAll("[data-change]")).toHaveLength(1);
+    expect(cells).toHaveLength(5);
+    expect(cells[0]?.textContent).toContain("Property-level evidence");
+    expect(cells[0]?.textContent).toContain("Property clicks declined materially");
+    expect(cells[1]?.textContent?.trim()).toContain(
+      "Entire Search Console property",
+    );
+    expect(cells[1]?.textContent).not.toContain("null");
+    expect(cells[1]?.textContent).not.toContain("example query");
+    expect(cells[1]?.textContent).not.toContain("https://");
+    expect(cells[2]?.textContent).toContain("49 → 35");
+    expect(cells[3]?.textContent).toContain("13.2 → 15.1");
+    expect(cells[4]?.textContent).toContain(
+      "Observed weekly deltas: clicks -14, impressions -1,176, average position +1.9",
+    );
+    expect(cells[4]?.textContent).toContain(
+      "Query/page evidence did not support a specific attribution",
+    );
+  });
+
+  it("renders unavailable property positions without inventing a rank", async () => {
+    const fallback = propertyFallback();
+    const host = await renderResults(
+      envelope({
+        propertyFallback: {
+          ...fallback,
+          change: {
+            ...fallback.change,
+            current: { ...fallback.change.current, position: null },
+            previous: { ...fallback.change.previous, position: null },
+            positionDelta: null,
+          },
+        },
+        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+      }),
+    );
+    const row = host.querySelector<HTMLElement>("[data-property-change]");
+    const cells = [...(row?.querySelectorAll<HTMLElement>('[role="cell"]') ?? [])];
+
+    expect(cells[3]?.textContent).toContain("Unavailable → Unavailable");
+    expect(cells[4]?.textContent).toContain("average position Unavailable");
+    expect(row?.textContent).not.toContain("null");
+    expect(row?.textContent).not.toContain("NaN");
+  });
+
+  it("renders one ranked property action and writes a private property-scope handoff", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        propertyFallback: propertyFallback(),
+        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+      }),
+    );
+    const row = host.querySelector<HTMLElement>(
+      "[data-action-row][data-property-action]",
+    );
+    const links = [
+      ...(row?.querySelectorAll<HTMLAnchorElement>("[data-action-link]") ?? []),
+    ];
+
+    expect(row?.getAttribute("data-action-rank")).toBe("1");
+    expect(row?.querySelector("[data-action-rank-badge]")?.getAttribute("aria-label")).toBe(
+      "Rank 1",
+    );
+    expect(row?.textContent).toContain("Diagnose the property-wide click decline");
+    expect(row?.textContent).toContain(PROPERTY);
+    expect(row?.textContent).toContain("49 → 35");
+    expect(row?.textContent).toContain("5,285 → 4,109");
+    expect(row?.textContent).toContain("13.2 → 15.1");
+    expect(row?.textContent).not.toContain("Query:");
+    expect(row?.textContent).not.toContain("Page:");
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute("href")).toBe(
+      "/tools/traffic-drop-diagnosis",
+    );
+    expect(links[0]?.getAttribute("href")).not.toContain(PROPERTY);
+
+    links[0]?.addEventListener("click", (event) => event.preventDefault());
+    await click(links[0]!);
+
+    expect(writeToolHandoffMock).toHaveBeenCalledOnce();
+    expect(writeToolHandoffMock.mock.calls[0]?.[2]).toEqual({
+      source: "daily-search-briefing",
+      destination: "traffic-drop-diagnosis",
+      scope: "property",
+      property: PROPERTY,
+      query: null,
+      page: null,
+      evidenceId: "daily:property:sitewide_click_decline",
+    });
+    expect(
+      (writeToolHandoffMock.mock.calls[0]?.[2] as { evidenceId: string })
+        .evidenceId.length,
+    ).toBeLessThanOrEqual(256);
+  });
+
+  it("routes a property visibility gain to Quick Wins without URL evidence", async () => {
+    const base = propertyFallback();
+    const host = await renderResults(
+      envelope({
+        propertyFallback: {
+          change: {
+            ...base.change,
+            kind: "sitewide_visibility_gain",
+            current: {
+              clicks: 100,
+              impressions: 10_000,
+              ctr: 0.01,
+              position: 8,
+            },
+            previous: {
+              clicks: 50,
+              impressions: 7_000,
+              ctr: 50 / 7_000,
+              position: 10.5,
+            },
+            clickChange: 50,
+            clickChangeRatio: 1,
+            impressionChange: 3_000,
+            impressionChangeRatio: 3_000 / 7_000,
+            positionDelta: -2.5,
+          },
+          action: {
+            kind: "sitewide_visibility_gain",
+            destination: "seo-quick-wins",
+          },
+        },
+        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+      }),
+    );
+    const link = host.querySelector<HTMLAnchorElement>(
+      "[data-property-action] [data-action-link]",
+    );
+
+    expect(host.textContent).toContain("Property visibility improved materially");
+    expect(host.textContent).toContain("Inspect the property-wide visibility gain");
+    expect(link?.getAttribute("href")).toBe("/tools/seo-quick-wins");
+    expect(link?.getAttribute("href")).not.toContain(PROPERTY);
+  });
+
+  it("gives query rows and exact query actions precedence over a contradictory property fallback", async () => {
+    const source = change("click_opportunity", 1);
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [action(source, "seo-quick-wins")],
+        propertyFallback: propertyFallback(),
+        signalFunnel: signalFunnel({
+          selectedQueryChanges: 1,
+          propertyFallbackShown: true,
+        }),
+      }),
+    );
+
+    expect(host.querySelectorAll("[data-change]")).toHaveLength(1);
+    expect(host.querySelector("[data-property-change]")).toBeNull();
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(1);
+    expect(host.querySelector("[data-property-action]")).toBeNull();
+    expect(host.textContent).toContain(source.query);
+    expect(host.textContent).not.toContain("Entire Search Console property");
+    expect(
+      host.querySelector('[data-result-section="noise"]')?.textContent,
+    ).toContain("0 property-level fallbacks shown");
+  });
+
+  it("blocks property-action navigation when the private handoff cannot be stored", async () => {
+    writeToolHandoffMock.mockReturnValue(false);
+    const host = await renderResults(
+      envelope({
+        propertyFallback: propertyFallback(),
+        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+      }),
+    );
+    const link = host.querySelector<HTMLAnchorElement>(
+      "[data-property-action] [data-action-link]",
+    )!;
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await act(async () => {
+      link.dispatchEvent(event);
+      await Promise.resolve();
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.textContent).toContain("navigation was stopped");
+    expect(link.getAttribute("href")).toBe("/tools/traffic-drop-diagnosis");
+    expect(link.getAttribute("href")).not.toContain(PROPERTY);
   });
 
   it("humanizes change kinds and evidence while capping the artifact at three", async () => {
@@ -439,14 +818,21 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("keeps a bordered explanatory panel when no change clears the gates", async () => {
-    const host = await renderResults(envelope({ changes: [] }));
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        propertyFallback: null,
+        signalFunnel: signalFunnel(),
+      }),
+    );
     const section = host.querySelector('[data-result-section="changes"]');
     const empty = section?.querySelector("[data-change-empty]");
 
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain(
-      "No change cleared the evidence floor in this run",
+      "No query/page signal or property-level weekly fallback cleared the available evidence gates",
     );
+    expect(empty?.textContent).toContain("not proof that nothing changed");
     expect(section?.querySelector('[role="table"]')).toBeNull();
     expect(section?.querySelector("[data-change]")).toBeNull();
   });
@@ -563,10 +949,12 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     expect(writeToolHandoffMock).toHaveBeenCalledOnce();
     const payload = writeToolHandoffMock.mock.calls[0]?.[2] as {
+      readonly scope: string;
       readonly evidenceId: string;
       readonly query: string;
       readonly page: string;
     };
+    expect(payload.scope).toBe("query_page");
     expect(payload.evidenceId).toBe("daily:0:click_opportunity");
     expect(payload.evidenceId.length).toBeLessThanOrEqual(256);
     expect(payload.query).toBe(longQuery);

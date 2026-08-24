@@ -1,11 +1,11 @@
 // @input  -- locale, GSC state, one local Daily Briefing handoff, quick-wins API
-// @output -- granted-property prefill, connect/run/evidence states, analytics
+// @output -- granted-property prefill/reset, connect/run/evidence states, analytics
 // @pos    -- primary client surface for /[locale]/tools/seo-quick-wins
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { QuickWinsResult } from "@sf/public-tools";
@@ -69,6 +69,13 @@ export function QuickWinsTool({
   const [result, setResult] = useState<QuickWinsResult | null>(null);
   const [handoffImported, setHandoffImported] = useState(false);
 
+  const selectProperty = useCallback((next: string) => {
+    setProperty(next);
+    setBrandInput("");
+    setErrorCode(null);
+    setResult(null);
+  }, []);
+
   useEffect(() => {
     try {
       const handoff = consumeToolHandoff(
@@ -77,13 +84,13 @@ export function QuickWinsTool({
         "seo-quick-wins",
       );
       if (handoff === null || !properties?.includes(handoff.property)) return;
-      setProperty(handoff.property);
+      selectProperty(handoff.property);
       setHandoffImported(true);
     } catch {
       // Storage access itself can be unavailable. The tool still works as a
       // normal form; only the optional local handoff is lost.
     }
-  }, [properties]);
+  }, [properties, selectProperty]);
 
   async function run(target: string) {
     setHandoffImported(false);
@@ -157,7 +164,7 @@ export function QuickWinsTool({
           <select
             value={property}
             onChange={(event) => {
-              setProperty(event.target.value);
+              selectProperty(event.target.value);
               setHandoffImported(false);
             }}
             className={SELECT_FIELD}

@@ -39,6 +39,12 @@ const CHANGE_KINDS = [
   "first_observed",
 ] as const;
 
+const PROPERTY_CHANGE_KINDS = [
+  "sitewide_click_decline",
+  "sitewide_visibility_decline",
+  "sitewide_visibility_gain",
+] as const;
+
 const EVIDENCE_STATES = [
   "observed",
   "not_observed",
@@ -100,8 +106,10 @@ const REQUIRED_LEAF_PATHS = [
   "kpis.dailySuppressed",
   "kpis.positionNote",
   "noise.label",
-  "noise.complete",
+  "noise.observed",
   "noise.partial",
+  "noise.unavailable",
+  "noise.observationOnly",
   "evidence.title",
   "evidence.thresholdSummary",
   "evidence.filteredComplete",
@@ -112,8 +120,25 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.anonymizationTitle",
   "evidence.anonymizationObserved",
   "evidence.anonymizationUnavailable",
+  "evidence.signalFunnel.title",
+  "evidence.signalFunnel.intro",
+  "evidence.signalFunnel.laneUnavailable",
+  "evidence.signalFunnel.lanes.ctrBaseline.title",
+  "evidence.signalFunnel.lanes.ctrBaseline.body",
+  "evidence.signalFunnel.lanes.ctrBaseline.notEvaluated",
+  "evidence.signalFunnel.lanes.clickOpportunity.title",
+  "evidence.signalFunnel.lanes.clickOpportunity.body",
+  "evidence.signalFunnel.lanes.stableDecline.title",
+  "evidence.signalFunnel.lanes.stableDecline.body",
+  "evidence.signalFunnel.lanes.firstObserved.title",
+  "evidence.signalFunnel.lanes.firstObserved.body",
+  "evidence.signalFunnel.lanes.pageAttribution.title",
+  "evidence.signalFunnel.lanes.pageAttribution.body",
   "changes.title",
   "changes.empty",
+  "changes.stableEmpty",
+  "changes.propertyEvidence",
+  "changes.entireProperty",
   "changes.query",
   "changes.page",
   "changes.current",
@@ -126,11 +151,25 @@ const REQUIRED_LEAF_PATHS = [
   "changes.columns.position",
   "changes.columns.interpretation",
   "changes.notObserved",
+  "propertyChangeKinds.sitewide_click_decline.title",
+  "propertyChangeKinds.sitewide_click_decline.body",
+  "propertyChangeKinds.sitewide_visibility_decline.title",
+  "propertyChangeKinds.sitewide_visibility_decline.body",
+  "propertyChangeKinds.sitewide_visibility_gain.title",
+  "propertyChangeKinds.sitewide_visibility_gain.body",
   "actions.title",
   "actions.empty",
   "actions.rank",
   "actions.why",
   "actions.evidence",
+  "actions.propertyEvidence",
+  "actions.propertyWeekly",
+  "propertyActionKinds.sitewide_click_decline.title",
+  "propertyActionKinds.sitewide_click_decline.body",
+  "propertyActionKinds.sitewide_visibility_decline.title",
+  "propertyActionKinds.sitewide_visibility_decline.body",
+  "propertyActionKinds.sitewide_visibility_gain.title",
+  "propertyActionKinds.sitewide_visibility_gain.body",
   "actionDestinations.seo-quick-wins",
   "actionDestinations.traffic-drop-diagnosis",
   "actionDestinations.on-page-seo-check",
@@ -183,7 +222,7 @@ function leafPaths(value: unknown, prefix = ""): readonly string[] {
 
 function placeholders(value: unknown): readonly string[] {
   expect(value).toEqual(expect.any(String));
-  return [...(value as string).matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g)]
+  return [...(value as string).matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)(?:,|\})/g)]
     .map((match) => match[1]!)
     .sort();
 }
@@ -204,6 +243,8 @@ describe("Daily Briefing message catalogs", () => {
     const errors = recordAt(namespace, "errors");
     const changeKinds = recordAt(namespace, "changeKinds");
     const actionKinds = recordAt(namespace, "actionKinds");
+    const propertyChangeKinds = recordAt(namespace, "propertyChangeKinds");
+    const propertyActionKinds = recordAt(namespace, "propertyActionKinds");
     const evidenceStates = recordAt(namespace, "evidenceStates");
 
     const paths = new Set(leafPaths(namespace));
@@ -227,6 +268,16 @@ describe("Daily Briefing message catalogs", () => {
         expect.any(Object),
       );
     }
+    for (const kind of PROPERTY_CHANGE_KINDS) {
+      expect(
+        propertyChangeKinds[kind],
+        `missing property change kind ${kind}`,
+      ).toEqual(expect.any(Object));
+      expect(
+        propertyActionKinds[kind],
+        `missing property action kind ${kind}`,
+      ).toEqual(expect.any(Object));
+    }
     for (const state of EVIDENCE_STATES) {
       expect(evidenceStates[state], `missing evidence state ${state}`).toEqual(
         expect.any(String),
@@ -238,10 +289,36 @@ describe("Daily Briefing message catalogs", () => {
     const enNoise = recordAt(daily(en), "noise");
     const zhNoise = recordAt(daily(zh), "noise");
 
-    for (const key of ["complete", "partial"] as const) {
-      expect(placeholders(enNoise[key])).toEqual(["filtered", "shown"]);
+    for (const key of [
+      "observed",
+      "partial",
+      "unavailable",
+      "observationOnly",
+    ] as const) {
       expect(placeholders(zhNoise[key])).toEqual(
         placeholders(enNoise[key]),
+      );
+    }
+  });
+
+  it("keeps placeholders aligned for every localized Daily Briefing leaf", () => {
+    const enDaily = daily(en);
+    const zhDaily = daily(zh);
+    const paths = [...leafPaths(enDaily)];
+
+    function valueAtPath(
+      value: Readonly<Record<string, unknown>>,
+      path: string,
+    ): unknown {
+      return path.split(".").reduce<unknown>((current, key) => {
+        expect(current).toEqual(expect.any(Object));
+        return (current as Readonly<Record<string, unknown>>)[key];
+      }, value);
+    }
+
+    for (const path of paths) {
+      expect(placeholders(valueAtPath(zhDaily, path)), path).toEqual(
+        placeholders(valueAtPath(enDaily, path)),
       );
     }
   });
@@ -254,6 +331,16 @@ describe("Daily Briefing message catalogs", () => {
     expect(placeholders(zhActions.rank)).toEqual(
       placeholders(enActions.rank),
     );
+  });
+
+  it("uses explicit localized entire-property labels without null placeholders", () => {
+    const enChanges = recordAt(daily(en), "changes");
+    const zhChanges = recordAt(daily(zh), "changes");
+
+    expect(enChanges.entireProperty).toBe("Entire Search Console property");
+    expect(zhChanges.entireProperty).toBe("整个 Search Console 站点");
+    expect(String(enChanges.entireProperty)).not.toContain("null");
+    expect(String(zhChanges.entireProperty)).not.toContain("null");
   });
 
   it("keeps client copy in next-intl instead of an in-component locale table", () => {

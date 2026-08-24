@@ -480,6 +480,7 @@ describe("On-Page checker local state", () => {
       writeToolHandoff(sessionStorage, Date.now(), {
         source: "daily-search-briefing",
         destination: "on-page-seo-check",
+        scope: "query_page",
         property: "sc-domain:example.com",
         query: "pricing automation",
         page: "https://example.com/pricing",
@@ -487,6 +488,33 @@ describe("On-Page checker local state", () => {
       }),
     ).toBe(true);
   }
+
+  it("rejects a crafted property-scoped handoff without filling or running", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    sessionStorage.setItem(
+      TOOL_HANDOFF_KEY,
+      JSON.stringify({
+        source: "daily-search-briefing",
+        destination: "on-page-seo-check",
+        scope: "property",
+        property: "sc-domain:example.com",
+        query: null,
+        page: null,
+        evidenceId: "sitewide-click-decline",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("");
+    expect(field(host, "onpage-query").value).toBe("");
+    expect(host.textContent).not.toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
   it("prefers the one-time briefing inputs to an older draft without running or clearing history", async () => {
     globalThis.fetch = vi.fn() as unknown as typeof fetch;

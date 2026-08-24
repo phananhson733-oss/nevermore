@@ -88,10 +88,25 @@ function stageHandoff(property = PROPERTY_B): void {
     writeToolHandoff(sessionStorage, Date.now(), {
       source: "daily-search-briefing",
       destination: "traffic-drop-diagnosis",
+      scope: "query_page",
       property,
       query: "workflow templates",
       page: "https://b.example/templates",
       evidenceId: "stable-position-click-decline:workflow-templates",
+    }),
+  ).toBe(true);
+}
+
+function stagePropertyHandoff(property = PROPERTY_B): void {
+  expect(
+    writeToolHandoff(sessionStorage, Date.now(), {
+      source: "daily-search-briefing",
+      destination: "traffic-drop-diagnosis",
+      scope: "property",
+      property,
+      query: null,
+      page: null,
+      evidenceId: "sitewide-click-decline",
     }),
   ).toBe(true);
 }
@@ -199,6 +214,31 @@ describe("Traffic Drop Daily Briefing handoff", () => {
     expect(buttonWith("Run analysis").disabled).toBe(false);
 
     stageHandoff();
+    await rerender([...PROPERTIES]);
+
+    expect(propertyField().value).toBe(PROPERTY_B);
+    expect(brandField().value).toBe("bravo");
+    expect(brandConfirmation().checked).toBe(false);
+    expect(
+      [...(host?.querySelectorAll('button[aria-pressed="true"]') ?? [])],
+    ).toHaveLength(0);
+    expect(buttonWith("Run analysis").disabled).toBe(true);
+    expect(host?.textContent).toContain(NOTICE);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("imports property scope and resets every property-owned input without running", async () => {
+    await renderTool();
+    const noIssueButtons = [...(host?.querySelectorAll("button") ?? [])].filter(
+      (button) => button.textContent?.trim() === "It says “No issues detected”",
+    );
+    await click(noIssueButtons[0] as HTMLButtonElement);
+    await click(noIssueButtons[1] as HTMLButtonElement);
+    await click(brandConfirmation());
+    expect(buttonWith("Run analysis").disabled).toBe(false);
+
+    stagePropertyHandoff();
     await rerender([...PROPERTIES]);
 
     expect(propertyField().value).toBe(PROPERTY_B);

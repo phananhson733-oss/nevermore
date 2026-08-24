@@ -1,6 +1,6 @@
 "use client";
 
-// @input  -- page/query fields, optional Daily Briefing handoff, market and role
+// @input  -- page/query fields, optional query/page Daily Briefing handoff, market and role
 // @output -- handoff prefill, page keyword coverage, fixes, local recent checks
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -218,7 +218,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         Date.now(),
         "on-page-seo-check",
       );
-      if (handoff) {
+      if (handoff?.scope === "query_page") {
         setUrl(handoff.page);
         setQueryText(handoff.query);
         setHandoffImported(true);
