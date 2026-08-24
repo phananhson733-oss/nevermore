@@ -1628,8 +1628,10 @@
       },
       "noise": {
         "label": "噪声过滤已开启",
-        "complete": "有 {filtered} 条已观察查询记录没有通过信号门槛；本次有 {shown} 项变化通过门槛。",
-        "partial": "已观察前缀中有 {filtered} 条记录没有通过门槛，这不是全站计数；本次有 {shown} 项变化通过当前可用证据门槛。"
+        "observed": "{observed} 条可见查询词 → {eligible} 条达到动作样本门槛 → {selected} 条查询词/页面信号；显示 {fallback} 条站点级回退信号。",
+        "partial": "已观察前缀中有 {observed} 条可见记录 → 下游候选数量不可得。这不是全站计数。",
+        "unavailable": "可见查询词的信号漏斗不可得。下游数量仍不可得，没有把缺失值当作 0。",
+        "observationOnly": "有 {count} 条查询词处于 50–99 次曝光，只作为观察候选，不能触发动作。"
       },
       "evidence": {
         "title": "证据门槛与可观察覆盖",
@@ -1641,7 +1643,35 @@
         "coverageUnavailable": "可比的查询词到页面覆盖不可得，因此没有推断缺失页面。",
         "anonymizationTitle": "Search Console 匿名化 · 当前窗口",
         "anonymizationObserved": "站点总曝光中有 {impressions}、总点击中有 {clicks} 没有出现在可见查询记录里。",
-        "anonymizationUnavailable": "被隐藏占比不可得；它不等于 0。"
+        "anonymizationUnavailable": "被隐藏占比不可得；它不等于 0。",
+        "signalFunnel": {
+          "title": "相互独立的信号路径",
+          "intro": "这些路径彼此独立且不可相加，请不要合计数量。",
+          "laneUnavailable": "当前证据状态下这条路径不可得；它不等于 0。",
+          "lanes": {
+            "ctrBaseline": {
+              "title": "CTR 基线",
+              "body": "{count} 条达到动作门槛的查询词形成了可用的站点留一法基线。",
+              "notEvaluated": "本次运行未评估；没有把它记成 0。"
+            },
+            "clickOpportunity": {
+              "title": "点击机会候选",
+              "body": "{count} 条查询词通过了独立的 CTR 差距候选路径，随后才进入最终选择。"
+            },
+            "stableDecline": {
+              "title": "排名稳定的点击下降",
+              "body": "{count} 条查询词通过了独立的排名稳定点击下降路径，随后才进入最终选择。"
+            },
+            "firstObserved": {
+              "title": "首次观察到的组合",
+              "body": "{count} 个查询词/页面组合通过了独立的首次观察路径，随后才进入最终选择。"
+            },
+            "pageAttribution": {
+              "title": "页面归因被抑制",
+              "body": "有 {count} 个候选因单一页面没有承载足够的可比可见证据而被抑制。"
+            }
+          }
+        }
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -1653,6 +1683,9 @@
         "title": "超出噪声阈值的变化",
         "intro": "对比最近完整 7 天与前 7 天，最多显示三条有证据支持的变化。",
         "empty": "本次运行没有变化通过证据门槛。这不等于证明没有发生变化。",
+        "stableEmpty": "没有查询词/页面信号或站点级周度回退信号通过当前可用证据门槛。这不等于证明没有发生变化。",
+        "propertyEvidence": "站点级证据",
+        "entireProperty": "整个 Search Console 站点",
         "query": "查询词",
         "page": "页面",
         "current": "当前 7 天",
@@ -1682,13 +1715,29 @@
           "body": "这个组合出现在当前可见记录中、没有出现在前一窗口的可见记录中。由于 Search Console 匿名化，这不是新收录的证据。"
         }
       },
+      "propertyChangeKinds": {
+        "sitewide_click_decline": {
+          "title": "站点点击出现实质下降",
+          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
+        },
+        "sitewide_visibility_decline": {
+          "title": "站点可见度和平均排名下降",
+          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
+        },
+        "sitewide_visibility_gain": {
+          "title": "站点可见度出现实质增长",
+          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
+        }
+      },
       "actions": {
         "title": "今日建议动作",
         "intro": "最多三项，按确定性的证据顺序排列；每项都把证据私密带到下一工具。",
         "empty": "当前可用证据不足以支持自动交接到其他工具。",
         "rank": "优先级 {rank}",
         "why": "为何出现这项动作",
-        "evidence": "私密带到下一工具的证据"
+        "evidence": "私密带到下一工具的证据",
+        "propertyEvidence": "私密带到下一工具的站点级证据",
+        "propertyWeekly": "前 7 天 → 当前 7 天：点击 {clicks}；曝光 {impressions}；平均排名 {position}。"
       },
       "preview": {
         "changes": "生成简报后，这里会显示最新完整对比窗口中有证据支持的变化。",
@@ -1706,6 +1755,20 @@
         "first_observed": {
           "title": "按目标查询词检查页面",
           "body": "打开 On-Page SEO Checker，预填页面和查询词，再核对公开 HTML 真正支持了什么。"
+        }
+      },
+      "propertyActionKinds": {
+        "sitewide_click_decline": {
+          "title": "诊断全站点击下降",
+          "body": "携带站点和周度对比打开 Traffic Drop Diagnosis。下一工具需要独立确认原因；本简报没有把下降归因到某个查询词或页面。"
+        },
+        "sitewide_visibility_decline": {
+          "title": "诊断全站可见度下降",
+          "body": "携带站点和周度对比打开 Traffic Drop Diagnosis。下一工具需要独立确认原因；本简报没有把下降归因到某个查询词或页面。"
+        },
+        "sitewide_visibility_gain": {
+          "title": "检查全站可见度增长",
+          "body": "携带站点和周度对比打开 GSC Opportunity Finder。下一工具需要独立排列查询词机会；本简报没有虚构查询词或页面。"
         }
       },
       "actionDestinations": {

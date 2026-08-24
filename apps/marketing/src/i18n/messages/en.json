@@ -1628,8 +1628,10 @@
       },
       "noise": {
         "label": "Noise filter on",
-        "complete": "{filtered} observed query rows did not clear a signal threshold. {shown} changes cleared the threshold.",
-        "partial": "{filtered} rows in the observed prefix did not clear a signal threshold; this is not property-wide. {shown} changes cleared the available evidence gates."
+        "observed": "{observed} visible queries → {eligible} reached the action sample floor → {selected} query/page signals; {fallback, plural, one {# property-level fallback shown} other {# property-level fallbacks shown}}.",
+        "partial": "{observed} visible rows in the observed prefix → downstream candidate counts are unavailable. This is not property-wide.",
+        "unavailable": "Visible-query signal funnel unavailable. Downstream counts remain unavailable; no zeroes were inferred.",
+        "observationOnly": "{count} queries had 50–99 impressions and remain observation-only; they cannot trigger an action."
       },
       "evidence": {
         "title": "Evidence floor and observable coverage",
@@ -1641,7 +1643,35 @@
         "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
         "anonymizationTitle": "Search Console anonymization · current window",
         "anonymizationObserved": "{impressions} of property impressions and {clicks} of property clicks are absent from visible query rows.",
-        "anonymizationUnavailable": "The withheld share is unavailable; it is not zero."
+        "anonymizationUnavailable": "The withheld share is unavailable; it is not zero.",
+        "signalFunnel": {
+          "title": "Independent signal paths",
+          "intro": "These lanes are independent and not additive; do not add the counts together.",
+          "laneUnavailable": "This lane is unavailable for the current evidence state; it is not zero.",
+          "lanes": {
+            "ctrBaseline": {
+              "title": "CTR baseline",
+              "body": "{count} action-eligible queries had a usable leave-one-out property baseline.",
+              "notEvaluated": "Not evaluated for this run; no zero was inferred."
+            },
+            "clickOpportunity": {
+              "title": "Click opportunity candidates",
+              "body": "{count} queries cleared the independent CTR-gap candidate lane before final selection."
+            },
+            "stableDecline": {
+              "title": "Stable-position click declines",
+              "body": "{count} queries cleared the independent stable-position decline lane before final selection."
+            },
+            "firstObserved": {
+              "title": "First-observed pairs",
+              "body": "{count} query/page pairs cleared the independent first-observed lane before final selection."
+            },
+            "pageAttribution": {
+              "title": "Page attribution withheld",
+              "body": "{count} candidates were withheld because one page did not carry enough comparable visible evidence."
+            }
+          }
+        }
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -1653,6 +1683,9 @@
         "title": "Changes above the noise threshold",
         "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown.",
         "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
+        "stableEmpty": "No query/page signal or property-level weekly fallback cleared the available evidence gates. That is not proof that nothing changed.",
+        "propertyEvidence": "Property-level evidence",
+        "entireProperty": "Entire Search Console property",
         "query": "Query",
         "page": "Page",
         "current": "Current 7 days",
@@ -1682,13 +1715,29 @@
           "body": "This pair appears in the current visible rows and not in the prior visible rows. Search Console anonymization means this is not proof of new indexing."
         }
       },
+      "propertyChangeKinds": {
+        "sitewide_click_decline": {
+          "title": "Property clicks declined materially",
+          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
+        },
+        "sitewide_visibility_decline": {
+          "title": "Property visibility and average position declined",
+          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
+        },
+        "sitewide_visibility_gain": {
+          "title": "Property visibility improved materially",
+          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
+        }
+      },
       "actions": {
         "title": "Today's recommended actions",
         "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool.",
         "empty": "No automated handoff is justified by the evidence available in this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
-        "evidence": "Evidence carried privately to the next tool"
+        "evidence": "Evidence carried privately to the next tool",
+        "propertyEvidence": "Property-level evidence carried privately to the next tool",
+        "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}."
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
@@ -1706,6 +1755,20 @@
         "first_observed": {
           "title": "Inspect the page against the target query",
           "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
+        }
+      },
+      "propertyActionKinds": {
+        "sitewide_click_decline": {
+          "title": "Diagnose the property-wide click decline",
+          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+        },
+        "sitewide_visibility_decline": {
+          "title": "Diagnose the property-wide visibility decline",
+          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+        },
+        "sitewide_visibility_gain": {
+          "title": "Inspect the property-wide visibility gain",
+          "body": "Open GSC Opportunity Finder with the property and weekly comparison. It must rank query opportunities independently; this briefing did not invent a query or page."
         }
       },
       "actionDestinations": {

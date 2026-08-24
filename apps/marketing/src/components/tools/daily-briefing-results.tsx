@@ -22,6 +22,9 @@ import type {
   DailyBriefingChange,
   DailyBriefingEnvelope,
   DailyBriefingKpiComparison,
+  DailyBriefingPropertyChange,
+  DailyBriefingPropertyFallback,
+  DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
@@ -52,9 +55,9 @@ interface ResultPreviewSectionProps {
 }
 
 interface NoiseSummaryProps {
-  readonly filtered: number;
-  readonly shown: number;
-  readonly complete: boolean;
+  readonly funnel: DailyBriefingSignalFunnel;
+  readonly selectedQueryChanges: number;
+  readonly propertyFallbackShown: boolean;
 }
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
@@ -127,7 +130,7 @@ function metricLabel(
 }
 
 function destination(
-  action: DailyBriefingAction,
+  actionDestination: DailyBriefingAction["destination"],
 ): {
   readonly path: string;
   readonly labelKey:
@@ -135,7 +138,7 @@ function destination(
     | "actionDestinations.traffic-drop-diagnosis"
     | "actionDestinations.on-page-seo-check";
 } {
-  switch (action.destination) {
+  switch (actionDestination) {
     case "seo-quick-wins":
       return {
         path: "/tools/seo-quick-wins",
@@ -177,6 +180,64 @@ function comparison(
   notObserved: string,
 ): string {
   return `${previous === null ? notObserved : format(previous)} → ${format(current)}`;
+}
+
+function nullableComparison(
+  previous: number | null,
+  current: number | null,
+  format: (value: number) => string,
+  unavailable: string,
+): string {
+  const formatObserved = (value: number | null) =>
+    value === null || !Number.isFinite(value) ? unavailable : format(value);
+  return `${formatObserved(previous)} → ${formatObserved(current)}`;
+}
+
+function signedMetric(
+  locale: string,
+  value: number | null,
+  unavailable: string,
+  digits = 1,
+): string {
+  if (value === null || !Number.isFinite(value)) return unavailable;
+  const formatted =
+    digits === 0
+      ? number(locale, Math.abs(value))
+      : Math.abs(value).toFixed(digits);
+  if (value > 0) return `+${formatted}`;
+  if (value < 0) return `-${formatted}`;
+  return digits === 0 ? "0" : (0).toFixed(digits);
+}
+
+function propertyWeeklyComparisons(
+  t: ReturnType<typeof useTranslations>,
+  locale: string,
+  change: DailyBriefingPropertyChange,
+): {
+  readonly clicks: string;
+  readonly impressions: string;
+  readonly position: string;
+} {
+  return {
+    clicks: nullableComparison(
+      change.previous.clicks,
+      change.current.clicks,
+      (value) => number(locale, value),
+      t("kpis.unavailable"),
+    ),
+    impressions: nullableComparison(
+      change.previous.impressions,
+      change.current.impressions,
+      (value) => number(locale, value),
+      t("kpis.unavailable"),
+    ),
+    position: nullableComparison(
+      change.previous.position,
+      change.current.position,
+      (value) => value.toFixed(1),
+      t("kpis.unavailable"),
+    ),
+  };
 }
 
 function matchingActions(
@@ -229,8 +290,18 @@ function ResultPreviewSection({
   );
 }
 
-function NoiseSummary({ filtered, shown, complete }: NoiseSummaryProps) {
+function NoiseSummary({
+  funnel,
+  selectedQueryChanges,
+  propertyFallbackShown,
+}: NoiseSummaryProps) {
   const t = useTranslations("tools.dailyBriefing");
+  const hasObservedSummary =
+    funnel.evidence === "observed" &&
+    funnel.observedQueryRows !== null &&
+    funnel.actionEligibleQueries !== null;
+  const hasPartialSummary =
+    funnel.evidence === "partial" && funnel.observedQueryRows !== null;
 
   return (
     <section
@@ -245,13 +316,120 @@ function NoiseSummary({ filtered, shown, complete }: NoiseSummaryProps) {
         >
           {t("noise.label")}
         </h3>
-        <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {complete
-            ? t("noise.complete", { filtered, shown })
-            : t("noise.partial", { filtered, shown })}
-        </p>
+        <div className="min-w-0 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          <p>
+            {hasObservedSummary
+              ? t("noise.observed", {
+                  observed: funnel.observedQueryRows,
+                  eligible: funnel.actionEligibleQueries,
+                  selected: selectedQueryChanges,
+                  fallback: propertyFallbackShown ? 1 : 0,
+                })
+              : hasPartialSummary
+                ? t("noise.partial", { observed: funnel.observedQueryRows })
+                : t("noise.unavailable")}
+          </p>
+          {hasObservedSummary && funnel.observationCandidates !== null ? (
+            <p className="mt-1">
+              {t("noise.observationOnly", {
+                count: funnel.observationCandidates,
+              })}
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
+  );
+}
+
+function SignalFunnelEvidence({
+  funnel,
+}: {
+  readonly funnel: DailyBriefingSignalFunnel;
+}) {
+  const t = useTranslations("tools.dailyBriefing");
+  const observed = funnel.evidence === "observed";
+  const lanes = [
+    {
+      key: "ctr-baseline",
+      title: t("evidence.signalFunnel.lanes.ctrBaseline.title"),
+      count: funnel.ctrBaselineRows,
+      bodyKey: "evidence.signalFunnel.lanes.ctrBaseline.body" as const,
+      unavailable: t("evidence.signalFunnel.lanes.ctrBaseline.notEvaluated"),
+    },
+    {
+      key: "click-opportunity",
+      title: t("evidence.signalFunnel.lanes.clickOpportunity.title"),
+      count: funnel.clickOpportunityCandidates,
+      bodyKey: "evidence.signalFunnel.lanes.clickOpportunity.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+    {
+      key: "stable-decline",
+      title: t("evidence.signalFunnel.lanes.stableDecline.title"),
+      count: funnel.stableDeclineCandidates,
+      bodyKey: "evidence.signalFunnel.lanes.stableDecline.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+    {
+      key: "first-observed",
+      title: t("evidence.signalFunnel.lanes.firstObserved.title"),
+      count: funnel.firstObservedCandidates,
+      bodyKey: "evidence.signalFunnel.lanes.firstObserved.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+    {
+      key: "page-attribution",
+      title: t("evidence.signalFunnel.lanes.pageAttribution.title"),
+      count: funnel.pageAttributionWithheld,
+      bodyKey: "evidence.signalFunnel.lanes.pageAttribution.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+  ];
+
+  return (
+    <div
+      data-signal-funnel
+      className="mt-5 rounded-[10px] border border-brand-border-card bg-brand-panel px-4 py-4"
+    >
+      <h4 className="text-[13px] font-semibold text-text-dark-primary">
+        {t("evidence.signalFunnel.title")}
+      </h4>
+      <p className="mt-1.5 max-w-3xl text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("evidence.signalFunnel.intro")}
+      </p>
+      <div className="mt-4 grid gap-x-5 gap-y-3 md:grid-cols-2">
+        {lanes.map((lane) => {
+          const count = observed ? lane.count : null;
+          const available = count !== null;
+          return (
+            <div
+              key={lane.key}
+              data-signal-lane={lane.key}
+              className="border-t border-brand-border pt-3"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h5 className="text-[12.5px] font-semibold text-text-dark-primary">
+                  {lane.title}
+                </h5>
+                <span className="font-mono text-[9.5px] tracking-[0.06em] text-brand-accent-text uppercase">
+                  {t(
+                    available
+                      ? "evidenceStates.observed"
+                      : "evidenceStates.unavailable",
+                  )}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-secondary">
+                {available
+                  ? t(lane.bodyKey, { count })
+                  : lane.unavailable}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -291,10 +469,20 @@ export function DailyBriefingResults({
   const { result } = envelope;
   const dailyAvailable =
     result.cadence === "daily" && result.day.evidence === "observed";
-  const actions = matchingActions(envelope);
+  const queryActions = matchingActions(envelope);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, 3);
+  const propertyFallback =
+    shownChanges.length === 0 ? result.propertyFallback : null;
+  const propertyComparisons =
+    propertyFallback === null
+      ? null
+      : propertyWeeklyComparisons(t, locale, propertyFallback.change);
+  const propertyTarget =
+    propertyFallback === null
+      ? null
+      : destination(propertyFallback.action.destination);
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -311,6 +499,30 @@ export function DailyBriefingResults({
         query: action.query,
         page: action.page,
         evidenceId: `daily:${index}:${action.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function propertyHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    fallback: DailyBriefingPropertyFallback,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: fallback.action.destination,
+        scope: "property",
+        property,
+        query: null,
+        page: null,
+        evidenceId: `daily:property:${fallback.change.kind}`,
       });
     } catch {
       written = false;
@@ -413,9 +625,14 @@ export function DailyBriefingResults({
       </section>
 
       <NoiseSummary
-        filtered={result.filteredObservedRows}
-        shown={shownChanges.length}
-        complete={result.countComplete}
+        funnel={result.signalFunnel}
+        selectedQueryChanges={Math.min(
+          result.signalFunnel.selectedQueryChanges,
+          shownChanges.length,
+        )}
+        propertyFallbackShown={
+          result.signalFunnel.propertyFallbackShown && propertyFallback !== null
+        }
       />
 
       <section
@@ -431,10 +648,10 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("changes.intro")}
         </p>
-        {shownChanges.length === 0 ? (
+        {shownChanges.length === 0 && propertyFallback === null ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t("changes.empty")}
+              {t("changes.stableEmpty")}
             </p>
           </div>
         ) : (
@@ -538,6 +755,83 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
+            {propertyFallback !== null && propertyComparisons !== null ? (
+              <div
+                role="row"
+                data-change
+                data-property-change
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.change")}
+                  </span>
+                  <div className="mt-2 min-w-0 md:mt-0">
+                    <p className={`${EYEBROW} text-brand-accent-text`}>
+                      {t("changes.propertyEvidence")}
+                    </p>
+                    <h4 className="mt-1.5 break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
+                      {t(
+                        `propertyChangeKinds.${propertyFallback.change.kind}.title`,
+                      )}
+                    </h4>
+                  </div>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.queryPage")}
+                  </span>
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {t("changes.entireProperty")}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {propertyComparisons.clicks}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {propertyComparisons.position}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("changes.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(
+                      `propertyChangeKinds.${propertyFallback.change.kind}.body`,
+                      {
+                        clicks: signedMetric(
+                          locale,
+                          propertyFallback.change.clickChange,
+                          t("kpis.unavailable"),
+                          0,
+                        ),
+                        impressions: signedMetric(
+                          locale,
+                          propertyFallback.change.impressionChange,
+                          t("kpis.unavailable"),
+                          0,
+                        ),
+                        position: signedMetric(
+                          locale,
+                          propertyFallback.change.positionDelta,
+                          t("kpis.unavailable"),
+                        ),
+                      },
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </section>
@@ -555,7 +849,7 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("actions.intro")}
         </p>
-        {actions.length === 0 ? (
+        {queryActions.length === 0 && propertyFallback === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {t("actions.empty")}
@@ -563,8 +857,8 @@ export function DailyBriefingResults({
           </div>
         ) : (
           <div data-actions-list className="mt-4 grid gap-3">
-            {actions.map(({ action, change }, index) => {
-              const target = destination(action);
+            {queryActions.map(({ action, change }, index) => {
+              const target = destination(action.destination);
               return (
                 <article
                   key={`action:${index}:${action.kind}`}
@@ -616,6 +910,59 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
+            {propertyFallback !== null &&
+            propertyComparisons !== null &&
+            propertyTarget !== null ? (
+              <article
+                data-action-row
+                data-property-action
+                data-action-rank={1}
+                className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                  <span
+                    data-action-rank-badge
+                    aria-label={t("actions.rank", { rank: 1 })}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
+                  >
+                    1
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-[16px] font-semibold text-text-dark-primary">
+                      {t(
+                        `propertyActionKinds.${propertyFallback.action.kind}.title`,
+                      )}
+                    </h4>
+                    <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                      {t(
+                        `propertyActionKinds.${propertyFallback.action.kind}.body`,
+                      )}
+                    </p>
+                    <div
+                      data-action-evidence
+                      className="mt-3 border-l border-brand-border pl-3"
+                    >
+                      <p className={EYEBROW}>{t("actions.propertyEvidence")}</p>
+                      <p className="mt-1.5 break-all text-[12.5px] font-medium text-text-dark-primary">
+                        {property}
+                      </p>
+                      <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                        {t("actions.propertyWeekly", propertyComparisons)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  data-action-link
+                  href={localePath(locale, propertyTarget.path)}
+                  onClick={(event) => propertyHandoff(event, propertyFallback)}
+                  className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                >
+                  {t(propertyTarget.labelKey)}
+                  <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />
+                </Link>
+              </article>
+            ) : null}
           </div>
         )}
         {handoffFailed ? (
@@ -673,15 +1020,7 @@ export function DailyBriefingResults({
         <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {t("evidence.thresholdSummary")}
         </p>
-        <p className="mt-3 border-l-2 border-brand-accent pl-3 text-[13px] leading-[1.6] text-text-dark-secondary">
-          {result.countComplete
-            ? t("evidence.filteredComplete", {
-                count: result.filteredObservedRows,
-              })
-            : t("evidence.filteredPartial", {
-                count: result.filteredObservedRows,
-              })}
-        </p>
+        <SignalFunnelEvidence funnel={result.signalFunnel} />
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <EvidenceCard
             title={t("evidence.coverageTitle")}
