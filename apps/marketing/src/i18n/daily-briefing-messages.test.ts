@@ -99,6 +99,9 @@ const REQUIRED_LEAF_PATHS = [
   "kpis.unavailable",
   "kpis.dailySuppressed",
   "kpis.positionNote",
+  "noise.label",
+  "noise.complete",
+  "noise.partial",
   "evidence.title",
   "evidence.thresholdSummary",
   "evidence.filteredComplete",
@@ -171,6 +174,13 @@ function leafPaths(value: unknown, prefix = ""): readonly string[] {
   );
 }
 
+function placeholders(value: unknown): readonly string[] {
+  expect(value).toEqual(expect.any(String));
+  return [...(value as string).matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g)]
+    .map((match) => match[1]!)
+    .sort();
+}
+
 describe("Daily Briefing message catalogs", () => {
   it("defines the namespace with identical EN and ZH leaf keys", () => {
     expect([...leafPaths(daily(en))].sort()).toEqual(
@@ -213,6 +223,18 @@ describe("Daily Briefing message catalogs", () => {
     for (const state of EVIDENCE_STATES) {
       expect(evidenceStates[state], `missing evidence state ${state}`).toEqual(
         expect.any(String),
+      );
+    }
+  });
+
+  it("keeps EN and ZH noise-summary placeholders aligned", () => {
+    const enNoise = recordAt(daily(en), "noise");
+    const zhNoise = recordAt(daily(zh), "noise");
+
+    for (const key of ["complete", "partial"] as const) {
+      expect(placeholders(enNoise[key])).toEqual(["filtered", "shown"]);
+      expect(placeholders(zhNoise[key])).toEqual(
+        placeholders(enNoise[key]),
       );
     }
   });

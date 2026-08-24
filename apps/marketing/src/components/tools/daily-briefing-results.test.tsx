@@ -213,6 +213,25 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(noise?.textContent).toContain("0 changes cleared the threshold");
   });
 
+  it("reports the number of changes actually shown after the three-row cap", async () => {
+    const host = await renderResults(
+      envelope({
+        countComplete: true,
+        changes: [
+          change("click_opportunity", 1),
+          change("stable_position_click_decline", 2),
+          change("first_observed", 3),
+          change("first_observed", 4),
+        ],
+      }),
+    );
+    const noise = host.querySelector('[data-result-section="noise"]');
+
+    expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
+    expect(noise?.textContent).toContain("3 changes cleared the threshold");
+    expect(noise?.textContent).not.toContain("4 changes cleared the threshold");
+  });
+
   it("renders four metric cards with latest-day and seven-day values", async () => {
     const host = await renderResults();
     const cards = [...host.querySelectorAll("[data-kpi]")];

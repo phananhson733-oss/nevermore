@@ -285,6 +285,7 @@ export function DailyBriefingResults({
   const actions = matchingActions(envelope);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
+  const shownChanges = result.changes.slice(0, 3);
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -403,7 +404,7 @@ export function DailyBriefingResults({
 
       <NoiseSummary
         filtered={result.filteredObservedRows}
-        shown={result.changes.length}
+        shown={shownChanges.length}
         complete={result.countComplete}
       />
 
@@ -420,13 +421,13 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("changes.intro")}
         </p>
-        {result.changes.length === 0 ? (
+        {shownChanges.length === 0 ? (
           <p className="mt-3 text-[13px] leading-[1.65] text-text-dark-secondary">
             {t("changes.empty")}
           </p>
         ) : (
           <div className="mt-4 grid gap-3">
-            {result.changes.slice(0, 3).map((change, index) => (
+            {shownChanges.map((change, index) => (
               <article
                 key={`change:${index}:${change.kind}`}
                 data-change
