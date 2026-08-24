@@ -1658,7 +1658,15 @@
         "current": "Current 7 days",
         "previous": "Previous 7 days",
         "firstObservedPrevious": "First observed in this comparison; the prior row is not treated as zero or as proof of new indexing.",
-        "metrics": "{clicks} clicks · {impressions} impressions · {ctr} CTR · avg position {position}"
+        "metrics": "{clicks} clicks · {impressions} impressions · {ctr} CTR · avg position {position}",
+        "columns": {
+          "change": "Change",
+          "queryPage": "Query / Page",
+          "clicks": "Clicks",
+          "position": "Position",
+          "interpretation": "Interpretation"
+        },
+        "notObserved": "Not observed"
       },
       "changeKinds": {
         "click_opportunity": {

@@ -1658,7 +1658,15 @@
         "current": "当前 7 天",
         "previous": "前 7 天",
         "firstObservedPrevious": "仅表示本次比较首次观察；上一窗口不按 0 处理，也不证明是新收录。",
-        "metrics": "点击 {clicks} · 曝光 {impressions} · CTR {ctr} · 平均排名 {position}"
+        "metrics": "点击 {clicks} · 曝光 {impressions} · CTR {ctr} · 平均排名 {position}",
+        "columns": {
+          "change": "变化",
+          "queryPage": "查询词 / 页面",
+          "clicks": "点击",
+          "position": "排名",
+          "interpretation": "解读"
+        },
+        "notObserved": "未观察到"
       },
       "changeKinds": {
         "click_opportunity": {

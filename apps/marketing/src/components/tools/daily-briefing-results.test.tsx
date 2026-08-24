@@ -365,13 +365,89 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     ];
     const host = await renderResults(envelope({ changes }));
 
-    expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
+    const table = host.querySelector('[role="table"]');
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-change]")];
+
+    expect(table).not.toBeNull();
+    expect(
+      [...host.querySelectorAll('[role="columnheader"]')].map((cell) =>
+        cell.textContent?.trim(),
+      ),
+    ).toEqual([
+      "Change",
+      "Query / Page",
+      "Clicks",
+      "Position",
+      "Interpretation",
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(table?.querySelectorAll('[role="row"]')).toHaveLength(4);
+    for (const row of rows) {
+      expect(row.getAttribute("role")).toBe("row");
+      expect(row.querySelectorAll('[role="cell"]')).toHaveLength(5);
+    }
+    expect(rows[0]?.textContent?.split("evidence query 1")).toHaveLength(2);
+    expect(rows[0]?.textContent?.split("https://example.com/page-1")).toHaveLength(
+      2,
+    );
+    expect(host.textContent).toContain("20 → 12");
+    expect(host.textContent).toContain("8.0 → 8.2");
     expect(host.textContent).toContain("Visibility rose beyond the clicks it earned");
     expect(host.textContent).toContain("Not observed in the comparison window");
     expect(host.textContent).toContain("not proof of new indexing");
     expect(host.textContent).not.toContain("click_opportunity");
     expect(host.textContent).not.toContain("first_observed");
     expect(host.textContent).not.toContain("evidence query 4");
+  });
+
+  it("renders a first-observed baseline as not observed rather than zero", async () => {
+    const host = await renderResults(
+      envelope({ changes: [change("first_observed", 1)] }),
+    );
+    const row = host.querySelector("[data-change]") as HTMLElement;
+    const cells = [...row.querySelectorAll<HTMLElement>('[role="cell"]')];
+
+    expect(cells[2]?.textContent).toContain("Not observed → 12");
+    expect(cells[3]?.textContent).toContain("Not observed → 8.2");
+    expect(row.textContent).not.toContain("0 → 12");
+    expect(row.textContent).not.toContain("0.0 → 8.2");
+  });
+
+  it("renders unavailable positions without fabricating a numeric rank", async () => {
+    const source = change("stable_position_click_decline", 1, {
+      current: {
+        query: "evidence query 1",
+        clicks: 12,
+        impressions: 240,
+        position: Number.NaN,
+      },
+      previous: {
+        query: "evidence query 1",
+        clicks: 20,
+        impressions: 250,
+        position: Number.POSITIVE_INFINITY,
+      },
+    });
+    const host = await renderResults(envelope({ changes: [source] }));
+    const row = host.querySelector("[data-change]") as HTMLElement;
+    const position = row.querySelectorAll<HTMLElement>('[role="cell"]')[3];
+
+    expect(position?.textContent).toContain("Unavailable → Unavailable");
+    expect(position?.textContent).not.toContain("NaN");
+    expect(position?.textContent).not.toContain("Infinity");
+  });
+
+  it("keeps a bordered explanatory panel when no change clears the gates", async () => {
+    const host = await renderResults(envelope({ changes: [] }));
+    const section = host.querySelector('[data-result-section="changes"]');
+    const empty = section?.querySelector("[data-change-empty]");
+
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toContain(
+      "No change cleared the evidence floor in this run",
+    );
+    expect(section?.querySelector('[role="table"]')).toBeNull();
+    expect(section?.querySelector("[data-change]")).toBeNull();
   });
 
   it("renders only matched actions, caps them at three, and uses internal links", async () => {
