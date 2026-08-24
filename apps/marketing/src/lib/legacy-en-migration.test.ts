@@ -66,7 +66,7 @@ describe("frozen legacy English migration inventory", () => {
       )
       .digest("hex");
     expect(frozenInventoryDigest).toBe(
-      "163b066b2eb30662382cc35fd4d5ab7bb994f7beecb3989068a44f21d39571a7",
+      "872d8461a20104cfc4b5de4eddba2f3b57a6bb79862b771e490e8fa306f3a36c",
     );
   });
 
@@ -118,6 +118,16 @@ describe("frozen legacy English migration inventory", () => {
       targetPath: "/blog#comparisons",
       disposition: "replacement_redirect",
       migrationDate: "2026-08-13",
+    });
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/tools/internal-link-audit",
+      ),
+    ).toMatchObject({
+      targetPath: "/tools/internal-link-audit",
+      disposition: "direct_redirect",
+      migrationDate: "2026-07-31",
+      provenance: "cutover_route_history",
     });
     expect(
       LEGACY_EN_MIGRATION_ENTRIES.find(

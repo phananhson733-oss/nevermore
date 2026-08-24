@@ -1,5 +1,5 @@
 // @input  — @/types 中的 NavItem / FooterLink 类型
-// @output — 顶部主导航、Agents / Resources 子菜单及 footer 链接数据
+// @output — 顶部主导航、网站审查 / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import type { NavItem, FooterLink, NavMenuGroup, NavMenuItem } from "@/types";
@@ -12,14 +12,12 @@ export function menuItemPath(
 }
 
 /**
- * The SEO Agent and its technical focus, surfaced in the primary header submenu.
+ * Website-audit destinations surfaced in the primary header submenu.
  *
- * Two entries, one product: the technical route renders the same workbench over
- * the same engine and keeps its own URL, so it stays listed and reachable while
- * reading as a focus rather than a second Agent.
- *
- * Agent route directories are the catalogue authority. `navigation.test.ts`
- * fails if the menu and those directories drift in either direction.
+ * The two Agent entries stay on their Agent routes. Internal Link Audit is a
+ * standalone public tool, so its explicit href crosses out of the `/agents`
+ * base path. `/agents/tech` remains a compatibility route without primary-menu
+ * promotion.
  */
 export const agentsMenuGroups: NavMenuGroup[] = [
   {
@@ -38,9 +36,10 @@ export const agentsMenuGroups: NavMenuGroup[] = [
         icon: "Radar",
       },
       {
-        slug: "tech",
-        labelKey: "nav.agentsMenu.tech.label",
-        descriptionKey: "nav.agentsMenu.tech.description",
+        slug: "internal-link-audit",
+        href: "/tools/internal-link-audit",
+        labelKey: "nav.agentsMenu.internalLinkAudit.label",
+        descriptionKey: "nav.agentsMenu.internalLinkAudit.description",
         icon: "Wrench",
       },
     ],

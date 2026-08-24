@@ -62,9 +62,10 @@ as soft 404s.
   `free-seo-consultation`, `free-white-label-seo`,
   `marketing-attribution-for-saas`, `serankings`, and
   `whitelabel-seo-tool`.
-- The pre-cutover audit routes redirect to their current Agent pages:
-  `/en/tools/seo-audit` → `/agents/seo` and
-  `/en/tools/internal-link-audit` → `/agents/tech`.
+- The retired pre-cutover SEO Audit route redirects to the SEO Agent:
+  `/en/tools/seo-audit` → `/agents/seo`.
+- The restored Internal Link Audit legacy route redirects to its canonical
+  public tool: `/en/tools/internal-link-audit` → `/tools/internal-link-audit`.
 - The retired comparison hub redirects to the maintained comparison section:
   `/en/compare` → `/blog#comparisons`.
 - Recovered legacy articles remain explicit repaired entries. Their final
