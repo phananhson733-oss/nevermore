@@ -56,12 +56,21 @@ pnpm exec vitest run --project unit \
 
 Expected: FAIL because no pre-run preview component or preview messages exist.
 
-**Step 3: Add the minimal localized preview contract**
+**Step 3: Add the approved localized titles, intros, and preview contract**
 
-Add matching EN/ZH keys under `tools.dailyBriefing`:
+Replace the weakened section titles, add the shared section introductions, and
+add matching preview copy under `tools.dailyBriefing`:
 
 ```json
 {
+  "changes": {
+    "title": "Changes above the noise threshold",
+    "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown."
+  },
+  "actions": {
+    "title": "Today's recommended actions",
+    "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool."
+  },
   "preview": {
     "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
     "actions": "Run the briefing to generate up to three actions tied to observed evidence."
@@ -73,6 +82,14 @@ Chinese:
 
 ```json
 {
+  "changes": {
+    "title": "超出噪声阈值的变化",
+    "intro": "对比最近完整 7 天与前 7 天，最多显示三条有证据支持的变化。"
+  },
+  "actions": {
+    "title": "今日建议动作",
+    "intro": "最多三项，按确定性的证据顺序排列；每项都把证据私密带到下一工具。"
+  },
   "preview": {
     "changes": "生成简报后，这里会显示最新完整对比窗口中有证据支持的变化。",
     "actions": "生成简报后，这里会显示最多三项与已观察证据绑定的动作。"
@@ -195,20 +212,13 @@ pnpm exec vitest run --project unit \
 Expected: FAIL because the evidence card still separates KPIs from changes and
 there is no compact noise section.
 
-**Step 3: Add exact section titles, intros, and noise messages**
+**Step 3: Add the compact noise messages**
 
-Replace the weakened titles and add introductions:
+The approved section titles and introductions already landed with the pre-run
+preview. Add the noise-summary messages:
 
 ```json
 {
-  "changes": {
-    "title": "Changes above the noise threshold",
-    "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown."
-  },
-  "actions": {
-    "title": "Today's recommended actions",
-    "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool."
-  },
   "noise": {
     "label": "Noise filter on",
     "complete": "{filtered} observed query rows did not clear a signal threshold. {shown} changes cleared the threshold.",
@@ -217,18 +227,10 @@ Replace the weakened titles and add introductions:
 }
 ```
 
-Add exact Chinese equivalents using the approved titles:
+Add exact Chinese equivalents:
 
 ```json
 {
-  "changes": {
-    "title": "超出噪声阈值的变化",
-    "intro": "对比最近完整 7 天与前 7 天，最多显示三条有证据支持的变化。"
-  },
-  "actions": {
-    "title": "今日建议动作",
-    "intro": "最多三项，按确定性的证据顺序排列；每项都把证据私密带到下一工具。"
-  },
   "noise": {
     "label": "噪声过滤已开启",
     "complete": "有 {filtered} 条已观察查询记录没有通过信号门槛；本次有 {shown} 项变化通过门槛。",
