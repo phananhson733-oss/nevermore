@@ -1806,7 +1806,7 @@
         "quotaAvailable": "{remaining} of {limit} shared runs remain this hour.",
         "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero.",
         "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it.",
-        "positionObservationReason": "No strict change lane can be evaluated on this property right now, so this runs weekly as provisional position movement and a watchlist rather than daily change detection.",
+        "positionObservationReason": "No strict change path can be evaluated on this property right now. Some queries carry a prior window of 50-99 impressions, which is enough for one provisional comparison, so this reads weekly.",
         "currentWatchlistReason": "No query on this property has a comparable prior window, so the briefing can describe current positions only and makes no change judgement.",
         "noClickLaneReason": "Only position paths could be evaluated this run. An average presented position is a week of impressions weighted together, so it does not bring something new to detect each morning; this reads weekly."
       },

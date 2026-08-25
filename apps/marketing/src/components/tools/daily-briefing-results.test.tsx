@@ -823,6 +823,9 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(host.textContent).toContain(
       "No strict change path could be evaluated this run",
     );
+    // Neither the cadence explanation nor the intro may promise that a
+    // movement is listed: the mode proves only that a comparison was possible.
+    expect(host.textContent).not.toContain("provisional position movement and a watchlist");
     // The mode proves only that a provisional comparison was possible, so the
     // intro must not promise that a movement is listed below it.
     expect(host.textContent).not.toContain("what follows is");

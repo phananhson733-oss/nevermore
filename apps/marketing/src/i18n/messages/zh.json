@@ -1806,7 +1806,7 @@
         "quotaAvailable": "本小时共享额度还剩 {remaining}/{limit} 次。",
         "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。",
         "unavailableReason": "本次没有读到查询词证据，因此无法判断这个站点适合每日还是每周节奏；日级解读同时被抑制。",
-        "positionObservationReason": "本站当前没有可评估的严格变化路径。本次按周给出待确认的位置移动与观察名单，而不是每日变化检测。",
+        "positionObservationReason": "本站当前没有可评估的严格变化路径。只有部分查询词的上一窗口达到 50–99 次曝光，够做一次临时比较，因此按周解读。",
         "currentWatchlistReason": "本站当前没有任何查询词具备可比的上一窗口，因此只能描述当前窗口的位置，不做变化判断。",
         "noClickLaneReason": "本轮能评估的只有位置类路径。平均展示位置是一周曝光加权出来的，不会每天带来新的可检测变化，因此按周解读。"
       },
