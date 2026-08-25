@@ -172,7 +172,7 @@ expect(JSON.stringify(result)).not.toMatch(
 
 (b) Add a test "omits bounds it was not given and keeps the legacy task shape": request without `maxFirstDomainRank`/`includeSerpInfo` → body has no `filters` key, `include_serp_info: false`, same `order_by` as above.
 
-(c) Add a test "drops unsafe or oversized competitor URLs and titles without failing the row": items with `url: "javascript:alert(1)"`, `url: "https://user:pw@competitor.example/x"`, a 3,000-char https URL, and a 500-char title → `firstDomainUrl: null` for the first three, `firstDomainTitle` truncated to 200 chars (trimmed). A non-string `url` (e.g. `42`) throws `SourceError` `INVALID_RESPONSE`.
+(c) Add a test "drops unsafe or oversized competitor URLs and titles without failing the row": items with `url: "javascript:alert(1)"`, `url: "https://user:pw@competitor.example/x"`, a 3,000-char https URL, and a 500-char title built without whitespace (`"t".repeat(500)`) → `firstDomainUrl: null` for the first three, `firstDomainTitle` of exactly 200 chars. A non-string `url` (e.g. `42`) throws `SourceError` `INVALID_RESPONSE`.
 
 (d) Add a test "treats an unparseable provider timestamp as silence": `last_updated_time: "yesterday"` → `serpUpdatedAt: null`; `serp_info: null` → `serpItemTypes: null, serpUpdatedAt: null`; `search_volume_trend: null` → `searchVolumeTrend: null`; `core_keyword: ""` → `coreKeyword: null`.
 
@@ -490,8 +490,10 @@ describe("preScreenCompetitorKeyword", () => {
       ).band,
     ).toBe("prioritize_serp_check");
   });
-  it("does not let a one-letter or generic label act as a brand token", () => {
-    expect(competitorBrandTokens(["a.io", "www.example.com", "seo-tools.example"])).toEqual(["seo-tools"]);
+  it("does not let a short or generic-only label act as a brand token", () => {
+    // "a.io" -> "a" is too short; "www.io" -> "www" is generic and "io" is too short.
+    expect(competitorBrandTokens(["a.io", "www.io", "seo-tools.example"])).toEqual(["seo-tools"]);
+    expect(competitorBrandTokens(["www.example.com"])).toEqual(["example"]);
   });
 });
 ```
@@ -571,7 +573,7 @@ export interface CompetitorKeywordGapPreScreen {
 }
 ```
 
-Extend `CompetitorKeywordGapRow` with `competitorPages`, `coreKeyword`, `searchVolumeTrend`, `serpSnapshot`, `preScreen` (as in the design doc) and rename `CompetitorKeywordGapResultV2` → `CompetitorKeywordGapResultV3` adding `sampleRule`, `gscQueryRowCount`, `gscQueryPageRowCount`. Keep `export type CompetitorKeywordGapResultV2 = CompetitorKeywordGapResultV3;` is NOT wanted — rename everywhere (grep `ResultV2`).
+Extend `CompetitorKeywordGapRow` with `competitorPages`, `coreKeyword`, `searchVolumeTrend`, `serpSnapshot`, `preScreen` (as in the design doc) and rename `CompetitorKeywordGapResultV2` → `CompetitorKeywordGapResultV3` adding `sampleRule`, `gscQueryRowCount`, `gscQueryPageRowCount`. No alias is kept: grep the exact identifier `CompetitorKeywordGapResultV2` (five references: `types.ts`, `report.test.ts`, `competitor-keyword-gap-results.tsx`) and rename them in their own tasks. Do NOT touch `KeywordOpportunityResultV2` in `keyword-opportunity/`.
 
 - [ ] **Step 4: Implement `pre-screen.ts`**
 
@@ -723,6 +725,8 @@ function row(overrides: Partial<CompetitorKeywordGapProviderRow> & { keyword: st
 }
 ```
 
+Add `sampleRule: { maxCompetitorRank: 20, perCompetitorLimit: 300, serpSnapshotRequested: true }` to `BASE` (the `reportFor` helper at ~L44 is the single `buildCompetitorKeywordGapReport` call site and spreads `BASE`). Rewrite the existing "publishes the v2 schema version" test (~L86) and its `expectTypeOf<...ResultV2>` (~L92) as case 1 below.
+
 Cases:
 1. "publishes the v3 schema version and the sample rule": `schemaVersion === "competitor_keyword_gap.v3"`, `result.sampleRule` equals `{ maxCompetitorRank: 20, perCompetitorLimit: 300, serpSnapshotRequested: true }` when `input.sampleRule` is passed as such (report takes `sampleRule` from input verbatim and freezes it).
 2. "keeps each competitor's best-rank page": two rows for `one.example` with the same keyword at ranks 9 and 3 → `competitorPages["one.example"]` is the rank-3 row's `{url,title,etv}`; a competitor whose rows carry no URL → `{ url: null, title: null, etv: null }`; `competitorPages` has exactly the domains in `competitorRanks`.
@@ -776,7 +780,7 @@ const serpSnapshot =
       });
 ```
 
-- `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages: mapValues(competitorPages, p => p.url), competitorDomains: input.competitorDomains })`.
+- Hoist `searchVolume`, `cpc`, `keywordDifficulty`, `providerIntent`, `bestCompetitorRank` (currently computed inline in the returned literal at ~L556-564) into `const`s before the call, then `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages: Object.fromEntries(Object.entries(competitorPages).map(([domain, page]) => [domain, page.url])), competitorDomains: input.competitorDomains })`. (There is no `mapValues` helper in this file.)
 - `rowSort`: after the impressions comparison and BEFORE `competitorCount`, insert:
 
 ```ts
@@ -1003,8 +1007,8 @@ Also replace the existing `coverage.rows` usage? Keep `coverage.rows` (still use
 5. "filters by pre-screen band and by lane together": click `[data-pre-screen-filter="defer_brand_navigational"]` → only the brand row visible; the lane filter count chips keep their totals; clicking `[data-next-step-filter="review_content_gap"]` AND a band → intersection.
 6. "states the sample rule and in-rule counts in coverage": `[data-sample-rule]` text contains `coverage.sampleRule:maxRank=20,limit=300`; competitor card uses `coverage.rowsInRule` when `totalCount !== null`.
 7. "surfaces a GSC zero-row limitation": overlay `available`, `gscQueryRowCount: 0` → `limitations.gscNoRows` rendered and `[data-coverage-details]` open; `gscQueryRowCount: 40` → `overview.gscQueryRows:count=40` appears in the GSC card body and no limitation.
-8. "keeps the boundaries list at six sentences" (four existing + `dfsSnapshot` + `preScreen`).
-9. Keep every existing test green (the six-column header list is unchanged; the copy-plan button is tested in Task 8).
+8. "keeps the boundaries list at six sentences" (four existing + `dfsSnapshot` + `preScreen`). The two existing assertions `boundaries?.querySelectorAll("li")).toHaveLength(4)` (around lines 924 and 952, titled "...always states the four durable evidence boundaries" and "...names all four durable boundaries") are updated to six and retitled; they are the only existing expectations this change breaks.
+9. Keep every other existing test green (the six-column header list is unchanged; `[data-competitor-rank]` stays on whichever element renders; the copy-plan button is tested in Task 8).
 
 In `competitor-keyword-gap-messages.test.tsx` upgrade the fixture and assert the ZH page renders `DFS 预筛` and `采样规则` and no literal `tools.competitorKeywordGap` path.
 
@@ -1079,8 +1083,9 @@ export function buildCompetitorKeywordGapPlan(input: CompetitorKeywordGapPlanInp
 - [ ] **Step 1: Targeted suites**
 
 ```
-pnpm vitest run --project unit packages/sources/src/dataforseo packages/public-tools/src/competitor-keyword-gap apps/marketing/src/lib/tools/competitor-keyword-gap-handler.test.ts apps/marketing/src/lib/tools/competitor-keyword-gap-copy-plan.test.ts apps/marketing/src/lib/tools/tool-handoff.test.ts apps/marketing/src/components/tools apps/marketing/src/i18n apps/marketing/src/app/[locale]/tools
+pnpm vitest run --project unit packages/sources/src/dataforseo packages/public-tools/src/competitor-keyword-gap apps/marketing/src/lib/tools/competitor-keyword-gap-handler.test.ts apps/marketing/src/lib/tools/competitor-keyword-gap-copy-plan.test.ts apps/marketing/src/lib/tools/tool-handoff.test.ts apps/marketing/src/components/tools apps/marketing/src/i18n "apps/marketing/src/app/[locale]/tools"
 ```
+(The `[locale]` path must be quoted: unquoted it is a zsh glob and aborts the command.)
 Expected: all green. Record counts.
 
 - [ ] **Step 2: Typecheck** `pnpm typecheck` (root). Expected: pass.

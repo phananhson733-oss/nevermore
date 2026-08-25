@@ -101,6 +101,7 @@ Evaluated in order; the first match wins.
 |---|---|---|
 | keyword contains a competitor brand token (registrable label of a requested competitor) and no comparative token (`alternative(s)`, `vs`, `versus`, `competitor(s)`, `替代`, `对比`) | `defer_brand_navigational` | `competitor_brand_token` |
 | keyword looks like a hostname (`^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$` after key normalisation) | `defer_brand_navigational` | `domain_like_keyword` |
+| a competitor's ranking page path contains `/<keyword>.<tld>/` (a domain-profile page for another brand, e.g. `semrush.com/website/hanime.tv/overview/`) | `defer_brand_navigational` | `competitor_domain_profile_page` |
 | provider intent is `navigational` | `defer_brand_navigational` | `provider_navigational_intent` |
 | KD or search volume is `provider_no_data` | `unbanded` | `dfs_metric_missing` |
 | KD > 60 | `defer_head_term` | `kd_high` |
@@ -120,10 +121,18 @@ Then the existing tie-breaks (competitor count, best rank, volume, keyword).
   "include_clickstream_data": false,
   "include_serp_info": true,
   "filters": [["first_domain_serp_element.rank_group", "<=", 20]],
-  "order_by": ["keyword_data.keyword_info.search_volume,desc"],
+  "order_by": [
+    "first_domain_serp_element.etv,desc",
+    "keyword_data.keyword_info.search_volume,desc"
+  ],
   "limit": 300, "offset": 0
 }
 ```
+
+Ordering by the competitor page's estimated traffic (`etv`, rank-weighted) rather
+than raw search volume was decided by the 2026-08-25 probe: even at
+`rank_group <= 20` the pool for a large competitor is ~68k rows and the
+volume-ordered head is dominated by domain-profile pages for other brands.
 
 `DataForSeoDomainIntersectionRequest` gains two optional, typed bounds
 (`maxFirstDomainRank`, `includeSerpInfo`); the client composes the provider
