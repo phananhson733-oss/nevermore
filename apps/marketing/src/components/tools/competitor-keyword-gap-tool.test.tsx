@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// @input  -- authenticated session status and a valid competitor-gap form
-// @output -- proof signed-out visitors see sign-in without a billable tool POST
+// @input  -- authenticated session status, a valid competitor-gap form, and v3 success bodies
+// @output -- proof signed-out visitors see sign-in without a billable tool POST and off-contract bodies never render
 // @pos    -- interaction contract for the Marketing competitor keyword gap tool
 
 import { act, type ComponentType } from "react";
@@ -15,9 +15,8 @@ type ToolProps = {
 };
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
-  signInDialogMock: vi.fn(
-    ({ open }: { readonly open: boolean }) =>
-      open ? <div data-testid="sign-in-dialog">sign in</div> : null,
+  signInDialogMock: vi.fn(({ open }: { readonly open: boolean }) =>
+    open ? <div data-testid="sign-in-dialog">sign in</div> : null,
   ),
   trackMarketingEventMock: vi.fn(),
 }));
@@ -71,7 +70,7 @@ let root: Root | null = null;
 const ENVELOPE: CompetitorKeywordGapEnvelope = {
   run: {
     tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v2",
+    schemaVersion: "competitor_keyword_gap.v3",
     mode: "public_preview",
     scope: "site",
     persistence: "none",
@@ -84,6 +83,11 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
     competitorDomains: ["rival.example"],
     marketCode: "US",
     languageCode: "en",
+    sampleRule: {
+      maxCompetitorRank: 20,
+      perCompetitorLimit: 300,
+      serpSnapshotRequested: true,
+    },
     requestedCompetitors: 1,
     completedCompetitors: 1,
     unavailableCompetitors: 0,
@@ -102,6 +106,8 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
     overlayStatus: "not_requested",
     gscQueryTruncated: false,
     gscQueryPageTruncated: false,
+    gscQueryRowCount: null,
+    gscQueryPageRowCount: null,
   },
 };
 
@@ -110,10 +116,19 @@ const ACTIONABLE_ENVELOPE: CompetitorKeywordGapEnvelope = {
   result: {
     ...ENVELOPE.result,
     overlayStatus: "available",
+    gscQueryRowCount: 1,
+    gscQueryPageRowCount: 1,
     rows: [
       {
         keyword: "approval workflow software",
         competitorRanks: { "rival.example": 4 },
+        competitorPages: {
+          "rival.example": {
+            url: "https://rival.example/approvals",
+            title: "Approval workflow software",
+            etv: 812.4,
+          },
+        },
         competitorCount: 1,
         bestCompetitorRank: 4,
         ownState: "not_observed_in_provider_rankings",
@@ -121,6 +136,17 @@ const ACTIONABLE_ENVELOPE: CompetitorKeywordGapEnvelope = {
         cpc: { availability: "available", value: 4.2 },
         keywordDifficulty: { availability: "available", value: 31 },
         providerIntent: "commercial",
+        coreKeyword: "approval workflow",
+        searchVolumeTrend: { monthly: 4, quarterly: -2, yearly: 11 },
+        serpSnapshot: {
+          itemTypes: ["organic", "ai_overview"],
+          updatedAt: "2026-05-14T18:17:21.000Z",
+        },
+        preScreen: {
+          band: "stretch",
+          basis: "dfs_estimate",
+          reason: "kd_mid_rank_top20",
+        },
         gsc: {
           queryStatus: "observed_weak",
           evidenceBasis: "query",
@@ -151,9 +177,11 @@ beforeEach(() => {
     value: scrollIntoViewMock,
     writable: true,
   });
-  globalThis.fetch = vi.fn().mockResolvedValue(
-    Response.json({ signedIn: false }),
-  ) as unknown as typeof fetch;
+  globalThis.fetch = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json({ signedIn: false }),
+    ) as unknown as typeof fetch;
 });
 
 afterEach(async () => {
@@ -182,13 +210,7 @@ async function renderTool(
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
-    root?.render(
-      <Tool
-        locale="en"
-        properties={properties}
-        markets={["US"]}
-      />,
-    );
+    root?.render(<Tool locale="en" properties={properties} markets={["US"]} />);
   });
   return host;
 }
@@ -229,7 +251,10 @@ async function change(
     !(field instanceof HTMLInputElement) &&
     !(field instanceof HTMLSelectElement)
   ) {
-    expect(field, "expected the requested form control to render").not.toBeNull();
+    expect(
+      field,
+      "expected the requested form control to render",
+    ).not.toBeNull();
     return;
   }
   const prototype =
@@ -352,11 +377,8 @@ describe("CompetitorKeywordGapTool", () => {
         .autocomplete,
     ).toBe("off");
     expect(
-      (
-        host.querySelector(
-          'input[name="competitorDomain"]',
-        ) as HTMLInputElement
-      ).autocomplete,
+      (host.querySelector('input[name="competitorDomain"]') as HTMLInputElement)
+        .autocomplete,
     ).toBe("off");
   });
 
@@ -769,29 +791,58 @@ describe("CompetitorKeywordGapTool", () => {
     );
   });
 
-  it.each(["stale-v1", "malformed-v2"] as const)(
+  it.each([
+    "stale-v2",
+    "malformed-gsc",
+    "unknown-pre-screen-band",
+    "non-string-competitor-page-url",
+    "missing-sample-rule",
+  ] as const)(
     "rejects a %s success body before rendering or completing analytics",
     async (kind) => {
-      const staleV1 = {
-        ...ENVELOPE,
-        run: { ...ENVELOPE.run, schemaVersion: "competitor_keyword_gap.v1" },
-      };
       const actionableRow = ACTIONABLE_ENVELOPE.result.rows[0]!;
-      const { pageStatus: _pageStatus, ...incompleteGsc } =
-        actionableRow.gsc;
-      const malformedV2 = {
+      const { pageStatus: _pageStatus, ...incompleteGsc } = actionableRow.gsc;
+      const { sampleRule: _sampleRule, ...resultWithoutRule } =
+        ACTIONABLE_ENVELOPE.result;
+      const withRows = (rows: readonly unknown[]) => ({
         ...ACTIONABLE_ENVELOPE,
-        result: {
-          ...ACTIONABLE_ENVELOPE.result,
-          rows: [{ ...actionableRow, gsc: incompleteGsc }],
+        result: { ...ACTIONABLE_ENVELOPE.result, rows },
+      });
+      const bodies: Record<typeof kind, unknown> = {
+        "stale-v2": {
+          ...ACTIONABLE_ENVELOPE,
+          run: {
+            ...ACTIONABLE_ENVELOPE.run,
+            schemaVersion: "competitor_keyword_gap.v2",
+          },
+        },
+        "malformed-gsc": withRows([{ ...actionableRow, gsc: incompleteGsc }]),
+        "unknown-pre-screen-band": withRows([
+          {
+            ...actionableRow,
+            preScreen: { ...actionableRow.preScreen, band: "winnable" },
+          },
+        ]),
+        "non-string-competitor-page-url": withRows([
+          {
+            ...actionableRow,
+            competitorPages: {
+              "rival.example": {
+                ...actionableRow.competitorPages["rival.example"],
+                url: 42,
+              },
+            },
+          },
+        ]),
+        "missing-sample-rule": {
+          ...ACTIONABLE_ENVELOPE,
+          result: resultWithoutRule,
         },
       };
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(Response.json({ signedIn: true }))
-        .mockResolvedValueOnce(
-          Response.json({ data: kind === "stale-v1" ? staleV1 : malformedV2 }),
-        );
+        .mockResolvedValueOnce(Response.json({ data: bodies[kind] }));
       globalThis.fetch = fetchMock as unknown as typeof fetch;
       const host = await renderTool();
 
@@ -834,7 +885,10 @@ describe("CompetitorKeywordGapTool", () => {
     fetchMock
       .mockResolvedValueOnce(Response.json({ signedIn: true }))
       .mockResolvedValueOnce(
-        Response.json({ error: { code: "brand_new_private_error" } }, { status: 502 }),
+        Response.json(
+          { error: { code: "brand_new_private_error" } },
+          { status: 502 },
+        ),
       );
     await click(buttonWith(host, "actions.run"));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
