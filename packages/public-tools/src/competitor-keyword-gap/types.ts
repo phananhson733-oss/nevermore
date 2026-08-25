@@ -179,16 +179,23 @@ export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES = [
  * page two, KD 31-60 on page two); it must not be rendered as "mid KD". The "top20"
  * half is the sample rule (`COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK`), which the
  * policy does not re-check.
+ *
+ * The union is derived from this array, like the bands, so a reason cannot exist
+ * without a place in the surface's copy.
  */
+export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS = [
+  "kd_low_rank_top10",
+  "kd_mid_rank_top20",
+  "kd_high",
+  "dfs_metric_missing",
+  "competitor_brand_token",
+  "competitor_domain_profile_page",
+  "domain_like_keyword",
+  "provider_navigational_intent",
+] as const;
+
 export type CompetitorKeywordGapPreScreenReason =
-  | "kd_low_rank_top10"
-  | "kd_mid_rank_top20"
-  | "kd_high"
-  | "dfs_metric_missing"
-  | "competitor_brand_token"
-  | "competitor_domain_profile_page"
-  | "domain_like_keyword"
-  | "provider_navigational_intent";
+  (typeof COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS)[number];
 
 /** Second, orthogonal axis next to `nextStep`; an estimate or a heuristic, never winnability. */
 export interface CompetitorKeywordGapPreScreen {
