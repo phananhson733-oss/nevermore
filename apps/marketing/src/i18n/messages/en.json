@@ -1877,7 +1877,7 @@
         "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed."
       },
       "evidence": {
-        "title": "Evidence floor and observable coverage",
+        "title": "Why there were not more signals",
         "thresholdSummary": "A query or query/page needs at least 100 impressions. A click movement needs at least 15% relative change and 3 absolute clicks. Position is considered stable only within 0.5.",
         "filteredComplete": "{count} observed query rows were read but did not clear a signal threshold.",
         "filteredPartial": "{count} rows in the observed prefix did not clear a signal threshold. The count is not property-wide because the read was partial or unavailable.",
