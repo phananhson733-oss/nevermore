@@ -3319,3 +3319,153 @@ describe("page dimension lanes", () => {
     expect(result.rowAccounting.observedRows).toBe(3);
   });
 });
+
+describe("page changes beside query changes", () => {
+  const PAGE = "https://example.com/guide";
+  const QUERY = "widget guide";
+
+  function pairedQueryDecline() {
+    return {
+      currentQueries: [queryRow(QUERY, 400, 2, 12)],
+      previousQueries: [queryRow(QUERY, 400, 20, 12)],
+      currentQueryPages: [queryPageRow(QUERY, PAGE, 400, 2, 12)],
+      previousQueryPages: [queryPageRow(QUERY, PAGE, 400, 20, 12)],
+    };
+  }
+
+  it("does not report the same page twice under two headings", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      pairedQueryDecline(),
+    );
+
+    // The query lane already named this page, and it is the more precise
+    // statement. Reporting it again as a page change would let one page be
+    // counted as two findings.
+    expect(result.changes).toMatchObject([
+      { kind: "stable_position_click_decline", query: QUERY, page: PAGE },
+    ]);
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageActions).toEqual([]);
+  });
+
+  it("still reports a different page while a query change holds its own", () => {
+    const other = "https://example.com/other";
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4), pageRow(other, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1), pageRow(other, 400, 20, 9.1)],
+      pairedQueryDecline(),
+    );
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_click_decline", page: other },
+    ]);
+  });
+
+  it("shares the three-row display budget with the query changes", () => {
+    const pages = Array.from({ length: 4 }, (_, index) =>
+      pageRow(`https://example.com/p${index}`, 380, 8, 9.4),
+    );
+    const previous = Array.from({ length: 4 }, (_, index) =>
+      pageRow(`https://example.com/p${index}`, 400, 20, 9.1),
+    );
+    const result = pageReport(pages, previous, pairedQueryDecline());
+
+    expect(result.changes).toHaveLength(1);
+    // One slot spent on the query change leaves two, not three.
+    expect(result.pageChanges).toHaveLength(2);
+    expect(result.pageAccounting.notSelectedVisibleRows).toBe(2);
+  });
+});
+
+describe("suggested checks", () => {
+  const PAGE_ONE_QUERY = "messi zodiac sign";
+  const PAGE_ONE_PAGE = "https://example.com/wiki/messi";
+
+  it("offers the rows it just displayed as checks when no lane found a change", () => {
+    const rows = [queryRow(PAGE_ONE_QUERY, 185, 0, 8.2)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, [
+        queryPageRow(PAGE_ONE_QUERY, PAGE_ONE_PAGE, 185, 0, 8.2),
+      ]),
+      previousQueryEvidence: evidence(rows, [
+        queryPageRow(PAGE_ONE_QUERY, PAGE_ONE_PAGE, 185, 0, 8.2),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // Nothing changed and nothing is claimed to have changed. The check says
+    // only where the property currently stands, which is what makes it
+    // offerable on evidence no lane could turn into a change.
+    expect(result.actions).toEqual([]);
+    expect(result.queryWatchlist.items).toHaveLength(1);
+    expect(result.suggestedChecks).toEqual({
+      evidence: "observed",
+      items: [
+        {
+          query: PAGE_ONE_QUERY,
+          page: PAGE_ONE_PAGE,
+          band: "page_one",
+          sampleKind: "sample_floor_reached",
+          destination: "on-page-seo-check",
+        },
+      ],
+      notCheckable: 0,
+    });
+  });
+
+  it("counts a displayed row it cannot turn into a check", () => {
+    const far = "buried term";
+    const rows = [
+      queryRow(PAGE_ONE_QUERY, 185, 0, 8.2),
+      queryRow(far, 300, 0, 62),
+    ];
+    const pages = [
+      queryPageRow(PAGE_ONE_QUERY, PAGE_ONE_PAGE, 185, 0, 8.2),
+      queryPageRow(far, "https://example.com/buried", 300, 0, 62),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // Position 62 is displayed because it is real, and is not offered as a
+    // check because nothing done to the page this week changes it. The count
+    // explains the gap between the rows above and the checks below.
+    expect(result.queryWatchlist.items).toHaveLength(2);
+    expect(result.suggestedChecks.items).toMatchObject([
+      { query: PAGE_ONE_QUERY },
+    ]);
+    expect(result.suggestedChecks.notCheckable).toBe(1);
+  });
+
+  it("withholds a check for a row whose page could not be attributed", () => {
+    const rows = [queryRow(PAGE_ONE_QUERY, 185, 0, 8.2)];
+    const result = report({
+      // No query-page split at all, so the row is displayed without a page.
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.queryWatchlist.items).toMatchObject([
+      { query: PAGE_ONE_QUERY, page: null },
+    ]);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(1);
+  });
+
+  it("reports checks as unavailable rather than empty when nothing was read", () => {
+    const result = report().result;
+
+    expect(result.queryWatchlist.evidence).toBe("unavailable");
+    expect(result.suggestedChecks).toEqual({
+      evidence: "unavailable",
+      items: [],
+      notCheckable: null,
+    });
+  });
+});
