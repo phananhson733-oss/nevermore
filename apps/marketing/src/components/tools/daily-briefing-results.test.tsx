@@ -1211,3 +1211,17 @@ describe("DailyBriefingResults unread query evidence", () => {
     expect(changes?.textContent).not.toContain("Strict changes appear first");
   });
 });
+
+describe("DailyBriefingResults folded explanation", () => {
+  it("labels the fold with the question it answers", async () => {
+    const host = await renderResults();
+    const details = host.querySelector("[data-evidence-details]");
+
+    // The section holds the noise strip, the signal funnel, coverage and
+    // anonymization. A reader opens it to find out why the briefing was
+    // thin, not to read the name of a threshold.
+    expect(details?.querySelector("summary")?.textContent).toContain(
+      "Why there were not more signals",
+    );
+  });
+});
