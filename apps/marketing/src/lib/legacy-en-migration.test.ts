@@ -65,8 +65,13 @@ describe("frozen legacy English migration inventory", () => {
           .join("\n"),
       )
       .digest("hex");
+    // Rotated 2026-08-25: the two AstrologyWiki entries were repointed from the
+    // retired evidence-boundary correction to /blog/programmatic-seo-at-scale,
+    // and the recovered_redirect on the zero-to-5000-users slug became a
+    // replacement_redirect because the article it recovered is gone. Membership
+    // and every other outcome are unchanged.
     expect(frozenInventoryDigest).toBe(
-      "872d8461a20104cfc4b5de4eddba2f3b57a6bb79862b771e490e8fa306f3a36c",
+      "4dbd46b64352aaa820bf8bb54165ccf5fa5c219f62f62bcf52630706cd9eef5a",
     );
   });
 

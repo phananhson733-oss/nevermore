@@ -44,7 +44,6 @@ export function getMarketingRedirects() {
       ["free-white-label-seo", "best-white-label-seo-tool"],
       ["marketing-attribution-for-saas", "marketing-attribution-models"],
       ["serankings", "serankings-alternative"],
-      ["astrologywiki-case-study", "astrologywiki-zero-to-5000-users"],
     ].flatMap(([source, destination]) => [
       {
         source: `/blog/${source}`,
@@ -57,6 +56,28 @@ export function getMarketingRedirects() {
         statusCode: 301 as const,
       },
     ]),
+    // The AstrologyWiki case study circulated growth numbers this repository
+    // cannot verify. It was first rewritten into an evidence-boundary
+    // correction, which left a meta-article in the blog that read to visitors
+    // as a publishing fault rather than a story. Both slugs are retired onto
+    // the page-production guide they were cited from. Unlike the blog slugs
+    // above, /zh/blog is a real route, so the Chinese URL needs its own entry
+    // instead of folding onto the default locale.
+    ...[
+      "/blog/astrologywiki-case-study",
+      "/en/blog/astrologywiki-case-study",
+      "/blog/astrologywiki-zero-to-5000-users",
+      "/en/blog/astrologywiki-zero-to-5000-users",
+    ].map((source) => ({
+      source,
+      destination: "/blog/programmatic-seo-at-scale",
+      statusCode: 301 as const,
+    })),
+    {
+      source: "/zh/blog/astrologywiki-case-study",
+      destination: "/zh/blog/programmatic-seo-at-scale",
+      statusCode: 301 as const,
+    },
   ];
 }
 

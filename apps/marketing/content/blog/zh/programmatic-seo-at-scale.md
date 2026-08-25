@@ -46,4 +46,4 @@ localeExclusive: false
 <p><strong>孤立页面。</strong>确保每个页面至少从一个分类页获得链接。</p>
 
 <h2>用证据驱动的工作流扩展</h2>
-<p>在扩展模板之前，用连贯的工作流审阅需求、页面目的、内链与衡量方案。若想看一个把增长叙事收回到仓库证据边界内的更正示例，请参见 <a href="/zh/blog/astrologywiki-case-study">AstrologyWiki 增长记录更正</a>。衡量框架参见<a href="/zh/blog/marketing-attribution-models">归因模型指南</a>。</p>
+<p>在扩展模板之前，用连贯的工作流审阅需求、页面目的、内链与衡量方案。公开审计能证明到什么边界，参见 <a href="/zh/blog/public-seo-audit-boundaries">Sitemap、robots.txt 与公开 SEO 审计的边界</a>。衡量框架参见<a href="/zh/blog/marketing-attribution-models">归因模型指南</a>。</p>

@@ -62,4 +62,4 @@ localeExclusive: false
 <p><strong>"团队太小，不需要工作流。"</strong>小团队未必需要更多工具，但仍然需要把决策、责任人和衡量标准保存在一个可重复流程里。</p>
 
 <h2>推荐阅读</h2>
-<p>如果你准备运行第一个自动化增长实验，请阅读我们的<a href="/zh/blog/growth-experiment-playbook">分步实验手册</a>。专注 SEO 的团队可以参考<a href="/zh/blog/programmatic-seo-at-scale">程序化 SEO 指南</a>。如果你想看一次把增长故事收回到仓库证据边界内的更正示例，请查看 <a href="/zh/blog/astrologywiki-case-study">AstrologyWiki 增长记录更正</a>。</p>
+<p>如果你准备运行第一个自动化增长实验，请阅读我们的<a href="/zh/blog/growth-experiment-playbook">分步实验手册</a>。专注 SEO 的团队可以参考<a href="/zh/blog/programmatic-seo-at-scale">程序化 SEO 指南</a>。如果你想知道一次受限抓取究竟能证明什么、不能证明什么，请查看<a href="/zh/blog/bounded-internal-link-crawl">受限内链抓取的边界说明</a>。</p>

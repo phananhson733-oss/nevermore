@@ -275,12 +275,19 @@ const REPAIR_TARGET_OVERRIDES: Readonly<
     "/blog/best-white-label-seo-tool",
     "replacement_redirect",
   ],
+  // Retired on 2026-08-25. The recovered article was an evidence-boundary
+  // correction of an unverifiable case study; it read to visitors as a
+  // publishing fault rather than a story, so both slugs now land on the
+  // page-production guide they were cited from. The migration cohort stays at
+  // its original date: this records where the legacy URL resolves today, and
+  // Google reads it from sitemap-legacy-en.xml, so it has to match the live
+  // 301 rather than preserve a target that no longer exists.
   "/en/blog/astrologywiki-zero-to-5000-users": [
-    "/blog/astrologywiki-zero-to-5000-users",
-    "recovered_redirect",
+    "/blog/programmatic-seo-at-scale",
+    "replacement_redirect",
   ],
   "/en/blog/astrologywiki-case-study": [
-    "/blog/astrologywiki-zero-to-5000-users",
+    "/blog/programmatic-seo-at-scale",
     "replacement_redirect",
   ],
   "/en/blog/9-best-marketing-attribution-tools-for-saas-in-2026": [

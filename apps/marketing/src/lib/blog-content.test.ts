@@ -108,7 +108,6 @@ describe("repository-backed blog content", () => {
       posts.map((post) => `/${post.locale}/blog/${post.slug}`),
     );
     const migratedLegacyUrls = [
-      "/en/blog/astrologywiki-zero-to-5000-users",
       "/en/blog/growth-experiment-playbook",
       "/en/blog/marketing-attribution-models",
       "/en/blog/organic-traffic-growth-case-study",
@@ -119,7 +118,6 @@ describe("repository-backed blog content", () => {
       "/en/blog/white-label-keyword-research",
       "/en/blog/bounded-internal-link-crawl",
       "/en/blog/public-seo-audit-boundaries",
-      "/zh/blog/astrologywiki-case-study",
       "/zh/blog/growth-experiment-playbook",
       "/zh/blog/marketing-attribution-models",
       "/zh/blog/programmatic-seo-at-scale",
@@ -158,8 +156,16 @@ describe("repository-backed blog content", () => {
     // 75 → 76 on 2026-08-20: 641107fa added the babylovegrowth alternatives
     // post, same pattern again. A count nobody updates with the content it
     // counts is red on main until the next unrelated branch notices.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(76);
-    expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
+    // 82 → 80 en / 9 → 8 zh on 2026-08-25: the AstrologyWiki correction is
+    // retired. Rewriting the unverifiable case study into a correction left a
+    // meta-article about our own publishing standard sitting in the blog feed,
+    // where it read as a fault rather than a story. Both English slugs and the
+    // Chinese one 301 onto programmatic-seo-at-scale. The number this line
+    // replaced said 76 while main actually carried 82: six posts landed since
+    // 2026-08-20 without moving it, so the gate was already red on main before
+    // this branch touched it. Same pattern the notes above keep recording.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(80);
+    expect(posts.filter((post) => post.locale === "zh")).toHaveLength(8);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
@@ -185,7 +191,6 @@ describe("repository-backed blog content", () => {
       "ai-marketing-automation-for-saas",
       "best-ai-marketing-and-cmo-tools-for-saas-in-2026",
       "gengrowth-vs-improvado",
-      "astrologywiki-zero-to-5000-users",
     ];
 
     const posts = await Promise.all(
@@ -217,7 +222,6 @@ describe("repository-backed blog content", () => {
       "9-best-marketing-attribution-tools-for-saas-in-2026",
       "ai-marketing-automation-for-saas",
       "gengrowth-vs-improvado",
-      "astrologywiki-zero-to-5000-users",
     ];
     const goneSlugs = [
       "gengrowth-vs-blaze",
