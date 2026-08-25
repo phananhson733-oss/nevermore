@@ -141,11 +141,19 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
       return host === domain || host.endsWith(`.${domain}`);
     }
     const prefix = new URL(property.trim());
-    return (
-      prefix.protocol === url.protocol &&
-      prefix.host.toLowerCase() === url.host.toLowerCase() &&
-      url.pathname.startsWith(prefix.pathname)
-    );
+    if (
+      prefix.protocol !== url.protocol ||
+      prefix.host.toLowerCase() !== url.host.toLowerCase()
+    ) {
+      return false;
+    }
+    // On a segment boundary, not a character one. A bare `startsWith` accepts
+    // `/aboutus` for a property scoped to `/about`, which is a different
+    // section of the site.
+    const base = prefix.pathname.endsWith("/")
+      ? prefix.pathname
+      : `${prefix.pathname}/`;
+    return url.pathname === prefix.pathname || url.pathname.startsWith(base);
   } catch {
     return false;
   }
@@ -245,10 +253,16 @@ function hasValidPayloadFields(
 
   if (value.source === "daily-search-briefing") {
     if (value.scope === "query_page") {
+      // Bound to the property for the same reason the page scope is: a
+      // syntactically safe URL from another site would attach Search Console
+      // evidence to a page this property never returned. Applied only to the
+      // daily-briefing source — a competitor gap handoff carries a competitor's
+      // page on purpose, and binding that one would break it.
       return (
         isDestination(value.destination) &&
         nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
-        nonEmptyString(value.page, MAX_PAGE_LENGTH)
+        typeof value.property === "string" &&
+        pageBelongsToProperty(value.property, value.page)
       );
     }
 

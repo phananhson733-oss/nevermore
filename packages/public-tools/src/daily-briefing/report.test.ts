@@ -3272,10 +3272,19 @@ describe("page dimension lanes", () => {
     // sanitized map is indistinguishable from a page that was never there.
     // Reading that as absence turned unusable evidence into proof of it.
     expect(result.pageChanges).toEqual([]);
-    expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
-      notEvaluated: 1,
-      evaluatedNoSignal: 0,
-      candidates: 0,
+    // Both lanes, not just the one that would have fired. A decline lane that
+    // recorded "evaluated, no signal" would be claiming it looked.
+    expect(result.pageAccounting.byLane).toEqual({
+      page_click_decline: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      page_first_observed: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
     });
   });
 
@@ -3288,7 +3297,88 @@ describe("page dimension lanes", () => {
     );
 
     expect(result.pageChanges).toEqual([]);
-    expect(result.pageAccounting.byLane?.page_first_observed.candidates).toBe(0);
+    expect(result.pageAccounting.byLane).toEqual({
+      page_click_decline: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      page_first_observed: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+    });
+  });
+
+  it("keeps one page identity across surrounding whitespace", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      // Same URL, one trailing space, and an unreadable metric. Keyed by the
+      // raw string these were two pages, so the unusable set never matched and
+      // the current row was reported as first observed.
+      [pageRow(`${PAGE} `, 10, 40, 10)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+  });
+
+  it.each([
+    [
+      "the current window",
+      { current: [pageRow(PAGE, 300, 400, 12)], previous: [pageRow(PAGE, 500, 50, 10)] },
+    ],
+    [
+      "two contradicting current rows",
+      {
+        current: [pageRow(PAGE, 300, 2, 12), pageRow(PAGE, 320, 4, 11)],
+        previous: [pageRow(PAGE, 500, 20, 10)],
+      },
+    ],
+  ])("counts a row it could not read in %s rather than dropping it", (
+    _label,
+    rows,
+  ) => {
+    const result = pageReport(rows.current, rows.previous);
+
+    // The window returned a row. Leaving it out of the denominator turned
+    // "one row we could not read" into "no such page", which is the same
+    // substitution the prior-window fix exists to prevent.
+    expect(result.pageAccounting.observedRows).toBe(1);
+    expect(result.pageAccounting.unreadableRows).toBe(1);
+    expect(result.pageAccounting.byLane?.page_click_decline.notEvaluated).toBe(1);
+    expect(result.pageAccounting.byLane?.page_first_observed.notEvaluated).toBe(
+      1,
+    );
+    expect(result.pageChanges).toEqual([]);
+  });
+
+  it.each([
+    ["only the previous window is on another basis", { previousPageAggregation: "byProperty" }],
+    ["only the current window is on another basis", { pageAggregation: "byProperty" }],
+  ])("rejects page evidence when %s", (_label, options) => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      options,
+    );
+
+    // Checked per window. Validating only the current one let last week's
+    // property-aggregated totals stand in for a page comparison.
+    expect(result.pageChanges).toEqual([]);
+    expect(result.limitations).toContain("page_evidence_unavailable");
+  });
+
+  it("calls a wrong-basis read unavailable even when it is also truncated", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      { pageAggregation: "byProperty", pageTruncated: true },
+    );
+
+    // A response on the wrong basis is not a prefix of the right one, so
+    // reporting it as partial would promise the rest is on its way.
+    expect(result.pageAccounting.evidence).toBe("unavailable");
   });
 
   it("rejects two page windows that agree on the wrong aggregation basis", () => {
@@ -3345,6 +3435,7 @@ describe("page dimension lanes", () => {
       observedRows: null,
       notSelectedVisibleRows: null,
       suppressedByQueryChange: null,
+      unreadableRows: null,
       byLane: null,
     });
     expect(result.limitations).toContain("page_evidence_unavailable");
@@ -3370,13 +3461,15 @@ describe("page dimension lanes", () => {
     expect(result.limitations).toContain("page_evidence_unavailable");
   });
 
-  it("calls one unread window unavailable even when the other is a prefix", () => {
-    const result = pageReport(null, [pageRow(PAGE, 400, 20, 9.1)], {
-      previousPageTruncated: true,
-    });
+  it.each([
+    ["the current window is unread", { current: null, previous: [pageRow(PAGE, 400, 20, 9.1)], options: { previousPageTruncated: true } }],
+    ["the previous window is unread", { current: [pageRow(PAGE, 380, 8, 9.4)], previous: null, options: { pageTruncated: true } }],
+  ])("calls it unavailable when %s and the other is a prefix", (_label, spec) => {
+    const result = pageReport(spec.current, spec.previous, spec.options);
 
-    // A comparison needs both windows. "Partly read" would describe a run that
-    // read part of what it needed; this one read none of one side.
+    // A comparison needs both windows, from either side. "Partly read"
+    // describes a run that read part of what it needed; this one read none of
+    // one side.
     expect(result.pageAccounting.evidence).toBe("unavailable");
   });
 
@@ -3655,6 +3748,38 @@ describe("suggested checks", () => {
     // that says "no evidence of change" would put both sentences on one page.
     expect(result.pageActions).toMatchObject([
       { kind: "page_click_decline", page: shared },
+    ]);
+    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.notCheckable).toBe(1);
+  });
+
+  it("withholds a check for a page a QUERY action already hands off", () => {
+    const page = "https://example.com/templates";
+    const actioned = "workflow templates";
+    const watched = "watched term";
+    const currentRows = [
+      queryRow(actioned, 400, 2, 12),
+      queryRow(watched, 185, 0, 8.2),
+    ];
+    const previousRows = [
+      queryRow(actioned, 400, 20, 12),
+      queryRow(watched, 185, 0, 8.2),
+    ];
+    // Both queries resolve to the same page, so the second one's check would
+    // sit under an action for that very page.
+    const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
+      rows.map((row) =>
+        queryPageRow(row.query, page, row.impressions, row.clicks, row.position),
+      );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, pages(currentRows)),
+      previousQueryEvidence: evidence(previousRows, pages(previousRows)),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // The query half of the exclusion set. Dropping it left this case green.
+    expect(result.actions).toMatchObject([
+      { kind: "stable_position_click_decline", page },
     ]);
     expect(result.suggestedChecks.items).toEqual([]);
     expect(result.suggestedChecks.notCheckable).toBe(1);

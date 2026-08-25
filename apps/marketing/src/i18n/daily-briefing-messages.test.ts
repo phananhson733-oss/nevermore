@@ -182,6 +182,7 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.foldPageChanges",
   "evidence.paths.pageUnavailable",
   "evidence.paths.pageSuppressed",
+  "evidence.paths.pageUnreadableRows",
   "review.priorBelowFloor",
   "review.introUnavailable",
   "review.introPositionObservation",

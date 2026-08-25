@@ -1823,6 +1823,62 @@ describe("DailyBriefingResults folded explanation", () => {
     );
   });
 
+  it("says where a suppressed page candidate went instead of losing it", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [],
+        pageActions: [],
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 4,
+          notSelectedVisibleRows: 0,
+          suppressedByQueryChange: 1,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(3, 0, 1),
+            page_first_observed: laneRows(4, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    // One candidate, no page row, and nothing said would be three numbers a
+    // reader cannot put together.
+    const line = host.querySelector("[data-page-suppressed]");
+    expect(line?.textContent).toContain("1 page candidates are not listed");
+    // And the reason may not rank one population above the other.
+    expect(line?.textContent).toContain("different populations");
+    expect(line?.textContent).not.toContain("more precise");
+  });
+
+  it("names a row it could not read rather than shrinking the denominator", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 5,
+          notSelectedVisibleRows: 0,
+          suppressedByQueryChange: 0,
+          unreadableRows: 2,
+          byLane: {
+            page_click_decline: laneRows(5, 0, 0),
+            page_first_observed: laneRows(5, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const intro = host.querySelector("[data-page-rows-intro]");
+
+    expect(intro?.textContent).toContain("5 page rows");
+    expect(intro?.textContent).toContain("2 of those page rows came back");
+  });
+
   it("names a page change as a whole page instead of inventing a query", async () => {
     const host = await renderResults(
       envelope({
@@ -1978,9 +2034,13 @@ describe("DailyBriefingResults folded explanation", () => {
     // from the impression floor, and naming the lanes instead would describe a
     // gate this run never hit.
     expect(facts?.textContent).not.toContain(
-      "Only position paths could be evaluated",
+      en.tools.dailyBriefing.facts.noClickLaneReason,
     );
-    expect(facts?.textContent).toContain("sample");
+    // The literal sentence, not the substring "sample" that half the catalog
+    // contains: the run must attribute its weekly cadence to the floor.
+    expect(facts?.textContent).toContain(
+      en.tools.dailyBriefing.facts.weeklyReason,
+    );
   });
 
   it("still explains the gap when every shown row failed to become a check", async () => {

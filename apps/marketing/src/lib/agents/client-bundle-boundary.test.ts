@@ -6,6 +6,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -53,41 +54,62 @@ interface Reference {
 }
 
 /**
- * Why the statement patterns are anchored to the start of a line.
+ * Read module references with the compiler's own parser.
  *
- * They scan raw text, so prose describing a module reads exactly like an
- * import of it: the sentence "must not import `@sf/sources`" in a doc comment
- * matched the side-effect pattern and reported the file that documents the
- * rule as the file that breaks it. Anchoring is what a comment cannot satisfy
- * — block-comment lines carry a leading `*`, line comments a leading `//` —
- * and unlike stripping comments first it needs no lexer, so a `/*` inside a
- * regex literal cannot swallow a real import and make this guard pass.
+ * Two hand-rolled versions failed in opposite directions. Scanning raw text
+ * matched prose: the sentence "must not import `@sf/sources`" in a doc comment
+ * reported the file documenting the rule as the file breaking it. Anchoring
+ * the patterns to a line start silenced that and quietly failed OPEN instead —
+ * `from /* server-only *\/ "@sf/sources"`, a comment inside a multi-line
+ * import, and `"use client"; import ...` on one line all stopped being seen,
+ * and a guard that stops seeing imports passes everything.
+ *
+ * Line position cannot decide lexical context. TypeScript already ships the
+ * scanner that can, so this asks it.
  */
 function referencesIn(source: string): readonly Reference[] {
+  const file = ts.createSourceFile(
+    "module.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
   const found: Reference[] = [];
-  // `import type { A } from "x"` and `import { type A } from "x"` differ: only
-  // the first erases the whole statement. The second still emits the import.
-  for (const match of source.matchAll(
-    /^[ \t]*(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/gm,
-  )) {
-    if (match[2] !== undefined) {
-      found.push({ specifier: match[2], typeOnly: match[1] !== undefined });
+
+  const literal = (node: ts.Node | undefined): string | null =>
+    node !== undefined && ts.isStringLiteralLike(node) ? node.text : null;
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const specifier = literal(node.moduleSpecifier);
+      if (specifier !== null) {
+        // `import type { A } from "x"` erases the whole statement.
+        // `import { type A } from "x"` does not: the import still emits.
+        found.push({
+          specifier,
+          typeOnly: node.importClause?.isTypeOnly === true,
+        });
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      const specifier = literal(node.moduleSpecifier);
+      if (specifier !== null) {
+        found.push({ specifier, typeOnly: node.isTypeOnly });
+      }
+    } else if (ts.isCallExpression(node)) {
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire =
+        ts.isIdentifier(node.expression) && node.expression.text === "require";
+      if (isDynamicImport || isRequire) {
+        const specifier = literal(node.arguments[0]);
+        // Neither form is ever erased: both run the module.
+        if (specifier !== null) found.push({ specifier, typeOnly: false });
+      }
     }
-  }
-  // A side-effect import has no `from` and is never erased: `import "x"` runs
-  // the whole module. The `from`-only pattern above walked straight past it.
-  for (const match of source.matchAll(/^[ \t]*import\s+['"]([^'"]+)['"]/gm)) {
-    if (match[1] !== undefined) {
-      found.push({ specifier: match[1], typeOnly: false });
-    }
-  }
-  for (const match of source.matchAll(
-    /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g,
-  )) {
-    if (match[1] !== undefined) {
-      found.push({ specifier: match[1], typeOnly: false });
-    }
-  }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(file, visit);
   return found;
 }
 
@@ -209,6 +231,52 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
       offenders,
       `use a subpath export instead:\n${offenders.join("\n")}`,
     ).toEqual([]);
+  });
+
+  it("reads every import spelling this codebase writes, and no prose", () => {
+    // Both hand-rolled scanners failed here: the first matched prose, the
+    // second stopped seeing real imports. Every line below is a case one of
+    // them got wrong.
+    const source = [
+      'import { a } from "@sf/public-tools";',
+      'import type { B } from "@sf/engine";',
+      "import {",
+      '  c, // re-exported from "./decoy"',
+      '} from "@sf/sources";',
+      'export { d } from "@sf/public-tools";',
+      'export * from "@sf/engine";',
+      'import "@sf/sources";',
+      'import { e } from /* server-only */ "@sf/sources";',
+      '"use client"; import { f } from "@sf/public-tools";',
+      "async function lazy() {",
+      '  return (await import("@sf/sources")).x;',
+      "}",
+      "const re = /[/*]/;",
+      '// import "@sf/engine";',
+      "/*",
+      '  import "@sf/engine";',
+      "*/",
+      "/**",
+      " * must not import `@sf/engine`, so the shape is restated here.",
+      " */",
+    ].join("\n");
+
+    const references = referencesIn(source);
+    const runtime = references
+      .filter((reference) => !reference.typeOnly)
+      .map((reference) => reference.specifier);
+
+    // Three barrels named in code; every `@sf/engine` mention in a comment is
+    // not a reference, and the decoy specifier inside a comment is not either.
+    expect(runtime.filter((v) => v === "@sf/public-tools")).toHaveLength(3);
+    expect(runtime.filter((v) => v === "@sf/sources")).toHaveLength(4);
+    expect(runtime).not.toContain("./decoy");
+    // The only `@sf/engine` references are the type-only import and the
+    // re-export; none of the three commented mentions count.
+    expect(references.filter((r) => r.specifier === "@sf/engine")).toEqual([
+      { specifier: "@sf/engine", typeOnly: true },
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
   });
 
   it("follows the aliased imports this app actually writes", () => {

@@ -2013,7 +2013,8 @@
             }
           },
           "pageRowsIntro": "{rows} page rows in the current window. These and the query rows above are two separate populations and do not add together.",
-          "pageSuppressed": "{count} page candidates are not listed separately: a query change above already names the same page, and that record is the more precise one."
+          "pageSuppressed": "{count} page candidates are not listed separately: this view shows one row per URL and a query change above already holds it. They are different populations — the page-level result covers every query for that URL, anonymized ones included — so the query row does not represent it.",
+          "pageUnreadableRows": "{count} of those page rows came back unreadable, so neither path evaluated them. That is not the same as their not being there."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",

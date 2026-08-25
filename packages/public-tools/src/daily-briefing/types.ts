@@ -457,6 +457,14 @@ export interface DailyBriefingPageAccounting {
    * cannot reconcile.
    */
   readonly suppressedByQueryChange: number | null;
+  /**
+   * Current-window rows that came back but could not be read.
+   *
+   * Counted inside `observedRows` and inside every lane's `notEvaluated`, and
+   * named separately because "we could not read it" and "it did not clear a
+   * threshold" are different answers to the same question.
+   */
+  readonly unreadableRows: number | null;
   readonly byLane: Readonly<
     Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
   > | null;

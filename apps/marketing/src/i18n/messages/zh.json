@@ -2013,7 +2013,8 @@
             }
           },
           "pageRowsIntro": "本轮当前窗口共 {rows} 条页面记录。这与上面的查询记录是两个不同的统计口径，不能相加。",
-          "pageSuppressed": "另有 {count} 条页面候选没有单独展示：同一页面已经由上面的查询词变化指名，那条记录更精确。"
+          "pageSuppressed": "另有 {count} 条页面候选没有单独展示：本视图对同一个 URL 只出一行，上方的查询词变化已经占用了它。两者是不同的统计总体——页面级结果覆盖该 URL 的全部查询词（含匿名化的），查询词那行并不代表它。",
+          "pageUnreadableRows": "其中 {count} 条页面记录本轮读回来了但读不出可用数值，两条路径都没有评估它们；这不等于它们不存在。"
         },
         "foldObservationsShown": "展示 {shown}/{candidates} 条观察候选",
         "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",

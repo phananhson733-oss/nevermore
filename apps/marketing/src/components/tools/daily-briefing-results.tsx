@@ -631,6 +631,12 @@ function SignalPathEvidence({
             {t("evidence.paths.pageRowsIntro", {
               rows: pageAccounting.observedRows,
             })}
+            {pageAccounting.unreadableRows !== null &&
+            pageAccounting.unreadableRows > 0
+              ? ` ${t("evidence.paths.pageUnreadableRows", {
+                  count: pageAccounting.unreadableRows,
+                })}`
+              : null}
           </p>
         ) : (
           <p className="text-[12px] leading-[1.6] text-text-dark-secondary">

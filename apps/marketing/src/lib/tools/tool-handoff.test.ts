@@ -420,6 +420,42 @@ describe("tool handoff storage", () => {
     ).toBe(false);
   });
 
+  /**
+   * A payload whose one field under test has the requested length and whose
+   * every other field stays valid.
+   *
+   * Padding with `x` used to be enough. Now that a page has to belong to its
+   * property, a page of 2,048 x's fails the membership check rather than the
+   * length one, and a long property no longer contains the fixture's page —
+   * so the test would pass for the wrong reason in both directions.
+   */
+  function payloadWithLength(
+    field: "property" | "query" | "page" | "evidenceId",
+    length: number,
+  ) {
+    if (field === "page") {
+      const base = "https://example.com/";
+      return {
+        ...payload(),
+        page: base + "x".repeat(Math.max(0, length - base.length)),
+      };
+    }
+    if (field === "property") {
+      const prefix = "sc-domain:";
+      const tail = ".example.com";
+      const domain =
+        "x".repeat(Math.max(1, length - prefix.length - tail.length)) + tail;
+      // The page moves under the generated domain, so the pair stays coherent
+      // while only the measured string grows.
+      return {
+        ...payload(),
+        property: `${prefix}${domain}`,
+        page: `https://${domain}/pricing`,
+      };
+    }
+    return { ...payload(), [field]: "x".repeat(length) };
+  }
+
   it.each([
     ["property", 512],
     ["query", 512],
@@ -429,17 +465,11 @@ describe("tool handoff storage", () => {
     const exact = storage();
     const oversized = storage();
 
+    expect(writeToolHandoff(exact, 1_000, payloadWithLength(field, max))).toBe(
+      true,
+    );
     expect(
-      writeToolHandoff(exact, 1_000, {
-        ...payload(),
-        [field]: "x".repeat(max),
-      }),
-    ).toBe(true);
-    expect(
-      writeToolHandoff(oversized, 1_000, {
-        ...payload(),
-        [field]: "x".repeat(max + 1),
-      }),
+      writeToolHandoff(oversized, 1_000, payloadWithLength(field, max + 1)),
     ).toBe(false);
   });
 
@@ -518,6 +548,39 @@ describe("tool handoff storage", () => {
     }
   });
 
+  it("binds the query_page scope to its property too", () => {
+    const session = storage();
+
+    // Same provenance rule, same reason: a safe-looking URL from another site
+    // would attach this property's Search Console evidence to a page it never
+    // returned.
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...payload(),
+        page: "https://unrelated.test/pricing",
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves a competitor gap handoff free to name another site", () => {
+    const session = storage();
+    const now = 1_760_000_000_000;
+
+    // The whole point of that tool is a competitor's page, which by definition
+    // is not under the operator's own property. Binding this source the way
+    // the briefing source is bound would break it, so the fixture names a page
+    // the membership rule would refuse.
+    const payload = {
+      ...competitorGapPayload(),
+      page: "https://competitor.test/pricing",
+    };
+
+    expect(writeToolHandoff(session, now, payload)).toBe(true);
+    expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toMatchObject({
+      page: "https://competitor.test/pricing",
+    });
+  });
+
   it("accepts a subdomain of an sc-domain property", () => {
     const session = storage();
     const now = 1_760_000_000_000;
@@ -527,8 +590,35 @@ describe("tool handoff storage", () => {
     };
 
     // sc-domain covers every subdomain, so refusing www would refuse the most
-    // common shape a real property returns.
+    // common shape a real property returns. Round-tripped, because a branch
+    // that returns true without storing anything also returns true.
     expect(writeToolHandoff(session, now, payload)).toBe(true);
+    expect(
+      consumeToolHandoff(session, now + 1, "traffic-drop-diagnosis"),
+    ).toEqual({
+      ...payload,
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+  });
+
+  it.each([
+    ["the prefix path itself", "https://example.com/about", true],
+    ["a page under the prefix", "https://example.com/about/team", true],
+    // A character-prefix match would accept this; it is a different section.
+    ["a sibling sharing a name prefix", "https://example.com/aboutus", false],
+    ["another protocol", "http://example.com/about/team", false],
+    ["another port", "https://example.com:8443/about/team", false],
+  ])("scopes a url-prefix property to %s", (_label, page, accepted) => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property: "https://example.com/about",
+        page,
+      }),
+    ).toBe(accepted);
   });
 
   it("carries a page with no query for a page-dimension signal", () => {

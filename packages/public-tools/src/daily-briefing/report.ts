@@ -1692,19 +1692,19 @@ function validPageRows(rows: readonly GscPageRow[]): PageRowSet {
   const unique = new Map<string, GscPageRow>();
   const unusable = new Set<string>();
   for (const row of rows) {
+    // One identity, and every map, set and lookup downstream uses it. Deriving
+    // a trimmed key and then keying by the raw string made "…/a " and "…/a"
+    // two different pages, which let a row rejected under one spelling be
+    // reported as absent under the other.
     const page = row.page.trim();
     if (page === "") continue;
-    if (!isMetricRowValid(row)) {
-      unique.delete(row.page);
-      unusable.add(row.page);
+    const normalized: GscPageRow = { ...row, page };
+    if (!isMetricRowValid(row) || unique.has(page) || unusable.has(page)) {
+      unique.delete(page);
+      unusable.add(page);
       continue;
     }
-    if (unique.has(row.page) || unusable.has(row.page)) {
-      unique.delete(row.page);
-      unusable.add(row.page);
-      continue;
-    }
-    unique.set(row.page, row);
+    unique.set(page, normalized);
   }
   return { rows: [...unique.values()], unusable };
 }
@@ -1735,6 +1735,8 @@ const PAGE_DESTINATIONS: Readonly<
 interface PageCandidateSet {
   readonly candidates: readonly PageCandidate[];
   readonly observedRows: number;
+  /** Current rows returned but not readable; counted, never dropped. */
+  readonly unreadableCurrentRows: number;
   readonly pageFloorRows: number;
   readonly pairedPageRows: number;
   readonly lanes: Readonly<
@@ -1881,7 +1883,11 @@ function pageCandidatesFor(
     (a, b) => b.order - a.order || a.change.page.localeCompare(b.change.page),
   );
 
-  const observedRows = currentRows.length;
+  // Current-window rows we could not read still happened. Leaving them out of
+  // the denominator made "0 of 0 rows" out of a window that returned one, and
+  // made an unreadable page indistinguishable from an absent one.
+  const observedRows = currentRows.length + currentSet.unusable.size;
+  const unreadableCurrentRows = currentSet.unusable.size;
   return {
     // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
     // relies on a stable sort to keep each lane's own magnitude order.
@@ -1895,6 +1901,9 @@ function pageCandidatesFor(
       page_first_observed:
         firstObservedCapableRows > 0 ? "evaluated" : "not_applicable",
     },
+    // Both lanes carry the unreadable rows in `notEvaluated`, which is what
+    // `pageLaneRows` produces for them: they are in `observedRows` and in
+    // neither capability count.
     byLane: {
       page_click_decline: pageLaneRows(
         observedRows,
@@ -1907,6 +1916,7 @@ function pageCandidatesFor(
         firstObserved.length,
       ),
     },
+    unreadableCurrentRows,
   };
 }
 
@@ -1929,9 +1939,11 @@ function selectPageChanges(
   const suppressed = new Set<string>();
   for (const candidate of ranked) {
     const page = candidate.change.page;
-    // A page a query change already names is not reported twice. The reader
-    // would see one page under two headings and count it as two findings.
-    // Counted, not silently dropped: the lane's candidate total includes it.
+    // One row per URL, and a query change already holds this one. This is a
+    // presentation rule, not a claim that the two measure the same thing: the
+    // page row covers every query for the URL including the anonymized ones,
+    // and the query row cannot stand in for it. Counted, never silently
+    // dropped, so the accounting says where the candidate went.
     if (excludedPages.has(page)) {
       suppressed.add(page);
       continue;
@@ -2348,6 +2360,7 @@ export function buildDailyBriefing(
           observedRows: null,
           notSelectedVisibleRows: null,
           suppressedByQueryChange: null,
+          unreadableRows: null,
           byLane: null,
         }
       : {
@@ -2358,6 +2371,7 @@ export function buildDailyBriefing(
             pageSelection.eligible - pageChanges.length,
           ),
           suppressedByQueryChange: pageSelection.suppressedByQueryChange,
+          unreadableRows: pageCandidateSet.unreadableCurrentRows,
           byLane: pageCandidateSet.byLane,
         };
 
