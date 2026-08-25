@@ -18,6 +18,7 @@ import {
   parseAgentProfileRefreshFields,
   PROFILE_REFRESH_SITE_CONTENT_CLOSE,
   PROFILE_REFRESH_SITE_CONTENT_OPEN,
+  PROFILE_REFRESH_PROMPT_SET_VERSION,
   PROFILE_REFRESH_SYSTEM_PROMPT,
   synthesizeAgentProfileRefresh,
   type AgentProfileRefreshPromptPage,
@@ -131,6 +132,17 @@ function recorder(replies: readonly (string | Error)[]): {
 }
 
 describe("profile refresh prompt", () => {
+  it("versions and bounds concise model output", () => {
+    const prompt = buildAgentProfileRefreshUserPrompt(INPUT);
+
+    expect.soft(PROFILE_REFRESH_PROMPT_SET_VERSION).toBe(
+      "agent_profile_refresh_prompt.v2",
+    );
+    expect.soft(prompt).toContain(
+      "Keep every value concise: STRING value <= 280 characters; LIST value <= 8 items; each LIST item <= 120 characters; unavailable limitation <= 180 characters.",
+    );
+  });
+
   it("frames every public page as hostile data and forbids general knowledge", () => {
     expect(PROFILE_REFRESH_SYSTEM_PROMPT).toContain(
       PROFILE_REFRESH_SITE_CONTENT_OPEN,
@@ -200,28 +212,76 @@ describe("parseAgentProfileRefreshFields", () => {
     ).toBeNull();
   });
 
-  it("rejects missing, duplicate, wrong-kind, empty, or off-crawl fields", () => {
-    const missing = fields().slice(1);
-    const duplicate = [fields()[0], ...fields().slice(0, -1)];
-    const wrongKind = fields().map((field) =>
-      field.path === "productName" ? { ...field, value: ["wrong"] } : field,
-    );
-    const empty = fields().map((field) =>
-      field.path === "productName" ? { ...field, value: "" } : field,
-    );
-    const offCrawl = fields().map((field) =>
-      field.path === "oneLinePositioning"
-        ? { ...field, evidenceUrls: ["https://evil.example/claim"] }
-        : field,
-    );
+  it("rejects a fields array containing an unknown path", () => {
+    const unexpected = {
+      ...availableField("productName"),
+      path: "unexpected",
+    };
 
-    for (const candidate of [missing, duplicate, wrongKind, empty, offCrawl]) {
-      expect(
-        parseAgentProfileRefreshFields(
-          { fields: candidate },
-          PAGES.map((page) => page.url),
+    expect(
+      parseAgentProfileRefreshFields(
+        { fields: [...fields(), unexpected] },
+        PAGES.map((page) => page.url),
+      ),
+    ).toBeNull();
+  });
+
+  it("downgrades missing, duplicate, wrong-kind, empty, or off-crawl fields", () => {
+    const candidates: readonly {
+      readonly fields: readonly unknown[];
+      readonly invalidPath: AgentProfileRefreshFieldPath;
+    }[] = [
+      {
+        fields: fields().slice(1),
+        invalidPath: "productName",
+      },
+      {
+        fields: [fields()[0], ...fields().slice(0, -1)],
+        invalidPath: "productName",
+      },
+      {
+        fields: fields().map((field) =>
+          field.path === "productName"
+            ? { ...field, value: ["wrong"] }
+            : field,
         ),
-      ).toBeNull();
+        invalidPath: "productName",
+      },
+      {
+        fields: fields().map((field) =>
+          field.path === "productName" ? { ...field, value: "" } : field,
+        ),
+        invalidPath: "productName",
+      },
+      {
+        fields: fields().map((field) =>
+          field.path === "oneLinePositioning"
+            ? { ...field, evidenceUrls: ["https://evil.example/claim"] }
+            : field,
+        ),
+        invalidPath: "oneLinePositioning",
+      },
+    ];
+
+    for (const candidate of candidates) {
+      const parsed = parseAgentProfileRefreshFields(
+        { fields: candidate.fields },
+        PAGES.map((page) => page.url),
+      );
+
+      expect(parsed?.map((field) => field.path)).toEqual(
+        AGENT_PROFILE_REFRESH_FIELD_PATHS,
+      );
+      expect(
+        parsed?.find((field) => field.path === candidate.invalidPath),
+      ).toMatchObject({
+        state: "unavailable",
+        value: null,
+        derivation: "missing",
+        confidence: "unknown",
+        source: "not_available",
+        evidenceUrls: [],
+      });
     }
   });
 });
@@ -241,17 +301,61 @@ describe("synthesizeAgentProfileRefresh", () => {
     });
     expect(requests).toHaveLength(1);
     expect(requests[0].system).toBe(PROFILE_REFRESH_SYSTEM_PROMPT);
-    expect(requests[0].maxOutputTokens).toBeGreaterThan(0);
+    expect(requests[0].maxOutputTokens).toBe(6_000);
   });
 
-  it("retries one unusable model reply and counts both billable attempts", async () => {
-    const invalid = fields().map((field) =>
-      field.path === "productName" && field.state === "available"
+  it("downgrades one invalid field without discarding valid fields or retrying", async () => {
+    const validFields = fields();
+    const invalidPath: AgentProfileRefreshFieldPath = "productName";
+    const preservedPath: AgentProfileRefreshFieldPath = "oneLinePositioning";
+    const invalid = validFields.map((field) =>
+      field.path === invalidPath
         ? { ...field, evidenceUrls: ["https://evil.example/invented"] }
         : field,
     );
+    const preserved = validFields.find((field) => field.path === preservedPath);
+    const { client, requests } = recorder([reply({ fields: invalid })]);
+
+    const result = await synthesizeAgentProfileRefresh(INPUT, { client });
+
+    expect(result.fields).toHaveLength(22);
+    expect(result.fields.map((field) => field.path)).toEqual(
+      AGENT_PROFILE_REFRESH_FIELD_PATHS,
+    );
+    expect(
+      result.fields.find((field) => field.path === invalidPath),
+    ).toMatchObject({
+      state: "unavailable",
+      value: null,
+      evidenceUrls: [],
+    });
+    expect(result.fields.find((field) => field.path === preservedPath)).toEqual(
+      preserved,
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  it("accepts one independently valid expected field without retrying", async () => {
+    const soleValidField = availableField("productName");
     const { client, requests } = recorder([
-      reply({ fields: invalid }),
+      reply({ fields: [soleValidField] }),
+    ]);
+
+    const result = await synthesizeAgentProfileRefresh(INPUT, { client });
+
+    expect(result.fields.map((field) => field.path)).toEqual(
+      AGENT_PROFILE_REFRESH_FIELD_PATHS,
+    );
+    expect(result.fields[0]).toEqual(soleValidField);
+    expect(
+      result.fields.filter((field) => field.state === "unavailable"),
+    ).toHaveLength(21);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("retries one wholly unusable model reply and counts both billable attempts", async () => {
+    const { client, requests } = recorder([
+      reply({ fields: [] }),
       reply({ fields: fields() }),
     ]);
 
@@ -267,14 +371,21 @@ describe("synthesizeAgentProfileRefresh", () => {
   });
 
   it("fails closed after two schema-invalid replies", async () => {
-    const { client } = recorder(["not json", reply({ fields: [] })]);
+    const { client, requests } = recorder(["not json", reply({ fields: [] })]);
 
     await expect(
       synthesizeAgentProfileRefresh(INPUT, { client }),
     ).rejects.toMatchObject({
       name: "KeywordLlmError",
       reason: "schema_invalid",
+      usage: {
+        inputTokens: 200,
+        outputTokens: 100,
+        requestCount: 2,
+        retryCount: 1,
+      },
     });
+    expect(requests).toHaveLength(2);
   });
 
   it("does not retry a provider transport failure", async () => {

@@ -68,6 +68,18 @@ interface ProfileRefreshCacheIdentity {
   readonly outputLocale: string;
 }
 
+export interface AgentProfileRefreshInvalidEvent {
+  readonly event: "agent_profile_refresh_invalid";
+  readonly stage:
+    | "model_schema"
+    | "cached_gate"
+    | "cached_envelope"
+    | "fresh_envelope";
+  readonly agent: "seo" | "tech";
+  readonly requestCount: number | null;
+  readonly retryCount: number | null;
+}
+
 export function profileRefreshCacheNamespace(
   agent: AgentKind,
   identity: ProfileRefreshCacheIdentity,
@@ -111,6 +123,9 @@ export interface AgentProfileRefreshHandlerDependencies {
   readonly synthesize: (
     input: AgentProfileRefreshSynthesisInput,
   ) => Promise<{ readonly fields: readonly AgentProfileRefreshField[] }>;
+  readonly reportInvalidResponse: (
+    event: AgentProfileRefreshInvalidEvent,
+  ) => void;
   /**
    * Records that a refresh completed, so a referred visitor's first qualifying
    * run can pay its reward.
@@ -145,6 +160,7 @@ export const DEFAULT_DEPENDENCIES: AgentProfileRefreshHandlerDependencies = {
     writeCrawlCache(namespace, host, payload),
   crawl: (url, options) => crawlSiteContextProfile(url, options),
   synthesize: (input) => synthesizeAgentProfileRefresh(input),
+  reportInvalidResponse: (event) => console.error(JSON.stringify(event)),
   reportFirstRun: reportFirstToolRun,
 };
 
@@ -211,8 +227,30 @@ function availabilityOf(
     : "partial";
 }
 
-function contextErrorResponse(error: unknown): Response {
+function safelyReportInvalidResponse(
+  sink: AgentProfileRefreshHandlerDependencies["reportInvalidResponse"],
+  event: AgentProfileRefreshInvalidEvent,
+): void {
+  try {
+    sink(event);
+  } catch {
+    // Observability must never replace the stable public response.
+  }
+}
+
+function contextErrorResponse(
+  error: unknown,
+  agent: AgentKind,
+  invalidResponseSink: AgentProfileRefreshHandlerDependencies["reportInvalidResponse"],
+): Response {
   if (error instanceof KeywordLlmError && error.reason === "schema_invalid") {
+    safelyReportInvalidResponse(invalidResponseSink, {
+      event: "agent_profile_refresh_invalid",
+      stage: "model_schema",
+      agent,
+      requestCount: error.usage.requestCount,
+      retryCount: error.usage.retryCount,
+    });
     return json({ error: { code: "profile_response_invalid" } }, 502);
   }
   if (!(error instanceof ContextProfileError)) {
@@ -359,6 +397,13 @@ export async function handleAgentProfileRefreshRequest(
         capturedAt === null ||
         !cachedIdentityMatches(gate.payload, agent, normalized.url, input)
       ) {
+        safelyReportInvalidResponse(dependencies.reportInvalidResponse, {
+          event: "agent_profile_refresh_invalid",
+          stage: "cached_gate",
+          agent,
+          requestCount: null,
+          retryCount: null,
+        });
         return json({ error: { code: "profile_response_invalid" } }, 502);
       }
       const cached: AgentProfileRefreshData = {
@@ -370,6 +415,13 @@ export async function handleAgentProfileRefreshRequest(
         cache: { status: "hit", capturedAt },
       };
       if (!isAgentProfileRefreshData(cached)) {
+        safelyReportInvalidResponse(dependencies.reportInvalidResponse, {
+          event: "agent_profile_refresh_invalid",
+          stage: "cached_envelope",
+          agent,
+          requestCount: null,
+          retryCount: null,
+        });
         return json({ error: { code: "profile_response_invalid" } }, 502);
       }
       dependencies.reportFirstRun?.("profile-refresh");
@@ -431,6 +483,13 @@ export async function handleAgentProfileRefreshRequest(
       fields: synthesis.fields,
     };
     if (!isAgentProfileRefreshData(data)) {
+      safelyReportInvalidResponse(dependencies.reportInvalidResponse, {
+        event: "agent_profile_refresh_invalid",
+        stage: "fresh_envelope",
+        agent,
+        requestCount: null,
+        retryCount: null,
+      });
       return json({ error: { code: "profile_response_invalid" } }, 502);
     }
     try {
@@ -441,7 +500,7 @@ export async function handleAgentProfileRefreshRequest(
     dependencies.reportFirstRun?.("profile-refresh");
     return json({ data }, 200);
   } catch (error) {
-    return contextErrorResponse(error);
+    return contextErrorResponse(error, agent, dependencies.reportInvalidResponse);
   } finally {
     gate.release();
   }

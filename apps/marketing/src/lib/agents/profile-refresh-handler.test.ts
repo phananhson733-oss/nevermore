@@ -2,6 +2,7 @@
 // @output -- auth-first admission and strict, evidence-bounded refresh assertions
 // @pos    -- focused tests for the shared SEO and Tech profile-refresh handler
 
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { ContextProfileError } from "@sf/sources";
 import { KeywordLlmError } from "../tools/keyword-llm-client.ts";
@@ -13,10 +14,12 @@ import {
   type AgentProfileRefreshFieldPath,
 } from "./profile-refresh-contract.ts";
 import {
+  DEFAULT_DEPENDENCIES,
   handleAgentProfileRefreshRequest,
   profileRefreshCacheNamespace,
   type AgentProfileRefreshHandlerDependencies,
 } from "./profile-refresh-handler.ts";
+import { PROFILE_REFRESH_PROMPT_SET_VERSION } from "./profile-refresh-prompt.ts";
 
 function request(body: unknown = {
   url: "https://acme.test/pricing",
@@ -62,6 +65,7 @@ function dependencies(
     synthesize: vi.fn(async () => {
       throw new Error("synthesis must not run in this test");
     }),
+    reportInvalidResponse: vi.fn(),
     ...overrides,
   };
 }
@@ -219,6 +223,39 @@ function profileData(
 }
 
 describe("handleAgentProfileRefreshRequest", () => {
+  it("emits the bounded invalid-response event as one production JSON line", () => {
+    const event = {
+      event: "agent_profile_refresh_invalid" as const,
+      stage: "model_schema" as const,
+      agent: "seo" as const,
+      requestCount: 2,
+      retryCount: 1,
+    };
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      DEFAULT_DEPENDENCIES.reportInvalidResponse(event);
+
+      expect(consoleError.mock.calls).toEqual([[JSON.stringify(event)]]);
+      const line = consoleError.mock.calls[0]?.[0];
+      expect(typeof line).toBe("string");
+      const parsed = JSON.parse(String(line)) as Readonly<Record<string, unknown>>;
+      expect(parsed).toEqual(event);
+      expect(Object.keys(parsed)).toEqual([
+        "event",
+        "stage",
+        "agent",
+        "requestCount",
+        "retryCount",
+      ]);
+      expect(line).not.toMatch(/url|host|content|field|body|header|cookie|message|stack|token/i);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("returns auth_required before reading the body or touching crawl admission", async () => {
     const incoming = request();
     const openGate = vi.fn<AgentProfileRefreshHandlerDependencies["openGate"]>();
@@ -433,13 +470,28 @@ describe("handleAgentProfileRefreshRequest", () => {
   });
 
   it("keys the completed cache by full request identity while storing under the safe host", () => {
-    const first = profileRefreshCacheNamespace("seo", {
+    const identity = {
       normalizedUrl: "https://acme.test/pricing",
       marketCode: "US",
       languageTag: "en-US",
       outputLocale: "en",
-    });
+    };
+    const first = profileRefreshCacheNamespace("seo", identity);
+    const expectedFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          schemaVersion: "agent_profile_refresh.v1",
+          promptVersion: PROFILE_REFRESH_PROMPT_SET_VERSION,
+          agent: "seo",
+          normalizedUrl: identity.normalizedUrl,
+          marketCode: identity.marketCode,
+          languageTag: identity.languageTag,
+          outputLocale: identity.outputLocale,
+        }),
+      )
+      .digest("hex");
 
+    expect(first).toBe(`agent_profile_refresh_v1_seo_${expectedFingerprint}`);
     expect(first).toMatch(/^agent_profile_refresh_v1_seo_[a-f0-9]{64}$/);
     expect(first).not.toContain("acme.test");
     expect(first).not.toContain("pricing");
@@ -637,6 +689,95 @@ describe("handleAgentProfileRefreshRequest", () => {
     expect(synthesize).not.toHaveBeenCalled();
   });
 
+  it("reports an invalid cached gate without changing the public response", async () => {
+    const release = vi.fn();
+    const reportInvalidResponse = vi.fn();
+    const response = await handleAgentProfileRefreshRequest(
+      request(),
+      "tech",
+      dependencies({
+        openGate: vi.fn(async () => ({
+          ok: true as const,
+          kind: "cached" as const,
+          payload: profileData("tech", "fresh"),
+          capturedAt: "not-a-time",
+          release,
+        })),
+        reportInvalidResponse,
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "profile_response_invalid" },
+    });
+    expect(reportInvalidResponse.mock.calls).toEqual([
+      [
+        {
+          event: "agent_profile_refresh_invalid",
+          stage: "cached_gate",
+          agent: "tech",
+          requestCount: null,
+          retryCount: null,
+        },
+      ],
+    ]);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("reports a reconstructed cached envelope failure without leaking its submitted URL", async () => {
+    const submittedUrl = `https://acme.test/${"a".repeat(2_100)}`;
+    const normalizedUrl = "https://acme.test/pricing";
+    const body = {
+      url: submittedUrl,
+      marketCode: "US",
+      languageTag: "en-US",
+      outputLocale: "en",
+      mode: "prefer_cache",
+    } as const;
+    const release = vi.fn();
+    const reportInvalidResponse = vi.fn();
+    const response = await handleAgentProfileRefreshRequest(
+      request(body),
+      "tech",
+      dependencies({
+        normalizeUrl: vi.fn(() => ({ ok: true as const, url: normalizedUrl })),
+        openGate: vi.fn(async () => ({
+          ok: true as const,
+          kind: "cached" as const,
+          payload: profileData("tech", "fresh"),
+          capturedAt: "2026-08-13T01:05:06.000Z",
+          release,
+        })),
+        reportInvalidResponse,
+      }),
+    );
+
+    expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThan(
+      4_096,
+    );
+    expect(submittedUrl.length).toBeGreaterThan(2_048);
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "profile_response_invalid" },
+    });
+    expect(reportInvalidResponse.mock.calls).toEqual([
+      [
+        {
+          event: "agent_profile_refresh_invalid",
+          stage: "cached_envelope",
+          agent: "tech",
+          requestCount: null,
+          retryCount: null,
+        },
+      ],
+    ]);
+    expect(JSON.stringify(reportInvalidResponse.mock.calls)).not.toContain(
+      submittedUrl,
+    );
+    expect(release).toHaveBeenCalledOnce();
+  });
+
   it("reads a www profile refresh through its exact target host", async () => {
     const normalizedUrl = "https://www.acme.test/pricing";
     const cached = {
@@ -731,6 +872,7 @@ describe("handleAgentProfileRefreshRequest", () => {
   it("fails closed when synthesis violates the strict profile contract", async () => {
     const release = vi.fn();
     const writeCache = vi.fn(async () => undefined);
+    const reportInvalidResponse = vi.fn();
     const response = await handleAgentProfileRefreshRequest(
       request(),
       "seo",
@@ -743,6 +885,7 @@ describe("handleAgentProfileRefreshRequest", () => {
         crawl: vi.fn(async () => contextResult()),
         synthesize: vi.fn(async () => ({ fields: [], usage: {} })),
         writeCache,
+        reportInvalidResponse,
       }),
     );
 
@@ -751,20 +894,35 @@ describe("handleAgentProfileRefreshRequest", () => {
       error: { code: "profile_response_invalid" },
     });
     expect(writeCache).not.toHaveBeenCalled();
+    expect(reportInvalidResponse.mock.calls).toEqual([
+      [
+        {
+          event: "agent_profile_refresh_invalid",
+          stage: "fresh_envelope",
+          agent: "seo",
+          requestCount: null,
+          retryCount: null,
+        },
+      ],
+    ]);
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it("reports an exhausted invalid model schema as an unverified response", async () => {
+  it("keeps the stable invalid response when observability fails", async () => {
+    const release = vi.fn();
     const response = await handleAgentProfileRefreshRequest(
       request(),
       "seo",
       dependencies({
+        openGate: vi.fn(async () => ({
+          ok: true as const,
+          kind: "crawl" as const,
+          release,
+        })),
         crawl: vi.fn(async () => contextResult()),
-        synthesize: vi.fn(async () => {
-          throw new KeywordLlmError(
-            "schema_invalid",
-            "reply did not match the field contract",
-          );
+        synthesize: vi.fn(async () => ({ fields: [], usage: {} })),
+        reportInvalidResponse: vi.fn(() => {
+          throw new Error("observability unavailable");
         }),
       }),
     );
@@ -773,6 +931,57 @@ describe("handleAgentProfileRefreshRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "profile_response_invalid" },
     });
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("reports an exhausted invalid model schema as an unverified response", async () => {
+    const release = vi.fn();
+    const reportInvalidResponse = vi.fn();
+    const response = await handleAgentProfileRefreshRequest(
+      request(),
+      "seo",
+      dependencies({
+        openGate: vi.fn(async () => ({
+          ok: true as const,
+          kind: "crawl" as const,
+          release,
+        })),
+        crawl: vi.fn(async () => contextResult()),
+        synthesize: vi.fn(async () => {
+          throw new KeywordLlmError(
+            "schema_invalid",
+            "reply did not match the field contract",
+            {
+              inputTokens: 123,
+              outputTokens: 45,
+              requestCount: 2,
+              retryCount: 1,
+            },
+          );
+        }),
+        reportInvalidResponse,
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "profile_response_invalid" },
+    });
+    expect(reportInvalidResponse.mock.calls).toEqual([
+      [
+        {
+          event: "agent_profile_refresh_invalid",
+          stage: "model_schema",
+          agent: "seo",
+          requestCount: 2,
+          retryCount: 1,
+        },
+      ],
+    ]);
+    expect(JSON.stringify(reportInvalidResponse.mock.calls)).not.toMatch(
+      /123|45|reply did not match/i,
+    );
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it("ignores a malformed or mismatched cache row and performs the admitted crawl", async () => {

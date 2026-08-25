@@ -17,12 +17,13 @@ import {
   isAgentProfileRefreshFields,
   type AgentProfileRefreshAgent,
   type AgentProfileRefreshField,
+  type AgentProfileRefreshFieldPath,
   type AgentProfileRefreshListFieldPath,
   type AgentProfileRefreshStringFieldPath,
 } from "./profile-refresh-contract.ts";
 
 export const PROFILE_REFRESH_PROMPT_SET_VERSION =
-  "agent_profile_refresh_prompt.v1" as const;
+  "agent_profile_refresh_prompt.v2" as const;
 
 export const PROFILE_REFRESH_SITE_CONTENT_OPEN =
   "<profile_site_content>" as const;
@@ -192,6 +193,7 @@ function buildUserPrompt(
     `- Emit exactly these 22 paths once each: ${AGENT_PROFILE_REFRESH_FIELD_PATHS.join(", ")}.`,
     `- STRING paths use a non-empty string value: ${STRING_FIELD_PATHS.join(", ")}.`,
     `- LIST paths use a non-empty, unique array of non-empty strings: ${LIST_FIELD_PATHS.join(", ")}.`,
+    "- Keep every value concise: STRING value <= 280 characters; LIST value <= 8 items; each LIST item <= 120 characters; unavailable limitation <= 180 characters.",
     '- Available exact shape: {"path":"one listed path","state":"available","value":"string or string[] as declared","derivation":"inferred","confidence":"high|medium|low","source":"public_page","limitation":null,"evidenceUrls":["exact supplied page URL"]}.',
     '- Unavailable exact shape: {"path":"one listed path","state":"unavailable","value":null,"derivation":"missing","confidence":"unknown","source":"not_available","limitation":"specific non-empty explanation of what the pages do not establish","evidenceUrls":[]}.',
     "- Each field object must have exactly those eight keys. The root object must have exactly one key.",
@@ -210,6 +212,46 @@ export function buildAgentProfileRefreshUserPrompt(
   return buildUserPrompt(input, preparePages(input.pages));
 }
 
+function unavailableField(
+  path: AgentProfileRefreshFieldPath,
+): AgentProfileRefreshField {
+  return {
+    path,
+    state: "unavailable",
+    value: null,
+    derivation: "missing",
+    confidence: "unknown",
+    source: "not_available",
+    limitation:
+      "The model response did not establish this field from the supplied public pages.",
+    evidenceUrls: [],
+  };
+}
+
+function hasExactPath(
+  value: unknown,
+  path: AgentProfileRefreshFieldPath,
+): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.hasOwn(value, "path") &&
+    (value as { readonly path?: unknown }).path === path
+  );
+}
+
+function isIndependentlyValidField(
+  value: unknown,
+  path: AgentProfileRefreshFieldPath,
+  sourceUrls: readonly string[],
+): value is AgentProfileRefreshField {
+  const probe = AGENT_PROFILE_REFRESH_FIELD_PATHS.map((expectedPath) =>
+    expectedPath === path ? value : unavailableField(expectedPath),
+  );
+  return isAgentProfileRefreshFields(probe, sourceUrls);
+}
+
 export function parseAgentProfileRefreshFields(
   value: unknown,
   sourceUrls: readonly string[],
@@ -224,7 +266,33 @@ export function parseAgentProfileRefreshFields(
     return null;
   }
   const fields = (value as { readonly fields?: unknown }).fields;
-  return isAgentProfileRefreshFields(fields, sourceUrls) ? fields : null;
+  if (!Array.isArray(fields)) return null;
+  if (
+    !fields.every((field) =>
+      AGENT_PROFILE_REFRESH_FIELD_PATHS.some((path) =>
+        hasExactPath(field, path),
+      ),
+    )
+  ) {
+    return null;
+  }
+
+  let validCount = 0;
+  const recovered = AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) => {
+    const candidates = fields.filter((field) => hasExactPath(field, path));
+    if (
+      candidates.length !== 1 ||
+      !isIndependentlyValidField(candidates[0], path, sourceUrls)
+    ) {
+      return unavailableField(path);
+    }
+    validCount += 1;
+    return candidates[0];
+  });
+
+  return validCount > 0 && isAgentProfileRefreshFields(recovered, sourceUrls)
+    ? recovered
+    : null;
 }
 
 function spentUsage(
