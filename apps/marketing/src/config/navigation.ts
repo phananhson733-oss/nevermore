@@ -12,12 +12,10 @@ export function menuItemPath(
 }
 
 /**
- * Website-audit destinations surfaced in the primary header submenu.
+ * Agent destinations surfaced in the primary header submenu.
  *
- * The two Agent entries stay on their Agent routes. Internal Link Audit is a
- * standalone public tool, so its explicit href crosses out of the `/agents`
- * base path. `/agents/tech` remains a compatibility route without primary-menu
- * promotion.
+ * SEO and GEO stay on their Agent routes. `/agents/tech` remains a subordinate
+ * compatibility route without primary-menu promotion.
  */
 export const agentsMenuGroups: NavMenuGroup[] = [
   {
@@ -34,13 +32,6 @@ export const agentsMenuGroups: NavMenuGroup[] = [
         labelKey: "nav.agentsMenu.geo.label",
         descriptionKey: "nav.agentsMenu.geo.description",
         icon: "Radar",
-      },
-      {
-        slug: "internal-link-audit",
-        href: "/tools/internal-link-audit",
-        labelKey: "nav.agentsMenu.internalLinkAudit.label",
-        descriptionKey: "nav.agentsMenu.internalLinkAudit.description",
-        icon: "Wrench",
       },
     ],
   },
