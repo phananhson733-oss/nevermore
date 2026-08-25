@@ -53,7 +53,7 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v3";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v4";
 export const BRIEFING_WINDOW_DAYS = 7;
 export const DAILY_CADENCE_MIN_IMPRESSIONS = 1_000;
 export const BRIEFING_MIN_ROW_IMPRESSIONS = 100;
@@ -61,7 +61,6 @@ export const BRIEFING_MATERIAL_CHANGE_RATIO = 0.15;
 export const BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE = 3;
 export const BRIEFING_STABLE_POSITION_DELTA = 0.5;
 export const DAILY_BRIEFING_ACTION_LIMIT = 3;
-export const BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS = 1_000;
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
@@ -1512,12 +1511,16 @@ function propertyTrendFor(
     action: null,
     noiseFloor: null,
   };
+  // No property-wide impression floor. A fixed floor does not scale with the
+  // sample, so it withheld moves the per-basis noise floor had already judged
+  // large enough: a property whose weekly clicks fell 23 to 13 cleared two
+  // sigma and was still dropped for sitting under a thousand impressions.
+  // `noiseFloorFor` is the gate that scales with the base, and on a count it
+  // is a stricter test than any volume threshold can be.
   if (
     weekly.evidence !== "observed" ||
     weekly.current === null ||
-    weekly.previous === null ||
-    weekly.current.impressions < BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS ||
-    weekly.previous.impressions < BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS
+    weekly.previous === null
   ) {
     return empty;
   }

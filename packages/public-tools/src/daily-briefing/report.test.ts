@@ -7,7 +7,6 @@ import {
   BRIEFING_MIN_ROW_IMPRESSIONS,
   BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS,
   BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE,
-  BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS,
   BRIEFING_PROPERTY_POSITION_DELTA,
   BRIEFING_STABLE_POSITION_DELTA,
   BRIEFING_WINDOW_DAYS,
@@ -176,7 +175,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v3");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v4");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -184,13 +183,12 @@ describe("daily briefing contract and windows", () => {
     expect(BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE).toBe(3);
     expect(BRIEFING_STABLE_POSITION_DELTA).toBe(0.5);
     expect(DAILY_BRIEFING_ACTION_LIMIT).toBe(3);
-    expect(BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE).toBe(100);
     expect(BRIEFING_PROPERTY_POSITION_DELTA).toBe(1);
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v3",
+      schemaVersion: "daily_search_briefing.v4",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -762,7 +760,7 @@ describe("property trend", () => {
     });
   });
 
-  it("includes the exact click-decline and weekly impression floor boundaries", () => {
+  it("includes the exact click-decline threshold boundary", () => {
     const result = report({
       dateRows: propertyDateRows({
         previousClicks: 20,
@@ -910,28 +908,73 @@ describe("property trend", () => {
     });
   });
 
-  it.each([
-    { currentImpressions: 999, previousImpressions: 1_000 },
-    { currentImpressions: 1_000, previousImpressions: 999 },
-  ])(
-    "returns null when either weekly window is below the property floor (%o)",
-    ({ currentImpressions, previousImpressions }) => {
-      const result = report({
-        dateRows: propertyDateRows({
-          previousClicks: 20,
-          currentClicks: 10,
-          previousImpressions,
-          currentImpressions,
-          previousPosition: 10,
-          currentPosition: 12,
-        }),
-      }).result;
+  // A fixed property-wide impression floor does not scale with the sample, so
+  // it withheld moves the noise floor had already judged big enough. These two
+  // are the shape of real runs on a small property: same order of traffic,
+  // opposite verdicts, and the discriminator is the floor that scales.
+  it("reports a small property whose click move clears the noise floor", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 23,
+        currentClicks: 13,
+        previousImpressions: 803,
+        currentImpressions: 810,
+        previousPosition: 30,
+        currentPosition: 30.8,
+      }),
+    }).result;
 
-      expect(result.weekly.evidence).toBe("observed");
-      expect(result.propertyTrend.change).toBeNull();
-      expect(result.propertyTrend.action).toBeNull();
-    },
-  );
+    // Both windows sit under a thousand impressions, which is the whole point:
+    // volume no longer decides whether the property may be described.
+    expect(result.weekly.evidence).toBe("observed");
+    expect(result.weekly.previous?.impressions).toBe(803);
+    expect(result.weekly.current?.impressions).toBe(810);
+    expect(result.propertyTrend.change).toMatchObject({
+      kind: "sitewide_click_decline",
+      clickChange: -10,
+    });
+    expect(result.propertyTrend.noiseFloor).toEqual({
+      basis: "clicks",
+      observedChange: -10,
+      minimumForAction: 2 * Math.sqrt(23),
+      cleared: true,
+    });
+    expect(result.propertyTrend.action).toEqual({
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+    expect(result.limitations).not.toContain(
+      "property_change_inside_noise_floor",
+    );
+  });
+
+  it("withholds a small property's action on the noise floor, not on volume", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 8,
+        currentClicks: 4,
+        previousImpressions: 400,
+        currentImpressions: 380,
+        previousPosition: 30,
+        currentPosition: 30.8,
+      }),
+    }).result;
+
+    // Four clicks off a base of eight is inside the spread the count carries
+    // on its own. The move is still reported; only the handoff waits.
+    expect(result.propertyTrend.change).toMatchObject({
+      kind: "sitewide_click_observation",
+      clickChange: -4,
+    });
+    expect(result.propertyTrend.noiseFloor).toEqual({
+      basis: "clicks",
+      observedChange: -4,
+      minimumForAction: 2 * Math.sqrt(8),
+      cleared: false,
+    });
+    expect(result.propertyTrend.action).toBeNull();
+    expect(result.limitations).toContain("property_change_inside_noise_floor");
+  });
 
   it("returns null when the weekly comparison is unavailable", () => {
     const dateRows = propertyDateRows({

@@ -99,7 +99,7 @@ function parseBrandTerms(input: string): readonly string[] {
  * pulls server-only code into this client bundle. A contract test keeps it
  * equal to the package's own constant.
  */
-export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v3";
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v4";
 
 export function DailyBriefingTool({
   locale,
