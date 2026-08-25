@@ -40,10 +40,6 @@
       "geo": {
         "label": "GEO Agent",
         "description": "See whether AI answers cite your site, sampled three times per question."
-      },
-      "internalLinkAudit": {
-        "label": "Internal Link Audit",
-        "description": "Run a public-site crawl without signing in to inspect the internal-link graph, click depth, and orphan-page evidence."
       }
     },
     "resourcesMenu": {

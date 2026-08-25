@@ -8,10 +8,10 @@ import {
 
 const AUDIT_API_REQUEST = "POST /api/tools/internal-link-audit";
 const HEADER_PROFILE_REQUEST = "GET /api/auth/profile";
-const HOMEPAGE_SESSION_REQUEST = "GET /api/auth/session";
+const SESSION_REQUEST = "GET /api/auth/session";
 const KNOWN_ABORTED_REQUESTS = new Set([
   HEADER_PROFILE_REQUEST,
-  HOMEPAGE_SESSION_REQUEST,
+  SESSION_REQUEST,
 ]);
 
 interface ApiGuardEvidence {
@@ -561,7 +561,7 @@ test("renders a deep mocked v3 report at 390px without horizontal overflow", asy
   await expectNoUnexpectedApiRequests(api);
 });
 
-test("links the Chinese header audit entry directly to the standalone tool", async ({
+test("keeps the Chinese Internal Link Audit in Tools rather than Agents", async ({
   page,
 }) => {
   const api = await installApiGuard(page);
@@ -569,16 +569,37 @@ test("links the Chinese header audit entry directly to the standalone tool", asy
   const primary = page.getByRole("navigation", { name: "Main navigation" });
   await primary.getByRole("button", { name: "Agents" }).click();
 
-  const auditLink = primary.getByRole("link", { name: /内链审计/ });
+  await expect(
+    primary.getByRole("link", { name: /内链审计/ }),
+  ).toHaveCount(0);
+
+  await primary.getByRole("button", { name: "资源" }).click();
+  const toolsLink = primary.getByRole("link", { name: /^Tools/ });
+  await expect(toolsLink).toBeVisible();
+  await expect(toolsLink).toHaveAttribute("href", "/zh/tools");
+  await toolsLink.click();
+  await expect(page).toHaveURL(/\/zh\/tools$/);
+
+  const auditLink = page
+    .getByRole("main")
+    .getByRole("link")
+    .filter({
+      has: page.getByRole("heading", { level: 3, name: "内链审计" }),
+    });
   await expect(auditLink).toBeVisible();
   await expect(auditLink).toHaveAttribute(
     "href",
     "/zh/tools/internal-link-audit",
   );
-  await expect(auditLink).not.toHaveAttribute("href", /agents\/tech/);
+  await auditLink.click();
+  await expect(page).toHaveURL(/\/zh\/tools\/internal-link-audit$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "内链审计" }),
+  ).toBeVisible();
   expect(api.auditRequestCount).toBe(0);
   await expectNoUnexpectedApiRequests(api, [
     HEADER_PROFILE_REQUEST,
-    HOMEPAGE_SESSION_REQUEST,
+    SESSION_REQUEST,
+    SESSION_REQUEST,
   ]);
 });

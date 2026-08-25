@@ -40,10 +40,6 @@
       "geo": {
         "label": "GEO Agent",
         "description": "看 AI 的回答会不会引用你的站点，每个问题采样三次。"
-      },
-      "internalLinkAudit": {
-        "label": "内链审计",
-        "description": "无需登录即可抓取公开网站，查看内链图谱、点击深度与孤岛页证据。"
       }
     },
     "resourcesMenu": {
