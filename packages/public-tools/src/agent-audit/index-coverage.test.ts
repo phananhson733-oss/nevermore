@@ -130,6 +130,10 @@ describe("A1 — index coverage over the declared population", () => {
     ["aggregate evidence label is unknown", (record: MutableAuditRecord) => {
       evidence(record.observations[0]!, "sitemap_urls_inspected").label = "urls_inspected";
     }],
+    ["aggregate evidence labels are reordered", (record: MutableAuditRecord) => {
+      const values = record.observations[0]!.values;
+      record.observations[0]!.values = [values[1]!, values[0]!];
+    }],
     ["detail URL is empty", (record: MutableAuditRecord) => {
       record.observations[1]!.url = "";
     }],

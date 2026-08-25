@@ -171,7 +171,7 @@ function hasExactEvidenceLabels(
 ): boolean {
   return (
     values.length === labels.length &&
-    labels.every((label) => values.some((entry) => entry.label === label))
+    labels.every((label, index) => values[index]?.label === label)
   );
 }
 

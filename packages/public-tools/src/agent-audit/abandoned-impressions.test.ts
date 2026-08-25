@@ -208,6 +208,10 @@ describe("A2 — impressions on URLs the site no longer serves", () => {
     ["aggregate evidence label is unknown", (record: MutableAuditRecord) => {
       evidence(record.observations[0]!, "impressions_total").label = "total_impressions";
     }],
+    ["aggregate evidence labels are reordered", (record: MutableAuditRecord) => {
+      const values = record.observations[0]!.values;
+      record.observations[0]!.values = [values[1]!, values[0]!, ...values.slice(2)];
+    }],
     ["detail row was replaced by another aggregate summary", (record: MutableAuditRecord) => {
       record.observations[1] = structuredClone(record.observations[0]!);
     }],
