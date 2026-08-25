@@ -843,6 +843,13 @@
         "search_in_progress": "Another competitor analysis is already running for this account. Wait for it to finish, then try again.",
         "keyword_source_unavailable": "DataForSEO could not provide a usable competitor ranking sample for this run.",
         "client_out_of_date": "This tool was updated while your page was open. Refresh the page, then run the analysis again.",
+        "gsc_property_not_granted": "This tool is not currently authorized to read the selected Search Console property, so the analysis did not start. Reconnect Search Console and grant that property, or run again without the GSC evidence layer.",
+        "gsc_property_site_mismatch": "The selected Search Console property does not cover the site domain you entered, so the analysis did not start. Choose a property that covers that domain, or run again without the GSC evidence layer.",
+        "gsc_revoked": "Your Search Console authorization is no longer valid, so the analysis did not start. Reconnect Search Console, or run again without the GSC evidence layer.",
+        "gsc_temporarily_unavailable": "Search Console could not be reached right now, so the analysis did not start. Try again shortly, or run again without the GSC evidence layer.",
+        "rate_limited": "The hourly Search Console read allowance is used up. It is shared across every Search Console tool here, and the analysis did not start. Wait for the window to reset, or run again without the GSC evidence layer.",
+        "quota_unavailable": "The Search Console read allowance could not be checked, so the analysis did not start rather than spend an unmetered read. Try again shortly, or run again without the GSC evidence layer.",
+        "scan_in_progress": "Another Search Console read is already running from this network, so the analysis did not start. Wait for it to finish, or run again without the GSC evidence layer.",
         "unknown": "The competitor analysis could not be completed."
       },
       "running": {
@@ -852,6 +859,7 @@
       "actions": {
         "run": "Run gap analysis",
         "running": "Analyzing…",
+        "runWithoutGsc": "Run without the GSC evidence layer",
         "openChecker": "Open On-Page Checker",
         "openObservedPage": "Open observed page",
         "copyKeyword": "Copy keyword",
@@ -871,7 +879,13 @@
         "complete": "Analysis complete",
         "completeBody": "Every requested competitor returned a usable DataForSEO result.",
         "partial": "Partial result",
-        "partialBody": "At least one competitor completed and at least one was unavailable. Read the coverage before using the rows.",
+        "partialBody": {
+          "competitors": "At least one competitor returned no usable ranking sample. Read the coverage section before using these rows.",
+          "gscUnavailable": "Every competitor completed. The optional Search Console layer could not be read this run, so the \"your status\" column is unavailable.",
+          "gscPartial": "Every competitor completed. The Search Console sample hit its row bound, so the \"your status\" column may be incomplete.",
+          "both": "At least one competitor returned no usable ranking sample, and the Search Console layer is incomplete. Read the coverage section before using these rows.",
+          "unspecified": "This run did not complete in full. Read the coverage section before using these rows."
+        },
         "unavailable": "Analysis unavailable",
         "unavailableBody": "No requested competitor returned a usable ranking sample. This is not evidence that the competitors have no keywords."
       },

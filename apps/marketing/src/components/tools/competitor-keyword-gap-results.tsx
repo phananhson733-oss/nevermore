@@ -122,6 +122,39 @@ function SourceBadge({
   );
 }
 
+/**
+ * Why this run is `partial`, derived rather than asserted.
+ *
+ * The single stock sentence used to say "at least one competitor is
+ * unavailable" for every partial run, including the common one where all
+ * competitors completed and only the optional GSC overlay was missing -- the
+ * surface stated a competitor failure that the same card's own counters
+ * disproved two lines below. Nothing here is new contract data: the three
+ * causes are already distinguishable from the counters and the overlay status.
+ */
+function partialCause(
+  result: CompetitorKeywordGapResultV3,
+): "competitors" | "gscUnavailable" | "gscPartial" | "both" | "unspecified" {
+  const competitorsIncomplete =
+    result.completedCompetitors < result.requestedCompetitors;
+  const overlayDegraded =
+    result.overlayStatus === "unavailable" || result.overlayStatus === "partial";
+  if (competitorsIncomplete && overlayDegraded) return "both";
+  if (competitorsIncomplete) return "competitors";
+  if (!overlayDegraded) return "unspecified";
+  return result.overlayStatus === "partial" ? "gscPartial" : "gscUnavailable";
+}
+
+function statusBody(
+  status: CompetitorKeywordGapEnvelope["run"]["status"],
+  result: CompetitorKeywordGapResultV3,
+  t: Translate,
+): string {
+  return status === "partial"
+    ? translated(t, `status.partialBody.${partialCause(result)}`)
+    : translated(t, `status.${status}Body`);
+}
+
 function ReportContext({
   envelope,
   locale,
@@ -153,7 +186,7 @@ function ReportContext({
           </h3>
           <div className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {translated(t, `status.${status}`)} ·{" "}
-            {translated(t, `status.${status}Body`)}
+            {statusBody(status, result, t)}
           </div>
           <div className="mt-1 text-[12px] text-text-dark-secondary">
             {t("summary.competitors", {

@@ -32,18 +32,14 @@ export interface CompetitorKeywordGapRequestV1 {
   readonly acceptSchemaVersion?: string;
 }
 
-export type CompetitorKeywordGapErrorCode =
-  | "invalid_input"
-  | "invalid_request"
-  | "payload_too_large"
-  | "unsupported_media_type"
-  | "auth_required"
-  | "auth_unavailable"
-  | "search_in_progress"
-  | "keyword_source_unavailable"
-  | "client_out_of_date";
-
-/** Every public code the Marketing surface must have localized copy for. */
+/**
+ * Every public code the Marketing surface must have localized copy for.
+ *
+ * The union below is derived FROM this array -- like the pre-screen bands --
+ * so a code cannot exist without a place in the surface's copy. A `satisfies`
+ * clause would only prove the listed entries are valid, never that the list
+ * is complete.
+ */
 export const COMPETITOR_KEYWORD_GAP_ERROR_CODES = [
   "invalid_input",
   "invalid_request",
@@ -54,7 +50,21 @@ export const COMPETITOR_KEYWORD_GAP_ERROR_CODES = [
   "search_in_progress",
   "keyword_source_unavailable",
   "client_out_of_date",
-] as const satisfies readonly CompetitorKeywordGapErrorCode[];
+  // Search Console preflight refusals. They exist because a request that
+  // names a property is asking for BOTH halves; when the first-party half
+  // cannot happen, the run is refused before the paid provider calls rather
+  // than charged for and delivered with a silently missing overlay.
+  "gsc_property_not_granted",
+  "gsc_property_site_mismatch",
+  "gsc_revoked",
+  "gsc_temporarily_unavailable",
+  "rate_limited",
+  "quota_unavailable",
+  "scan_in_progress",
+] as const;
+
+export type CompetitorKeywordGapErrorCode =
+  (typeof COMPETITOR_KEYWORD_GAP_ERROR_CODES)[number];
 
 export type CompetitorKeywordGapErrorEnvelope =
   PublicToolErrorEnvelope<CompetitorKeywordGapErrorCode>;

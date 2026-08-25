@@ -1964,6 +1964,13 @@ describe("buildCompetitorKeywordGapReport", () => {
       "search_in_progress",
       "keyword_source_unavailable",
       "client_out_of_date",
+      "gsc_property_not_granted",
+      "gsc_property_site_mismatch",
+      "gsc_revoked",
+      "gsc_temporarily_unavailable",
+      "rate_limited",
+      "quota_unavailable",
+      "scan_in_progress",
     ]);
   });
 });

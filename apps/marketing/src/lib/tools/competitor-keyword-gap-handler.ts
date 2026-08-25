@@ -12,6 +12,7 @@ import {
   normalizeCompetitorKeywordGapDomain,
   parseCompetitorKeywordGapInput,
   type CompetitorKeywordGapDataForSeoResult,
+  type CompetitorKeywordGapErrorCode,
   type CompetitorKeywordGapGscRead,
   type CompetitorKeywordGapSampleRule,
   type KeywordCoverageRead,
@@ -30,7 +31,11 @@ import {
 } from "../auth/server-auth-user.ts";
 import type { GrantResolution } from "../auth/grant-cookie.ts";
 import { extractClientIp } from "../rate-limit.ts";
-import { openGscGate, type GscGateResult } from "./gsc-gate.ts";
+import {
+  openGscGate,
+  refuseWithoutGrant,
+  type GscGateResult,
+} from "./gsc-gate.ts";
 import { createKeywordCoverageReader } from "./keyword-coverage-reader.ts";
 import {
   acquirePublicToolSlot,
@@ -68,7 +73,16 @@ export interface CompetitorKeywordGapFinalLog {
   readonly unavailableCompetitors: number;
   readonly rowCount: number;
   readonly costUsd: number | null;
-  readonly gsc: "not_requested" | "available" | "partial" | "unavailable";
+  /**
+   * `refused` is distinct from `unavailable`: the run never happened and
+   * nothing was spent, so it must not be counted as a degraded delivery.
+   */
+  readonly gsc:
+    | "not_requested"
+    | "available"
+    | "partial"
+    | "unavailable"
+    | "refused";
   readonly reportProduced: boolean;
 }
 
@@ -200,37 +214,103 @@ function propertyMatchesSite(property: string, siteDomain: string): boolean {
   );
 }
 
-async function readOptionalGsc(
+/**
+ * Everything about the Search Console overlay that can be known WITHOUT
+ * spending anything: the selected property is one this session may read, it
+ * belongs to the site under analysis, the shared per-IP gate admits the read,
+ * and a usable grant exists.
+ *
+ * It runs before the paid DataForSEO calls on purpose. A request that names a
+ * property is asking for both halves of the report; when the first-party half
+ * provably cannot happen, refusing costs the visitor nothing and names what to
+ * fix, while proceeding charges for a run whose "your status" column would be
+ * empty. Only the read itself -- which cannot be predicted -- is allowed to
+ * fail after the money is spent.
+ *
+ * The per-IP quota unit is consumed here rather than at read time. In the
+ * normal path that is the same single unit the read used to spend; the one
+ * case it costs more is a run whose competitors all fail afterwards, and a
+ * durable counter cannot be un-incremented to avoid it.
+ *
+ * On success the caller owns `release` and must call it once the read is done.
+ */
+type CompetitorKeywordGapGscPreflight =
+  | {
+      readonly kind: "ready";
+      readonly accessToken: string;
+      readonly release: () => void;
+    }
+  | { readonly kind: "refused"; readonly response: Response };
+
+async function openGscPreflight(
   property: string,
   siteDomain: string,
   clientIp: string,
   dependencies: Pick<
     CompetitorKeywordGapHandlerDependencies,
-    "readGscSession" | "openGscGate" | "resolveGscGrant" | "readCoverageQueries"
+    "readGscSession" | "openGscGate" | "resolveGscGrant"
   >,
-): Promise<CompetitorKeywordGapGscRead> {
+): Promise<CompetitorKeywordGapGscPreflight> {
   let release: (() => void) | null = null;
+  let transferred = false;
   try {
     const session = await dependencies.readGscSession();
     if (session.properties === null || !session.properties.includes(property)) {
-      return unavailableGscRead();
+      return refusedPreflight("gsc_property_not_granted", 403);
     }
     if (!propertyMatchesSite(property, siteDomain)) {
-      return unavailableGscRead();
+      return refusedPreflight("gsc_property_site_mismatch", 400);
     }
 
+    // The gate releases its own slot on every refusal, so `gate.response` is
+    // returned without touching `release`.
     const gate = await dependencies.openGscGate(clientIp);
-    if (!gate.ok) return unavailableGscRead();
+    if (!gate.ok) return { kind: "refused", response: gate.response };
     release = gate.release;
 
     const grant = await dependencies.resolveGscGrant();
-    if (grant.kind !== "grant" || !grant.properties.includes(property)) {
-      return unavailableGscRead();
+    if (grant.kind !== "grant") {
+      // Distinguishes a grant that is genuinely gone (401, reconnect) from a
+      // Google blip (503, come back) instead of collapsing both.
+      return { kind: "refused", response: refuseWithoutGrant(grant) };
+    }
+    if (!grant.properties.includes(property)) {
+      return refusedPreflight("gsc_property_not_granted", 403);
     }
 
+    transferred = true;
+    return { kind: "ready", accessToken: grant.accessToken, release };
+  } catch {
+    return refusedPreflight("gsc_temporarily_unavailable", 503);
+  } finally {
+    if (!transferred) release?.();
+  }
+}
+
+function refusedPreflight(
+  code: CompetitorKeywordGapErrorCode,
+  status: number,
+): CompetitorKeywordGapGscPreflight {
+  return { kind: "refused", response: json(createPublicToolError(code), status) };
+}
+
+/**
+ * The one overlay failure that survives the preflight. It cannot be predicted
+ * before the provider calls, so it is the only reason a delivered report may
+ * still carry an unavailable overlay.
+ */
+async function readGscCoverage(
+  property: string,
+  accessToken: string,
+  dependencies: Pick<
+    CompetitorKeywordGapHandlerDependencies,
+    "readCoverageQueries"
+  >,
+): Promise<CompetitorKeywordGapGscRead> {
+  try {
     const coverage = await dependencies.readCoverageQueries({
       property,
-      accessToken: grant.accessToken,
+      accessToken,
     });
     return {
       status: "available",
@@ -241,8 +321,6 @@ async function readOptionalGsc(
     };
   } catch {
     return unavailableGscRead();
-  } finally {
-    release?.();
   }
 }
 
@@ -347,6 +425,7 @@ export async function handleCompetitorKeywordGapRequest(
     return conflict(createPublicToolError("search_in_progress"));
   }
 
+  const property = parsed.value.property;
   let finalLog: CompetitorKeywordGapFinalLog = {
     status: "unavailable",
     requestedCompetitors: parsed.value.competitorDomains.length,
@@ -354,11 +433,29 @@ export async function handleCompetitorKeywordGapRequest(
     unavailableCompetitors: parsed.value.competitorDomains.length,
     rowCount: 0,
     costUsd: null,
-    gsc: parsed.value.property === undefined ? "not_requested" : "unavailable",
+    gsc: property === undefined ? "not_requested" : "unavailable",
     reportProduced: false,
   };
+  let releaseGsc: (() => void) | null = null;
 
   try {
+    // Before the provider, not after: see openGscPreflight.
+    let accessToken: string | null = null;
+    if (property !== undefined) {
+      const preflight = await openGscPreflight(
+        property,
+        parsed.value.siteDomain,
+        clientIp,
+        dependencies,
+      );
+      if (preflight.kind === "refused") {
+        finalLog = { ...finalLog, gsc: "refused" };
+        return preflight.response;
+      }
+      accessToken = preflight.accessToken;
+      releaseGsc = preflight.release;
+    }
+
     const provider = dependencies.createProvider(credentials);
     const settled = await Promise.allSettled(
       parsed.value.competitorDomains.map((domain) =>
@@ -408,14 +505,9 @@ export async function handleCompetitorKeywordGapRequest(
     }
 
     const gsc =
-      parsed.value.property === undefined
+      property === undefined || accessToken === null
         ? null
-        : await readOptionalGsc(
-            parsed.value.property,
-            parsed.value.siteDomain,
-            clientIp,
-            dependencies,
-          );
+        : await readGscCoverage(property, accessToken, dependencies);
     finalLog = { ...finalLog, gsc: gscLogStatus(gsc) };
 
     const envelope = buildCompetitorKeywordGapReport({
@@ -442,6 +534,11 @@ export async function handleCompetitorKeywordGapRequest(
   } catch {
     return json(createPublicToolError("keyword_source_unavailable"), 502);
   } finally {
+    try {
+      releaseGsc?.();
+    } catch {
+      // Releasing an admission slot must never replace the result response.
+    }
     try {
       slot.release();
     } finally {
