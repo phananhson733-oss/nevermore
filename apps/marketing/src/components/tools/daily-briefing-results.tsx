@@ -24,6 +24,7 @@ import type {
   DailyBriefingKpiComparison,
   DailyBriefingPropertyChange,
   DailyBriefingPropertyFallback,
+  DailyBriefingQueryWatchlist,
   DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
@@ -33,6 +34,8 @@ const CARD =
   "rounded-[12px] border border-brand-border-card bg-brand-bg p-4 md:p-[18px]";
 const EYEBROW =
   "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+const TABLE_HEADER =
+  "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
 
 type RateLimitFacts = {
   readonly remaining: number | null;
@@ -56,8 +59,9 @@ interface ResultPreviewSectionProps {
 
 interface NoiseSummaryProps {
   readonly funnel: DailyBriefingSignalFunnel;
+  readonly observationsShown: number;
   readonly selectedQueryChanges: number;
-  readonly propertyFallbackShown: boolean;
+  readonly siteTrendShown: boolean;
 }
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
@@ -209,12 +213,26 @@ function signedMetric(
   return digits === 0 ? "0" : (0).toFixed(digits);
 }
 
+function reviewEmptyMessageKey(
+  evidence: DailyBriefingQueryWatchlist["evidence"],
+): "review.empty" | "review.partial" | "review.unavailable" {
+  switch (evidence) {
+    case "observed":
+      return "review.empty";
+    case "partial":
+      return "review.partial";
+    case "unavailable":
+      return "review.unavailable";
+  }
+}
+
 function propertyWeeklyComparisons(
   t: ReturnType<typeof useTranslations>,
   locale: string,
   change: DailyBriefingPropertyChange,
 ): {
   readonly clicks: string;
+  readonly ctr: string;
   readonly impressions: string;
   readonly position: string;
 } {
@@ -229,6 +247,12 @@ function propertyWeeklyComparisons(
       change.previous.impressions,
       change.current.impressions,
       (value) => number(locale, value),
+      t("kpis.unavailable"),
+    ),
+    ctr: nullableComparison(
+      change.previous.ctr,
+      change.current.ctr,
+      percent,
       t("kpis.unavailable"),
     ),
     position: nullableComparison(
@@ -292,8 +316,9 @@ function ResultPreviewSection({
 
 function NoiseSummary({
   funnel,
+  observationsShown,
   selectedQueryChanges,
-  propertyFallbackShown,
+  siteTrendShown,
 }: NoiseSummaryProps) {
   const t = useTranslations("tools.dailyBriefing");
   const hasObservedSummary =
@@ -321,9 +346,10 @@ function NoiseSummary({
             {hasObservedSummary
               ? t("noise.observed", {
                   observed: funnel.observedQueryRows,
+                  observations: observationsShown,
                   eligible: funnel.actionEligibleQueries,
                   selected: selectedQueryChanges,
-                  fallback: propertyFallbackShown ? 1 : 0,
+                  trend: siteTrendShown ? 1 : 0,
                 })
               : hasPartialSummary
                 ? t("noise.partial", { observed: funnel.observedQueryRows })
@@ -441,8 +467,8 @@ export function DailyBriefingResultPreview() {
       <ResultPreviewSection
         id="daily-briefing-preview-changes"
         kind="changes"
-        title={t("changes.title")}
-        intro={t("changes.intro")}
+        title={t("review.title")}
+        intro={t("review.intro")}
         body={t("preview.changes")}
       />
       <ResultPreviewSection
@@ -473,6 +499,14 @@ export function DailyBriefingResults({
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, 3);
+  const watchlistItems =
+    result.queryWatchlist.evidence === "observed"
+      ? result.queryWatchlist.items
+      : [];
+  const shownObservations = watchlistItems.slice(
+    0,
+    Math.max(0, 3 - shownChanges.length),
+  );
   const propertyFallback =
     shownChanges.length === 0 ? result.propertyFallback : null;
   const propertyComparisons =
@@ -626,14 +660,87 @@ export function DailyBriefingResults({
 
       <NoiseSummary
         funnel={result.signalFunnel}
+        observationsShown={shownObservations.length}
         selectedQueryChanges={Math.min(
           result.signalFunnel.selectedQueryChanges,
           shownChanges.length,
         )}
-        propertyFallbackShown={
-          result.signalFunnel.propertyFallbackShown && propertyFallback !== null
-        }
+        siteTrendShown={propertyFallback !== null}
       />
+
+      {propertyFallback !== null && propertyComparisons !== null ? (
+        <section
+          aria-labelledby="daily-briefing-site-trend"
+          data-result-section="site-trend"
+          data-site-trend
+        >
+          <h3
+            id="daily-briefing-site-trend"
+            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+          >
+            {t("siteTrend.title")}
+          </h3>
+          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("siteTrend.intro")}
+          </p>
+          <div className={`${CARD} mt-4`}>
+            <p className={`${EYEBROW} text-brand-accent-text`}>
+              {t("siteTrend.evidence")}
+            </p>
+            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
+              {t(
+                `propertyChangeKinds.${propertyFallback.change.kind}.title`,
+              )}
+            </h4>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                [t("kpis.clicks"), propertyComparisons.clicks],
+                [t("kpis.impressions"), propertyComparisons.impressions],
+                [t("kpis.ctr"), propertyComparisons.ctr],
+                [t("kpis.averagePosition"), propertyComparisons.position],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
+                >
+                  <p className={EYEBROW}>{label}</p>
+                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {t(`propertyChangeKinds.${propertyFallback.change.kind}.body`, {
+                clicks: signedMetric(
+                  locale,
+                  propertyFallback.change.clickChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                impressions: signedMetric(
+                  locale,
+                  propertyFallback.change.impressionChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                position: signedMetric(
+                  locale,
+                  propertyFallback.change.positionDelta,
+                  t("kpis.unavailable"),
+                ),
+              })}
+            </p>
+            <a
+              data-site-trend-action-link
+              href="#daily-briefing-actions"
+              className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            >
+              {t("siteTrend.actionListed")}
+            </a>
+          </div>
+        </section>
+      ) : null}
 
       <section
         aria-labelledby="daily-briefing-changes"
@@ -643,38 +750,38 @@ export function DailyBriefingResults({
           id="daily-briefing-changes"
           className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
         >
-          {t("changes.title")}
+          {t("review.title")}
         </h3>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("changes.intro")}
+          {t("review.intro")}
         </p>
-        {shownChanges.length === 0 && propertyFallback === null ? (
+        {shownChanges.length === 0 && shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t("changes.stableEmpty")}
+              {t(reviewEmptyMessageKey(result.queryWatchlist.evidence))}
             </p>
           </div>
         ) : (
           <div
             role="table"
-            aria-label={t("changes.title")}
+            aria-label={t("review.title")}
             className="mt-4 overflow-hidden rounded-[12px] border border-brand-border-card bg-brand-bg"
           >
             <div
               role="row"
-              className="sr-only border-brand-border-card bg-brand-panel px-4 py-3 md:not-sr-only md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5"
+              className="sr-only border-brand-border-card bg-brand-panel px-4 py-4 md:not-sr-only md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5"
             >
               {[
-                t("changes.columns.change"),
-                t("changes.columns.queryPage"),
-                t("changes.columns.clicks"),
-                t("changes.columns.position"),
-                t("changes.columns.interpretation"),
+                t("review.columns.status"),
+                t("review.columns.queryPage"),
+                t("review.columns.clicks"),
+                t("review.columns.position"),
+                t("review.columns.interpretation"),
               ].map((header) => (
                 <div
                   key={header}
                   role="columnheader"
-                  className={EYEBROW}
+                  className={TABLE_HEADER}
                 >
                   {header}
                 </div>
@@ -684,12 +791,13 @@ export function DailyBriefingResults({
               <div
                 key={`change:${index}:${change.kind}`}
                 role="row"
+                data-review-row
                 data-change
                 className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.change")}
+                    {t("review.columns.status")}
                   </span>
                   <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
                     <span className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text">
@@ -707,7 +815,7 @@ export function DailyBriefingResults({
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.queryPage")}
+                    {t("review.columns.queryPage")}
                   </span>
                   <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
                     {change.query}
@@ -718,7 +826,7 @@ export function DailyBriefingResults({
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.clicks")}
+                    {t("review.columns.clicks")}
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
@@ -731,7 +839,7 @@ export function DailyBriefingResults({
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.position")}
+                    {t("review.columns.position")}
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
@@ -747,7 +855,7 @@ export function DailyBriefingResults({
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.interpretation")}
+                    {t("review.columns.interpretation")}
                   </span>
                   <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
                     {t(`changeKinds.${change.kind}.body`)}
@@ -755,83 +863,75 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
-            {propertyFallback !== null && propertyComparisons !== null ? (
+            {shownObservations.map((observation) => (
               <div
+                key={`observation:${observation.kind}:${observation.query}`}
                 role="row"
-                data-change
-                data-property-change
+                data-review-row
+                data-observation-row
                 className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.change")}
+                    {t("review.columns.status")}
                   </span>
-                  <div className="mt-2 min-w-0 md:mt-0">
-                    <p className={`${EYEBROW} text-brand-accent-text`}>
-                      {t("changes.propertyEvidence")}
-                    </p>
-                    <h4 className="mt-1.5 break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
-                      {t(
-                        `propertyChangeKinds.${propertyFallback.change.kind}.title`,
-                      )}
-                    </h4>
-                  </div>
+                  <p className="mt-2 inline-flex rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2.5 py-1 text-[11px] font-semibold text-brand-accent-text md:mt-0">
+                    {t(`review.observationKinds.${observation.kind}.title`)}
+                  </p>
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.queryPage")}
+                    {t("review.columns.queryPage")}
                   </span>
                   <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
-                    {t("changes.entireProperty")}
+                    {observation.query}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {observation.pageEvidence === "observed" &&
+                    observation.page !== null
+                      ? observation.page
+                      : t("review.pageUnavailable")}
                   </p>
                 </div>
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.clicks")}
+                    {t("review.columns.clicks")}
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {propertyComparisons.clicks}
-                  </p>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.position")}
-                  </span>
-                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {propertyComparisons.position}
-                  </p>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("changes.columns.interpretation")}
-                  </span>
-                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
-                    {t(
-                      `propertyChangeKinds.${propertyFallback.change.kind}.body`,
-                      {
-                        clicks: signedMetric(
-                          locale,
-                          propertyFallback.change.clickChange,
-                          t("kpis.unavailable"),
-                          0,
-                        ),
-                        impressions: signedMetric(
-                          locale,
-                          propertyFallback.change.impressionChange,
-                          t("kpis.unavailable"),
-                          0,
-                        ),
-                        position: signedMetric(
-                          locale,
-                          propertyFallback.change.positionDelta,
-                          t("kpis.unavailable"),
-                        ),
-                      },
+                    {comparison(
+                      observation.previous?.clicks ?? null,
+                      observation.current.clicks,
+                      (value) => number(locale, value),
+                      t("changes.notObserved"),
                     )}
                   </p>
                 </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      observation.previous?.position ?? null,
+                      observation.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("changes.notObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`review.observationKinds.${observation.kind}.body`)}
+                  </p>
+                </div>
               </div>
-            ) : null}
+            ))}
           </div>
         )}
       </section>

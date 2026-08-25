@@ -238,7 +238,7 @@ describe("DailyBriefingTool connection boundary", () => {
     const host = await renderTool();
 
     expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(2);
-    expect(host.textContent).toContain("Changes above the noise threshold");
+    expect(host.textContent).toContain("Queries and pages to review today");
     expect(host.textContent).toContain("Today's recommended actions");
     expect(host.textContent).toContain("Run the briefing to generate");
     expect(host.querySelector("[data-change]")).toBeNull();

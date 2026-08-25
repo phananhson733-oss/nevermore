@@ -1146,6 +1146,330 @@ describe("signal funnel", () => {
   });
 });
 
+describe("query observation watchlist", () => {
+  it("keeps 49 below the watchlist and classifies the 50, 99, and 100 boundaries", () => {
+    const currentRows = [
+      queryRow("below floor", 49, 4, 30),
+      queryRow("sample fifty", 50, 5, 30),
+      queryRow("sample ninety nine", 99, 9, 30),
+      queryRow("eligible hundred", 100, 10, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 0 }));
+    const currentPages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.queryWatchlist).toEqual({
+      evidence: "observed",
+      items: [
+        expect.objectContaining({
+          kind: "evaluation_eligible",
+          query: "eligible hundred",
+          page: "https://example.com/eligible-hundred",
+          pageEvidence: "observed",
+        }),
+        expect.objectContaining({
+          kind: "sample_building",
+          query: "sample ninety nine",
+          page: "https://example.com/sample-ninety-nine",
+          pageEvidence: "observed",
+        }),
+        expect.objectContaining({
+          kind: "sample_building",
+          query: "sample fifty",
+          page: "https://example.com/sample-fifty",
+          pageEvidence: "observed",
+        }),
+      ],
+    });
+    expect(result.queryWatchlist.items.map((item) => item.query)).not.toContain(
+      "below floor",
+    );
+  });
+
+  it("excludes strict changes and fills only the unused three-row slots", () => {
+    const strict = queryRow("strict decline", 200, 10, 5.2);
+    const observers = [
+      queryRow("observer a", 180, 12, 30),
+      queryRow("observer b", 170, 11, 30),
+      queryRow("observer c", 160, 10, 30),
+    ];
+    const currentRows = [strict, ...observers];
+    const previousRows = [
+      queryRow(strict.query, 200, 20, 5),
+      ...observers.map((row) => ({ ...row, clicks: row.clicks - 1 })),
+    ];
+    const currentPages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.changes).toEqual([
+      expect.objectContaining({ query: strict.query }),
+    ]);
+    expect(result.queryWatchlist.items).toHaveLength(2);
+    expect(result.queryWatchlist.items.map((item) => item.query)).not.toContain(
+      strict.query,
+    );
+    expect(result.changes.length + result.queryWatchlist.items.length).toBe(3);
+  });
+
+  it("sorts observed comparisons before a missing previous row within a tier", () => {
+    const currentRows = [
+      queryRow("missing previous", 500, 30, 30),
+      queryRow("smaller delta", 200, 15, 30),
+      queryRow("larger delta", 150, 20, 30),
+    ];
+    const previousRows = [
+      queryRow("smaller delta", 200, 10, 30),
+      queryRow("larger delta", 150, 5, 30),
+    ];
+    const pages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, pages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "larger delta",
+      "smaller delta",
+      "missing previous",
+    ]);
+    expect(result.queryWatchlist.items[2]?.previous).toBeNull();
+  });
+
+  it("uses impressions and query as the final stable sort tie-breakers", () => {
+    const currentRows = [
+      queryRow("zeta tie", 200, 10, 30),
+      queryRow("higher impressions", 300, 10, 30),
+      queryRow("alpha tie", 200, 10, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 5 }));
+    const pages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, pages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "higher impressions",
+      "alpha tie",
+      "zeta tie",
+    ]);
+  });
+
+  it("returns no observations when three strict changes consume every slot", () => {
+    const ctrTarget = queryRow("ctr target", 1_000, 0, 9);
+    const decline = queryRow("brand decline", 200, 10, 5.2);
+    const firstObserved = queryRow("new pair", 200, 20, 13);
+    const leftover = queryRow("leftover eligible", 150, 15, 30);
+    const baselines = baselineRows("baseline");
+    const currentRows = [
+      ctrTarget,
+      decline,
+      firstObserved,
+      leftover,
+      ...baselines,
+    ];
+    const previousRows = [
+      ctrTarget,
+      queryRow(decline.query, 200, 20, 5),
+      { ...leftover, clicks: 14 },
+      ...baselines,
+    ];
+    const currentPages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTerms: [decline.query],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes.map((change) => change.kind)).toEqual([
+      "click_opportunity",
+      "stable_position_click_decline",
+      "first_observed",
+    ]);
+    expect(result.queryWatchlist).toEqual({ evidence: "observed", items: [] });
+  });
+
+  it("attributes only pages at the tier floor with at least 80 percent coverage", () => {
+    const currentRows = [
+      queryRow("coverage below", 1_000, 10, 30),
+      queryRow("coverage boundary", 1_000, 10, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 9 }));
+    const currentPages = [
+      queryPageRow("coverage below", "https://example.com/coverage-below", 799, 8, 30),
+      queryPageRow("coverage boundary", "https://example.com/coverage-boundary", 800, 8, 30),
+    ];
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/previous-${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+    const byQuery = new Map(
+      result.queryWatchlist.items.map((item) => [item.query, item]),
+    );
+
+    expect(byQuery.get("coverage below")).toMatchObject({
+      page: null,
+      pageEvidence: "unavailable",
+    });
+    expect(byQuery.get("coverage boundary")).toMatchObject({
+      page: "https://example.com/coverage-boundary",
+      pageEvidence: "observed",
+    });
+  });
+
+  it("requires 50 page impressions for a sample-building attribution", () => {
+    const currentRows = [
+      queryRow("sample page below", 50, 5, 30),
+      queryRow("sample page boundary", 50, 5, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 4 }));
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, [
+        queryPageRow("sample page below", "https://example.com/sample-below", 49, 5, 30),
+        queryPageRow("sample page boundary", "https://example.com/sample-boundary", 50, 5, 30),
+      ]),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: false,
+    }).result;
+    const byQuery = new Map(
+      result.queryWatchlist.items.map((item) => [item.query, item]),
+    );
+
+    expect(byQuery.get("sample page below")).toMatchObject({
+      page: null,
+      pageEvidence: "unavailable",
+    });
+    expect(byQuery.get("sample page boundary")).toMatchObject({
+      page: "https://example.com/sample-boundary",
+      pageEvidence: "observed",
+    });
+  });
+
+  it("requires 100 page impressions for an evaluation-eligible attribution", () => {
+    const currentRows = [
+      queryRow("eligible page below", 100, 10, 30),
+      queryRow("eligible page boundary", 100, 10, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 9 }));
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, [
+        queryPageRow("eligible page below", "https://example.com/eligible-below", 99, 10, 30),
+        queryPageRow("eligible page boundary", "https://example.com/eligible-boundary", 100, 10, 30),
+      ]),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: false,
+    }).result;
+    const byQuery = new Map(
+      result.queryWatchlist.items.map((item) => [item.query, item]),
+    );
+
+    expect(byQuery.get("eligible page below")).toMatchObject({
+      page: null,
+      pageEvidence: "unavailable",
+    });
+    expect(byQuery.get("eligible page boundary")).toMatchObject({
+      page: "https://example.com/eligible-boundary",
+      pageEvidence: "observed",
+    });
+  });
+
+  it("keeps partial and unavailable watchlists distinct without ranked items", () => {
+    const rows = [queryRow("eligible", 100, 10, 30)];
+    const partial = report({
+      currentQueryEvidence: evidence(rows, [], { queryTruncated: true }),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: false,
+    }).result.queryWatchlist;
+    const unavailable = report().result.queryWatchlist;
+    const mixed = report({
+      currentQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byProperty",
+        queryPageAggregation: "byProperty",
+        totalAggregation: "byProperty",
+      }),
+      previousQueryEvidence: evidence(rows, [], {
+        queryAggregation: "byPage",
+        queryPageAggregation: "byPage",
+        totalAggregation: "byPage",
+      }),
+      brandTermsConfirmed: false,
+    }).result.queryWatchlist;
+
+    expect(partial).toEqual({ evidence: "partial", items: [] });
+    expect(unavailable).toEqual({ evidence: "unavailable", items: [] });
+    expect(mixed).toEqual({ evidence: "unavailable", items: [] });
+  });
+
+  it("keeps the property fallback independent from observation rows", () => {
+    const currentRows = [
+      queryRow("sample a", 99, 2, 30),
+      queryRow("sample b", 98, 2, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 1 }));
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 70,
+        currentClicks: 35,
+        previousImpressions: 7_000,
+        currentImpressions: 4_900,
+        previousPosition: 10,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(currentRows, []),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.propertyFallback).toMatchObject({
+      change: { kind: "sitewide_click_decline", query: null, page: null },
+    });
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "sample a",
+      "sample b",
+    ]);
+  });
+});
+
 describe("query evidence boundaries", () => {
   it("filters negative query and query-page metrics before coverage", () => {
     const query = "pricing automation";

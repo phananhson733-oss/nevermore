@@ -51,7 +51,6 @@ describe("marketing redirects", () => {
     ["free-white-label-seo", "best-white-label-seo-tool"],
     ["marketing-attribution-for-saas", "marketing-attribution-models"],
     ["serankings", "serankings-alternative"],
-    ["astrologywiki-case-study", "astrologywiki-zero-to-5000-users"],
   ])("redirects the retired %s slug in one hop", (source, destination) => {
     for (const prefix of ["", "/en"]) {
       expect(redirects).toContainEqual({

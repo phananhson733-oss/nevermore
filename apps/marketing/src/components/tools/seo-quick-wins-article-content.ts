@@ -207,9 +207,9 @@ const EN: QuickWinsArticle = {
   relatedReadingHeading: "Related reading",
   relatedReading: [
     {
-      label: "From 0 to 5,000 users: the astrologywiki.com case study",
-      href: "/blog/astrologywiki-case-study",
-      description: "The site the numbers on this page come from.",
+      label: "What a bounded internal-link crawl can prove",
+      href: "/blog/bounded-internal-link-crawl",
+      description: "How far one crawl's coverage actually reaches.",
     },
     {
       label: "What a public SEO audit can and cannot see",
@@ -366,9 +366,9 @@ const ZH: QuickWinsArticle = {
   relatedReadingHeading: "延伸阅读",
   relatedReading: [
     {
-      label: "从 0 到 5,000 用户：astrologywiki.com 案例",
-      href: "/blog/astrologywiki-case-study",
-      description: "本页数字来自的那个网站。",
+      label: "受限内链抓取到底能证明什么",
+      href: "/blog/bounded-internal-link-crawl",
+      description: "一次抓取的覆盖范围到哪里为止。",
     },
     {
       label: "公开 SEO 审计看得到和看不到什么",
