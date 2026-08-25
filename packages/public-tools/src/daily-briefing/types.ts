@@ -183,6 +183,24 @@ export interface DailyBriefingSignalFunnel {
   readonly propertyFallbackShown: boolean;
 }
 
+export type DailyBriefingQueryObservationKind =
+  | "evaluation_eligible"
+  | "sample_building";
+
+export interface DailyBriefingQueryObservation {
+  readonly kind: DailyBriefingQueryObservationKind;
+  readonly query: string;
+  readonly page: string | null;
+  readonly pageEvidence: "observed" | "unavailable";
+  readonly current: GscQueryRow;
+  readonly previous: GscQueryRow | null;
+}
+
+export interface DailyBriefingQueryWatchlist {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly items: readonly DailyBriefingQueryObservation[];
+}
+
 export type DailyBriefingLimitationCode =
   | "daily_data_incomplete"
   | "daily_rows_omitted"
@@ -203,6 +221,7 @@ export interface DailyBriefingResult {
   readonly actions: readonly DailyBriefingAction[];
   readonly propertyFallback: DailyBriefingPropertyFallback | null;
   readonly signalFunnel: DailyBriefingSignalFunnel;
+  readonly queryWatchlist: DailyBriefingQueryWatchlist;
   /** Rows in the observed query read that did not clear any signal threshold. */
   readonly filteredObservedRows: number;
   /** False when the count describes only a prefix or no query read happened. */
