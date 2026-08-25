@@ -36,6 +36,16 @@ export const DATAFORSEO_DOMAIN_PAGES_LIVE_URL =
 export const DEFAULT_DATAFORSEO_LIMIT = 200;
 export const DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT = 100;
 export const MAX_DATAFORSEO_LIMIT = 1_000;
+/** Provider rank_group ceiling: bounds both the request filter and the parsed ranks. */
+const MAX_DOMAIN_INTERSECTION_RANK = 100;
+/** Applies to the serialized href, which percent-encoding can inflate well past the raw input. */
+const MAX_PROVIDER_URL_CHARS = 2_048;
+const MAX_PROVIDER_TITLE_CHARS = 200;
+/** core_keyword is a short phrase; the cap only guards against provider drift. */
+const MAX_PROVIDER_CORE_KEYWORD_CHARS = 200;
+const MAX_PROVIDER_SERP_ITEM_TYPE_CHARS = 64;
+const PROVIDER_TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\s*([+-])(\d{2}):?(\d{2})|Z)?$/;
 const DATAFORSEO_PROVIDER_SEARCH_INTENTS = [
   "informational",
   "navigational",
@@ -255,6 +265,20 @@ export interface DataForSeoDomainIntersectionRequest {
   readonly languageCode: string;
   readonly intersections: boolean;
   readonly limit: number;
+  /**
+   * Keep only items where target1's organic element sits at this rank_group or
+   * better. Composed into the provider `filters` array here so no free-form
+   * filter expression crosses this boundary.
+   */
+  readonly maxFirstDomainRank?: number;
+  /** Ask for the provider's stored SERP snapshot per keyword (no price change: probe 2026-08-25). */
+  readonly includeSerpInfo?: boolean;
+}
+
+export interface DataForSeoSearchVolumeTrend {
+  readonly monthly: number | null;
+  readonly quarterly: number | null;
+  readonly yearly: number | null;
 }
 
 /** Sanitized facts retained from one domain-intersection keyword item. */
@@ -266,6 +290,18 @@ export interface DataForSeoDomainIntersectionRow {
   readonly providerIntent: DataForSeoProviderSearchIntent | null;
   readonly firstDomainRank: number | null;
   readonly secondDomainRank: number | null;
+  /** target1's ranking page; http(s) only, no userinfo, at most 2048 chars, else null. */
+  readonly firstDomainUrl: string | null;
+  /** Provider title of that page, trimmed to 200 chars. */
+  readonly firstDomainTitle: string | null;
+  /** Provider estimated monthly traffic to that page for this keyword. */
+  readonly firstDomainEtv: number | null;
+  readonly coreKeyword: string | null;
+  readonly searchVolumeTrend: DataForSeoSearchVolumeTrend | null;
+  /** Stored SERP snapshot element types; null when no snapshot was requested or reported. */
+  readonly serpItemTypes: readonly string[] | null;
+  /** ISO timestamp of that snapshot; null when absent or unparseable. */
+  readonly serpUpdatedAt: string | null;
 }
 
 /** Sanitized pairwise result with no provider prose or authentication. */
@@ -476,6 +512,143 @@ function nullableString(value: unknown, context: string): string | null {
     );
   }
   return value;
+}
+
+/**
+ * A provider URL the surface may link to, or null. Drops rather than throws on
+ * unsafe shapes. The length bound is enforced on the serialized href because
+ * WHATWG parsing percent-encodes non-ASCII paths and can multiply the length.
+ */
+function nullableSafeHttpUrl(value: unknown, context: string): string | null {
+  const raw = nullableString(value, context);
+  if (raw === null) return null;
+  try {
+    const url = new URL(raw.trim());
+    const safeScheme = url.protocol === "http:" || url.protocol === "https:";
+    const noUserinfo = url.username === "" && url.password === "";
+    return safeScheme && noUserinfo && url.href.length <= MAX_PROVIDER_URL_CHARS
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whitespace-collapsed provider text cut to maxChars; blank text is null. */
+function nullableBoundedText(
+  value: unknown,
+  maxChars: number,
+  context: string,
+): string | null {
+  const raw = nullableString(value, context);
+  if (raw === null) return null;
+  const flat = raw.replace(/\s+/g, " ").trim();
+  if (flat === "") return null;
+  return flat.length > maxChars ? flat.slice(0, maxChars).trim() : flat;
+}
+
+/**
+ * Provider timestamps arrive as "YYYY-MM-DD HH:MM:SS +00:00". A missing zone is
+ * read as UTC because the provider only emits UTC. Fractional seconds, fields
+ * that do not name a real instant (Feb 30, hour 24, offset +99:00), and any
+ * other format drift are silence (null), never a row failure.
+ */
+function nullableProviderTimestamp(
+  value: unknown,
+  context: string,
+): string | null {
+  const raw = nullableString(value, context);
+  if (raw === null) return null;
+  const match = PROVIDER_TIMESTAMP_RE.exec(raw.trim());
+  if (match === null) return null;
+  const fields = match.slice(1, 7).map(Number);
+  const utcMillis = Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6]),
+  );
+  if (!calendarFieldsRoundTrip(utcMillis, fields)) return null;
+  const offsetMinutes = providerOffsetMinutes(match[7], match[8], match[9]);
+  if (offsetMinutes === null) return null;
+  return new Date(utcMillis - offsetMinutes * 60_000).toISOString();
+}
+
+/** JS Date rolls impossible fields over (Feb 30 -> Mar 2); reject anything that did not survive intact. */
+function calendarFieldsRoundTrip(
+  utcMillis: number,
+  fields: readonly number[],
+): boolean {
+  if (!Number.isFinite(utcMillis)) return false;
+  const date = new Date(utcMillis);
+  const actual = [
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+  ];
+  return actual.every((part, index) => part === fields[index]);
+}
+
+/** Signed zone offset in minutes; absent means UTC; an impossible offset is null. */
+function providerOffsetMinutes(
+  sign: string | undefined,
+  hours: string | undefined,
+  minutes: string | undefined,
+): number | null {
+  if (sign === undefined) return 0;
+  const offsetHours = Number(hours);
+  const offsetMinutes = Number(minutes);
+  if (offsetHours > 23 || offsetMinutes > 59) return null;
+  return (sign === "-" ? -1 : 1) * (offsetHours * 60 + offsetMinutes);
+}
+
+function nullableNumberOrNull(value: unknown, context: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a finite number.`,
+    );
+  }
+  return value;
+}
+
+function nullableSearchVolumeTrend(
+  value: unknown,
+  context: string,
+): DataForSeoSearchVolumeTrend | null {
+  if (value === undefined || value === null) return null;
+  const trend = asRecord(value, context);
+  return {
+    monthly: nullableNumberOrNull(trend.monthly, `${context}.monthly`),
+    quarterly: nullableNumberOrNull(trend.quarterly, `${context}.quarterly`),
+    yearly: nullableNumberOrNull(trend.yearly, `${context}.yearly`),
+  };
+}
+
+function nullableStringList(
+  value: unknown,
+  context: string,
+): readonly string[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) {
+    throw new SourceError("INVALID_RESPONSE", `${context} was not an array.`);
+  }
+  return value.flatMap((entry) =>
+    typeof entry === "string" && entry.trim() !== ""
+      ? [entry.trim().slice(0, MAX_PROVIDER_SERP_ITEM_TYPE_CHARS)]
+      : [],
+  );
+}
+
+function optionalRecord(value: unknown, context: string): JsonRecord | null {
+  if (value === undefined || value === null) return null;
+  return asRecord(value, context);
 }
 
 function nullableIntegerInRange(
@@ -809,6 +982,26 @@ function normalizeDomainIntersectionRequest(
       `DataForSEO domain-intersection limit must be an integer from 1 to ${MAX_DATAFORSEO_LIMIT}.`,
     );
   }
+  if (
+    value.maxFirstDomainRank !== undefined &&
+    (!Number.isSafeInteger(value.maxFirstDomainRank) ||
+      value.maxFirstDomainRank < 1 ||
+      value.maxFirstDomainRank > MAX_DOMAIN_INTERSECTION_RANK)
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `DataForSEO domain-intersection maxFirstDomainRank must be an integer from 1 to ${MAX_DOMAIN_INTERSECTION_RANK}.`,
+    );
+  }
+  if (
+    value.includeSerpInfo !== undefined &&
+    typeof value.includeSerpInfo !== "boolean"
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection includeSerpInfo must be a boolean.",
+    );
+  }
 
   const common = {
     target1,
@@ -816,6 +1009,10 @@ function normalizeDomainIntersectionRequest(
     languageCode: value.languageCode.trim().toLowerCase(),
     intersections: value.intersections,
     limit: value.limit,
+    ...(value.maxFirstDomainRank === undefined
+      ? {}
+      : { maxFirstDomainRank: value.maxFirstDomainRank }),
+    includeSerpInfo: value.includeSerpInfo ?? false,
   };
   return locationCode !== undefined
     ? { ...common, locationCode }
@@ -1075,15 +1272,14 @@ function parseCompetitorDomainRow(
 }
 
 function domainIntersectionRank(
-  value: unknown,
+  element: JsonRecord | null,
   context: string,
 ): number | null {
-  if (value === undefined || value === null) return null;
-  const element = asRecord(value, context);
+  if (element === null) return null;
   const rank = nullableIntegerInRange(
     element.rank_group,
     1,
-    100,
+    MAX_DOMAIN_INTERSECTION_RANK,
     `${context}.rank_group`,
   );
   if (rank === null) {
@@ -1095,74 +1291,140 @@ function domainIntersectionRank(
   return rank;
 }
 
-function parseDomainIntersectionRow(
-  value: unknown,
-  index: number,
-): DataForSeoDomainIntersectionRow {
-  const item = asRecord(value, `DataForSEO domain-intersection item ${index}`);
-  const keywordData = asRecord(
-    item.keyword_data,
-    `DataForSEO domain-intersection item ${index}.keyword_data`,
-  );
+/** The paid-for facts about target1's ranking page; all null when the element is absent. */
+function parseFirstDomainPageFacts(
+  element: JsonRecord | null,
+  context: string,
+): Pick<
+  DataForSeoDomainIntersectionRow,
+  "firstDomainUrl" | "firstDomainTitle" | "firstDomainEtv"
+> {
+  if (element === null) {
+    return { firstDomainUrl: null, firstDomainTitle: null, firstDomainEtv: null };
+  }
+  return {
+    firstDomainUrl: nullableSafeHttpUrl(element.url, `${context}.url`),
+    firstDomainTitle: nullableBoundedText(
+      element.title,
+      MAX_PROVIDER_TITLE_CHARS,
+      `${context}.title`,
+    ),
+    firstDomainEtv: nullableNonNegativeNumber(element.etv, `${context}.etv`),
+  };
+}
+
+/** The stored SERP snapshot; all null when none was requested or reported. */
+function parseSerpSnapshot(
+  serpInfo: JsonRecord | null,
+  context: string,
+): Pick<DataForSeoDomainIntersectionRow, "serpItemTypes" | "serpUpdatedAt"> {
+  if (serpInfo === null) return { serpItemTypes: null, serpUpdatedAt: null };
+  return {
+    serpItemTypes: nullableStringList(
+      serpInfo.serp_item_types,
+      `${context}.serp_item_types`,
+    ),
+    serpUpdatedAt: nullableProviderTimestamp(
+      serpInfo.last_updated_time,
+      `${context}.last_updated_time`,
+    ),
+  };
+}
+
+/** The keyword and its provider metrics carried by keyword_data. */
+function parseDomainIntersectionKeywordFacts(
+  keywordData: JsonRecord,
+  context: string,
+): Pick<
+  DataForSeoDomainIntersectionRow,
+  | "keyword"
+  | "searchVolume"
+  | "cpc"
+  | "keywordDifficulty"
+  | "providerIntent"
+  | "coreKeyword"
+  | "searchVolumeTrend"
+> {
   const keyword = keywordData.keyword;
   if (typeof keyword !== "string" || keyword.trim() === "") {
     throw new SourceError(
       "INVALID_RESPONSE",
-      `DataForSEO domain-intersection item ${index} did not contain a keyword.`,
+      `${context} did not contain a keyword.`,
     );
   }
-  const keywordInfo =
-    keywordData.keyword_info === undefined || keywordData.keyword_info === null
-      ? null
-      : asRecord(
-          keywordData.keyword_info,
-          `DataForSEO domain-intersection item ${index}.keyword_info`,
-        );
-  const keywordProperties =
-    keywordData.keyword_properties === undefined ||
-    keywordData.keyword_properties === null
-      ? null
-      : asRecord(
-          keywordData.keyword_properties,
-          `DataForSEO domain-intersection item ${index}.keyword_properties`,
-        );
-  const searchIntentInfo =
-    keywordData.search_intent_info === undefined ||
-    keywordData.search_intent_info === null
-      ? null
-      : asRecord(
-          keywordData.search_intent_info,
-          `DataForSEO domain-intersection item ${index}.search_intent_info`,
-        );
-
+  const keywordInfo = optionalRecord(
+    keywordData.keyword_info,
+    `${context}.keyword_info`,
+  );
+  const keywordProperties = optionalRecord(
+    keywordData.keyword_properties,
+    `${context}.keyword_properties`,
+  );
+  const searchIntentInfo = optionalRecord(
+    keywordData.search_intent_info,
+    `${context}.search_intent_info`,
+  );
   return {
     keyword: keyword.trim(),
     searchVolume: nullableNonNegativeNumber(
       keywordInfo?.search_volume,
-      `DataForSEO domain-intersection item ${index}.search_volume`,
+      `${context}.search_volume`,
     ),
-    cpc: nullableNonNegativeNumber(
-      keywordInfo?.cpc,
-      `DataForSEO domain-intersection item ${index}.cpc`,
-    ),
+    cpc: nullableNonNegativeNumber(keywordInfo?.cpc, `${context}.cpc`),
     keywordDifficulty: nullableIntegerInRange(
       keywordProperties?.keyword_difficulty,
       0,
       100,
-      `DataForSEO domain-intersection item ${index}.keyword_difficulty`,
+      `${context}.keyword_difficulty`,
     ),
     providerIntent: nullableProviderSearchIntent(
       searchIntentInfo?.main_intent,
-      `DataForSEO domain-intersection item ${index}.main_intent`,
+      `${context}.main_intent`,
     ),
+    coreKeyword: nullableBoundedText(
+      keywordProperties?.core_keyword,
+      MAX_PROVIDER_CORE_KEYWORD_CHARS,
+      `${context}.core_keyword`,
+    ),
+    searchVolumeTrend: nullableSearchVolumeTrend(
+      keywordInfo?.search_volume_trend,
+      `${context}.search_volume_trend`,
+    ),
+  };
+}
+
+function parseDomainIntersectionRow(
+  value: unknown,
+  index: number,
+): DataForSeoDomainIntersectionRow {
+  const ctx = `DataForSEO domain-intersection item ${index}`;
+  const item = asRecord(value, ctx);
+  const keywordData = asRecord(item.keyword_data, `${ctx}.keyword_data`);
+  const firstElement = optionalRecord(
+    item.first_domain_serp_element,
+    `${ctx}.first_domain_serp_element`,
+  );
+  const secondElement = optionalRecord(
+    item.second_domain_serp_element,
+    `${ctx}.second_domain_serp_element`,
+  );
+  const serpInfo = optionalRecord(keywordData.serp_info, `${ctx}.serp_info`);
+
+  return {
+    ...parseDomainIntersectionKeywordFacts(keywordData, ctx),
     firstDomainRank: domainIntersectionRank(
-      item.first_domain_serp_element,
-      `DataForSEO domain-intersection item ${index}.first_domain_serp_element`,
+      firstElement,
+      `${ctx}.first_domain_serp_element`,
     ),
     secondDomainRank: domainIntersectionRank(
-      item.second_domain_serp_element,
-      `DataForSEO domain-intersection item ${index}.second_domain_serp_element`,
+      secondElement,
+      `${ctx}.second_domain_serp_element`,
     ),
+    ...parseFirstDomainPageFacts(
+      firstElement,
+      `${ctx}.first_domain_serp_element`,
+    ),
+    ...parseSerpSnapshot(serpInfo, `${ctx}.serp_info`),
   };
 }
 
@@ -2613,7 +2875,22 @@ function toDomainIntersectionProviderTask(
     intersections: normalized.intersections,
     item_types: ["organic"],
     include_clickstream_data: false,
-    order_by: ["keyword_data.keyword_info.search_volume,desc"],
+    include_serp_info: normalized.includeSerpInfo === true,
+    ...(normalized.maxFirstDomainRank === undefined
+      ? {}
+      : {
+          filters: [
+            [
+              "first_domain_serp_element.rank_group",
+              "<=",
+              normalized.maxFirstDomainRank,
+            ],
+          ],
+        }),
+    order_by: [
+      "first_domain_serp_element.etv,desc",
+      "keyword_data.keyword_info.search_volume,desc",
+    ],
     limit: normalized.limit,
     offset: 0,
   };
