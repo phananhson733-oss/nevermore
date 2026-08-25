@@ -8,9 +8,15 @@ import type {
 } from "../contract.ts";
 
 export const COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION =
-  "competitor_keyword_gap.v2";
+  "competitor_keyword_gap.v3";
 export const COMPETITOR_KEYWORD_GAP_TOOL = "competitor_keyword_gap";
-export const COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT = 100;
+/** Server-owned per-competitor cap; billing is per returned row so the rank filter keeps runs cheap. */
+export const COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT = 300;
+export const COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK = 20;
+/** Pre-screen thresholds. KD is a band input only; it is never a filter and never called winnability. */
+export const COMPETITOR_KEYWORD_GAP_KD_LOW_MAX = 30;
+export const COMPETITOR_KEYWORD_GAP_KD_HEAD_MIN = 61;
+export const COMPETITOR_KEYWORD_GAP_PAGE_ONE_RANK_MAX = 10;
 
 export interface CompetitorKeywordGapRequestV1 {
   readonly property?: string;
@@ -114,9 +120,71 @@ export interface CompetitorKeywordGapCompetitorCoverage {
   readonly failureCode: CompetitorKeywordGapCompetitorFailureCode | null;
 }
 
+export interface CompetitorKeywordGapSampleRule {
+  readonly maxCompetitorRank: number;
+  readonly perCompetitorLimit: number;
+  readonly serpSnapshotRequested: boolean;
+}
+
+export interface CompetitorKeywordGapCompetitorPage {
+  /** http(s) only, no userinfo, bounded length; null when the provider gave none. */
+  readonly url: string | null;
+  readonly title: string | null;
+  /** Provider estimated monthly traffic to the ranking page. */
+  readonly etv: number | null;
+}
+
+export interface CompetitorKeywordGapSearchVolumeTrend {
+  readonly monthly: number | null;
+  readonly quarterly: number | null;
+  readonly yearly: number | null;
+}
+
+/** A dated provider snapshot of the SERP, never an observation made by this tool. */
+export interface CompetitorKeywordGapSerpSnapshot {
+  readonly itemTypes: readonly string[];
+  readonly updatedAt: string | null;
+}
+
+export type CompetitorKeywordGapPreScreenBand =
+  | "prioritize_serp_check"
+  | "stretch"
+  | "unbanded"
+  | "defer_head_term"
+  | "defer_brand_navigational";
+
+/** Display order inside a GSC lane: prioritize, stretch, unbanded, head, brand. */
+export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS = [
+  "prioritize_serp_check",
+  "stretch",
+  "unbanded",
+  "defer_head_term",
+  "defer_brand_navigational",
+] as const satisfies readonly CompetitorKeywordGapPreScreenBand[];
+
+export type CompetitorKeywordGapPreScreenReason =
+  | "kd_low_rank_top10"
+  | "kd_mid_rank_top20"
+  | "kd_high"
+  | "dfs_metric_missing"
+  | "competitor_brand_token"
+  | "competitor_domain_profile_page"
+  | "domain_like_keyword"
+  | "provider_navigational_intent";
+
+/** Second, orthogonal axis next to `nextStep`; a DFS estimate, never winnability. */
+export interface CompetitorKeywordGapPreScreen {
+  readonly band: CompetitorKeywordGapPreScreenBand;
+  readonly basis: "dfs_estimate";
+  readonly reason: CompetitorKeywordGapPreScreenReason;
+}
+
 export interface CompetitorKeywordGapRow {
   readonly keyword: string;
   readonly competitorRanks: Readonly<Record<string, number>>;
+  readonly competitorPages: Readonly<
+    Record<string, CompetitorKeywordGapCompetitorPage>
+  >;
   readonly competitorCount: number;
   readonly bestCompetitorRank: number;
   readonly ownState: "not_observed_in_provider_rankings";
@@ -124,15 +192,21 @@ export interface CompetitorKeywordGapRow {
   readonly cpc: CompetitorKeywordGapMetric;
   readonly keywordDifficulty: CompetitorKeywordGapMetric;
   readonly providerIntent: string | null;
+  readonly coreKeyword: string | null;
+  readonly searchVolumeTrend: CompetitorKeywordGapSearchVolumeTrend | null;
+  /** null when the snapshot was not requested or the provider reported none. */
+  readonly serpSnapshot: CompetitorKeywordGapSerpSnapshot | null;
+  readonly preScreen: CompetitorKeywordGapPreScreen;
   readonly gsc: CompetitorKeywordGapGscEvidence;
 }
 
-export interface CompetitorKeywordGapResultV2 {
+export interface CompetitorKeywordGapResultV3 {
   readonly capturedAt: string;
   readonly siteDomain: string;
   readonly competitorDomains: readonly string[];
   readonly marketCode: string;
   readonly languageCode: string;
+  readonly sampleRule: CompetitorKeywordGapSampleRule;
   readonly requestedCompetitors: number;
   readonly completedCompetitors: number;
   readonly unavailableCompetitors: number;
@@ -142,6 +216,9 @@ export interface CompetitorKeywordGapResultV2 {
   readonly overlayStatus: CompetitorKeywordGapGscOverlayStatus;
   readonly gscQueryTruncated: boolean;
   readonly gscQueryPageTruncated: boolean;
+  /** Raw GSC row counts so "available with 0 observed" differs from "GSC returned nothing". */
+  readonly gscQueryRowCount: number | null;
+  readonly gscQueryPageRowCount: number | null;
 }
 
 export interface CompetitorKeywordGapRun
@@ -152,5 +229,5 @@ export interface CompetitorKeywordGapRun
 
 export interface CompetitorKeywordGapEnvelope {
   readonly run: CompetitorKeywordGapRun;
-  readonly result: CompetitorKeywordGapResultV2;
+  readonly result: CompetitorKeywordGapResultV3;
 }
