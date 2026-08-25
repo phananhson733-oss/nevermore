@@ -256,6 +256,10 @@ function watchlist(
       evidence === "observed"
         ? { page_one: 0, near_page_one: 0, mid: 0, far: 0 }
         : null,
+    withheldByKind:
+      evidence === "observed"
+        ? { sample_floor_reached: 0, sample_building: 0 }
+        : null,
     ...overrides,
   };
 }
@@ -443,6 +447,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           change("first_observed", 4),
         ],
         signalFunnel: signalFunnel({ selectedQueryChanges: 3 }),
+        queryWatchlist: watchlist("observed"),
       }),
     );
     const summary = host.querySelector("[data-evidence-fold-summary]");
@@ -465,8 +470,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     // "0 changes" over a page that also says the site declined was the copy
     // this line replaces.
     expect(summary?.textContent).toContain("0 query changes");
-    expect(summary?.textContent).toContain("1 site trend observations");
-    expect(summary?.textContent).toContain("observation candidates 0/8 shown");
+    expect(summary?.textContent).toContain("1 site trend observation");
+    expect(summary?.textContent).toContain("0/8 observation candidates shown");
     expect(summary?.textContent).not.toContain("below the threshold");
   });
 
@@ -815,8 +820,11 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       expect(row?.textContent).not.toContain(banned);
     }
     expect(host.textContent).toContain(
-      "No strict change lane could be evaluated",
+      "No strict change path could be evaluated this run",
     );
+    // The mode proves only that a provisional comparison was possible, so the
+    // intro must not promise that a movement is listed below it.
+    expect(host.textContent).not.toContain("what follows is");
   });
 
   it("hands off a provisional page check without counting it as an action", async () => {
@@ -860,6 +868,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
           {
             candidates: 4,
             withheldByBand: { page_one: 0, near_page_one: 0, mid: 1, far: 2 },
+            withheldByKind: { sample_floor_reached: 1, sample_building: 2 },
           },
         ),
       }),
@@ -869,8 +878,54 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(withheld?.textContent).toContain("3 more observation candidates");
     expect(withheld?.textContent).toContain("1 mid-band");
     expect(withheld?.textContent).toContain("2 far");
-    // They cleared every threshold; the row budget is what dropped them.
-    expect(withheld?.textContent).toContain("not below a threshold");
+    // "They cleared every threshold" is true of one sample tier and false of
+    // the other, so the sentence names both instead of asserting either.
+    expect(withheld?.textContent).toContain(
+      "1 of them had reached the strict 100-impression sample floor",
+    );
+    expect(withheld?.textContent).toContain("2 sit at 50-99 impressions");
+    expect(withheld?.textContent).not.toContain("not below a threshold");
+  });
+
+  it("names the lane, not the sample, when only position paths ran", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "change_detection",
+        cadence: "weekly",
+        laneCapability: laneCapability({
+          strictPairedPositionQueries: 2,
+          lanes: {
+            click_opportunity: "not_applicable",
+            stable_position_click_decline: "not_applicable",
+            average_position_crossed_page_one_band: "evaluated",
+            actionable_position_decline: "not_applicable",
+            first_observed: "not_applicable",
+          },
+        }),
+      }),
+    );
+
+    // The weekly-because-small-sample sentence names a gate this run never
+    // hit: the property can have plenty of impressions and still have no
+    // click lane to evaluate.
+    expect(host.textContent).toContain("Only position paths could be evaluated");
+    expect(host.textContent).not.toContain("the sample or complete-day comparison");
+  });
+
+  it("does not claim there is nothing to hand off while offering a page check", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        provisionalMoves: provisionalMoves([
+          provisionalMove("provisional_page_one_band_entry", 9),
+        ]),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(host.querySelector("[data-provisional-check-link]")).not.toBeNull();
+    expect(empty?.textContent).toContain("observational and is not counted");
   });
 
   it("never prints an unread observation count as a total of zero", async () => {
@@ -879,7 +934,11 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     );
     const summary = host.querySelector("[data-evidence-fold-summary]");
 
-    expect(summary?.textContent).toContain("count unavailable (not zero)");
+    // Not one query-derived zero may appear: the rows were never read.
+    expect(summary?.textContent).toContain(
+      "query evidence unavailable, so change and observation counts are unavailable",
+    );
+    expect(summary?.textContent).not.toContain("query changes");
     expect(summary?.textContent).not.toContain("0/0");
   });
 
@@ -964,6 +1023,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
           ],
           candidates: null,
           withheldByBand: null,
+          withheldByKind: null,
         },
       }),
     );
@@ -1145,6 +1205,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
           selectedQueryChanges: 1,
           propertyTrendShown: true,
         }),
+        queryWatchlist: watchlist("observed"),
       }),
     );
 
@@ -1160,7 +1221,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(host.querySelector("[data-site-trend]")).not.toBeNull();
     expect(
       host.querySelector("[data-evidence-fold-summary]")?.textContent,
-    ).toContain("1 site trend observations");
+    ).toContain("1 site trend observation");
   });
 
   it("blocks property-action navigation when the private handoff cannot be stored", async () => {

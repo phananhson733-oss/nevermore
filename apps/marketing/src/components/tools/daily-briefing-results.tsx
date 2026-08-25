@@ -252,11 +252,17 @@ function reviewEmptyMessageKey(
 function cadenceDetailKey(
   mode: DailyBriefingMode,
   dailyCadence: boolean,
+  clickLaneEvaluated: boolean,
 ): string {
   if (dailyCadence) return "facts.dailyReason";
   switch (mode) {
     case "change_detection":
-      return "facts.weeklyReason";
+      // A property with plenty of impressions and no click lane is weekly
+      // because of the lane, not the sample. Saying "the sample is too small"
+      // there names a gate the run never hit.
+      return clickLaneEvaluated
+        ? "facts.weeklyReason"
+        : "facts.noClickLaneReason";
     case "position_observation":
       return "facts.positionObservationReason";
     case "current_position_watchlist":
@@ -678,6 +684,18 @@ export function DailyBriefingResults({
   const dailyAvailable =
     result.cadence === "daily" && result.day.evidence === "observed";
   const queryActions = matchingActions(envelope);
+  // The site-wide trend is the property's own fact. It used to be dropped the
+  // moment any query signal was selected, which deleted the only whole-site
+  // statement in the briefing exactly when the briefing had the most to say.
+  const propertyChange = result.propertyTrend.change;
+  const propertyAction = result.propertyTrend.action;
+  const propertyNoiseFloor = result.propertyTrend.noiseFloor;
+  const propertyComparisons =
+    propertyChange === null
+      ? null
+      : propertyWeeklyComparisons(t, locale, propertyChange);
+  const propertyTarget =
+    propertyAction === null ? null : destination(propertyAction.destination);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
@@ -712,19 +730,42 @@ export function DailyBriefingResults({
     0,
     (result.provisionalMoves.candidates ?? 0) - shownProvisional.length,
   );
-  // The site-wide trend is the property's own fact. It used to be dropped the
-  // moment any query signal was selected, which deleted the only whole-site
-  // statement in the briefing exactly when the briefing had the most to say.
-  const propertyChange = result.propertyTrend.change;
-  const propertyAction = result.propertyTrend.action;
-  const propertyNoiseFloor = result.propertyTrend.noiseFloor;
-  const propertyComparisons =
-    propertyChange === null
-      ? null
-      : propertyWeeklyComparisons(t, locale, propertyChange);
-  const propertyTarget =
-    propertyAction === null ? null : destination(propertyAction.destination);
   const ctrLane = result.laneCapability.ctrLane;
+  // Only the click-driven lanes move on a daily timescale, which is what
+  // decides both the cadence and the sentence explaining it.
+  const clickLaneEvaluated =
+    result.laneCapability.lanes.click_opportunity === "evaluated" ||
+    result.laneCapability.lanes.stable_position_click_decline === "evaluated";
+
+  // Every count in the summary is query-derived, so when the query rows were
+  // never read none of them may be printed: a run that could not look is not
+  // a run that found nothing. The shown counts are also labelled as shown,
+  // never as the category total the display budget cut them down from.
+  const queryEvidenceRead = result.queryWatchlist.candidates !== null;
+  const provisionalCandidates = result.provisionalMoves.candidates ?? 0;
+  const foldSummary = (
+    queryEvidenceRead
+      ? [
+          t("evidence.foldChanges", { count: shownChanges.length }),
+          provisionalCandidates > 0
+            ? t("evidence.foldProvisional", {
+                shown: shownProvisional.length,
+                candidates: provisionalCandidates,
+              })
+            : null,
+          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          t("evidence.foldObservationsShown", {
+            shown: shownObservations.length,
+            candidates: result.queryWatchlist.candidates ?? 0,
+          }),
+        ]
+      : [
+          t("evidence.foldQueryEvidenceUnavailable"),
+          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+        ]
+  )
+    .filter((part): part is string => part !== null)
+    .join(" · ");
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -847,7 +888,11 @@ export function DailyBriefingResults({
               result.cadence === "daily" ? t("facts.daily") : t("facts.weekly")
             }
             detail={t(
-              cadenceDetailKey(result.mode, result.cadence === "daily"),
+              cadenceDetailKey(
+                result.mode,
+                result.cadence === "daily",
+                clickLaneEvaluated,
+              ),
             )}
           />
           <FactCard
@@ -1236,6 +1281,10 @@ export function DailyBriefingResults({
             {t("review.withheld", {
               count: withheldObservations,
               breakdown: withheldObservationBands,
+              atFloor:
+                result.queryWatchlist.withheldByKind?.sample_floor_reached ?? 0,
+              building:
+                result.queryWatchlist.withheldByKind?.sample_building ?? 0,
             })}
           </p>
         ) : null}
@@ -1345,7 +1394,11 @@ export function DailyBriefingResults({
         {queryActions.length === 0 && propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t("actions.empty")}
+              {t(
+                shownProvisional.length > 0
+                  ? "actions.emptyWithProvisional"
+                  : "actions.empty",
+              )}
             </p>
           </div>
         ) : (
@@ -1518,21 +1571,7 @@ export function DailyBriefingResults({
               data-evidence-fold-summary
               className="text-[12px] leading-[1.6] text-text-dark-secondary"
             >
-              {t("evidence.foldSummary", {
-                changes: shownChanges.length,
-                provisional: shownProvisional.length,
-                trend: propertyChange === null ? 0 : 1,
-                // A null candidate count means the rows were never read.
-                // Printing the shown count as the total would turn "we could
-                // not look" into "there was nothing there".
-                observations:
-                  result.queryWatchlist.candidates === null
-                    ? t("evidence.foldObservationsUnavailable")
-                    : t("evidence.foldObservationsShown", {
-                        shown: shownObservations.length,
-                        candidates: result.queryWatchlist.candidates,
-                      }),
-              })}
+              {foldSummary}
             </span>
           </summary>
         <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">

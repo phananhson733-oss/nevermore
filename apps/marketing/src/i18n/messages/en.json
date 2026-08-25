@@ -1807,7 +1807,8 @@
         "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero.",
         "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it.",
         "positionObservationReason": "No strict change lane can be evaluated on this property right now, so this runs weekly as provisional position movement and a watchlist rather than daily change detection.",
-        "currentWatchlistReason": "No query on this property has a comparable prior window, so the briefing can describe current positions only and makes no change judgement."
+        "currentWatchlistReason": "No query on this property has a comparable prior window, so the briefing can describe current positions only and makes no change judgement.",
+        "noClickLaneReason": "Only position paths could be evaluated this run. An average presented position is a week of impressions weighted together, so it does not bring something new to detect each morning; this reads weekly."
       },
       "kpis": {
         "title": "Performance at a glance",
@@ -1875,9 +1876,9 @@
           }
         },
         "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed.",
-        "introPositionObservation": "No strict change lane could be evaluated this run. What follows is provisional position movement and current-window observation, not an established change.",
+        "introPositionObservation": "No strict change path could be evaluated this run. Some queries carry a prior window of 50-99 impressions, which is enough for one provisional comparison and not enough to call anything a change.",
         "introCurrentWatchlist": "There is no comparable prior window this run, so only current-window positions are listed. No row here is a change judgement.",
-        "withheld": "{count} more observation candidates were not shown: {breakdown}. They are not below a threshold; they lost the row budget.",
+        "withheld": "{count} more observation candidates were not shown: {breakdown}. {atFloor} of them had reached the strict 100-impression sample floor and {building} sit at 50-99 impressions. They lost the row budget.",
         "withheldBands": {
           "page_one": "{count} in the 1-10 band",
           "near_page_one": "{count} near the 1-10 band",
@@ -1887,14 +1888,13 @@
       },
       "evidence": {
         "title": "Why there were not more signals",
-        "thresholdSummary": "A strict change requires the same query to carry at least 100 impressions in each of the two windows. On top of that: a stable-position click decline needs clicks down by both 15 percent and 3, with average position moving no more than 0.5; a move into the 1-10 band needs the prior window outside 10, the current window inside it, and at least 1.5 positions of improvement; a slide inside the actionable band needs at least 3 positions of decline with at least one window inside the top 30; a first-observed pair needs page attribution usable in both windows. The site-wide trend carries its own noise floor: the move must exceed 2x the square root of the prior window base.",
+        "thresholdSummary": "The three paired paths require the same query to carry at least 100 impressions in each of the two windows: a stable-position click decline needs clicks down by both 15 percent and 3 with average position moving no more than 0.5; a move into the 1-10 band needs the prior window outside 10, the current window inside it, and at least 1.5 positions of improvement; a slide from the actionable band needs at least 3 positions of decline with at least one window inside the top 30. Two paths do not look at the prior window at all: click opportunity uses the current window only and needs a leave-one-out CTR baseline the property’s own rows can supply for that query; a first-observed pair needs the query and page pair to reach 100 impressions in the current window at an average position between 8 and 21, to be absent from the prior window’s pair list, and query-to-page coverage of at least 80 percent in both windows. The site-wide trend carries its own noise floor: the move must reach 2x the square root of the prior window base.",
         "coverageTitle": "Query-to-page coverage · current window",
         "coverageObserved": "{covered} of {eligible} eligible queries had a page carrying at least {floor} of their visible impressions.",
         "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
         "anonymizationTitle": "Search Console anonymization · current window",
         "anonymizationObserved": "{impressions} of property impressions and {clicks} of property clicks are absent from visible query rows.",
         "anonymizationUnavailable": "The withheld share is unavailable; it is not zero.",
-        "foldSummary": "{changes} query changes · {provisional} provisional position moves · {trend} site trend observations · observation candidates {observations}",
         "paths": {
           "title": "Signal evaluation and suppression paths",
           "intro": "Each path stands on its own and the counts cannot be added together. The three tiers below are preconditions, evaluation paths, and attribution suppression.",
@@ -1927,12 +1927,12 @@
               "requirement": "at least 100 impressions in each window, with the prior average presented position outside 10"
             },
             "positionDecline": {
-              "name": "Slide inside the actionable band",
+              "name": "Slide from the actionable band",
               "requirement": "at least 100 impressions in each window, with at least one window inside the top 30"
             },
             "firstObserved": {
-              "name": "First-observed query and page pair",
-              "requirement": "page attribution usable in both windows, and the pair reaching 100 impressions in the current window"
+              "name": "First-observed query and page pair (counted below by query)",
+              "requirement": "page attribution usable in both windows, the pair reaching 100 impressions in the current window at an average position between 8 and 21, and the pair being absent from the prior window’s list"
             }
           },
           "pageAttribution": {
@@ -1942,8 +1942,12 @@
             "unavailable": "Page attribution evidence is unavailable, so the withheld count cannot be reported. It is not zero."
           }
         },
-        "foldObservationsShown": "{shown}/{candidates} shown",
-        "foldObservationsUnavailable": "count unavailable (not zero)"
+        "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
+        "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
+        "foldChanges": "{count, plural, one {# query change} other {# query changes}}",
+        "foldProvisional": "{shown}/{candidates} provisional position moves shown",
+        "foldTrend": "{count, plural, one {# site trend observation} other {# site trend observations}}",
+        "foldQueryEvidenceUnavailable": "query evidence unavailable, so change and observation counts are unavailable (not zero)"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -2025,7 +2029,8 @@
         "why": "Why this action appears",
         "evidence": "Evidence carried privately to the next tool",
         "propertyEvidence": "Property-level evidence carried privately to the next tool",
-        "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}."
+        "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
+        "emptyWithProvisional": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action."
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
@@ -2130,8 +2135,8 @@
           "body": "Average presented position moved from outside 10 into the 1-10 band. Confirm which page carries it before deciding whether it is worth work."
         },
         "provisional_actionable_position_decline": {
-          "title": "Possible position slide",
-          "body": "Average presented position slid inside the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
+          "title": "Possible slide from the actionable band",
+          "body": "Average presented position slid relative to the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
         }
       }
     },

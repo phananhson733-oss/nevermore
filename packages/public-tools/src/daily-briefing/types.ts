@@ -386,6 +386,16 @@ export interface DailyBriefingQueryWatchlist {
   readonly withheldByBand: Readonly<
     Record<DailyBriefingObservationBand, number>
   > | null;
+  /**
+   * Withheld observations by sample tier.
+   *
+   * The band alone cannot say whether a dropped row had cleared the strict
+   * sample floor, and "they are not below a threshold" is true of one tier and
+   * false of the other.
+   */
+  readonly withheldByKind: Readonly<
+    Record<DailyBriefingQueryObservationKind, number>
+  > | null;
 }
 
 /**

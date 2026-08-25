@@ -1807,7 +1807,8 @@
         "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。",
         "unavailableReason": "本次没有读到查询词证据，因此无法判断这个站点适合每日还是每周节奏；日级解读同时被抑制。",
         "positionObservationReason": "本站当前没有可评估的严格变化路径。本次按周给出待确认的位置移动与观察名单，而不是每日变化检测。",
-        "currentWatchlistReason": "本站当前没有任何查询词具备可比的上一窗口，因此只能描述当前窗口的位置，不做变化判断。"
+        "currentWatchlistReason": "本站当前没有任何查询词具备可比的上一窗口，因此只能描述当前窗口的位置，不做变化判断。",
+        "noClickLaneReason": "本轮能评估的只有位置类路径。平均展示位置是一周曝光加权出来的，不会每天带来新的可检测变化，因此按周解读。"
       },
       "kpis": {
         "title": "表现概览",
@@ -1875,9 +1876,9 @@
           }
         },
         "introUnavailable": "本次没有读到可比的查询词证据，下面的判断路径都没有运行过。这不等于证明没有发生变化。",
-        "introPositionObservation": "本轮没有任何严格变化路径可以评估。下面列出的是待确认的位置移动与当前窗口观察，不是已成立的变化。",
+        "introPositionObservation": "本轮没有任何严格变化路径可以评估。只有部分查询词的上一窗口达到 50–99 次曝光，够做一次临时比较，不够称为变化。",
         "introCurrentWatchlist": "本轮没有可比的上一窗口，因此只能列出当前窗口的位置。这里的每一行都不构成变化判断。",
-        "withheld": "另有 {count} 条观察候选未展示：{breakdown}。它们不是低于门槛，是没有排进本次显示的行数上限。",
+        "withheld": "另有 {count} 条观察候选未展示：{breakdown}。其中 {atFloor} 条已达到 100 次曝光的严格样本门槛，{building} 条处于 50–99 次曝光。它们没有排进本次显示的行数上限。",
         "withheldBands": {
           "page_one": "{count} 条在 1–10 区间",
           "near_page_one": "{count} 条接近 1–10 区间",
@@ -1887,14 +1888,13 @@
       },
       "evidence": {
         "title": "为什么没有更多信号",
-        "thresholdSummary": "严格变化要求同一个查询词在两个窗口各至少 100 次曝光。在此之上：排名稳定的点击下降要求点击同时下降 15% 和 3 次，且平均位置移动不超过 0.5；移入 1–10 区间要求上一窗口在 10 以外、当前窗口进入且改善至少 1.5 位；可行动区间内的位置下滑要求至少后退 3 位，且至少一个窗口在前 30 名内；首次出现的组合要求两个窗口的页面归因都可用。站点级趋势另有噪声底线：变化量必须超过 2×√上一窗口基数。",
+        "thresholdSummary": "配对判断的三条路径要求同一个查询词在两个窗口各至少 100 次曝光：排名稳定的点击下降要求点击同时下降 15% 和 3 次、且平均位置移动不超过 0.5；移入 1–10 区间要求上一窗口在 10 以外、当前窗口进入且改善至少 1.5 位；从可行动区间下滑要求至少后退 3 位、且至少一个窗口在前 30 名内。另外两条路径不看上一窗口的曝光：点击机会只用当前窗口，要求该查询词能从站点自身数据得到留一法 CTR 基线；首次出现的组合要求该查询词/页面组合当前窗口达到 100 次曝光、平均位置在 8 到 21 之间、上一窗口的组合清单里没有它，且两个窗口的查询词到页面覆盖率都不低于 80%。站点级趋势另有噪声底线：变化量必须达到 2×√上一窗口基数。",
         "coverageTitle": "查询词到页面覆盖 · 当前窗口",
         "coverageObserved": "{eligible} 个合格查询词中，有 {covered} 个能归因到承载至少 {floor} 可见曝光的页面。",
         "coverageUnavailable": "可比的查询词到页面覆盖不可得，因此没有推断缺失页面。",
         "anonymizationTitle": "Search Console 匿名化 · 当前窗口",
         "anonymizationObserved": "站点总曝光中有 {impressions}、总点击中有 {clicks} 没有出现在可见查询记录里。",
         "anonymizationUnavailable": "被隐藏占比不可得；它不等于 0。",
-        "foldSummary": "{changes} 条查询词变化 · {provisional} 条待确认位置移动 · {trend} 条站点趋势观察 · 观察候选{observations}",
         "paths": {
           "title": "信号评估与抑制路径",
           "intro": "每条路径独立成立，数量不可相加。下面按前置条件、判断路径、归因抑制三层，逐条说明本轮走到了哪里。",
@@ -1927,12 +1927,12 @@
               "requirement": "两个窗口各至少 100 次曝光，且上一窗口的平均展示位置在 10 以外"
             },
             "positionDecline": {
-              "name": "可行动区间内的位置下滑",
+              "name": "从可行动区间下滑",
               "requirement": "两个窗口各至少 100 次曝光，且至少一个窗口的平均展示位置在前 30 名内"
             },
             "firstObserved": {
-              "name": "首次出现的查询词 / 页面组合",
-              "requirement": "两个窗口的页面归因都可用，且该组合在当前窗口达到 100 次曝光"
+              "name": "首次出现的查询词 / 页面组合（下面按查询词计）",
+              "requirement": "两个窗口的页面归因都可用，该组合在当前窗口达到 100 次曝光、平均位置在 8 到 21 之间，且上一窗口的组合清单里没有它"
             }
           },
           "pageAttribution": {
@@ -1942,8 +1942,12 @@
             "unavailable": "页面归因证据不可得，因此无法统计被隐去的数量；它不等于 0。"
           }
         },
-        "foldObservationsShown": "展示 {shown}/{candidates} 条",
-        "foldObservationsUnavailable": "数量不可得（不等于 0）"
+        "foldObservationsShown": "展示 {shown}/{candidates} 条观察候选",
+        "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",
+        "foldChanges": "{count, plural, other {# 条查询词变化}}",
+        "foldProvisional": "展示 {shown}/{candidates} 条待确认位置移动",
+        "foldTrend": "{count, plural, other {# 条站点趋势观察}}",
+        "foldQueryEvidenceUnavailable": "查询词证据不可得，变化与观察数量都不可得（不等于 0）"
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -2025,7 +2029,8 @@
         "why": "为何出现这项动作",
         "evidence": "私密带到下一工具的证据",
         "propertyEvidence": "私密带到下一工具的站点级证据",
-        "propertyWeekly": "前 7 天 → 当前 7 天：点击 {clicks}；曝光 {impressions}；平均排名 {position}。"
+        "propertyWeekly": "前 7 天 → 当前 7 天：点击 {clicks}；曝光 {impressions}；平均排名 {position}。",
+        "emptyWithProvisional": "本轮没有严格证据支持的动作。上方「待确认的位置移动」给出的检查入口是观察性的，不计入今日动作。"
       },
       "preview": {
         "changes": "生成简报后，这里会显示最新完整对比窗口中有证据支持的变化。",
@@ -2130,8 +2135,8 @@
           "body": "平均展示位置从 10 以外移入 1–10 区间。先确认承载页是哪一个，再决定是否值得投入。"
         },
         "provisional_actionable_position_decline": {
-          "title": "疑似位置后退",
-          "body": "平均展示位置在可行动区间内出现后退。样本还不足以判断这是趋势还是波动，先记录不派发。"
+          "title": "疑似从可行动区间下滑",
+          "body": "平均展示位置相对可行动区间出现后退。样本还不足以判断这是趋势还是波动，先记录不派发。"
         }
       }
     },

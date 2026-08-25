@@ -45,6 +45,7 @@ import type {
   DailyBriefingProvisionalMove,
   DailyBriefingProvisionalMoves,
   DailyBriefingQueryObservation,
+  DailyBriefingQueryObservationKind,
   DailyBriefingQueryWatchlist,
   DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
@@ -995,14 +996,25 @@ function candidatesFor(
       currentCoverageRatio !== null &&
       currentCoverageRatio !== undefined &&
       currentCoverageRatio >= MIN_DIMENSION_COVERAGE;
-    const previousCoverageSufficient =
-      previous === undefined ||
-      (previous.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS &&
-        previousCoverageRatio !== null &&
-        previousCoverageRatio !== undefined &&
-        previousCoverageRatio >= MIN_DIMENSION_COVERAGE);
-    if (!currentCoverageSufficient || !previousCoverageSufficient) {
+    const previousPageCoverageSufficient =
+      previousCoverageRatio !== null &&
+      previousCoverageRatio !== undefined &&
+      previousCoverageRatio >= MIN_DIMENSION_COVERAGE;
+    // Thin page evidence and a missing comparison window are different
+    // failures. Counting the second as a withheld page said the landing page
+    // of a query whose page this same run displays had been withheld.
+    if (
+      !currentCoverageSufficient ||
+      (previous !== undefined &&
+        previous.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS &&
+        !previousPageCoverageSufficient)
+    ) {
       pageAttributionWithheld.add(`${pair.query}\u0000${pair.page}`);
+      continue;
+    }
+    // No prior window at the floor: nothing was withheld, the question simply
+    // could not be asked of this pair.
+    if (previous !== undefined && previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) {
       continue;
     }
 
@@ -1048,8 +1060,19 @@ function candidatesFor(
       (a.page ?? "").localeCompare(b.page ?? ""),
   );
 
+  // A query a strict lane already produced a candidate for is not provisional:
+  // the strict statement is the one the page will make about it, and leaving
+  // it in both places let the same query hold an action while the provisional
+  // note under it promised there was none.
+  const strictCandidateQueries = new Set(
+    [...opportunities, ...declines, ...pageOneCrossings, ...positionDeclines, ...firstObserved].map(
+      (candidate) => candidate.query,
+    ),
+  );
+
   // Resolved after the loop because page attribution needs the whole read.
   const provisionalMoves: DailyBriefingProvisionalMove[] = provisionalPairs
+    .filter((entry) => !strictCandidateQueries.has(entry.current.query))
     .sort(
       (a, b) =>
         PROVISIONAL_KIND_RANK[a.kind] - PROVISIONAL_KIND_RANK[b.kind] ||
@@ -1080,7 +1103,17 @@ function candidatesFor(
   const ctrLane = ctrLaneFor(input.brandTermsConfirmed, curve, table.rows.length);
   const ctrOpportunityCapableQueries = table.rows.length;
   const lanes: Record<DailyBriefingChangeKind, DailyBriefingLaneState> = {
-    click_opportunity: ctrLane.state,
+    // A usable position band is not a usable per-query baseline. The curve
+    // needs the band; the lane needs a leave-one-out baseline for the query
+    // itself, and five queries of a hundred impressions can satisfy the first
+    // while every one of them fails the second. Reading the lane off the band
+    // let a run report "the lane was evaluated" beside "no row was evaluable".
+    click_opportunity:
+      ctrLane.state === "unavailable"
+        ? "unavailable"
+        : ctrOpportunityCapableQueries > 0
+          ? "evaluated"
+          : "not_applicable",
     stable_position_click_decline:
       clickDeclineCapableQueries > 0 ? "evaluated" : "not_applicable",
     average_position_crossed_page_one_band:
@@ -1346,7 +1379,13 @@ function queryWatchlistFor({
     previousEvidence?.queryRead === null ||
     previousEvidence?.queryRead === undefined
   ) {
-    return { evidence, items: [], candidates: null, withheldByBand: null };
+    return {
+      evidence,
+      items: [],
+      candidates: null,
+      withheldByBand: null,
+      withheldByKind: null,
+    };
   }
 
   const previousByQuery = mapByQuery(
@@ -1373,7 +1412,15 @@ function queryWatchlistFor({
         currentEvidence,
         minimumPageImpressions,
       );
-      const previous = previousByQuery.get(current.query) ?? null;
+      // Below the provisional floor the prior window cannot carry a position
+      // comparison, and rendering "11.8 -> 9.7" from a 49-impression week is
+      // exactly the low-sample claim the floors exist to refuse.
+      const priorWindow = previousByQuery.get(current.query);
+      const previous =
+        priorWindow !== undefined &&
+        priorWindow.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS
+          ? priorWindow
+          : null;
       return [
         {
           kind,
@@ -1416,8 +1463,13 @@ function queryWatchlistFor({
   // of them "below the threshold" is the lie this count exists to prevent.
   const items = observations.slice(0, Math.max(0, budget));
   const withheldByBand = emptyBandCounts();
+  const withheldByKind: Record<DailyBriefingQueryObservationKind, number> = {
+    sample_floor_reached: 0,
+    sample_building: 0,
+  };
   for (const withheld of observations.slice(items.length)) {
     withheldByBand[withheld.band] += 1;
+    withheldByKind[withheld.kind] += 1;
   }
 
   return {
@@ -1425,6 +1477,7 @@ function queryWatchlistFor({
     items,
     candidates: observations.length,
     withheldByBand,
+    withheldByKind,
   };
 }
 
