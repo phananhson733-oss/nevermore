@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
   AGENT_PROFILE_REFRESH_READY_FIELD_PATHS,
   isAgentProfileRefreshData,
   isAgentProfileRefreshEnvelope,
@@ -228,6 +229,37 @@ describe("Agent profile refresh wire contract", () => {
     expect(isAgentProfileRefreshEnvelope(noEvidence)).toBe(false);
     expect(isAgentProfileRefreshEnvelope(offCrawl)).toBe(false);
     expect(isAgentProfileRefreshEnvelope(duplicate)).toBe(false);
+  });
+
+  it("accepts the diagnostic page limit and rejects one page above it", () => {
+    const base = envelopeWithAvailableCount(1);
+    const sourceUrls = Array.from(
+      { length: AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES + 1 },
+      (_, index) => `https://www.acme.com/page-${index}`,
+    );
+    sourceUrls[0] = SOURCE_URLS[0];
+    const atLimit = withDiagnostics(base, {
+      ...base.data.diagnostics,
+      pagesFetched: AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
+      productPagesFetched: 12,
+      stopReason: null,
+      contextSufficient: true,
+      sourceUrls: sourceUrls.slice(
+        0,
+        AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
+      ),
+    });
+    const aboveLimit = withDiagnostics(base, {
+      ...base.data.diagnostics,
+      pagesFetched: AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES + 1,
+      productPagesFetched: 12,
+      stopReason: null,
+      contextSufficient: true,
+      sourceUrls,
+    });
+
+    expect(isAgentProfileRefreshEnvelope(atLimit)).toBe(true);
+    expect(isAgentProfileRefreshEnvelope(aboveLimit)).toBe(false);
   });
 
   it("keeps unavailable distinct from empty, inferred values", () => {

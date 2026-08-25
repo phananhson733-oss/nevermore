@@ -4,11 +4,18 @@
 
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { ContextProfileError } from "@sf/sources";
+import {
+  CONTEXT_PROFILE_CRAWL_BUDGET,
+  ContextProfileError,
+  pageValueIsProductPage,
+  type ContextProfileResult,
+} from "@sf/sources";
 import { KeywordLlmError } from "../tools/keyword-llm-client.ts";
 import {
+  AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
   AGENT_PROFILE_REFRESH_READY_FIELD_PATHS,
+  isAgentProfileRefreshData,
   type AgentProfileRefreshData,
   type AgentProfileRefreshField,
   type AgentProfileRefreshFieldPath,
@@ -223,6 +230,12 @@ function profileData(
 }
 
 describe("handleAgentProfileRefreshRequest", () => {
+  it("keeps the diagnostic page maximum aligned with the context crawler", () => {
+    expect(AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES).toBe(
+      CONTEXT_PROFILE_CRAWL_BUDGET.maxUrls,
+    );
+  });
+
   it("emits the bounded invalid-response event as one production JSON line", () => {
     const event = {
       event: "agent_profile_refresh_invalid" as const,
@@ -587,6 +600,97 @@ describe("handleAgentProfileRefreshRequest", () => {
       profileData("seo", "fresh"),
     );
     expect(response.headers.get("cache-control")).toBe("no-store, private");
+  });
+
+  it("keeps a strict 20-page crawl as the canonical response diagnostics", async () => {
+    const pages = Array.from({ length: 20 }, (_, index) => ({
+      url:
+        index === 0
+          ? "https://www.acme.test/"
+          : `https://www.acme.test/page-${String(index).padStart(2, "0")}`,
+      path: index === 0 ? "/" : `/page-${String(index).padStart(2, "0")}`,
+      score: 20 - index,
+      title: `Page ${index}`,
+      metaDescription: `Description ${index}`,
+      headings: {
+        h1: [`Heading ${index}`],
+        h2: [`Section ${index}`],
+        h3: [],
+      },
+      text: `Product context ${index}`,
+      textTruncated: false,
+    }));
+    const crawlResult: ContextProfileResult = {
+      origin: "https://www.acme.test",
+      pages,
+      pagesFetched: pages.length,
+      productPagesFetched: pages.filter((page) =>
+        pageValueIsProductPage(page.score),
+      ).length,
+      stopReason: null,
+      contextSufficient: true,
+      requestsSent: 24,
+      bytesFetched: 120_000,
+      botProtectionResponses: 0,
+      rateLimitedResponses: 0,
+      protocolDowngradesRejected: 0,
+      capturedAt: "2026-08-25T09:55:25.000Z",
+    };
+    expect(crawlResult.pagesFetched).toBe(
+      AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
+    );
+    const fields = synthesisFields();
+    const synthesize = vi.fn(async () => ({ fields, usage: {} }));
+    const writeCache = vi.fn(async () => undefined);
+    const reportInvalidResponse = vi.fn();
+
+    const response = await handleAgentProfileRefreshRequest(
+      request(),
+      "seo",
+      dependencies({
+        crawl: vi.fn(async () => crawlResult),
+        synthesize,
+        writeCache,
+        reportInvalidResponse,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(synthesize).toHaveBeenCalledWith({
+      agent: "seo",
+      marketCode: "US",
+      languageTag: "en-US",
+      outputLocale: "en",
+      pages: pages.map((page) => ({
+        url: page.url,
+        title: page.title,
+        headings: [...page.headings.h1, ...page.headings.h2, ...page.headings.h3],
+        text: page.text,
+      })),
+    });
+    expect(body.data.diagnostics).toEqual({
+      resolvedOrigin: crawlResult.origin,
+      pagesFetched: crawlResult.pagesFetched,
+      productPagesFetched: crawlResult.productPagesFetched,
+      stopReason: crawlResult.stopReason,
+      contextSufficient: crawlResult.contextSufficient,
+      sourceUrls: pages.map((page) => page.url),
+      fieldsAvailable: 1,
+      fieldsMissing: 21,
+    });
+    expect(isAgentProfileRefreshData(body.data)).toBe(true);
+    expect(reportInvalidResponse).not.toHaveBeenCalled();
+    expect(writeCache).toHaveBeenCalledWith(
+      profileRefreshCacheNamespace("seo", {
+        normalizedUrl: "https://acme.test/pricing",
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+      }),
+      "acme.test",
+      body.data,
+    );
   });
 
   it("writes a www profile refresh under its exact target host", async () => {
