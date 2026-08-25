@@ -110,6 +110,25 @@ const REQUIRED_LEAF_PATHS = [
   "noise.partial",
   "noise.unavailable",
   "noise.observationOnly",
+  "siteTrend.title",
+  "siteTrend.intro",
+  "siteTrend.evidence",
+  "siteTrend.actionListed",
+  "review.title",
+  "review.intro",
+  "review.empty",
+  "review.partial",
+  "review.unavailable",
+  "review.pageUnavailable",
+  "review.observationKinds.evaluation_eligible.title",
+  "review.observationKinds.evaluation_eligible.body",
+  "review.observationKinds.sample_building.title",
+  "review.observationKinds.sample_building.body",
+  "review.columns.status",
+  "review.columns.queryPage",
+  "review.columns.clicks",
+  "review.columns.position",
+  "review.columns.interpretation",
   "evidence.title",
   "evidence.thresholdSummary",
   "evidence.filteredComplete",
@@ -299,6 +318,28 @@ describe("Daily Briefing message catalogs", () => {
         placeholders(enNoise[key]),
       );
     }
+  });
+
+  it("uses the approved evidence-yield vocabulary and placeholders", () => {
+    const enNoise = recordAt(daily(en), "noise");
+    const zhNoise = recordAt(daily(zh), "noise");
+
+    expect(placeholders(enNoise.observed)).toEqual([
+      "eligible",
+      "observations",
+      "observed",
+      "selected",
+      "trend",
+    ]);
+    expect(placeholders(zhNoise.observed)).toEqual(
+      placeholders(enNoise.observed),
+    );
+    expect(String(enNoise.observed)).toContain("evaluation sample floor");
+    expect(String(zhNoise.observed)).toContain("可评估样本门槛");
+    expect(String(enNoise.observed)).not.toContain("action sample floor");
+    expect(String(zhNoise.observed)).not.toContain("动作样本门槛");
+    expect(String(enNoise.observed)).not.toContain("fallback");
+    expect(String(zhNoise.observed)).not.toContain("回退");
   });
 
   it("keeps placeholders aligned for every localized Daily Briefing leaf", () => {
