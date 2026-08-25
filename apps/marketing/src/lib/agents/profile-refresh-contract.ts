@@ -4,6 +4,8 @@
 
 export const AGENT_PROFILE_REFRESH_SCHEMA_VERSION =
   "agent_profile_refresh.v1" as const;
+export const AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES = 14;
+export const AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES = 20;
 
 export const AGENT_PROFILE_REFRESH_FIELD_PATHS = [
   "productName",
@@ -313,7 +315,11 @@ function isUniqueNonEmptyStrings(
 
 function isSourceUrls(value: unknown): value is readonly string[] {
   return (
-    isUniqueNonEmptyStrings(value, 14, 2_048) &&
+    isUniqueNonEmptyStrings(
+      value,
+      AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES,
+      2_048,
+    ) &&
     value.every((url) => isPublicNormalizedUrl(url))
   );
 }
@@ -360,7 +366,11 @@ function isField(
     value.source !== "public_page" ||
     (value.limitation !== null &&
       !isNonEmptyString(value.limitation, 500)) ||
-    !isUniqueNonEmptyStrings(value.evidenceUrls, 14, 2_048) ||
+    !isUniqueNonEmptyStrings(
+      value.evidenceUrls,
+      AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES,
+      2_048,
+    ) ||
     !value.evidenceUrls.every((url) => sourceUrls.has(url))
   ) {
     return false;
@@ -418,7 +428,8 @@ function isDiagnostics(
     isCanonicalOrigin(value.resolvedOrigin) &&
     Number.isSafeInteger(value.pagesFetched) &&
     (value.pagesFetched as number) > 0 &&
-    (value.pagesFetched as number) <= 14 &&
+    (value.pagesFetched as number) <=
+      AGENT_PROFILE_REFRESH_MAX_DIAGNOSTIC_PAGES &&
     Number.isSafeInteger(value.productPagesFetched) &&
     (value.productPagesFetched as number) >= 0 &&
     (value.productPagesFetched as number) <= (value.pagesFetched as number) &&
