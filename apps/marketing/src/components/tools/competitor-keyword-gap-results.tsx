@@ -6,55 +6,44 @@
 
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslations } from "next-intl";
-import {
-  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS,
-  type CompetitorKeywordGapCompetitorPage,
-  type CompetitorKeywordGapEnvelope,
-  type CompetitorKeywordGapMetric,
-  type CompetitorKeywordGapPreScreenBand,
-  type CompetitorKeywordGapResultV3,
-  type CompetitorKeywordGapRow,
+import type {
+  CompetitorKeywordGapEnvelope,
+  CompetitorKeywordGapMetric,
+  CompetitorKeywordGapResultV3,
+  CompetitorKeywordGapRow,
 } from "@sf/public-tools/competitor-keyword-gap";
 
 import { localePath } from "../../lib/locale-path";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
-
-const CARD =
-  "rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
-const BADGE =
-  "inline-flex items-center rounded-full border border-brand-border-strong bg-brand-panel-sunken px-2.5 py-1 font-mono text-[10px] tracking-[0.05em] text-text-dark-secondary uppercase";
-const TABLE_TEXT = "text-[13px] leading-[1.45]";
-const META_TEXT = "text-[12px] leading-[1.35]";
-const KEYWORD_TEXT =
-  "text-[15.5px] font-semibold leading-[1.25] text-text-dark-primary";
-const CHIP_TEXT =
-  "inline-flex items-center rounded-full border border-brand-border-strong bg-brand-panel-sunken px-2 py-1 font-mono text-[11px] leading-none text-text-dark-primary";
-const ACTION_BUTTON =
-  "inline-flex items-center rounded-[10px] border border-brand-border-strong px-3 py-2 text-[12px] font-medium text-text-dark-primary transition hover:border-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
-const PRIMARY_ACTION_BUTTON =
-  "inline-flex items-center rounded-[10px] bg-brand-accent px-3 py-2 text-[12px] font-semibold text-brand-on-accent transition hover:opacity-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
-
-type Translate = ReturnType<
-  typeof useTranslations<"tools.competitorKeywordGap">
->;
+import {
+  BandFilters,
+  type BandFilter,
+} from "./competitor-keyword-gap-band-filters";
+import { bestCompetitorPage } from "./competitor-keyword-gap-competitor-pages";
+import {
+  CoverageDetails,
+  EvidenceBoundaries,
+} from "./competitor-keyword-gap-coverage";
+import {
+  ACTION_BUTTON,
+  BADGE,
+  CARD,
+  CHIP_TEXT,
+  KEYWORD_TEXT,
+  META_TEXT,
+  PRIMARY_ACTION_BUTTON,
+  TABLE_TEXT,
+  number,
+  safePageUrl,
+  translated,
+  type Translate,
+} from "./competitor-keyword-gap-results-shared";
+import {
+  CompetitorChips,
+  SignalChips,
+} from "./competitor-keyword-gap-row-chips";
 
 type Filter = "all" | CompetitorKeywordGapRow["gsc"]["nextStep"];
-type BandFilter = "all" | CompetitorKeywordGapPreScreenBand;
-
-function translated(t: Translate, key: string): string {
-  return t(key as Parameters<typeof t>[0]);
-}
-
-function number(
-  value: number,
-  locale: string,
-  maximumFractionDigits = 0,
-): string {
-  return new Intl.NumberFormat(locale, {
-    maximumFractionDigits,
-    useGrouping: true,
-  }).format(value);
-}
 
 function capturedTime(value: string, locale: string): string {
   const date = new Date(value);
@@ -65,73 +54,11 @@ function capturedTime(value: string, locale: string): string {
   }).format(date);
 }
 
-/** Provider snapshot date only; null when the provider gave none or drifted its format. */
-function snapshotDate(value: string | null, locale: string): string | null {
-  if (value === null) return null;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
-}
-
-function safePageUrl(value: string | null): string | null {
-  if (value === null) return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") &&
-      url.username === "" &&
-      url.password === ""
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 function pagePath(value: string | null): string | null {
   const page = safePageUrl(value);
   if (page === null) return null;
   const url = new URL(page);
   return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
-}
-
-interface RankedCompetitorPage {
-  readonly domain: string;
-  readonly rank: number;
-  readonly page: CompetitorKeywordGapCompetitorPage | null;
-}
-
-/** Competitors by provider rank, best first; ties break on domain so the order is stable. */
-function rankedCompetitorPages(
-  row: CompetitorKeywordGapRow,
-): readonly RankedCompetitorPage[] {
-  return Object.entries(row.competitorRanks)
-    .map(([domain, rank]) => ({
-      domain,
-      rank,
-      page: row.competitorPages[domain] ?? null,
-    }))
-    .sort((a, b) => a.rank - b.rank || a.domain.localeCompare(b.domain));
-}
-
-function competitorLink(
-  row: CompetitorKeywordGapRow,
-  domain: string,
-): string | null {
-  return safePageUrl(row.competitorPages[domain]?.url ?? null);
-}
-
-/** The best-rank competitor's page when known, else any competitor page with a safe URL. */
-function bestCompetitorPageUrl(row: CompetitorKeywordGapRow): string | null {
-  for (const entry of rankedCompetitorPages(row)) {
-    const url = safePageUrl(entry.page?.url ?? null);
-    if (url !== null) return url;
-  }
-  return null;
-}
-
-/** Provider traffic estimate for the best-rank competitor's page; never a fallback to another page. */
-function bestCompetitorTraffic(row: CompetitorKeywordGapRow): number | null {
-  return rankedCompetitorPages(row)[0]?.page?.etv ?? null;
 }
 
 /** Stable and bounded; the full keyword remains only in the validated payload. */
@@ -349,183 +276,6 @@ function OverviewCards({
   );
 }
 
-function CoverageCards({
-  result,
-  locale,
-  t,
-}: {
-  readonly result: CompetitorKeywordGapResultV3;
-  readonly locale: string;
-  readonly t: Translate;
-}) {
-  return (
-    <section className={CARD}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-[16px] font-semibold text-text-dark-primary">
-            {t("coverage.title")}
-          </h3>
-          <div className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-            {t("coverage.scope", {
-              completed: result.completedCompetitors,
-              requested: result.requestedCompetitors,
-            })}
-          </div>
-        </div>
-        <span className={BADGE}>
-          {t("coverage.requested", { count: result.requestedCompetitors })}
-        </span>
-      </div>
-      <div
-        data-sample-rule
-        className="mt-3 text-[12px] leading-[1.6] text-text-dark-secondary"
-      >
-        {t("coverage.sampleRule", {
-          maxRank: result.sampleRule.maxCompetitorRank,
-          limit: result.sampleRule.perCompetitorLimit,
-        })}
-      </div>
-      <ul className="mt-4 grid gap-3 xl:grid-cols-2">
-        {result.competitors.map((competitor) => (
-          <li
-            key={competitor.domain}
-            data-competitor-status={competitor.status}
-            className="rounded-[10px] border border-brand-border-card bg-brand-bg p-4"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-[12px] text-text-dark-primary">
-                {competitor.domain}
-              </span>
-              <span className={BADGE}>
-                {translated(t, `coverage.${competitor.status}`)}
-              </span>
-            </div>
-            <div className="mt-2 text-[12px] text-text-dark-secondary">
-              {competitor.totalCount === null
-                ? t("coverage.rows", {
-                    returned: number(competitor.returnedRows, locale),
-                    total: "—",
-                  })
-                : t("coverage.rowsInRule", {
-                    returned: number(competitor.returnedRows, locale),
-                    total: number(competitor.totalCount, locale),
-                  })}
-            </div>
-            {competitor.failureCode !== null ? (
-              <div className="mt-1 text-[11.5px] text-text-dark-secondary">
-                {t("coverage.failure", { code: competitor.failureCode })}
-              </div>
-            ) : null}
-            {competitor.truncated ? (
-              <div className="mt-1.5 text-[12px] text-brand-warning">
-                {t("coverage.truncated")}
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** GSC answered but returned nothing: distinct from "not observed", and worth a property check. */
-function gscReturnedNoRows(result: CompetitorKeywordGapResultV3): boolean {
-  return result.overlayStatus === "available" && result.gscQueryRowCount === 0;
-}
-
-function Limitations({
-  result,
-  t,
-}: {
-  readonly result: CompetitorKeywordGapResultV3;
-  readonly t: Translate;
-}) {
-  const items = [
-    ...(result.resultTruncated ? ["limitations.resultTruncated"] : []),
-    ...(result.gscQueryTruncated ? ["limitations.gscQueryTruncated"] : []),
-    ...(result.gscQueryPageTruncated
-      ? ["limitations.gscQueryPageTruncated"]
-      : []),
-    ...(result.overlayStatus === "unavailable"
-      ? ["limitations.gscUnavailable"]
-      : []),
-    ...(gscReturnedNoRows(result) ? ["limitations.gscNoRows"] : []),
-  ];
-  if (items.length === 0) return null;
-  return (
-    <section className="rounded-card border border-brand-warning/30 bg-brand-warning/[0.08] p-[22px]">
-      <h3 className="text-[15px] font-semibold text-text-dark-primary">
-        {t("limitations.title")}
-      </h3>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {items.map((key) => (
-          <li key={key}>{translated(t, key)}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function CoverageDetails({
-  envelope,
-  locale,
-  t,
-}: {
-  readonly envelope: CompetitorKeywordGapEnvelope;
-  readonly locale: string;
-  readonly t: Translate;
-}) {
-  const { result } = envelope;
-  const hasWarning =
-    envelope.run.status !== "complete" ||
-    result.resultTruncated ||
-    result.gscQueryTruncated ||
-    result.gscQueryPageTruncated ||
-    result.overlayStatus === "partial" ||
-    result.overlayStatus === "unavailable" ||
-    gscReturnedNoRows(result) ||
-    result.competitors.some(
-      (competitor) =>
-        competitor.status === "unavailable" || competitor.truncated,
-    );
-
-  return (
-    <details data-coverage-details open={hasWarning} className={CARD}>
-      <summary className="cursor-pointer text-[15px] font-semibold text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
-        {t("coverage.detailsSummary")}
-      </summary>
-      <div className="mt-4 space-y-4">
-        <CoverageCards result={result} locale={locale} t={t} />
-        <Limitations result={result} t={t} />
-      </div>
-    </details>
-  );
-}
-
-function EvidenceBoundaries({ t }: { readonly t: Translate }) {
-  return (
-    <section data-evidence-boundaries className={CARD}>
-      <h3 className="text-[15px] font-semibold text-text-dark-primary">
-        {t("boundaries.title")}
-      </h3>
-      <ul className="mt-3 grid gap-2 text-[12.5px] leading-[1.6] text-text-dark-secondary md:grid-cols-2">
-        {[
-          "dfsEstimates",
-          "gscOwnSample",
-          "competitorOutcomesUnavailable",
-          "manualSnapshot",
-          "dfsSnapshot",
-          "preScreen",
-        ].map((key) => (
-          <li key={key} className="rounded-[10px] bg-brand-bg px-4 py-3">
-            {translated(t, `boundaries.${key}`)}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function statusTone(
   status: CompetitorKeywordGapRow["gsc"]["queryStatus"],
 ): string {
@@ -539,143 +289,6 @@ function statusTone(
     case "gsc_query_sample_not_read":
       return "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary";
   }
-}
-
-function CompetitorChips({ row }: { readonly row: CompetitorKeywordGapRow }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {Object.entries(row.competitorRanks)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([domain, rank]) => {
-          const href = competitorLink(row, domain);
-          const className = `${CHIP_TEXT} max-w-[240px] break-all`;
-          return href === null ? (
-            <span
-              key={domain}
-              data-competitor-rank={domain}
-              className={className}
-            >
-              {domain} #{rank}
-            </span>
-          ) : (
-            <a
-              key={domain}
-              data-competitor-rank={domain}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={row.competitorPages[domain]?.title ?? undefined}
-              className={`${className} transition hover:border-brand-accent-text`}
-            >
-              {domain} #{rank}
-            </a>
-          );
-        })}
-    </div>
-  );
-}
-
-function SignalChips({
-  row,
-  locale,
-  t,
-}: {
-  readonly row: CompetitorKeywordGapRow;
-  readonly locale: string;
-  readonly t: Translate;
-}) {
-  const aiOverview =
-    row.serpSnapshot?.itemTypes.includes("ai_overview") ?? false;
-  const snapshotAt = snapshotDate(row.serpSnapshot?.updatedAt ?? null, locale);
-  const traffic = bestCompetitorTraffic(row);
-  return (
-    <div className={`flex flex-wrap gap-2 ${META_TEXT}`}>
-      <span className={CHIP_TEXT}>
-        {t("signals.bestRank", { rank: row.bestCompetitorRank })}
-      </span>
-      <span className={CHIP_TEXT}>
-        {t("signals.difficulty", {
-          value:
-            row.keywordDifficulty.value === null
-              ? "—"
-              : number(row.keywordDifficulty.value, locale),
-        })}
-      </span>
-      <span
-        data-pre-screen={row.preScreen.band}
-        title={`${translated(t, `preScreen.basis.${row.preScreen.basis}`)} ${translated(t, `preScreen.reason.${row.preScreen.reason}`)}`}
-        className={CHIP_TEXT}
-      >
-        {translated(t, `preScreen.band.${row.preScreen.band}`)}
-      </span>
-      {aiOverview ? (
-        <span data-serp-snapshot="ai_overview" className={CHIP_TEXT}>
-          {snapshotAt === null
-            ? t("signals.aiOverviewSnapshotUndated")
-            : t("signals.aiOverviewSnapshot", { date: snapshotAt })}
-        </span>
-      ) : null}
-      {traffic !== null ? (
-        <span data-competitor-traffic className={CHIP_TEXT}>
-          {t("signals.competitorTraffic", { value: number(traffic, locale) })}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function BandFilters({
-  rows,
-  band,
-  locale,
-  onChange,
-  t,
-}: {
-  readonly rows: readonly CompetitorKeywordGapRow[];
-  readonly band: BandFilter;
-  readonly locale: string;
-  readonly onChange: (next: BandFilter) => void;
-  readonly t: Translate;
-}) {
-  const options: readonly (readonly [BandFilter, number])[] = [
-    ["all", rows.length],
-    ...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS.map(
-      (value) =>
-        [
-          value,
-          rows.filter((row) => row.preScreen.band === value).length,
-        ] as const,
-    ),
-  ];
-  return (
-    <div
-      className="mb-4 flex flex-wrap items-center gap-2"
-      data-pre-screen-filters
-    >
-      <span className="mr-1 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
-        {t("preScreen.title")}
-      </span>
-      {options.map(([value, count]) => (
-        <button
-          key={value}
-          type="button"
-          data-pre-screen-filter={value}
-          aria-pressed={value === band}
-          onClick={() => onChange(value)}
-          className={
-            value === band
-              ? `${PRIMARY_ACTION_BUTTON} !py-1.5`
-              : `${ACTION_BUTTON} !py-1.5`
-          }
-        >
-          {value === "all"
-            ? t("preScreen.filterAll")
-            : translated(t, `preScreen.band.${value}`)}{" "}
-          · {number(count, locale)}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function actionLabelKey(
@@ -736,8 +349,10 @@ function ResultsTable({
   const visibleRows = expanded ? filteredRows : filteredRows.slice(0, 10);
   const remaining = Math.max(0, filteredRows.length - visibleRows.length);
 
+  /** A lane change also clears the band: lane chip counts are lane-only totals, so a kept band could show an empty table under a non-zero count. */
   function changeFilter(next: Filter): void {
     setFilter(next);
+    setBand("all");
     setExpanded(false);
     setActionError(null);
   }
@@ -900,7 +515,7 @@ function ResultsTable({
                 selectedProperty !== "" &&
                 row.gsc.pageStatus === "observed_sufficient";
               const canOpenPage = page !== null;
-              const competitorPage = bestCompetitorPageUrl(row);
+              const competitorPage = bestCompetitorPage(row);
               return (
                 <tr
                   key={row.keyword}
@@ -1012,13 +627,14 @@ function ResultsTable({
                           {competitorPage !== null ? (
                             <a
                               data-row-action="open-competitor-page"
-                              href={competitorPage}
+                              href={competitorPage.url}
                               target="_blank"
                               rel="noopener noreferrer"
                               className={ACTION_BUTTON}
                               onClick={() => setActionError(null)}
                             >
-                              {t("actions.openCompetitorPage")}
+                              {t("actions.openCompetitorPage")} ·{" "}
+                              {competitorPage.domain}
                             </a>
                           ) : null}
                         </div>

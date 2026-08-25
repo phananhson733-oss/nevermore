@@ -211,6 +211,8 @@ describe.each([
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
     preScreen: "DFS pre-screen",
+    preScreenBasis:
+      "DataForSEO estimate; a pre-screen, not SERP winnability.",
     sampleRule: "Sample rule:",
   },
   {
@@ -228,6 +230,7 @@ describe.each([
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
     preScreen: "DFS 预筛",
+    preScreenBasis: "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
     sampleRule: "采样规则",
   },
 ])("competitor keyword gap $locale messages", (expected) => {
@@ -251,9 +254,13 @@ describe.each([
     expect(host.textContent).toContain(expected.boundaries);
     expect(host.textContent).toContain(expected.manualSnapshot);
     expect(host.textContent).toContain(expected.preScreen);
+    // The pre-screen basis is visible row text now, not only a tooltip.
+    expect(host.textContent).toContain(expected.preScreenBasis);
     expect(host.textContent).toContain(expected.sampleRule);
     expect(host.textContent).not.toContain("tools.competitorKeywordGap");
     expect(host.textContent).not.toContain("preScreen.band");
+    expect(host.textContent).not.toContain("preScreen.basis");
+    expect(host.textContent).not.toContain("preScreen.reason");
     expect(host.textContent).not.toContain("coverage.sampleRule");
     expect(host.textContent).not.toContain("overview.gscQueryRows");
     expect(host.textContent).not.toContain("summary.unavailable");
