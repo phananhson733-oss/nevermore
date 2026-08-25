@@ -45,7 +45,10 @@ const SECOND_LEVEL_SUFFIXES = new Set([
   "gov",
   "edu",
 ]);
-/** Trailing labels that make a dotted keyword a file or technology name (`robots.txt`, `node.js`), not a hostname. */
+/**
+ * Trailing labels that make a dotted keyword a file or technology name (`robots.txt`, `node.js`), not a hostname.
+ * `php` can also be read as a top-level domain; the file reading wins because `index.php` is the likelier query.
+ */
 const FILE_EXTENSION_LABELS = new Set([
   "txt",
   "xml",
@@ -116,20 +119,9 @@ function tokenPattern(token: string): RegExp {
   return new RegExp(`(^|[^a-z0-9])${escapeRegExp(token)}([^a-z0-9]|$)`, "i");
 }
 
-interface BrandTokenPatterns {
-  readonly key: string;
-  readonly patterns: readonly RegExp[];
-}
-
-/** Single-entry memo: a run screens hundreds of rows against one constant competitor set. */
-let lastBrandTokenPatterns: BrandTokenPatterns | null = null;
-
+/** Compiled per row on purpose: a handful of tiny patterns is cheap, and the module keeps no state. */
 function brandTokenPatterns(domains: readonly string[]): readonly RegExp[] {
-  const key = domains.join("\n");
-  if (lastBrandTokenPatterns?.key === key) return lastBrandTokenPatterns.patterns;
-  const patterns = competitorBrandTokens(domains).map(tokenPattern);
-  lastBrandTokenPatterns = { key, patterns };
-  return patterns;
+  return competitorBrandTokens(domains).map(tokenPattern);
 }
 
 /** `now.gg` is a hostname; `robots.txt` and `node.js` are a file and a technology and stay in the metric lane. */

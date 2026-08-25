@@ -100,7 +100,7 @@ Evaluated in order; the first match wins.
 | Condition | Band | Reason |
 |---|---|---|
 | keyword contains a competitor brand token (registrable label of a requested competitor) and no comparative token (`alternative(s)`, `vs`, `versus`, `competitor(s)`, `替代`, `对比`) | `defer_brand_navigational` | `competitor_brand_token` |
-| keyword looks like a hostname (`^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$` after key normalisation) | `defer_brand_navigational` | `domain_like_keyword` |
+| keyword looks like a hostname (`^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$` after key normalisation) and its last label is not a file or technology extension (`txt`, `xml`, `js`, `json`, `html`, `htm`, `css`, `pdf`, `config`, `csv`, `php`, `yaml`, `yml`; so `robots.txt` and `node.js` stay in the metric lane while `now.gg` does not) | `defer_brand_navigational` | `domain_like_keyword` |
 | a competitor's ranking page path contains `/<keyword>.<tld>/` (a domain-profile page for another brand, e.g. `semrush.com/website/hanime.tv/overview/`) | `defer_brand_navigational` | `competitor_domain_profile_page` |
 | provider intent is `navigational` | `defer_brand_navigational` | `provider_navigational_intent` |
 | KD or search volume is `provider_no_data` | `unbanded` | `dfs_metric_missing` |

@@ -433,6 +433,9 @@ const METRIC = (value: number | null) =>
       ? { availability: "explicit_zero" as const, value: 0 }
       : { availability: "available" as const, value };
 
+/** The row's own page shape, so the report seam passes `row.competitorPages` through untouched. */
+const PAGE = (url: string | null) => ({ url, title: null, etv: null });
+
 function input(overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[0]> = {}) {
   return {
     keyword: "approval workflow software",
@@ -440,7 +443,7 @@ function input(overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[
     searchVolume: METRIC(2_900),
     bestCompetitorRank: 4,
     providerIntent: "commercial",
-    competitorPages: { "one.example": "https://one.example/approval-workflows" },
+    competitorPages: { "one.example": PAGE("https://one.example/approval-workflows") },
     competitorDomains: ["one.example", "two.example"],
     ...overrides,
   };
@@ -481,12 +484,12 @@ describe("preScreenCompetitorKeyword", () => {
   it("recognises a competitor domain-profile page as another brand's navigational term", () => {
     expect(
       preScreenCompetitorKeyword(
-        input({ keyword: "hanime", competitorPages: { "one.example": "https://one.example/website/hanime.tv/overview/" } }),
+        input({ keyword: "hanime", competitorPages: { "one.example": PAGE("https://one.example/website/hanime.tv/overview/") } }),
       ),
     ).toEqual({ band: "defer_brand_navigational", basis: "dfs_estimate", reason: "competitor_domain_profile_page" });
     expect(
       preScreenCompetitorKeyword(
-        input({ keyword: "approval software", competitorPages: { "one.example": "https://one.example/blog/approval-software-guide" } }),
+        input({ keyword: "approval software", competitorPages: { "one.example": PAGE("https://one.example/blog/approval-software-guide") } }),
       ).band,
     ).toBe("prioritize_serp_check");
   });
@@ -583,6 +586,7 @@ Extend `CompetitorKeywordGapRow` with `competitorPages`, `coreKeyword`, `searchV
 // @pos    -- second, orthogonal axis next to the GSC-derived next step; an estimate, never winnability
 
 import type {
+  CompetitorKeywordGapCompetitorPage,
   CompetitorKeywordGapMetric,
   CompetitorKeywordGapPreScreen,
 } from "./types.ts";
@@ -598,8 +602,8 @@ export interface CompetitorKeywordGapPreScreenInput {
   readonly searchVolume: CompetitorKeywordGapMetric;
   readonly bestCompetitorRank: number;
   readonly providerIntent: string | null;
-  /** Competitor domain -> ranking page URL (already sanitised), when known. */
-  readonly competitorPages: Readonly<Record<string, string | null>>;
+  /** Competitor domain -> its ranking page, in the row's own shape so the seam passes it through untouched. */
+  readonly competitorPages: Readonly<Record<string, CompetitorKeywordGapCompetitorPage>>;
   readonly competitorDomains: readonly string[];
 }
 
@@ -627,15 +631,18 @@ function containsToken(keyword: string, token: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(keyword);
 }
 
-function isDomainProfilePage(keyword: string, pages: Readonly<Record<string, string | null>>): boolean {
+function isDomainProfilePage(
+  keyword: string,
+  pages: Readonly<Record<string, CompetitorKeywordGapCompetitorPage>>,
+): boolean {
   const compact = keyword.replace(/\s+/g, "");
   if (compact.length < 3) return false;
   const escaped = compact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const needle = new RegExp(`/${escaped}\\.[a-z]{2,}(?:/|$)`, "i");
-  return Object.values(pages).some((url) => {
-    if (url === null) return false;
+  return Object.values(pages).some((page) => {
+    if (page.url === null) return false;
     try {
-      return needle.test(new URL(url).pathname);
+      return needle.test(new URL(page.url).pathname);
     } catch {
       return false;
     }
@@ -690,6 +697,12 @@ export function preScreenCompetitorKeyword(
 ```
 
 Note on the tests: `"ONE.example login"` must hit `competitor_brand_token` (the token `one` is present) — the order above checks brand tokens before hostname shape, which is what the test expects. The comparative exemption applies to all four navigational checks.
+
+Review rulings folded into the landed `pre-screen.ts` (the snippet above is the starting point, the design doc's decision table is authoritative):
+- `competitorBrandTokens` reads the registrable label from the right (`ahrefs` for `tools.ahrefs.com`, `example` for `blog.example.co.uk`), not the leftmost non-generic label, so a subdomain such as `developers` never becomes a brand token.
+- `domain_like_keyword` skips a keyword whose last label is a file or technology extension (`robots.txt`, `node.js`, `web.config`); see the design doc table row.
+- `competitorPages` takes the row's `{ url, title, etv }` shape, so Task 3 passes `row.competitorPages` through untouched.
+- No module-level state: the brand-token patterns are compiled per row.
 
 Export from `index.ts`: `export * from "./pre-screen.ts";` (check the barrel's existing style — it re-exports three modules).
 
@@ -780,7 +793,7 @@ const serpSnapshot =
       });
 ```
 
-- Hoist `searchVolume`, `cpc`, `keywordDifficulty`, `providerIntent`, `bestCompetitorRank` (currently computed inline in the returned literal at ~L556-564) into `const`s before the call, then `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages: Object.fromEntries(Object.entries(competitorPages).map(([domain, page]) => [domain, page.url])), competitorDomains: input.competitorDomains })`. (There is no `mapValues` helper in this file.)
+- Hoist `searchVolume`, `cpc`, `keywordDifficulty`, `providerIntent`, `bestCompetitorRank` (currently computed inline in the returned literal at ~L556-564) into `const`s before the call, then `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages, competitorDomains: input.competitorDomains })`. (`competitorPages` is passed in the row's own `{ url, title, etv }` shape; the pre-screen input type takes it as-is.)
 - `rowSort`: after the impressions comparison and BEFORE `competitorCount`, insert:
 
 ```ts
