@@ -1784,10 +1784,41 @@
       },
       "noise": {
         "label": "Noise filter on",
-        "observed": "{observed} visible queries → {eligible} reached the action sample floor → {selected} query/page signals; {fallback, plural, one {# property-level fallback shown} other {# property-level fallbacks shown}}.",
+        "observed": "{observed} visible queries: {eligible} reached the evaluation sample floor; {selected, plural, one {# strict query/page change was selected} other {# strict query/page changes were selected}}; {observations, plural, one {# observation is shown} other {# observations are shown}}; {trend, plural, one {# site-wide trend is shown} other {# site-wide trends are shown}}.",
         "partial": "{observed} visible rows in the observed prefix → downstream candidate counts are unavailable. This is not property-wide.",
         "unavailable": "Visible-query signal funnel unavailable. Downstream counts remain unavailable; no zeroes were inferred.",
         "observationOnly": "{count} queries had 50–99 impressions and remain observation-only; they cannot trigger an action."
+      },
+      "siteTrend": {
+        "title": "Site-wide trend",
+        "intro": "Observed property movement across the latest complete seven days and the preceding seven days. It does not identify a query, page, or cause.",
+        "evidence": "Observed property evidence",
+        "actionListed": "The evidence-backed property action is listed in Today's recommended actions."
+      },
+      "review": {
+        "title": "Queries and pages to review today",
+        "intro": "Strict changes appear first; observation-only rows fill the remaining space. At most three real query/page rows are shown.",
+        "empty": "No strict change or query observation reached the available display floors in this run. That is not proof that nothing changed.",
+        "partial": "The query read is partial, so a property-wide watchlist cannot be ranked from the observed prefix.",
+        "unavailable": "Comparable query/page evidence is unavailable, so no watchlist was inferred and no missing count was shown as zero.",
+        "pageUnavailable": "Primary page evidence unavailable",
+        "observationKinds": {
+          "evaluation_eligible": {
+            "title": "Watch",
+            "body": "The sample reached the evaluation floor, but this run did not select a strict action signal. Continue observing."
+          },
+          "sample_building": {
+            "title": "Building sample",
+            "body": "This query has 50–99 impressions and remains observation-only. It cannot trigger an action."
+          }
+        },
+        "columns": {
+          "status": "Status",
+          "queryPage": "Query / Page",
+          "clicks": "Clicks",
+          "position": "Position",
+          "interpretation": "Interpretation"
+        }
       },
       "evidence": {
         "title": "Evidence floor and observable coverage",
@@ -1839,7 +1870,7 @@
         "title": "Changes above the noise threshold",
         "intro": "Latest complete 7 days versus the preceding 7 days. At most three evidence-backed rows are shown.",
         "empty": "No change cleared the evidence floor in this run. That is not the same as proving nothing changed.",
-        "stableEmpty": "No query/page signal or property-level weekly fallback cleared the available evidence gates. That is not proof that nothing changed.",
+        "stableEmpty": "No query/page signal or site-wide weekly trend cleared the available evidence gates. That is not proof that nothing changed.",
         "propertyEvidence": "Property-level evidence",
         "entireProperty": "Entire Search Console property",
         "query": "Query",
@@ -1887,7 +1918,7 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "At most three, in deterministic evidence order. Each action carries its evidence to the next tool.",
+        "intro": "Only strict evidence-backed actions are listed, in deterministic order. The list is not padded to three.",
         "empty": "No automated handoff is justified by the evidence available in this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",

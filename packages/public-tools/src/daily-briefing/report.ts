@@ -30,6 +30,8 @@ import type {
   DailyBriefingPropertyChangeKind,
   DailyBriefingPropertyFallback,
   DailyBriefingQueryEvidence,
+  DailyBriefingQueryObservation,
+  DailyBriefingQueryWatchlist,
   DailyBriefingSignalFunnel,
   DailyBriefingWindowCoverage,
   DailyBriefingWindows,
@@ -468,6 +470,32 @@ function pageForQuery(
   return rows[0]?.page ?? null;
 }
 
+function pageForObservation(
+  query: string,
+  evidence: DailyBriefingQueryEvidence,
+  minimumImpressions: number,
+): string | null {
+  if (evidence.queryRead === null || evidence.queryPageRead === null) return null;
+  const queryPages = validQueryPageRows(evidence.queryPageRead.rows);
+  const coverage = queryPageCoverage(
+    validQueryRows(evidence.queryRead.rows),
+    queryPages,
+  ).get(query);
+  if (coverage === null || coverage === undefined || coverage < MIN_DIMENSION_COVERAGE) {
+    return null;
+  }
+  const rows = queryPages
+    .filter(
+      (row) =>
+        row.query === query && row.impressions >= minimumImpressions,
+    )
+    .sort(
+      (a, b) =>
+        b.impressions - a.impressions || a.page.localeCompare(b.page),
+    );
+  return rows[0]?.page ?? null;
+}
+
 interface ChangeCandidate {
   readonly kind: DailyBriefingChangeKind;
   readonly query: string;
@@ -747,6 +775,88 @@ function selectChanges(
   };
 }
 
+function queryWatchlistFor({
+  changes,
+  currentEvidence,
+  evidence,
+  previousEvidence,
+}: {
+  readonly changes: readonly DailyBriefingChange[];
+  readonly currentEvidence: DailyBriefingQueryEvidence | null;
+  readonly evidence: DailyBriefingQueryWatchlist["evidence"];
+  readonly previousEvidence: DailyBriefingQueryEvidence | null;
+}): DailyBriefingQueryWatchlist {
+  if (
+    evidence !== "observed" ||
+    currentEvidence?.queryRead === null ||
+    currentEvidence?.queryRead === undefined ||
+    previousEvidence?.queryRead === null ||
+    previousEvidence?.queryRead === undefined
+  ) {
+    return { evidence, items: [] };
+  }
+
+  const remaining = Math.max(0, DAILY_BRIEFING_ACTION_LIMIT - changes.length);
+  if (remaining === 0) return { evidence, items: [] };
+
+  const selectedQueries = new Set(changes.map((change) => change.query));
+  const previousByQuery = mapByQuery(
+    validQueryRows(previousEvidence.queryRead.rows),
+  );
+  const observations = validQueryRows(currentEvidence.queryRead.rows)
+    .flatMap<DailyBriefingQueryObservation>((current) => {
+      if (
+        selectedQueries.has(current.query) ||
+        current.impressions < BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS
+      ) {
+        return [];
+      }
+      const kind =
+        current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS
+          ? "evaluation_eligible"
+          : "sample_building";
+      const minimumPageImpressions =
+        kind === "evaluation_eligible"
+          ? BRIEFING_MIN_ROW_IMPRESSIONS
+          : BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS;
+      const page = pageForObservation(
+        current.query,
+        currentEvidence,
+        minimumPageImpressions,
+      );
+      return [
+        {
+          kind,
+          query: current.query,
+          page,
+          pageEvidence: page === null ? "unavailable" : "observed",
+          current,
+          previous: previousByQuery.get(current.query) ?? null,
+        },
+      ];
+    })
+    .sort((a, b) => {
+      if (a.kind !== b.kind) {
+        return a.kind === "evaluation_eligible" ? -1 : 1;
+      }
+      if ((a.previous !== null) !== (b.previous !== null)) {
+        return a.previous === null ? 1 : -1;
+      }
+      const aClickDelta =
+        a.previous === null ? -1 : Math.abs(a.current.clicks - a.previous.clicks);
+      const bClickDelta =
+        b.previous === null ? -1 : Math.abs(b.current.clicks - b.previous.clicks);
+      return (
+        bClickDelta - aClickDelta ||
+        b.current.impressions - a.current.impressions ||
+        a.query.localeCompare(b.query)
+      );
+    })
+    .slice(0, remaining);
+
+  return { evidence, items: observations };
+}
+
 function propertyFallbackFor(
   weekly: DailyBriefingKpiComparison,
 ): DailyBriefingPropertyFallback | null {
@@ -970,6 +1080,12 @@ export function buildDailyBriefing(
   }
   const propertyFallback =
     changes.length === 0 ? propertyFallbackFor(weekly) : null;
+  const queryWatchlist = queryWatchlistFor({
+    changes,
+    currentEvidence,
+    evidence: funnelEvidence,
+    previousEvidence,
+  });
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {
@@ -1016,6 +1132,7 @@ export function buildDailyBriefing(
       actions,
       propertyFallback,
       signalFunnel,
+      queryWatchlist,
       filteredObservedRows,
       countComplete,
       coverage,
