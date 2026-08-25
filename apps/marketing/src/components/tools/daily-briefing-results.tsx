@@ -23,7 +23,7 @@ import type {
   DailyBriefingEnvelope,
   DailyBriefingKpiComparison,
   DailyBriefingPropertyChange,
-  DailyBriefingPropertyFallback,
+  DailyBriefingPropertyTrend,
   DailyBriefingQueryWatchlist,
   DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
@@ -398,6 +398,20 @@ function SignalFunnelEvidence({
       unavailable: t("evidence.signalFunnel.laneUnavailable"),
     },
     {
+      key: "page-one-band",
+      title: t("evidence.signalFunnel.lanes.pageOneBand.title"),
+      count: funnel.pageOneBandCandidates,
+      bodyKey: "evidence.signalFunnel.lanes.pageOneBand.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+    {
+      key: "position-decline",
+      title: t("evidence.signalFunnel.lanes.positionDecline.title"),
+      count: funnel.positionDeclineCandidates,
+      bodyKey: "evidence.signalFunnel.lanes.positionDecline.body" as const,
+      unavailable: t("evidence.signalFunnel.laneUnavailable"),
+    },
+    {
       key: "first-observed",
       title: t("evidence.signalFunnel.lanes.firstObserved.title"),
       count: funnel.firstObservedCandidates,
@@ -507,16 +521,19 @@ export function DailyBriefingResults({
     0,
     Math.max(0, 3 - shownChanges.length),
   );
-  const propertyFallback =
-    shownChanges.length === 0 ? result.propertyFallback : null;
+  // The site-wide trend is the property's own fact. It used to be dropped the
+  // moment any query signal was selected, which deleted the only whole-site
+  // statement in the briefing exactly when the briefing had the most to say.
+  const propertyChange = result.propertyTrend.change;
+  const propertyAction = result.propertyTrend.action;
+  const propertyNoiseFloor = result.propertyTrend.noiseFloor;
   const propertyComparisons =
-    propertyFallback === null
+    propertyChange === null
       ? null
-      : propertyWeeklyComparisons(t, locale, propertyFallback.change);
+      : propertyWeeklyComparisons(t, locale, propertyChange);
   const propertyTarget =
-    propertyFallback === null
-      ? null
-      : destination(propertyFallback.action.destination);
+    propertyAction === null ? null : destination(propertyAction.destination);
+  const ctrLane = result.laneCapability.ctrLane;
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -545,18 +562,23 @@ export function DailyBriefingResults({
 
   function propertyHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
-    fallback: DailyBriefingPropertyFallback,
+    trend: DailyBriefingPropertyTrend,
   ) {
     let written = false;
     try {
+      if (trend.action === null || trend.change === null) {
+        event.preventDefault();
+        setHandoffFailed(true);
+        return;
+      }
       written = writeToolHandoff(window.sessionStorage, Date.now(), {
         source: "daily-search-briefing",
-        destination: fallback.action.destination,
+        destination: trend.action.destination,
         scope: "property",
         property,
         query: null,
         page: null,
-        evidenceId: `daily:property:${fallback.change.kind}`,
+        evidenceId: `daily:property:${trend.change.kind}`,
       });
     } catch {
       written = false;
@@ -605,7 +627,9 @@ export function DailyBriefingResults({
             detail={
               result.cadence === "daily"
                 ? t("facts.dailyReason")
-                : t("facts.weeklyReason")
+                : result.mode === "position_first"
+                  ? t("facts.positionFirstReason")
+                  : t("facts.weeklyReason")
             }
           />
           <FactCard
@@ -658,89 +682,6 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <NoiseSummary
-        funnel={result.signalFunnel}
-        observationsShown={shownObservations.length}
-        selectedQueryChanges={Math.min(
-          result.signalFunnel.selectedQueryChanges,
-          shownChanges.length,
-        )}
-        siteTrendShown={propertyFallback !== null}
-      />
-
-      {propertyFallback !== null && propertyComparisons !== null ? (
-        <section
-          aria-labelledby="daily-briefing-site-trend"
-          data-result-section="site-trend"
-          data-site-trend
-        >
-          <h3
-            id="daily-briefing-site-trend"
-            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-          >
-            {t("siteTrend.title")}
-          </h3>
-          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-            {t("siteTrend.intro")}
-          </p>
-          <div className={`${CARD} mt-4`}>
-            <p className={`${EYEBROW} text-brand-accent-text`}>
-              {t("siteTrend.evidence")}
-            </p>
-            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
-              {t(
-                `propertyChangeKinds.${propertyFallback.change.kind}.title`,
-              )}
-            </h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                [t("kpis.clicks"), propertyComparisons.clicks],
-                [t("kpis.impressions"), propertyComparisons.impressions],
-                [t("kpis.ctr"), propertyComparisons.ctr],
-                [t("kpis.averagePosition"), propertyComparisons.position],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
-                >
-                  <p className={EYEBROW}>{label}</p>
-                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
-              {t(`propertyChangeKinds.${propertyFallback.change.kind}.body`, {
-                clicks: signedMetric(
-                  locale,
-                  propertyFallback.change.clickChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                impressions: signedMetric(
-                  locale,
-                  propertyFallback.change.impressionChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                position: signedMetric(
-                  locale,
-                  propertyFallback.change.positionDelta,
-                  t("kpis.unavailable"),
-                ),
-              })}
-            </p>
-            <a
-              data-site-trend-action-link
-              href="#daily-briefing-actions"
-              className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-            >
-              {t("siteTrend.actionListed")}
-            </a>
-          </div>
-        </section>
-      ) : null}
 
       <section
         aria-labelledby="daily-briefing-changes"
@@ -753,8 +694,38 @@ export function DailyBriefingResults({
           {t("review.title")}
         </h3>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("review.intro")}
+          {t(
+            result.mode === "position_first"
+              ? "review.introPositionFirst"
+              : "review.intro",
+          )}
         </p>
+        {ctrLane.state !== "evaluated" ? (
+          <div
+            data-ctr-lane-blocked
+            className={`${CARD} mt-4 border-brand-warning/30 bg-brand-warning/[0.06]`}
+          >
+            <p className={`${EYEBROW} text-brand-warning`}>
+              {t("ctrLane.notEvaluated")}
+            </p>
+            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {ctrLane.blockers.length === 0
+                ? t("ctrLane.blockers.unknown")
+                : ctrLane.blockers
+                    .map((blocker) => t(`ctrLane.blockers.${blocker}`))
+                    .join(" ")}
+            </p>
+            {ctrLane.blockers.includes("brand_terms_not_confirmed") ? (
+              <a
+                data-ctr-lane-confirm-link
+                href="#daily-briefing-brand-terms"
+                className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                {t("ctrLane.confirmAndRerun")}
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         {shownChanges.length === 0 && shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
@@ -821,7 +792,9 @@ export function DailyBriefingResults({
                     {change.query}
                   </p>
                   <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
-                    {change.page}
+                    {change.pageEvidence === "observed" && change.page !== null
+                      ? change.page
+                      : t("review.pageUnavailable")}
                   </p>
                 </div>
                 <div role="cell" className="min-w-0">
@@ -927,7 +900,7 @@ export function DailyBriefingResults({
                     {t("review.columns.interpretation")}
                   </span>
                   <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
-                    {t(`review.observationKinds.${observation.kind}.body`)}
+                    {t(`review.observationBands.${observation.band}.body`)}
                   </p>
                 </div>
               </div>
@@ -935,6 +908,94 @@ export function DailyBriefingResults({
           </div>
         )}
       </section>
+
+      {propertyChange !== null && propertyComparisons !== null ? (
+        <section
+          aria-labelledby="daily-briefing-site-trend"
+          data-result-section="site-trend"
+          data-site-trend
+        >
+          <h3
+            id="daily-briefing-site-trend"
+            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+          >
+            {t("siteTrend.title")}
+          </h3>
+          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("siteTrend.intro")}
+          </p>
+          <div className={`${CARD} mt-4`}>
+            <p className={`${EYEBROW} text-brand-accent-text`}>
+              {t("siteTrend.evidence")}
+            </p>
+            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
+              {t(
+                `propertyChangeKinds.${propertyChange.kind}.title`,
+              )}
+            </h4>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                [t("kpis.clicks"), propertyComparisons.clicks],
+                [t("kpis.impressions"), propertyComparisons.impressions],
+                [t("kpis.ctr"), propertyComparisons.ctr],
+                [t("kpis.averagePosition"), propertyComparisons.position],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
+                >
+                  <p className={EYEBROW}>{label}</p>
+                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {t(`propertyChangeKinds.${propertyChange.kind}.body`, {
+                clicks: signedMetric(
+                  locale,
+                  propertyChange.clickChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                impressions: signedMetric(
+                  locale,
+                  propertyChange.impressionChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                position: signedMetric(
+                  locale,
+                  propertyChange.positionDelta,
+                  t("kpis.unavailable"),
+                ),
+              })}
+            </p>
+            {propertyAction !== null ? (
+              <a
+                data-site-trend-action-link
+                href="#daily-briefing-actions"
+                className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                {t("siteTrend.actionListed")}
+              </a>
+            ) : propertyNoiseFloor !== null ? (
+              <p
+                data-site-trend-noise-floor
+                className="mt-3 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("siteTrend.insideNoiseFloor", {
+                  observed: Math.abs(propertyNoiseFloor.observedChange).toFixed(
+                    0,
+                  ),
+                  minimum: propertyNoiseFloor.minimumForAction.toFixed(1),
+                })}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section
         aria-labelledby="daily-briefing-actions"
@@ -949,7 +1010,7 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("actions.intro")}
         </p>
-        {queryActions.length === 0 && propertyFallback === null ? (
+        {queryActions.length === 0 && propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {t("actions.empty")}
@@ -990,7 +1051,7 @@ export function DailyBriefingResults({
                           {change.query}
                         </p>
                         <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                          {change.page}
+                          {change.page ?? t("review.pageUnavailable")}
                         </p>
                         <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {metricsLine(t, locale, change.current)}
@@ -1010,32 +1071,34 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
-            {propertyFallback !== null &&
+            {propertyAction !== null &&
             propertyComparisons !== null &&
             propertyTarget !== null ? (
               <article
                 data-action-row
                 data-property-action
-                data-action-rank={1}
+                data-action-rank={queryActions.length + 1}
                 className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-3.5">
                   <span
                     data-action-rank-badge
-                    aria-label={t("actions.rank", { rank: 1 })}
+                    aria-label={t("actions.rank", {
+                      rank: queryActions.length + 1,
+                    })}
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
                   >
-                    1
+                    {queryActions.length + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="text-[16px] font-semibold text-text-dark-primary">
                       {t(
-                        `propertyActionKinds.${propertyFallback.action.kind}.title`,
+                        `propertyActionKinds.${propertyAction.kind}.title`,
                       )}
                     </h4>
                     <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                       {t(
-                        `propertyActionKinds.${propertyFallback.action.kind}.body`,
+                        `propertyActionKinds.${propertyAction.kind}.body`,
                       )}
                     </p>
                     <div
@@ -1055,7 +1118,7 @@ export function DailyBriefingResults({
                 <Link
                   data-action-link
                   href={localePath(locale, propertyTarget.path)}
-                  onClick={(event) => propertyHandoff(event, propertyFallback)}
+                  onClick={(event) => propertyHandoff(event, result.propertyTrend)}
                   className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                 >
                   {t(propertyTarget.labelKey)}
@@ -1111,15 +1174,36 @@ export function DailyBriefingResults({
         data-result-section="evidence"
         className={CARD}
       >
-        <h3
-          id="daily-briefing-evidence"
-          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("evidence.title")}
-        </h3>
+        <details data-evidence-details>
+          <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3 gap-y-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+            <h3
+              id="daily-briefing-evidence"
+              className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+            >
+              {t("evidence.title")}
+            </h3>
+            <span
+              data-evidence-fold-summary
+              className="text-[12px] leading-[1.6] text-text-dark-secondary"
+            >
+              {t("evidence.foldSummary", {
+                changes: shownChanges.length,
+                observations: shownObservations.length,
+              })}
+            </span>
+          </summary>
         <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {t("evidence.thresholdSummary")}
         </p>
+        <NoiseSummary
+        funnel={result.signalFunnel}
+        observationsShown={shownObservations.length}
+        selectedQueryChanges={Math.min(
+          result.signalFunnel.selectedQueryChanges,
+          shownChanges.length,
+        )}
+        siteTrendShown={propertyChange !== null}
+        />
         <SignalFunnelEvidence funnel={result.signalFunnel} />
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <EvidenceCard
@@ -1154,6 +1238,7 @@ export function DailyBriefingResults({
             }
           />
         </div>
+        </details>
       </section>
 
       <section

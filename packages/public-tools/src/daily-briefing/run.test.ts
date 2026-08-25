@@ -195,7 +195,11 @@ describe("runDailyBriefing read plan", () => {
     expect(envelope.result.weekly.current?.clicks).toBe(70);
     expect(envelope.result.changes).toEqual([]);
     expect(envelope.result.coverage.current.evidence).toBe("unavailable");
-    expect(envelope.result.limitations).toContain("query_evidence_unavailable");
+    // Each of the six attachments soft-fails on its own, so a lost page read
+    // costs page attribution and the handoff, not the query lanes.
+    expect(envelope.result.limitations).toContain(
+      "query_page_coverage_below_floor",
+    );
   });
 
   it("invokes the shared optional-read cancellation seam exactly once on failures", async () => {

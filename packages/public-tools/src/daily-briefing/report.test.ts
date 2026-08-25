@@ -175,7 +175,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v1");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v2");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -189,7 +189,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v1",
+      schemaVersion: "daily_search_briefing.v2",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -465,7 +465,9 @@ describe("query changes and actions", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    expect(result.changes).toEqual([]);
+    expect(result.changes).toMatchObject([
+      { kind: "click_opportunity", query, page: null, pageEvidence: "unavailable" },
+    ]);
     expect(result.actions).toEqual([]);
     expect(result.limitations).toContain("query_page_coverage_below_floor");
   });
@@ -490,12 +492,14 @@ describe("query changes and actions", () => {
     }).result;
 
     expect(result.coverage.current.coveredQueries).toBe(1);
-    expect(result.changes).toEqual([]);
+    expect(result.changes).toMatchObject([
+      { kind: "click_opportunity", query, page: null, pageEvidence: "unavailable" },
+    ]);
     expect(result.actions).toEqual([]);
     expect(result.limitations).toContain("query_page_coverage_below_floor");
   });
 
-  it("emits at most one action per category in fixed order with stable tie breaks", () => {
+  it("ranks every lane on one actionability order instead of capping each category", () => {
     const base = baselineRows("base");
     const currentRows = [
       queryRow("b click gap", 800, 0, 9),
@@ -526,15 +530,17 @@ describe("query changes and actions", () => {
     }).result;
 
     expect(result.actions).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
+    // Two strong opportunities of the same kind now outrank one weaker
+    // candidate of another kind, which the per-category cap made impossible.
     expect(result.actions.map((action) => action.kind)).toEqual([
       "click_opportunity",
+      "click_opportunity",
       "stable_position_click_decline",
-      "first_observed",
     ]);
     expect(result.actions.map((action) => action.query)).toEqual([
       "a click gap",
+      "b click gap",
       "a decline",
-      "a first",
     ]);
   });
 
@@ -628,7 +634,7 @@ describe("query changes and actions", () => {
   });
 });
 
-describe("property fallback", () => {
+describe("property trend", () => {
   it("falls back to an observed property click decline when query signals are empty", () => {
     const currentRows = Array.from({ length: 4 }, (_, index) =>
       queryRow(`astrology current ${index}`, 98, index === 0 ? 1 : 0, 12),
@@ -674,7 +680,7 @@ describe("property fallback", () => {
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
-    expect(result.propertyFallback).toEqual({
+    expect(result.propertyTrend).toEqual({
       change: {
         kind: "sitewide_click_decline",
         evidence: "observed",
@@ -702,6 +708,12 @@ describe("property fallback", () => {
         kind: "sitewide_click_decline",
         destination: "traffic-drop-diagnosis",
       },
+      noiseFloor: {
+        basis: "clicks",
+        observedChange: -35,
+        minimumForAction: 2 * Math.sqrt(70),
+        cleared: true,
+      },
     });
   });
 
@@ -717,16 +729,22 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change).toMatchObject({
+    expect(result.propertyTrend.change).toMatchObject({
       kind: "sitewide_click_decline",
       clickChange: -3,
       clickChangeRatio: -0.15,
       positionDelta: 0,
     });
-    expect(result.propertyFallback?.action).toEqual({
-      kind: "sitewide_click_decline",
-      destination: "traffic-drop-diagnosis",
+    // The thresholds are met, but three clicks off a base of twenty is inside
+    // the spread the count carries on its own, so no diagnosis is dispatched.
+    expect(result.propertyTrend.noiseFloor).toEqual({
+      basis: "clicks",
+      observedChange: -3,
+      minimumForAction: 2 * Math.sqrt(20),
+      cleared: false,
     });
+    expect(result.propertyTrend.action).toBeNull();
+    expect(result.limitations).toContain("property_change_inside_noise_floor");
   });
 
   it("prioritizes click decline when click and visibility declines both qualify", () => {
@@ -741,10 +759,10 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change.kind).toBe(
+    expect(result.propertyTrend.change?.kind).toBe(
       "sitewide_click_decline",
     );
-    expect(result.propertyFallback?.action.destination).toBe(
+    expect(result.propertyTrend.action?.destination).toBe(
       "traffic-drop-diagnosis",
     );
   });
@@ -761,7 +779,7 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change).toMatchObject({
+    expect(result.propertyTrend.change).toMatchObject({
       kind: "sitewide_visibility_decline",
       clickChange: -2,
       clickChangeRatio: -0.1,
@@ -769,7 +787,7 @@ describe("property fallback", () => {
       impressionChangeRatio: -0.15,
       positionDelta: 1,
     });
-    expect(result.propertyFallback?.action).toEqual({
+    expect(result.propertyTrend.action).toEqual({
       kind: "sitewide_visibility_decline",
       destination: "traffic-drop-diagnosis",
     });
@@ -787,7 +805,7 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change).toMatchObject({
+    expect(result.propertyTrend.change).toMatchObject({
       kind: "sitewide_visibility_gain",
       clickChange: 3,
       clickChangeRatio: 0.15,
@@ -795,10 +813,10 @@ describe("property fallback", () => {
       impressionChangeRatio: 0,
       positionDelta: 0,
     });
-    expect(result.propertyFallback?.action).toEqual({
-      kind: "sitewide_visibility_gain",
-      destination: "seo-quick-wins",
-    });
+    // Gains face the same floor as declines; three clicks off twenty is noise
+    // in either direction.
+    expect(result.propertyTrend.noiseFloor?.cleared).toBe(false);
+    expect(result.propertyTrend.action).toBeNull();
   });
 
   it("emits a visibility gain from impression growth plus position improvement", () => {
@@ -813,7 +831,7 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change).toMatchObject({
+    expect(result.propertyTrend.change).toMatchObject({
       kind: "sitewide_visibility_gain",
       clickChange: 0,
       clickChangeRatio: 0,
@@ -821,7 +839,7 @@ describe("property fallback", () => {
       impressionChangeRatio: 0.15,
       positionDelta: -1,
     });
-    expect(result.propertyFallback?.action.destination).toBe("seo-quick-wins");
+    expect(result.propertyTrend.action?.destination).toBe("seo-quick-wins");
   });
 
   it("preserves a missing click denominator while selecting visibility decline", () => {
@@ -836,7 +854,7 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback?.change).toMatchObject({
+    expect(result.propertyTrend.change).toMatchObject({
       kind: "sitewide_visibility_decline",
       clickChange: 0,
       clickChangeRatio: null,
@@ -863,7 +881,8 @@ describe("property fallback", () => {
       }).result;
 
       expect(result.weekly.evidence).toBe("observed");
-      expect(result.propertyFallback).toBeNull();
+      expect(result.propertyTrend.change).toBeNull();
+      expect(result.propertyTrend.action).toBeNull();
     },
   );
 
@@ -879,7 +898,8 @@ describe("property fallback", () => {
     const result = report({ dateRows }).result;
 
     expect(result.weekly.evidence).toBe("unavailable");
-    expect(result.propertyFallback).toBeNull();
+    expect(result.propertyTrend.change).toBeNull();
+    expect(result.propertyTrend.action).toBeNull();
   });
 
   it("returns null for a stable property", () => {
@@ -894,10 +914,11 @@ describe("property fallback", () => {
       }),
     }).result;
 
-    expect(result.propertyFallback).toBeNull();
+    expect(result.propertyTrend.change).toBeNull();
+    expect(result.propertyTrend.action).toBeNull();
   });
 
-  it("suppresses the property fallback when a query-page change is selected", () => {
+  it("keeps the property trend alongside a selected query-page change", () => {
     const query = "workflow templates";
     const page = "https://example.com/templates";
     const currentRows = [queryRow(query, 200, 10, 5.2)];
@@ -935,7 +956,17 @@ describe("property fallback", () => {
         page,
       }),
     ]);
-    expect(result.propertyFallback).toBeNull();
+    // The site-wide fact belongs to the property, not to whatever the query
+    // lanes happened to find. Gating one on the other deleted it.
+    expect(result.propertyTrend.change).toMatchObject({
+      kind: "sitewide_click_decline",
+      clickChange: -35,
+    });
+    expect(result.propertyTrend.action).toEqual({
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+    expect(result.signalFunnel.propertyTrendShown).toBe(true);
   });
 });
 
@@ -969,10 +1000,12 @@ describe("signal funnel", () => {
       ctrBaselineRows: 1,
       clickOpportunityCandidates: 1,
       stableDeclineCandidates: 0,
+      pageOneBandCandidates: 0,
+      positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 1,
-      propertyFallbackShown: false,
+      propertyTrendShown: false,
     });
   });
 
@@ -1015,10 +1048,12 @@ describe("signal funnel", () => {
       ctrBaselineRows: null,
       clickOpportunityCandidates: null,
       stableDeclineCandidates: 0,
+      pageOneBandCandidates: 0,
+      positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 0,
-      propertyFallbackShown: false,
+      propertyTrendShown: false,
     });
   });
 
@@ -1042,10 +1077,12 @@ describe("signal funnel", () => {
       ctrBaselineRows: null,
       clickOpportunityCandidates: null,
       stableDeclineCandidates: null,
+      pageOneBandCandidates: null,
+      positionDeclineCandidates: null,
       firstObservedCandidates: null,
       pageAttributionWithheld: null,
       selectedQueryChanges: 0,
-      propertyFallbackShown: false,
+      propertyTrendShown: false,
     });
   });
 
@@ -1075,10 +1112,12 @@ describe("signal funnel", () => {
         ctrBaselineRows: null,
         clickOpportunityCandidates: null,
         stableDeclineCandidates: null,
+        pageOneBandCandidates: null,
+        positionDeclineCandidates: null,
         firstObservedCandidates: null,
         pageAttributionWithheld: null,
         selectedQueryChanges: 0,
-        propertyFallbackShown: false,
+        propertyTrendShown: false,
       });
     }
   });
@@ -1110,7 +1149,7 @@ describe("signal funnel", () => {
       observationCandidates: 4,
       actionEligibleQueries: 0,
       selectedQueryChanges: 0,
-      propertyFallbackShown: true,
+      propertyTrendShown: true,
     });
   });
 
@@ -1136,12 +1175,17 @@ describe("signal funnel", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    expect(result.changes).toEqual([]);
+    // The query-level opportunity survives without its page; only the
+    // pair-level first_observed signal dies with its attribution.
+    expect(result.changes).toMatchObject([
+      { kind: "click_opportunity", page: null, pageEvidence: "unavailable" },
+    ]);
+    expect(result.actions).toEqual([]);
     expect(result.signalFunnel).toMatchObject({
       clickOpportunityCandidates: 1,
       firstObservedCandidates: 0,
       pageAttributionWithheld: 2,
-      selectedQueryChanges: 0,
+      selectedQueryChanges: 1,
     });
   });
 });
@@ -1171,7 +1215,7 @@ describe("query observation watchlist", () => {
       evidence: "observed",
       items: [
         expect.objectContaining({
-          kind: "evaluation_eligible",
+          kind: "sample_floor_reached",
           query: "eligible hundred",
           page: "https://example.com/eligible-hundred",
           pageEvidence: "observed",
@@ -1460,7 +1504,7 @@ describe("query observation watchlist", () => {
       brandTermsConfirmed: false,
     }).result;
 
-    expect(result.propertyFallback).toMatchObject({
+    expect(result.propertyTrend).toMatchObject({
       change: { kind: "sitewide_click_decline", query: null, page: null },
     });
     expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
@@ -1539,7 +1583,9 @@ describe("query evidence boundaries", () => {
     expect(result.coverage.current.queryRows).toBe(6);
     expect(result.coverage.current.queryPageRows).toBe(1);
     expect(result.coverage.current.coveredQueries).toBe(0);
-    expect(result.changes).toEqual([]);
+    expect(result.changes).toMatchObject([
+      { kind: "click_opportunity", query, page: null, pageEvidence: "unavailable" },
+    ]);
     expect(result.actions).toEqual([]);
     expect(result.limitations).toContain("query_page_coverage_below_floor");
   });
@@ -1612,7 +1658,11 @@ describe("query evidence boundaries", () => {
     }).result;
 
     expect(result.coverage.current.evidence).toBe("unavailable");
-    expect(result.changes).toEqual([]);
+    // The query rows are internally consistent, so the query-level signal is
+    // real. Only the attribution that crosses the two reads is invalid.
+    expect(result.changes).toMatchObject([
+      { kind: "click_opportunity", page: null, pageEvidence: "unavailable" },
+    ]);
     expect(result.actions).toEqual([]);
     expect(result.limitations).toContain("aggregation_basis_mismatch");
   });
@@ -1685,5 +1735,546 @@ describe("query evidence boundaries", () => {
     expect(result.coverage.current.evidence).toBe("unavailable");
     expect(result.anonymization.current.evidence).toBe("unavailable");
     expect(result.limitations).toContain("query_evidence_unavailable");
+  });
+});
+
+describe("average position lanes", () => {
+  function positionCase(
+    query: string,
+    previousPosition: number,
+    currentPosition: number,
+    impressions = 200,
+  ) {
+    const current = [
+      queryRow(query, impressions, 0, currentPosition),
+      ...baselineRows("base"),
+    ];
+    const previous = [
+      queryRow(query, impressions, 0, previousPosition),
+      ...baselineRows("base"),
+    ];
+    const page = `https://example.com/${query.replaceAll(" ", "-")}`;
+    return report({
+      currentQueryEvidence: evidence(current, [
+        queryPageRow(query, page, impressions, 0, currentPosition),
+      ]),
+      previousQueryEvidence: evidence(previous, [
+        queryPageRow(query, page, impressions, 0, previousPosition),
+      ]),
+    }).result;
+  }
+
+  it("reports a crossing into the top band at the exact improvement floor", () => {
+    const result = positionCase("striking distance", 11.5, 10);
+
+    expect(result.changes).toMatchObject([
+      {
+        kind: "average_position_crossed_page_one_band",
+        query: "striking distance",
+        positionDelta: -1.5,
+        pageEvidence: "observed",
+      },
+    ]);
+    expect(result.actions).toMatchObject([
+      {
+        kind: "average_position_crossed_page_one_band",
+        destination: "on-page-seo-check",
+      },
+    ]);
+  });
+
+  it("keeps a crossing below the improvement floor out of the briefing", () => {
+    expect(positionCase("small drift", 11.4, 10).changes).toEqual([]);
+  });
+
+  it("refuses to call a move a crossing when the prior window was already in band", () => {
+    expect(positionCase("already there", 10, 8).changes).toEqual([]);
+  });
+
+  it("refuses to call a move a crossing when the current window is outside the band", () => {
+    expect(positionCase("still outside", 13, 10.1).changes).toEqual([]);
+  });
+
+  it("reports an actionable position decline at the exact band edge", () => {
+    const result = positionCase("slipping", 28, 31);
+
+    expect(result.changes).toMatchObject([
+      {
+        kind: "actionable_position_decline",
+        query: "slipping",
+        positionDelta: 3,
+      },
+    ]);
+    expect(result.actions).toMatchObject([
+      { destination: "traffic-drop-diagnosis" },
+    ]);
+  });
+
+  it("keeps a far-position slide out of the action list", () => {
+    // A four-and-a-half point slide from eighty-six is real and useless: no
+    // edit made this week decides whether that query earns a click.
+    const result = positionCase("backlinks monitor", 86.5, 91.3);
+
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    // The lane ran and found nothing, which is a different statement from the
+    // lane having nothing it could measure.
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "evaluated",
+    );
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(0);
+  });
+
+  it("keeps a shallow in-band slide out of the action list", () => {
+    expect(positionCase("shallow", 25, 27.5).changes).toEqual([]);
+  });
+
+  it("evaluates position lanes without confirmed brand terms", () => {
+    // The CTR lane needs a trustworthy brand split. The position lanes do not,
+    // which is the whole reason a property with no clicks can still be told
+    // something true.
+    const result = positionCase("unconfirmed brand", 11.8, 9.7);
+
+    expect(result.limitations).toContain("brand_terms_not_confirmed");
+    expect(result.laneCapability.ctrLane.state).toBe("not_applicable");
+    expect(result.changes).toMatchObject([
+      { kind: "average_position_crossed_page_one_band" },
+    ]);
+  });
+});
+
+describe("lane capability and briefing mode", () => {
+  it("falls back to a position-first weekly briefing when no click lane applies", () => {
+    const query = "no clicks anywhere";
+    const rows = [queryRow(query, 500, 0, 12)];
+    const page = "https://example.com/no-clicks";
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 0,
+        currentClicks: 0,
+        previousImpressions: 3_000,
+        currentImpressions: 3_000,
+        previousPosition: 12,
+        currentPosition: 12,
+      }),
+      currentQueryEvidence: evidence(rows, [
+        queryPageRow(query, page, 500, 0, 12),
+      ]),
+      previousQueryEvidence: evidence(rows, [
+        queryPageRow(query, page, 500, 0, 12),
+      ]),
+    }).result;
+
+    expect(result.mode).toBe("position_first");
+    // Weekly impressions clear the daily floor, but a property whose click
+    // lanes cannot be evaluated has nothing new to detect each morning.
+    expect(result.weekly.current?.impressions).toBeGreaterThanOrEqual(
+      DAILY_CADENCE_MIN_IMPRESSIONS,
+    );
+    expect(result.cadence).toBe("weekly");
+    expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
+    expect(result.laneCapability.ctrOpportunityCapableQueries).toBe(0);
+    expect(result.laneCapability.lanes.stable_position_click_decline).toBe(
+      "not_applicable",
+    );
+  });
+
+  it("claims change detection once one query carries clicks to lose", () => {
+    const query = "has clicks";
+    const current = [queryRow(query, 500, 10, 9), ...baselineRows("base")];
+    const previous = [queryRow(query, 500, 12, 9), ...baselineRows("base")];
+    const page = "https://example.com/has-clicks";
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 40,
+        currentClicks: 40,
+        previousImpressions: 3_000,
+        currentImpressions: 3_000,
+        previousPosition: 9,
+        currentPosition: 9,
+      }),
+      currentQueryEvidence: evidence(current, [
+        queryPageRow(query, page, 500, 10, 9),
+      ]),
+      previousQueryEvidence: evidence(previous, [
+        queryPageRow(query, page, 500, 12, 9),
+      ]),
+    }).result;
+
+    expect(result.laneCapability.clickDeclineCapableQueries).toBeGreaterThan(0);
+    expect(result.mode).toBe("change_detection");
+    expect(result.cadence).toBe("daily");
+  });
+
+  it("separates a lane it could not read from a lane that cannot apply", () => {
+    const result = report({
+      currentQueryEvidence: null,
+      previousQueryEvidence: null,
+    }).result;
+
+    expect(result.mode).toBe("change_detection");
+    expect(result.laneCapability.evidence).toBe("unavailable");
+    expect(result.laneCapability.clickDeclineCapableQueries).toBeNull();
+    expect(result.laneCapability.lanes.click_opportunity).toBe("unavailable");
+  });
+
+  it("names why the CTR lane could not run", () => {
+    const query = "thin band";
+    const rows = [queryRow(query, 120, 0, 9)];
+    const page = "https://example.com/thin";
+    const result = report({
+      currentQueryEvidence: evidence(rows, [
+        queryPageRow(query, page, 120, 0, 9),
+      ]),
+      previousQueryEvidence: evidence(rows, [
+        queryPageRow(query, page, 120, 0, 9),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.laneCapability.ctrLane.state).toBe("not_applicable");
+    expect(result.laneCapability.ctrLane.blockers).toContain(
+      "insufficient_band_impressions",
+    );
+  });
+
+  it("blames unconfirmed brand terms rather than the data", () => {
+    const result = report({
+      currentQueryEvidence: evidence(baselineRows("base"), []),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+    }).result;
+
+    expect(result.laneCapability.ctrLane.blockers).toEqual([
+      "brand_terms_not_confirmed",
+    ]);
+    expect(result.laneCapability.ctrLane.usableBaselineBands).toBeNull();
+  });
+});
+
+describe("property trend noise floor", () => {
+  it("dispatches a diagnosis once the move outruns counting noise", () => {
+    const result = report({
+      dateRows: propertyDateRows({
+        previousClicks: 200,
+        currentClicks: 160,
+        previousImpressions: 8_000,
+        currentImpressions: 8_000,
+        previousPosition: 10,
+        currentPosition: 10,
+      }),
+    }).result;
+
+    expect(result.propertyTrend.noiseFloor).toEqual({
+      basis: "clicks",
+      observedChange: -40,
+      minimumForAction: 2 * Math.sqrt(200),
+      cleared: true,
+    });
+    expect(result.propertyTrend.action).toEqual({
+      kind: "sitewide_click_decline",
+      destination: "traffic-drop-diagnosis",
+    });
+    expect(result.limitations).not.toContain(
+      "property_change_inside_noise_floor",
+    );
+  });
+});
+
+describe("observation bands", () => {
+  it("puts a top-band observation above a far one carrying more impressions", () => {
+    const near = queryRow("near band", 150, 0, 9.7);
+    const far = queryRow("far band", 900, 0, 91.3);
+    const currentRows = [far, near];
+    const previousRows = [
+      queryRow("far band", 900, 0, 91.3),
+      queryRow("near band", 150, 0, 9.7),
+    ];
+    const pages = [
+      queryPageRow("far band", "https://example.com/far", 900, 0, 91.3),
+      queryPageRow("near band", "https://example.com/near", 150, 0, 9.7),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, pages),
+      previousQueryEvidence: evidence(previousRows, pages),
+    }).result;
+
+    // Sorting on click delta collapses to impressions when nothing has clicks,
+    // which is how a query at ninety-one ended up above one at nine.
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "near band",
+      "far band",
+    ]);
+    expect(result.queryWatchlist.items.map((item) => item.band)).toEqual([
+      "page_one",
+      "far",
+    ]);
+  });
+
+  it("labels each band from the current average position", () => {
+    const rows = [
+      queryRow("top", 150, 0, 10),
+      queryRow("near", 150, 0, 20),
+      queryRow("mid", 150, 0, 40),
+      queryRow("distant", 150, 0, 40.1),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+    }).result;
+
+    expect(
+      Object.fromEntries(
+        result.queryWatchlist.items.map((item) => [item.query, item.band]),
+      ),
+    ).toMatchObject({ top: "page_one", near: "near_page_one", mid: "mid" });
+  });
+
+  it("says the sample floor was reached without claiming a lane evaluated it", () => {
+    const rows = [queryRow("floor only", 150, 0, 30)];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+    }).result;
+
+    expect(result.queryWatchlist.items[0]).toMatchObject({
+      kind: "sample_floor_reached",
+      band: "mid",
+      positionDelta: 0,
+    });
+    expect(result.laneCapability.ctrLane.state).not.toBe("evaluated");
+  });
+});
+
+describe("gengrowth.ai 2026-08-24 production run", () => {
+  // The run that produced "this gives an SEO practitioner no usable
+  // information": twenty-one weekly clicks, three queries over the sample
+  // floor, none of them with a click to lose.
+  const BACKLINKS = "backlinks monitor";
+  const MANUAL = "manual seo service";
+  const BEST = "best all in one seo agency software";
+
+  function productionRun() {
+    const currentRows = [
+      queryRow(BACKLINKS, 400, 0, 91.3),
+      queryRow(MANUAL, 200, 0, 9.7),
+      queryRow(BEST, 150, 0, 78.3),
+      queryRow("sub floor a", 60, 0, 45),
+      queryRow("sub floor b", 55, 0, 62),
+    ];
+    const previousRows = [
+      queryRow(BACKLINKS, 400, 0, 86.5),
+      queryRow(MANUAL, 200, 0, 11.8),
+      queryRow(BEST, 150, 0, 77.3),
+      queryRow("sub floor a", 60, 0, 45),
+      queryRow("sub floor b", 55, 0, 62),
+    ];
+    const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
+      rows
+        .filter((row) => row.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS)
+        .map((row) =>
+          queryPageRow(
+            row.query,
+            `https://gengrowth.ai/${row.query.replaceAll(" ", "-")}`,
+            row.impressions,
+            row.clicks,
+            row.position,
+          ),
+        );
+
+    return report({
+      dateRows: propertyDateRows({
+        previousClicks: 21,
+        currentClicks: 14,
+        previousImpressions: 2_701,
+        currentImpressions: 2_534,
+        previousPosition: 25.3,
+        currentPosition: 25.7,
+      }),
+      currentQueryEvidence: evidence(currentRows, pages(currentRows)),
+      previousQueryEvidence: evidence(previousRows, pages(previousRows)),
+      brandTermsConfirmed: false,
+    }).result;
+  }
+
+  it("leads with the query that moved into the top band", () => {
+    const result = productionRun();
+
+    expect(result.changes[0]).toMatchObject({
+      kind: "average_position_crossed_page_one_band",
+      query: MANUAL,
+      positionDelta: 9.7 - 11.8,
+    });
+    expect(result.actions).toMatchObject([
+      { query: MANUAL, destination: "on-page-seo-check" },
+    ]);
+  });
+
+  it("hands out no action for the two far-position queries", () => {
+    const result = productionRun();
+
+    expect(
+      result.actions.filter(
+        (action) => action.query === BACKLINKS || action.query === BEST,
+      ),
+    ).toEqual([]);
+    expect(
+      result.changes.filter(
+        (change) => change.query === BACKLINKS || change.query === BEST,
+      ),
+    ).toEqual([]);
+  });
+
+  it("ranks the far-position observations below the change", () => {
+    const result = productionRun();
+
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      BACKLINKS,
+      BEST,
+    ]);
+    expect(result.queryWatchlist.items.every((item) => item.band === "far")).toBe(
+      true,
+    );
+  });
+
+  it("runs as a weekly position-first briefing", () => {
+    const result = productionRun();
+
+    expect(result.mode).toBe("position_first");
+    expect(result.cadence).toBe("weekly");
+    expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
+    expect(result.laneCapability.positionCapableQueries).toBe(1);
+  });
+
+  it("reports the site-wide decline without dispatching a diagnosis for it", () => {
+    const result = productionRun();
+
+    // The trend survives the query-level signal, and seven clicks off a base
+    // of twenty-one stays inside the spread the count carries on its own.
+    expect(result.propertyTrend.change).toMatchObject({
+      kind: "sitewide_click_decline",
+      clickChange: -7,
+    });
+    expect(result.propertyTrend.noiseFloor).toMatchObject({
+      basis: "clicks",
+      cleared: false,
+    });
+    expect(result.propertyTrend.action).toBeNull();
+    expect(result.limitations).toContain("property_change_inside_noise_floor");
+  });
+});
+
+describe("evidence gates on the query rows, not their page attachment", () => {
+  function crossingWithoutPages() {
+    const query = "manual seo service";
+    const current = [queryRow(query, 200, 0, 9.7)];
+    const previous = [queryRow(query, 200, 0, 11.8)];
+    const withoutPageRead = (
+      rows: readonly ReturnType<typeof queryRow>[],
+    ) => ({
+      ...evidence(rows, []),
+      queryPageRead: null,
+    });
+
+    return report({
+      currentQueryEvidence: withoutPageRead(current),
+      previousQueryEvidence: withoutPageRead(previous),
+    }).result;
+  }
+
+  it("keeps a query-level signal when the query-page read soft-failed", () => {
+    const result = crossingWithoutPages();
+
+    // run.ts lets each of the six attachments fail on its own. Coupling the
+    // gates meant one failed page read deleted every position signal the
+    // query rows could still prove.
+    expect(result.changes).toMatchObject([
+      {
+        kind: "average_position_crossed_page_one_band",
+        query: "manual seo service",
+        page: null,
+        pageEvidence: "unavailable",
+      },
+    ]);
+    expect(result.actions).toEqual([]);
+    expect(result.limitations).toContain("query_page_coverage_below_floor");
+    expect(result.limitations).not.toContain("query_evidence_unavailable");
+  });
+
+  it("still measures lane capability and mode without a page read", () => {
+    const result = crossingWithoutPages();
+
+    expect(result.laneCapability.evidence).toBe("observed");
+    expect(result.mode).toBe("position_first");
+    expect(result.laneCapability.lanes.average_position_crossed_page_one_band).toBe(
+      "evaluated",
+    );
+  });
+});
+
+describe("action budget", () => {
+  it("gives up the weakest un-handoffable row for one that can hand off", () => {
+    const splitPages = (query: string) =>
+      Array.from({ length: 13 }, (_, index) =>
+        queryPageRow(
+          query,
+          `https://example.com/${query}-${index}`,
+          index === 12 ? 40 : 80,
+          0,
+          9,
+        ),
+      );
+    const crossings = ["cross a", "cross b", "cross c"];
+    const currentRows = [
+      ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
+      queryRow("decliner", 300, 0, 26),
+    ];
+    const previousRows = [
+      ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
+      queryRow("decliner", 300, 0, 22),
+    ];
+    const currentPages = [
+      ...crossings.flatMap(splitPages),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 26),
+    ];
+    const previousPages = [
+      ...crossings.flatMap(splitPages),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 22),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+    }).result;
+
+    // Three higher-ranked crossings have no attributable page. Letting them
+    // take every slot leaves a briefing with no handoff at all while a real
+    // one waits outside the cut.
+    expect(result.changes).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
+    expect(result.changes.at(-1)).toMatchObject({
+      kind: "actionable_position_decline",
+      query: "decliner",
+      pageEvidence: "observed",
+    });
+    expect(result.actions).toMatchObject([
+      { query: "decliner", destination: "traffic-drop-diagnosis" },
+    ]);
+  });
+
+  it("keeps all three rows when none of them can hand off", () => {
+    const crossings = ["cross a", "cross b", "cross c"];
+    const currentRows = crossings.map((query) => queryRow(query, 1_000, 0, 9));
+    const previousRows = crossings.map((query) => queryRow(query, 1_000, 0, 12));
+    const result = report({
+      currentQueryEvidence: {
+        ...evidence(currentRows, []),
+        queryPageRead: null,
+      },
+      previousQueryEvidence: {
+        ...evidence(previousRows, []),
+        queryPageRead: null,
+      },
+    }).result;
+
+    expect(result.changes).toHaveLength(DAILY_BRIEFING_ACTION_LIMIT);
+    expect(result.actions).toEqual([]);
   });
 });
