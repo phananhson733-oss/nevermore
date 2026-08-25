@@ -19,6 +19,7 @@ const LIMITATION_CODES = [
   "anonymization_gap_uncomputable",
   "brand_terms_not_confirmed",
   "property_change_inside_noise_floor",
+  "page_evidence_unavailable",
 ] as const;
 
 const ERROR_CODES = [
@@ -40,6 +41,12 @@ const CHANGE_KINDS = [
   "average_position_crossed_page_one_band",
   "actionable_position_decline",
   "first_observed",
+] as const;
+
+/** Page-dimension kinds. Every one of them is dispatchable, unlike the site ones. */
+const PAGE_CHANGE_KINDS = [
+  "page_click_decline",
+  "page_first_observed",
 ] as const;
 
 const OBSERVATION_BANDS = [
@@ -166,6 +173,14 @@ const REQUIRED_LEAF_PATHS = [
   "review.partial",
   "review.unavailable",
   "review.pageUnavailable",
+  "review.pageScope",
+  "review.pageNotObserved",
+  "checks.title",
+  "checks.intro",
+  "checks.evidence",
+  "checks.notCheckable",
+  "evidence.foldPageChanges",
+  "evidence.paths.pageUnavailable",
   "review.priorBelowFloor",
   "review.introUnavailable",
   "review.introPositionObservation",
@@ -382,6 +397,26 @@ describe("Daily Briefing message catalogs", () => {
       expect(propertyActionKinds[kind], `${kind} must not be dispatchable`).toBe(
         undefined,
       );
+    }
+    const pageChangeKinds = recordAt(namespace, "pageChangeKinds");
+    const pageActionKinds = recordAt(namespace, "pageActionKinds");
+    for (const kind of PAGE_CHANGE_KINDS) {
+      expect(pageChangeKinds[kind], `missing page change kind ${kind}`).toEqual(
+        expect.any(Object),
+      );
+      // Unlike the site-trend observation kinds, a page change is only ever
+      // emitted once it has cleared its floor, so each one is dispatchable and
+      // each one needs action copy.
+      expect(pageActionKinds[kind], `missing page action kind ${kind}`).toEqual(
+        expect.any(Object),
+      );
+    }
+    const pageLanes = recordAt(namespace, "evidence.paths.pageLanes");
+    for (const key of ["pageClickDecline", "pageFirstObserved"] as const) {
+      const lane = pageLanes[key] as Readonly<Record<string, string>>;
+      expect(lane, `missing page path ${key}`).toEqual(expect.any(Object));
+      expect(lane.requirement, `${key}.requirement`).toEqual(expect.any(String));
+      expect(lane.finding, `${key}.finding`).toEqual(expect.any(String));
     }
     for (const kind of PROVISIONAL_MOVE_KINDS) {
       expect(

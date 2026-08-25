@@ -31,12 +31,16 @@ import type {
   DailyBriefingLaneState,
   DailyBriefingMode,
   DailyBriefingObservationBand,
+  DailyBriefingPageAccounting,
+  DailyBriefingPageAction,
+  DailyBriefingPageChangeKind,
   DailyBriefingPropertyChange,
   DailyBriefingPropertyTrend,
   DailyBriefingProvisionalMove,
   DailyBriefingQueryWatchlist,
   DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
+  DailyBriefingSuggestedCheck,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
@@ -79,6 +83,7 @@ interface SignalPathEvidenceProps {
   readonly funnel: DailyBriefingSignalFunnel;
   readonly laneCapability: DailyBriefingLaneCapability;
   readonly rowAccounting: DailyBriefingRowAccounting;
+  readonly pageAccounting: DailyBriefingPageAccounting;
 }
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
@@ -458,6 +463,23 @@ function NoiseSummary({ funnel, laneCapability }: NoiseSummaryProps) {
   );
 }
 
+const PAGE_SIGNAL_PATHS: readonly {
+  readonly key: string;
+  readonly copyKey: string;
+  readonly kind: DailyBriefingPageChangeKind;
+}[] = [
+  {
+    key: "page-click-decline",
+    copyKey: "pageClickDecline",
+    kind: "page_click_decline",
+  },
+  {
+    key: "page-first-observed",
+    copyKey: "pageFirstObserved",
+    kind: "page_first_observed",
+  },
+];
+
 const SIGNAL_PATHS: readonly {
   readonly key: string;
   readonly copyKey: string;
@@ -518,6 +540,7 @@ function SignalPathEvidence({
   funnel,
   laneCapability,
   rowAccounting,
+  pageAccounting,
 }: SignalPathEvidenceProps) {
   const t = useTranslations("tools.dailyBriefing");
   const byLane = rowAccounting.byLane;
@@ -585,6 +608,54 @@ function SignalPathEvidence({
               // to work out why their query is not on the page.
               finding={t("evidence.paths.laneFinding", {
                 finding: t(`evidence.paths.lanes.${path.copyKey}.finding`),
+              })}
+              outcome={
+                state === "unavailable" || counts === null
+                  ? t("evidence.paths.laneUnavailable")
+                  : t("evidence.paths.rowSplit", { ...counts })
+              }
+            />
+          );
+        })}
+      </PathTier>
+
+      <PathTier title={t("evidence.paths.tiers.pageLanes")}>
+        {/* Its own row count, deliberately beside the query one rather than
+            added to it. Pages and queries are different populations and a
+            single total would measure neither. */}
+        {pageAccounting.observedRows !== null ? (
+          <p
+            data-page-rows-intro
+            className="text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("evidence.paths.pageRowsIntro", {
+              rows: pageAccounting.observedRows,
+            })}
+          </p>
+        ) : (
+          <p className="text-[12px] leading-[1.6] text-text-dark-secondary">
+            {t("evidence.paths.pageUnavailable")}
+          </p>
+        )}
+        {PAGE_SIGNAL_PATHS.map((path) => {
+          const state = laneCapability.pageLanes[path.kind];
+          const counts =
+            pageAccounting.byLane === null
+              ? null
+              : pageAccounting.byLane[path.kind];
+          return (
+            <PathLine
+              key={path.key}
+              id={path.key}
+              state={state}
+              name={t(`evidence.paths.pageLanes.${path.copyKey}.name`)}
+              requirement={t("evidence.paths.laneRequirement", {
+                requirement: t(
+                  `evidence.paths.pageLanes.${path.copyKey}.requirement`,
+                ),
+              })}
+              finding={t("evidence.paths.laneFinding", {
+                finding: t(`evidence.paths.pageLanes.${path.copyKey}.finding`),
               })}
               outcome={
                 state === "unavailable" || counts === null
@@ -738,12 +809,22 @@ export function DailyBriefingResults({
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
+  // A page change names a page but no query, so it is less precise than a
+  // query change and more precise than an observation. It takes its slot
+  // between them.
+  const shownPageChanges = result.pageChanges.slice(
+    0,
+    Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
+  );
   // Provisional moves name a movement, so they outrank rows that only name a
   // position. The engine already applies this budget; the page applies it
   // again so no contract change can put a fourth row on screen.
   const shownProvisional = result.provisionalMoves.items.slice(
     0,
-    Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
+    Math.max(
+      0,
+      DISPLAY_ROW_LIMIT - shownChanges.length - shownPageChanges.length,
+    ),
   );
   const watchlistItems =
     result.queryWatchlist.evidence === "observed"
@@ -753,7 +834,10 @@ export function DailyBriefingResults({
     0,
     Math.max(
       0,
-      DISPLAY_ROW_LIMIT - shownChanges.length - shownProvisional.length,
+      DISPLAY_ROW_LIMIT -
+        shownChanges.length -
+        shownPageChanges.length -
+        shownProvisional.length,
     ),
   );
   const withheldObservations = Math.max(
@@ -769,6 +853,20 @@ export function DailyBriefingResults({
     0,
     (result.provisionalMoves.candidates ?? 0) - shownProvisional.length,
   );
+  const pageActions = result.pageActions
+    .flatMap((action) => {
+      const change = result.pageChanges.find(
+        (candidate) =>
+          candidate.kind === action.kind && candidate.page === action.page,
+      );
+      return change ? [{ action, change }] : [];
+    })
+    .slice(0, DISPLAY_ROW_LIMIT);
+  // Checks are offered against current standing, never against a change, so
+  // they are listed after every evidence-backed action and labelled as what
+  // they are. Only the checks whose row is actually on screen are offered.
+  const suggestedChecks = result.suggestedChecks.items;
+  const notCheckable = result.suggestedChecks.notCheckable ?? 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Only the click-driven lanes move on a daily timescale, which is what
   // decides both the cadence and the sentence explaining it.
@@ -786,6 +884,9 @@ export function DailyBriefingResults({
     queryEvidenceRead
       ? [
           t("evidence.foldChanges", { count: shownChanges.length }),
+          shownPageChanges.length > 0
+            ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
+            : null,
           provisionalCandidates > 0
             ? t("evidence.foldProvisional", {
                 shown: shownProvisional.length,
@@ -821,6 +922,59 @@ export function DailyBriefingResults({
         query: action.query,
         page: action.page,
         evidenceId: `daily:${index}:${action.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function pageHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    action: DailyBriefingPageAction,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: action.destination,
+        // A page and no query: the queries that moved it are anonymized, and
+        // inventing one to fit the query_page shape would hand the next tool a
+        // term this briefing never saw.
+        scope: "page",
+        property,
+        query: null,
+        page: action.page,
+        evidenceId: `daily:page:${action.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function checkHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    check: DailyBriefingSuggestedCheck,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: check.destination,
+        scope: "query_page",
+        property,
+        query: check.query,
+        page: check.page,
+        // Deliberately not an action index. A check never entered the action
+        // list and must not be counted as one downstream.
+        evidenceId: `daily:check:${check.sampleKind}`,
       });
     } catch {
       written = false;
@@ -1025,6 +1179,7 @@ export function DailyBriefingResults({
           </div>
         ) : null}
         {shownChanges.length === 0 &&
+        shownPageChanges.length === 0 &&
         shownProvisional.length === 0 &&
         shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
@@ -1132,6 +1287,85 @@ export function DailyBriefingResults({
                   </span>
                   <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
                     {t(`changeKinds.${change.kind}.body`)}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {shownPageChanges.map((change, index) => (
+              <div
+                key={`page-change:${change.kind}:${change.page}`}
+                role="row"
+                data-review-row
+                data-page-change
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.status")}
+                  </span>
+                  <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
+                    <span className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text">
+                      {String(shownChanges.length + index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
+                        {t(`pageChangeKinds.${change.kind}.title`)}
+                      </h4>
+                      <p className="mt-1.5 font-mono text-[9.5px] leading-[1.4] tracking-[0.04em] text-brand-accent-text uppercase">
+                        {t(`evidenceStates.${change.evidence}`)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.queryPage")}
+                  </span>
+                  {/* Named as a whole page on purpose. This row has no query
+                      behind it, and leaving the cell to imply one would be the
+                      substitution the rest of the page refuses. */}
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {t("review.pageScope")}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {change.page}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.clicks ?? null,
+                      change.current.clicks,
+                      (value) => number(locale, value),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.position ?? null,
+                      change.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`pageChangeKinds.${change.kind}.body`)}
                   </p>
                 </div>
               </div>
@@ -1438,7 +1672,9 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("actions.intro")}
         </p>
-        {queryActions.length === 0 && propertyAction === null ? (
+        {queryActions.length === 0 &&
+        pageActions.length === 0 &&
+        propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {shownProvisional.length === 0
@@ -1515,24 +1751,84 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
+            {pageActions.map(({ action, change }, index) => {
+              const target = destination(action.destination);
+              const rank = queryActions.length + index + 1;
+              return (
+                <article
+                  key={`page-action:${action.kind}:${action.page}`}
+                  data-action-row
+                  data-page-action
+                  data-action-rank={rank}
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                    <span
+                      data-action-rank-badge
+                      aria-label={t("actions.rank", { rank })}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
+                    >
+                      {rank}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-[16px] font-semibold text-text-dark-primary">
+                        {t(`pageActionKinds.${action.kind}.title`)}
+                      </h4>
+                      <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                        {t(`pageActionKinds.${action.kind}.body`)}
+                      </p>
+                      <div
+                        data-action-evidence
+                        className="mt-3 border-l border-brand-border pl-3"
+                      >
+                        <p className={EYEBROW}>{t("actions.evidence")}</p>
+                        <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                          {t("review.pageScope")}
+                        </p>
+                        <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {change.page}
+                        </p>
+                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {metricsLine(t, locale, {
+                            query: "",
+                            clicks: change.current.clicks,
+                            impressions: change.current.impressions,
+                            position: change.current.position,
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <Link
+                    data-action-link
+                    href={localePath(locale, target.path)}
+                    onClick={(event) => pageHandoff(event, action)}
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                  >
+                    {t(target.labelKey)}
+                    <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />
+                  </Link>
+                </article>
+              );
+            })}
             {propertyAction !== null &&
             propertyComparisons !== null &&
             propertyTarget !== null ? (
               <article
                 data-action-row
                 data-property-action
-                data-action-rank={queryActions.length + 1}
+                data-action-rank={queryActions.length + pageActions.length + 1}
                 className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-3.5">
                   <span
                     data-action-rank-badge
                     aria-label={t("actions.rank", {
-                      rank: queryActions.length + 1,
+                      rank: queryActions.length + pageActions.length + 1,
                     })}
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
                   >
-                    {queryActions.length + 1}
+                    {queryActions.length + pageActions.length + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="text-[16px] font-semibold text-text-dark-primary">
@@ -1572,6 +1868,66 @@ export function DailyBriefingResults({
             ) : null}
           </div>
         )}
+        {suggestedChecks.length > 0 ? (
+          <div
+            data-suggested-checks
+            className="mt-6 border-t border-brand-border pt-5"
+          >
+            <h4 className="text-[15px] font-semibold text-text-dark-primary">
+              {t("checks.title")}
+            </h4>
+            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("checks.intro")}
+            </p>
+            <div className="mt-3 grid gap-3">
+              {suggestedChecks.map((check) => {
+                const target = destination(check.destination);
+                return (
+                  <article
+                    key={`check:${check.query}:${check.page}`}
+                    data-check-row
+                    className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      {/* Labelled as standing, not as evidence. The whole
+                          point of a check is that it claims no change. */}
+                      <p className={EYEBROW}>{t("checks.evidence")}</p>
+                      <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                        {check.query}
+                      </p>
+                      <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                        {check.page}
+                      </p>
+                      <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                        {t(`review.observationBands.${check.band}.body`)}
+                      </p>
+                    </div>
+                    <Link
+                      data-check-link
+                      href={localePath(locale, target.path)}
+                      onClick={(event) => checkHandoff(event, check)}
+                      className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                    >
+                      {t(target.labelKey)}
+                      <ArrowUpRight
+                        aria-hidden="true"
+                        className="size-4 shrink-0"
+                      />
+                    </Link>
+                  </article>
+                );
+              })}
+            </div>
+            {notCheckable > 0 ? (
+              <p
+                data-checks-not-checkable
+                className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("checks.notCheckable", { count: notCheckable })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {handoffFailed ? (
           <p
             role="alert"
@@ -1644,6 +2000,7 @@ export function DailyBriefingResults({
           funnel={result.signalFunnel}
           laneCapability={result.laneCapability}
           rowAccounting={result.rowAccounting}
+          pageAccounting={result.pageAccounting}
         />
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <EvidenceCard

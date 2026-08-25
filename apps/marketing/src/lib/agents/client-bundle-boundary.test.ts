@@ -52,7 +52,63 @@ interface Reference {
   readonly typeOnly: boolean;
 }
 
-function referencesIn(source: string): readonly Reference[] {
+/**
+ * Strip comments before anything looks for an import.
+ *
+ * The patterns below scan raw text, so prose describing a module reads exactly
+ * like an import of it: the sentence "must not import `@sf/sources`" in a doc
+ * comment matched the side-effect-import pattern and reported the file that
+ * documents the rule as the file that breaks it. Scanned character by
+ * character rather than by regex because a `//` inside "https://..." is not a
+ * comment, and a `/*` inside a string is not one either.
+ */
+function withoutComments(source: string): string {
+  let out = "";
+  let index = 0;
+  let quote: string | null = null;
+  while (index < source.length) {
+    const char = source[index] ?? "";
+    const next = source[index + 1] ?? "";
+    if (quote !== null) {
+      out += char;
+      if (char === "\\") {
+        out += next;
+        index += 2;
+        continue;
+      }
+      if (char === quote) quote = null;
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") index += 1;
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      index += 2;
+      while (
+        index < source.length &&
+        !(source[index] === "*" && source[index + 1] === "/")
+      ) {
+        index += 1;
+      }
+      index += 2;
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+function referencesIn(rawSource: string): readonly Reference[] {
+  const source = withoutComments(rawSource);
   const found: Reference[] = [];
   // `import type { A } from "x"` and `import { type A } from "x"` differ: only
   // the first erases the whole statement. The second still emits the import.

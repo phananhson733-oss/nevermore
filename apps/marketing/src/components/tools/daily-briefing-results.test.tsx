@@ -17,7 +17,10 @@ import {
   type DailyBriefingLimitationCode,
   type DailyBriefingPropertyTrend,
   type DailyBriefingProvisionalMove,
+  type DailyBriefingPageAction,
+  type DailyBriefingPageChange,
   type DailyBriefingQueryObservation,
+  type DailyBriefingSuggestedCheck,
   type DailyBriefingProvisionalMoves,
   type DailyBriefingQueryWatchlist,
   type DailyBriefingRowAccounting,
@@ -179,6 +182,14 @@ function laneCapability(
       actionable_position_decline: "not_applicable",
       first_observed: "not_applicable",
     },
+    // Page evidence defaults to unread, so a fixture that says nothing about
+    // pages does not assert the property has none.
+    pairedPageRows: null,
+    pageFloorRows: null,
+    pageLanes: {
+      page_click_decline: "unavailable",
+      page_first_observed: "unavailable",
+    },
     ...overrides,
   };
 }
@@ -237,6 +248,75 @@ function provisionalMoves(
     items,
     candidates: items.length,
     priorWindowImpressionRange: [50, 99],
+    ...overrides,
+  };
+}
+
+const PAGE_CHANGE_URL = "https://example.com/guide";
+const CHECK_QUERY = "messi zodiac sign";
+const CHECK_PAGE = "https://example.com/wiki/messi";
+
+function pageChange(
+  overrides: Partial<DailyBriefingPageChange> = {},
+): DailyBriefingPageChange {
+  return {
+    kind: "page_click_decline",
+    evidence: "observed",
+    page: PAGE_CHANGE_URL,
+    current: { page: PAGE_CHANGE_URL, clicks: 8, impressions: 380, position: 9.4 },
+    previous: { page: PAGE_CHANGE_URL, clicks: 20, impressions: 400, position: 9.1 },
+    clickChange: -12,
+    clickChangeRatio: -0.6,
+    impressionChange: -20,
+    impressionChangeRatio: -0.05,
+    positionDelta: 0.3,
+    noiseFloor: {
+      basis: "clicks",
+      observedChange: -12,
+      minimumForAction: 2 * Math.sqrt(20),
+      cleared: true,
+    },
+    ...overrides,
+  };
+}
+
+function pageAction(
+  overrides: Partial<DailyBriefingPageAction> = {},
+): DailyBriefingPageAction {
+  return {
+    kind: "page_click_decline",
+    destination: "traffic-drop-diagnosis",
+    page: PAGE_CHANGE_URL,
+    ...overrides,
+  };
+}
+
+function checkableObservation(
+  overrides: Partial<DailyBriefingQueryObservation> = {},
+): DailyBriefingQueryObservation {
+  return {
+    kind: "sample_floor_reached",
+    band: "page_one",
+    query: CHECK_QUERY,
+    page: CHECK_PAGE,
+    pageEvidence: "observed",
+    current: { query: CHECK_QUERY, clicks: 0, impressions: 185, position: 8.2 },
+    previous: null,
+    previousBelowFloor: null,
+    positionDelta: null,
+    ...overrides,
+  };
+}
+
+function suggestedCheck(
+  overrides: Partial<DailyBriefingSuggestedCheck> = {},
+): DailyBriefingSuggestedCheck {
+  return {
+    query: CHECK_QUERY,
+    page: CHECK_PAGE,
+    band: "page_one",
+    sampleKind: "sample_floor_reached",
+    destination: "on-page-seo-check",
     ...overrides,
   };
 }
@@ -339,6 +419,11 @@ afterEach(async () => {
     root = null;
   }
   document.body.replaceChildren();
+  // The privacy-mode test replaces the sessionStorage getter with one that
+  // throws. Without this, every test declared after it inherits a broken
+  // global and its handoff clicks fail silently — which is exactly how it
+  // was found.
+  vi.restoreAllMocks();
 });
 
 async function renderResults(
@@ -621,7 +706,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     // Every path carries its own requirement, so a reader can check why it
     // did or did not run instead of reading a badge that says "observed".
     expect(paths?.textContent).toContain("Requires:");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
   });
 
   it("tells a path that could not run from a path that found nothing", async () => {
@@ -704,13 +789,13 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     ];
     // Asserted, not assumed: a loop over a selector that stopped matching
     // would otherwise pass by making no assertion at all.
-    expect(outcomes).toHaveLength(7);
+    expect(outcomes).toHaveLength(9);
     for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
     }
     expect(paths?.textContent).not.toContain("query rows, and every");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
   });
 
   it("accounts for every observed row inside each evaluation path", async () => {
@@ -1736,5 +1821,140 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(details?.querySelector("summary")?.textContent).toContain(
       "Why there were not more signals",
     );
+  });
+
+  it("names a page change as a whole page instead of inventing a query", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const row = host.querySelector("[data-page-change]");
+
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("Page clicks fell");
+    expect(row?.textContent).toContain("Whole page, across every query");
+    expect(row?.textContent).toContain(PAGE_CHANGE_URL);
+    expect(row?.textContent).toContain("20 → 8");
+    // The queries behind a page move are anonymized, so no query may appear.
+    expect(row?.textContent).not.toContain("evidence query");
+  });
+
+  it("hands a page action off with a page scope and no query", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const row = host.querySelector<HTMLElement>(
+      "[data-action-row][data-page-action]",
+    );
+    const link = row?.querySelector<HTMLAnchorElement>("[data-action-link]");
+    expect(row?.getAttribute("data-action-rank")).toBe("1");
+    expect(row?.textContent).toContain("Diagnose this page's click decline");
+    expect(link?.getAttribute("href")).toBe("/tools/traffic-drop-diagnosis");
+    expect(link?.getAttribute("href")).not.toContain(PAGE_CHANGE_URL);
+
+    link?.addEventListener("click", (event) => event.preventDefault());
+    await click(link!);
+
+    expect(writeToolHandoffMock).toHaveBeenCalledOnce();
+    expect(writeToolHandoffMock.mock.calls[0]?.[2]).toEqual({
+      source: "daily-search-briefing",
+      destination: "traffic-drop-diagnosis",
+      scope: "page",
+      property: PROPERTY,
+      query: null,
+      page: PAGE_CHANGE_URL,
+      evidenceId: "daily:page:page_click_decline",
+    });
+  });
+
+  it("offers checks under the empty action panel instead of leaving it alone", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed", [checkableObservation()]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 1,
+        },
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+    const checks = host.querySelector("[data-suggested-checks]");
+
+    // Both, not one or the other. The empty panel is still true — no strict
+    // evidence backs an action — and it is no longer the last word on a page
+    // that just listed a row worth opening.
+    expect(empty).not.toBeNull();
+    expect(checks).not.toBeNull();
+    expect(checks?.textContent).toContain("No evidence of change");
+    expect(checks?.textContent).toContain("no change is claimed");
+    expect(checks?.textContent).toContain(CHECK_QUERY);
+    expect(checks?.textContent).toContain(CHECK_PAGE);
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("Another 1 shown rows carry no check");
+    // A check is never counted as an action, here or downstream.
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(0);
+  });
+
+  it("marks a check handoff as a check rather than an action index", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed", [checkableObservation()]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 0,
+        },
+      }),
+    );
+    const link = host.querySelector<HTMLAnchorElement>("[data-check-link]");
+
+    expect(link?.getAttribute("href")).toBe("/tools/on-page-seo-check");
+    link?.addEventListener("click", (event) => event.preventDefault());
+    await click(link!);
+
+    expect(writeToolHandoffMock.mock.calls[0]?.[2]).toEqual({
+      source: "daily-search-briefing",
+      destination: "on-page-seo-check",
+      scope: "query_page",
+      property: PROPERTY,
+      query: CHECK_QUERY,
+      page: CHECK_PAGE,
+      evidenceId: "daily:check:sample_floor_reached",
+    });
+  });
+
+  it("says nothing about checks when none could be offered", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed"),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 0,
+        },
+      }),
+    );
+
+    expect(host.querySelector("[data-suggested-checks]")).toBeNull();
+    expect(host.querySelector("[data-action-empty]")).not.toBeNull();
   });
 });

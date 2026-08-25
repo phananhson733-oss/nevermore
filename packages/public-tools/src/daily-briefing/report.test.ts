@@ -3458,6 +3458,44 @@ describe("suggested checks", () => {
     expect(result.suggestedChecks.notCheckable).toBe(1);
   });
 
+  it("only ever offers a check for a row the briefing also displays", () => {
+    // The page renders these straight from the contract, so a check whose row
+    // did not survive the display budget would point at nothing the reader can
+    // see. Pinned here because the construction, not the UI, is what holds it.
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      queryRow(`watch ${index}`, 300 - index, 0, 8 + index * 0.1),
+    );
+    const pages = rows.map((row, index) =>
+      queryPageRow(
+        row.query,
+        `https://example.com/w${index}`,
+        row.impressions,
+        0,
+        row.position,
+      ),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(rows, pages),
+      previousQueryEvidence: evidence(rows, pages),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // More candidates than slots, so the budget really did cut some.
+    expect(result.queryWatchlist.candidates).toBeGreaterThan(
+      result.queryWatchlist.items.length,
+    );
+    expect(result.suggestedChecks.items.length).toBeGreaterThan(0);
+    const shown = new Set(result.queryWatchlist.items.map((item) => item.query));
+    for (const check of result.suggestedChecks.items) {
+      expect(shown.has(check.query)).toBe(true);
+    }
+    // Items and the un-checkable count together account for every shown row.
+    expect(
+      result.suggestedChecks.items.length +
+        (result.suggestedChecks.notCheckable ?? 0),
+    ).toBe(result.queryWatchlist.items.length);
+  });
+
   it("reports checks as unavailable rather than empty when nothing was read", () => {
     const result = report().result;
 

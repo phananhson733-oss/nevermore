@@ -39,6 +39,23 @@ export type ToolHandoffPayload =
       readonly evidenceId: string;
     }
   | {
+      /**
+       * A page with no query behind it.
+       *
+       * The page-dimension lanes name a page and nothing else — Search Console
+       * anonymizes the queries that made it move — so neither `query_page` nor
+       * `property` fits. Filling `query` with an empty string to reuse
+       * `query_page` would hand the next tool a query the briefing never saw.
+       */
+      readonly source: "daily-search-briefing";
+      readonly destination: ToolHandoffDestination;
+      readonly scope: "page";
+      readonly property: string;
+      readonly query: null;
+      readonly page: string;
+      readonly evidenceId: string;
+    }
+  | {
       readonly source: "competitor-keyword-gap";
       readonly destination: "on-page-seo-check";
       readonly scope: "query_page";
@@ -195,6 +212,16 @@ function hasValidPayloadFields(
       );
     }
 
+    if (value.scope === "page") {
+      // The page is the entire payload here, and the destination will fetch
+      // it, so it is validated as a URL rather than merely as a string.
+      return (
+        isDestination(value.destination) &&
+        value.query === null &&
+        isSafeHttpPage(value.page)
+      );
+    }
+
     if (value.scope === "property") {
       return (
         isPropertyDestination(value.destination) &&
@@ -258,6 +285,18 @@ export function writeToolHandoff(
             scope: payload.scope,
             property: payload.property.trim(),
             query: payload.query.trim(),
+            page: payload.page.trim(),
+            evidenceId: payload.evidenceId.trim(),
+            createdAt: now,
+            expiresAt: now + TOOL_HANDOFF_TTL_MS,
+          }
+        : payload.scope === "page"
+        ? {
+            source: payload.source,
+            destination: payload.destination,
+            scope: payload.scope,
+            property: payload.property.trim(),
+            query: null,
             page: payload.page.trim(),
             evidenceId: payload.evidenceId.trim(),
             createdAt: now,

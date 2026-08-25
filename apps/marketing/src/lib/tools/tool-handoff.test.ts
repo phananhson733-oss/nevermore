@@ -47,6 +47,18 @@ function propertyPayload() {
   };
 }
 
+function pagePayload() {
+  return {
+    source: "daily-search-briefing" as const,
+    destination: "traffic-drop-diagnosis" as const,
+    scope: "page" as const,
+    property: "sc-domain:example.com",
+    query: null,
+    page: "https://example.com/guide",
+    evidenceId: "daily:page:page_click_decline",
+  };
+}
+
 function competitorGapPayload() {
   return {
     source: "competitor-keyword-gap" as const,
@@ -504,5 +516,42 @@ describe("tool handoff storage", () => {
     ]) {
       expect(source).not.toContain(forbidden);
     }
+  });
+
+  it("carries a page with no query for a page-dimension signal", () => {
+    const session = storage();
+    const now = 1_760_000_000_000;
+
+    expect(writeToolHandoff(session, now, pagePayload())).toBe(true);
+    expect(
+      consumeToolHandoff(session, now + 1, "traffic-drop-diagnosis"),
+    ).toEqual({
+      ...pagePayload(),
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+  });
+
+  it.each([
+    // The page dimension names a page and nothing else. A query here would be
+    // one the briefing never observed, since the queries behind a page move
+    // are exactly the ones Search Console anonymized.
+    ["a page-scope query", { ...pagePayload(), query: "invented query" }],
+    ["a missing page", { ...pagePayload(), page: "" }],
+    ["a non-http page", { ...pagePayload(), page: "javascript:alert(1)" }],
+    [
+      "a page carrying credentials",
+      { ...pagePayload(), page: "https://user:pw@example.com/guide" },
+    ],
+  ])("refuses %s", (_label, payload) => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(
+        session,
+        1_760_000_000_000,
+        payload as unknown as Parameters<typeof writeToolHandoff>[2],
+      ),
+    ).toBe(false);
   });
 });
