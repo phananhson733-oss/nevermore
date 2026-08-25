@@ -33,21 +33,27 @@ import type {
   DailyBriefingCtrLaneBlocker,
   DailyBriefingLaneCapability,
   DailyBriefingLaneState,
+  DailyBriefingLaneRowCounts,
   DailyBriefingLimitationCode,
   DailyBriefingMode,
   DailyBriefingObservationBand,
+  DailyBriefingPropertyActionKind,
   DailyBriefingPropertyChangeKind,
   DailyBriefingPropertyNoiseFloor,
   DailyBriefingPropertyTrend,
   DailyBriefingQueryEvidence,
+  DailyBriefingProvisionalMove,
+  DailyBriefingProvisionalMoves,
   DailyBriefingQueryObservation,
+  DailyBriefingQueryObservationKind,
   DailyBriefingQueryWatchlist,
+  DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
   DailyBriefingWindowCoverage,
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v2";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v3";
 export const BRIEFING_WINDOW_DAYS = 7;
 export const DAILY_CADENCE_MIN_IMPRESSIONS = 1_000;
 export const BRIEFING_MIN_ROW_IMPRESSIONS = 100;
@@ -88,7 +94,14 @@ export const BRIEFING_OBSERVATION_NEAR_BAND_MAX = 20;
 /** Upper edge of the band an observation is worth revisiting later. */
 export const BRIEFING_OBSERVATION_MID_BAND_MAX = 40;
 
-const BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS = 50;
+/**
+ * Impressions a current row needs before it is worth naming at all.
+ *
+ * Also the prior-window floor for a provisional position move: enough of a
+ * sample to see that the average position moved, never enough to call the
+ * move a change.
+ */
+export const BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS = 50;
 const FIRST_OBSERVED_MIN_POSITION = 8;
 const FIRST_OBSERVED_MAX_POSITION = 21;
 
@@ -607,6 +620,19 @@ function pageForObservation(
   return rows[0]?.page ?? null;
 }
 
+/** Everything the lane capability and the mode are derived from. */
+interface CapabilityCounts {
+  readonly clickDeclineCapableQueries: number;
+  readonly ctrOpportunityCapableQueries: number;
+  readonly strictPairedPositionQueries: number;
+  readonly provisionalPairedPositionQueries: number;
+  readonly currentFloorOnlyQueries: number;
+  readonly ctrLane: DailyBriefingCtrLane;
+  readonly lanes: Readonly<
+    Record<DailyBriefingChangeKind, DailyBriefingLaneState>
+  >;
+}
+
 interface ChangeCandidate {
   readonly kind: DailyBriefingChangeKind;
   readonly query: string;
@@ -696,11 +722,18 @@ function candidatesFor(
   readonly pageOneBandCandidates: number;
   readonly positionDeclineCandidates: number;
   readonly firstObservedCandidates: number;
+  readonly provisionalMoves: readonly DailyBriefingProvisionalMove[];
   readonly pageAttributionWithheld: number;
   readonly clickDeclineCapableQueries: number;
   readonly ctrOpportunityCapableQueries: number;
-  readonly positionCapableQueries: number;
+  readonly strictPairedPositionQueries: number;
+  readonly provisionalPairedPositionQueries: number;
+  readonly currentFloorOnlyQueries: number;
   readonly ctrLane: DailyBriefingCtrLane;
+  readonly lanes: Readonly<Record<DailyBriefingChangeKind, DailyBriefingLaneState>>;
+  readonly byLane: Readonly<
+    Record<DailyBriefingChangeKind, DailyBriefingLaneRowCounts>
+  >;
 } {
   const currentAll = validQueryRows(currentEvidence.queryRead?.rows ?? []);
   const previousAll = validQueryRows(previousEvidence.queryRead?.rows ?? []);
@@ -753,46 +786,113 @@ function candidatesFor(
   const declines: ChangeCandidate[] = [];
   const pageOneCrossings: ChangeCandidate[] = [];
   const positionDeclines: ChangeCandidate[] = [];
+  const provisionalPairs: {
+    readonly kind: DailyBriefingProvisionalMove["kind"];
+    readonly current: GscQueryRow;
+    readonly previous: GscQueryRow;
+    readonly positionDelta: number;
+    readonly order: number;
+  }[] = [];
   let observationCandidates = 0;
   let actionEligibleQueries = 0;
   let clickDeclineCapableQueries = 0;
-  let positionCapableQueries = 0;
+  let strictPairedPositionQueries = 0;
+  let provisionalPairedPositionQueries = 0;
+  let currentFloorOnlyQueries = 0;
+  let crossingCapableQueries = 0;
+  let positionDeclineCapableQueries = 0;
   for (const current of currentRows) {
+    const currentAtFloor = current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS;
     if (
       current.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS &&
-      current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS
+      !currentAtFloor
     ) {
       observationCandidates += 1;
     }
-    if (current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS) {
-      actionEligibleQueries += 1;
-    }
+    if (currentAtFloor) actionEligibleQueries += 1;
+    if (!currentAtFloor) continue;
+
     const previous = previousByQuery.get(current.query);
-    if (
-      previous === undefined ||
-      current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS ||
-      previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS
-    ) {
+    const previousAtFloor =
+      previous !== undefined &&
+      previous.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS;
+    const previousProvisional =
+      previous !== undefined &&
+      !previousAtFloor &&
+      previous.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS;
+    if (previous === undefined || (!previousAtFloor && !previousProvisional)) {
+      currentFloorOnlyQueries += 1;
+      continue;
+    }
+
+    const positionsComparable =
+      Number.isFinite(current.position) &&
+      Number.isFinite(previous.position) &&
+      current.position > 0 &&
+      previous.position > 0;
+    const positionDelta = current.position - previous.position;
+    const crossedIntoTopBand =
+      positionsComparable &&
+      previous.position > BRIEFING_TOP_BAND_MAX_POSITION &&
+      current.position <= BRIEFING_TOP_BAND_MAX_POSITION &&
+      previous.position - current.position >= BRIEFING_TOP_BAND_MIN_IMPROVEMENT;
+    const declinedInsideBand =
+      positionsComparable &&
+      positionDelta >= BRIEFING_POSITION_DECLINE_MIN_DELTA &&
+      (withinActionableBand(current.position) ||
+        withinActionableBand(previous.position));
+
+    // A prior window of 50-99 impressions can show that the average position
+    // moved; it cannot carry the word "change". The move is collected as an
+    // observation and never reaches a lane, a change or an action.
+    if (previousProvisional) {
+      if (!positionsComparable) continue;
+      provisionalPairedPositionQueries += 1;
+      if (crossedIntoTopBand) {
+        provisionalPairs.push({
+          kind: "provisional_page_one_band_entry",
+          current,
+          previous,
+          positionDelta,
+          order: previous.position - current.position,
+        });
+      } else if (declinedInsideBand) {
+        provisionalPairs.push({
+          kind: "provisional_actionable_position_decline",
+          current,
+          previous,
+          positionDelta,
+          order: positionDelta,
+        });
+      }
       continue;
     }
 
     // Both windows carry a comparable sample, so this query can be asked every
-    // paired question below.
+    // paired question below. Each lane is asked independently: short-circuiting
+    // to the next query on the first hit made source order act as a priority,
+    // which is the ordering bug KIND_RANK exists to prevent.
     if (previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS) {
       clickDeclineCapableQueries += 1;
     }
-    if (
-      withinActionableBand(current.position) ||
-      withinActionableBand(previous.position)
-    ) {
-      positionCapableQueries += 1;
+    if (positionsComparable) {
+      strictPairedPositionQueries += 1;
+      if (previous.position > BRIEFING_TOP_BAND_MAX_POSITION) {
+        crossingCapableQueries += 1;
+      }
+      if (
+        withinActionableBand(current.position) ||
+        withinActionableBand(previous.position)
+      ) {
+        positionDeclineCapableQueries += 1;
+      }
     }
 
     const clickChange = current.clicks - previous.clicks;
     const clickChangeRatio = ratio(previous.clicks, current.clicks);
-    const positionDelta = current.position - previous.position;
 
     if (
+      previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS &&
       clickChange <= -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
       clickChangeRatio !== null &&
       clickChangeRatio <= -BRIEFING_MATERIAL_CHANGE_RATIO &&
@@ -811,19 +911,11 @@ function candidatesFor(
         positionDelta,
         order: -clickChange,
       });
-      continue;
     }
 
     // Average position, not rank: this says the query's impression-weighted
     // position moved into the top band, never that the page holds place N.
-    if (
-      Number.isFinite(current.position) &&
-      Number.isFinite(previous.position) &&
-      previous.position > BRIEFING_TOP_BAND_MAX_POSITION &&
-      current.position <= BRIEFING_TOP_BAND_MAX_POSITION &&
-      current.position > 0 &&
-      previous.position - current.position >= BRIEFING_TOP_BAND_MIN_IMPROVEMENT
-    ) {
+    if (crossedIntoTopBand) {
       pageOneCrossings.push({
         kind: "average_position_crossed_page_one_band",
         query: current.query,
@@ -837,16 +929,11 @@ function candidatesFor(
         positionDelta,
         order: previous.position - current.position,
       });
-      continue;
     }
 
     // A decline outside the actionable band is real and useless: nothing done
     // to the page this week decides whether position eighty-six earns a click.
-    if (
-      positionDelta >= BRIEFING_POSITION_DECLINE_MIN_DELTA &&
-      (withinActionableBand(current.position) ||
-        withinActionableBand(previous.position))
-    ) {
+    if (declinedInsideBand) {
       positionDeclines.push({
         kind: "actionable_position_decline",
         query: current.query,
@@ -886,16 +973,18 @@ function candidatesFor(
   );
   const firstObserved: ChangeCandidate[] = [];
   const pageAttributionWithheld = new Set<string>();
+  // Queries whose pairs this lane actually got to compare against the prior
+  // read, and queries it found something in. Counted distinctly so a query
+  // carrying two new pairs cannot make the lane look busier than the property.
+  const firstObservedEvaluableQueries = new Set<string>();
+  const firstObservedSignalQueries = new Set<string>();
 
   for (const pair of currentQueryPages) {
     const current = currentByQuery.get(pair.query);
     if (
       current === undefined ||
       current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS ||
-      pair.impressions < BRIEFING_MIN_ROW_IMPRESSIONS ||
-      pair.position < FIRST_OBSERVED_MIN_POSITION ||
-      pair.position >= FIRST_OBSERVED_MAX_POSITION ||
-      previousPairs.has(`${pair.query}\u0000${pair.page}`)
+      pair.impressions < BRIEFING_MIN_ROW_IMPRESSIONS
     ) {
       continue;
     }
@@ -907,17 +996,44 @@ function candidatesFor(
       currentCoverageRatio !== null &&
       currentCoverageRatio !== undefined &&
       currentCoverageRatio >= MIN_DIMENSION_COVERAGE;
-    const previousCoverageSufficient =
-      previous === undefined ||
-      (previous.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS &&
-        previousCoverageRatio !== null &&
-        previousCoverageRatio !== undefined &&
-        previousCoverageRatio >= MIN_DIMENSION_COVERAGE);
-    if (!currentCoverageSufficient || !previousCoverageSufficient) {
+    const previousPageCoverageSufficient =
+      previousCoverageRatio !== null &&
+      previousCoverageRatio !== undefined &&
+      previousCoverageRatio >= MIN_DIMENSION_COVERAGE;
+    // Thin page evidence and a missing comparison window are different
+    // failures. Counting the second as a withheld page said the landing page
+    // of a query whose page this same run displays had been withheld.
+    if (
+      !currentCoverageSufficient ||
+      (previous !== undefined &&
+        previous.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS &&
+        !previousPageCoverageSufficient)
+    ) {
       pageAttributionWithheld.add(`${pair.query}\u0000${pair.page}`);
       continue;
     }
+    // No prior window at the floor: nothing was withheld, the question simply
+    // could not be asked of this pair.
+    if (previous !== undefined && previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) {
+      continue;
+    }
 
+    // Evaluable is claimed here rather than at the impression floor: an
+    // attribution we could not trust was never evaluated, and filing it under
+    // "evaluated, no signal" would rebuild the conflation the row split exists
+    // to remove. A pair that survives to here was compared against the prior
+    // read, whether or not the comparison found anything.
+    firstObservedEvaluableQueries.add(pair.query);
+
+    if (
+      pair.position < FIRST_OBSERVED_MIN_POSITION ||
+      pair.position >= FIRST_OBSERVED_MAX_POSITION ||
+      previousPairs.has(`${pair.query}\u0000${pair.page}`)
+    ) {
+      continue;
+    }
+
+    firstObservedSignalQueries.add(pair.query);
     firstObserved.push({
       kind: "first_observed",
       query: pair.query,
@@ -944,6 +1060,74 @@ function candidatesFor(
       (a.page ?? "").localeCompare(b.page ?? ""),
   );
 
+  // Resolved after the loop because page attribution needs the whole read.
+  const provisionalMoves: DailyBriefingProvisionalMove[] = provisionalPairs
+    .sort(
+      (a, b) =>
+        PROVISIONAL_KIND_RANK[a.kind] - PROVISIONAL_KIND_RANK[b.kind] ||
+        b.order - a.order ||
+        a.current.query.localeCompare(b.current.query),
+    )
+    .map((entry) => {
+      const page = pageForObservation(
+        entry.current.query,
+        currentEvidence,
+        BRIEFING_MIN_ROW_IMPRESSIONS,
+      );
+      return {
+        kind: entry.kind,
+        evidence: "observed" as const,
+        query: entry.current.query,
+        page,
+        pageEvidence: (page === null ? "unavailable" : "observed") as
+          | "observed"
+          | "unavailable",
+        current: entry.current,
+        previous: entry.previous,
+        positionDelta: entry.positionDelta,
+      };
+    });
+
+  const observedQueryRows = currentRows.length;
+  const ctrLane = ctrLaneFor(input.brandTermsConfirmed, curve, table.rows.length);
+  const ctrOpportunityCapableQueries = table.rows.length;
+  const lanes: Record<DailyBriefingChangeKind, DailyBriefingLaneState> = {
+    // A usable position band is not a usable per-query baseline. The curve
+    // needs the band; the lane needs a leave-one-out baseline for the query
+    // itself, and five queries of a hundred impressions can satisfy the first
+    // while every one of them fails the second. Reading the lane off the band
+    // let a run report "the lane was evaluated" beside "no row was evaluable".
+    click_opportunity:
+      ctrLane.state === "unavailable"
+        ? "unavailable"
+        : ctrOpportunityCapableQueries > 0
+          ? "evaluated"
+          : "not_applicable",
+    stable_position_click_decline:
+      clickDeclineCapableQueries > 0 ? "evaluated" : "not_applicable",
+    average_position_crossed_page_one_band:
+      crossingCapableQueries > 0 ? "evaluated" : "not_applicable",
+    actionable_position_decline:
+      positionDeclineCapableQueries > 0 ? "evaluated" : "not_applicable",
+    // This lane stands on the page attachment, not on the query rows. Marking
+    // it evaluated whenever the funnel could be computed claimed a comparison
+    // that never happened when the attachment was missing or truncated.
+    first_observed: !pairAttributionUsable
+      ? "unavailable"
+      : firstObservedEvaluableQueries.size > 0
+        ? "evaluated"
+        : "not_applicable",
+  };
+
+  const laneRows = (
+    capable: number,
+    candidateCount: number,
+  ): DailyBriefingLaneRowCounts => ({
+    notEvaluated: Math.max(0, observedQueryRows - capable),
+    evaluatedNoSignal: Math.max(0, capable - candidateCount),
+    candidates: candidateCount,
+  });
+
   return {
     currentRows,
     candidates: [
@@ -953,7 +1137,7 @@ function candidatesFor(
       ...positionDeclines,
       ...firstObserved,
     ],
-    observedQueryRows: currentRows.length,
+    observedQueryRows,
     observationCandidates,
     actionEligibleQueries,
     ctrBaselineRows: input.brandTermsConfirmed ? table.rows.length : null,
@@ -964,17 +1148,47 @@ function candidatesFor(
     pageOneBandCandidates: pageOneCrossings.length,
     positionDeclineCandidates: positionDeclines.length,
     firstObservedCandidates: firstObserved.length,
+    provisionalMoves,
     pageAttributionWithheld: pageAttributionWithheld.size,
     clickDeclineCapableQueries,
-    ctrOpportunityCapableQueries: table.rows.length,
-    positionCapableQueries,
-    ctrLane: ctrLaneFor(
-      input.brandTermsConfirmed,
-      curve,
-      table.rows.length,
-    ),
+    ctrOpportunityCapableQueries,
+    strictPairedPositionQueries,
+    provisionalPairedPositionQueries,
+    currentFloorOnlyQueries,
+    ctrLane,
+    lanes,
+    byLane: {
+      click_opportunity: laneRows(
+        ctrOpportunityCapableQueries,
+        opportunities.length,
+      ),
+      stable_position_click_decline: laneRows(
+        clickDeclineCapableQueries,
+        declines.length,
+      ),
+      average_position_crossed_page_one_band: laneRows(
+        crossingCapableQueries,
+        pageOneCrossings.length,
+      ),
+      actionable_position_decline: laneRows(
+        positionDeclineCapableQueries,
+        positionDeclines.length,
+      ),
+      first_observed: laneRows(
+        firstObservedEvaluableQueries.size,
+        firstObservedSignalQueries.size,
+      ),
+    },
   };
 }
+
+/** Crossings before declines: entering the top band is the rarer fact. */
+const PROVISIONAL_KIND_RANK: Readonly<
+  Record<DailyBriefingProvisionalMove["kind"], number>
+> = {
+  provisional_page_one_band_entry: 0,
+  provisional_actionable_position_decline: 1,
+};
 
 const DESTINATIONS: Readonly<
   Record<DailyBriefingChangeKind, DailyBriefingAction["destination"]>
@@ -1128,15 +1342,23 @@ function observationRank(item: DailyBriefingQueryObservation): number {
   }
 }
 
+function emptyBandCounts(): Record<DailyBriefingObservationBand, number> {
+  return { page_one: 0, near_page_one: 0, mid: 0, far: 0 };
+}
+
 function queryWatchlistFor({
-  changes,
+  budget,
   currentEvidence,
   evidence,
+  excludedQueries,
   previousEvidence,
 }: {
-  readonly changes: readonly DailyBriefingChange[];
+  /** Display rows left after changes and provisional moves have taken theirs. */
+  readonly budget: number;
   readonly currentEvidence: DailyBriefingQueryEvidence | null;
   readonly evidence: DailyBriefingQueryWatchlist["evidence"];
+  /** Queries already named elsewhere on the page. */
+  readonly excludedQueries: ReadonlySet<string>;
   readonly previousEvidence: DailyBriefingQueryEvidence | null;
 }): DailyBriefingQueryWatchlist {
   if (
@@ -1146,20 +1368,22 @@ function queryWatchlistFor({
     previousEvidence?.queryRead === null ||
     previousEvidence?.queryRead === undefined
   ) {
-    return { evidence, items: [] };
+    return {
+      evidence,
+      items: [],
+      candidates: null,
+      withheldByBand: null,
+      withheldByKind: null,
+    };
   }
 
-  const remaining = Math.max(0, DAILY_BRIEFING_ACTION_LIMIT - changes.length);
-  if (remaining === 0) return { evidence, items: [] };
-
-  const selectedQueries = new Set(changes.map((change) => change.query));
   const previousByQuery = mapByQuery(
     validQueryRows(previousEvidence.queryRead.rows),
   );
   const observations = validQueryRows(currentEvidence.queryRead.rows)
     .flatMap<DailyBriefingQueryObservation>((current) => {
       if (
-        selectedQueries.has(current.query) ||
+        excludedQueries.has(current.query) ||
         current.impressions < BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS
       ) {
         return [];
@@ -1177,7 +1401,21 @@ function queryWatchlistFor({
         currentEvidence,
         minimumPageImpressions,
       );
-      const previous = previousByQuery.get(current.query) ?? null;
+      // Below the provisional floor the prior window cannot carry a position
+      // comparison, and rendering "11.8 -> 9.7" from a 49-impression week is
+      // exactly the low-sample claim the floors exist to refuse.
+      const priorWindow = previousByQuery.get(current.query);
+      const priorComparable =
+        priorWindow !== undefined &&
+        priorWindow.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS;
+      const previous = priorComparable ? (priorWindow ?? null) : null;
+      // Refusing the comparison must not also erase that a prior window
+      // existed: "not observed" and "observed, too small to compare" are
+      // different facts and the row would otherwise report the wrong one.
+      const previousBelowFloor =
+        priorWindow !== undefined && !priorComparable
+          ? priorWindow.impressions
+          : null;
       return [
         {
           kind,
@@ -1187,6 +1425,7 @@ function queryWatchlistFor({
           pageEvidence: page === null ? "unavailable" : "observed",
           current,
           previous,
+          previousBelowFloor,
           positionDelta:
             previous === null ||
             !Number.isFinite(current.position) ||
@@ -1213,10 +1452,29 @@ function queryWatchlistFor({
         b.current.impressions - a.current.impressions ||
         a.query.localeCompare(b.query)
       );
-    })
-    .slice(0, remaining);
+    });
 
-  return { evidence, items: observations };
+  // Rows that cleared every observation threshold and then lost the display
+  // budget are a different fact from rows that cleared nothing. Calling both
+  // of them "below the threshold" is the lie this count exists to prevent.
+  const items = observations.slice(0, Math.max(0, budget));
+  const withheldByBand = emptyBandCounts();
+  const withheldByKind: Record<DailyBriefingQueryObservationKind, number> = {
+    sample_floor_reached: 0,
+    sample_building: 0,
+  };
+  for (const withheld of observations.slice(items.length)) {
+    withheldByBand[withheld.band] += 1;
+    withheldByKind[withheld.kind] += 1;
+  }
+
+  return {
+    evidence,
+    items,
+    candidates: observations.length,
+    withheldByBand,
+    withheldByKind,
+  };
 }
 
 /**
@@ -1278,7 +1536,7 @@ function propertyTrendFor(
       ? null
       : current.position - previous.position;
 
-  let kind: DailyBriefingPropertyChangeKind | null = null;
+  let kind: DailyBriefingPropertyActionKind | null = null;
   let destination: "traffic-drop-diagnosis" | "seo-quick-wins" | null = null;
   let noiseFloor: DailyBriefingPropertyNoiseFloor | null = null;
 
@@ -1334,9 +1592,19 @@ function propertyTrendFor(
     return empty;
   }
 
+  // The threshold says a move happened; the noise floor says whether the
+  // sample can carry the word "material". Encoding an uncleared move as a
+  // decline made the heading assert what the sentence under it withdrew, so
+  // the kind itself now stops short of the claim.
+  const reportedKind: DailyBriefingPropertyChangeKind = noiseFloor.cleared
+    ? kind
+    : noiseFloor.basis === "clicks"
+      ? "sitewide_click_observation"
+      : "sitewide_visibility_observation";
+
   return {
     change: {
-      kind,
+      kind: reportedKind,
       evidence: "observed",
       query: null,
       page: null,
@@ -1369,12 +1637,7 @@ function laneCapabilityFor({
   evidence,
 }: {
   readonly brandTermsConfirmed: boolean;
-  readonly counts: {
-    readonly clickDeclineCapableQueries: number;
-    readonly ctrOpportunityCapableQueries: number;
-    readonly positionCapableQueries: number;
-    readonly ctrLane: DailyBriefingCtrLane;
-  } | null;
+  readonly counts: CapabilityCounts | null;
   readonly evidence: DailyBriefingLaneCapability["evidence"];
 }): DailyBriefingLaneCapability {
   if (counts === null) {
@@ -1383,7 +1646,9 @@ function laneCapabilityFor({
       evidence,
       clickDeclineCapableQueries: null,
       ctrOpportunityCapableQueries: null,
-      positionCapableQueries: null,
+      strictPairedPositionQueries: null,
+      provisionalPairedPositionQueries: null,
+      currentFloorOnlyQueries: null,
       ctrLane: {
         state: unavailable,
         blockers: brandTermsConfirmed ? [] : ["brand_terms_not_confirmed"],
@@ -1399,25 +1664,41 @@ function laneCapabilityFor({
     };
   }
 
-  const clickLane: DailyBriefingLaneState =
-    counts.clickDeclineCapableQueries > 0 ? "evaluated" : "not_applicable";
-  const positionLane: DailyBriefingLaneState =
-    counts.positionCapableQueries > 0 ? "evaluated" : "not_applicable";
-
   return {
     evidence,
     clickDeclineCapableQueries: counts.clickDeclineCapableQueries,
     ctrOpportunityCapableQueries: counts.ctrOpportunityCapableQueries,
-    positionCapableQueries: counts.positionCapableQueries,
+    strictPairedPositionQueries: counts.strictPairedPositionQueries,
+    provisionalPairedPositionQueries: counts.provisionalPairedPositionQueries,
+    currentFloorOnlyQueries: counts.currentFloorOnlyQueries,
     ctrLane: counts.ctrLane,
-    lanes: {
-      click_opportunity: counts.ctrLane.state,
-      stable_position_click_decline: clickLane,
-      average_position_crossed_page_one_band: positionLane,
-      actionable_position_decline: positionLane,
-      first_observed: "evaluated",
-    },
+    lanes: counts.lanes,
   };
+}
+
+const STRICT_CHANGE_LANES: readonly DailyBriefingChangeKind[] = [
+  "click_opportunity",
+  "stable_position_click_decline",
+  "average_position_crossed_page_one_band",
+  "actionable_position_decline",
+  "first_observed",
+];
+
+/**
+ * The briefing this property's evidence supports, stated from that evidence.
+ *
+ * The earlier two-way split asked only whether a click-driven lane had input,
+ * so a run where no position lane could be evaluated either still announced
+ * itself as position-first. Every branch here is answerable from `lanes` and
+ * the paired counts beside it.
+ */
+function modeFor(counts: CapabilityCounts | null): DailyBriefingMode {
+  if (counts === null) return "unavailable";
+  if (STRICT_CHANGE_LANES.some((lane) => counts.lanes[lane] === "evaluated")) {
+    return "change_detection";
+  }
+  if (counts.provisionalPairedPositionQueries > 0) return "position_observation";
+  return "current_position_watchlist";
 }
 
 export function buildDailyBriefing(
@@ -1522,18 +1803,18 @@ export function buildDailyBriefing(
 
   let changes: readonly DailyBriefingChange[] = [];
   let actions: readonly DailyBriefingAction[] = [];
-  let filteredObservedRows = 0;
-  let countComplete = false;
+  let allProvisionalMoves: readonly DailyBriefingProvisionalMove[] = [];
+  let rowAccounting: DailyBriefingRowAccounting = {
+    evidence: funnelEvidence,
+    observedRows: null,
+    notSelectedVisibleRows: null,
+    byLane: null,
+  };
   let observedSignalCounts: Omit<
     DailyBriefingSignalFunnel,
     "evidence" | "selectedQueryChanges" | "propertyTrendShown"
   > | null = null;
-  let capabilityCounts: {
-    readonly clickDeclineCapableQueries: number;
-    readonly ctrOpportunityCapableQueries: number;
-    readonly positionCapableQueries: number;
-    readonly ctrLane: DailyBriefingCtrLane;
-  } | null = null;
+  let capabilityCounts: CapabilityCounts | null = null;
 
   if (
     currentEvidence !== null &&
@@ -1543,19 +1824,20 @@ export function buildDailyBriefing(
     comparableQueryWindows
   ) {
     const candidateSet = candidatesFor(input, currentEvidence, previousEvidence);
-    if (input.brandTermsConfirmed) {
-      const candidateQueries = new Set(
-        candidateSet.candidates.map((candidate) => candidate.query),
-      );
-      filteredObservedRows = Math.max(
-        0,
-        candidateSet.currentRows.length - candidateQueries.size,
-      );
-      countComplete = true;
-    }
     const selected = selectChanges(candidateSet.candidates, currentEvidence);
     changes = selected.changes;
     actions = selected.actions;
+    allProvisionalMoves = candidateSet.provisionalMoves;
+    rowAccounting = {
+      evidence: "observed",
+      observedRows: candidateSet.observedQueryRows,
+      notSelectedVisibleRows: Math.max(
+        0,
+        new Set(candidateSet.candidates.map((candidate) => candidate.query))
+          .size - changes.length,
+      ),
+      byLane: candidateSet.byLane,
+    };
     observedSignalCounts = {
       observedQueryRows: candidateSet.observedQueryRows,
       observationCandidates: candidateSet.observationCandidates,
@@ -1566,14 +1848,19 @@ export function buildDailyBriefing(
       pageOneBandCandidates: candidateSet.pageOneBandCandidates,
       positionDeclineCandidates: candidateSet.positionDeclineCandidates,
       firstObservedCandidates: candidateSet.firstObservedCandidates,
+      provisionalMoveCandidates: candidateSet.provisionalMoves.length,
       pageAttributionWithheld:
         candidateSet.pageAttributionWithheld + selected.pageAttributionWithheld,
     };
     capabilityCounts = {
       clickDeclineCapableQueries: candidateSet.clickDeclineCapableQueries,
       ctrOpportunityCapableQueries: candidateSet.ctrOpportunityCapableQueries,
-      positionCapableQueries: candidateSet.positionCapableQueries,
+      strictPairedPositionQueries: candidateSet.strictPairedPositionQueries,
+      provisionalPairedPositionQueries:
+        candidateSet.provisionalPairedPositionQueries,
+      currentFloorOnlyQueries: candidateSet.currentFloorOnlyQueries,
       ctrLane: candidateSet.ctrLane,
+      lanes: candidateSet.lanes,
     };
     if (
       candidateSet.pageAttributionWithheld > 0 ||
@@ -1596,18 +1883,43 @@ export function buildDailyBriefing(
     evidence: funnelEvidence,
     brandTermsConfirmed: input.brandTermsConfirmed,
   });
-  const mode: DailyBriefingMode =
-    capabilityCounts === null
-      ? "unavailable"
-      : capabilityCounts.clickDeclineCapableQueries === 0 &&
-          capabilityCounts.ctrOpportunityCapableQueries === 0
-        ? "position_first"
-        : "change_detection";
+  const mode = modeFor(capabilityCounts);
 
+  // Three query rows is the whole display budget. Changes take theirs first,
+  // provisional moves take what is left, and the watchlist gets the remainder:
+  // a provisional move names a movement, so it outranks a row that only names
+  // a position.
+  const provisionalBudget = Math.max(
+    0,
+    DAILY_BRIEFING_ACTION_LIMIT - changes.length,
+  );
+  // A query the page is about to report as a change is not also provisional:
+  // the same query would hold an action while the provisional note under it
+  // promised there was none. Filtered against the *selected* changes rather
+  // than the candidate set, so a candidate that lost the display budget keeps
+  // its provisional row instead of falling out of both lists.
+  const selectedChangeQueries = new Set(changes.map((change) => change.query));
+  const eligibleProvisionalMoves = allProvisionalMoves.filter(
+    (move) => !selectedChangeQueries.has(move.query),
+  );
+  const provisionalMoves: DailyBriefingProvisionalMoves = {
+    evidence: funnelEvidence,
+    items: eligibleProvisionalMoves.slice(0, provisionalBudget),
+    candidates:
+      funnelEvidence === "observed" ? eligibleProvisionalMoves.length : null,
+    priorWindowImpressionRange: [
+      BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS,
+      BRIEFING_MIN_ROW_IMPRESSIONS - 1,
+    ],
+  };
   const queryWatchlist = queryWatchlistFor({
-    changes,
+    budget: provisionalBudget - provisionalMoves.items.length,
     currentEvidence,
     evidence: funnelEvidence,
+    excludedQueries: new Set([
+      ...selectedChangeQueries,
+      ...eligibleProvisionalMoves.map((move) => move.query),
+    ]),
     previousEvidence,
   });
   const signalFunnel: DailyBriefingSignalFunnel =
@@ -1626,6 +1938,7 @@ export function buildDailyBriefing(
           pageOneBandCandidates: null,
           positionDeclineCandidates: null,
           firstObservedCandidates: null,
+          provisionalMoveCandidates: null,
           pageAttributionWithheld: null,
           selectedQueryChanges: changes.length,
           propertyTrendShown: propertyTrend.change !== null,
@@ -1650,11 +1963,13 @@ export function buildDailyBriefing(
       weekly,
       mode,
       // A daily cadence is a claim that each morning brings something new to
-      // detect. It is offered only when a click lane was actually evaluated:
-      // a property that cannot support one, and a run that could not read the
-      // rows to tell, are both told to come back next week.
+      // detect, and only the click-driven lanes move on that timescale: an
+      // average position is a week's worth of impressions weighted together.
+      // Reading this off `mode` was safe while mode meant "a click lane has
+      // input"; now that mode is broader, the click lanes are asked directly.
       cadence:
-        mode !== "change_detection" ||
+        (laneCapability.lanes.click_opportunity !== "evaluated" &&
+          laneCapability.lanes.stable_position_click_decline !== "evaluated") ||
         day.evidence === "unavailable" ||
         currentWeek === null ||
         currentWeek.impressions < DAILY_CADENCE_MIN_IMPRESSIONS
@@ -1666,8 +1981,8 @@ export function buildDailyBriefing(
       propertyTrend,
       signalFunnel,
       queryWatchlist,
-      filteredObservedRows,
-      countComplete,
+      provisionalMoves,
+      rowAccounting,
       coverage,
       anonymization: {
         current: currentAnonymization.value,

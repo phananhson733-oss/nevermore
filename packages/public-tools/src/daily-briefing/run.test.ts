@@ -333,7 +333,7 @@ describe("runDailyBriefing read plan", () => {
       ),
     ).toHaveLength(2);
     expect(calls.some((call) => call.startRow === GSC_ROW_LIMIT)).toBe(false);
-    expect(envelope.result.countComplete).toBe(false);
+    expect(envelope.result.rowAccounting.byLane).toBeNull();
     expect(envelope.result.limitations).toContain("query_evidence_partial");
   });
 

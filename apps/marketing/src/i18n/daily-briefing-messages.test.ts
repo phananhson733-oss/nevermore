@@ -56,10 +56,25 @@ const CTR_LANE_BLOCKERS = [
   "no_position_band_coverage",
 ] as const;
 
+/** Every kind the site-trend card can render, action-grade or not. */
 const PROPERTY_CHANGE_KINDS = [
   "sitewide_click_decline",
   "sitewide_visibility_decline",
   "sitewide_visibility_gain",
+  "sitewide_click_observation",
+  "sitewide_visibility_observation",
+] as const;
+
+/** Only these three may be dispatched, so only these need action copy. */
+const PROPERTY_ACTION_KINDS = [
+  "sitewide_click_decline",
+  "sitewide_visibility_decline",
+  "sitewide_visibility_gain",
+] as const;
+
+const PROVISIONAL_MOVE_KINDS = [
+  "provisional_page_one_band_entry",
+  "provisional_actionable_position_decline",
 ] as const;
 
 const EVIDENCE_STATES = [
@@ -109,8 +124,10 @@ const REQUIRED_LEAF_PATHS = [
   "facts.weekly",
   "facts.dailyReason",
   "facts.weeklyReason",
-  "facts.positionFirstReason",
   "facts.unavailableReason",
+  "facts.positionObservationReason",
+  "facts.currentWatchlistReason",
+  "facts.noClickLaneReason",
   "facts.quotaAvailable",
   "facts.quotaUnavailable",
   "kpis.title",
@@ -137,15 +154,28 @@ const REQUIRED_LEAF_PATHS = [
   "ctrLane.notEvaluated",
   "ctrLane.blockers.unknown",
   "ctrLane.confirmAndRerun",
-  "evidence.foldSummary",
+  "evidence.foldChanges",
+  "evidence.foldProvisional",
+  "evidence.foldTrend",
+  "evidence.foldObservationsShown",
+  "evidence.foldObservationsUnavailable",
+  "evidence.foldQueryEvidenceUnavailable",
   "review.title",
   "review.intro",
   "review.empty",
   "review.partial",
   "review.unavailable",
   "review.pageUnavailable",
-  "review.introPositionFirst",
+  "review.priorBelowFloor",
   "review.introUnavailable",
+  "review.introPositionObservation",
+  "review.introCurrentWatchlist",
+  "review.withheld",
+  "provisional.title",
+  "provisional.intro",
+  "provisional.note",
+  "provisional.checkPage",
+  "provisional.withheld",
   "review.observationKinds.sample_floor_reached.title",
   "review.observationKinds.sample_floor_reached.body",
   "review.observationKinds.sample_building.title",
@@ -157,32 +187,34 @@ const REQUIRED_LEAF_PATHS = [
   "review.columns.interpretation",
   "evidence.title",
   "evidence.thresholdSummary",
-  "evidence.filteredComplete",
-  "evidence.filteredPartial",
+  "evidence.paths.title",
+  "evidence.paths.intro",
+  "evidence.paths.rowsIntro",
+  "evidence.paths.tiers.baseline",
+  "evidence.paths.tiers.lanes",
+  "evidence.paths.tiers.suppression",
+  "evidence.paths.rowSplit",
+  "evidence.paths.laneUnavailable",
+  "evidence.paths.laneRequirement",
+  "evidence.paths.laneFinding",
+  "evidence.paths.selectionTitle",
+  "evidence.paths.selectionRules",
+  "evidence.paths.selectionNotShown",
+  "evidence.paths.selectionAllShown",
+  "evidence.paths.ctrBaseline.name",
+  "evidence.paths.ctrBaseline.requirement",
+  "evidence.paths.ctrBaseline.evaluated",
+  "evidence.paths.ctrBaseline.unavailable",
+  "evidence.paths.pageAttribution.name",
+  "evidence.paths.pageAttribution.observed",
+  "evidence.paths.pageAttribution.none",
+  "evidence.paths.pageAttribution.unavailable",
   "evidence.coverageTitle",
   "evidence.coverageObserved",
   "evidence.coverageUnavailable",
   "evidence.anonymizationTitle",
   "evidence.anonymizationObserved",
   "evidence.anonymizationUnavailable",
-  "evidence.signalFunnel.title",
-  "evidence.signalFunnel.intro",
-  "evidence.signalFunnel.laneUnavailable",
-  "evidence.signalFunnel.lanes.ctrBaseline.title",
-  "evidence.signalFunnel.lanes.ctrBaseline.body",
-  "evidence.signalFunnel.lanes.ctrBaseline.notEvaluated",
-  "evidence.signalFunnel.lanes.clickOpportunity.title",
-  "evidence.signalFunnel.lanes.clickOpportunity.body",
-  "evidence.signalFunnel.lanes.stableDecline.title",
-  "evidence.signalFunnel.lanes.stableDecline.body",
-  "evidence.signalFunnel.lanes.pageOneBand.title",
-  "evidence.signalFunnel.lanes.pageOneBand.body",
-  "evidence.signalFunnel.lanes.positionDecline.title",
-  "evidence.signalFunnel.lanes.positionDecline.body",
-  "evidence.signalFunnel.lanes.firstObserved.title",
-  "evidence.signalFunnel.lanes.firstObserved.body",
-  "evidence.signalFunnel.lanes.pageAttribution.title",
-  "evidence.signalFunnel.lanes.pageAttribution.body",
   "changes.title",
   "changes.empty",
   "changes.stableEmpty",
@@ -208,6 +240,9 @@ const REQUIRED_LEAF_PATHS = [
   "propertyChangeKinds.sitewide_visibility_gain.body",
   "actions.title",
   "actions.empty",
+  "actions.emptyWithProvisional",
+  "actions.emptyWithProvisionalCheck",
+  "actions.emptyWithWithheldProvisional",
   "actions.rank",
   "actions.why",
   "actions.evidence",
@@ -303,6 +338,9 @@ describe("Daily Briefing message catalogs", () => {
     const evidenceStates = recordAt(namespace, "evidenceStates");
     const observationBands = recordAt(namespace, "review.observationBands");
     const ctrLaneBlockers = recordAt(namespace, "ctrLane.blockers");
+    const provisionalMoveKinds = recordAt(namespace, "provisionalMoveKinds");
+    const withheldBands = recordAt(namespace, "review.withheldBands");
+    const evidencePathLanes = recordAt(namespace, "evidence.paths.lanes");
 
     const paths = new Set(leafPaths(namespace));
     for (const path of REQUIRED_LEAF_PATHS) {
@@ -330,15 +368,42 @@ describe("Daily Briefing message catalogs", () => {
         propertyChangeKinds[kind],
         `missing property change kind ${kind}`,
       ).toEqual(expect.any(Object));
+    }
+    for (const kind of PROPERTY_ACTION_KINDS) {
       expect(
         propertyActionKinds[kind],
         `missing property action kind ${kind}`,
       ).toEqual(expect.any(Object));
     }
+    // Copy for a kind that can never be dispatched would be an invitation to
+    // dispatch it. The observation kinds deliberately have no action entry.
+    for (const kind of PROPERTY_CHANGE_KINDS) {
+      if (PROPERTY_ACTION_KINDS.some((allowed) => allowed === kind)) continue;
+      expect(propertyActionKinds[kind], `${kind} must not be dispatchable`).toBe(
+        undefined,
+      );
+    }
+    for (const kind of PROVISIONAL_MOVE_KINDS) {
+      expect(
+        provisionalMoveKinds[kind],
+        `missing provisional move kind ${kind}`,
+      ).toEqual(expect.any(Object));
+    }
+    for (const key of ["clickOpportunity", "stableDecline", "pageOneBand", "positionDecline", "firstObserved"] as const) {
+      const lane = evidencePathLanes[key] as Readonly<Record<string, string>>;
+      expect(lane, `missing evidence path ${key}`).toEqual(expect.any(Object));
+      // Both halves: what could be asked, and what would have counted.
+      expect(lane.requirement, `${key}.requirement`).toEqual(expect.any(String));
+      expect(lane.finding, `${key}.finding`).toEqual(expect.any(String));
+    }
     for (const band of OBSERVATION_BANDS) {
       expect(observationBands[band], `missing observation band ${band}`).toEqual(
         expect.any(Object),
       );
+      expect(
+        withheldBands[band],
+        `missing withheld band label ${band}`,
+      ).toEqual(expect.any(String));
     }
     for (const blocker of CTR_LANE_BLOCKERS) {
       expect(
@@ -369,26 +434,56 @@ describe("Daily Briefing message catalogs", () => {
     }
   });
 
-  it("uses the approved evidence-yield vocabulary and placeholders", () => {
+  it("breaks the sample floor down instead of calling it an evaluation floor", () => {
     const enNoise = recordAt(daily(en), "noise");
     const zhNoise = recordAt(daily(zh), "noise");
 
+    // The impression floor says a row has a sample, never that a lane looked
+    // at it. Calling the same count an "evaluation sample floor" is the claim
+    // this breakdown replaces.
     expect(placeholders(enNoise.observed)).toEqual([
+      "clickDecline",
+      "currentOnly",
       "eligible",
-      "observations",
       "observed",
-      "selected",
-      "trend",
+      "provisional",
+      "strictPaired",
     ]);
     expect(placeholders(zhNoise.observed)).toEqual(
       placeholders(enNoise.observed),
     );
-    expect(String(enNoise.observed)).toContain("evaluation sample floor");
-    expect(String(zhNoise.observed)).toContain("可评估样本门槛");
-    expect(String(enNoise.observed)).not.toContain("action sample floor");
-    expect(String(zhNoise.observed)).not.toContain("动作样本门槛");
+    expect(String(enNoise.observed)).not.toContain("evaluation sample floor");
+    expect(String(zhNoise.observed)).not.toContain("可评估样本门槛");
     expect(String(enNoise.observed)).not.toContain("fallback");
     expect(String(zhNoise.observed)).not.toContain("回退");
+  });
+
+  it("keeps material wording off the site-trend observation kinds", () => {
+    for (const catalog of [daily(en), daily(zh)]) {
+      const kinds = recordAt(catalog, "propertyChangeKinds");
+      for (const kind of [
+        "sitewide_click_observation",
+        "sitewide_visibility_observation",
+      ] as const) {
+        const entry = kinds[kind] as Readonly<Record<string, string>>;
+        // A heading that asserts a material decline over a sentence that
+        // withdraws the claim is the defect these kinds exist to remove.
+        for (const banned of ["实质", "material", "Material"]) {
+          expect(entry.title, `${kind}.title`).not.toContain(banned);
+        }
+      }
+    }
+  });
+
+  it("states the two-window floor in the threshold summary", () => {
+    // Without it, a reader cannot tell why a query that visibly moved was not
+    // reported as a change.
+    expect(String(recordAt(daily(zh), "evidence").thresholdSummary)).toContain(
+      "两个窗口各至少 100 次曝光",
+    );
+    expect(String(recordAt(daily(en), "evidence").thresholdSummary)).toContain(
+      "100 impressions in each of the two windows",
+    );
   });
 
   it("keeps placeholders aligned for every localized Daily Briefing leaf", () => {
