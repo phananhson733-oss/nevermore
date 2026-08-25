@@ -135,4 +135,74 @@ describe("preScreenCompetitorKeyword", () => {
     ).toEqual(["seo-tools"]);
     expect(competitorBrandTokens(["www.example.com"])).toEqual(["example"]);
   });
+
+  it("derives the brand token from the registrable label, never a subdomain", () => {
+    expect(
+      competitorBrandTokens([
+        "tools.ahrefs.com",
+        "developers.example.com",
+        "help.zendesk.com",
+      ]),
+    ).toEqual(["ahrefs", "example", "zendesk"]);
+    // Second-level suffixes are skipped; "ox" and "co" are then too short.
+    expect(
+      competitorBrandTokens(["blog.example.co.uk", "ox.ac.uk", "co.uk"]),
+    ).toEqual(["example"]);
+    expect(
+      preScreenCompetitorKeyword(
+        input({
+          keyword: "api developers guide",
+          competitorDomains: ["developers.example.com"],
+        }),
+      ).band,
+    ).toBe("prioritize_serp_check");
+    expect(
+      preScreenCompetitorKeyword(
+        input({ keyword: "seo tools", competitorDomains: ["tools.ahrefs.com"] }),
+      ).band,
+    ).toBe("prioritize_serp_check");
+    expect(
+      preScreenCompetitorKeyword(
+        input({
+          keyword: "ahrefs webmaster tools",
+          competitorDomains: ["tools.ahrefs.com"],
+        }),
+      ).reason,
+    ).toBe("competitor_brand_token");
+  });
+
+  it("pins the KD and rank thresholds at their boundaries", () => {
+    const reasonFor = (
+      overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[0]>,
+    ) => preScreenCompetitorKeyword(input(overrides)).reason;
+    expect(reasonFor({ keywordDifficulty: METRIC(30) })).toBe("kd_low_rank_top10");
+    expect(reasonFor({ keywordDifficulty: METRIC(31) })).toBe("kd_mid_rank_top20");
+    expect(reasonFor({ keywordDifficulty: METRIC(60) })).toBe("kd_mid_rank_top20");
+    expect(reasonFor({ keywordDifficulty: METRIC(61) })).toBe("kd_high");
+    expect(reasonFor({ bestCompetitorRank: 10 })).toBe("kd_low_rank_top10");
+    expect(reasonFor({ bestCompetitorRank: 11 })).toBe("kd_mid_rank_top20");
+    // An explicit KD of zero is a real estimate, not a missing one.
+    expect(
+      preScreenCompetitorKeyword(input({ keywordDifficulty: METRIC(0) })),
+    ).toEqual({
+      band: "prioritize_serp_check",
+      basis: "dfs_estimate",
+      reason: "kd_low_rank_top10",
+    });
+  });
+
+  it("lets a comparative query through even when the provider calls it navigational", () => {
+    expect(
+      preScreenCompetitorKeyword(
+        input({
+          keyword: "approval software alternatives",
+          providerIntent: "navigational",
+        }),
+      ),
+    ).toEqual({
+      band: "prioritize_serp_check",
+      basis: "dfs_estimate",
+      reason: "kd_low_rank_top10",
+    });
+  });
 });

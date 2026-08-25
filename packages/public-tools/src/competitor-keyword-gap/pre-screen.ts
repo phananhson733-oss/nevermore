@@ -32,6 +32,17 @@ const GENERIC_LABELS = new Set([
   "shop",
   "home",
 ]);
+/** Second-level suffixes under which the registrable label sits one step further left (`example.co.uk`). */
+const SECOND_LEVEL_SUFFIXES = new Set([
+  "co",
+  "com",
+  "net",
+  "org",
+  "ac",
+  "gov",
+  "edu",
+]);
+const MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX = 3;
 const MIN_BRAND_TOKEN_LENGTH = 3;
 const MIN_PROFILE_KEYWORD_LENGTH = 3;
 const COMPARATIVE_TOKENS =
@@ -46,18 +57,32 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** The registrable label, read from the right: `ahrefs` for `tools.ahrefs.com`, `example` for `blog.example.co.uk`. */
+function registrableLabel(domain: string): string | undefined {
+  const labels = domain
+    .toLowerCase()
+    .split(".")
+    .filter((label) => label !== "");
+  const beforeTld = labels.at(-2);
+  if (beforeTld === undefined) return undefined;
+  const underSecondLevelSuffix =
+    labels.length >= MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX &&
+    SECOND_LEVEL_SUFFIXES.has(beforeTld);
+  return underSecondLevelSuffix ? labels.at(-3) : beforeTld;
+}
+
 /** The label a person would call the competitor by: `ahrefs` for `ahrefs.com`, `seo-tools` for `seo-tools.example`. */
 export function competitorBrandTokens(
   domains: readonly string[],
 ): readonly string[] {
   const tokens = new Set<string>();
   for (const domain of domains) {
-    const labels = domain
-      .toLowerCase()
-      .split(".")
-      .filter((label) => label !== "");
-    const candidate = labels.find((label) => !GENERIC_LABELS.has(label));
-    if (candidate !== undefined && candidate.length >= MIN_BRAND_TOKEN_LENGTH) {
+    const candidate = registrableLabel(domain);
+    if (
+      candidate !== undefined &&
+      !GENERIC_LABELS.has(candidate) &&
+      candidate.length >= MIN_BRAND_TOKEN_LENGTH
+    ) {
       tokens.add(candidate);
     }
   }
@@ -142,5 +167,8 @@ export function preScreenCompetitorKeyword(
   ) {
     return decide("prioritize_serp_check", "kd_low_rank_top10");
   }
+  // Everything that is not both low-KD and page-one lands here, including a
+  // low-KD term a competitor only holds on page two; the reason name is pinned
+  // by the contract and must not be read as "mid KD" by UI copy.
   return decide("stretch", "kd_mid_rank_top20");
 }
