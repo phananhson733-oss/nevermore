@@ -3311,6 +3311,63 @@ describe("page dimension lanes", () => {
     });
   });
 
+  it("normalizes the page it emits, not just the key it looks up", () => {
+    const result = pageReport(
+      [pageRow(` ${PAGE} `, 380, 8, 9.4)],
+      [pageRow(`${PAGE} `, 400, 20, 9.1)],
+    );
+
+    // Keying by the trimmed URL while storing the raw row would leave the
+    // padded spelling in the change, the action and the handoff.
+    expect(result.pageChanges).toMatchObject([
+      { page: PAGE, current: { page: PAGE }, previous: { page: PAGE } },
+    ]);
+    expect(result.pageActions).toMatchObject([{ page: PAGE }]);
+  });
+
+  it("counts a row that named no page instead of shrinking the window", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow("   ", 400, 5, 9)],
+      [pageRow("https://example.com/other", 300, 2, 12)],
+    );
+
+    // A row came back and named nothing. No identity set can hold it, so it is
+    // counted on its own rather than making the window look one row emptier.
+    expect(result.pageAccounting.observedRows).toBe(2);
+    expect(result.pageAccounting.unreadableRows).toBe(1);
+  });
+
+  it("mixes readable and unreadable rows in one window without losing either", () => {
+    const other = "https://example.com/other";
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(other, 100, 400, 9)],
+      [pageRow(PAGE, 0, 0, 0), pageRow(other, 300, 5, 9)],
+    );
+
+    // One usable row and one unreadable one. An implementation taking the
+    // larger of the two counts would report 1 here and still pass a fixture
+    // where the window holds only unreadable rows.
+    expect(result.pageAccounting.observedRows).toBe(2);
+    expect(result.pageAccounting.unreadableRows).toBe(1);
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_first_observed", page: PAGE },
+    ]);
+  });
+
+  it("says it could not look when every page row was unreadable", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 100, 400, 9)],
+      [pageRow(PAGE, 300, 5, 9)],
+    );
+
+    // "Not applicable" claims the property has nothing this lane could ever
+    // measure. One unreadable row does not establish that.
+    expect(result.laneCapability.pageLanes).toEqual({
+      page_click_decline: "unavailable",
+      page_first_observed: "unavailable",
+    });
+  });
+
   it("keeps one page identity across surrounding whitespace", () => {
     const result = pageReport(
       [pageRow(PAGE, 300, 2, 12)],
@@ -3379,6 +3436,8 @@ describe("page dimension lanes", () => {
     // A response on the wrong basis is not a prefix of the right one, so
     // reporting it as partial would promise the rest is on its way.
     expect(result.pageAccounting.evidence).toBe("unavailable");
+    expect(result.pageAccounting.observedRows).toBeNull();
+    expect(result.pageAccounting.byLane).toBeNull();
   });
 
   it("rejects two page windows that agree on the wrong aggregation basis", () => {
@@ -3434,7 +3493,6 @@ describe("page dimension lanes", () => {
       evidence: "unavailable",
       observedRows: null,
       notSelectedVisibleRows: null,
-      suppressedByQueryChange: null,
       unreadableRows: null,
       byLane: null,
     });
@@ -3469,8 +3527,15 @@ describe("page dimension lanes", () => {
 
     // A comparison needs both windows, from either side. "Partly read"
     // describes a run that read part of what it needed; this one read none of
-    // one side.
-    expect(result.pageAccounting.evidence).toBe("unavailable");
+    // one side. Every count stays null: the renderer prints them whenever they
+    // are numbers, so a zero here becomes a measurement on the page.
+    expect(result.pageAccounting).toEqual({
+      evidence: "unavailable",
+      observedRows: null,
+      notSelectedVisibleRows: null,
+      unreadableRows: null,
+      byLane: null,
+    });
   });
 
   it("refuses page windows read on disagreeing aggregation bases", () => {
@@ -3517,42 +3582,41 @@ describe("page changes beside query changes", () => {
     };
   }
 
-  it("does not report the same page twice under two headings", () => {
+  it("reports the page result beside the query one, not behind it", () => {
     const result = pageReport(
       [pageRow(PAGE, 380, 8, 9.4)],
       [pageRow(PAGE, 400, 20, 9.1)],
       pairedQueryDecline(),
     );
 
-    // The lane still formed the candidate, and the accounting says where it
-    // went. Without this the run could claim one candidate, show no page row,
-    // and report nothing withheld — three statements that cannot all be read
-    // together.
-    expect(result.pageAccounting.byLane?.page_click_decline.candidates).toBe(1);
-    expect(result.pageAccounting.suppressedByQueryChange).toBe(1);
-    expect(result.pageAccounting.notSelectedVisibleRows).toBe(0);
-
-    // The query lane already named this page, and it is the more precise
-    // statement. Reporting it again as a page change would let one page be
-    // counted as two findings.
+    // One query on the page lost 18 clicks; the page as a whole lost 12 across
+    // every query, anonymized ones included. They are different measurements
+    // of different populations and can move in opposite directions, so hiding
+    // the second behind the first would substitute one for the other.
     expect(result.changes).toMatchObject([
       { kind: "stable_position_click_decline", query: QUERY, page: PAGE },
     ]);
-    expect(result.pageChanges).toEqual([]);
-    expect(result.pageActions).toEqual([]);
+    expect(result.changes[0]?.clickChange).toBe(-18);
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_click_decline", page: PAGE, clickChange: -12 },
+    ]);
+    expect(result.pageAccounting.notSelectedVisibleRows).toBe(0);
   });
 
-  it("still reports a different page while a query change holds its own", () => {
+  it("orders page declines by size when several qualify", () => {
     const other = "https://example.com/other";
     const result = pageReport(
-      [pageRow(PAGE, 380, 8, 9.4), pageRow(other, 380, 8, 9.4)],
-      [pageRow(PAGE, 400, 20, 9.1), pageRow(other, 400, 20, 9.1)],
+      [pageRow(PAGE, 380, 8, 9.4), pageRow(other, 380, 2, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1), pageRow(other, 400, 30, 9.1)],
       pairedQueryDecline(),
     );
 
     expect(result.changes).toHaveLength(1);
+    // The larger loss first, and both survive: neither page is hidden by the
+    // query row that happens to name one of them.
     expect(result.pageChanges).toMatchObject([
-      { kind: "page_click_decline", page: other },
+      { page: other, clickChange: -28 },
+      { page: PAGE, clickChange: -12 },
     ]);
   });
 
@@ -3783,6 +3847,38 @@ describe("suggested checks", () => {
     ]);
     expect(result.suggestedChecks.items).toEqual([]);
     expect(result.suggestedChecks.notCheckable).toBe(1);
+  });
+
+  it("matches an actioned page across dimensions that spell the URL differently", () => {
+    const shared = "https://example.com/guide";
+    const query = "watched term";
+    const rows = [queryRow(query, 185, 0, 8.2)];
+    // The query-page read pads the URL; the page read does not. Normalizing
+    // only the page dimension gave one URL two identities, and the exclusion
+    // that keeps a check off an actioned page compared the wrong pair.
+    const pages = [queryPageRow(query, `${shared} `, 185, 0, 8.2)];
+    const pageRead = (impressions: number, clicks: number, position: number) => ({
+      rows: [{ page: shared, impressions, clicks, position }],
+      paging: { pagesFetched: 1, truncated: false },
+      responseAggregationType: "byPage",
+    });
+    const result = report({
+      currentQueryEvidence: {
+        ...evidence(rows, pages),
+        pageRead: pageRead(380, 8, 9.4),
+      },
+      previousQueryEvidence: {
+        ...evidence(rows, pages),
+        pageRead: pageRead(400, 20, 9.1),
+      },
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.pageActions).toMatchObject([{ page: shared }]);
+    // The watchlist row names the same page, so it may not also be offered as
+    // a page with no known change.
+    expect(result.queryWatchlist.items).toMatchObject([{ page: shared }]);
+    expect(result.suggestedChecks.items).toEqual([]);
   });
 
   it("reports checks as unavailable rather than empty when nothing was read", () => {

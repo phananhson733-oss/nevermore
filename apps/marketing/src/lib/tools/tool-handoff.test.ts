@@ -574,6 +574,36 @@ describe("tool handoff storage", () => {
     ).toBe(true);
   });
 
+  it("treats equivalent percent-encoding as the same path", () => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property: "https://example.com/%7Eteam/",
+        page: "https://example.com/~team/guide",
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["credentials", "https://user:pw@example.com/about/"],
+    ["a query string", "https://example.com/about/?x=1"],
+    ["a fragment", "https://example.com/about/#f"],
+  ])("refuses a url-prefix property carrying %s", (_label, property) => {
+    const session = storage();
+
+    // A property identifier is a prefix. A string that is not one must not be
+    // matched on the parts of it that happen to parse.
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property,
+        page: "https://example.com/about/team",
+      }),
+    ).toBe(false);
+  });
+
   it("binds the query_page scope to its property too", () => {
     const session = storage();
 
@@ -586,6 +616,9 @@ describe("tool handoff storage", () => {
         page: "https://unrelated.test/pricing",
       }),
     ).toBe(false);
+    // Refused means not written. A writer that stores first and reports false
+    // afterwards leaves the payload for the next reader.
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
   });
 
   it("leaves a competitor gap handoff free to name another site", () => {
@@ -717,5 +750,6 @@ describe("tool handoff storage", () => {
         payload as unknown as Parameters<typeof writeToolHandoff>[2],
       ),
     ).toBe(false);
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
   });
 });

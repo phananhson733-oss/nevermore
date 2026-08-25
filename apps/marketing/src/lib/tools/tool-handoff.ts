@@ -130,6 +130,14 @@ function isPageDestination(
  * return such a pair, so refusing it costs nothing and closes the gap between
  * "this is a URL" and "this is a URL this property could have produced".
  */
+function decodedPath(pathname: string): string {
+  try {
+    return decodeURI(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
 function withoutRootDot(host: string): string {
   const lower = host.toLowerCase();
   return lower.endsWith(".") ? lower.slice(0, -1) : lower;
@@ -152,6 +160,18 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
       return host === domain || host.endsWith(`.${domain}`);
     }
     const prefix = new URL(property.trim());
+    // A property identifier is a prefix, not a request: credentials, a query
+    // or a fragment mean the string is not one, and matching only its host and
+    // path would let `https://user:pw@example.com/about?x=1#f` stand in for
+    // the property it merely resembles.
+    if (
+      prefix.username !== "" ||
+      prefix.password !== "" ||
+      prefix.search !== "" ||
+      prefix.hash !== ""
+    ) {
+      return false;
+    }
     if (
       prefix.protocol !== url.protocol ||
       withoutRootDot(prefix.hostname) !== host ||
@@ -162,10 +182,13 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
     // On a segment boundary, not a character one. A bare `startsWith` accepts
     // `/aboutus` for a property scoped to `/about`, which is a different
     // section of the site.
-    const base = prefix.pathname.endsWith("/")
-      ? prefix.pathname
-      : `${prefix.pathname}/`;
-    return url.pathname === prefix.pathname || url.pathname.startsWith(base);
+    // Compared after decoding the escapes that carry no meaning, so `/%7Eteam`
+    // and `/~team` are the one path they name. Decoding can throw on a
+    // malformed escape; the raw forms are then compared instead.
+    const prefixPath = decodedPath(prefix.pathname);
+    const pagePath = decodedPath(url.pathname);
+    const base = prefixPath.endsWith("/") ? prefixPath : `${prefixPath}/`;
+    return pagePath === prefixPath || pagePath.startsWith(base);
   } catch {
     return false;
   }

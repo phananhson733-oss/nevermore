@@ -416,12 +416,16 @@ function validQueryRows(rows: readonly GscQueryRow[]): readonly GscQueryRow[] {
 function validQueryPageRows(
   rows: readonly GscQueryPageRow[],
 ): readonly GscQueryPageRow[] {
-  return rows.filter(
-    (row) =>
-      row.query.trim() !== "" &&
-      row.page.trim() !== "" &&
-      isMetricRowValid(row),
-  );
+  // Normalized the same way `validPageRows` normalizes the page dimension.
+  // Trimming one side only gave the same URL two identities, so a page under
+  // an action could still be offered as a page with no known change.
+  return rows.flatMap((row) => {
+    const page = row.page.trim();
+    if (row.query.trim() === "" || page === "" || !isMetricRowValid(row)) {
+      return [];
+    }
+    return [{ ...row, page }];
+  });
 }
 
 function coverageOf(
@@ -1680,6 +1684,8 @@ interface PageRowSet {
    * is the one substitution this tool exists to refuse.
    */
   readonly unusable: ReadonlySet<string>;
+  /** Rows that named no page at all, which no identity set can represent. */
+  readonly blank: number;
 }
 
 /**
@@ -1691,13 +1697,20 @@ interface PageRowSet {
 function validPageRows(rows: readonly GscPageRow[]): PageRowSet {
   const unique = new Map<string, GscPageRow>();
   const unusable = new Set<string>();
+  let blank = 0;
   for (const row of rows) {
     // One identity, and every map, set and lookup downstream uses it. Deriving
     // a trimmed key and then keying by the raw string made "…/a " and "…/a"
     // two different pages, which let a row rejected under one spelling be
     // reported as absent under the other.
     const page = row.page.trim();
-    if (page === "") continue;
+    if (page === "") {
+      // A row came back and named nothing. Skipping it made the window look
+      // one row emptier than it was; there is no identity to put in the set,
+      // so it is counted on its own.
+      blank += 1;
+      continue;
+    }
     const normalized: GscPageRow = { ...row, page };
     if (!isMetricRowValid(row) || unique.has(page) || unusable.has(page)) {
       unique.delete(page);
@@ -1706,7 +1719,7 @@ function validPageRows(rows: readonly GscPageRow[]): PageRowSet {
     }
     unique.set(page, normalized);
   }
-  return { rows: [...unique.values()], unusable };
+  return { rows: [...unique.values()], unusable, blank };
 }
 
 interface PageCandidate {
@@ -1745,6 +1758,16 @@ interface PageCandidateSet {
   readonly byLane: Readonly<
     Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
   >;
+}
+
+function pageLaneState(
+  capable: number,
+  readableRows: number,
+  unreadableRows: number,
+): DailyBriefingLaneState {
+  if (capable > 0) return "evaluated";
+  if (readableRows === 0 && unreadableRows > 0) return "unavailable";
+  return "not_applicable";
 }
 
 function pageLaneRows(
@@ -1886,8 +1909,9 @@ function pageCandidatesFor(
   // Current-window rows we could not read still happened. Leaving them out of
   // the denominator made "0 of 0 rows" out of a window that returned one, and
   // made an unreadable page indistinguishable from an absent one.
-  const observedRows = currentRows.length + currentSet.unusable.size;
-  const unreadableCurrentRows = currentSet.unusable.size;
+  const observedRows =
+    currentRows.length + currentSet.unusable.size + currentSet.blank;
+  const unreadableCurrentRows = currentSet.unusable.size + currentSet.blank;
   return {
     // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
     // relies on a stable sort to keep each lane's own magnitude order.
@@ -1895,11 +1919,23 @@ function pageCandidatesFor(
     observedRows,
     pageFloorRows,
     pairedPageRows,
+    // "Not applicable" says the property has nothing this lane could ever
+    // measure. A window whose rows were ALL unreadable has not established
+    // that, so it reports the state that means "we could not look". A window
+    // with readable rows did establish it, whatever else came back beside
+    // them — saying "could not be read" there would be false about the rows
+    // that were.
     lanes: {
-      page_click_decline:
-        declineCapableRows > 0 ? "evaluated" : "not_applicable",
-      page_first_observed:
-        firstObservedCapableRows > 0 ? "evaluated" : "not_applicable",
+      page_click_decline: pageLaneState(
+        declineCapableRows,
+        currentRows.length,
+        unreadableCurrentRows,
+      ),
+      page_first_observed: pageLaneState(
+        firstObservedCapableRows,
+        currentRows.length,
+        unreadableCurrentRows,
+      ),
     },
     // Both lanes carry the unreadable rows in `notEvaluated`, which is what
     // `pageLaneRows` produces for them: they are in `observedRows` and in
@@ -1920,15 +1956,25 @@ function pageCandidatesFor(
   };
 }
 
+/**
+ * Why a page named by a query change is still reported.
+ *
+ * It was suppressed for a while, on the theory that one URL should occupy one
+ * row. But the two rows do not measure the same thing: the query row is one
+ * query on that page, the page row is every query on it including the ones
+ * Search Console anonymized, and they can move in opposite directions. Hiding
+ * the second behind the first is the population substitution this tool exists
+ * to refuse — and a count saying "one candidate was suppressed" preserves the
+ * cardinality, not the measurement. Both are shown, each labelled with its own
+ * scope.
+ */
 function selectPageChanges(
   candidates: readonly PageCandidate[],
-  excludedPages: ReadonlySet<string>,
   budget: number,
 ): {
   readonly changes: readonly DailyBriefingPageChange[];
   readonly actions: readonly DailyBriefingPageAction[];
   readonly eligible: number;
-  readonly suppressedByQueryChange: number;
 } {
   const ranked = [...candidates].sort(
     (a, b) => PAGE_KIND_RANK[a.change.kind] - PAGE_KIND_RANK[b.change.kind],
@@ -1936,18 +1982,10 @@ function selectPageChanges(
 
   const seen = new Set<string>();
   const eligible: DailyBriefingPageChange[] = [];
-  const suppressed = new Set<string>();
   for (const candidate of ranked) {
     const page = candidate.change.page;
-    // One row per URL, and a query change already holds this one. This is a
-    // presentation rule, not a claim that the two measure the same thing: the
-    // page row covers every query for the URL including the anonymized ones,
-    // and the query row cannot stand in for it. Counted, never silently
-    // dropped, so the accounting says where the candidate went.
-    if (excludedPages.has(page)) {
-      suppressed.add(page);
-      continue;
-    }
+    // Only against itself: one page cannot be reported by both page lanes at
+    // once, because the second would restate the first about the same rows.
     if (seen.has(page)) continue;
     seen.add(page);
     eligible.push(candidate.change);
@@ -1964,7 +2002,6 @@ function selectPageChanges(
       page: change.page,
     })),
     eligible: eligible.length,
-    suppressedByQueryChange: suppressed.size,
   };
 }
 
@@ -2326,21 +2363,15 @@ export function buildDailyBriefing(
   });
   const mode = modeFor(capabilityCounts, pageCandidateSet);
 
-  // Three rows is the whole display budget and the page lanes share it, in
-  // order of how precisely each names its subject: a query change names a
-  // query and usually its page, a page change names a page, an observation
-  // names only where something currently sits.
-  const selectedChangePages = new Set(
-    changes
-      .map((change) => change.page)
-      .filter((page): page is string => page !== null),
-  );
+  // Three rows is the whole display budget and the page lanes share it. The
+  // order is how narrowly each names its subject, not which measurement is
+  // better: a query change names one query on a page, a page change names
+  // every query on that page, and neither represents the other.
   const pageSelection =
     pageCandidateSet === null
-      ? { changes: [], actions: [], eligible: 0, suppressedByQueryChange: 0 }
+      ? { changes: [], actions: [], eligible: 0 }
       : selectPageChanges(
           pageCandidateSet.candidates,
-          selectedChangePages,
           Math.max(0, DAILY_BRIEFING_ACTION_LIMIT - changes.length),
         );
   const pageChanges: readonly DailyBriefingPageChange[] = pageSelection.changes;
@@ -2359,7 +2390,6 @@ export function buildDailyBriefing(
               : "partial",
           observedRows: null,
           notSelectedVisibleRows: null,
-          suppressedByQueryChange: null,
           unreadableRows: null,
           byLane: null,
         }
@@ -2370,7 +2400,6 @@ export function buildDailyBriefing(
             0,
             pageSelection.eligible - pageChanges.length,
           ),
-          suppressedByQueryChange: pageSelection.suppressedByQueryChange,
           unreadableRows: pageCandidateSet.unreadableCurrentRows,
           byLane: pageCandidateSet.byLane,
         };

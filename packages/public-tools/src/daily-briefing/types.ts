@@ -447,23 +447,6 @@ export interface DailyBriefingPageAccounting {
   readonly observedRows: number | null;
   /** Page rows that produced a candidate but lost the display budget. */
   readonly notSelectedVisibleRows: number | null;
-  /**
-   * Page candidates suppressed because a query change already names the page.
-   *
-   * Not folded into `notSelectedVisibleRows`: those lost the budget and appear
-   * nowhere, while these are on the page under a more precise heading. Kept as
-   * its own number because without it the lane could report a candidate, show
-   * no page row, and claim nothing was withheld — three statements a reader
-   * cannot reconcile.
-   */
-  readonly suppressedByQueryChange: number | null;
-  /**
-   * Current-window rows that came back but could not be read.
-   *
-   * Counted inside `observedRows` and inside every lane's `notEvaluated`, and
-   * named separately because "we could not read it" and "it did not clear a
-   * threshold" are different answers to the same question.
-   */
   readonly unreadableRows: number | null;
   readonly byLane: Readonly<
     Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>

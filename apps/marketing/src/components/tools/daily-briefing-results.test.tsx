@@ -1823,35 +1823,33 @@ describe("DailyBriefingResults folded explanation", () => {
     );
   });
 
-  it("says where a suppressed page candidate went instead of losing it", async () => {
+  it("counts page candidates in the not-shown line, not only query ones", async () => {
     const host = await renderResults(
       envelope({
         changes: [],
         actions: [],
-        pageChanges: [],
-        pageActions: [],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: 0 }),
         pageAccounting: {
           evidence: "observed",
-          observedRows: 4,
-          notSelectedVisibleRows: 0,
-          suppressedByQueryChange: 1,
+          observedRows: 6,
+          notSelectedVisibleRows: 2,
           unreadableRows: 0,
           byLane: {
-            page_click_decline: laneRows(3, 0, 1),
-            page_first_observed: laneRows(4, 0, 0),
+            page_click_decline: laneRows(2, 0, 4),
+            page_first_observed: laneRows(6, 0, 0),
           },
         },
         queryWatchlist: watchlist("observed"),
       }),
     );
+    const line = host.querySelector("[data-selection-not-shown]");
 
-    // One candidate, no page row, and nothing said would be three numbers a
-    // reader cannot put together.
-    const line = host.querySelector("[data-page-suppressed]");
-    expect(line?.textContent).toContain("1 page candidates are not listed");
-    // And the reason may not rank one population above the other.
-    expect(line?.textContent).toContain("different populations");
-    expect(line?.textContent).not.toContain("more precise");
+    // Reading only the query count let this line say every candidate is above
+    // while two page candidates were missing from the table.
+    expect(line?.textContent).toContain("2");
+    expect(line?.textContent).not.toBe(
+      en.tools.dailyBriefing.evidence.paths.selectionAllShown,
+    );
   });
 
   it("names a row it could not read rather than shrinking the denominator", async () => {
@@ -1859,11 +1857,19 @@ describe("DailyBriefingResults folded explanation", () => {
       envelope({
         changes: [],
         actions: [],
+        // Three readable rows below the floor plus two unreadable ones: the
+        // lanes did establish they had nothing to measure, so the split
+        // renders rather than the "could not look" sentence.
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "not_applicable",
+            page_first_observed: "not_applicable",
+          },
+        }),
         pageAccounting: {
           evidence: "observed",
           observedRows: 5,
           notSelectedVisibleRows: 0,
-          suppressedByQueryChange: 0,
           unreadableRows: 2,
           byLane: {
             page_click_decline: laneRows(5, 0, 0),
@@ -1874,9 +1880,18 @@ describe("DailyBriefingResults folded explanation", () => {
       }),
     );
     const intro = host.querySelector("[data-page-rows-intro]");
+    const paths = host.querySelector("[data-signal-paths]");
 
-    expect(intro?.textContent).toContain("5 page rows");
-    expect(intro?.textContent).toContain("2 of those page rows came back");
+    expect(intro?.textContent).toContain("5 pages in the current window");
+    expect(intro?.textContent).toContain("2 of them came back unreadable");
+    expect(intro?.textContent).toContain("neither path evaluated them");
+    // And the lanes must carry them, not just the sentence above: an
+    // unreadable row is a row neither lane could ask about.
+    for (const id of ["page-click-decline", "page-first-observed"]) {
+      expect(
+        paths?.querySelector(`[data-signal-path="${id}"]`)?.textContent,
+      ).toContain("5 not evaluated");
+    }
   });
 
   it("names a page change as a whole page instead of inventing a query", async () => {

@@ -181,7 +181,6 @@ const REQUIRED_LEAF_PATHS = [
   "checks.notCheckable",
   "evidence.foldPageChanges",
   "evidence.paths.pageUnavailable",
-  "evidence.paths.pageSuppressed",
   "evidence.paths.pageUnreadableRows",
   "review.priorBelowFloor",
   "review.introUnavailable",
@@ -452,6 +451,46 @@ describe("Daily Briefing message catalogs", () => {
       expect(evidenceStates[state], `missing evidence state ${state}`).toEqual(
         expect.any(String),
       );
+    }
+  });
+
+  it("never ranks the page population against the query one", () => {
+    // A leaf-parity check proves the Chinese string exists, not what it says.
+    // These two sentences were the ones that ranked a query row above a page
+    // measurement, and they are in different files from the code that stopped
+    // doing it.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const namespace = (
+        catalog as unknown as Record<string, Record<string, unknown>>
+      ).tools?.dailyBriefing;
+      const text = JSON.stringify(namespace);
+      for (const banned of ["more precise", "更精确", "更准确"]) {
+        expect(text, `${locale} still ranks one population above the other`)
+          .not.toContain(banned);
+      }
+    }
+  });
+
+  it("keeps the page-first-observed copy inside the comparison it made", () => {
+    // The lane compares two windows. "First time" and 首次出现 without a
+    // qualifier claim the page never drew impressions before either of them.
+    const pairs = [
+      [en, "this comparison"],
+      [zh, "本次对比"],
+    ] as const;
+    for (const [catalog, qualifier] of pairs) {
+      const kinds = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "pageChangeKinds",
+      );
+      const firstObserved = kinds.page_first_observed as Readonly<
+        Record<string, string>
+      >;
+      expect(firstObserved.title).toContain(qualifier);
     }
   });
 

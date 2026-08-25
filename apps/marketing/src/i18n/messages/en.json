@@ -1931,7 +1931,7 @@
         },
         "priorBelowFloor": "prior window too small",
         "pageScope": "Whole page, across every query",
-        "pageNotObserved": "Not present in the prior window"
+        "pageNotObserved": "No comparable prior window"
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -2007,14 +2007,13 @@
               "finding": "Clicks fell by both 15% and 3, and the drop reached 2 x the square root of the prior window's clicks"
             },
             "pageFirstObserved": {
-              "name": "Page first drew impressions",
+              "name": "Page first appears in this comparison",
               "requirement": "No row for the page in the prior window, or a row shown zero times, plus at least 100 impressions now",
               "finding": "Current average position sits inside the actionable band of 30 or better"
             }
           },
-          "pageRowsIntro": "{rows} page rows in the current window. These and the query rows above are two separate populations and do not add together.",
-          "pageSuppressed": "{count} page candidates are not listed separately: this view shows one row per URL and a query change above already holds it. They are different populations — the page-level result covers every query for that URL, anonymized ones included — so the query row does not represent it.",
-          "pageUnreadableRows": "{count} of those page rows came back unreadable, so neither path evaluated them. That is not the same as their not being there."
+          "pageRowsIntro": "{rows} pages in the current window, counted once each by URL. These and the query rows above are two separate populations and do not add together.",
+          "pageUnreadableRows": "{count} of them came back unreadable, so neither path evaluated them. That is not the same as their not being there."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
@@ -2180,7 +2179,7 @@
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
         "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
-        "page_evidence_unavailable": "No usable page-dimension read this run (not read, or only a partial prefix), so the two page-level paths did not run. That is not the same as no change on any page."
+        "page_evidence_unavailable": "No usable page-dimension evidence this run: not read, only a partial prefix, or returned on an aggregation other than by page. The two page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2223,8 +2222,8 @@
           "body": "This page cleared the sample floor in both windows and lost more clicks than its own week-to-week spread accounts for. Page data is not subject to query anonymization, so the clicks here are complete; this briefing has not judged why they fell."
         },
         "page_first_observed": {
-          "title": "Page drew impressions for the first time",
-          "body": "The prior window carries no row for this page (or a row shown zero times), and the current window clears the sample floor with an average position inside the actionable band. This is the moment to calibrate the title, snippet and internal links, not a promise about rank."
+          "title": "Page first appears in this comparison",
+          "body": "The prior window carries no row for this page (or a row shown zero times), and the current window clears the sample floor with an average position inside the actionable band. This compares two windows and says nothing about whether the page ever drew impressions before them. It is the moment to calibrate the title, snippet and internal links, not a promise about rank."
         }
       },
       "pageActionKinds": {
@@ -2233,7 +2232,7 @@
           "body": "Opens Traffic Drop Diagnosis carrying the page and the weekly comparison. The next tool has to confirm the cause independently; this briefing has not attributed the decline to any query."
         },
         "page_first_observed": {
-          "title": "Check the page that just started drawing impressions",
+          "title": "Check the page this comparison saw first",
           "body": "Opens On-Page Checker carrying the page. It checks the page itself and makes no claim about where any single query ranks."
         }
       },

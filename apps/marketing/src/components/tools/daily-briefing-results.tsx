@@ -671,19 +671,6 @@ function SignalPathEvidence({
             />
           );
         })}
-        {/* Without this the lane can report a candidate, show no page row, and
-            report nothing withheld — three numbers a reader cannot reconcile. */}
-        {pageAccounting.suppressedByQueryChange !== null &&
-        pageAccounting.suppressedByQueryChange > 0 ? (
-          <p
-            data-page-suppressed
-            className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
-          >
-            {t("evidence.paths.pageSuppressed", {
-              count: pageAccounting.suppressedByQueryChange,
-            })}
-          </p>
-        ) : null}
       </PathTier>
 
       <PathTier title={t("evidence.paths.selectionTitle")}>
@@ -696,16 +683,24 @@ function SignalPathEvidence({
         >
           {t("evidence.paths.selectionRules")}
         </p>
-        {rowAccounting.notSelectedVisibleRows === null ? null : (
+        {/* Both populations, because the sentence is about the table and the
+            table holds both. Reading only the query count let the page print
+            "every row that formed a candidate appears above" while page
+            candidates were missing from it. */}
+        {rowAccounting.notSelectedVisibleRows === null &&
+        pageAccounting.notSelectedVisibleRows === null ? null : (
           <p
             data-selection-not-shown
             className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
           >
-            {rowAccounting.notSelectedVisibleRows === 0
-              ? t("evidence.paths.selectionAllShown")
-              : t("evidence.paths.selectionNotShown", {
-                  count: rowAccounting.notSelectedVisibleRows,
-                })}
+            {(() => {
+              const notShown =
+                (rowAccounting.notSelectedVisibleRows ?? 0) +
+                (pageAccounting.notSelectedVisibleRows ?? 0);
+              return notShown === 0
+                ? t("evidence.paths.selectionAllShown")
+                : t("evidence.paths.selectionNotShown", { count: notShown });
+            })()}
           </p>
         )}
       </PathTier>
@@ -828,9 +823,11 @@ export function DailyBriefingResults({
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
-  // A page change names a page but no query, so it is less precise than a
-  // query change and more precise than an observation. It takes its slot
-  // between them.
+  // Ordered by how narrowly each names its subject, which is not a ranking of
+  // how good the measurement is: a query change names one query on one page, a
+  // page change names every query on that page, and an observation names only
+  // where something currently sits. The two changes measure different
+  // populations and neither stands in for the other.
   const shownPageChanges = result.pageChanges.slice(
     0,
     Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
@@ -907,13 +904,18 @@ export function DailyBriefingResults({
   // never as the category total the display budget cut them down from.
   const queryEvidenceRead = result.queryWatchlist.candidates !== null;
   const provisionalCandidates = result.provisionalMoves.candidates ?? 0;
+  // Page changes are counted whether or not the query read succeeded: the two
+  // dimensions fail separately, and a run whose queries were unreadable can
+  // still put a page row in the table above this summary.
+  const foldPageChanges =
+    shownPageChanges.length > 0
+      ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
+      : null;
   const foldSummary = (
     queryEvidenceRead
       ? [
           t("evidence.foldChanges", { count: shownChanges.length }),
-          shownPageChanges.length > 0
-            ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
-            : null,
+          foldPageChanges,
           provisionalCandidates > 0
             ? t("evidence.foldProvisional", {
                 shown: shownProvisional.length,
@@ -928,6 +930,7 @@ export function DailyBriefingResults({
         ]
       : [
           t("evidence.foldQueryEvidenceUnavailable"),
+          foldPageChanges,
           t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
         ]
   )
