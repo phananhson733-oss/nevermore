@@ -2355,21 +2355,48 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
   it("separates rows no lane tested from rows a lane cleared", () => {
     const result = reducedRun();
 
+    // Written as literals per lane rather than a sum check: the three numbers
+    // are produced by subtraction from each other, so asserting that they add
+    // up proves only that subtraction works. These are hand-checkable against
+    // the fixture above.
     expect(result.rowAccounting.observedRows).toBe(6);
-    expect(result.rowAccounting.byLane?.actionable_position_decline).toEqual({
-      notEvaluated: 6,
-      evaluatedNoSignal: 0,
-      candidates: 0,
+    expect(result.rowAccounting.byLane).toEqual({
+      // Brand terms unconfirmed, so no row entered the CTR baseline.
+      click_opportunity: {
+        notEvaluated: 6,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      // No prior window carries the three clicks a decline needs.
+      stable_position_click_decline: {
+        notEvaluated: 6,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      // The two far-position queries pair at the floor and were asked.
+      average_position_crossed_page_one_band: {
+        notEvaluated: 4,
+        evaluatedNoSignal: 2,
+        candidates: 0,
+      },
+      // Neither paired query sits inside the top thirty in either window.
+      actionable_position_decline: {
+        notEvaluated: 6,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      // Two: `manual seo service` carries a page row at the floor, but its
+      // prior window is under the floor, so "this pair is new" could not be
+      // asked of it. Its landing page is withheld instead.
+      first_observed: {
+        notEvaluated: 4,
+        evaluatedNoSignal: 2,
+        candidates: 0,
+      },
     });
-    expect(
-      result.rowAccounting.byLane?.average_position_crossed_page_one_band,
-    ).toEqual({ notEvaluated: 4, evaluatedNoSignal: 2, candidates: 0 });
-    // Every lane accounts for every observed row exactly once.
-    for (const counts of Object.values(result.rowAccounting.byLane ?? {})) {
-      expect(
-        counts.notEvaluated + counts.evaluatedNoSignal + counts.candidates,
-      ).toBe(6);
-    }
+    expect(result.rowAccounting.notSelectedVisibleRows).toBe(0);
+    expect(result.signalFunnel.pageAttributionWithheld).toBe(1);
+    expect(result.limitations).toContain("query_page_coverage_below_floor");
   });
 
   it("discloses the observations the display budget left out", () => {

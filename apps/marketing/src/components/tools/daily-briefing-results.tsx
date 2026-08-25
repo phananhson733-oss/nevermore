@@ -631,7 +631,10 @@ function PathLine({
           {requirement}
         </p>
       )}
-      <p className="mt-1 max-w-4xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
+      <p
+        data-path-outcome
+        className="mt-1 max-w-4xl font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
+      >
         {outcome}
       </p>
     </div>
@@ -1519,9 +1522,16 @@ export function DailyBriefingResults({
                 changes: shownChanges.length,
                 provisional: shownProvisional.length,
                 trend: propertyChange === null ? 0 : 1,
-                shown: shownObservations.length,
-                candidates:
-                  result.queryWatchlist.candidates ?? shownObservations.length,
+                // A null candidate count means the rows were never read.
+                // Printing the shown count as the total would turn "we could
+                // not look" into "there was nothing there".
+                observations:
+                  result.queryWatchlist.candidates === null
+                    ? t("evidence.foldObservationsUnavailable")
+                    : t("evidence.foldObservationsShown", {
+                        shown: shownObservations.length,
+                        candidates: result.queryWatchlist.candidates,
+                      }),
               })}
             </span>
           </summary>

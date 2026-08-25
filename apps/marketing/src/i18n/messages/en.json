@@ -1894,7 +1894,7 @@
         "anonymizationTitle": "Search Console anonymization · current window",
         "anonymizationObserved": "{impressions} of property impressions and {clicks} of property clicks are absent from visible query rows.",
         "anonymizationUnavailable": "The withheld share is unavailable; it is not zero.",
-        "foldSummary": "{changes} query changes · {provisional} provisional position moves · {trend} site trend observations · {shown}/{candidates} observation candidates shown",
+        "foldSummary": "{changes} query changes · {provisional} provisional position moves · {trend} site trend observations · observation candidates {observations}",
         "paths": {
           "title": "Signal evaluation and suppression paths",
           "intro": "Each path stands on its own and the counts cannot be added together. The three tiers below are preconditions, evaluation paths, and attribution suppression.",
@@ -1937,11 +1937,13 @@
           },
           "pageAttribution": {
             "name": "Landing page withheld",
-            "observed": "{count} candidates had their landing page withheld because no single page carried enough coverage. The query-level signal survives.",
+            "observed": "{count} records had their landing page withheld because no single page carried enough comparable evidence. That affects page attribution and handoff only; a query-level signal that was already established survives.",
             "none": "No candidate had its landing page withheld this run.",
             "unavailable": "Page attribution evidence is unavailable, so the withheld count cannot be reported. It is not zero."
           }
-        }
+        },
+        "foldObservationsShown": "{shown}/{candidates} shown",
+        "foldObservationsUnavailable": "count unavailable (not zero)"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -2008,11 +2010,11 @@
         },
         "sitewide_click_observation": {
           "title": "Site-wide click move stays inside its own spread",
-          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. The move does not exceed the spread this sample size carries on its own, so it is recorded rather than called material."
+          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. Query and page evidence cannot attribute this site-wide move to a specific subject."
         },
         "sitewide_visibility_observation": {
           "title": "Site-wide impression move stays inside its own spread",
-          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. The move does not exceed the spread this sample size carries on its own, so it is recorded rather than called material."
+          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. Query and page evidence cannot attribute this site-wide move to a specific subject."
         }
       },
       "actions": {

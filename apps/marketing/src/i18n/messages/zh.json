@@ -1894,7 +1894,7 @@
         "anonymizationTitle": "Search Console 匿名化 · 当前窗口",
         "anonymizationObserved": "站点总曝光中有 {impressions}、总点击中有 {clicks} 没有出现在可见查询记录里。",
         "anonymizationUnavailable": "被隐藏占比不可得；它不等于 0。",
-        "foldSummary": "{changes} 条查询词变化 · {provisional} 条待确认位置移动 · {trend} 条站点趋势观察 · 观察候选展示 {shown}/{candidates} 条",
+        "foldSummary": "{changes} 条查询词变化 · {provisional} 条待确认位置移动 · {trend} 条站点趋势观察 · 观察候选{observations}",
         "paths": {
           "title": "信号评估与抑制路径",
           "intro": "每条路径独立成立，数量不可相加。下面按前置条件、判断路径、归因抑制三层，逐条说明本轮走到了哪里。",
@@ -1937,11 +1937,13 @@
           },
           "pageAttribution": {
             "name": "承载页被隐去",
-            "observed": "有 {count} 条候选的承载页因单一页面覆盖率不足被隐去；查询词层面的信号仍然保留。",
+            "observed": "有 {count} 条记录因为没有单一页面承载足够的可比证据，被隐去了承载页。这只影响页面归因与交接，不影响查询词层面已经成立的信号。",
             "none": "本轮没有候选因页面覆盖率被隐去。",
             "unavailable": "页面归因证据不可得，因此无法统计被隐去的数量；它不等于 0。"
           }
-        }
+        },
+        "foldObservationsShown": "展示 {shown}/{candidates} 条",
+        "foldObservationsUnavailable": "数量不可得（不等于 0）"
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -2008,11 +2010,11 @@
         },
         "sitewide_click_observation": {
           "title": "站点点击变化仍在自身波动范围内",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。变化幅度没有超过这个样本量自身的波动，因此只作记录，不称为实质变化。"
+          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
         },
         "sitewide_visibility_observation": {
           "title": "站点曝光变化仍在自身波动范围内",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。变化幅度没有超过这个样本量自身的波动，因此只作记录，不称为实质变化。"
+          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
         }
       },
       "actions": {

@@ -466,7 +466,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     // this line replaces.
     expect(summary?.textContent).toContain("0 query changes");
     expect(summary?.textContent).toContain("1 site trend observations");
-    expect(summary?.textContent).toContain("0/8 observation candidates shown");
+    expect(summary?.textContent).toContain("observation candidates 0/8 shown");
     expect(summary?.textContent).not.toContain("below the threshold");
   });
 
@@ -743,7 +743,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(textOf("position-decline")).toContain(
       "12 not evaluated · 0 evaluated with no signal · 0 produced a candidate",
     );
-    expect(textOf("page-attribution")).toContain("5 candidates");
+    expect(textOf("page-attribution")).toContain("5 records");
   });
 
 });
@@ -871,6 +871,16 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(withheld?.textContent).toContain("2 far");
     // They cleared every threshold; the row budget is what dropped them.
     expect(withheld?.textContent).toContain("not below a threshold");
+  });
+
+  it("never prints an unread observation count as a total of zero", async () => {
+    const host = await renderResults(
+      envelope({ queryWatchlist: watchlist("unavailable") }),
+    );
+    const summary = host.querySelector("[data-evidence-fold-summary]");
+
+    expect(summary?.textContent).toContain("count unavailable (not zero)");
+    expect(summary?.textContent).not.toContain("0/0");
   });
 
   it("explains a current-window watchlist run in its own terms", async () => {

@@ -154,6 +154,8 @@ const REQUIRED_LEAF_PATHS = [
   "ctrLane.blockers.unknown",
   "ctrLane.confirmAndRerun",
   "evidence.foldSummary",
+  "evidence.foldObservationsShown",
+  "evidence.foldObservationsUnavailable",
   "review.title",
   "review.intro",
   "review.empty",
