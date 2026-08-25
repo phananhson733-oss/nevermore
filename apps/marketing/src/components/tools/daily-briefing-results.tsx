@@ -29,6 +29,7 @@ import type {
   DailyBriefingKpiComparison,
   DailyBriefingLaneCapability,
   DailyBriefingLaneState,
+  DailyBriefingPageLaneState,
   DailyBriefingMode,
   DailyBriefingObservationBand,
   DailyBriefingPageAccounting,
@@ -51,6 +52,14 @@ const EYEBROW =
   "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
 /** Query rows this page will show, changes and observations together. */
 const DISPLAY_ROW_LIMIT = 3;
+/**
+ * Page rows this page will show, counted apart from the query ones.
+ *
+ * A shared budget spent query-first let three query candidates hide every page
+ * measurement, which is the size of one population deciding the visibility of
+ * the other.
+ */
+const DISPLAY_PAGE_ROW_LIMIT = 2;
 const TABLE_HEADER =
   "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
 
@@ -666,7 +675,13 @@ function SignalPathEvidence({
               outcome={
                 state === "unavailable" || counts === null
                   ? t("evidence.paths.laneUnavailable")
-                  : t("evidence.paths.rowSplit", { ...counts })
+                  : // The split still applies to the rows it could read, so it
+                    // is printed beside the caveat rather than replaced by it.
+                    `${t("evidence.paths.rowSplit", { ...counts })}${
+                      state === "partially_readable"
+                        ? ` ${t("evidence.paths.lanePartiallyReadable")}`
+                        : ""
+                    }`
               }
             />
           );
@@ -683,26 +698,41 @@ function SignalPathEvidence({
         >
           {t("evidence.paths.selectionRules")}
         </p>
-        {/* Both populations, because the sentence is about the table and the
-            table holds both. Reading only the query count let the page print
-            "every row that formed a candidate appears above" while page
-            candidates were missing from it. */}
-        {rowAccounting.notSelectedVisibleRows === null &&
-        pageAccounting.notSelectedVisibleRows === null ? null : (
+        {/* One line per population, never their sum. The two accountings
+            count different things, so adding them invents a total that
+            measures neither — and a null on either side is not a zero on the
+            other. */}
+        {(
+          [
+            ["query", rowAccounting.notSelectedVisibleRows],
+            ["page", pageAccounting.notSelectedVisibleRows],
+          ] as const
+        ).map(([scope, notShown]) => (
           <p
-            data-selection-not-shown
+            key={scope}
+            data-selection-not-shown={scope}
             className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
           >
-            {(() => {
-              const notShown =
-                (rowAccounting.notSelectedVisibleRows ?? 0) +
-                (pageAccounting.notSelectedVisibleRows ?? 0);
-              return notShown === 0
-                ? t("evidence.paths.selectionAllShown")
-                : t("evidence.paths.selectionNotShown", { count: notShown });
-            })()}
+            {notShown === null
+              ? t(
+                  scope === "query"
+                    ? "evidence.paths.selectionUnavailableQuery"
+                    : "evidence.paths.selectionUnavailablePage",
+                )
+              : notShown === 0
+                ? t(
+                    scope === "query"
+                      ? "evidence.paths.selectionAllShownQuery"
+                      : "evidence.paths.selectionAllShownPage",
+                  )
+                : t(
+                    scope === "query"
+                      ? "evidence.paths.selectionNotShownQuery"
+                      : "evidence.paths.selectionNotShownPage",
+                    { count: notShown },
+                  )}
           </p>
-        )}
+        ))}
       </PathTier>
 
       <PathTier title={t("evidence.paths.tiers.suppression")}>
@@ -740,7 +770,7 @@ function PathLine({
   readonly finding: string | null;
   readonly outcome: string;
   readonly requirement: string | null;
-  readonly state: DailyBriefingLaneState;
+  readonly state: DailyBriefingLaneState | DailyBriefingPageLaneState;
 }) {
   return (
     <div
@@ -823,24 +853,17 @@ export function DailyBriefingResults({
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
-  // Ordered by how narrowly each names its subject, which is not a ranking of
-  // how good the measurement is: a query change names one query on one page, a
-  // page change names every query on that page, and an observation names only
-  // where something currently sits. The two changes measure different
-  // populations and neither stands in for the other.
-  const shownPageChanges = result.pageChanges.slice(
-    0,
-    Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
-  );
+  // Its own budget, not what the query rows left over. Allocating page
+  // evidence from query leftovers made the number of query candidates decide
+  // whether a page measurement was visible at all, which is one population
+  // ranked by the size of the other.
+  const shownPageChanges = result.pageChanges.slice(0, DISPLAY_PAGE_ROW_LIMIT);
   // Provisional moves name a movement, so they outrank rows that only name a
   // position. The engine already applies this budget; the page applies it
   // again so no contract change can put a fourth row on screen.
   const shownProvisional = result.provisionalMoves.items.slice(
     0,
-    Math.max(
-      0,
-      DISPLAY_ROW_LIMIT - shownChanges.length - shownPageChanges.length,
-    ),
+    Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
   );
   const watchlistItems =
     result.queryWatchlist.evidence === "observed"
@@ -850,10 +873,7 @@ export function DailyBriefingResults({
     0,
     Math.max(
       0,
-      DISPLAY_ROW_LIMIT -
-        shownChanges.length -
-        shownPageChanges.length -
-        shownProvisional.length,
+      DISPLAY_ROW_LIMIT - shownChanges.length - shownProvisional.length,
     ),
   );
   const withheldObservations = Math.max(
@@ -907,6 +927,13 @@ export function DailyBriefingResults({
   // Page changes are counted whether or not the query read succeeded: the two
   // dimensions fail separately, and a run whose queries were unreadable can
   // still put a page row in the table above this summary.
+  // "0 site trend observations" is a measurement. A weekly comparison that
+  // could not be read did not measure zero of them, and `propertyTrend.change`
+  // is null in both cases.
+  const foldTrend =
+    result.weekly.evidence === "observed"
+      ? t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 })
+      : t("evidence.foldTrendUnavailable");
   const foldPageChanges =
     shownPageChanges.length > 0
       ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
@@ -922,7 +949,7 @@ export function DailyBriefingResults({
                 candidates: provisionalCandidates,
               })
             : null,
-          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          foldTrend,
           t("evidence.foldObservationsShown", {
             shown: shownObservations.length,
             candidates: result.queryWatchlist.candidates ?? 0,
@@ -931,7 +958,7 @@ export function DailyBriefingResults({
       : [
           t("evidence.foldQueryEvidenceUnavailable"),
           foldPageChanges,
-          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          foldTrend,
         ]
   )
     .filter((part): part is string => part !== null)
@@ -1781,9 +1808,13 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
+            {/* Numbered from one again. A single sequence running through
+                query, page and property actions reads as one priority order
+                over three different populations, and nothing measured says a
+                query action outranks a page one. Each group orders itself. */}
             {pageActions.map(({ action, change }, index) => {
               const target = destination(action.destination);
-              const rank = queryActions.length + index + 1;
+              const rank = index + 1;
               return (
                 <article
                   key={`page-action:${action.kind}:${action.page}`}
@@ -1847,18 +1878,18 @@ export function DailyBriefingResults({
               <article
                 data-action-row
                 data-property-action
-                data-action-rank={queryActions.length + pageActions.length + 1}
+                data-action-rank={1}
                 className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-3.5">
                   <span
                     data-action-rank-badge
                     aria-label={t("actions.rank", {
-                      rank: queryActions.length + pageActions.length + 1,
+                      rank: 1,
                     })}
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
                   >
-                    {queryActions.length + pageActions.length + 1}
+                    {1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="text-[16px] font-semibold text-text-dark-primary">

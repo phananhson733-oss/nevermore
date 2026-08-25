@@ -789,7 +789,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     ];
     // Asserted, not assumed: a loop over a selector that stopped matching
     // would otherwise pass by making no assertion at all.
-    expect(outcomes).toHaveLength(9);
+    // Seven lane outcomes plus the two per-population selection lines.
+    expect(outcomes).toHaveLength(11);
     for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
@@ -1104,8 +1105,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rules?.textContent).toContain("at most three query rows");
     expect(rules?.textContent).toContain("gives up its place");
     expect(
-      host.querySelector("[data-selection-not-shown]")?.textContent,
-    ).toContain("4 rows formed candidates");
+      host.querySelector('[data-selection-not-shown="query"]')?.textContent,
+    ).toContain("4 further query records");
   });
 
   it("counts one withheld sample-building row with singular grammar", async () => {
@@ -1417,7 +1418,10 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const propertyAction = host.querySelector("[data-property-action]");
 
     expect(propertyAction).not.toBeNull();
-    expect(propertyAction?.getAttribute("data-action-rank")).toBe("2");
+    // Each group orders itself. A sequence running 1, 2, 3 through query,
+    // page and property actions would read as one priority order over three
+    // different populations, and nothing measured supports that ordering.
+    expect(propertyAction?.getAttribute("data-action-rank")).toBe("1");
     expect(host.querySelector("[data-site-trend]")).not.toBeNull();
     expect(
       host.querySelector("[data-evidence-fold-summary]")?.textContent,
@@ -1842,14 +1846,45 @@ describe("DailyBriefingResults folded explanation", () => {
         queryWatchlist: watchlist("observed"),
       }),
     );
-    const line = host.querySelector("[data-selection-not-shown]");
+    const queryLine = host.querySelector('[data-selection-not-shown="query"]');
+    const pageLine = host.querySelector('[data-selection-not-shown="page"]');
 
-    // Reading only the query count let this line say every candidate is above
-    // while two page candidates were missing from the table.
-    expect(line?.textContent).toContain("2");
-    expect(line?.textContent).not.toBe(
-      en.tools.dailyBriefing.evidence.paths.selectionAllShown,
+    // One line per population, never their sum: the query side really did show
+    // everything, and the page side did not.
+    expect(queryLine?.textContent).toBe(
+      en.tools.dailyBriefing.evidence.paths.selectionAllShownQuery,
     );
+    expect(pageLine?.textContent).toContain("2 further page records");
+  });
+
+  it("withholds a not-shown count it could not measure, on either side", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: null }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 2,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(2, 0, 0),
+            page_first_observed: laneRows(2, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    // A null on one side is not a zero on the other, and summing them produced
+    // an exact-looking total out of one unknown.
+    expect(
+      host.querySelector('[data-selection-not-shown="query"]')?.textContent,
+    ).toBe(en.tools.dailyBriefing.evidence.paths.selectionUnavailableQuery);
+    expect(
+      host.querySelector('[data-selection-not-shown="page"]')?.textContent,
+    ).toBe(en.tools.dailyBriefing.evidence.paths.selectionAllShownPage);
   });
 
   it("names a row it could not read rather than shrinking the denominator", async () => {
@@ -1882,8 +1917,8 @@ describe("DailyBriefingResults folded explanation", () => {
     const intro = host.querySelector("[data-page-rows-intro]");
     const paths = host.querySelector("[data-signal-paths]");
 
-    expect(intro?.textContent).toContain("5 pages in the current window");
-    expect(intro?.textContent).toContain("2 of them came back unreadable");
+    expect(intro?.textContent).toContain("5 page records returned");
+    expect(intro?.textContent).toContain("2 of them carried no usable value");
     expect(intro?.textContent).toContain("neither path evaluated them");
     // And the lanes must carry them, not just the sentence above: an
     // unreadable row is a row neither lane could ask about.
@@ -1892,6 +1927,48 @@ describe("DailyBriefingResults folded explanation", () => {
         paths?.querySelector(`[data-signal-path="${id}"]`)?.textContent,
       ).toContain("5 not evaluated");
     }
+  });
+
+  it("withholds the site-trend count when the weekly comparison was unread", async () => {
+    const base = envelope();
+    const host = await renderResults({
+      ...base,
+      result: {
+        ...base.result,
+        weekly: { ...base.result.weekly, evidence: "unavailable" },
+        propertyTrend: { change: null, action: null, noiseFloor: null },
+        queryWatchlist: watchlist("observed"),
+      },
+    });
+    const summary = host.querySelector("[data-evidence-fold-summary]");
+
+    // "0 site trend observations" is a measurement. A weekly comparison that
+    // could not be read did not measure zero of them, and the trend is null in
+    // both cases.
+    expect(summary?.textContent).toContain(
+      en.tools.dailyBriefing.evidence.foldTrendUnavailable,
+    );
+    expect(summary?.textContent).not.toContain("0 site trend observation");
+  });
+
+  it("orders each action group from one instead of ranking across them", async () => {
+    const source = change("click_opportunity", 1);
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [action(source, "seo-quick-wins")],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        propertyTrend: propertyTrend(),
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const ranks = [
+      ...host.querySelectorAll<HTMLElement>("[data-action-row]"),
+    ].map((row) => row.getAttribute("data-action-rank"));
+
+    // Three actions over three populations, each numbered within its own.
+    expect(ranks).toEqual(["1", "1", "1"]);
   });
 
   it("names a page change as a whole page instead of inventing a query", async () => {

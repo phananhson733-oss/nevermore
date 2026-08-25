@@ -43,6 +43,7 @@ import type {
   DailyBriefingPageAction,
   DailyBriefingPageChange,
   DailyBriefingPageChangeKind,
+  DailyBriefingPageLaneState,
   DailyBriefingPropertyActionKind,
   DailyBriefingPropertyChangeKind,
   DailyBriefingPropertyTrend,
@@ -68,6 +69,15 @@ export const BRIEFING_MATERIAL_CHANGE_RATIO = 0.15;
 export const BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE = 3;
 export const BRIEFING_STABLE_POSITION_DELTA = 0.5;
 export const DAILY_BRIEFING_ACTION_LIMIT = 3;
+/**
+ * Page rows a briefing will carry, counted apart from the query ones.
+ *
+ * Page and query rows are different populations. Taking page rows out of what
+ * the query rows left over let the number of query candidates decide whether a
+ * page measurement was visible, which is one population ranked by the size of
+ * the other.
+ */
+export const DAILY_BRIEFING_PAGE_LIMIT = 2;
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
@@ -1753,7 +1763,7 @@ interface PageCandidateSet {
   readonly pageFloorRows: number;
   readonly pairedPageRows: number;
   readonly lanes: Readonly<
-    Record<DailyBriefingPageChangeKind, DailyBriefingLaneState>
+    Record<DailyBriefingPageChangeKind, DailyBriefingPageLaneState>
   >;
   readonly byLane: Readonly<
     Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
@@ -1764,9 +1774,15 @@ function pageLaneState(
   capable: number,
   readableRows: number,
   unreadableRows: number,
-): DailyBriefingLaneState {
+): DailyBriefingPageLaneState {
   if (capable > 0) return "evaluated";
+  // Nothing readable at all: we could not look.
   if (readableRows === 0 && unreadableRows > 0) return "unavailable";
+  // Some readable, some not: the lane judged what it could read and cannot
+  // speak for the rest. Calling that "not applicable" would assert the
+  // property has nothing this lane could ever measure, which these rows did
+  // not establish.
+  if (unreadableRows > 0) return "partially_readable";
   return "not_applicable";
 }
 
@@ -1798,6 +1814,13 @@ function pageCandidatesFor(
   const currentRows = currentSet.rows;
   const previousByPage = new Map(priorSet.rows.map((row) => [row.page, row]));
 
+  // Absence is the one claim an unattributable prior record can break for
+  // every page at once: a row that named no page could have been any of them.
+  // The comparison lane is unaffected — it needs a matching prior row and
+  // simply will not find one.
+  const priorAbsenceProvable =
+    priorSet.blank === 0 &&
+    (previousEvidence?.pageRead?.unreadableRows ?? 0) === 0;
   const declines: PageCandidate[] = [];
   const firstObserved: PageCandidate[] = [];
   let pageFloorRows = 0;
@@ -1821,6 +1844,7 @@ function pageCandidatesFor(
     // calling that "first observed" would be a different claim than the one
     // this lane is allowed to make.
     if (previous === undefined || previous.impressions === 0) {
+      if (!priorAbsenceProvable) continue;
       firstObservedCapableRows += 1;
       if (withinActionableBand(current.position)) {
         firstObserved.push({
@@ -1909,9 +1933,14 @@ function pageCandidatesFor(
   // Current-window rows we could not read still happened. Leaving them out of
   // the denominator made "0 of 0 rows" out of a window that returned one, and
   // made an unreadable page indistinguishable from an absent one.
-  const observedRows =
-    currentRows.length + currentSet.unusable.size + currentSet.blank;
-  const unreadableCurrentRows = currentSet.unusable.size + currentSet.blank;
+  // Every record the window returned, however far it got. Rows the reader
+  // could not map are included through `pageRead.unreadableRows`, because a
+  // record erased before the report saw it still arrived.
+  const unreadableCurrentRows =
+    currentSet.unusable.size +
+    currentSet.blank +
+    (currentEvidence?.pageRead?.unreadableRows ?? 0);
+  const observedRows = currentRows.length + unreadableCurrentRows;
   return {
     // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
     // relies on a stable sort to keep each lane's own magnitude order.
@@ -1934,7 +1963,11 @@ function pageCandidatesFor(
       page_first_observed: pageLaneState(
         firstObservedCapableRows,
         currentRows.length,
-        unreadableCurrentRows,
+        unreadableCurrentRows +
+          (priorAbsenceProvable
+            ? 0
+            : priorSet.blank +
+              (previousEvidence?.pageRead?.unreadableRows ?? 0)),
       ),
     },
     // Both lanes carry the unreadable rows in `notEvaluated`, which is what
@@ -2363,17 +2396,12 @@ export function buildDailyBriefing(
   });
   const mode = modeFor(capabilityCounts, pageCandidateSet);
 
-  // Three rows is the whole display budget and the page lanes share it. The
-  // order is how narrowly each names its subject, not which measurement is
-  // better: a query change names one query on a page, a page change names
-  // every query on that page, and neither represents the other.
+  // The page lanes have their own budget, so no count of query candidates can
+  // decide whether a page measurement is shown.
   const pageSelection =
     pageCandidateSet === null
       ? { changes: [], actions: [], eligible: 0 }
-      : selectPageChanges(
-          pageCandidateSet.candidates,
-          Math.max(0, DAILY_BRIEFING_ACTION_LIMIT - changes.length),
-        );
+      : selectPageChanges(pageCandidateSet.candidates, DAILY_BRIEFING_PAGE_LIMIT);
   const pageChanges: readonly DailyBriefingPageChange[] = pageSelection.changes;
   const pageActions: readonly DailyBriefingPageAction[] = pageSelection.actions;
   const pageAccounting: DailyBriefingPageAccounting =
@@ -2409,7 +2437,7 @@ export function buildDailyBriefing(
   // whatever survives both.
   const provisionalBudget = Math.max(
     0,
-    DAILY_BRIEFING_ACTION_LIMIT - changes.length - pageChanges.length,
+    DAILY_BRIEFING_ACTION_LIMIT - changes.length,
   );
   // A query the page is about to report as a change is not also provisional:
   // the same query would hold an action while the provisional note under it

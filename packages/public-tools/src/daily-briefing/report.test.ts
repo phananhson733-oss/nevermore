@@ -130,6 +130,7 @@ function evidence(
     readonly previousPageTruncated?: boolean;
     readonly pageAggregation?: string | null;
     readonly previousPageAggregation?: string | null;
+    readonly pageUnreadable?: number;
   } = {},
 ) {
   const totals = options.totals === undefined
@@ -163,6 +164,7 @@ function evidence(
         ? null
         : {
             rows: options.pages,
+            unreadableRows: options.pageUnreadable ?? 0,
             paging: {
               pagesFetched: 1,
               truncated: options.pageTruncated ?? false,
@@ -3104,6 +3106,8 @@ function pageReport(
     readonly previousPageTruncated?: boolean;
     readonly pageAggregation?: string | null;
     readonly previousPageAggregation?: string | null;
+    readonly pageUnreadable?: number;
+    readonly previousPageUnreadable?: number;
   } = {},
 ) {
   return report({
@@ -3118,6 +3122,9 @@ function pageReport(
         ...(overrides.pageAggregation === undefined
           ? {}
           : { pageAggregation: overrides.pageAggregation }),
+        ...(overrides.pageUnreadable === undefined
+          ? {}
+          : { pageUnreadable: overrides.pageUnreadable }),
       },
     ),
     previousQueryEvidence: evidence(
@@ -3131,6 +3138,9 @@ function pageReport(
         ...(overrides.previousPageAggregation === undefined
           ? {}
           : { pageAggregation: overrides.previousPageAggregation }),
+        ...(overrides.previousPageUnreadable === undefined
+          ? {}
+          : { pageUnreadable: overrides.previousPageUnreadable }),
       },
     ),
     brandTermsConfirmed: true,
@@ -3352,6 +3362,46 @@ describe("page dimension lanes", () => {
     expect(result.pageChanges).toMatchObject([
       { kind: "page_first_observed", page: PAGE },
     ]);
+  });
+
+  it("cannot prove a page is new when a prior record named no page at all", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow("https://example.com/other", 300, 2, 12)],
+      // One prior record the reader could not attribute. It could have been
+      // any page, this one included, so absence stops being provable for all
+      // of them — and no count added later can recover a row erased upstream.
+      { previousPageUnreadable: 1 },
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_first_observed).toBe(
+      "partially_readable",
+    );
+  });
+
+  it("counts a record the reader could not map at all", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 0, 0, 0)],
+      { pageUnreadable: 2 },
+    );
+
+    expect(result.pageAccounting.observedRows).toBe(3);
+    expect(result.pageAccounting.unreadableRows).toBe(2);
+  });
+
+  it("says it partly could not look when only some rows were unreadable", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 80, 2, 12), pageRow("https://example.com/b", 100, 400, 9)],
+      [pageRow(PAGE, 300, 5, 9)],
+    );
+
+    // One readable row that cleared no gate, one unreadable. Neither "nothing
+    // this lane could ever measure" nor "we could not look" is true of that.
+    expect(result.laneCapability.pageLanes.page_click_decline).toBe(
+      "partially_readable",
+    );
   });
 
   it("says it could not look when every page row was unreadable", () => {
@@ -3620,7 +3670,42 @@ describe("page changes beside query changes", () => {
     ]);
   });
 
-  it("shares the three-row display budget with the query changes", () => {
+  it("keeps page rows out of the query budget entirely", () => {
+    const queries = ["alpha term", "beta term", "gamma term"];
+    const currentQueries = queries.map((q) => queryRow(q, 400, 2, 12));
+    const previousQueries = queries.map((q) => queryRow(q, 400, 20, 12));
+    const queryPages = (rows: readonly ReturnType<typeof queryRow>[]) =>
+      rows.map((row, index) =>
+        queryPageRow(
+          row.query,
+          `https://example.com/q${index}`,
+          row.impressions,
+          row.clicks,
+          row.position,
+        ),
+      );
+    const pages = Array.from({ length: 2 }, (_, index) =>
+      pageRow(`https://example.com/p${index}`, 380, 8, 9.4),
+    );
+    const previousPages = Array.from({ length: 2 }, (_, index) =>
+      pageRow(`https://example.com/p${index}`, 400, 20, 9.1),
+    );
+    const result = pageReport(pages, previousPages, {
+      currentQueries,
+      previousQueries,
+      currentQueryPages: queryPages(currentQueries),
+      previousQueryPages: queryPages(previousQueries),
+    });
+
+    // Three query changes fill the query budget. Taking page rows out of what
+    // the query rows left over made the count of query candidates decide
+    // whether a page measurement was visible at all.
+    expect(result.changes).toHaveLength(3);
+    expect(result.pageChanges).toHaveLength(2);
+    expect(result.pageAccounting.notSelectedVisibleRows).toBe(0);
+  });
+
+  it("caps its own budget and says how many it left out", () => {
     const pages = Array.from({ length: 4 }, (_, index) =>
       pageRow(`https://example.com/p${index}`, 380, 8, 9.4),
     );
@@ -3629,8 +3714,8 @@ describe("page changes beside query changes", () => {
     );
     const result = pageReport(pages, previous, pairedQueryDecline());
 
-    expect(result.changes).toHaveLength(1);
-    // One slot spent on the query change leaves two, not three.
+    // Its own limit of two, whatever the query side did, and the remainder is
+    // reported rather than dropped.
     expect(result.pageChanges).toHaveLength(2);
     expect(result.pageAccounting.notSelectedVisibleRows).toBe(2);
   });

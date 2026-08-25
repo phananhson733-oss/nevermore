@@ -1883,7 +1883,7 @@
       },
       "review": {
         "title": "Queries and pages to review today",
-        "intro": "Strict changes appear first; observation-only rows fill the remaining space. At most three real query/page rows are shown.",
+        "intro": "Strict changes first, with observation-only records filling what is left; at most three query records, plus up to two page-dimension records of their own.",
         "empty": "No strict change or query observation reached the available display floors in this run. That is not proof that nothing changed.",
         "partial": "The query read is partial, so a property-wide watchlist cannot be ranked from the observed prefix.",
         "unavailable": "Comparable query/page evidence is unavailable, so no watchlist was inferred and no missing count was shown as zero.",
@@ -1931,7 +1931,7 @@
         },
         "priorBelowFloor": "prior window too small",
         "pageScope": "Whole page, across every query",
-        "pageNotObserved": "No comparable prior window"
+        "pageNotObserved": "No comparable page record in the prior window"
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -1996,9 +1996,7 @@
           },
           "laneFinding": "Hits when: {finding}",
           "selectionTitle": "What happens after a candidate forms",
-          "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows. If all three selected rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
-          "selectionNotShown": "{count, plural, one {# row formed a candidate} other {# rows formed candidates}} this run without appearing in the table above.",
-          "selectionAllShown": "Every row that formed a candidate this run appears in the table above.",
+          "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows; page rows have their own budget of at most two and do not compete for those slots. If all three selected query rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
           "pageUnavailable": "The page dimension returned nothing usable this run, so the two paths below did not run.",
           "pageLanes": {
             "pageClickDecline": {
@@ -2012,8 +2010,15 @@
               "finding": "Current average position sits inside the actionable band of 30 or better"
             }
           },
-          "pageRowsIntro": "{rows} pages in the current window, counted once each by URL. These and the query rows above are two separate populations and do not add together.",
-          "pageUnreadableRows": "{count} of them came back unreadable, so neither path evaluated them. That is not the same as their not being there."
+          "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
+          "pageUnreadableRows": "{count} of them carried no usable value — no page identifier, or figures that contradict each other — so neither path evaluated them. That is not the same as their not being there.",
+          "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
+          "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
+          "selectionAllShownPage": "Every page record that formed a candidate this run appears in the table above.",
+          "selectionNotShownPage": "{count} further page records formed a candidate and are not shown.",
+          "selectionUnavailableQuery": "The query-record candidate split could not be read this run, so no not-shown count is reported.",
+          "selectionUnavailablePage": "The page-record candidate split could not be read this run, so no not-shown count is reported.",
+          "lanePartiallyReadable": "Some page records could not be read this run. This path judged the ones it could read and cannot speak for the rest."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
@@ -2021,7 +2026,8 @@
         "foldProvisional": "{shown}/{candidates} provisional position moves shown",
         "foldTrend": "{count, plural, one {# site trend observation} other {# site trend observations}}",
         "foldQueryEvidenceUnavailable": "query evidence unavailable, so change and observation counts are unavailable (not zero)",
-        "foldPageChanges": "{count, plural, one {# page-dimension change} other {# page-dimension changes}}"
+        "foldPageChanges": "{count, plural, one {# page-dimension change} other {# page-dimension changes}}",
+        "foldTrendUnavailable": "site trend not readable this run, no observation count reported"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -2240,7 +2246,7 @@
         "title": "No evidence of change, still worth a look",
         "intro": "These entries come from the rows already shown above. They say where these queries currently sit and nothing more: no change is claimed, and none of them is an evidence-backed action.",
         "evidence": "Current standing, not evidence of change",
-        "notCheckable": "Another {count} shown rows carry no check: either the page could not be attributed, or the current position is far enough back that nothing done to the page this week changes the outcome."
+        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, the current position is far enough back that nothing done to the page this week changes the outcome, or the page already appears in an action above."
       }
     },
     "trafficDrop": {

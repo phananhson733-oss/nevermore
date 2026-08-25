@@ -47,6 +47,16 @@ export interface GscQueryPageRow {
 
 interface PagedRead<T> {
   readonly rows: readonly T[];
+  /**
+   * Rows the response carried that `map` could not turn into a row.
+   *
+   * Dropping them silently made a response that returned records reach the
+   * caller as an empty read, and no count added downstream can recover a row
+   * erased here. A caller that reports totals has to be able to say "the
+   * window returned records I could not read" instead of "the window was
+   * empty".
+   */
+  readonly unreadableRows: number;
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
 }
@@ -68,6 +78,7 @@ async function readPaged<T>(
   aggregationType?: GscAggregationType,
 ): Promise<PagedRead<T>> {
   const rows: T[] = [];
+  let unreadableRows = 0;
   let pagesFetched = 0;
   let truncated = false;
   let responseAggregationType: string | null = null;
@@ -99,14 +110,23 @@ async function readPaged<T>(
 
     for (const raw of response.rows) {
       const mapped = map(raw.keys, raw);
-      if (mapped !== null) rows.push(mapped);
+      if (mapped === null) {
+        unreadableRows += 1;
+        continue;
+      }
+      rows.push(mapped);
     }
 
     if (response.rows.length < GSC_ROW_LIMIT) break;
     if (page === pageCap - 1) truncated = true;
   }
 
-  return { rows, paging: { pagesFetched, truncated }, responseAggregationType };
+  return {
+    rows,
+    unreadableRows,
+    paging: { pagesFetched, truncated },
+    responseAggregationType,
+  };
 }
 
 /**

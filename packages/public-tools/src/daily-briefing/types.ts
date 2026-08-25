@@ -79,6 +79,20 @@ export type DailyBriefingLaneState =
   | "not_applicable"
   | "unavailable";
 
+/**
+ * A page lane's state, which has one more case than a query lane's.
+ *
+ * `not_applicable` asserts the property has nothing this lane could ever
+ * measure. A window that returned records this run could not read has not
+ * established that, and neither has it established "we could not look" while
+ * other records in the same window were read and judged. `partially_readable`
+ * is that middle: the lane ran on what it could read and cannot speak for the
+ * rest.
+ */
+export type DailyBriefingPageLaneState =
+  | DailyBriefingLaneState
+  | "partially_readable";
+
 /** Why the CTR opportunity lane could not run, in the operator's terms. */
 export type DailyBriefingCtrLaneBlocker =
   | "brand_terms_not_confirmed"
@@ -141,6 +155,8 @@ export interface DailyBriefingQueryPageRead {
 
 export interface DailyBriefingPageRead {
   readonly rows: readonly GscPageRow[];
+  /** Records the response carried that could not be turned into a page row. */
+  readonly unreadableRows: number;
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
 }
@@ -381,7 +397,7 @@ export interface DailyBriefingLaneCapability {
   /** Current-window page rows that cleared the sample floor. */
   readonly pageFloorRows: number | null;
   readonly pageLanes: Readonly<
-    Record<DailyBriefingPageChangeKind, DailyBriefingLaneState>
+    Record<DailyBriefingPageChangeKind, DailyBriefingPageLaneState>
   >;
 }
 

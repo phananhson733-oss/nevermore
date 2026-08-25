@@ -604,6 +604,61 @@ describe("tool handoff storage", () => {
     ).toBe(false);
   });
 
+  it.each([
+    ["credentials", "sc-domain:user:pw@example.com"],
+    ["a path", "sc-domain:example.com/path"],
+    ["a query string", "sc-domain:example.com?x=1"],
+    ["a scheme", "sc-domain:https://example.com"],
+  ])("refuses an sc-domain property carrying %s", (_label, property) => {
+    const session = storage();
+
+    // Each of these contains a hostname. Reducing the string to the hostname
+    // buried in it accepts the property it merely resembles.
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property,
+        page: "https://example.com/guide",
+      }),
+    ).toBe(false);
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("keeps a double-encoded path distinct from the escape it contains", () => {
+    const session = storage();
+
+    // `decodeURI` over the whole path turns "/%252F/" into "/%2F/", so a page
+    // under a different path started matching. Only unreserved octets fold.
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property: "https://example.com/%252F/",
+        page: "https://example.com/%2F/team",
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["credentials", "https://user:pw@example.com/"],
+    ["a query string", "https://example.com/?x=1"],
+    ["a fragment", "https://example.com/#f"],
+    ["a malformed sc-domain", "sc-domain:example.com/oops"],
+  ])("refuses a property-scope handoff whose property carries %s", (
+    _label,
+    property,
+  ) => {
+    const session = storage();
+
+    // The scope that carries only the property is the last place that should
+    // skip checking it.
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...propertyPayload(),
+        property,
+      }),
+    ).toBe(false);
+  });
+
   it("binds the query_page scope to its property too", () => {
     const session = storage();
 

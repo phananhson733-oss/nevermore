@@ -1883,7 +1883,7 @@
       },
       "review": {
         "title": "今天需要看的查询词与页面",
-        "intro": "严格变化优先，剩余位置由仅供观察的记录补足；最多显示三条真实查询词/页面记录。",
+        "intro": "严格变化优先，剩余位置由仅供观察的记录补足；最多显示三条查询词记录，页面维度的记录另有最多两条。",
         "empty": "本次没有严格变化或查询观察达到当前展示门槛。这不等于证明没有发生变化。",
         "partial": "查询词读取只有部分前缀，不能据此生成代表整个站点的观察清单。",
         "unavailable": "可比的查询词/页面证据不可得，因此没有推断观察清单，也没有把缺失数量显示成 0。",
@@ -1931,7 +1931,7 @@
         },
         "priorBelowFloor": "上一窗口样本过小",
         "pageScope": "整个页面 · 跨全部查询词",
-        "pageNotObserved": "上一窗口无可比记录"
+        "pageNotObserved": "上一窗口无可比的页面记录"
       },
       "evidence": {
         "title": "为什么没有更多信号",
@@ -1996,9 +1996,7 @@
           },
           "laneFinding": "命中：{finding}",
           "selectionTitle": "形成候选之后还会发生什么",
-          "selectionRules": "同一个查询词只显示一条：多条路径同时命中时，按上面的路径顺序取最靠前的那条。整页最多三条查询词记录。如果选中的三条都没有承载页、而名额外还有一条能交接的候选，会让出其中最弱的一条给它。",
-          "selectionNotShown": "本轮有 {count} 条记录形成了候选但没有出现在上面的表里。",
-          "selectionAllShown": "本轮形成候选的记录都出现在了上面的表里。",
+          "selectionRules": "同一个查询词只显示一条：多条路径同时命中时，按上面的路径顺序取最靠前的那条。查询词记录整页最多三条；页面记录另有自己的名额（最多两条），不与查询词记录抢位置。如果选中的三条查询词记录都没有承载页、而名额外还有一条能交接的候选，会让出其中最弱的一条给它。",
           "pageUnavailable": "页面维度本轮没有读到可用数据，因此下面两条路径没有运行。",
           "pageLanes": {
             "pageClickDecline": {
@@ -2012,8 +2010,15 @@
               "finding": "当前平均展示位置在 30 以内的可行动区间内"
             }
           },
-          "pageRowsIntro": "本轮当前窗口共 {rows} 条页面记录（按 URL 去重后）。这与上面的查询记录是两个不同的统计总体，不能相加。",
-          "pageUnreadableRows": "其中 {count} 条本轮读回来了但读不出可用数值，两条路径都没有评估它们；这不等于它们不存在。"
+          "pageRowsIntro": "本轮当前窗口共返回 {rows} 条页面记录。这与上面的查询记录是两个不同的统计总体，不能相加。",
+          "pageUnreadableRows": "其中 {count} 条读不出可用数值（缺页面标识或数值自相矛盾），两条路径都没有评估它们；这不等于它们不存在。",
+          "selectionAllShownQuery": "本轮形成候选的查询记录都在上表里。",
+          "selectionNotShownQuery": "另有 {count} 条查询记录形成了候选但没有展示。",
+          "selectionAllShownPage": "本轮形成候选的页面记录都在上表里。",
+          "selectionNotShownPage": "另有 {count} 条页面记录形成了候选但没有展示。",
+          "selectionUnavailableQuery": "查询记录的候选分账本轮读不到，因此没有报告未展示数量。",
+          "selectionUnavailablePage": "页面记录的候选分账本轮读不到，因此没有报告未展示数量。",
+          "lanePartiallyReadable": "本轮有部分页面记录读不出来。这条路径只对读得出来的行做了判断，不能代表其余的行。"
         },
         "foldObservationsShown": "展示 {shown}/{candidates} 条观察候选",
         "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",
@@ -2021,7 +2026,8 @@
         "foldProvisional": "展示 {shown}/{candidates} 条待确认位置移动",
         "foldTrend": "{count, plural, other {# 条站点趋势观察}}",
         "foldQueryEvidenceUnavailable": "查询词证据不可得，变化与观察数量都不可得（不等于 0）",
-        "foldPageChanges": "{count, plural, other {# 条页面维度变化}}"
+        "foldPageChanges": "{count, plural, other {# 条页面维度变化}}",
+        "foldTrendUnavailable": "站点整体趋势本轮读不到，未报告观察数量"
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -2240,7 +2246,7 @@
         "title": "没有变化证据，但值得看一眼",
         "intro": "以下入口来自上方已经展示的记录。它们只说明这些查询词当前处在什么位置，不声称发生过任何变化，也不是有证据支持的动作。",
         "evidence": "当前位置观察 · 非变化证据",
-        "notCheckable": "另有 {count} 条已展示记录没有给出检查入口：要么缺页面归因，要么当前位置太靠后，本周对页面做什么都改变不了结果。"
+        "notCheckable": "另有 {count} 条已展示记录没有给出检查入口：要么缺页面归因，要么当前位置太靠后（本周对页面做什么都改变不了结果），要么该页面已经在上面的动作里了。"
       }
     },
     "trafficDrop": {

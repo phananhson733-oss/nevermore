@@ -130,20 +130,55 @@ function isPageDestination(
  * return such a pair, so refusing it costs nothing and closes the gap between
  * "this is a URL" and "this is a URL this property could have produced".
  */
-function decodedPath(pathname: string): string {
-  try {
-    return decodeURI(pathname);
-  } catch {
-    return pathname;
-  }
+/**
+ * Decode only the escapes that carry no meaning.
+ *
+ * `decodeURI` over the whole path is not injective: it turns `/%252F/` into
+ * `/%2F/`, so a property and a page whose serialized paths differ start
+ * comparing equal. RFC 3986 says a percent-encoded unreserved octet is
+ * equivalent to the character itself and nothing else is, so only those are
+ * folded.
+ */
+const UNRESERVED_ESCAPE = /%(?:2[DdEe]|3[0-9]|4[1-9A-Fa-f]|5[0-9Aa]|5[Ff]|6[1-9A-Fa-f]|7[0-9Aa]|7[Ee])/g;
+
+function canonicalPath(pathname: string): string {
+  return pathname.replace(UNRESERVED_ESCAPE, (escape) => {
+    const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+    return /[A-Za-z0-9\-._~]/.test(char) ? char : escape;
+  });
 }
+
+/** A Search Console domain property is a bare host and nothing else. */
+const BARE_HOSTNAME = /^[a-z0-9\u00a1-\uffff](?:[a-z0-9\-._\u00a1-\uffff]*[a-z0-9\u00a1-\uffff])?$/iu;
 
 function withoutRootDot(host: string): string {
   const lower = host.toLowerCase();
   return lower.endsWith(".") ? lower.slice(0, -1) : lower;
 }
 
+/** Whether the string is a Search Console property identifier at all. */
+function isProperty(property: string): boolean {
+  const trimmed = property.trim();
+  if (trimmed.startsWith("sc-domain:")) {
+    return BARE_HOSTNAME.test(trimmed.slice("sc-domain:".length).trim());
+  }
+  try {
+    const url = new URL(trimmed);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname !== "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 function pageBelongsToProperty(property: string, page: unknown): boolean {
+  if (!isProperty(property)) return false;
   if (!isSafeHttpPage(page)) return false;
   try {
     const url = new URL(page.trim());
@@ -154,7 +189,11 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
     const host = withoutRootDot(url.hostname);
     if (property.startsWith("sc-domain:")) {
       const raw = property.slice("sc-domain:".length).trim();
-      if (raw === "") return false;
+      // A bare host, checked before it is handed to `URL`. Otherwise
+      // `sc-domain:user:pw@example.com`, `sc-domain:example.com/path` and
+      // `sc-domain:example.com?x=1` all reduce to the hostname buried in them
+      // and are accepted as the property they merely contain.
+      if (!BARE_HOSTNAME.test(raw)) return false;
       const domain = withoutRootDot(new URL(`https://${raw}`).hostname);
       if (domain === "") return false;
       return host === domain || host.endsWith(`.${domain}`);
@@ -185,8 +224,8 @@ function pageBelongsToProperty(property: string, page: unknown): boolean {
     // Compared after decoding the escapes that carry no meaning, so `/%7Eteam`
     // and `/~team` are the one path they name. Decoding can throw on a
     // malformed escape; the raw forms are then compared instead.
-    const prefixPath = decodedPath(prefix.pathname);
-    const pagePath = decodedPath(url.pathname);
+    const prefixPath = canonicalPath(prefix.pathname);
+    const pagePath = canonicalPath(url.pathname);
     const base = prefixPath.endsWith("/") ? prefixPath : `${prefixPath}/`;
     return pagePath === prefixPath || pagePath.startsWith(base);
   } catch {
@@ -314,10 +353,16 @@ function hasValidPayloadFields(
     }
 
     if (value.scope === "property") {
+      // The property identifier is checked here too. Every other daily
+      // briefing scope proves the property parses before it uses it, and a
+      // scope that carries the property alone should not be the one that
+      // skips the check.
       return (
         isPropertyDestination(value.destination) &&
         value.query === null &&
-        value.page === null
+        value.page === null &&
+        typeof value.property === "string" &&
+        isProperty(value.property)
       );
     }
   }
