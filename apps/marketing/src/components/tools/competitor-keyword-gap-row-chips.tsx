@@ -1,11 +1,11 @@
 // @input  -- one v3 competitor gap row, the viewer locale, and the tool translator
-// @output -- competitor rank chips linked to known pages, and opportunity signal chips with a visible pre-screen basis
+// @output -- competitor rank chips linked to known pages, and opportunity signal chips with the pre-screen basis in the band chip title
 // @pos    -- stateless row cells for the Marketing competitor gap results table
 
 import type { CompetitorKeywordGapRow } from "@sf/public-tools/competitor-keyword-gap";
 
 import {
-  bestCompetitorTraffic,
+  bestCompetitorTrafficEstimate,
   competitorLink,
   snapshotDate,
 } from "./competitor-keyword-gap-competitor-pages";
@@ -67,52 +67,41 @@ export function SignalChips({
   const aiOverview =
     row.serpSnapshot?.itemTypes.includes("ai_overview") ?? false;
   const snapshotAt = snapshotDate(row.serpSnapshot?.updatedAt ?? null, locale);
-  const traffic = bestCompetitorTraffic(row);
+  const traffic = bestCompetitorTrafficEstimate(row);
   const basis = translated(t, `preScreen.basis.${row.preScreen.basis}`);
   const reason = translated(t, `preScreen.reason.${row.preScreen.reason}`);
   return (
-    <div>
-      <div className={`flex flex-wrap gap-2 ${META_TEXT}`}>
-        <span className={CHIP_TEXT}>
-          {t("signals.bestRank", { rank: row.bestCompetitorRank })}
-        </span>
-        <span className={CHIP_TEXT}>
-          {t("signals.difficulty", {
-            value:
-              row.keywordDifficulty.value === null
-                ? "—"
-                : number(row.keywordDifficulty.value, locale),
-          })}
-        </span>
-        <span
-          data-pre-screen={row.preScreen.band}
-          title={`${basis} ${reason}`}
-          className={CHIP_TEXT}
-        >
-          {translated(t, `preScreen.band.${row.preScreen.band}`)}
-        </span>
-        {aiOverview ? (
-          <span data-serp-snapshot="ai_overview" className={CHIP_TEXT}>
-            {snapshotAt === null
-              ? t("signals.aiOverviewSnapshotUndated")
-              : t("signals.aiOverviewSnapshot", { date: snapshotAt })}
-          </span>
-        ) : null}
-        {traffic !== null ? (
-          <span data-competitor-traffic className={CHIP_TEXT}>
-            {t("signals.competitorTraffic", {
-              value: number(traffic.value, locale),
-            })}{" "}
-            · {traffic.domain}
-          </span>
-        ) : null}
-      </div>
-      <div
-        data-pre-screen-reason
-        className={`mt-2 ${META_TEXT} text-text-dark-secondary`}
+    <div className={`flex flex-wrap gap-2 ${META_TEXT}`}>
+      <span className={CHIP_TEXT}>
+        {t("signals.bestRank", { rank: row.bestCompetitorRank })}
+      </span>
+      <span className={CHIP_TEXT}>
+        {t("signals.difficulty", {
+          value:
+            row.keywordDifficulty.value === null
+              ? "—"
+              : number(row.keywordDifficulty.value, locale),
+        })}
+      </span>
+      <span
+        data-pre-screen={row.preScreen.band}
+        title={`${basis} ${reason}`}
+        className={CHIP_TEXT}
       >
-        {basis} {reason}
-      </div>
+        {translated(t, `preScreen.band.${row.preScreen.band}`)}
+      </span>
+      {aiOverview ? (
+        <span data-serp-snapshot="ai_overview" className={CHIP_TEXT}>
+          {snapshotAt === null
+            ? t("signals.aiOverviewSnapshotUndated")
+            : t("signals.aiOverviewSnapshot", { date: snapshotAt })}
+        </span>
+      ) : null}
+      {traffic !== null ? (
+        <span data-competitor-traffic className={CHIP_TEXT}>
+          {t("signals.competitorTraffic", { value: number(traffic, locale) })}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -46,9 +46,6 @@ export function BandFilters({
       className="mb-4 flex flex-wrap items-center gap-2"
       data-pre-screen-filters
     >
-      <span className="mr-1 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
-        {t("preScreen.title")}
-      </span>
       {options.map(([value, count]) => (
         <button
           key={value}

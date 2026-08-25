@@ -254,8 +254,10 @@ describe.each([
     expect(host.textContent).toContain(expected.boundaries);
     expect(host.textContent).toContain(expected.manualSnapshot);
     expect(host.textContent).toContain(expected.preScreen);
-    // The pre-screen basis is visible row text now, not only a tooltip.
-    expect(host.textContent).toContain(expected.preScreenBasis);
+    expect(
+      host.querySelector("[data-pre-screen]")?.getAttribute("title"),
+    ).toContain(expected.preScreenBasis);
+    expect(host.textContent).not.toContain(expected.preScreenBasis);
     expect(host.textContent).toContain(expected.sampleRule);
     expect(host.textContent).not.toContain("tools.competitorKeywordGap");
     expect(host.textContent).not.toContain("preScreen.band");

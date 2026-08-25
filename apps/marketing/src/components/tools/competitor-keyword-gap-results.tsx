@@ -19,7 +19,7 @@ import {
   BandFilters,
   type BandFilter,
 } from "./competitor-keyword-gap-band-filters";
-import { bestCompetitorPage } from "./competitor-keyword-gap-competitor-pages";
+import { bestCompetitorPageUrl } from "./competitor-keyword-gap-competitor-pages";
 import {
   CoverageDetails,
   EvidenceBoundaries,
@@ -349,10 +349,8 @@ function ResultsTable({
   const visibleRows = expanded ? filteredRows : filteredRows.slice(0, 10);
   const remaining = Math.max(0, filteredRows.length - visibleRows.length);
 
-  /** A lane change also clears the band: lane chip counts are lane-only totals, so a kept band could show an empty table under a non-zero count. */
   function changeFilter(next: Filter): void {
     setFilter(next);
-    setBand("all");
     setExpanded(false);
     setActionError(null);
   }
@@ -515,7 +513,7 @@ function ResultsTable({
                 selectedProperty !== "" &&
                 row.gsc.pageStatus === "observed_sufficient";
               const canOpenPage = page !== null;
-              const competitorPage = bestCompetitorPage(row);
+              const competitorPageUrl = bestCompetitorPageUrl(row);
               return (
                 <tr
                   key={row.keyword}
@@ -624,17 +622,16 @@ function ResultsTable({
                               actionLabelKey(row, selectedProperty),
                             )}
                           </button>
-                          {competitorPage !== null ? (
+                          {competitorPageUrl !== null ? (
                             <a
                               data-row-action="open-competitor-page"
-                              href={competitorPage.url}
+                              href={competitorPageUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className={ACTION_BUTTON}
                               onClick={() => setActionError(null)}
                             >
-                              {t("actions.openCompetitorPage")} ·{" "}
-                              {competitorPage.domain}
+                              {t("actions.openCompetitorPage")}
                             </a>
                           ) : null}
                         </div>

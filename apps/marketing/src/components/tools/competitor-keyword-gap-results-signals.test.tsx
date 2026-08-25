@@ -86,13 +86,9 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     });
 
     const trafficChip = withTraffic.querySelector("[data-competitor-traffic]");
-    expect(trafficChip?.textContent).toContain(
+    expect(trafficChip?.textContent?.trim()).toBe(
       "signals.competitorTraffic:value=812",
     );
-    // The chip names the page's domain so it cannot be read as another
-    // competitor's page when the open-competitor-page link falls back.
-    expect(trafficChip?.textContent).toContain("alpha.example");
-    expect(trafficChip?.textContent).not.toContain("beta.example");
     expect(
       smallerTraffic.querySelector("[data-competitor-traffic]")?.textContent,
     ).toContain("signals.competitorTraffic:value=120");
@@ -152,27 +148,10 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(brandChip?.getAttribute("title")).toContain(
       "preScreen.reason.competitor_brand_token",
     );
-    // The basis qualifier and reason are visible text, not only a tooltip,
-    // so keyboard and touch users reach the "not winnability" caveat.
-    const prioritizedReason = tableRow(
-      host,
-      "prioritized keyword",
-    ).querySelector("[data-pre-screen-reason]");
-    const brandReason = tableRow(host, "alpha brand keyword").querySelector(
-      "[data-pre-screen-reason]",
-    );
-    expect(prioritizedReason?.textContent).toContain(
-      "preScreen.basis.dfs_estimate",
-    );
-    expect(prioritizedReason?.textContent).toContain(
-      "preScreen.reason.kd_low_rank_top10",
-    );
-    expect(brandReason?.textContent).toContain(
-      "preScreen.basis.tool_heuristic",
-    );
-    expect(brandReason?.textContent).toContain(
-      "preScreen.reason.competitor_brand_token",
-    );
+    // The basis and reason live in the chip title only; no row text repeats them.
+    expect(host.querySelector("[data-pre-screen-reason]")).toBeNull();
+    expect(host.textContent).not.toContain("preScreen.basis");
+    expect(host.textContent).not.toContain("preScreen.reason");
   });
 
   it("shows a dated AI Overview snapshot chip only when the snapshot lists it", async () => {
@@ -180,8 +159,8 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
       keyword: "undated snapshot",
       serpSnapshot: { itemTypes: ["ai_overview"], updatedAt: null },
     });
-    // The guard only pins updatedAt to string | null, so a provider format
-    // drift must read as "date given but unreadable", never as "undated".
+    // The guard only pins updatedAt to string | null; a provider format drift
+    // falls back to the undated label rather than throwing in the formatter.
     const unreadable = row(5, {
       keyword: "unreadable snapshot date",
       serpSnapshot: { itemTypes: ["ai_overview"], updatedAt: "not-a-date" },
@@ -215,11 +194,9 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
       "unreadable snapshot date",
     ).querySelector('[data-serp-snapshot="ai_overview"]');
     expect(unreadableChip?.textContent).toContain(
-      "signals.aiOverviewSnapshot:date=not-a-date",
-    );
-    expect(unreadableChip?.textContent).not.toContain(
       "signals.aiOverviewSnapshotUndated",
     );
+    expect(unreadableChip?.textContent).not.toContain("not-a-date");
   });
 
   it("offers the competitor page next to copy-keyword in the content-gap lane", async () => {
@@ -273,18 +250,18 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(open.getAttribute("href")).toBe("https://beta.example/best");
     expect(open.getAttribute("target")).toBe("_blank");
     expect(open.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(open.textContent).toContain("actions.openCompetitorPage");
-    expect(open.textContent).toContain("beta.example");
-    // The fallback opens a different competitor than the best-rank chip
-    // describes, so the link names its domain visibly.
+    expect(open.textContent?.trim()).toBe("actions.openCompetitorPage");
+    // The best-rank competitor has no page here, so the link falls back to
+    // any competitor page with a safe URL.
     const fallbackOpen = fallbackRow.querySelector(
       '[data-row-action="open-competitor-page"]',
     );
     expect(fallbackOpen?.getAttribute("href")).toBe(
       "https://alpha.example/fallback",
     );
-    expect(fallbackOpen?.textContent).toContain("alpha.example");
-    expect(fallbackOpen?.textContent).not.toContain("beta.example");
+    expect(fallbackOpen?.textContent?.trim()).toBe(
+      "actions.openCompetitorPage",
+    );
     expect(
       unknownRow.querySelector('[data-row-action="copy-keyword"]'),
     ).toBeInstanceOf(HTMLButtonElement);
@@ -386,7 +363,7 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 
-  it("resets the band filter when the lane changes so a lane chip's count always matches the visible rows", async () => {
+  it("keeps the pressed band when the lane changes and recounts bands within the lane", async () => {
     const brandGap = row(0, {
       keyword: "brand gap",
       preScreen: {
@@ -395,8 +372,16 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
         reason: "competitor_brand_token",
       },
     });
+    const prioritizedGap = row(1, {
+      keyword: "prioritized gap",
+      preScreen: {
+        band: "prioritize_serp_check",
+        basis: "dfs_estimate",
+        reason: "kd_low_rank_top10",
+      },
+    });
     const prioritizedOptimize = rowWithGsc(
-      1,
+      2,
       {
         queryStatus: "observed_weak",
         evidenceBasis: "query",
@@ -419,34 +404,29 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
       },
     );
     const host = await renderResults(
-      withResult({ rows: [brandGap, prioritizedOptimize] }),
+      withResult({ rows: [brandGap, prioritizedGap, prioritizedOptimize] }),
     );
-    const allBands = host.querySelector('[data-pre-screen-filter="all"]');
-    const brandBand = host.querySelector(
-      '[data-pre-screen-filter="defer_brand_navigational"]',
+    const prioritizedBand = host.querySelector(
+      '[data-pre-screen-filter="prioritize_serp_check"]',
     );
-    const optimizeLane = host.querySelector(
-      '[data-next-step-filter="optimize_existing"]',
+    const contentGapLane = host.querySelector(
+      '[data-next-step-filter="review_content_gap"]',
     );
 
-    await click(brandBand);
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
-    expect(host.querySelector("tbody tr")?.textContent).toContain("brand gap");
-
-    // The optimize lane advertises 1 row and none of them is in the pressed
-    // band; without the reset the table would render empty with no message.
-    expect(optimizeLane?.textContent).toContain(
-      "filters.optimize_existing · 1",
-    );
-    await click(optimizeLane);
+    // Band first, then lane: the intersection holds in either click order.
+    await click(prioritizedBand);
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
+    await click(contentGapLane);
+    expect(prioritizedBand?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(host.querySelector("tbody tr")?.textContent).toContain(
-      "prioritized optimize",
+      "prioritized gap",
     );
-    expect(allBands?.getAttribute("aria-pressed")).toBe("true");
-    expect(brandBand?.getAttribute("aria-pressed")).toBe("false");
-    expect(brandBand?.textContent).toContain(
-      "preScreen.band.defer_brand_navigational · 0",
+    expect(prioritizedBand?.textContent).toContain(
+      "preScreen.band.prioritize_serp_check · 1",
+    );
+    expect(contentGapLane?.textContent).toContain(
+      "filters.review_content_gap · 2",
     );
   });
 

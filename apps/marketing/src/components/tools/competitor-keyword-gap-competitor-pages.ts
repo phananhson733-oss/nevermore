@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap row and the viewer locale
-// @output -- rank-ordered competitor pages, the best safe page link, its traffic estimate, and the snapshot date label
+// @output -- rank-ordered competitor pages, the best safe page URL, the best-rank traffic estimate, and the snapshot date label
 // @pos    -- pure row derivations shared by the competitor gap chips and results table
 
 import type {
@@ -8,9 +8,6 @@ import type {
 } from "@sf/public-tools/competitor-keyword-gap";
 
 import { safePageUrl } from "./competitor-keyword-gap-results-shared";
-
-/** Bounds a provider timestamp we could not parse; long enough for any real DFS format. */
-const RAW_SNAPSHOT_DATE_MAX_LENGTH = 40;
 
 export interface RankedCompetitorPage {
   readonly domain: string;
@@ -38,47 +35,32 @@ export function competitorLink(
   return safePageUrl(row.competitorPages[domain]?.url ?? null);
 }
 
-export interface BestCompetitorPage {
-  readonly domain: string;
-  readonly rank: number;
-  readonly url: string;
-}
-
 /**
- * The best-rank competitor's page when known, else any competitor page with a
- * safe URL. The domain travels with the URL because the fallback may name a
- * different competitor than the row's best-rank chip.
+ * The best-rank competitor's page URL when known and safe, else any competitor
+ * page with a safe URL.
  */
-export function bestCompetitorPage(
+export function bestCompetitorPageUrl(
   row: CompetitorKeywordGapRow,
-): BestCompetitorPage | null {
+): string | null {
   for (const entry of rankedCompetitorPages(row)) {
     const url = safePageUrl(entry.page?.url ?? null);
-    if (url !== null) return { domain: entry.domain, rank: entry.rank, url };
+    if (url !== null) return url;
   }
   return null;
 }
 
-export interface CompetitorTraffic {
-  readonly domain: string;
-  readonly rank: number;
-  readonly value: number;
-}
-
 /** Provider traffic estimate for the best-rank competitor's page only; never a fallback to another page. */
-export function bestCompetitorTraffic(
+export function bestCompetitorTrafficEstimate(
   row: CompetitorKeywordGapRow,
-): CompetitorTraffic | null {
+): number | null {
   const best = rankedCompetitorPages(row)[0];
-  if (best === undefined || best.page === null || best.page.etv === null) {
-    return null;
-  }
-  return { domain: best.domain, rank: best.rank, value: best.page.etv };
+  if (best === undefined || best.page === null) return null;
+  return best.page.etv;
 }
 
 /**
- * Null only when the provider gave no date. A date we cannot parse is shown
- * verbatim (bounded) so format drift reads as "unreadable", never "undated".
+ * Null when the provider gave no date or one this runtime cannot parse; the
+ * caller renders the undated label in both cases rather than throwing.
  */
 export function snapshotDate(
   value: string | null,
@@ -86,8 +68,6 @@ export function snapshotDate(
 ): string | null {
   if (value === null) return null;
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return value.slice(0, RAW_SNAPSHOT_DATE_MAX_LENGTH);
-  }
+  if (!Number.isFinite(date.getTime())) return null;
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
 }
