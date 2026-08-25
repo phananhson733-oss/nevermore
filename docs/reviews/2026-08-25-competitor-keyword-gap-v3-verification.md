@@ -105,9 +105,26 @@ four P2. Every finding was acted on in the follow-up commit:
 Re-run after the fixes: 56 files, 909 tests passed; root typecheck clean;
 scoped eslint clean.
 
+## Incident: PR #207 merged only Task 1
+
+The Task 1 implementer amended its commit and left the worktree on a detached
+HEAD at `cd3c3b37`. Every later commit (Tasks 2-8 and the codex fixes) landed
+on that detached HEAD; the branch ref never moved. `git push -u` therefore
+pushed `cd3c3b37` alone, PR #207 merged that single commit (`ce64d744`), and
+the production run at 13:58Z (`rowCount 281 · costUsd 0.072`, v2 surface)
+showed it: the client's new `etv desc` ordering was live, the handler still
+sent `limit 100` with no rank filter and no snapshot.
+
+Fix: `git branch -f` onto the real HEAD, merge `origin/main` (two trivial
+`en.json`/`zh.json` conflicts on the new `gscQueryRows` key), re-run the
+suites (94 files, 1734 tests) and typecheck, push with an explicit refspec,
+and open the follow-up PR. Lesson recorded in memory: verify
+`git branch --show-current` and `git rev-parse origin/<branch>` against HEAD
+before creating a PR from a worktree that subagents have committed in.
+
 ## Production run
 
-_Pending; recorded below after merge._
+_Pending; recorded below after the follow-up PR merges._
 
 ## Deferred to PR B
 
