@@ -8,6 +8,7 @@ import {
   buildIndexCoverageRecords,
   type IndexCoverageEntry,
 } from "../seo-audit/index-coverage.ts";
+import { isSearchPerformanceRecord } from "../seo-audit/contract.ts";
 import { evaluateAgentAuditScope } from "./evaluate.ts";
 
 function a1(entries: readonly IndexCoverageEntry[] | null, gap?: never) {
@@ -25,6 +26,54 @@ const census = (indexed: number, total: number): IndexCoverageEntry[] =>
   }));
 
 describe("A1 — index coverage over the declared population", () => {
+  it("keeps one aggregate summary before each URL outside the index", () => {
+    const record = buildIndexCoverageRecords([
+      { url: "https://acme.test/indexed", verdict: "PASS" },
+      { url: "https://acme.test/missing", verdict: "NEUTRAL" },
+    ])[0];
+
+    expect(record?.state).toBe("observed");
+    expect(record?.affected).toBe(1);
+    expect(record?.observations).toHaveLength(2);
+    expect(record?.observations[0]?.url).toBeNull();
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("accepts an all-indexed record with its aggregate summary only", () => {
+    const record = buildIndexCoverageRecords([
+      { url: "https://acme.test/a", verdict: "PASS" },
+      { url: "https://acme.test/b", verdict: "PASS" },
+    ])[0];
+
+    expect(record?.state).toBe("observed");
+    expect(record?.affected).toBe(0);
+    expect(record?.observations).toHaveLength(1);
+    expect(record?.observations[0]?.url).toBeNull();
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("rejects index coverage when the aggregate row is malformed", () => {
+    const record = structuredClone(
+      buildIndexCoverageRecords([
+        { url: "https://acme.test/a", verdict: "PASS" },
+        { url: "https://acme.test/missing", verdict: "NEUTRAL" },
+      ])[0],
+    ) as unknown as {
+      observations: Array<{ url: string | null; values: Array<{ label: string; value: unknown }> }>;
+    } | undefined;
+
+    if (!record) throw new Error("missing index coverage record");
+    record.observations[0] = {
+      url: null,
+      values: [
+        { label: "index_coverage_rate", value: 1.5 },
+        { label: "sitemap_urls_inspected", value: 2 },
+      ],
+    };
+
+    expect(isSearchPerformanceRecord(record)).toBe(false);
+  });
+
   it("passes a site at or above the published 90%", () => {
     expect(a1(census(90, 100))?.result).toBe("pass");
   });

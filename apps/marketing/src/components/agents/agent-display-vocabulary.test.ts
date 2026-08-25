@@ -84,7 +84,22 @@ function rawFromPages(
   } as unknown as SeoAuditRaw;
 }
 
-/** A title and description far outside the reviewed range, plus a duplicate. */
+const DUPLICATE_BODY = `
+  The calculator explains planetary positions through a carefully reviewed
+  sequence of houses signs aspects transits patterns relationships timings and
+  interpretations. Readers can compare the same evidence, understand each
+  placement, and explore a consistent narrative without hidden predictions or
+  unsupported claims. Every section connects the chart details to practical
+  reflection, repeatable observation, and clearly bounded educational context.
+`;
+
+/**
+ * Length findings plus real near-duplicate and FAQ promise violations.
+ *
+ * Four pages are required before the model can separate duplicated body text
+ * from site chrome. Only the first two share the long body, so it remains
+ * distinctive rather than being stripped as furniture.
+ */
 const PAGES = [
   {
     url: "https://acme.test/",
@@ -92,7 +107,7 @@ const PAGES = [
       <title>${"An extremely long page title that runs well past the reviewed range ".repeat(2)}</title>
       <meta name="description" content="short">
       <link rel="canonical" href="https://acme.test/">
-    </head><body><h1>Home</h1><p>Body copy.</p>
+    </head><body><h1>Home</h1><p>${DUPLICATE_BODY}</p>
       <a href="/pricing">Pricing</a></body></html>`,
   },
   {
@@ -101,7 +116,37 @@ const PAGES = [
       <title>Hi</title>
       <meta name="description" content="${"A description far past the reviewed upper bound. ".repeat(6)}">
       <link rel="canonical" href="https://acme.test/pricing">
-    </head><body><h1>Pricing</h1><h1>Second</h1><p>Plans.</p></body></html>`,
+      <script type="application/ld+json">${JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: [
+          {
+            "@type": "Question",
+            name: "Which planets are included in the calculation?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "The calculation includes every major planet.",
+            },
+          },
+        ],
+      })}</script>
+    </head><body><h1>Pricing</h1><h1>Second</h1><p>${DUPLICATE_BODY}</p></body></html>`,
+  },
+  {
+    url: "https://acme.test/about",
+    html: `<!doctype html><html lang="en"><head>
+      <title>About Acme</title>
+      <meta name="description" content="How the Acme team reviews its educational material.">
+      <link rel="canonical" href="https://acme.test/about">
+    </head><body><h1>About</h1><p>Our researchers document sources, compare interpretations, review terminology, and publish clear educational notes for readers who want transparent context.</p></body></html>`,
+  },
+  {
+    url: "https://acme.test/contact",
+    html: `<!doctype html><html lang="en"><head>
+      <title>Contact Acme</title>
+      <meta name="description" content="Contact the Acme editorial and research team.">
+      <link rel="canonical" href="https://acme.test/contact">
+    </head><body><h1>Contact</h1><p>Send the editorial team a detailed question about methodology, accessibility, corrections, partnerships, or the provenance of a published explanation.</p></body></html>`,
   },
 ];
 
@@ -113,6 +158,16 @@ describe("the browser's display vocabulary covers what the model emits", () => {
     const ids = report.records.map((record) => record.id);
     expect(ids).toContain("title_length_outside_range");
     expect(ids).toContain("meta_description_length_outside_range");
+    expect(
+      report.records.find(
+        (record) => record.id === "page_near_duplicate_of_another_page",
+      )?.affected,
+    ).toBeGreaterThan(0);
+    expect(
+      report.records.find(
+        (record) => record.id === "faq_schema_question_not_on_page",
+      )?.affected,
+    ).toBeGreaterThan(0);
     const flagged = report.records.filter((record) => record.affected > 0);
     expect(flagged.length).toBeGreaterThan(2);
   });
