@@ -1403,9 +1403,13 @@ export function DailyBriefingResults({
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {t(
-                shownProvisional.length > 0
-                  ? "actions.emptyWithProvisional"
-                  : "actions.empty",
+                shownProvisional.length === 0
+                  ? "actions.empty"
+                  : // A provisional row without page evidence offers no check
+                    // link, so the sentence must not point at one.
+                    shownProvisional.some((move) => move.page !== null)
+                    ? "actions.emptyWithProvisionalCheck"
+                    : "actions.emptyWithProvisional",
               )}
             </p>
           </div>

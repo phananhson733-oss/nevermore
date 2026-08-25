@@ -952,6 +952,46 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(empty?.textContent).toContain("observational and is not counted");
   });
 
+  it("does not point at a page check when no provisional row carries a page", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        provisionalMoves: provisionalMoves([
+          provisionalMove("provisional_page_one_band_entry", 11, {
+            page: null,
+            pageEvidence: "unavailable",
+          }),
+        ]),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(host.querySelector("[data-provisional-check-link]")).toBeNull();
+    expect(empty?.textContent).toContain("is an observation");
+    expect(empty?.textContent).not.toContain("page check offered");
+  });
+
+  it("counts one withheld sample-building row with singular grammar", async () => {
+    const host = await renderResults(
+      envelope({
+        queryWatchlist: watchlist(
+          "observed",
+          [observation("sample_building", 21)],
+          {
+            candidates: 3,
+            withheldByBand: { page_one: 0, near_page_one: 0, mid: 0, far: 2 },
+            withheldByKind: { sample_floor_reached: 1, sample_building: 1 },
+          },
+        ),
+      }),
+    );
+    const withheld = host.querySelector("[data-observations-withheld]");
+
+    expect(withheld?.textContent).toContain("1 sits at 50-99 impressions");
+    expect(withheld?.textContent).not.toContain("1 sit at 50-99");
+  });
+
   it("never prints an unread observation count as a total of zero", async () => {
     const host = await renderResults(
       envelope({ queryWatchlist: watchlist("unavailable") }),

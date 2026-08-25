@@ -2518,10 +2518,15 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
   it("blocks the CTR lane on the band, not on brand confirmation", () => {
     const result = reducedRun();
 
+    // The ruling recorded this exact blocker. Asserting only "some blocker
+    // exists" would keep passing if band-impression handling broke and a
+    // different band blocker took its place.
+    expect(result.laneCapability.ctrLane.blockers).toContain(
+      "insufficient_band_impressions",
+    );
     expect(result.laneCapability.ctrLane.blockers).not.toContain(
       "brand_terms_not_confirmed",
     );
-    expect(result.laneCapability.ctrLane.blockers.length).toBeGreaterThan(0);
     expect(result.limitations).not.toContain("brand_terms_not_confirmed");
   });
 

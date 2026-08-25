@@ -236,6 +236,7 @@ const REQUIRED_LEAF_PATHS = [
   "actions.title",
   "actions.empty",
   "actions.emptyWithProvisional",
+  "actions.emptyWithProvisionalCheck",
   "actions.rank",
   "actions.why",
   "actions.evidence",
