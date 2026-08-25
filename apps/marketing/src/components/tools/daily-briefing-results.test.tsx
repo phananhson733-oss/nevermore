@@ -14,7 +14,7 @@ import {
   type DailyBriefingChange,
   type DailyBriefingEnvelope,
   type DailyBriefingLimitationCode,
-  type DailyBriefingPropertyFallback,
+  type DailyBriefingPropertyTrend,
   type DailyBriefingQueryObservation,
   type DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
@@ -90,6 +90,7 @@ function change(
     evidence: kind === "first_observed" ? "not_observed" : "observed",
     query,
     page,
+    pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 240, position: 8.2 },
     previous:
       kind === "first_observed"
@@ -112,7 +113,7 @@ function action(
     kind: source.kind,
     destination,
     query: source.query,
-    page: source.page,
+    page: source.page ?? "",
   };
 }
 
@@ -123,7 +124,7 @@ function envelope(
     ...BASE_ENVELOPE,
     result: {
       ...BASE_ENVELOPE.result,
-      propertyFallback: null,
+      propertyTrend: { change: null, action: null, noiseFloor: null },
       ...overrides,
     },
   };
@@ -140,17 +141,19 @@ function signalFunnel(
     ctrBaselineRows: 0,
     clickOpportunityCandidates: 0,
     stableDeclineCandidates: 0,
+    pageOneBandCandidates: 0,
+    positionDeclineCandidates: 0,
     firstObservedCandidates: 0,
     pageAttributionWithheld: 0,
     selectedQueryChanges: 0,
-    propertyFallbackShown: false,
+    propertyTrendShown: false,
     ...overrides,
   };
 }
 
-function propertyFallback(
-  overrides: Partial<DailyBriefingPropertyFallback> = {},
-): DailyBriefingPropertyFallback {
+function propertyTrend(
+  overrides: Partial<DailyBriefingPropertyTrend> = {},
+): DailyBriefingPropertyTrend {
   return {
     change: {
       kind: "sitewide_click_decline",
@@ -179,6 +182,12 @@ function propertyFallback(
       kind: "sitewide_click_decline",
       destination: "traffic-drop-diagnosis",
     },
+    noiseFloor: {
+      basis: "clicks",
+      observedChange: -14,
+      minimumForAction: 2 * Math.sqrt(49),
+      cleared: true,
+    },
     ...overrides,
   };
 }
@@ -191,11 +200,13 @@ function observation(
   const query = `watch query ${index}`;
   return {
     kind,
+    band: "page_one",
     query,
     page: `https://example.com/watch-${index}`,
     pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 120, position: 9.2 },
     previous: { query, clicks: 8, impressions: 110, position: 9.5 },
+    positionDelta: -0.3,
     ...overrides,
   };
 }
@@ -263,7 +274,7 @@ async function click(element: HTMLElement) {
 }
 
 describe("DailyBriefingResults KPI and evidence facts", () => {
-  it("puts the noise summary and decision sections directly after KPIs", async () => {
+  it("leads with what to look at and folds the method statement to the end", async () => {
     const host = await renderResults(
       envelope({
         signalFunnel: signalFunnel({
@@ -277,17 +288,26 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     );
     const noise = host.querySelector('[data-result-section="noise"]');
 
+    // No site-wide trend cleared its gates in this fixture, so the reading
+    // path runs KPIs -> what to look at -> actions, and the noise strip is
+    // nested inside the collapsed explanation near the end.
     expect(order).toEqual([
       "facts",
       "kpis",
-      "noise",
       "changes",
       "actions",
       "manual",
       "evidence",
+      "noise",
       "limitations",
       "methodology",
     ]);
+    // The strip that used to open the results now lives inside the collapsed
+    // explanation, so the page no longer answers for itself before it reports.
+    expect(
+      host.querySelector('[data-result-section="evidence"] [data-result-section="noise"]'),
+    ).not.toBeNull();
+    expect(host.querySelector("[data-evidence-details]")).not.toBeNull();
     expect(noise?.textContent).toContain("Noise filter on");
     expect(noise?.textContent).toContain("17 visible queries");
     expect(noise?.textContent).toContain("2 reached the evaluation sample floor");
@@ -316,7 +336,11 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
   });
 
   it("renders four metric cards with latest-day and seven-day values", async () => {
-    const host = await renderResults();
+    // Day-level values are shown only on a daily briefing, which requires a
+    // click lane that could actually be evaluated.
+    const host = await renderResults(
+      envelope({ mode: "change_detection", cadence: "daily" }),
+    );
     const cards = [...host.querySelectorAll("[data-kpi]")];
 
     expect(cards).toHaveLength(4);
@@ -396,6 +420,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           ctrBaselineRows: null,
           clickOpportunityCandidates: null,
           stableDeclineCandidates: null,
+          pageOneBandCandidates: null,
+          positionDeclineCandidates: null,
           firstObservedCandidates: null,
           pageAttributionWithheld: null,
         }),
@@ -434,9 +460,9 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           actionEligibleQueries: 2,
           ctrBaselineRows: null,
           selectedQueryChanges: 0,
-          propertyFallbackShown: true,
+          propertyTrendShown: true,
         }),
-        propertyFallback: propertyFallback(),
+        propertyTrend: propertyTrend(),
       }),
     );
     const noise = host.querySelector('[data-result-section="noise"]');
@@ -452,7 +478,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(funnel?.textContent).toContain("not additive");
     expect(funnel?.textContent).toContain("CTR baseline");
     expect(funnel?.textContent).toContain("Not evaluated");
-    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(7);
   });
 
   it("keeps unavailable funnel counts unavailable rather than rendering null as zero", async () => {
@@ -466,6 +492,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           ctrBaselineRows: null,
           clickOpportunityCandidates: null,
           stableDeclineCandidates: null,
+          pageOneBandCandidates: null,
+          positionDeclineCandidates: null,
           firstObservedCandidates: null,
           pageAttributionWithheld: null,
         }),
@@ -480,7 +508,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(noise?.textContent).not.toMatch(/\b0\b/);
     expect(funnel?.textContent).not.toContain("null");
     expect(funnel?.textContent).not.toMatch(/\b0\b/);
-    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(7);
   });
 
   it("reports independent signal lanes without implying they add up", async () => {
@@ -490,6 +518,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           ctrBaselineRows: 1,
           clickOpportunityCandidates: 2,
           stableDeclineCandidates: 3,
+          pageOneBandCandidates: 3,
+          positionDeclineCandidates: 3,
           firstObservedCandidates: 4,
           pageAttributionWithheld: 5,
         }),
@@ -543,14 +573,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("renders the site-wide trend outside the query-page review table", async () => {
-    const fallback = propertyFallback();
-    const watch = observation("evaluation_eligible", 1);
+    const fallback = propertyTrend();
+    const watch = observation("sample_floor_reached", 1);
     const host = await renderResults(
       envelope({
         changes: [],
         actions: [],
-        propertyFallback: fallback,
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        propertyTrend: fallback,
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
         queryWatchlist: { evidence: "observed", items: [watch] },
       }),
     );
@@ -592,7 +622,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
         queryWatchlist: {
           evidence: "observed",
           items: [
-            observation("evaluation_eligible", 2),
+            observation("sample_floor_reached", 2),
             observation("sample_building", 3),
             observation("sample_building", 4),
           ],
@@ -608,7 +638,10 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rows[0]?.textContent).toContain(strict.query);
     expect(rows[1]?.hasAttribute("data-observation-row")).toBe(true);
     expect(rows[1]?.textContent).toContain("watch query 2");
-    expect(rows[1]?.textContent).toContain("Watch");
+    expect(rows[1]?.textContent).toContain("Observation");
+    expect(rows[1]?.textContent).toContain(
+      "Already inside the 1-10 average position band",
+    );
     expect(rows[2]?.textContent).toContain("watch query 3");
     expect(rows[2]?.textContent).toContain("Building sample");
     expect(host.textContent).not.toContain("watch query 4");
@@ -634,19 +667,21 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("renders unavailable property positions without inventing a rank", async () => {
-    const fallback = propertyFallback();
+    const fallback = propertyTrend();
+    const baseChange = fallback.change;
+    if (baseChange === null) throw new Error("fixture must carry a change");
     const host = await renderResults(
       envelope({
-        propertyFallback: {
+        propertyTrend: {
           ...fallback,
           change: {
-            ...fallback.change,
-            current: { ...fallback.change.current, position: null },
-            previous: { ...fallback.change.previous, position: null },
+            ...baseChange,
+            current: { ...baseChange.current, position: null },
+            previous: { ...baseChange.previous, position: null },
             positionDelta: null,
           },
         },
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const row = host.querySelector<HTMLElement>("[data-site-trend]");
@@ -662,8 +697,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       envelope({
         changes: [],
         actions: [],
-        propertyFallback: propertyFallback(),
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        propertyTrend: propertyTrend(),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const row = host.querySelector<HTMLElement>(
@@ -710,12 +745,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("routes a property visibility gain to Quick Wins without URL evidence", async () => {
-    const base = propertyFallback();
+    const base = propertyTrend();
+    const baseGainChange = base.change;
+    if (baseGainChange === null) throw new Error("fixture must carry a change");
     const host = await renderResults(
       envelope({
-        propertyFallback: {
+        propertyTrend: {
           change: {
-            ...base.change,
+            ...baseGainChange,
             kind: "sitewide_visibility_gain",
             current: {
               clicks: 100,
@@ -739,8 +776,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
             kind: "sitewide_visibility_gain",
             destination: "seo-quick-wins",
           },
+          noiseFloor: {
+            basis: "clicks",
+            observedChange: 50,
+            minimumForAction: 2 * Math.sqrt(50),
+            cleared: true,
+          },
         },
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const link = host.querySelector<HTMLAnchorElement>(
@@ -753,37 +796,41 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(link?.getAttribute("href")).not.toContain(PROPERTY);
   });
 
-  it("gives query rows and exact query actions precedence over a contradictory property fallback", async () => {
+  it("shows the property trend alongside an exact query action", async () => {
     const source = change("click_opportunity", 1);
     const host = await renderResults(
       envelope({
         changes: [source],
         actions: [action(source, "seo-quick-wins")],
-        propertyFallback: propertyFallback(),
+        propertyTrend: propertyTrend(),
         signalFunnel: signalFunnel({
           selectedQueryChanges: 1,
-          propertyFallbackShown: true,
+          propertyTrendShown: true,
         }),
       }),
     );
 
     expect(host.querySelectorAll("[data-change]")).toHaveLength(1);
-    expect(host.querySelector("[data-property-change]")).toBeNull();
-    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(1);
-    expect(host.querySelector("[data-property-action]")).toBeNull();
     expect(host.textContent).toContain(source.query);
-    expect(host.textContent).not.toContain("Entire Search Console property");
+    // The query signal keeps the first action slot; the site-wide fact keeps
+    // its own place instead of being deleted by it.
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(2);
+    const propertyAction = host.querySelector("[data-property-action]");
+
+    expect(propertyAction).not.toBeNull();
+    expect(propertyAction?.getAttribute("data-action-rank")).toBe("2");
+    expect(host.querySelector("[data-site-trend]")).not.toBeNull();
     expect(
       host.querySelector('[data-result-section="noise"]')?.textContent,
-    ).toContain("0 site-wide trends are shown");
+    ).toContain("1 site-wide trend is shown");
   });
 
   it("blocks property-action navigation when the private handoff cannot be stored", async () => {
     writeToolHandoffMock.mockReturnValue(false);
     const host = await renderResults(
       envelope({
-        propertyFallback: propertyFallback(),
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        propertyTrend: propertyTrend(),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const link = host.querySelector<HTMLAnchorElement>(
@@ -902,7 +949,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const host = await renderResults(
       envelope({
         changes: [],
-        propertyFallback: null,
+        propertyTrend: { change: null, action: null, noiseFloor: null },
         signalFunnel: signalFunnel(),
         queryWatchlist: { evidence: "observed", items: [] },
       }),
@@ -924,7 +971,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       envelope({
         queryWatchlist: {
           evidence: "partial",
-          items: [observation("evaluation_eligible", 99)],
+          items: [observation("sample_floor_reached", 99)],
         },
       }),
     );
@@ -1145,5 +1192,22 @@ describe("DailyBriefingResults page-local manual checks", () => {
     await click(buttonWith(host, "Mark checked for this page"));
     expect(host.textContent).toContain("Marked on this page: no notification seen");
     expect(host.textContent).toContain("Not confirmed on this page");
+  });
+});
+
+describe("DailyBriefingResults unread query evidence", () => {
+  it("explains that the lanes never ran rather than blaming the sample", async () => {
+    const host = await renderResults(
+      envelope({ mode: "unavailable", cadence: "weekly" }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+    const changes = host.querySelector('[data-result-section="changes"]');
+
+    expect(facts?.textContent).toContain("query evidence could not be read");
+    expect(facts?.textContent).not.toContain(
+      "Daily interpretation is suppressed because the sample",
+    );
+    expect(changes?.textContent).toContain("none of the lanes below were run");
+    expect(changes?.textContent).not.toContain("Strict changes appear first");
   });
 });

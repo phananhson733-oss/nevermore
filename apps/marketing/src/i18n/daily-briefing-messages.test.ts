@@ -18,6 +18,7 @@ const LIMITATION_CODES = [
   "aggregation_basis_mismatch",
   "anonymization_gap_uncomputable",
   "brand_terms_not_confirmed",
+  "property_change_inside_noise_floor",
 ] as const;
 
 const ERROR_CODES = [
@@ -36,7 +37,23 @@ const ERROR_CODES = [
 const CHANGE_KINDS = [
   "click_opportunity",
   "stable_position_click_decline",
+  "average_position_crossed_page_one_band",
+  "actionable_position_decline",
   "first_observed",
+] as const;
+
+const OBSERVATION_BANDS = [
+  "page_one",
+  "near_page_one",
+  "mid",
+  "far",
+] as const;
+
+const CTR_LANE_BLOCKERS = [
+  "brand_terms_not_confirmed",
+  "insufficient_band_impressions",
+  "insufficient_band_queries",
+  "no_position_band_coverage",
 ] as const;
 
 const PROPERTY_CHANGE_KINDS = [
@@ -92,6 +109,8 @@ const REQUIRED_LEAF_PATHS = [
   "facts.weekly",
   "facts.dailyReason",
   "facts.weeklyReason",
+  "facts.positionFirstReason",
+  "facts.unavailableReason",
   "facts.quotaAvailable",
   "facts.quotaUnavailable",
   "kpis.title",
@@ -114,14 +133,21 @@ const REQUIRED_LEAF_PATHS = [
   "siteTrend.intro",
   "siteTrend.evidence",
   "siteTrend.actionListed",
+  "siteTrend.insideNoiseFloor",
+  "ctrLane.notEvaluated",
+  "ctrLane.blockers.unknown",
+  "ctrLane.confirmAndRerun",
+  "evidence.foldSummary",
   "review.title",
   "review.intro",
   "review.empty",
   "review.partial",
   "review.unavailable",
   "review.pageUnavailable",
-  "review.observationKinds.evaluation_eligible.title",
-  "review.observationKinds.evaluation_eligible.body",
+  "review.introPositionFirst",
+  "review.introUnavailable",
+  "review.observationKinds.sample_floor_reached.title",
+  "review.observationKinds.sample_floor_reached.body",
   "review.observationKinds.sample_building.title",
   "review.observationKinds.sample_building.body",
   "review.columns.status",
@@ -149,6 +175,10 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.signalFunnel.lanes.clickOpportunity.body",
   "evidence.signalFunnel.lanes.stableDecline.title",
   "evidence.signalFunnel.lanes.stableDecline.body",
+  "evidence.signalFunnel.lanes.pageOneBand.title",
+  "evidence.signalFunnel.lanes.pageOneBand.body",
+  "evidence.signalFunnel.lanes.positionDecline.title",
+  "evidence.signalFunnel.lanes.positionDecline.body",
   "evidence.signalFunnel.lanes.firstObserved.title",
   "evidence.signalFunnel.lanes.firstObserved.body",
   "evidence.signalFunnel.lanes.pageAttribution.title",
@@ -223,7 +253,13 @@ function recordAt(
   value: Readonly<Record<string, unknown>>,
   key: string,
 ): Readonly<Record<string, unknown>> {
-  const child = value[key];
+  let child: unknown = value;
+  for (const part of key.split(".")) {
+    child =
+      child && typeof child === "object"
+        ? (child as Record<string, unknown>)[part]
+        : undefined;
+  }
   expect(child, `missing tools.dailyBriefing.${key}`).toEqual(
     expect.any(Object),
   );
@@ -265,6 +301,8 @@ describe("Daily Briefing message catalogs", () => {
     const propertyChangeKinds = recordAt(namespace, "propertyChangeKinds");
     const propertyActionKinds = recordAt(namespace, "propertyActionKinds");
     const evidenceStates = recordAt(namespace, "evidenceStates");
+    const observationBands = recordAt(namespace, "review.observationBands");
+    const ctrLaneBlockers = recordAt(namespace, "ctrLane.blockers");
 
     const paths = new Set(leafPaths(namespace));
     for (const path of REQUIRED_LEAF_PATHS) {
@@ -296,6 +334,17 @@ describe("Daily Briefing message catalogs", () => {
         propertyActionKinds[kind],
         `missing property action kind ${kind}`,
       ).toEqual(expect.any(Object));
+    }
+    for (const band of OBSERVATION_BANDS) {
+      expect(observationBands[band], `missing observation band ${band}`).toEqual(
+        expect.any(Object),
+      );
+    }
+    for (const blocker of CTR_LANE_BLOCKERS) {
+      expect(
+        ctrLaneBlockers[blocker],
+        `missing CTR lane blocker ${blocker}`,
+      ).toEqual(expect.any(String));
     }
     for (const state of EVIDENCE_STATES) {
       expect(evidenceStates[state], `missing evidence state ${state}`).toEqual(

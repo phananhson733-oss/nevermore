@@ -26,15 +26,6 @@ export interface RunDailyBriefingInput {
   readonly brandTerms: readonly string[];
   readonly brandTermsConfirmed: boolean;
   readonly budget?: ReadBudget;
-  /**
-   * Shared cancellation seam for failures in the query/query-page read group.
-   *
-   * Marketing may bind this to one AbortController owned by its transport.
-   * A property-totals failure does not invoke it, because totals only size
-   * anonymization and must not abort otherwise usable action evidence. The
-   * package neither imports nor constructs a transport-specific signal.
-   */
-  readonly cancelOptionalReads?: () => void;
 }
 
 function fulfilledOrNull<T>(result: PromiseSettledResult<T>): T | null {
@@ -72,19 +63,14 @@ export async function runDailyBriefing(
     });
   }
 
-  let optionalReadsCancelled = false;
+  // Each attachment carries its own request timeout and shares the run
+  // budget, so a failed one is left to settle alone. Cancelling its siblings
+  // used to be harmless because every derived signal needed all four reads;
+  // now a query lane stands on its query rows alone, and aborting a sibling
+  // still in flight deletes the very evidence that survived the failure.
   const optionalBudget: ReadBudget = {
-    isExpired: () =>
-      optionalReadsCancelled || input.budget?.isExpired() === true,
+    isExpired: () => input.budget?.isExpired() === true,
   };
-  const observeOptional = <T>(read: Promise<T>): Promise<T> =>
-    read.catch((error: unknown) => {
-      if (!optionalReadsCancelled) {
-        optionalReadsCancelled = true;
-        input.cancelOptionalReads?.();
-      }
-      throw error;
-    });
 
   const [
     currentQuery,
@@ -94,41 +80,33 @@ export async function runDailyBriefing(
     currentTotals,
     previousTotals,
   ] = await Promise.allSettled([
-    observeOptional(
-      readQueryRows(
-        input.client,
-        windows.current7Days,
-        optionalBudget,
-        1,
-        "byPage",
-      ),
+    readQueryRows(
+      input.client,
+      windows.current7Days,
+      optionalBudget,
+      1,
+      "byPage",
     ),
-    observeOptional(
-      readQueryRows(
-        input.client,
-        windows.previous7Days,
-        optionalBudget,
-        1,
-        "byPage",
-      ),
+    readQueryRows(
+      input.client,
+      windows.previous7Days,
+      optionalBudget,
+      1,
+      "byPage",
     ),
-    observeOptional(
-      readQueryPageRows(
-        input.client,
-        windows.current7Days,
-        optionalBudget,
-        1,
-        "auto",
-      ),
+    readQueryPageRows(
+      input.client,
+      windows.current7Days,
+      optionalBudget,
+      1,
+      "auto",
     ),
-    observeOptional(
-      readQueryPageRows(
-        input.client,
-        windows.previous7Days,
-        optionalBudget,
-        1,
-        "auto",
-      ),
+    readQueryPageRows(
+      input.client,
+      windows.previous7Days,
+      optionalBudget,
+      1,
+      "auto",
     ),
     readPropertyTotals(input.client, windows.current7Days, "byPage"),
     readPropertyTotals(input.client, windows.previous7Days, "byPage"),

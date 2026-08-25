@@ -16,6 +16,25 @@ import type { GscQueryRow } from "../site-baseline/types.ts";
 
 export type DailyBriefingCadence = "daily" | "weekly";
 
+/**
+ * Which briefing the property can actually support this run.
+ *
+ * `position_first` is claimed only from evidence: it requires observed query
+ * rows in both windows showing that no click-driven lane can be evaluated. A
+ * property whose queries have no clicks to lose cannot produce click change
+ * evidence, so promising daily change detection there is a promise the data
+ * can never keep.
+ *
+ * `unavailable` is not a third kind of briefing: it says the query rows could
+ * not be read, so neither claim can be made. Calling that `change_detection`
+ * put a mode the data never supported in front of the reader, and let the
+ * cadence promise a daily one.
+ */
+export type DailyBriefingMode =
+  | "change_detection"
+  | "position_first"
+  | "unavailable";
+
 export type DailyBriefingEvidenceState =
   | "observed"
   | "not_observed"
@@ -25,7 +44,28 @@ export type DailyBriefingEvidenceState =
 export type DailyBriefingChangeKind =
   | "click_opportunity"
   | "stable_position_click_decline"
+  | "average_position_crossed_page_one_band"
+  | "actionable_position_decline"
   | "first_observed";
+
+/**
+ * Whether a lane produced evidence, could not apply, or could not be read.
+ *
+ * `not_applicable` and `unavailable` both yield zero signals and must stay
+ * distinguishable: the first says the property has nothing this lane could
+ * ever measure, the second says we could not look.
+ */
+export type DailyBriefingLaneState =
+  | "evaluated"
+  | "not_applicable"
+  | "unavailable";
+
+/** Why the CTR opportunity lane could not run, in the operator's terms. */
+export type DailyBriefingCtrLaneBlocker =
+  | "brand_terms_not_confirmed"
+  | "insufficient_band_impressions"
+  | "insufficient_band_queries"
+  | "no_position_band_coverage";
 
 export type DailyBriefingActionDestination =
   | "seo-quick-wins"
@@ -119,7 +159,14 @@ export interface DailyBriefingChange {
   readonly kind: DailyBriefingChangeKind;
   readonly evidence: "observed" | "not_observed";
   readonly query: string;
-  readonly page: string;
+  /**
+   * The page carrying the query, or null when page evidence is withheld.
+   *
+   * A query signal and its page attribution are separate facts. Withholding
+   * the page must not delete the query signal that was observed.
+   */
+  readonly page: string | null;
+  readonly pageEvidence: "observed" | "unavailable";
   /** Query totals for query-level changes; exact pair metrics for first_observed. */
   readonly current: GscQueryRow;
   /** Null means this exact query/page pair was not observed in the prior read. */
@@ -159,12 +206,55 @@ export interface DailyBriefingPropertyChange {
   readonly positionDelta: number | null;
 }
 
-export interface DailyBriefingPropertyFallback {
-  readonly change: DailyBriefingPropertyChange;
+/**
+ * The counting-noise floor a property-level change must clear to drive action.
+ *
+ * Weekly totals are counts, so their run-to-run spread grows with the square
+ * root of the base. A fifteen percent move on twenty-one clicks sits inside
+ * that spread; calling it a material decline and dispatching a diagnosis is a
+ * claim the sample cannot support.
+ */
+export interface DailyBriefingPropertyNoiseFloor {
+  readonly basis: "clicks" | "impressions";
+  readonly observedChange: number;
+  readonly minimumForAction: number;
+  readonly cleared: boolean;
+}
+
+export interface DailyBriefingPropertyTrend {
+  readonly change: DailyBriefingPropertyChange | null;
+  /** Null when the change was observed but stayed inside the noise floor. */
   readonly action: {
     readonly kind: DailyBriefingPropertyChangeKind;
     readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
-  };
+  } | null;
+  readonly noiseFloor: DailyBriefingPropertyNoiseFloor | null;
+}
+
+export interface DailyBriefingCtrLane {
+  readonly state: DailyBriefingLaneState;
+  readonly blockers: readonly DailyBriefingCtrLaneBlocker[];
+  /** Position bands whose own rows can serve as a baseline, or null when unread. */
+  readonly usableBaselineBands: number | null;
+}
+
+/**
+ * Which lanes this property can support, measured rather than assumed.
+ *
+ * The action-eligible query count cannot answer this: a query sitting at
+ * average position ninety with a hundred impressions clears that floor and
+ * still cannot produce a single click signal.
+ */
+export interface DailyBriefingLaneCapability {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  /** Queries with a comparable prior window carrying at least the click floor. */
+  readonly clickDeclineCapableQueries: number | null;
+  /** Queries the CTR lane could measure against a usable band baseline. */
+  readonly ctrOpportunityCapableQueries: number | null;
+  /** Queries inside the actionable average-position band in either window. */
+  readonly positionCapableQueries: number | null;
+  readonly ctrLane: DailyBriefingCtrLane;
+  readonly lanes: Readonly<Record<DailyBriefingChangeKind, DailyBriefingLaneState>>;
 }
 
 export interface DailyBriefingSignalFunnel {
@@ -172,28 +262,46 @@ export interface DailyBriefingSignalFunnel {
   readonly observedQueryRows: number | null;
   /** Current query rows with 50–99 impressions; never action-eligible. */
   readonly observationCandidates: number | null;
-  /** Current query rows at the existing 100-impression action floor. */
+  /** Current query rows at the existing 100-impression sample floor. */
   readonly actionEligibleQueries: number | null;
   readonly ctrBaselineRows: number | null;
   readonly clickOpportunityCandidates: number | null;
   readonly stableDeclineCandidates: number | null;
+  readonly pageOneBandCandidates: number | null;
+  readonly positionDeclineCandidates: number | null;
   readonly firstObservedCandidates: number | null;
   readonly pageAttributionWithheld: number | null;
   readonly selectedQueryChanges: number;
-  readonly propertyFallbackShown: boolean;
+  readonly propertyTrendShown: boolean;
 }
 
+/**
+ * The sample state of an observation.
+ *
+ * `sample_floor_reached` says only that the row cleared the impression floor.
+ * It does not claim any lane evaluated it, which is why the earlier
+ * `evaluation_eligible` spelling had to go.
+ */
 export type DailyBriefingQueryObservationKind =
-  | "evaluation_eligible"
+  | "sample_floor_reached"
   | "sample_building";
+
+/** Actionability band of an observation's current average position. */
+export type DailyBriefingObservationBand =
+  | "page_one"
+  | "near_page_one"
+  | "mid"
+  | "far";
 
 export interface DailyBriefingQueryObservation {
   readonly kind: DailyBriefingQueryObservationKind;
+  readonly band: DailyBriefingObservationBand;
   readonly query: string;
   readonly page: string | null;
   readonly pageEvidence: "observed" | "unavailable";
   readonly current: GscQueryRow;
   readonly previous: GscQueryRow | null;
+  readonly positionDelta: number | null;
 }
 
 export interface DailyBriefingQueryWatchlist {
@@ -210,16 +318,20 @@ export type DailyBriefingLimitationCode =
   | "query_page_coverage_below_floor"
   | "aggregation_basis_mismatch"
   | "anonymization_gap_uncomputable"
-  | "brand_terms_not_confirmed";
+  | "brand_terms_not_confirmed"
+  | "property_change_inside_noise_floor";
 
 export interface DailyBriefingResult {
   readonly windows: DailyBriefingWindows;
   readonly day: DailyBriefingKpiComparison;
   readonly weekly: DailyBriefingKpiComparison;
+  readonly mode: DailyBriefingMode;
   readonly cadence: DailyBriefingCadence;
+  readonly laneCapability: DailyBriefingLaneCapability;
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
-  readonly propertyFallback: DailyBriefingPropertyFallback | null;
+  /** Always evaluated; never suppressed by query-level signals. */
+  readonly propertyTrend: DailyBriefingPropertyTrend;
   readonly signalFunnel: DailyBriefingSignalFunnel;
   readonly queryWatchlist: DailyBriefingQueryWatchlist;
   /** Rows in the observed query read that did not clear any signal threshold. */

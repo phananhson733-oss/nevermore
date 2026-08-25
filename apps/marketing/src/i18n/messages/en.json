@@ -912,11 +912,11 @@
         "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
         "completedCompetitors": "Completed competitors",
         "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
-      "gscObservedRows": "Own-site GSC observed rows",
-      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
+        "gscObservedRows": "Own-site GSC observed rows",
+        "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
       },
-    "legend": {
-      "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
+      "legend": {
+        "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
       },
       "boundaries": {
         "title": "Evidence boundaries",
@@ -930,19 +930,19 @@
         "difficulty": "Difficulty"
       },
       "gsc": {
-      "observed_strong": "Observed · performing well",
-      "observed_weak": "Impressions · needs improvement",
-      "not_observed_in_gsc_query_sample": "Not observed in this sample",
-      "gsc_query_sample_not_read": "GSC sample not read",
-      "evidenceBasis": {
-        "query": "Exact-query evidence",
-        "query_page": "Query-page evidence"
-      },
-      "pageStatus": {
-        "observed_sufficient": "Page attribution sufficient",
-        "observed_partial": "Page attribution partial",
-        "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
-        "gsc_query_page_sample_not_read": "Page sample not fully read"
+        "observed_strong": "Observed · performing well",
+        "observed_weak": "Impressions · needs improvement",
+        "not_observed_in_gsc_query_sample": "Not observed in this sample",
+        "gsc_query_sample_not_read": "GSC sample not read",
+        "evidenceBasis": {
+          "query": "Exact-query evidence",
+          "query_page": "Query-page evidence"
+        },
+        "pageStatus": {
+          "observed_sufficient": "Page attribution sufficient",
+          "observed_partial": "Page attribution partial",
+          "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
+          "gsc_query_page_sample_not_read": "Page sample not fully read"
         },
         "impressions": "Impressions",
         "position": "Average position",
@@ -957,11 +957,11 @@
         "review_content_gap": "Review content gap",
         "verify_own_coverage": "Need evidence"
       },
-    "nextSteps": {
-      "optimize_existing": "Trusted existing page; check and optimize it first.",
-      "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
-      "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
-      "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
+      "nextSteps": {
+        "optimize_existing": "Trusted existing page; check and optimize it first.",
+        "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
+        "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
+        "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
       },
       "signals": {
         "bestRank": "Best competitor #{rank}",
@@ -1763,8 +1763,8 @@
       "propertyLabel": "Search Console property",
       "propertiesTruncated": "Showing {shown} of {total} granted properties. The remaining names did not fit in the browser grant cookie; reconnect to choose one that is missing.",
       "brand": {
-        "label": "Brand terms for this run (optional)",
-        "hint": "Separate terms with commas. Domain-derived suggestions are only candidates; confirm the list separately, even if the correct list is empty.",
+        "label": "Brand terms (required for CTR opportunities)",
+        "hint": "Separate terms with commas. They decide only whether the CTR opportunity lane can run; the rest of the briefing does not need them. Domain-derived suggestions are only candidates; confirm the list separately, even if the correct list is empty.",
         "placeholder": "acme, acme cloud",
         "confirm": "I confirm this is the complete brand-term list for this run.",
         "unconfirmed": "Not confirmed. The briefing will omit CTR opportunities that require a trusted brand split.",
@@ -1804,7 +1804,9 @@
         "dailyReason": "The complete seven-day window has enough impressions for day-level context.",
         "weeklyReason": "Daily interpretation is suppressed because the sample or complete-day comparison is insufficient.",
         "quotaAvailable": "{remaining} of {limit} shared runs remain this hour.",
-        "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero."
+        "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero.",
+        "positionFirstReason": "This property has no click signal that can be evaluated yet, so the briefing reports weekly average-position opportunities instead of daily change detection.",
+        "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it."
       },
       "kpis": {
         "title": "Performance at a glance",
@@ -1830,7 +1832,8 @@
         "title": "Site-wide trend",
         "intro": "Observed property movement across the latest complete seven days and the preceding seven days. It does not identify a query, page, or cause.",
         "evidence": "Observed property evidence",
-        "actionListed": "The evidence-backed property action is listed in Today's recommended actions."
+        "actionListed": "The evidence-backed property action is listed in Today's recommended actions.",
+        "insideNoiseFloor": "The move is {observed}, below the {minimum} this sample varies by on its own. It is recorded as an observation and does not dispatch a site-wide diagnosis."
       },
       "review": {
         "title": "Queries and pages to review today",
@@ -1840,13 +1843,13 @@
         "unavailable": "Comparable query/page evidence is unavailable, so no watchlist was inferred and no missing count was shown as zero.",
         "pageUnavailable": "Primary page evidence unavailable",
         "observationKinds": {
-          "evaluation_eligible": {
-            "title": "Watch",
-            "body": "The sample reached the evaluation floor, but this run did not select a strict action signal. Continue observing."
-          },
           "sample_building": {
             "title": "Building sample",
             "body": "This query has 50–99 impressions and remains observation-only. It cannot trigger an action."
+          },
+          "sample_floor_reached": {
+            "title": "Observation",
+            "body": "Impressions cleared the sample floor. That says the sample is large enough, not that any signal rule evaluated this row."
           }
         },
         "columns": {
@@ -1855,7 +1858,23 @@
           "clicks": "Clicks",
           "position": "Position",
           "interpretation": "Interpretation"
-        }
+        },
+        "introPositionFirst": "Click signals do not apply at this traffic level. Rows are ordered by average position, closest to acting on first.",
+        "observationBands": {
+          "page_one": {
+            "body": "Already inside the 1-10 average position band. Check search intent, title and snippet, and whether the carrying page matches the query."
+          },
+          "near_page_one": {
+            "body": "Close to the 1-10 band. Confirm which page carries it and whether that page has enough topical support."
+          },
+          "mid": {
+            "body": "Still some distance away. Verify that this query really maps to the current page before changing content over one position move."
+          },
+          "far": {
+            "body": "A distant-position observation, not a priority for today's work."
+          }
+        },
+        "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed."
       },
       "evidence": {
         "title": "Evidence floor and observable coverage",
@@ -1893,9 +1912,18 @@
             "pageAttribution": {
               "title": "Page attribution withheld",
               "body": "{count} candidates were withheld because one page did not carry enough comparable visible evidence."
+            },
+            "pageOneBand": {
+              "title": "Moved into the 1-10 band",
+              "body": "{count} queries moved their average position from outside 10 into the 1-10 band."
+            },
+            "positionDecline": {
+              "title": "Declines inside the actionable band",
+              "body": "{count} queries moved materially the wrong way while staying inside the actionable position band."
             }
           }
-        }
+        },
+        "foldSummary": "{changes} changes · {observations} observations · everything else below the floors"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -1937,6 +1965,14 @@
         "first_observed": {
           "title": "Query-page pair first observed in this comparison",
           "body": "This pair appears in the current visible rows and not in the prior visible rows. Search Console anonymization means this is not proof of new indexing."
+        },
+        "average_position_crossed_page_one_band": {
+          "title": "Average position moved into the 1-10 band",
+          "body": "This query's impression-weighted average position moved from outside 10 into the 1-10 band. It is a position observation, not a fixed rank."
+        },
+        "actionable_position_decline": {
+          "title": "Position slipped inside the actionable band",
+          "body": "This query is still in a band where work on the page can matter, and its average position moved materially the wrong way."
         }
       },
       "propertyChangeKinds": {
@@ -1979,6 +2015,14 @@
         "first_observed": {
           "title": "Inspect the page against the target query",
           "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
+        },
+        "average_position_crossed_page_one_band": {
+          "title": "Review the query that moved into the 1-10 band",
+          "body": "Check the carrying page's title, snippet and content against the search intent behind this query."
+        },
+        "actionable_position_decline": {
+          "title": "Diagnose the in-band position decline",
+          "body": "Take this query and page into the traffic drop diagnosis and work through the possible causes."
         }
       },
       "propertyActionKinds": {
@@ -2024,7 +2068,8 @@
         "query_page_coverage_below_floor": "Too little of the visible query traffic could be attributed to one page, so the page and its action were withheld.",
         "aggregation_basis_mismatch": "Search Console aggregated the compared reads on different bases. Coverage and withheld-share ratios are unavailable.",
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
-        "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted."
+        "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
+        "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2032,6 +2077,17 @@
         "position": "Average position is weighted by impressions. It describes where exposures occurred, not one fixed rank.",
         "anonymization": "Search Console withholds some low-volume queries for privacy. Not observed never means zero, first ever, or newly indexed.",
         "noPersistence": "This report and both manual-check marks live only in this page state. Refreshing, rerunning, changing property, or closing the tab clears them."
+      },
+      "ctrLane": {
+        "notEvaluated": "CTR opportunities not evaluated",
+        "blockers": {
+          "brand_terms_not_confirmed": "The brand-term list is not confirmed, so there is no trusted brand/non-brand split.",
+          "insufficient_band_impressions": "The position band does not carry enough impressions to serve as this site's own CTR baseline.",
+          "insufficient_band_queries": "The position band does not carry enough distinct queries to serve as this site's own CTR baseline.",
+          "no_position_band_coverage": "No query sits inside a position band where a CTR baseline can be built.",
+          "unknown": "This lane did not run in this comparison."
+        },
+        "confirmAndRerun": "Confirm brand terms and run again"
       }
     },
     "trafficDrop": {

@@ -912,11 +912,11 @@
         "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
         "completedCompetitors": "完成竞品",
         "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
-      "gscObservedRows": "GSC 已观测行",
-      "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
+        "gscObservedRows": "GSC 已观测行",
+        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
       },
-    "legend": {
-      "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
+      "legend": {
+        "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
       },
       "boundaries": {
         "title": "数据与证据边界",
@@ -930,19 +930,19 @@
         "difficulty": "难度"
       },
       "gsc": {
-      "observed_strong": "已观测 · 表现较强",
-      "observed_weak": "有曝光 · 待提升",
-      "not_observed_in_gsc_query_sample": "本次样本未观测",
-      "gsc_query_sample_not_read": "GSC 样本未读取",
-      "evidenceBasis": {
-        "query": "精确 query 证据",
-        "query_page": "query-page 证据"
-      },
-      "pageStatus": {
-        "observed_sufficient": "页面归因充分",
-        "observed_partial": "页面归因不完整",
-        "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
-        "gsc_query_page_sample_not_read": "页面样本未完整读取"
+        "observed_strong": "已观测 · 表现较强",
+        "observed_weak": "有曝光 · 待提升",
+        "not_observed_in_gsc_query_sample": "本次样本未观测",
+        "gsc_query_sample_not_read": "GSC 样本未读取",
+        "evidenceBasis": {
+          "query": "精确 query 证据",
+          "query_page": "query-page 证据"
+        },
+        "pageStatus": {
+          "observed_sufficient": "页面归因充分",
+          "observed_partial": "页面归因不完整",
+          "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
+          "gsc_query_page_sample_not_read": "页面样本未完整读取"
         },
         "impressions": "曝光",
         "position": "平均排名",
@@ -957,11 +957,11 @@
         "review_content_gap": "复核内容差距",
         "verify_own_coverage": "补证据"
       },
-    "nextSteps": {
-      "optimize_existing": "已有可信落地页，先检查并优化现有页。",
-      "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
-      "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
-      "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
+      "nextSteps": {
+        "optimize_existing": "已有可信落地页，先检查并优化现有页。",
+        "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
+        "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
+        "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
       },
       "signals": {
         "bestRank": "最佳竞品排名 #{rank}",
@@ -1763,8 +1763,8 @@
       "propertyLabel": "Search Console 站点",
       "propertiesTruncated": "当前显示 {shown}/{total} 个已授权站点；其余名称没有放进浏览器授权 Cookie。若要选择缺失站点，请重新连接。",
       "brand": {
-        "label": "本次运行的品牌词（可选）",
-        "hint": "请用逗号分隔。根据域名得到的只是候选词；即使正确列表为空，也需要单独确认。",
+        "label": "品牌词（CTR 机会所需）",
+        "hint": "请用逗号分隔。它只决定 CTR 机会这一条路径能否运行，其余简报内容不需要它。根据域名得到的只是候选词；即使正确列表为空，也需要单独确认。",
         "placeholder": "品牌名, 品牌英文名",
         "confirm": "我确认这就是本次运行的完整品牌词列表。",
         "unconfirmed": "尚未确认。简报会省略依赖可信品牌拆分的 CTR 机会。",
@@ -1804,7 +1804,9 @@
         "dailyReason": "完整七天窗口的曝光量足以支持日级上下文。",
         "weeklyReason": "样本量或完整日对比不足，因此抑制日级解读。",
         "quotaAvailable": "本小时共享额度还剩 {remaining}/{limit} 次。",
-        "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。"
+        "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。",
+        "positionFirstReason": "本站当前没有可评估的点击类信号，因此按周给出平均展示位置机会，而不是每日变化检测。",
+        "unavailableReason": "本次没有读到查询词证据，因此无法判断这个站点适合每日还是每周节奏；日级解读同时被抑制。"
       },
       "kpis": {
         "title": "表现概览",
@@ -1830,7 +1832,8 @@
         "title": "站点整体趋势",
         "intro": "对比最近完整 7 天与前 7 天的已观察站点变化；它不指向某个查询词、页面或唯一原因。",
         "evidence": "已观察的站点级证据",
-        "actionListed": "对应的证据动作列在下方「今日建议动作」中。"
+        "actionListed": "对应的证据动作列在下方「今日建议动作」中。",
+        "insideNoiseFloor": "本次变化为 {observed}，低于该样本量下的自身波动幅度 {minimum}。已作为观察记录，不据此派发全站诊断。"
       },
       "review": {
         "title": "今天需要看的查询词与页面",
@@ -1840,13 +1843,13 @@
         "unavailable": "可比的查询词/页面证据不可得，因此没有推断观察清单，也没有把缺失数量显示成 0。",
         "pageUnavailable": "主要页面证据不足",
         "observationKinds": {
-          "evaluation_eligible": {
-            "title": "观察",
-            "body": "样本达到可评估门槛，但本次没有形成严格动作信号；继续观察。"
-          },
           "sample_building": {
             "title": "样本积累中",
             "body": "当前查询词有 50–99 次曝光，只用于积累样本；不会触发动作。"
+          },
+          "sample_floor_reached": {
+            "title": "观察",
+            "body": "曝光达到样本门槛。这只说明样本够了，不代表任何一条信号规则已经评估过它。"
           }
         },
         "columns": {
@@ -1855,7 +1858,23 @@
           "clicks": "点击",
           "position": "排名",
           "interpretation": "解读"
-        }
+        },
+        "introPositionFirst": "当前流量下点击类信号不适用。本次按平均展示位置排序，先给出最值得检查的查询词。",
+        "observationBands": {
+          "page_one": {
+            "body": "已处于 1–10 的平均展示位置区间。检查搜索意图、标题与摘要，以及承载页面是否对得上。"
+          },
+          "near_page_one": {
+            "body": "接近 1–10 区间。先确认承载页面是哪一个，以及页面内是否有足够的主题支持。"
+          },
+          "mid": {
+            "body": "仍有距离。先验证这个查询词是否真的对应当前页面，不建议因为一次位置变化就改内容。"
+          },
+          "far": {
+            "body": "远排名观察，不作为今日优化的优先项。"
+          }
+        },
+        "introUnavailable": "本次没有读到可比的查询词证据，下面的判断路径都没有运行过。这不等于证明没有发生变化。"
       },
       "evidence": {
         "title": "证据门槛与可观察覆盖",
@@ -1893,9 +1912,18 @@
             "pageAttribution": {
               "title": "页面归因被抑制",
               "body": "有 {count} 个候选因单一页面没有承载足够的可比可见证据而被抑制。"
+            },
+            "pageOneBand": {
+              "title": "进入 1–10 区间",
+              "body": "{count} 个查询词的平均展示位置从 10 以外移入 1–10 区间。"
+            },
+            "positionDecline": {
+              "title": "可行动区间内的位置下滑",
+              "body": "{count} 个查询词在可行动位置区间内出现明显后退。"
             }
           }
-        }
+        },
+        "foldSummary": "{changes} 条变化 · {observations} 条观察 · 其余低于门槛"
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -1937,6 +1965,14 @@
         "first_observed": {
           "title": "本次比较首次观察到查询词/页面组合",
           "body": "这个组合出现在当前可见记录中、没有出现在前一窗口的可见记录中。由于 Search Console 匿名化，这不是新收录的证据。"
+        },
+        "average_position_crossed_page_one_band": {
+          "title": "平均展示位置进入 1–10 区间",
+          "body": "该查询词的曝光加权平均位置从 10 以外移入 1–10 区间。这是位置观察，不是固定排名。"
+        },
+        "actionable_position_decline": {
+          "title": "可行动区间内的位置下滑",
+          "body": "该查询词仍处在可以着手优化的位置区间内，但平均展示位置明显后退。"
         }
       },
       "propertyChangeKinds": {
@@ -1979,6 +2015,14 @@
         "first_observed": {
           "title": "按目标查询词检查页面",
           "body": "打开 On-Page SEO Checker，预填页面和查询词，再核对公开 HTML 真正支持了什么。"
+        },
+        "average_position_crossed_page_one_band": {
+          "title": "检查已进入 1–10 区间的查询词",
+          "body": "核对承载页面的标题、摘要与页面内容是否匹配这个查询词的搜索意图。"
+        },
+        "actionable_position_decline": {
+          "title": "诊断可行动区间内的位置下滑",
+          "body": "带着这个查询词与页面进入流量下降诊断，逐项排查可能的成因。"
         }
       },
       "propertyActionKinds": {
@@ -2024,7 +2068,8 @@
         "query_page_coverage_below_floor": "能归因到单个页面的可见查询流量不足，因此页面和相关动作都被抑制。",
         "aggregation_basis_mismatch": "Search Console 对被比较的读取采用了不同聚合口径，因此覆盖率和隐藏占比不可得。",
         "anonymization_gap_uncomputable": "可见查询总计与站点总计无法生成可信的隐藏占比，因此不报告该比例。",
-        "brand_terms_not_confirmed": "品牌词列表未被显式确认，因此省略了依赖可信非品牌基线的 CTR 机会。"
+        "brand_terms_not_confirmed": "品牌词列表未被显式确认，因此省略了依赖可信非品牌基线的 CTR 机会。",
+        "property_change_inside_noise_floor": "站点级变化通过了阈值，但幅度仍在该样本量的自身波动范围内，因此只作为观察记录，不派发动作。"
       },
       "methodology": {
         "title": "如何阅读这份简报",
@@ -2032,6 +2077,17 @@
         "position": "平均排名按曝光加权；它描述曝光发生的位置，不是某个固定排名。",
         "anonymization": "Search Console 会出于隐私隐藏部分低量查询词。未观察到不等于 0、首次发生或刚被收录。",
         "noPersistence": "报告与两项人工检查标记只存在当前页面状态中。刷新、重新运行、更换站点或关闭标签页都会清除。"
+      },
+      "ctrLane": {
+        "notEvaluated": "CTR 机会未评估",
+        "blockers": {
+          "brand_terms_not_confirmed": "品牌词列表未确认，因此没有可信的品牌／非品牌拆分。",
+          "insufficient_band_impressions": "同位置区间的曝光量不足以构成站点自身的 CTR 基线。",
+          "insufficient_band_queries": "同位置区间的查询词数量不足以构成站点自身的 CTR 基线。",
+          "no_position_band_coverage": "没有查询词落在能建立 CTR 基线的位置区间内。",
+          "unknown": "这条路径本次没有运行。"
+        },
+        "confirmAndRerun": "确认品牌词后重新运行"
       }
     },
     "trafficDrop": {
