@@ -554,10 +554,36 @@ describe("handleAgentAuditRequest", () => {
   });
 
   it("accepts the production-shaped 7 search plus 6 page response at the browser seam", async () => {
+    const browserCompatiblePayload = structuredClone(upstreamPayload);
+    browserCompatiblePayload.result.records =
+      browserCompatiblePayload.result.records.map((entry) =>
+        entry.state === "observed"
+          ? {
+              ...entry,
+              observations: [
+                {
+                  url: "https://acme.test/",
+                  values: [{ label: "title", value: "Acme" }],
+                },
+              ],
+            }
+          : entry.state === "unverified"
+            ? {
+                ...entry,
+                limitation: "resource_not_observed_does_not_prove_absence",
+              }
+            : entry,
+      );
     const response = await handleAgentAuditRequest(
       request(),
       "seo",
       dependencies({
+        delegate: vi.fn(async () =>
+          Response.json(
+            { data: browserCompatiblePayload },
+            { status: 200 },
+          ),
+        ),
         readSearchPerformance: async () => searchRegion,
         readPagePerformance: async () => ({
           status: "ok" as const,
