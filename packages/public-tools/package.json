@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent-audit": "./src/agent-audit/index.ts",
+    "./competitor-keyword-gap": "./src/competitor-keyword-gap/index.ts",
+    "./competitor-keyword-gap/types": "./src/competitor-keyword-gap/types.ts",
     "./keyword-opportunity/csv": "./src/keyword-opportunity/csv.ts",
     "./keyword-opportunity/next-checks": "./src/keyword-opportunity/next-checks.ts",
     "./keyword-opportunity/types": "./src/keyword-opportunity/types.ts",

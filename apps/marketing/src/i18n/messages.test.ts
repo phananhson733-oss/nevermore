@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { COMPETITOR_KEYWORD_GAP_ERROR_CODES } from "@sf/public-tools/competitor-keyword-gap";
 import enMessages from "./messages/en.json";
 import zhMessages from "./messages/zh.json";
 
@@ -26,12 +27,77 @@ const SEO_AUDIT_EVIDENCE_KEYS = [
   "types_observed",
 ] as const;
 
+const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
+  "summary.eyebrow",
+  "summary.versus",
+  "competitors.snapshot",
+  "overview.returnedGapRows",
+  "overview.returnedGapRowsBody",
+  "overview.completedCompetitors",
+  "overview.completedCompetitorsBody",
+  "overview.gscObservedRows",
+  "overview.gscObservedRowsBody",
+  "coverage.scope",
+  "coverage.requested",
+  "coverage.failure",
+  "coverage.detailsSummary",
+  "metrics.searchVolume",
+  "metrics.cpc",
+  "metrics.difficulty",
+  "metrics.intent",
+  "boundaries.title",
+  "boundaries.dfsEstimates",
+  "boundaries.gscOwnSample",
+  "boundaries.competitorOutcomesUnavailable",
+  "boundaries.manualSnapshot",
+  "table.title",
+  "table.subtitle",
+  "table.legend",
+  "table.keyword",
+  "table.dfsEstimates",
+  "table.competitorRanks",
+  "table.ownSiteGsc",
+  "table.recommendation",
+] as const;
+
+const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
+  "actions.openObservedPage",
+  "overview.gapKeywords",
+  "overview.gapKeywordsBody",
+  "overview.optimizeExisting",
+  "overview.optimizeExistingBody",
+  "overview.reviewContentGap",
+  "overview.reviewContentGapBody",
+  "table.searchSnapshot",
+  "table.yourSite",
+  "table.action",
+] as const;
+
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return [prefix];
   }
   return Object.entries(value).flatMap(([key, child]) =>
     leafPaths(child, prefix ? `${prefix}.${key}` : key),
+  );
+}
+
+function placeholders(value: string): readonly string[] {
+  return [...value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)(?:,|\})/g)]
+    .map((match) => match[1] ?? "")
+    .sort();
+}
+
+function leafMessages(
+  value: unknown,
+  prefix = "",
+): Readonly<Record<string, string>> {
+  if (typeof value === "string") return { [prefix]: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, child]) =>
+      Object.entries(leafMessages(child, prefix ? `${prefix}.${key}` : key)),
+    ),
   );
 }
 
@@ -91,4 +157,51 @@ describe("SEO Audit message catalogs", () => {
       expect(keys).not.toContain(removed);
     }
   });
+});
+
+describe("competitor keyword gap message catalogs", () => {
+  it("keeps the full EN/ZH key shape and placeholders aligned", () => {
+    const en = leafMessages(enMessages.tools.competitorKeywordGap);
+    const zh = leafMessages(zhMessages.tools.competitorKeywordGap);
+
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+    for (const [key, message] of Object.entries(en)) {
+      expect(placeholders(message), key).toEqual(placeholders(zh[key] ?? ""));
+    }
+  });
+
+  it("localizes every public error and the four canonical provider intents", () => {
+    for (const messages of [enMessages, zhMessages]) {
+      const copy = messages.tools.competitorKeywordGap;
+      expect(Object.keys(copy.errors).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_ERROR_CODES, "unknown"].sort(),
+      );
+      expect(Object.keys(copy.intent).sort()).toEqual([
+        "commercial",
+        "informational",
+        "navigational",
+        "transactional",
+      ]);
+      expect(copy.summary.unavailable).toMatch(/\{count(?:,|\})/);
+    }
+  });
+
+  it.each([
+    ["en", enMessages],
+    ["zh", zhMessages],
+  ] as const)(
+    "contains the exact production result paths and no unused shape keys in %s",
+    (_, messages) => {
+      const leaves = leafMessages(messages.tools.competitorKeywordGap);
+
+      expect(
+        COMPETITOR_GAP_RESULT_REQUIRED_PATHS.filter(
+          (path) => typeof leaves[path] !== "string",
+        ),
+      ).toEqual([]);
+      expect(
+        COMPETITOR_GAP_UNUSED_SHAPE_PATHS.filter((path) => path in leaves),
+      ).toEqual([]);
+    },
+  );
 });

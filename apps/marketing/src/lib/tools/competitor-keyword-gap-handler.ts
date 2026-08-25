@@ -1,0 +1,431 @@
+// @input  -- one authenticated competitor-keyword-gap request
+// @output -- a private result envelope or stable public error code
+// @pos    -- Marketing orchestration boundary for the standalone gap tool
+
+import {
+  buildCompetitorKeywordGapReport,
+  COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+  createPublicToolError,
+  keywordCoverageProperty,
+  normalizeCompetitorKeywordGapDomain,
+  parseCompetitorKeywordGapInput,
+  type CompetitorKeywordGapDataForSeoResult,
+  type CompetitorKeywordGapGscRead,
+  type KeywordCoverageRead,
+} from "@sf/public-tools";
+import {
+  HttpDataForSeoClient,
+  resolveDataForSeoMarket,
+  type DataForSeoDomainIntersectionClient,
+  type DataForSeoDomainIntersectionResponse,
+  type DataForSeoMarketResolution,
+} from "@sf/sources";
+
+import {
+  getServerAuthenticatedUser,
+  type ServerAuthenticatedUser,
+} from "../auth/server-auth-user.ts";
+import type { GrantResolution } from "../auth/grant-cookie.ts";
+import { extractClientIp } from "../rate-limit.ts";
+import { openGscGate, type GscGateResult } from "./gsc-gate.ts";
+import { createKeywordCoverageReader } from "./keyword-coverage-reader.ts";
+import {
+  acquirePublicToolSlot,
+  readPublicToolJson,
+  type PublicToolJsonResult,
+  type PublicToolSlot,
+} from "./public-tool-request.ts";
+import {
+  readTrafficDropSession,
+  resolveTrafficDropGrant,
+  type TrafficDropSession,
+} from "./traffic-drop-session.ts";
+
+const REQUEST_BODY_LIMIT_BYTES = 4_096;
+
+interface DataForSeoCredentials {
+  readonly login: string;
+  readonly password: string;
+}
+
+export interface CompetitorKeywordGapFinalLog {
+  readonly status: "complete" | "partial" | "unavailable";
+  readonly requestedCompetitors: number;
+  readonly completedCompetitors: number;
+  readonly unavailableCompetitors: number;
+  readonly rowCount: number;
+  readonly costUsd: number | null;
+  readonly gsc: "not_requested" | "available" | "partial" | "unavailable";
+  readonly reportProduced: boolean;
+}
+
+export interface CompetitorKeywordGapHandlerDependencies {
+  readonly getServerAuthenticatedUser: () => Promise<ServerAuthenticatedUser>;
+  readonly readJson: (
+    request: Request,
+    maxBytes: number,
+  ) => Promise<PublicToolJsonResult>;
+  readonly resolveMarket: (
+    marketCode: unknown,
+    preferredLanguage?: unknown,
+  ) => DataForSeoMarketResolution | null;
+  readonly credentials: () => DataForSeoCredentials | null;
+  readonly createProvider: (
+    credentials: DataForSeoCredentials,
+  ) => DataForSeoDomainIntersectionClient;
+  readonly extractClientIp: (headers: Headers) => string;
+  readonly acquireSlot: (key: string) => PublicToolSlot;
+  readonly readGscSession: () => Promise<TrafficDropSession>;
+  readonly openGscGate: (clientIp: string) => Promise<GscGateResult>;
+  readonly resolveGscGrant: () => Promise<GrantResolution>;
+  readonly readCoverageQueries: (input: {
+    readonly property: string;
+    readonly accessToken: string;
+  }) => Promise<KeywordCoverageRead>;
+  readonly now: () => Date;
+  /** Sanitized final run telemetry only. */
+  readonly log: (record: CompetitorKeywordGapFinalLog) => void;
+}
+
+function providerCredentials(): DataForSeoCredentials | null {
+  const login = process.env["DATAFORSEO_LOGIN"]?.trim() ?? "";
+  const password = process.env["DATAFORSEO_PASSWORD"]?.trim() ?? "";
+  return login === "" || password === "" ? null : { login, password };
+}
+
+function defaultLog(record: CompetitorKeywordGapFinalLog): void {
+  console.info(
+    JSON.stringify({ event: "competitor_keyword_gap", ...record }),
+  );
+}
+
+function inflightKey(userId: string): string {
+  return `tools:competitor-keyword-gap:inflight:${userId}`;
+}
+
+function completedProviderResult(
+  domain: string,
+  response: DataForSeoDomainIntersectionResponse,
+): CompetitorKeywordGapDataForSeoResult {
+  return {
+    domain,
+    status: "complete",
+    rows: response.rows.flatMap((row) =>
+      row.firstDomainRank === null
+        ? []
+        : [
+            {
+              keyword: row.keyword,
+              searchVolume: row.searchVolume,
+              cpc: row.cpc,
+              keywordDifficulty: row.keywordDifficulty,
+              providerIntent: row.providerIntent,
+              firstDomainRank: row.firstDomainRank,
+              secondDomainRank: row.secondDomainRank,
+            },
+          ],
+    ),
+    totalCount: response.totalCount,
+    costUsd: response.costUsd,
+    providerStatusCode: response.providerStatusCode,
+    taskStatusCode: response.taskStatusCode,
+  };
+}
+
+function unavailableProviderResult(
+  domain: string,
+): CompetitorKeywordGapDataForSeoResult {
+  return {
+    domain,
+    status: "unavailable",
+    rows: [],
+    totalCount: null,
+    costUsd: null,
+    providerStatusCode: null,
+    taskStatusCode: null,
+    failureCode: "keyword_source_unavailable",
+  };
+}
+
+function unavailableGscRead(): CompetitorKeywordGapGscRead {
+  return {
+    status: "unavailable",
+    queryRows: [],
+    queryPageRows: [],
+    queryTruncated: false,
+    queryPageTruncated: false,
+  };
+}
+
+function gscLogStatus(
+  gsc: CompetitorKeywordGapGscRead | null,
+): CompetitorKeywordGapFinalLog["gsc"] {
+  if (gsc === null) return "not_requested";
+  if (gsc.status === "unavailable") return "unavailable";
+  return gsc.queryTruncated || gsc.queryPageTruncated
+    ? "partial"
+    : "available";
+}
+
+function propertyMatchesSite(property: string, siteDomain: string): boolean {
+  if (/^https?:\/\//i.test(property)) {
+    try {
+      return (
+        normalizeCompetitorKeywordGapDomain(new URL(property).hostname) ===
+        siteDomain
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  return (
+    keywordCoverageProperty(`https://${siteDomain}/`, [property]) === property
+  );
+}
+
+async function readOptionalGsc(
+  property: string,
+  siteDomain: string,
+  clientIp: string,
+  dependencies: Pick<
+    CompetitorKeywordGapHandlerDependencies,
+    | "readGscSession"
+    | "openGscGate"
+    | "resolveGscGrant"
+    | "readCoverageQueries"
+  >,
+): Promise<CompetitorKeywordGapGscRead> {
+  let release: (() => void) | null = null;
+  try {
+    const session = await dependencies.readGscSession();
+    if (
+      session.properties === null ||
+      !session.properties.includes(property)
+    ) {
+      return unavailableGscRead();
+    }
+    if (!propertyMatchesSite(property, siteDomain)) {
+      return unavailableGscRead();
+    }
+
+    const gate = await dependencies.openGscGate(clientIp);
+    if (!gate.ok) return unavailableGscRead();
+    release = gate.release;
+
+    const grant = await dependencies.resolveGscGrant();
+    if (
+      grant.kind !== "grant" ||
+      !grant.properties.includes(property)
+    ) {
+      return unavailableGscRead();
+    }
+
+    const coverage = await dependencies.readCoverageQueries({
+      property,
+      accessToken: grant.accessToken,
+    });
+    return {
+      status: "available",
+      queryRows: coverage.queryRows,
+      queryPageRows: coverage.queryPageRows,
+      queryTruncated: coverage.queryPaging.truncated,
+      queryPageTruncated: coverage.queryPagePaging.truncated,
+    };
+  } catch {
+    return unavailableGscRead();
+  } finally {
+    release?.();
+  }
+}
+
+const DEFAULT_DEPENDENCIES: CompetitorKeywordGapHandlerDependencies = {
+  getServerAuthenticatedUser,
+  readJson: readPublicToolJson,
+  resolveMarket: resolveDataForSeoMarket,
+  credentials: providerCredentials,
+  createProvider: (credentials) => new HttpDataForSeoClient(credentials),
+  extractClientIp,
+  acquireSlot: acquirePublicToolSlot,
+  readGscSession: readTrafficDropSession,
+  openGscGate: (clientIp) => openGscGate(clientIp),
+  resolveGscGrant: resolveTrafficDropGrant,
+  readCoverageQueries: createKeywordCoverageReader({}),
+  now: () => new Date(),
+  log: defaultLog,
+};
+
+function json(body: unknown, status: number): Response {
+  return Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store, private" },
+  });
+}
+
+function conflict(body: unknown): Response {
+  return Response.json(body, {
+    status: 409,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Retry-After": "5",
+    },
+  });
+}
+
+export async function handleCompetitorKeywordGapRequest(
+  request: Request,
+  overrides: Partial<CompetitorKeywordGapHandlerDependencies> = {},
+): Promise<Response> {
+  const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
+  let authentication: ServerAuthenticatedUser;
+  try {
+    authentication = await dependencies.getServerAuthenticatedUser();
+  } catch {
+    authentication = { status: "unavailable" };
+  }
+
+  if (authentication.status === "unauthenticated") {
+    return json(createPublicToolError("auth_required"), 401);
+  }
+  if (authentication.status === "unavailable") {
+    return json(createPublicToolError("auth_unavailable"), 503);
+  }
+
+  const body = await dependencies.readJson(request, REQUEST_BODY_LIMIT_BYTES);
+  if (!body.ok) {
+    const status =
+      body.code === "unsupported_media_type"
+        ? 415
+        : body.code === "payload_too_large"
+          ? 413
+          : 400;
+    return json(createPublicToolError(body.code), status);
+  }
+
+  const parsed = parseCompetitorKeywordGapInput(body.value);
+  if (!parsed.ok) {
+    return json(createPublicToolError("invalid_input"), 400);
+  }
+
+  const market = dependencies.resolveMarket(
+    parsed.value.marketCode,
+    parsed.value.languageCode,
+  );
+  if (market === null) {
+    return json(createPublicToolError("invalid_input"), 400);
+  }
+
+  const credentials = dependencies.credentials();
+  if (credentials === null) {
+    return json(createPublicToolError("keyword_source_unavailable"), 503);
+  }
+
+  const clientIp = dependencies.extractClientIp(request.headers);
+  const slot = dependencies.acquireSlot(inflightKey(authentication.userId));
+  if (!slot.acquired) {
+    return conflict(createPublicToolError("search_in_progress"));
+  }
+
+  let finalLog: CompetitorKeywordGapFinalLog = {
+    status: "unavailable",
+    requestedCompetitors: parsed.value.competitorDomains.length,
+    completedCompetitors: 0,
+    unavailableCompetitors: parsed.value.competitorDomains.length,
+    rowCount: 0,
+    costUsd: null,
+    gsc: parsed.value.property === undefined ? "not_requested" : "unavailable",
+    reportProduced: false,
+  };
+
+  try {
+    const provider = dependencies.createProvider(credentials);
+    const settled = await Promise.allSettled(
+      parsed.value.competitorDomains.map((domain) =>
+        Promise.resolve().then(() =>
+          provider.domainIntersection(
+            {
+              target1: domain,
+              target2: parsed.value.siteDomain,
+              locationCode: market.locationCode,
+              languageCode: market.languageCode,
+              intersections: false,
+              limit: COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+            },
+            request.signal,
+          ),
+        ),
+      ),
+    );
+    const completedCompetitors = settled.filter(
+      (outcome) => outcome.status === "fulfilled",
+    ).length;
+    const providerResults = settled.map((outcome, index) => {
+      const domain = parsed.value.competitorDomains[index]!;
+      return outcome.status === "fulfilled"
+        ? completedProviderResult(domain, outcome.value)
+        : unavailableProviderResult(domain);
+    });
+    const costUsd = providerResults.reduce<number | null>(
+      (sum, result) =>
+        result.costUsd === null
+          ? sum
+          : Number(((sum ?? 0) + result.costUsd).toFixed(12)),
+      null,
+    );
+    finalLog = {
+      ...finalLog,
+      completedCompetitors,
+      unavailableCompetitors:
+        parsed.value.competitorDomains.length - completedCompetitors,
+      costUsd,
+    };
+
+    if (completedCompetitors === 0) {
+      return json(createPublicToolError("keyword_source_unavailable"), 502);
+    }
+
+    const gsc =
+      parsed.value.property === undefined
+        ? null
+        : await readOptionalGsc(
+            parsed.value.property,
+            parsed.value.siteDomain,
+            clientIp,
+            dependencies,
+          );
+    finalLog = { ...finalLog, gsc: gscLogStatus(gsc) };
+
+    const envelope = buildCompetitorKeywordGapReport({
+      completedAt: dependencies.now().toISOString(),
+      siteDomain: parsed.value.siteDomain,
+      marketCode: parsed.value.marketCode,
+      languageCode: market.languageCode,
+      competitorDomains: parsed.value.competitorDomains,
+      competitors: providerResults,
+      gsc,
+    });
+    finalLog = {
+      status: envelope.run.status,
+      requestedCompetitors: envelope.result.requestedCompetitors,
+      completedCompetitors: envelope.result.completedCompetitors,
+      unavailableCompetitors: envelope.result.unavailableCompetitors,
+      rowCount: envelope.result.rows.length,
+      costUsd,
+      gsc: envelope.result.overlayStatus,
+      reportProduced: true,
+    };
+    return json({ data: envelope }, 200);
+  } catch {
+    return json(createPublicToolError("keyword_source_unavailable"), 502);
+  } finally {
+    try {
+      slot.release();
+    } finally {
+      try {
+        dependencies.log(finalLog);
+      } catch {
+        // Operational telemetry must never replace the result response.
+      }
+    }
+  }
+}

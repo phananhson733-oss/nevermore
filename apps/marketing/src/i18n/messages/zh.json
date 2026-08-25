@@ -801,6 +801,166 @@
     "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
     "productCtaBody": "如果你想在更完整的连贯工作流开放时收到邮件通知，就加入候补名单。在此之前，先使用本站已公开的 Agents 和辅助工具。",
     "productCta": "加入候补，接收产品开放通知",
+    "competitorKeywordGap": {
+      "form": {
+        "title": "设置竞品关键词差距分析",
+        "intro": "填写本站与 1–5 个竞品域名。本工具只在你主动提交时运行；竞品事实来自 DataForSEO，所选 Search Console 资源只会增加可选的本站证据层。"
+      },
+      "fields": {
+        "siteDomain": {
+          "label": "本站域名",
+          "placeholder": "example.com"
+        },
+        "property": {
+          "label": "Search Console 资源（可选）",
+          "none": "不叠加 GSC 证据"
+        },
+        "market": {
+          "label": "市场"
+        },
+        "language": {
+          "label": "语言"
+        }
+      },
+      "competitors": {
+        "label": "竞品域名",
+        "placeholder": "competitor.com",
+        "add": "添加竞品",
+        "count": "已添加 {count} / 5 个竞品",
+        "remove": "移除 {domain}",
+        "snapshot": "{count} 个竞品 · 最佳排名 #{bestRank}"
+      },
+      "validation": {
+        "siteInvalid": "请输入有效的公开网站域名。",
+        "competitorsRequired": "请至少添加一个竞品再开始分析。",
+        "competitorInvalid": "请输入有效的公开竞品域名。",
+        "competitorSelf": "本站不能同时作为竞品。",
+        "competitorDuplicate": "本次运行已经添加过这个竞品。",
+        "competitorLimit": "一次运行最多比较五个竞品。"
+      },
+      "errors": {
+        "invalid_input": "请检查本站、竞品、市场和语言字段。",
+        "invalid_request": "无法读取本次分析请求。",
+        "payload_too_large": "提交的请求体过大。",
+        "unsupported_media_type": "请使用 JSON 格式提交请求。",
+        "auth_required": "请先登录再运行竞品分析。",
+        "auth_unavailable": "暂时无法读取登录状态，请稍后重试。",
+        "search_in_progress": "该账号已有一次竞品分析正在运行，请等待其完成后再试。",
+        "keyword_source_unavailable": "DataForSEO 本次未能提供可用的竞品排名样本。",
+        "unknown": "本次竞品分析未能完成。"
+      },
+      "running": {
+        "elapsed": "正在分析竞品… 已用时 {seconds} 秒",
+        "complete": "竞品关键词差距分析已完成。"
+      },
+      "actions": {
+        "run": "开始差距分析",
+        "running": "正在分析…"
+      },
+      "status": {
+        "complete": "分析完成",
+        "completeBody": "所有请求的竞品都返回了可用的 DataForSEO 结果。",
+        "partial": "部分结果",
+        "partialBody": "至少一个竞品完成、至少一个竞品不可用。使用结果行前请先查看覆盖范围。",
+        "unavailable": "分析不可用",
+        "unavailableBody": "所有竞品都没有返回可用排名样本；这不代表这些竞品没有关键词。"
+      },
+      "summary": {
+        "eyebrow": "竞品关键词差距报告",
+        "title": "本次运行摘要",
+        "versus": "对比",
+        "scope": "{site} · {market} · {language}",
+        "competitors": "{requested} 个竞品中有 {completed} 个完成",
+        "unavailable": "{count, plural, other {# 个竞品不可用}}",
+        "capturedAt": "采集时间"
+      },
+      "sources": {
+        "dfs": "DataForSEO 估算",
+        "gsc": "GSC 实测",
+        "status": {
+          "available": "可用",
+          "partial": "部分可用",
+          "unavailable": "不可用",
+          "not_requested": "未请求"
+        }
+      },
+      "coverage": {
+        "title": "竞品覆盖范围",
+        "detailsSummary": "技术覆盖范围与限制",
+        "scope": "{requested} 个请求竞品中，有 {completed} 个返回了可用的数据源结果。",
+        "requested": "请求了 {count} 个竞品",
+        "complete": "完成",
+        "unavailable": "不可用",
+        "rows": "返回 {returned} 条 · 数据源报告 {total} 条",
+        "truncated": "该竞品结果触及行数边界。",
+        "failure": "不可用原因：{code}"
+      },
+      "limitations": {
+        "title": "证据边界",
+        "resultTruncated": "合并结果触及输出边界，可能还有其他关键词行。",
+        "gscQueryTruncated": "GSC 查询样本触及行数边界；缺少一条查询不能证明曝光为零。",
+        "gscQueryPageTruncated": "GSC query-page 样本触及行数边界；可能遗漏匹配页面。",
+        "gscUnavailable": "可选 GSC 证据层不可用。DataForSEO 竞品行仍然是独立的数据源证据。"
+      },
+      "overview": {
+        "returnedGapRows": "本次返回的差距行",
+        "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
+        "completedCompetitors": "完成竞品",
+        "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
+        "gscObservedRows": "GSC 已观测行",
+        "gscObservedRowsBody": "本次返回结果中，在有限本站 GSC 查询样本里被强或弱观测到的行数。"
+      },
+      "boundaries": {
+        "title": "数据与证据边界",
+        "dfsEstimates": "搜索量、CPC、难度、意图和竞品排名是 DataForSEO 在本次有限运行中的估算。",
+        "gscOwnSample": "GSC 只覆盖所选本站的有限样本；缺少某条查询记录不等于曝光为零。",
+        "competitorOutcomesUnavailable": "竞品流量与转化结果不可用；排名和估算不能证明这些结果。",
+        "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。"
+      },
+      "metrics": {
+        "searchVolume": "搜索量",
+        "cpc": "CPC",
+        "difficulty": "难度",
+        "intent": "意图"
+      },
+      "gsc": {
+        "observed_strong": "在 GSC 查询样本中观测到较强表现",
+        "observed_weak": "在 GSC 查询样本中观测到较弱表现",
+        "not_observed_in_gsc_query_sample": "本次 GSC 查询样本未观测到",
+        "gsc_query_sample_not_read": "未读取到 GSC 查询样本",
+        "impressions": "曝光",
+        "position": "平均排名",
+        "page": "打开已观测页面"
+      },
+      "nextSteps": {
+        "optimize_existing": "创建新内容前，先检查已观测到的页面。",
+        "review_content_gap": "先检查竞品差距，再决定是否值得新建页面。"
+      },
+      "table": {
+        "title": "差距清单",
+        "subtitle": "按关键词聚合，方便一次看清竞品覆盖、本站有限 GSC 证据，以及当前最明确的下一步。",
+        "legend": "DataForSEO 的竞品结果与可选的本站 Search Console 观测分开呈现。",
+        "caption": "带 DataForSEO 指标与可选 GSC 证据的竞品关键词差距",
+        "keyword": "关键词",
+        "dfsEstimates": "DataForSEO 估算",
+        "competitorRanks": "竞品排名",
+        "ownSiteGsc": "本站 GSC 证据",
+        "recommendation": "下一步检查建议"
+      },
+      "ownState": {
+        "not_observed_in_provider_rankings": "数据源排名样本未观测到本站"
+      },
+      "intent": {
+        "informational": "信息获取",
+        "navigational": "导航访问",
+        "commercial": "商业调研",
+        "transactional": "交易转化"
+      },
+      "empty": {
+        "title": "没有返回差距行",
+        "body": "已完成的竞品读取在本次排名与行数边界内没有返回关键词。"
+      }
+    },
     "abTest": {
       "title": "A/B 测试样本量计算器",
       "description": "根据基线转化率、最小可检测效应和统计参数，计算 A/B 测试所需的样本量。",

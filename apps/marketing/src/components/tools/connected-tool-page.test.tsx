@@ -5,7 +5,11 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../auth/sign-in-dialog", () => ({
+  SignInDialog: () => null,
+}));
 
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
@@ -36,6 +40,7 @@ function render(
   locale: string,
   tool: ConnectedTool,
   connected = false,
+  accountGated = false,
 ): string {
   return withIntl(
     locale,
@@ -43,6 +48,7 @@ function render(
       locale={locale}
       content={getConnectedToolContent(locale, tool)}
       connected={connected}
+      accountGated={accountGated}
     />,
   );
 }
@@ -112,6 +118,45 @@ describe("ConnectedToolPage hero CTA", () => {
     );
     expect(markup).toContain('href="/waitlist"');
     expect(markup).not.toContain("/api/auth/google/start");
+  });
+
+  it("shows an account sign-in button for a signed-out account-gated tool", () => {
+    const markup = render("en", "competitor-keyword-gap", false, true);
+
+    expect(markup).toContain("A GenGrowth sign-in is required");
+    expect(markup).toContain("Sign in to analyze competitors");
+    expect(markup).toContain("<button");
+    expect(markup).not.toContain('href="/waitlist"');
+    expect(markup).not.toContain("/api/auth/google/start");
+    expect(markup).not.toContain('href="#"');
+  });
+
+  it("hides the account gate once the visitor is authenticated", () => {
+    const markup = render("en", "competitor-keyword-gap", true, true);
+
+    expect(markup).not.toContain(
+      "If you already connected Search Console, you can optionally add your own observed query and page evidence",
+    );
+    expect(markup).not.toContain("Sign in to analyze competitors");
+    expect(markup).not.toContain("/waitlist");
+    expect(markup).not.toContain("/api/auth/google/start");
+  });
+
+  it("can switch an authenticated tool into a report-first shell", () => {
+    const markup = withIntl(
+      "en",
+      <ConnectedToolPage
+        locale="en"
+        content={getConnectedToolContent("en", "competitor-keyword-gap")}
+        connected
+        accountGated
+        compactConnected
+      />,
+    );
+
+    expect(markup).not.toContain("How the competitor gap is built");
+    expect(markup).not.toContain("What one run gives you");
+    expect(markup).not.toContain(">FAQ<");
   });
 
   it("renders no connect CTA once the visitor is connected", () => {

@@ -9,3 +9,4 @@ export * from "./quick-wins/index.ts";
 export * from "./gsc-analytics/index.ts";
 export * from "./keyword-opportunity/index.ts";
 export * from "./daily-briefing/index.ts";
+export * from "./competitor-keyword-gap/index.ts";

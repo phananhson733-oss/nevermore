@@ -31,6 +31,7 @@ vi.mock("../config/sitemap-tools", () => ({
     "traffic-drop-diagnosis",
     "low-competition-keywords",
     "internal-link-audit",
+    "competitor-keyword-gap",
   ],
 }));
 
@@ -65,6 +66,12 @@ describe("canonical marketing sitemap", () => {
       "https://gengrowth.ai/zh/tools/daily-search-briefing",
     );
     expect(urls).toContain("https://gengrowth.ai/tools/seo-quick-wins");
+    expect(urls).toContain(
+      "https://gengrowth.ai/tools/competitor-keyword-gap",
+    );
+    expect(urls).toContain(
+      "https://gengrowth.ai/zh/tools/competitor-keyword-gap",
+    );
     expect(urls).not.toContain("https://gengrowth.ai/tools/seo-audit");
     expect(urls).toContain(
       "https://gengrowth.ai/tools/internal-link-audit",

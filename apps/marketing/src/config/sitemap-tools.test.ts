@@ -77,6 +77,10 @@ describe("sitemap tool list", () => {
     expect(SITEMAP_TOOLS).toContain("internal-link-audit");
   });
 
+  it("publishes the competitor keyword gap route", () => {
+    expect(SITEMAP_TOOLS).toContain("competitor-keyword-gap");
+  });
+
   it("keeps every compatibility redirect out of the sitemap", () => {
     const listed = new Set<string>(SITEMAP_TOOLS);
     for (const slug of REDIRECT_ONLY) {
@@ -150,6 +154,16 @@ describe("sitemap Agent routes", () => {
 });
 
 describe("connected tool paths", () => {
+  it("uses the competitor keyword gap slug everywhere", () => {
+    expect(CONNECTED_TOOLS).toContain("competitor-keyword-gap");
+    expect(
+      getConnectedToolContent("en", "competitor-keyword-gap").path,
+    ).toBe("/tools/competitor-keyword-gap");
+    expect(
+      getConnectedToolContent("zh", "competitor-keyword-gap").path,
+    ).toBe("/tools/competitor-keyword-gap");
+  });
+
   // Both locales: the table holds a separate object per language, and a stale
   // path in only one of them sends exactly that language's visitors to the
   // wrong canonical and the wrong OAuth return.
