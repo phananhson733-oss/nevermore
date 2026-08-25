@@ -68,7 +68,13 @@ export function bestCompetitorPageHost(
   if (url === null) return null;
   try {
     const { hostname } = new URL(url);
-    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+    // Strip `www.` only when something is left. `https://www./path` parses,
+    // passes the safety checks, and used to yield an empty string -- rendering
+    // a live link whose label named nowhere at all.
+    const label = hostname.startsWith("www.")
+      ? hostname.slice(4)
+      : hostname;
+    return label === "" ? null : label;
   } catch {
     return null;
   }

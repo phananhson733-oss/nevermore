@@ -340,11 +340,20 @@ const DEFAULT_DEPENDENCIES: CompetitorKeywordGapHandlerDependencies = {
   log: defaultLog,
 };
 
-/** The raw client-declared contract version, or null when the body carries none. */
+/**
+ * The raw client-declared contract version, or null when the body carries none.
+ *
+ * `Object.hasOwn` rather than a plain read: ordinary property access walks the
+ * prototype, so a polluted `Object.prototype.acceptSchemaVersion` anywhere in
+ * the process would let a body that declares nothing satisfy a required field.
+ * A gate that decides whether to spend money should not be satisfiable by
+ * something the request never sent.
+ */
 function declaredSchemaVersion(body: unknown): string | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return null;
   }
+  if (!Object.hasOwn(body, "acceptSchemaVersion")) return null;
   const declared = (body as Record<string, unknown>)["acceptSchemaVersion"];
   return typeof declared === "string" ? declared : null;
 }

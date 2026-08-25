@@ -5,6 +5,15 @@ import {
   parseCompetitorKeywordGapInput,
 } from "./validation.ts";
 
+/**
+ * The contract version is required, so every negative fixture that is not
+ * ABOUT the version has to carry it. Without this the version check short-
+ * circuits first and the test passes while never reaching the rule it names --
+ * a regression that started accepting duplicate competitors or malformed
+ * hosts would stay green.
+ */
+const VERSION = { acceptSchemaVersion: "competitor_keyword_gap.v3" } as const;
+
 describe("parseCompetitorKeywordGapInput", () => {
   it("normalizes the site and competitor domains onto one canonical provider shape", () => {
     expect(
@@ -167,6 +176,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   it("rejects duplicate and self competitors after normalization", () => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["www.acme.com", "https://www.acme.com"],
         marketCode: "US",
@@ -179,6 +189,7 @@ describe("parseCompetitorKeywordGapInput", () => {
 
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["One.Example", "https://www.one.example/"],
         marketCode: "US",
@@ -211,6 +222,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects invalid public competitor host %s", (competitorDomain) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: [competitorDomain],
         marketCode: "US",
@@ -228,30 +240,35 @@ describe("parseCompetitorKeywordGapInput", () => {
     "acme.com",
     {},
     {
+      ...VERSION,
       siteDomain: 123,
       competitorDomains: ["one.example"],
       marketCode: "US",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: "one.example",
       marketCode: "US",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
       marketCode: "",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
       marketCode: "US",
       languageCode: "",
     },
     {
+      ...VERSION,
       property: 123,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
@@ -277,6 +294,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects %s", (_label, overrides) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["one.example"],
         marketCode: "US",
@@ -303,6 +321,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects invalid Search Console property %s", (property) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         property,
         siteDomain: "acme.com",
         competitorDomains: ["one.example"],

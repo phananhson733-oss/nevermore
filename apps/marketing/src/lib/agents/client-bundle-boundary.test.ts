@@ -53,40 +53,58 @@ interface Reference {
 }
 
 /**
- * Both static patterns below are anchored to the start of a line, because a
- * regex cannot tell code from prose. A JSDoc line reading "must not import
+ * How an import is recognised, and why it is not just `\bimport\b`.
+ *
+ * A regex cannot tell code from prose. A JSDoc line reading "must not import
  * `@sf/sources`" matched the side-effect pattern, and this guard reported the
  * file that DOCUMENTS the rule as the file that breaks it. A guard that cries
  * wolf about its own comment is one people learn to mute.
  *
- * Anchoring rather than stripping comments: `import` and `export` are
- * statements, so a real one always follows a statement boundary -- the start
- * of a line, or a `;`/`}` -- while a comment line that mentions one does not
- * (` * ...`, `// ...`). Stripping would mean tracking strings, templates and
- * regex literals, and this app parses text, so a regex holding an unbalanced
- * quote would desynchronise the stripper and hide a real import.
+ * Three rules, each answering a way the naive version was wrong:
  *
- * The `;`/`}` alternative is deliberate and asymmetric. `const a = 1; import
- * "@sf/sources";` is legal -- a static import must be top-level but need not
- * begin a physical line -- and a line-start-only anchor walked straight past
- * it. It does re-admit one false positive, a comment that spells `;` before
- * the word `import`, and that is the trade taken on purpose: a MISSED import
- * fails later as an unreadable Turbopack chunking error, while a false
- * positive fails here with the offending file named.
+ * 1. STATEMENT_START -- a real `import`/`export` statement begins a line;
+ *    a comment line that mentions one does not (` * ...`, `// ...`).
  *
- * The dynamic form stays unanchored: `await import("x")` is legitimately
- * mid-expression, and missing one of those is worse than the rare false
- * positive from a comment that spells a call.
+ * 2. IMPORT_CLAUSE -- what may sit between the keyword and `from` is an
+ *    import clause and nothing else: bindings, at most one braced group, no
+ *    `;`, no `=`, no stray brace. The old `[\s\S]*?` crossed statement
+ *    boundaries, so `export type Local = {...}` on the line above a real
+ *    value import swallowed it and reported it as TYPE-ONLY -- a false
+ *    NEGATIVE in the one direction that matters, since the offender check
+ *    then skips it and the forbidden barrel ships.
+ *
+ * 3. The keyword may be followed by punctuation instead of whitespace.
+ *    `import{a}from"x"`, `import"x"`, `export{a}from"x"` and `export*from"x"`
+ *    are all legal and all used to be invisible here.
+ *
+ * Stripping comments and strings instead of anchoring would mean tracking
+ * templates and regex literals, and this app parses text: a regex holding an
+ * unbalanced quote would desynchronise a stripper and hide a real import.
+ *
+ * Known gap, accepted: a static import that shares a line with an earlier
+ * statement (`const a = 1; import "@sf/sources";`) is not seen. It is legal
+ * but the repository's formatter never emits it, and admitting a `;` boundary
+ * to catch it made every string and comment containing "; import ... from"
+ * a false positive -- including the code examples this marketing app ships.
+ * The production build still fails on a missed barrel; this guard is the
+ * earlier of two nets, not the only one.
  */
-const STATEMENT_START = "(?:^|[;}])[ \\t]*";
+const STATEMENT_START = "^[ \\t]*";
+/** Bindings and at most one braced group -- never a `;`, `=`, or stray brace. */
+const IMPORT_CLAUSE = "[^;={}]*(?:\\{[^{}]*\\})?[^;={}]*";
 const STATIC_IMPORT = new RegExp(
-  `${STATEMENT_START}(?:import|export)\\s+(type\\s+)?[\\s\\S]*?from\\s*['"\`]([^'"\`]+)['"\`]`,
+  `${STATEMENT_START}(?:import|export)(?:\\s+(type\\s+)?|(?=[{*]))${IMPORT_CLAUSE}from\\s*['"\`]([^'"\`]+)['"\`]`,
   "gm",
 );
 const SIDE_EFFECT_IMPORT = new RegExp(
-  `${STATEMENT_START}import\\s+['"\`]([^'"\`]+)['"\`]`,
+  `${STATEMENT_START}import(?:\\s+|(?=['"\`]))['"\`]([^'"\`]+)['"\`]`,
   "gm",
 );
+/**
+ * Unanchored on purpose: `await import("x")` is legitimately mid-expression,
+ * and missing one is worse than the rare false positive from a comment that
+ * spells a call.
+ */
 const DYNAMIC_IMPORT = /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g;
 
 function referencesIn(source: string): readonly Reference[] {
@@ -216,14 +234,52 @@ describe("the reference scanner reads code, not prose", () => {
     expect(referencesIn(source)).toEqual([]);
   });
 
-  it("sees a static import that shares a line with an earlier statement", () => {
-    // Legal ECMAScript: a static import must be top-level, not line-leading.
-    expect(referencesIn('const marker = 1; import "@sf/sources";')).toEqual([
+  it("does not let a preceding type declaration swallow the import below it", () => {
+    // The failure this exists to prevent is a false NEGATIVE: the old pattern
+    // matched from `export type`, ran across the line break to the next
+    // statement's `from`, and reported a real VALUE import as type-only --
+    // which the offender check then skips, shipping the forbidden barrel.
+    for (const preceding of [
+      "export type Local = { id: string };",
+      "export type Local = { id: string }",
+      "export interface Local { id: string }",
+      "export function noop() {}",
+      "export const ready = { id: 1 };",
+    ]) {
+      expect(
+        referencesIn(`${preceding}\nimport { runtime } from "@sf/engine";`),
+      ).toContainEqual({ specifier: "@sf/engine", typeOnly: false });
+    }
+  });
+
+  it("does not report a type-only import as a value one after any of those", () => {
+    expect(
+      referencesIn(
+        'export function noop() {}\nimport type { Shape } from "@sf/engine";',
+      ),
+    ).toEqual([{ specifier: "@sf/engine", typeOnly: true }]);
+  });
+
+  it("sees the compact forms that omit whitespace after the keyword", () => {
+    // All legal: JavaScript does not require a space before punctuation.
+    expect(referencesIn('import{runtime}from"@sf/engine";')).toEqual([
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
+    expect(referencesIn('import"@sf/sources";')).toEqual([
       { specifier: "@sf/sources", typeOnly: false },
     ]);
+    expect(referencesIn('export{runtime}from"@sf/engine";')).toEqual([
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
+    expect(referencesIn('export*from"@sf/public-tools";')).toEqual([
+      { specifier: "@sf/public-tools", typeOnly: false },
+    ]);
+  });
+
+  it("reads a multi-line import clause as one reference", () => {
     expect(
-      referencesIn('function f() {} import { a } from "@sf/engine";'),
-    ).toEqual([{ specifier: "@sf/engine", typeOnly: false }]);
+      referencesIn('import {\n  a,\n  b,\n} from "@sf/public-tools";'),
+    ).toEqual([{ specifier: "@sf/public-tools", typeOnly: false }]);
   });
 
   it("still reports the real thing on the line below one", () => {

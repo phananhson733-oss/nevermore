@@ -154,7 +154,11 @@ export function parseCompetitorKeywordGapInput(
   const competitorDomains = input["competitorDomains"];
   const marketCode = input["marketCode"];
   const languageCode = input["languageCode"];
-  const acceptSchemaVersion = input["acceptSchemaVersion"];
+  // Own property only: a plain read walks the prototype, and a required field
+  // must not be satisfiable by something the request never sent.
+  const acceptSchemaVersion = Object.hasOwn(input, "acceptSchemaVersion")
+    ? input["acceptSchemaVersion"]
+    : undefined;
 
   if (
     typeof siteDomain !== "string" ||

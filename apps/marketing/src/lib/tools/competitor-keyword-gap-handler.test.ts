@@ -362,7 +362,39 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.log).not.toHaveBeenCalled();
   });
 
-  it("runs a request that declares the current contract version exactly like one that omits it", async () => {
+  it("does not let an inherited property satisfy the declared version", async () => {
+    // Injected past `post()` on purpose: JSON.stringify drops inherited
+    // properties, so a test that went through it would pass with or without
+    // the own-property read and prove nothing. This is the shape a polluted
+    // `Object.prototype` produces -- a body that declares nothing while an
+    // ordinary property read still answers with the current version.
+    const body = Object.create({
+      acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    }) as Record<string, unknown>;
+    const { acceptSchemaVersion: _omitted, ...withoutVersion } = VALID_INPUT;
+    Object.assign(body, withoutVersion);
+    expect(body["acceptSchemaVersion"]).toBe(
+      COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    );
+    expect(Object.hasOwn(body, "acceptSchemaVersion")).toBe(false);
+
+    const dependencies = runnableDependencies({
+      readJson: vi.fn().mockResolvedValue({ ok: true, value: body }),
+    });
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      dependencies,
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: { code: "client_out_of_date" },
+    });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+  });
+
+  it("runs a request that declares the current contract version", async () => {
     const dependencies = runnableDependencies();
 
     const response = await handleCompetitorKeywordGapRequest(
@@ -392,7 +424,6 @@ describe("handleCompetitorKeywordGapRequest", () => {
       post(withoutVersion),
       dependencies,
     );
-
     // Not `invalid_input`: a bundle too old to send the field needs to be
     // told to reload, and it must hear that before the run is paid for --
     // which is the population the optional field used to miss entirely.
