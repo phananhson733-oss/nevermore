@@ -52,27 +52,46 @@ interface Reference {
   readonly typeOnly: boolean;
 }
 
+/**
+ * Both static patterns below are anchored to the start of a line, because a
+ * regex cannot tell code from prose. A JSDoc line reading "must not import
+ * `@sf/sources`" matched the side-effect pattern, and this guard reported the
+ * file that DOCUMENTS the rule as the file that breaks it. A guard that cries
+ * wolf about its own comment is one people learn to mute.
+ *
+ * Anchoring rather than stripping comments: `import` and `export` are
+ * statements, so a real one always begins a line, while a comment line that
+ * mentions one never does (` * ...`, `// ...`). Stripping would mean tracking
+ * strings, templates and regex literals -- and this app parses text, so a
+ * regex holding an unbalanced quote would desynchronise the stripper and hide
+ * a real import. A missed import is the failure mode that matters here.
+ *
+ * The dynamic form stays unanchored: `await import("x")` is legitimately
+ * mid-expression, and missing one of those is worse than the rare false
+ * positive from a comment that spells a call.
+ */
+const STATIC_IMPORT =
+  /^[ \t]*(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/gm;
+const SIDE_EFFECT_IMPORT = /^[ \t]*import\s+['"`]([^'"`]+)['"`]/gm;
+const DYNAMIC_IMPORT = /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g;
+
 function referencesIn(source: string): readonly Reference[] {
   const found: Reference[] = [];
   // `import type { A } from "x"` and `import { type A } from "x"` differ: only
   // the first erases the whole statement. The second still emits the import.
-  for (const match of source.matchAll(
-    /\b(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/g,
-  )) {
+  for (const match of source.matchAll(STATIC_IMPORT)) {
     if (match[2] !== undefined) {
       found.push({ specifier: match[2], typeOnly: match[1] !== undefined });
     }
   }
   // A side-effect import has no `from` and is never erased: `import "x"` runs
   // the whole module. The `from`-only pattern above walked straight past it.
-  for (const match of source.matchAll(/\bimport\s+['"`]([^'"`]+)['"`]/g)) {
+  for (const match of source.matchAll(SIDE_EFFECT_IMPORT)) {
     if (match[1] !== undefined) {
       found.push({ specifier: match[1], typeOnly: false });
     }
   }
-  for (const match of source.matchAll(
-    /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g,
-  )) {
+  for (const match of source.matchAll(DYNAMIC_IMPORT)) {
     if (match[1] !== undefined) {
       found.push({ specifier: match[1], typeOnly: false });
     }
@@ -169,6 +188,41 @@ function clientClosure(): ReadonlyMap<string, readonly Reference[]> {
   }
   return seen;
 }
+
+describe("the reference scanner reads code, not prose", () => {
+  it("ignores a barrel named inside a comment", () => {
+    const source = [
+      "/**",
+      " * This module must not import `@sf/sources`, so the shape is restated.",
+      " */",
+      "// import \"@sf/engine\";",
+      "export const shape = 1;",
+    ].join("\n");
+
+    expect(referencesIn(source)).toEqual([]);
+  });
+
+  it("still reports the real thing on the line below one", () => {
+    const source = [
+      "// we deliberately do not import \"@sf/engine\" here",
+      'import "@sf/sources";',
+      'import { thing } from "@sf/public-tools";',
+      'import type { Shape } from "@sf/engine";',
+      'const late = await import("@sf/sources");',
+    ].join("\n");
+
+    expect(referencesIn(source)).toEqual(
+      expect.arrayContaining([
+        { specifier: "@sf/sources", typeOnly: false },
+        { specifier: "@sf/public-tools", typeOnly: false },
+        { specifier: "@sf/engine", typeOnly: true },
+      ]),
+    );
+    expect(
+      referencesIn(source).filter((reference) => !reference.typeOnly).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
 
 describe("modules the browser bundle reaches stay off the package barrels", () => {
   const closure = clientClosure();
