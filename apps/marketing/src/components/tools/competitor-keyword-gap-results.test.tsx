@@ -769,6 +769,24 @@ describe("CompetitorKeywordGapResults", () => {
     );
   });
 
+  it("disables the plan button when the lane and band filter match nothing", async () => {
+    const host = await renderResults();
+    const copyPlan = (): HTMLButtonElement | null =>
+      host.querySelector<HTMLButtonElement>('[data-row-action="copy-plan"]');
+
+    expect(copyPlan()?.disabled).toBe(false);
+
+    await click(host.querySelector('[data-next-step-filter="optimize_existing"]'));
+    await click(host.querySelector('[data-pre-screen-filter="stretch"]'));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=0");
+    expect(copyPlan()?.disabled).toBe(true);
+
+    await click(copyPlan());
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="status"]')).toBeNull();
+  });
+
   it("writes the Chinese plan for zh locales and reports a clipboard failure inline", async () => {
     const host = await renderResults(BASE, { locale: "zh" });
     const copyPlan = host.querySelector('[data-row-action="copy-plan"]');

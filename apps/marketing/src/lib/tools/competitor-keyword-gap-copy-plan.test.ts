@@ -65,6 +65,7 @@ function row(
 
 function result(
   rows: readonly CompetitorKeywordGapRow[],
+  overrides: Partial<CompetitorKeywordGapResultV3> = {},
 ): CompetitorKeywordGapResultV3 {
   return {
     capturedAt: "2026-08-24T12:00:00.000Z",
@@ -80,7 +81,24 @@ function result(
     requestedCompetitors: 2,
     completedCompetitors: 2,
     unavailableCompetitors: 0,
-    competitors: [],
+    competitors: [
+      {
+        domain: "alpha.example",
+        status: "complete",
+        returnedRows: rows.length,
+        totalCount: rows.length,
+        truncated: false,
+        failureCode: null,
+      },
+      {
+        domain: "beta.example",
+        status: "complete",
+        returnedRows: 0,
+        totalCount: 0,
+        truncated: false,
+        failureCode: null,
+      },
+    ],
     rows,
     resultTruncated: false,
     overlayStatus: "available",
@@ -88,16 +106,18 @@ function result(
     gscQueryPageTruncated: false,
     gscQueryRowCount: 2,
     gscQueryPageRowCount: 2,
+    ...overrides,
   };
 }
 
 function build(
   rows: readonly CompetitorKeywordGapRow[],
   locale: "en" | "zh" = "en",
+  overrides: Partial<CompetitorKeywordGapResultV3> = {},
 ) {
   return buildCompetitorKeywordGapPlan({
     locale,
-    result: result(rows),
+    result: result(rows, overrides),
     rows,
     laneFilter: "review_content_gap",
     bandFilter: "stretch",
@@ -109,15 +129,20 @@ interface ParsedPlan {
   readonly rows: readonly Record<string, unknown>[];
 }
 
-/** Splits the markdown into the text outside the single fence and the parsed JSON inside it. */
+/**
+ * Splits the markdown into the text outside the single fence and the parsed
+ * JSON inside it. Throws rather than asserting so a malformed document fails
+ * the test that built it, not this helper.
+ */
 function splitFence(markdown: string): {
   readonly outside: string;
   readonly parsed: ParsedPlan;
 } {
   const open = markdown.indexOf("```json\n");
   const close = markdown.indexOf("\n```", open + "```json\n".length);
-  expect(open).toBeGreaterThan(-1);
-  expect(close).toBeGreaterThan(open);
+  if (open === -1 || close <= open) {
+    throw new Error("plan does not contain one fenced JSON block");
+  }
   const body = markdown.slice(open + "```json\n".length, close);
   return {
     outside: markdown.slice(0, open) + markdown.slice(close + "\n```".length),
@@ -138,6 +163,15 @@ describe("buildCompetitorKeywordGapPlan", () => {
     expect(zh.markdown.match(/```json/g)).toHaveLength(1);
     expect(en.rowCount).toBe(1);
     expect(en.omittedRows).toBe(0);
+    expect(Object.isFrozen(en)).toBe(true);
+  });
+
+  it("states the row cap from the constant the loop enforces", () => {
+    const en = splitFence(build([row(0)], "en").markdown);
+    const zh = splitFence(build([row(0)], "zh").markdown);
+
+    expect(en.outside).toContain(`capped at ${COPY_PLAN_MAX_ROWS}`);
+    expect(zh.outside).toContain(`最多 ${COPY_PLAN_MAX_ROWS} 行`);
   });
 
   it("puts every visitor/provider value inside the fence", () => {
@@ -174,6 +208,8 @@ describe("buildCompetitorKeywordGapPlan", () => {
   it("carries each field's evidence label", () => {
     const plan = build([
       row(0, {
+        cpc: { availability: "explicit_zero", value: 0 },
+        keywordDifficulty: { availability: "provider_no_data", value: null },
         preScreen: {
           band: "defer_brand_navigational",
           basis: "tool_heuristic",
@@ -195,9 +231,28 @@ describe("buildCompetitorKeywordGapPlan", () => {
     ]);
     const { parsed } = splitFence(plan.markdown);
 
-    expect(parsed.rows[0]).toMatchObject({
+    expect(parsed.rows[0]).toStrictEqual({
       keyword: "keyword 000",
-      searchVolume: { value: 1000, source: "dfs_estimate" },
+      coreKeyword: { value: "keyword", source: "dfs_estimate" },
+      providerIntent: { value: "commercial", source: "dfs_estimate" },
+      searchVolume: {
+        value: 1000,
+        availability: "available",
+        source: "dfs_estimate",
+      },
+      searchVolumeTrend: {
+        monthly: 1,
+        quarterly: 2,
+        yearly: 3,
+        source: "dfs_estimate",
+      },
+      cpc: { value: 0, availability: "explicit_zero", source: "dfs_estimate" },
+      keywordDifficulty: {
+        value: null,
+        availability: "provider_no_data",
+        source: "dfs_estimate",
+      },
+      bestCompetitorRank: { value: 1, source: "dfs_estimate" },
       competitorPages: {
         "alpha.example": {
           rank: 1,
@@ -212,6 +267,10 @@ describe("buildCompetitorKeywordGapPlan", () => {
         updatedAt: "2026-05-14T18:17:21.000Z",
         source: "dfs_snapshot",
       },
+      ownState: {
+        value: "not_observed_in_provider_rankings",
+        source: "dfs_estimate",
+      },
       gsc: {
         queryStatus: "observed_weak",
         evidenceBasis: "query",
@@ -219,6 +278,9 @@ describe("buildCompetitorKeywordGapPlan", () => {
         queryPosition: 34,
         pageStatus: "observed_sufficient",
         pageUrl: "https://example.com/product",
+        pageImpressions: 300,
+        pagePosition: 12.4,
+        queryPageCoverage: 0.94,
         source: "gsc_measured",
       },
       preScreen: {
@@ -226,7 +288,41 @@ describe("buildCompetitorKeywordGapPlan", () => {
         reason: "competitor_brand_token",
         source: "tool_heuristic",
       },
-      nextStep: "optimize_existing",
+      nextStep: { value: "optimize_existing", source: "tool_heuristic" },
+    });
+  });
+
+  it("gives the gsc block no source when the sample was not read", () => {
+    const plan = build(
+      [
+        row(0, {
+          gsc: {
+            queryStatus: "gsc_query_sample_not_read",
+            evidenceBasis: null,
+            queryImpressions: null,
+            queryPosition: null,
+            pageStatus: "gsc_query_page_sample_not_read",
+            pageUrl: null,
+            pageImpressions: null,
+            pagePosition: null,
+            queryPageCoverage: null,
+            nextStep: "verify_own_coverage",
+          },
+        }),
+      ],
+      "en",
+      { overlayStatus: "not_requested", gscQueryRowCount: null },
+    );
+    const { parsed } = splitFence(plan.markdown);
+
+    expect(parsed.rows[0]?.gsc).toMatchObject({
+      queryStatus: "gsc_query_sample_not_read",
+      pageStatus: "gsc_query_page_sample_not_read",
+      source: null,
+    });
+    expect(parsed.rows[0]?.nextStep).toStrictEqual({
+      value: "verify_own_coverage",
+      source: "tool_heuristic",
     });
   });
 
@@ -277,6 +373,17 @@ describe("buildCompetitorKeywordGapPlan", () => {
     ).toBe(hugeTitle);
   });
 
+  it("renders an empty plan for zero rows without inventing a row", () => {
+    const plan = build([]);
+    const { parsed } = splitFence(plan.markdown);
+
+    expect(plan.rowCount).toBe(0);
+    expect(plan.omittedRows).toBe(0);
+    expect(parsed.rows).toStrictEqual([]);
+    expect(parsed.meta).toMatchObject({ rowCount: 0, omittedRows: 0 });
+    expect(plan.markdown.match(/```json/g)).toHaveLength(1);
+  });
+
   it("labels the filter that produced the rows", () => {
     const plan = build([row(0)]);
     const { parsed } = splitFence(plan.markdown);
@@ -294,6 +401,68 @@ describe("buildCompetitorKeywordGapPlan", () => {
       competitorDomains: ["alpha.example", "beta.example"],
       rowCount: 1,
       omittedRows: 0,
+    });
+  });
+
+  it("carries the run's coverage and truncation facts so absence is not read as evidence", () => {
+    const plan = build([row(0)], "en", {
+      completedCompetitors: 1,
+      unavailableCompetitors: 1,
+      competitors: [
+        {
+          domain: "alpha.example",
+          status: "complete",
+          returnedRows: 300,
+          totalCount: 68642,
+          truncated: true,
+          failureCode: null,
+        },
+        {
+          domain: "beta.example",
+          status: "unavailable",
+          returnedRows: 0,
+          totalCount: null,
+          truncated: false,
+          failureCode: "keyword_source_unavailable",
+        },
+      ],
+      resultTruncated: true,
+      overlayStatus: "partial",
+      gscQueryTruncated: true,
+      gscQueryPageTruncated: false,
+      gscQueryRowCount: 25000,
+      gscQueryPageRowCount: 0,
+    });
+    const { parsed } = splitFence(plan.markdown);
+
+    expect(parsed.meta).toMatchObject({
+      requestedCompetitors: 2,
+      completedCompetitors: 1,
+      unavailableCompetitors: 1,
+      competitors: [
+        {
+          domain: "alpha.example",
+          status: "complete",
+          returnedRows: 300,
+          totalCount: 68642,
+          truncated: true,
+          failureCode: null,
+        },
+        {
+          domain: "beta.example",
+          status: "unavailable",
+          returnedRows: 0,
+          totalCount: null,
+          truncated: false,
+          failureCode: "keyword_source_unavailable",
+        },
+      ],
+      resultTruncated: true,
+      overlayStatus: "partial",
+      gscQueryTruncated: true,
+      gscQueryPageTruncated: false,
+      gscQueryRowCount: 25000,
+      gscQueryPageRowCount: 0,
     });
   });
 });
