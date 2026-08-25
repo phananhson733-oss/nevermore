@@ -6,6 +6,7 @@ import { createPublicToolResult } from "../contract.ts";
 import {
   MIN_DIMENSION_COVERAGE,
   queryPageCoverage,
+  type GscPageRow,
   type GscQueryPageRow,
 } from "../gsc-analytics/page-reader.ts";
 import { latestFinalWindow, shiftDate } from "../gsc-analytics/window.ts";
@@ -36,10 +37,14 @@ import type {
   DailyBriefingLaneRowCounts,
   DailyBriefingLimitationCode,
   DailyBriefingMode,
+  DailyBriefingNoiseFloor,
   DailyBriefingObservationBand,
+  DailyBriefingPageAccounting,
+  DailyBriefingPageAction,
+  DailyBriefingPageChange,
+  DailyBriefingPageChangeKind,
   DailyBriefingPropertyActionKind,
   DailyBriefingPropertyChangeKind,
-  DailyBriefingPropertyNoiseFloor,
   DailyBriefingPropertyTrend,
   DailyBriefingQueryEvidence,
   DailyBriefingProvisionalMove,
@@ -49,11 +54,13 @@ import type {
   DailyBriefingQueryWatchlist,
   DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
+  DailyBriefingSuggestedCheck,
+  DailyBriefingSuggestedChecks,
   DailyBriefingWindowCoverage,
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v4";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v5";
 export const BRIEFING_WINDOW_DAYS = 7;
 export const DAILY_CADENCE_MIN_IMPRESSIONS = 1_000;
 export const BRIEFING_MIN_ROW_IMPRESSIONS = 100;
@@ -1485,10 +1492,10 @@ function queryWatchlistFor({
  * look for a cause that may not exist.
  */
 function noiseFloorFor(
-  basis: DailyBriefingPropertyNoiseFloor["basis"],
+  basis: DailyBriefingNoiseFloor["basis"],
   previousValue: number,
   observedChange: number,
-): DailyBriefingPropertyNoiseFloor | null {
+): DailyBriefingNoiseFloor | null {
   // Without a positive base there is no spread to measure against. Returning
   // an infinite floor would satisfy the type and then serialize to null over
   // the wire, so the trend is withheld instead.
@@ -1541,7 +1548,7 @@ function propertyTrendFor(
 
   let kind: DailyBriefingPropertyActionKind | null = null;
   let destination: "traffic-drop-diagnosis" | "seo-quick-wins" | null = null;
-  let noiseFloor: DailyBriefingPropertyNoiseFloor | null = null;
+  let noiseFloor: DailyBriefingNoiseFloor | null = null;
 
   if (
     clickChange <= -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
@@ -1626,6 +1633,343 @@ function propertyTrendFor(
   };
 }
 
+/* ── the page dimension ──────────────────────────────────────────────── */
+
+/**
+ * Why this dimension exists beside the query one.
+ *
+ * Search Console anonymizes low-volume queries, not pages. On one measured
+ * property the query rows accounted for 9 of 37 weekly clicks; the page rows
+ * accounted for all 37. Every click-driven query lane is blind to that
+ * remainder, and on a small property the remainder is most of the property.
+ *
+ * These lanes read `pageRead` and never the `[query,page]` split, which Search
+ * Console drops rows from and which therefore understates each page by exactly
+ * the amount this dimension exists to recover.
+ */
+function pageRowsState(
+  evidence: DailyBriefingQueryEvidence | null,
+): Exclude<DailyBriefingEvidenceState, "not_observed"> {
+  if (evidence === null || evidence.pageRead === null) return "unavailable";
+  if (evidence.pageRead.paging.truncated) return "partial";
+  if (evidence.pageRead.responseAggregationType === null) return "unavailable";
+  return "observed";
+}
+
+/** Both page reads on one aggregation basis, so their rows may be subtracted. */
+function pageWindowsComparable(
+  current: DailyBriefingQueryEvidence | null,
+  previous: DailyBriefingQueryEvidence | null,
+): boolean {
+  const currentBasis = current?.pageRead?.responseAggregationType;
+  const previousBasis = previous?.pageRead?.responseAggregationType;
+  return (
+    currentBasis !== null &&
+    currentBasis !== undefined &&
+    previousBasis !== null &&
+    previousBasis !== undefined &&
+    currentBasis === previousBasis
+  );
+}
+
+/**
+ * Rows keyed uniquely by page, with contradictions dropped rather than summed.
+ *
+ * Same discipline as `validQueryRows`: one URL appearing twice in one window
+ * is two readings that disagree, and adding them invents a third.
+ */
+function validPageRows(rows: readonly GscPageRow[]): readonly GscPageRow[] {
+  const unique = new Map<string, GscPageRow>();
+  const conflicts = new Set<string>();
+  for (const row of rows) {
+    if (row.page.trim() === "" || !isMetricRowValid(row)) continue;
+    if (unique.has(row.page)) {
+      unique.delete(row.page);
+      conflicts.add(row.page);
+      continue;
+    }
+    if (!conflicts.has(row.page)) unique.set(row.page, row);
+  }
+  return [...unique.values()];
+}
+
+interface PageCandidate {
+  readonly change: DailyBriefingPageChange;
+  readonly order: number;
+}
+
+const PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
+  "page_click_decline",
+  "page_first_observed",
+];
+
+/** A measured decline outranks a page that has only just appeared. */
+const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
+  page_click_decline: 0,
+  page_first_observed: 1,
+};
+
+const PAGE_DESTINATIONS: Readonly<
+  Record<DailyBriefingPageChangeKind, DailyBriefingPageAction["destination"]>
+> = {
+  page_click_decline: "traffic-drop-diagnosis",
+  page_first_observed: "on-page-seo-check",
+};
+
+interface PageCandidateSet {
+  readonly candidates: readonly PageCandidate[];
+  readonly observedRows: number;
+  readonly pageFloorRows: number;
+  readonly pairedPageRows: number;
+  readonly lanes: Readonly<
+    Record<DailyBriefingPageChangeKind, DailyBriefingLaneState>
+  >;
+  readonly byLane: Readonly<
+    Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
+  >;
+}
+
+function pageLaneRows(
+  observedRows: number,
+  capable: number,
+  candidates: number,
+): DailyBriefingLaneRowCounts {
+  return {
+    notEvaluated: Math.max(0, observedRows - capable),
+    evaluatedNoSignal: Math.max(0, capable - candidates),
+    candidates,
+  };
+}
+
+function pageCandidatesFor(
+  currentEvidence: DailyBriefingQueryEvidence | null,
+  previousEvidence: DailyBriefingQueryEvidence | null,
+): PageCandidateSet | null {
+  if (
+    pageRowsState(currentEvidence) !== "observed" ||
+    pageRowsState(previousEvidence) !== "observed" ||
+    !pageWindowsComparable(currentEvidence, previousEvidence)
+  ) {
+    return null;
+  }
+
+  const currentRows = validPageRows(currentEvidence?.pageRead?.rows ?? []);
+  const previousRows = validPageRows(previousEvidence?.pageRead?.rows ?? []);
+  const previousByPage = new Map(previousRows.map((row) => [row.page, row]));
+
+  const declines: PageCandidate[] = [];
+  const firstObserved: PageCandidate[] = [];
+  let pageFloorRows = 0;
+  let pairedPageRows = 0;
+  let declineCapableRows = 0;
+  let firstObservedCapableRows = 0;
+
+  for (const current of currentRows) {
+    if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
+    pageFloorRows += 1;
+    const previous = previousByPage.get(current.page);
+
+    // Absent, not merely small. Search Console does return zero-impression
+    // rows, and a row nobody was shown is observationally the same as no row;
+    // a page that had 60 impressions and now has 300 is a page that grew, and
+    // calling that "first observed" would be a different claim than the one
+    // this lane is allowed to make.
+    if (previous === undefined || previous.impressions === 0) {
+      firstObservedCapableRows += 1;
+      if (withinActionableBand(current.position)) {
+        firstObserved.push({
+          change: {
+            kind: "page_first_observed",
+            evidence: "observed",
+            page: current.page,
+            previous: previous ?? null,
+            current,
+            clickChange: null,
+            clickChangeRatio: null,
+            impressionChange: null,
+            impressionChangeRatio: null,
+            positionDelta: null,
+            noiseFloor: null,
+          },
+          order: current.impressions,
+        });
+      }
+      continue;
+    }
+
+    // A prior window between one impression and the sample floor can neither
+    // anchor a comparison nor support "first observed". Neither lane may ask,
+    // and the row is counted as un-evaluated by both rather than rejected by
+    // either.
+    if (previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
+    pairedPageRows += 1;
+
+    if (previous.clicks < BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS) continue;
+    declineCapableRows += 1;
+
+    const clickChange = current.clicks - previous.clicks;
+    const clickChangeRatio = ratio(previous.clicks, current.clicks);
+    if (
+      clickChange > -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE ||
+      clickChangeRatio === null ||
+      clickChangeRatio > -BRIEFING_MATERIAL_CHANGE_RATIO
+    ) {
+      continue;
+    }
+
+    // The query click lane earns its claim from a stable average position:
+    // clicks fell while the position held. A page's average position is
+    // blended across every query it ranks for, so that test is not available
+    // here and the counting-noise floor takes its place. Without one of the
+    // two this lane would announce ordinary week-to-week spread as a decline.
+    const noiseFloor = noiseFloorFor("clicks", previous.clicks, clickChange);
+    if (noiseFloor === null || !noiseFloor.cleared) continue;
+
+    declines.push({
+      change: {
+        kind: "page_click_decline",
+        evidence: "observed",
+        page: current.page,
+        previous,
+        current,
+        clickChange,
+        clickChangeRatio,
+        impressionChange: current.impressions - previous.impressions,
+        impressionChangeRatio: ratio(previous.impressions, current.impressions),
+        positionDelta:
+          Number.isFinite(current.position) &&
+          Number.isFinite(previous.position) &&
+          current.position > 0 &&
+          previous.position > 0
+            ? current.position - previous.position
+            : null,
+        noiseFloor,
+      },
+      order: -clickChange,
+    });
+  }
+
+  declines.sort(
+    (a, b) => b.order - a.order || a.change.page.localeCompare(b.change.page),
+  );
+  firstObserved.sort(
+    (a, b) => b.order - a.order || a.change.page.localeCompare(b.change.page),
+  );
+
+  const observedRows = currentRows.length;
+  return {
+    // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
+    // relies on a stable sort to keep each lane's own magnitude order.
+    candidates: [...declines, ...firstObserved],
+    observedRows,
+    pageFloorRows,
+    pairedPageRows,
+    lanes: {
+      page_click_decline:
+        declineCapableRows > 0 ? "evaluated" : "not_applicable",
+      page_first_observed:
+        firstObservedCapableRows > 0 ? "evaluated" : "not_applicable",
+    },
+    byLane: {
+      page_click_decline: pageLaneRows(
+        observedRows,
+        declineCapableRows,
+        declines.length,
+      ),
+      page_first_observed: pageLaneRows(
+        observedRows,
+        firstObservedCapableRows,
+        firstObserved.length,
+      ),
+    },
+  };
+}
+
+function selectPageChanges(
+  candidates: readonly PageCandidate[],
+  excludedPages: ReadonlySet<string>,
+  budget: number,
+): {
+  readonly changes: readonly DailyBriefingPageChange[];
+  readonly actions: readonly DailyBriefingPageAction[];
+  readonly eligible: number;
+} {
+  const ranked = [...candidates].sort(
+    (a, b) => PAGE_KIND_RANK[a.change.kind] - PAGE_KIND_RANK[b.change.kind],
+  );
+
+  const seen = new Set<string>();
+  const eligible: DailyBriefingPageChange[] = [];
+  for (const candidate of ranked) {
+    const page = candidate.change.page;
+    // A page a query change already names is not reported twice. The reader
+    // would see one page under two headings and count it as two findings.
+    if (excludedPages.has(page) || seen.has(page)) continue;
+    seen.add(page);
+    eligible.push(candidate.change);
+  }
+
+  const changes = eligible.slice(0, Math.max(0, budget));
+  return {
+    changes,
+    // Every page change carries its page by construction, so unlike the query
+    // lanes there is no withheld-attribution case to fall through here.
+    actions: changes.map((change) => ({
+      kind: change.kind,
+      destination: PAGE_DESTINATIONS[change.kind],
+      page: change.page,
+    })),
+    eligible: eligible.length,
+  };
+}
+
+/** Bands where opening the page today can still change the outcome. */
+const CHECKABLE_BANDS: readonly DailyBriefingObservationBand[] = [
+  "page_one",
+  "near_page_one",
+];
+
+/**
+ * Turn the rows the page already shows into things to do with them.
+ *
+ * A check is not a weak action. An action says "this changed, here is the
+ * evidence"; a check says "nothing here is known to have changed, and this is
+ * still where the property stands today". Only the second is available when no
+ * lane could measure a change, and offering it is what stops the page from
+ * listing rows it called worth looking at directly above a heading that says
+ * nothing is worth doing.
+ *
+ * Drawn from the displayed watchlist rather than the full candidate set on
+ * purpose: a check pointing at a row the reader cannot see is one they cannot
+ * evaluate.
+ */
+function suggestedChecksFor(
+  watchlist: DailyBriefingQueryWatchlist,
+): DailyBriefingSuggestedChecks {
+  if (watchlist.evidence === "unavailable") {
+    return { evidence: "unavailable", items: [], notCheckable: null };
+  }
+
+  const items: DailyBriefingSuggestedCheck[] = [];
+  let notCheckable = 0;
+  for (const item of watchlist.items) {
+    const page = item.page;
+    if (page === null || !CHECKABLE_BANDS.includes(item.band)) {
+      notCheckable += 1;
+      continue;
+    }
+    items.push({
+      query: item.query,
+      page,
+      band: item.band,
+      sampleKind: item.kind,
+      destination: "on-page-seo-check",
+    });
+  }
+
+  return { evidence: watchlist.evidence, items, notCheckable };
+}
+
 /**
  * What this property's own rows let each lane ask.
  *
@@ -1638,10 +1982,15 @@ function laneCapabilityFor({
   brandTermsConfirmed,
   counts,
   evidence,
+  pages,
 }: {
   readonly brandTermsConfirmed: boolean;
   readonly counts: CapabilityCounts | null;
   readonly evidence: DailyBriefingLaneCapability["evidence"];
+  // Read independently of the query counts: the query rows can be unusable
+  // while the page rows are fine, and on a small property that is the case
+  // that matters most.
+  readonly pages: PageCandidateSet | null;
 }): DailyBriefingLaneCapability {
   if (counts === null) {
     const unavailable: DailyBriefingLaneState = "unavailable";
@@ -1664,6 +2013,12 @@ function laneCapabilityFor({
         actionable_position_decline: unavailable,
         first_observed: unavailable,
       },
+      pairedPageRows: pages?.pairedPageRows ?? null,
+      pageFloorRows: pages?.pageFloorRows ?? null,
+      pageLanes: pages?.lanes ?? {
+        page_click_decline: unavailable,
+        page_first_observed: unavailable,
+      },
     };
   }
 
@@ -1676,6 +2031,12 @@ function laneCapabilityFor({
     currentFloorOnlyQueries: counts.currentFloorOnlyQueries,
     ctrLane: counts.ctrLane,
     lanes: counts.lanes,
+    pairedPageRows: pages?.pairedPageRows ?? null,
+    pageFloorRows: pages?.pageFloorRows ?? null,
+    pageLanes: pages?.lanes ?? {
+      page_click_decline: "unavailable",
+      page_first_observed: "unavailable",
+    },
   };
 }
 
@@ -1695,7 +2056,19 @@ const STRICT_CHANGE_LANES: readonly DailyBriefingChangeKind[] = [
  * itself as position-first. Every branch here is answerable from `lanes` and
  * the paired counts beside it.
  */
-function modeFor(counts: CapabilityCounts | null): DailyBriefingMode {
+function modeFor(
+  counts: CapabilityCounts | null,
+  pages: PageCandidateSet | null,
+): DailyBriefingMode {
+  // Asked before the query counts: a property whose queries are all anonymized
+  // can still have a page lane that was genuinely evaluated, and reporting that
+  // run as `unavailable` would deny a detection the tool just performed.
+  if (
+    pages !== null &&
+    PAGE_CHANGE_LANES.some((lane) => pages.lanes[lane] === "evaluated")
+  ) {
+    return "change_detection";
+  }
   if (counts === null) return "unavailable";
   if (STRICT_CHANGE_LANES.some((lane) => counts.lanes[lane] === "evaluated")) {
     return "change_detection";
@@ -1881,20 +2254,67 @@ export function buildDailyBriefing(
     limitations.add("property_change_inside_noise_floor");
   }
 
+  // Read independently of the query evidence above. The two dimensions fail
+  // separately, and on a property whose queries are mostly anonymized the page
+  // rows are the only place the clicks are visible at all.
+  const pageCandidateSet = pageCandidatesFor(currentEvidence, previousEvidence);
+  if (pageCandidateSet === null) limitations.add("page_evidence_unavailable");
+
   const laneCapability = laneCapabilityFor({
     counts: capabilityCounts,
     evidence: funnelEvidence,
     brandTermsConfirmed: input.brandTermsConfirmed,
+    pages: pageCandidateSet,
   });
-  const mode = modeFor(capabilityCounts);
+  const mode = modeFor(capabilityCounts, pageCandidateSet);
 
-  // Three query rows is the whole display budget. Changes take theirs first,
-  // provisional moves take what is left, and the watchlist gets the remainder:
-  // a provisional move names a movement, so it outranks a row that only names
-  // a position.
+  // Three rows is the whole display budget and the page lanes share it, in
+  // order of how precisely each names its subject: a query change names a
+  // query and usually its page, a page change names a page, an observation
+  // names only where something currently sits.
+  const selectedChangePages = new Set(
+    changes
+      .map((change) => change.page)
+      .filter((page): page is string => page !== null),
+  );
+  const pageSelection =
+    pageCandidateSet === null
+      ? { changes: [], actions: [], eligible: 0 }
+      : selectPageChanges(
+          pageCandidateSet.candidates,
+          selectedChangePages,
+          Math.max(0, DAILY_BRIEFING_ACTION_LIMIT - changes.length),
+        );
+  const pageChanges: readonly DailyBriefingPageChange[] = pageSelection.changes;
+  const pageActions: readonly DailyBriefingPageAction[] = pageSelection.actions;
+  const pageAccounting: DailyBriefingPageAccounting =
+    pageCandidateSet === null
+      ? {
+          evidence:
+            pageRowsState(currentEvidence) === "partial" ||
+            pageRowsState(previousEvidence) === "partial"
+              ? "partial"
+              : "unavailable",
+          observedRows: null,
+          notSelectedVisibleRows: null,
+          byLane: null,
+        }
+      : {
+          evidence: "observed",
+          observedRows: pageCandidateSet.observedRows,
+          notSelectedVisibleRows: Math.max(
+            0,
+            pageSelection.eligible - pageChanges.length,
+          ),
+          byLane: pageCandidateSet.byLane,
+        };
+
+  // What the query and page changes left. A provisional move names a movement,
+  // so it outranks a row that only names a position, and the watchlist takes
+  // whatever survives both.
   const provisionalBudget = Math.max(
     0,
-    DAILY_BRIEFING_ACTION_LIMIT - changes.length,
+    DAILY_BRIEFING_ACTION_LIMIT - changes.length - pageChanges.length,
   );
   // A query the page is about to report as a change is not also provisional:
   // the same query would hold an action while the provisional note under it
@@ -1925,6 +2345,9 @@ export function buildDailyBriefing(
     ]),
     previousEvidence,
   });
+  // Built from the watchlist that was just displayed, so every check points at
+  // a row the reader can see.
+  const suggestedChecks = suggestedChecksFor(queryWatchlist);
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {
@@ -1972,7 +2395,8 @@ export function buildDailyBriefing(
       // input"; now that mode is broader, the click lanes are asked directly.
       cadence:
         (laneCapability.lanes.click_opportunity !== "evaluated" &&
-          laneCapability.lanes.stable_position_click_decline !== "evaluated") ||
+          laneCapability.lanes.stable_position_click_decline !== "evaluated" &&
+          laneCapability.pageLanes.page_click_decline !== "evaluated") ||
         day.evidence === "unavailable" ||
         currentWeek === null ||
         currentWeek.impressions < DAILY_CADENCE_MIN_IMPRESSIONS
@@ -1981,11 +2405,15 @@ export function buildDailyBriefing(
       laneCapability,
       changes,
       actions,
+      pageChanges,
+      pageActions,
       propertyTrend,
       signalFunnel,
       queryWatchlist,
       provisionalMoves,
       rowAccounting,
+      pageAccounting,
+      suggestedChecks,
       coverage,
       anonymization: {
         current: currentAnonymization.value,

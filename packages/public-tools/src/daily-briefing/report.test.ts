@@ -120,6 +120,14 @@ function evidence(
     readonly queryPageAggregation?: string | null;
     readonly totalAggregation?: string | null;
     readonly totals?: { readonly impressions: number; readonly clicks: number } | null;
+    readonly pages?: readonly {
+      readonly page: string;
+      readonly clicks: number;
+      readonly impressions: number;
+      readonly position: number;
+    }[] | null;
+    readonly pageTruncated?: boolean;
+    readonly pageAggregation?: string | null;
   } = {},
 ) {
   const totals = options.totals === undefined
@@ -146,6 +154,19 @@ function evidence(
       },
       responseAggregationType: options.queryPageAggregation ?? "byPage",
     },
+    // Defaults to "not read" rather than to an empty read: a fixture that
+    // never mentions pages must not assert the property has none.
+    pageRead:
+      options.pages === undefined || options.pages === null
+        ? null
+        : {
+            rows: options.pages,
+            paging: {
+              pagesFetched: 1,
+              truncated: options.pageTruncated ?? false,
+            },
+            responseAggregationType: options.pageAggregation ?? "byPage",
+          },
     propertyTotals: totals === null
       ? null
       : {
@@ -175,7 +196,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v4");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v5");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -188,7 +209,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v4",
+      schemaVersion: "daily_search_briefing.v5",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -2008,6 +2029,7 @@ describe("lane capability and briefing mode", () => {
     const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
       ...evidence(rows, []),
       queryPageRead: null,
+      pageRead: null,
     });
     const result = report({
       currentQueryEvidence: withoutPages(current),
@@ -2029,6 +2051,7 @@ describe("lane capability and briefing mode", () => {
     const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
       ...evidence(rows, []),
       queryPageRead: null,
+      pageRead: null,
     });
     const result = report({
       currentQueryEvidence: withoutPages([queryRow(query, 180, 0, 9.7)]),
@@ -2299,6 +2322,7 @@ describe("lane state stands on per-query evidence, not on an aggregate", () => {
     const withoutPages = (input: readonly ReturnType<typeof queryRow>[]) => ({
       ...evidence(input, []),
       queryPageRead: null,
+      pageRead: null,
     });
     const result = report({
       dateRows: propertyDateRows({
@@ -2412,6 +2436,7 @@ describe("lane state stands on per-query evidence, not on an aggregate", () => {
     const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
       ...evidence(rows, []),
       queryPageRead: null,
+      pageRead: null,
     });
     const result = report({
       currentQueryEvidence: withoutPages([queryRow(query, 180, 0, 9.7)]),
@@ -2681,6 +2706,7 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
     const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
       ...evidence(rows, []),
       queryPageRead: null,
+      pageRead: null,
     });
     const result = report({
       currentQueryEvidence: withoutPages(current),
@@ -2710,6 +2736,7 @@ describe("evidence gates on the query rows, not their page attachment", () => {
     ) => ({
       ...evidence(rows, []),
       queryPageRead: null,
+      pageRead: null,
     });
 
     return report({
@@ -2808,10 +2835,12 @@ describe("action budget", () => {
       currentQueryEvidence: {
         ...evidence(currentRows, []),
         queryPageRead: null,
+        pageRead: null,
       },
       previousQueryEvidence: {
         ...evidence(previousRows, []),
         queryPageRead: null,
+        pageRead: null,
       },
     }).result;
 
@@ -3044,5 +3073,249 @@ describe("handoff seat decisions", () => {
     expect(result.actions).toMatchObject([
       { kind: "first_observed", destination: "on-page-seo-check" },
     ]);
+  });
+});
+
+function pageRow(
+  page: string,
+  impressions: number,
+  clicks: number,
+  position = 9,
+) {
+  return { page, impressions, clicks, position };
+}
+
+/** Query rows a lane can do nothing with, so page lanes are what is under test. */
+function inertQueryRows() {
+  return [queryRow("inert term", 20, 0, 40)];
+}
+
+function pageReport(
+  currentPages: readonly ReturnType<typeof pageRow>[] | null,
+  previousPages: readonly ReturnType<typeof pageRow>[] | null,
+  overrides: {
+    readonly currentQueries?: readonly ReturnType<typeof queryRow>[];
+    readonly previousQueries?: readonly ReturnType<typeof queryRow>[];
+    readonly currentQueryPages?: readonly ReturnType<typeof queryPageRow>[];
+    readonly previousQueryPages?: readonly ReturnType<typeof queryPageRow>[];
+    readonly pageTruncated?: boolean;
+    readonly pageAggregation?: string | null;
+  } = {},
+) {
+  return report({
+    currentQueryEvidence: evidence(
+      overrides.currentQueries ?? inertQueryRows(),
+      overrides.currentQueryPages ?? [],
+      {
+        pages: currentPages,
+        ...(overrides.pageTruncated === undefined
+          ? {}
+          : { pageTruncated: overrides.pageTruncated }),
+        ...(overrides.pageAggregation === undefined
+          ? {}
+          : { pageAggregation: overrides.pageAggregation }),
+      },
+    ),
+    previousQueryEvidence: evidence(
+      overrides.previousQueries ?? inertQueryRows(),
+      overrides.previousQueryPages ?? [],
+      { pages: previousPages },
+    ),
+    brandTermsConfirmed: true,
+  }).result;
+}
+
+describe("page dimension lanes", () => {
+  const PAGE = "https://example.com/guide";
+
+  it("finds the click decline the query rows cannot see", () => {
+    // The reason this dimension exists. Search Console anonymizes low-volume
+    // queries, so the query rows here account for 0 clicks while the page rows
+    // account for 20 — and the whole decline lives in the part only pages see.
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+    );
+
+    expect(result.laneCapability.pageLanes.page_click_decline).toBe("evaluated");
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_click_decline",
+        evidence: "observed",
+        page: PAGE,
+        clickChange: -12,
+        impressionChange: -20,
+      },
+    ]);
+    expect(result.pageChanges[0]?.noiseFloor).toEqual({
+      basis: "clicks",
+      observedChange: -12,
+      minimumForAction: 2 * Math.sqrt(20),
+      cleared: true,
+    });
+    expect(result.pageActions).toEqual([
+      {
+        kind: "page_click_decline",
+        destination: "traffic-drop-diagnosis",
+        page: PAGE,
+      },
+    ]);
+    // No query lane found anything; the briefing is still change detection
+    // because a page lane genuinely was evaluated.
+    expect(result.changes).toEqual([]);
+    expect(result.mode).toBe("change_detection");
+  });
+
+  it("withholds a page decline that stays inside its own counting noise", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 1, 9.4)],
+      [pageRow(PAGE, 400, 5, 9.1)],
+    );
+
+    // Thresholds met — four clicks off five is 80% — and still refused: two
+    // sigma on a base of five is 4.47, which a move of four does not reach.
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageActions).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_click_decline).toBe("evaluated");
+    expect(result.pageAccounting.byLane?.page_click_decline).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+  });
+
+  it("reports a page that first appears inside the actionable band", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow("https://example.com/other", 300, 2, 12)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_first_observed",
+        page: PAGE,
+        previous: null,
+        clickChange: null,
+        noiseFloor: null,
+      },
+    ]);
+    expect(result.pageActions).toEqual([
+      {
+        kind: "page_first_observed",
+        destination: "on-page-seo-check",
+        page: PAGE,
+      },
+    ]);
+  });
+
+  it("evaluates but does not report a new page beyond the actionable band", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 0, 45)],
+      [pageRow("https://example.com/other", 300, 2, 12)],
+    );
+
+    // Nothing done to this page this week decides whether position 45 earns a
+    // click. Evaluated and rejected, which is a different fact from unasked.
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+  });
+
+  it("treats a zero-impression prior row as absence, not as a comparison", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 0, 0, 0)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_first_observed", page: PAGE },
+    ]);
+  });
+
+  it("calls a page that merely grew neither new nor comparable", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 60, 0, 14)],
+    );
+
+    // 60 impressions can neither anchor a comparison nor support "first
+    // observed". Both lanes must record it as unasked rather than one of them
+    // claiming the page is new.
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane).toEqual({
+      page_click_decline: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      page_first_observed: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+    });
+  });
+
+  it("reports page lanes as unavailable when the page dimension was not read", () => {
+    const result = pageReport(null, null);
+
+    expect(result.laneCapability.pageLanes).toEqual({
+      page_click_decline: "unavailable",
+      page_first_observed: "unavailable",
+    });
+    expect(result.laneCapability.pairedPageRows).toBeNull();
+    expect(result.laneCapability.pageFloorRows).toBeNull();
+    expect(result.pageAccounting).toEqual({
+      evidence: "unavailable",
+      observedRows: null,
+      notSelectedVisibleRows: null,
+      byLane: null,
+    });
+    expect(result.limitations).toContain("page_evidence_unavailable");
+  });
+
+  it("refuses a truncated page read rather than reading a prefix as the site", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      { pageTruncated: true },
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.evidence).toBe("partial");
+    expect(result.limitations).toContain("page_evidence_unavailable");
+  });
+
+  it("refuses page windows read on disagreeing aggregation bases", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      { pageAggregation: "byProperty" },
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.limitations).toContain("page_evidence_unavailable");
+  });
+
+  it("keeps page rows and query rows as separate denominators", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 380, 8, 9.4), pageRow("https://example.com/b", 120, 1, 11)],
+      [pageRow(PAGE, 400, 20, 9.1)],
+      {
+        currentQueries: [
+          queryRow("a", 20, 0, 40),
+          queryRow("b", 20, 0, 40),
+          queryRow("c", 20, 0, 40),
+        ],
+      },
+    );
+
+    // Two populations, two totals. Adding them would invent a third that
+    // counts nothing that exists.
+    expect(result.pageAccounting.observedRows).toBe(2);
+    expect(result.rowAccounting.observedRows).toBe(3);
   });
 });

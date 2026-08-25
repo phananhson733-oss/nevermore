@@ -42,12 +42,22 @@ function queryPageRows(): readonly GscRawRow[] {
   }));
 }
 
+function pageRows(): readonly GscRawRow[] {
+  return Array.from({ length: 3 }, (_, index) => ({
+    keys: [`https://example.com/${index}`],
+    clicks: 20,
+    impressions: 400,
+    position: 9,
+  }));
+}
+
 function responseFor(
   request: GscQueryRequest,
   rows: {
     readonly dates?: readonly GscRawRow[];
     readonly queries?: readonly GscRawRow[];
     readonly queryPages?: readonly GscRawRow[];
+    readonly pages?: readonly GscRawRow[];
   } = {},
 ): GscQueryResponse {
   if (request.dimensions.length === 0) {
@@ -68,6 +78,12 @@ function responseFor(
       responseAggregationType: "byPage",
     };
   }
+  if (request.dimensions[0] === "page") {
+    return {
+      rows: rows.pages ?? pageRows(),
+      responseAggregationType: "byPage",
+    };
+  }
   return {
     rows: rows.queries ?? queryRows(),
     responseAggregationType: "byPage",
@@ -75,7 +91,7 @@ function responseFor(
 }
 
 describe("runDailyBriefing read plan", () => {
-  it("uses one required 14-day read and six one-page optional attachments", async () => {
+  it("uses one required 14-day read and eight one-page optional attachments", async () => {
     const calls: GscQueryRequest[] = [];
     const client: GscQueryClient = async (request) => {
       calls.push(request);
@@ -89,7 +105,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
     expect(calls.filter((call) => call.dimensions[0] === "date")).toEqual([
       {
         dimensions: ["date"],
@@ -125,6 +141,31 @@ describe("runDailyBriefing read plan", () => {
       expect.objectContaining({ aggregationType: "byPage" }),
       expect.objectContaining({ aggregationType: "byPage" }),
     ]);
+    // The page dimension on its own, one window each. Sent with no
+    // aggregationType so Search Console answers on its native page basis.
+    expect(
+      calls.filter(
+        (call) => call.dimensions.length === 1 && call.dimensions[0] === "page",
+      ),
+    ).toEqual([
+      {
+        dimensions: ["page"],
+        startDate: "2026-08-15",
+        endDate: "2026-08-21",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+      },
+      {
+        dimensions: ["page"],
+        startDate: "2026-08-08",
+        endDate: "2026-08-14",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+      },
+    ]);
+    expect(envelope.result.limitations).not.toContain(
+      "page_evidence_unavailable",
+    );
     expect(envelope.result.weekly.evidence).toBe("observed");
     expect(envelope.result.limitations).not.toContain("query_evidence_unavailable");
   });
@@ -149,7 +190,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(optionalStarted).toHaveLength(6));
+    await vi.waitFor(() => expect(optionalStarted).toHaveLength(8));
     release();
     await expect(pending).resolves.toBeDefined();
   });
@@ -280,7 +321,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(calls).toHaveLength(7));
+    await vi.waitFor(() => expect(calls).toHaveLength(9));
     releaseQueryReads();
     const envelope = await pending;
 
