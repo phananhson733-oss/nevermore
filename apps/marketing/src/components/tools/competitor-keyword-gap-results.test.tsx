@@ -30,7 +30,7 @@ vi.mock("next-intl", () => ({
         : "";
       return rendered === "" ? key : `${key}:${rendered}`;
     },
-}))
+}));
 
 installResultsHarness();
 
@@ -727,5 +727,63 @@ describe("CompetitorKeywordGapResults", () => {
     expect(unavailable.textContent).toContain("status.unavailable");
     expect(unavailable.textContent).toContain("status.unavailableBody");
     expect(unavailable.querySelector("table")).toBeNull();
+  });
+
+  it("copies the current filter as one fenced plan and reports the copied count", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const copyPlan = (): Element | null =>
+      host.querySelector('[data-row-action="copy-plan"]');
+
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
+    expect(host.querySelector('[role="status"]')).toBeNull();
+
+    await click(copyPlan());
+    expect(writeTextMock).toHaveBeenCalledOnce();
+    const markdown = String(writeTextMock.mock.calls[0]?.[0]);
+    expect(markdown.startsWith("# Competitor keyword gap plan")).toBe(true);
+    expect(markdown.match(/```json/g)).toHaveLength(1);
+    expect(markdown).toContain('"laneFilter": "all"');
+    expect(markdown).toContain('"bandFilter": "all"');
+    // The plan follows the filter's full order, not only the ten visible rows.
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(markdown).toContain('"keyword": "content-gap-09"');
+    expect(markdown).not.toContain('"keyword": "content-gap-10"');
+    expect(markdown).toContain('"omittedRows": 80');
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=20",
+    );
+
+    await click(
+      host.querySelector('[data-next-step-filter="verify_own_coverage"]'),
+    );
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=2");
+
+    await click(copyPlan());
+    const filtered = String(writeTextMock.mock.calls[1]?.[0]);
+    expect(filtered).toContain('"laneFilter": "verify_own_coverage"');
+    expect(filtered).toContain('"keyword": "verify-01"');
+    expect(filtered).not.toContain("optimize-00");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=2",
+    );
+  });
+
+  it("writes the Chinese plan for zh locales and reports a clipboard failure inline", async () => {
+    const host = await renderResults(BASE, { locale: "zh" });
+    const copyPlan = host.querySelector('[data-row-action="copy-plan"]');
+
+    await click(copyPlan);
+    expect(
+      String(writeTextMock.mock.calls[0]?.[0]).startsWith("# 竞品词差距计划"),
+    ).toBe(true);
+    expect(host.querySelector('[role="status"]')).not.toBeNull();
+
+    writeTextMock.mockRejectedValueOnce(new Error("denied"));
+    await click(copyPlan);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "actions.copyPlanFailed",
+    );
+    expect(host.querySelector('[role="status"]')).toBeNull();
   });
 });

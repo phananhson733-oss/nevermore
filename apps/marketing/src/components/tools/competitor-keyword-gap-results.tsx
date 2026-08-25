@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap envelope, selected GSC property, and focus callback
-// @output -- compact DFS/GSC evidence table with competitor pages, pre-screen bands, and qualified next actions
+// @output -- compact DFS/GSC evidence table with competitor pages, pre-screen bands, qualified next actions, and a copy-rows-as-plan export
 // @pos    -- non-persistent result surface for the Marketing competitor gap tool
 
 "use client";
@@ -14,6 +14,10 @@ import type {
 } from "@sf/public-tools/competitor-keyword-gap";
 
 import { localePath } from "../../lib/locale-path";
+import {
+  buildCompetitorKeywordGapPlan,
+  COPY_PLAN_MAX_ROWS,
+} from "../../lib/tools/competitor-keyword-gap-copy-plan";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
 import {
   BandFilters,
@@ -338,6 +342,7 @@ function ResultsTable({
   const [band, setBand] = useState<BandFilter>("all");
   const [expanded, setExpanded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [copyPlanStatus, setCopyPlanStatus] = useState<string | null>(null);
   const laneRows =
     filter === "all"
       ? result.rows
@@ -348,17 +353,39 @@ function ResultsTable({
       : laneRows.filter((row) => row.preScreen.band === band);
   const visibleRows = expanded ? filteredRows : filteredRows.slice(0, 10);
   const remaining = Math.max(0, filteredRows.length - visibleRows.length);
+  const planRowCount = Math.min(filteredRows.length, COPY_PLAN_MAX_ROWS);
 
   function changeFilter(next: Filter): void {
     setFilter(next);
     setExpanded(false);
     setActionError(null);
+    setCopyPlanStatus(null);
   }
 
   function changeBandFilter(next: BandFilter): void {
     setBand(next);
     setExpanded(false);
     setActionError(null);
+    setCopyPlanStatus(null);
+  }
+
+  /** The current lane and band filter in full order, never only the visible ten. */
+  async function copyPlan(): Promise<void> {
+    try {
+      const plan = buildCompetitorKeywordGapPlan({
+        locale: locale.startsWith("zh") ? "zh" : "en",
+        result,
+        rows: filteredRows,
+        laneFilter: filter,
+        bandFilter: band,
+      });
+      await navigator.clipboard.writeText(plan.markdown);
+      setActionError(null);
+      setCopyPlanStatus(t("actions.copyPlanDone", { count: plan.rowCount }));
+    } catch {
+      setCopyPlanStatus(null);
+      setActionError(t("actions.copyPlanFailed"));
+    }
   }
 
   async function copyKeyword(keyword: string): Promise<void> {
@@ -422,8 +449,18 @@ function ResultsTable({
             {t("table.subtitle")}
           </div>
         </div>
-        <div className="text-[12px] text-text-dark-secondary">
-          {t("table.legend")}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="text-[12px] text-text-dark-secondary">
+            {t("table.legend")}
+          </div>
+          <button
+            type="button"
+            data-row-action="copy-plan"
+            className={ACTION_BUTTON}
+            onClick={() => void copyPlan()}
+          >
+            {t("actions.copyPlan", { count: planRowCount })}
+          </button>
         </div>
       </div>
 
@@ -675,6 +712,16 @@ function ResultsTable({
           </tbody>
         </table>
       </div>
+
+      {copyPlanStatus !== null ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-4 text-[12.5px] text-text-dark-secondary"
+        >
+          {copyPlanStatus}
+        </div>
+      ) : null}
 
       {actionError !== null ? (
         <div
