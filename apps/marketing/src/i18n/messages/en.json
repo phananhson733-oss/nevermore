@@ -823,8 +823,7 @@
         "placeholder": "competitor.com",
         "add": "Add competitor",
         "count": "{count} / 5 competitors",
-        "remove": "Remove {domain}",
-        "snapshot": "{count, plural, one {# competitor} other {# competitors}} · best #{bestRank}"
+        "remove": "Remove {domain}"
       },
       "validation": {
         "siteInvalid": "Enter a valid public site domain.",
@@ -851,7 +850,17 @@
       },
       "actions": {
         "run": "Run gap analysis",
-        "running": "Analyzing…"
+        "running": "Analyzing…",
+        "openChecker": "Open On-Page Checker",
+        "openObservedPage": "Open observed page",
+        "copyKeyword": "Copy keyword",
+        "focusProperty": "Focus GSC property",
+        "copyFailed": "Could not copy this keyword in the browser.",
+        "handoffFailed": "Could not prepare the private On-Page handoff in this tab.",
+        "remaining": "{count} more rows hidden in this filter.",
+        "showingAll": "Showing all {count} rows in this filter.",
+        "showAll": "Show all",
+        "showLess": "Show less"
       },
       "status": {
         "complete": "Analysis complete",
@@ -903,8 +912,11 @@
         "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
         "completedCompetitors": "Completed competitors",
         "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
-        "gscObservedRows": "Own-site GSC observed rows",
-        "gscObservedRowsBody": "Returned rows observed strongly or weakly in the bounded own-site GSC query sample."
+      "gscObservedRows": "Own-site GSC observed rows",
+      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
+      },
+    "legend": {
+      "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
       },
       "boundaries": {
         "title": "Evidence boundaries",
@@ -914,23 +926,46 @@
         "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh."
       },
       "metrics": {
-        "searchVolume": "Search volume",
         "cpc": "CPC",
-        "difficulty": "Difficulty",
-        "intent": "Intent"
+        "difficulty": "Difficulty"
       },
       "gsc": {
-        "observed_strong": "Observed strongly in the GSC query sample",
-        "observed_weak": "Observed weakly in the GSC query sample",
-        "not_observed_in_gsc_query_sample": "Not observed in this GSC query sample",
-        "gsc_query_sample_not_read": "GSC query sample was not read",
+      "observed_strong": "Observed · performing well",
+      "observed_weak": "Impressions · needs improvement",
+      "not_observed_in_gsc_query_sample": "Not observed in this sample",
+      "gsc_query_sample_not_read": "GSC sample not read",
+      "evidenceBasis": {
+        "query": "Exact-query evidence",
+        "query_page": "Query-page evidence"
+      },
+      "pageStatus": {
+        "observed_sufficient": "Page attribution sufficient",
+        "observed_partial": "Page attribution partial",
+        "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
+        "gsc_query_page_sample_not_read": "Page sample not fully read"
+        },
         "impressions": "Impressions",
         "position": "Average position",
+        "metricLine": "{impressions} impressions · avg position {position}",
+        "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}",
         "page": "Open observed page"
       },
-      "nextSteps": {
-        "optimize_existing": "Review the observed page before creating anything new.",
-        "review_content_gap": "Review the competitor gap before deciding whether a new page is warranted."
+      "filters": {
+        "all": "All rows",
+        "optimize_existing": "Optimize now",
+        "review_existing_query": "Review existing",
+        "review_content_gap": "Review content gap",
+        "verify_own_coverage": "Need evidence"
+      },
+    "nextSteps": {
+      "optimize_existing": "Trusted existing page; check and optimize it first.",
+      "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
+      "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
+      "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
+      },
+      "signals": {
+        "bestRank": "Best competitor #{rank}",
+        "difficulty": "KD {value}"
       },
       "table": {
         "title": "Gap list",
@@ -938,10 +973,11 @@
         "legend": "DataForSEO rows remain separate from optional Search Console observations about your own site.",
         "caption": "Competitor keyword gaps with DataForSEO metrics and optional GSC evidence",
         "keyword": "Keyword",
-        "dfsEstimates": "DataForSEO estimates",
-        "competitorRanks": "Competitor ranks",
-        "ownSiteGsc": "Own-site GSC evidence",
-        "recommendation": "Recommendation"
+        "monthlySearchVolume": "Monthly search volume",
+        "competitorCoverage": "Competitor coverage",
+        "yourStatus": "Your status",
+        "opportunitySignals": "Opportunity signals",
+        "nextCheck": "Next check"
       },
       "ownState": {
         "not_observed_in_provider_rankings": "Your site was not observed in the provider ranking sample"
@@ -950,7 +986,8 @@
         "informational": "Informational",
         "navigational": "Navigational",
         "commercial": "Commercial",
-        "transactional": "Transactional"
+        "transactional": "Transactional",
+        "unknown": "Unknown intent"
       },
       "empty": {
         "title": "No gap rows returned",
@@ -1984,7 +2021,7 @@
       "inviteOnlyRequest": "Ask to join the beta",
       "signedInNoGrant": "You are signed in, but this tool still needs read-only Search Console access.",
       "propertyLabel": "Property",
-      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
+      "handoffNotice": "Imported from another tool. This page has not been checked again yet.",
       "rerun": "Run again",
       "running": "Reading your Search Console data…",
       "dataThrough": "Data through {date}",
@@ -2407,7 +2444,7 @@
       "inviteOnlyCta": "Ask for access",
       "signedInNoGrant": "You are signed in, but no Search Console property has been granted yet.",
       "propertyLabel": "Search Console property",
-      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
+      "handoffNotice": "Imported from another tool. This page has not been checked again yet.",
       "propertiesTruncated": "Your grant covers {total} properties; the list was trimmed to fit. Reconnect to pick one that is missing.",
       "noPropertyTitle": "No properties in this grant",
       "noPropertyBody": "The connection succeeded but it covers no Search Console properties. Check that the Google account you used owns a verified property.",
@@ -2890,7 +2927,7 @@
       "eyebrow": "TOOL · ONE PAGE · ONE SET OF QUERIES",
       "title": "Does this page actually cover the words you want it found for?",
       "intro": "Submit one page and up to five target queries. You get where each query does and does not appear on that page, how often, and what is not measurable from public HTML.",
-      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
+      "handoffNotice": "Imported from another tool. This page has not been checked again yet.",
       "stages": {
         "target": {
           "eyebrow": "STAGE 01",

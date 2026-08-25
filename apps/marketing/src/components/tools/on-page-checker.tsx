@@ -1,6 +1,6 @@
 "use client";
 
-// @input  -- page/query fields, optional query/page Daily Briefing handoff, market and role
+// @input  -- page/query fields, optional private query/page handoff, market and role
 // @output -- handoff prefill, page keyword coverage, fixes, local recent checks
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -221,8 +221,24 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       if (handoff?.scope === "query_page") {
         setUrl(handoff.page);
         setQueryText(handoff.query);
+        if (handoff.source === "competitor-keyword-gap") {
+          setCountry(
+            SERP_MARKET_OPTIONS.some(
+              (option) => option.code === handoff.marketCode,
+            )
+              ? handoff.marketCode
+              : DEFAULT_SERP_MARKET,
+          );
+          setLanguage(
+            SERP_LANGUAGE_OPTIONS.some(
+              (option) => option.code === handoff.languageCode,
+            )
+              ? handoff.languageCode
+              : DEFAULT_SERP_LANGUAGE,
+          );
+        }
         setHandoffImported(true);
-        // The briefing is the newer explicit intent. The checker draft and its
+        // The handoff is the newer explicit intent. The checker draft and its
         // page-focused Agent intent are one handoff, so replace the pair rather
         // than leaving the Agent half able to resurrect the older URL.
         const pendingIntent = readPendingAgentIntent(session, "seo");

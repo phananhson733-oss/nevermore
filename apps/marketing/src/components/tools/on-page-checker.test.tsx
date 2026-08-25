@@ -473,7 +473,7 @@ describe("On-Page checker result", () => {
 
 describe("On-Page checker local state", () => {
   const handoffNotice =
-    "Brought in from Daily Search Briefing. This tool has not been run again yet.";
+    "Imported from another tool. This page has not been checked again yet.";
 
   function stageDailyBriefingHandoff(): void {
     expect(
@@ -488,6 +488,67 @@ describe("On-Page checker local state", () => {
       }),
     ).toBe(true);
   }
+
+  function stageCompetitorGapHandoff(
+    marketCode = "GB",
+    languageCode = "zh",
+  ): void {
+    expect(
+      writeToolHandoff(sessionStorage, Date.now(), {
+        source: "competitor-keyword-gap",
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        property: "sc-domain:example.com",
+        query: "pricing automation",
+        page: "https://example.com/pricing",
+        evidenceId: "gap:pricing-automation:observed-sufficient",
+        marketCode,
+        languageCode,
+      }),
+    ).toBe(true);
+  }
+
+  it("imports one gap page/query and its supported market context without running or URL leakage", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    stageCompetitorGapHandoff();
+    const beforeUrl = window.location.href;
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("https://example.com/pricing");
+    expect(field(host, "onpage-query").value).toBe("pricing automation");
+    expect(
+      (host.querySelector("#onpage-country") as HTMLSelectElement).value,
+    ).toBe("GB");
+    expect(
+      (host.querySelector("#onpage-language") as HTMLSelectElement).value,
+    ).toBe("zh");
+    expect(host.textContent).toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(window.location.href).toBe(beforeUrl);
+    expect(window.location.href).not.toContain("pricing automation");
+    expect(window.location.href).not.toContain("sc-domain%3Aexample.com");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("consumes a gap handoff and falls back when its shaped market context is unsupported", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    stageCompetitorGapHandoff("ZZ", "zz");
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("https://example.com/pricing");
+    expect(field(host, "onpage-query").value).toBe("pricing automation");
+    expect(
+      (host.querySelector("#onpage-country") as HTMLSelectElement).value,
+    ).toBe("US");
+    expect(
+      (host.querySelector("#onpage-language") as HTMLSelectElement).value,
+    ).toBe("en");
+    expect(host.textContent).toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 
   it("rejects a crafted property-scoped handoff without filling or running", async () => {
     globalThis.fetch = vi.fn() as unknown as typeof fetch;

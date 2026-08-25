@@ -1,6 +1,6 @@
 // @input  -- sessionStorage-like access, the current time, and one private tool handoff
 // @output -- a one-time, tab-scoped handoff between connected tools without URL leakage
-// @pos    -- the only browser storage used for Daily Briefing cross-tool navigation
+// @pos    -- the only browser storage used for private connected-tool navigation
 
 export const TOOL_HANDOFF_KEY = "gengrowth.tool-handoff.v1";
 export const TOOL_HANDOFF_TTL_MS = 10 * 60 * 1_000;
@@ -37,6 +37,17 @@ export type ToolHandoffPayload =
       readonly query: null;
       readonly page: null;
       readonly evidenceId: string;
+    }
+  | {
+      readonly source: "competitor-keyword-gap";
+      readonly destination: "on-page-seo-check";
+      readonly scope: "query_page";
+      readonly property: string;
+      readonly query: string;
+      readonly page: string;
+      readonly evidenceId: string;
+      readonly marketCode: string;
+      readonly languageCode: string;
     };
 
 export type ToolHandoff = ToolHandoffPayload & {
@@ -48,7 +59,7 @@ const MAX_PROPERTY_LENGTH = 512;
 const MAX_QUERY_LENGTH = 512;
 const MAX_PAGE_LENGTH = 2_048;
 const MAX_EVIDENCE_ID_LENGTH = 256;
-const PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+const DAILY_BRIEFING_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "source",
   "destination",
   "scope",
@@ -57,11 +68,23 @@ const PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "page",
   "evidenceId",
 ]);
-const HANDOFF_KEYS: ReadonlySet<string> = new Set([
-  ...PAYLOAD_KEYS,
+const COMPETITOR_GAP_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  ...DAILY_BRIEFING_PAYLOAD_KEYS,
+  "marketCode",
+  "languageCode",
+]);
+const DAILY_BRIEFING_HANDOFF_KEYS: ReadonlySet<string> = new Set([
+  ...DAILY_BRIEFING_PAYLOAD_KEYS,
   "createdAt",
   "expiresAt",
 ]);
+const COMPETITOR_GAP_HANDOFF_KEYS: ReadonlySet<string> = new Set([
+  ...COMPETITOR_GAP_PAYLOAD_KEYS,
+  "createdAt",
+  "expiresAt",
+]);
+const MARKET_CODE = /^[A-Z]{2}$/u;
+const LANGUAGE_CODE = /^[a-z]{2}$/u;
 
 function isDestination(value: unknown): value is ToolHandoffDestination {
   return (
@@ -101,38 +124,93 @@ function hasExactKeys(
   return keys.length === expected.size && keys.every((key) => expected.has(key));
 }
 
+function payloadKeysFor(
+  value: Readonly<Record<string, unknown>>,
+): ReadonlySet<string> | null {
+  if (value.source === "daily-search-briefing") {
+    return DAILY_BRIEFING_PAYLOAD_KEYS;
+  }
+  if (value.source === "competitor-keyword-gap") {
+    return COMPETITOR_GAP_PAYLOAD_KEYS;
+  }
+  return null;
+}
+
+function handoffKeysFor(
+  value: Readonly<Record<string, unknown>>,
+): ReadonlySet<string> | null {
+  if (value.source === "daily-search-briefing") {
+    return DAILY_BRIEFING_HANDOFF_KEYS;
+  }
+  if (value.source === "competitor-keyword-gap") {
+    return COMPETITOR_GAP_HANDOFF_KEYS;
+  }
+  return null;
+}
+
+function isSafeHttpPage(value: unknown): value is string {
+  if (!nonEmptyString(value, MAX_PAGE_LENGTH)) return false;
+  try {
+    const page = new URL(value.trim());
+    return (
+      (page.protocol === "http:" || page.protocol === "https:") &&
+      page.hostname !== "" &&
+      page.username === "" &&
+      page.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 function hasValidPayloadFields(
   value: Readonly<Record<string, unknown>>,
 ): boolean {
   if (
-    value.source !== "daily-search-briefing" ||
     !nonEmptyString(value.property, MAX_PROPERTY_LENGTH) ||
     !nonEmptyString(value.evidenceId, MAX_EVIDENCE_ID_LENGTH)
   ) {
     return false;
   }
 
-  if (value.scope === "query_page") {
+  if (value.source === "competitor-keyword-gap") {
     return (
-      isDestination(value.destination) &&
+      value.destination === "on-page-seo-check" &&
+      value.scope === "query_page" &&
       nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
-      nonEmptyString(value.page, MAX_PAGE_LENGTH)
+      isSafeHttpPage(value.page) &&
+      typeof value.marketCode === "string" &&
+      MARKET_CODE.test(value.marketCode) &&
+      typeof value.languageCode === "string" &&
+      LANGUAGE_CODE.test(value.languageCode)
     );
   }
 
-  if (value.scope === "property") {
-    return (
-      isPropertyDestination(value.destination) &&
-      value.query === null &&
-      value.page === null
-    );
+  if (value.source === "daily-search-briefing") {
+    if (value.scope === "query_page") {
+      return (
+        isDestination(value.destination) &&
+        nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
+        nonEmptyString(value.page, MAX_PAGE_LENGTH)
+      );
+    }
+
+    if (value.scope === "property") {
+      return (
+        isPropertyDestination(value.destination) &&
+        value.query === null &&
+        value.page === null
+      );
+    }
   }
 
   return false;
 }
 
 function isToolHandoff(value: unknown): value is ToolHandoff {
-  if (!isObject(value) || !hasExactKeys(value, HANDOFF_KEYS)) return false;
+  if (!isObject(value)) return false;
+  const expectedKeys = handoffKeysFor(value);
+  if (expectedKeys === null || !hasExactKeys(value, expectedKeys)) return false;
   return (
     hasValidPayloadFields(value) &&
     isFiniteTimestamp(value.createdAt) &&
@@ -147,17 +225,19 @@ export function writeToolHandoff(
   now: number,
   payload: ToolHandoffPayload,
 ): boolean {
+  const expectedKeys = isObject(payload) ? payloadKeysFor(payload) : null;
   if (
     !Number.isFinite(now) ||
     !isObject(payload) ||
-    !hasExactKeys(payload, PAYLOAD_KEYS) ||
+    expectedKeys === null ||
+    !hasExactKeys(payload, expectedKeys) ||
     !hasValidPayloadFields(payload)
   ) {
     return false;
   }
 
   const handoff: ToolHandoff =
-    payload.scope === "query_page"
+    payload.source === "competitor-keyword-gap"
       ? {
           source: payload.source,
           destination: payload.destination,
@@ -166,20 +246,34 @@ export function writeToolHandoff(
           query: payload.query.trim(),
           page: payload.page.trim(),
           evidenceId: payload.evidenceId.trim(),
+          marketCode: payload.marketCode,
+          languageCode: payload.languageCode,
           createdAt: now,
           expiresAt: now + TOOL_HANDOFF_TTL_MS,
         }
-      : {
-          source: payload.source,
-          destination: payload.destination,
-          scope: payload.scope,
-          property: payload.property.trim(),
-          query: null,
-          page: null,
-          evidenceId: payload.evidenceId.trim(),
-          createdAt: now,
-          expiresAt: now + TOOL_HANDOFF_TTL_MS,
-        };
+      : payload.scope === "query_page"
+        ? {
+            source: payload.source,
+            destination: payload.destination,
+            scope: payload.scope,
+            property: payload.property.trim(),
+            query: payload.query.trim(),
+            page: payload.page.trim(),
+            evidenceId: payload.evidenceId.trim(),
+            createdAt: now,
+            expiresAt: now + TOOL_HANDOFF_TTL_MS,
+          }
+        : {
+            source: payload.source,
+            destination: payload.destination,
+            scope: payload.scope,
+            property: payload.property.trim(),
+            query: null,
+            page: null,
+            evidenceId: payload.evidenceId.trim(),
+            createdAt: now,
+            expiresAt: now + TOOL_HANDOFF_TTL_MS,
+          };
 
   try {
     storage.setItem(TOOL_HANDOFF_KEY, JSON.stringify(handoff));
