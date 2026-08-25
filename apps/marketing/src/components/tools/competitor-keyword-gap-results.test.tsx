@@ -734,18 +734,33 @@ describe("CompetitorKeywordGapResults", () => {
     const copyPlan = (): Element | null =>
       host.querySelector('[data-row-action="copy-plan"]');
 
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
+    // Collapsed: only the ten rows on screen are copied; the other ninety in
+    // the filter are counted as omitted, never carried into the plan.
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=10");
     expect(host.querySelector('[role="status"]')).toBeNull();
 
     await click(copyPlan());
     expect(writeTextMock).toHaveBeenCalledOnce();
-    const markdown = String(writeTextMock.mock.calls[0]?.[0]);
-    expect(markdown.startsWith("# Competitor keyword gap plan")).toBe(true);
-    expect(markdown.match(/```json/g)).toHaveLength(1);
-    expect(markdown).toContain('"laneFilter": "all"');
-    expect(markdown).toContain('"bandFilter": "all"');
-    // The plan follows the filter's full order, not only the ten visible rows.
+    const collapsed = String(writeTextMock.mock.calls[0]?.[0]);
+    expect(collapsed.startsWith("# Competitor keyword gap plan")).toBe(true);
+    expect(collapsed.match(/```json/g)).toHaveLength(1);
+    expect(collapsed).toContain('"laneFilter": "all"');
+    expect(collapsed).toContain('"bandFilter": "all"');
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(collapsed).not.toContain('"keyword": "content-gap-00"');
+    expect(collapsed).toContain('"omittedRows": 90');
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=10",
+    );
+
+    // Expanded: the plan follows the filter's full order up to the cap.
+    const showAll = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("actions.showAll"),
+    );
+    await click(showAll ?? null);
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
+    await click(copyPlan());
+    const markdown = String(writeTextMock.mock.calls[1]?.[0]);
     expect(markdown).toContain('"keyword": "content-gap-09"');
     expect(markdown).not.toContain('"keyword": "content-gap-10"');
     expect(markdown).toContain('"omittedRows": 80');
@@ -760,7 +775,7 @@ describe("CompetitorKeywordGapResults", () => {
     expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=2");
 
     await click(copyPlan());
-    const filtered = String(writeTextMock.mock.calls[1]?.[0]);
+    const filtered = String(writeTextMock.mock.calls[2]?.[0]);
     expect(filtered).toContain('"laneFilter": "verify_own_coverage"');
     expect(filtered).toContain('"keyword": "verify-01"');
     expect(filtered).not.toContain("optimize-00");
@@ -776,7 +791,9 @@ describe("CompetitorKeywordGapResults", () => {
 
     expect(copyPlan()?.disabled).toBe(false);
 
-    await click(host.querySelector('[data-next-step-filter="optimize_existing"]'));
+    await click(
+      host.querySelector('[data-next-step-filter="optimize_existing"]'),
+    );
     await click(host.querySelector('[data-pre-screen-filter="stretch"]'));
     expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
     expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=0");

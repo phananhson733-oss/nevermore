@@ -431,7 +431,8 @@ function ResultsTable({
           <CopyPlanButton
             key={`${filter}|${band}`}
             result={result}
-            rows={filteredRows}
+            rows={visibleRows}
+            rowsNotShown={remaining}
             laneFilter={filter}
             bandFilter={band}
             locale={locale}

@@ -144,6 +144,32 @@ volume-ordered head is dominated by domain-profile pages for other brands.
 (`maxFirstDomainRank`, `includeSerpInfo`); the client composes the provider
 filter array. No free-form filter string crosses the boundary.
 
+The report enforces the same rule on the rows it receives (rank above
+`maxCompetitorRank` or beyond `perCompetitorLimit` is dropped) so the echoed
+`sampleRule` is a promise the envelope keeps even if the provider drifts.
+
+A `serp_item_types` list with any malformed entry is treated as unreported
+(`serpSnapshot: null`), never as a shorter or empty list: an empty list is a
+reported fact, silence is not.
+
+## Cross-model review (2026-08-25)
+
+Codex review of the source diff returned two P1 and four P2 findings; all six
+were acted on before merge:
+
+- Band copy said more than the rule knows: `stretch` was "可争取" and KD > 60
+  was "head term". Labels now describe the inputs only ("Higher KD or page
+  two" / "难度较高或第二页"; "KD above 60, defer" / "难度 > 60，暂缓").
+- The copy plan's legend called `dfs_snapshot` a "provider SERP observation";
+  it now says "stored SERP snapshot, not an observation made in this run".
+- The plan exported up to 20 rows while the table showed 10; it now copies
+  exactly the rows on screen and counts the collapsed rows as `omittedRows`.
+- Hosted competitors (`acme.github.io`) yielded the platform as the brand
+  token; a short platform-suffix list reads the customer label instead. The
+  ordinary-word brand case (`linear.app` vs "linear regression") remains a
+  documented limitation of the visible skip lane.
+- Sample-rule enforcement and malformed-snapshot silence, above.
+
 ## Surface changes
 
 - Competitor chips link to the competitor's ranking page (`target=_blank`,

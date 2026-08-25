@@ -1910,6 +1910,33 @@ describe("buildCompetitorKeywordGapReport", () => {
     );
   });
 
+  it("enforces the echoed sample rule on provider rows it did not filter", () => {
+    const report = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({ keyword: "in rule", firstDomainRank: 20 }),
+            row({ keyword: "past the rank ceiling", firstDomainRank: 21 }),
+            row({ keyword: "past the cap", firstDomainRank: 3 }),
+          ],
+          totalCount: 3,
+        }),
+      ],
+      sampleRule: {
+        maxCompetitorRank: 20,
+        perCompetitorLimit: 2,
+        serpSnapshotRequested: false,
+      },
+      gsc: null,
+    });
+
+    expect(report.result.rows.map((entry) => entry.keyword)).toEqual([
+      "in rule",
+    ]);
+    expect(report.result.competitors[0]?.returnedRows).toBe(3);
+  });
+
   it("keeps every localized public error code covered", () => {
     expect(COMPETITOR_KEYWORD_GAP_ERROR_CODES).toEqual([
       "invalid_input",

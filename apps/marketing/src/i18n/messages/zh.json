@@ -982,9 +982,9 @@
         "filterAll": "全部预筛带",
         "band": {
           "prioritize_serp_check": "优先核 SERP",
-          "stretch": "可争取",
+          "stretch": "难度较高或第二页",
           "unbanded": "未分带",
-          "defer_head_term": "头部词，暂缓",
+          "defer_head_term": "难度 > 60，暂缓",
           "defer_brand_navigational": "品牌/导航词，暂缓"
         },
         "reason": {

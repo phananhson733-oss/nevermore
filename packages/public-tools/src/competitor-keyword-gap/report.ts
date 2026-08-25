@@ -636,7 +636,15 @@ export function buildCompetitorKeywordGapReport(
       }),
     );
 
-    provider.rows.forEach((row, rowIndex) => {
+    // The envelope echoes `sampleRule` as a promise about these rows, so the
+    // rule is enforced here as well as requested upstream: a provider that
+    // ignores the rank filter or the cap must not put out-of-rule rows under
+    // an in-rule label.
+    const rowsInRule = provider.rows.slice(
+      0,
+      input.sampleRule.perCompetitorLimit,
+    );
+    rowsInRule.forEach((row, rowIndex) => {
       const key = competitorKeywordGapKey(row.keyword);
       const displayed = displayKeyword(row.keyword);
       if (
@@ -644,6 +652,7 @@ export function buildCompetitorKeywordGapReport(
         displayed === "" ||
         !Number.isFinite(row.firstDomainRank) ||
         row.firstDomainRank <= 0 ||
+        row.firstDomainRank > input.sampleRule.maxCompetitorRank ||
         row.secondDomainRank !== null
       ) {
         return;

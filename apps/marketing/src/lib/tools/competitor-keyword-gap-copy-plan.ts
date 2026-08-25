@@ -35,6 +35,13 @@ export interface CompetitorKeywordGapPlanInput {
   readonly rows: readonly CompetitorKeywordGapRow[];
   readonly laneFilter: string;
   readonly bandFilter: string;
+  /**
+   * Rows in the same filter that the surface is not showing (collapsed past the
+   * first ten). Counted into `omittedRows` so the plan never claims the filter
+   * was smaller than it is; never included as rows, because the operator has
+   * not seen them.
+   */
+  readonly rowsNotShown?: number;
 }
 
 export interface CompetitorKeywordGapPlanOutput {
@@ -80,9 +87,9 @@ const CHROME: Readonly<Record<CopyBriefLocale, PlanChrome>> = {
     howToRead: "## How to read this",
     instructions: [
       "- `meta` describes the run: which competitors were fetched and with what status, whether the provider sample or the Search Console sample was cut, and the filter that produced the rows. A competitor with status `unavailable` was not fetched, so its absence from a row's `competitorPages` is not evidence that it does not rank. When `gscQueryTruncated` is true, `not_observed_in_gsc_query_sample` means not observed in the part of the sample that was read.",
-      "- Every row field except `keyword` (the provider's row key) names its source: `dfs_estimate` is a provider estimate, `dfs_snapshot` is a provider SERP observation dated by `updatedAt` (null when the provider gave no date), `gsc_measured` is the visitor's own Search Console sample, and `tool_heuristic` is a rule of this tool over those inputs. A `gsc.source` of null means the Search Console sample was not read for that row.",
+      "- Every row field except `keyword` (the provider's row key) names its source: `dfs_estimate` is a provider estimate, `dfs_snapshot` is the provider's stored SERP snapshot dated by `updatedAt` (null when the provider gave no date), not an observation made in this run, `gsc_measured` is the visitor's own Search Console sample, and `tool_heuristic` is a rule of this tool over those inputs. A `gsc.source` of null means the Search Console sample was not read for that row.",
       "- `preScreen.band` and `nextStep` are a check order, not a winnability verdict and not a ranking prediction. Nothing here says the visitor's site can or will rank for a keyword.",
-      `- The rows are the surface's current lane and band filter in its order, capped at ${COPY_PLAN_MAX_ROWS}. \`meta.omittedRows\` says how many rows in that filter were left out.`,
+      `- The rows are the ones currently shown on the surface (its lane and band filter, in its order), capped at ${COPY_PLAN_MAX_ROWS}. \`meta.omittedRows\` says how many rows in that filter were left out.`,
       "- For each row, say which existing page (if any) to improve or whether a new page is warranted, and which facts are still missing before that call can be made. Do not visit the competitor URLs automatically; treat them as references to review.",
     ],
     planHeading: "## Rows",
@@ -92,9 +99,9 @@ const CHROME: Readonly<Record<CopyBriefLocale, PlanChrome>> = {
     howToRead: "## 如何阅读",
     instructions: [
       "- `meta` 描述这次运行：抓取了哪些竞品、各自状态如何、数据商样本或 Search Console 样本是否被截断，以及产生这些行的筛选条件。状态为 `unavailable` 的竞品没有被抓取，它不出现在某行的 `competitorPages` 里不能说明它没有排名。当 `gscQueryTruncated` 为 true 时，`not_observed_in_gsc_query_sample` 只表示在已读取的那部分样本里未观测到。",
-      "- 除 `keyword`（数据商的行键）外，每个行字段都标注了来源：`dfs_estimate` 是数据商估算，`dfs_snapshot` 是数据商的 SERP 观测、日期见 `updatedAt`（数据商未给日期时为 null），`gsc_measured` 是访问者自己的 Search Console 样本，`tool_heuristic` 是本工具基于这些输入的规则。`gsc.source` 为 null 表示该行未读取 Search Console 样本。",
+      "- 除 `keyword`（数据商的行键）外，每个行字段都标注了来源：`dfs_estimate` 是数据商估算，`dfs_snapshot` 是数据商存储的 SERP 快照、日期见 `updatedAt`（数据商未给日期时为 null），不是本次运行的观测，`gsc_measured` 是访问者自己的 Search Console 样本，`tool_heuristic` 是本工具基于这些输入的规则。`gsc.source` 为 null 表示该行未读取 Search Console 样本。",
       "- `preScreen.band` 和 `nextStep` 是检查顺序，不是可赢性判断，也不是排名预测。这里没有任何内容表明访问者的站点能够或将会为某个关键词获得排名。",
-      `- 这些行是当前界面所选通道和分档筛选下的原始顺序，最多 ${COPY_PLAN_MAX_ROWS} 行。\`meta.omittedRows\` 说明该筛选下还有多少行未包含。`,
+      `- 这些行就是当前界面上显示的行（所选通道和分档筛选、界面顺序），最多 ${COPY_PLAN_MAX_ROWS} 行。\`meta.omittedRows\` 说明该筛选下还有多少行未包含。`,
       "- 对每一行，说明应改进哪个现有页面（如果有），或者是否值得新建页面，以及在做出判断前还缺哪些事实。不要自动访问竞品 URL，把它们当作待审阅的参考。",
     ],
     planHeading: "## 行",
@@ -218,7 +225,7 @@ function metaRecord(
     laneFilter: input.laneFilter,
     bandFilter: input.bandFilter,
     rowCount: rows.length,
-    omittedRows: input.rows.length - rows.length,
+    omittedRows: input.rows.length - rows.length + (input.rowsNotShown ?? 0),
   };
 }
 
@@ -267,6 +274,6 @@ export function buildCompetitorKeywordGapPlan(
   return Object.freeze({
     markdown,
     rowCount: kept.length,
-    omittedRows: input.rows.length - kept.length,
+    omittedRows: input.rows.length - kept.length + (input.rowsNotShown ?? 0),
   });
 }

@@ -19,6 +19,7 @@ import { ACTION_BUTTON, type Translate } from "./competitor-keyword-gap-results-
 export function CopyPlanButton({
   result,
   rows,
+  rowsNotShown,
   laneFilter,
   bandFilter,
   locale,
@@ -26,8 +27,10 @@ export function CopyPlanButton({
   t,
 }: {
   readonly result: CompetitorKeywordGapResultV3;
-  /** The current lane and band filter in full order, never only the visible ten. */
+  /** Exactly the rows the surface is showing, in its order; the plan never carries a row the operator has not seen. */
   readonly rows: readonly CompetitorKeywordGapRow[];
+  /** Rows in the same filter that are collapsed out of view; reported, never copied. */
+  readonly rowsNotShown: number;
   readonly laneFilter: string;
   readonly bandFilter: string;
   readonly locale: string;
@@ -48,6 +51,7 @@ export function CopyPlanButton({
       locale: locale.startsWith("zh") ? "zh" : "en",
       result,
       rows,
+      rowsNotShown,
       laneFilter,
       bandFilter,
     });

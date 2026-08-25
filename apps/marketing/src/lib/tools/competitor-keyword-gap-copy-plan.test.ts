@@ -326,6 +326,24 @@ describe("buildCompetitorKeywordGapPlan", () => {
     });
   });
 
+  it("counts rows the surface is not showing as omitted without copying them", () => {
+    const shown = Array.from({ length: 10 }, (_, index) => row(index));
+    const plan = buildCompetitorKeywordGapPlan({
+      locale: "en",
+      result: result(shown),
+      rows: shown,
+      laneFilter: "all",
+      bandFilter: "all",
+      rowsNotShown: 90,
+    });
+    const { parsed } = splitFence(plan.markdown);
+
+    expect(plan.rowCount).toBe(10);
+    expect(plan.omittedRows).toBe(90);
+    expect(parsed.meta.omittedRows).toBe(90);
+    expect(parsed.rows).toHaveLength(10);
+  });
+
   it("caps rows and bytes", () => {
     const many = Array.from({ length: 500 }, (_, index) => row(index));
     const capped = build(many);

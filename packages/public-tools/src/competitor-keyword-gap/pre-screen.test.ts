@@ -200,6 +200,20 @@ describe("preScreenCompetitorKeyword", () => {
     expect(competitorBrandTokens(["www.example.com"])).toEqual(["example"]);
   });
 
+  it("reads the customer label, not the platform, on a hosted competitor", () => {
+    expect(
+      competitorBrandTokens(["acme.github.io", "docs.acme.vercel.app"]),
+    ).toEqual(["acme"]);
+    expect(
+      preScreenCompetitorKeyword(
+        input({
+          keyword: "github actions tutorial",
+          competitorDomains: ["acme.github.io"],
+        }),
+      ).band,
+    ).toBe("prioritize_serp_check");
+  });
+
   it("derives the brand token from the registrable label, never a subdomain", () => {
     expect(
       competitorBrandTokens([

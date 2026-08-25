@@ -982,9 +982,9 @@
         "filterAll": "All bands",
         "band": {
           "prioritize_serp_check": "Check SERP first",
-          "stretch": "Stretch",
+          "stretch": "Higher KD or page two",
           "unbanded": "Not banded",
-          "defer_head_term": "Head term, defer",
+          "defer_head_term": "KD above 60, defer",
           "defer_brand_navigational": "Brand or navigational, defer"
         },
         "reason": {

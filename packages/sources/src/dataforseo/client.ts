@@ -639,10 +639,16 @@ function nullableStringList(
   if (!Array.isArray(value)) {
     throw new SourceError("INVALID_RESPONSE", `${context} was not an array.`);
   }
-  return value.flatMap((entry) =>
-    typeof entry === "string" && entry.trim() !== ""
-      ? [entry.trim().slice(0, MAX_PROVIDER_SERP_ITEM_TYPE_CHARS)]
-      : [],
+  // A list with any malformed entry is silence, not a shorter list: dropping the
+  // junk would let a junk-only array read downstream as a reported empty
+  // snapshot, which is a claim the provider never made.
+  if (
+    value.some((entry) => typeof entry !== "string" || entry.trim() === "")
+  ) {
+    return null;
+  }
+  return value.map((entry: string) =>
+    entry.trim().slice(0, MAX_PROVIDER_SERP_ITEM_TYPE_CHARS),
   );
 }
 

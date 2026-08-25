@@ -80,6 +80,30 @@ const FILE_EXTENSION_LABELS = new Set([
   "dmg",
   "apk",
 ]);
+/**
+ * Hosting platforms whose customers live one label to the left (`acme.github.io`):
+ * the brand is `acme`, not the platform. A short, deliberately incomplete list;
+ * a platform not listed here yields the platform as the brand token, which the
+ * visible skip lane makes correctable rather than silent.
+ */
+const PLATFORM_SUFFIXES = new Set([
+  "github.io",
+  "gitlab.io",
+  "vercel.app",
+  "netlify.app",
+  "pages.dev",
+  "web.app",
+  "firebaseapp.com",
+  "herokuapp.com",
+  "wordpress.com",
+  "blogspot.com",
+  "medium.com",
+  "substack.com",
+  "notion.site",
+  "webflow.io",
+  "wixsite.com",
+  "myshopify.com",
+]);
 const MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX = 3;
 const MIN_BRAND_TOKEN_LENGTH = 3;
 const MIN_PROFILE_KEYWORD_LENGTH = 3;
@@ -105,7 +129,8 @@ function registrableLabel(domain: string): string | undefined {
   if (beforeTld === undefined) return undefined;
   const underSecondLevelSuffix =
     labels.length >= MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX &&
-    SECOND_LEVEL_SUFFIXES.has(beforeTld);
+    (SECOND_LEVEL_SUFFIXES.has(beforeTld) ||
+      PLATFORM_SUFFIXES.has(labels.slice(-2).join(".")));
   return underSecondLevelSuffix ? labels.at(-3) : beforeTld;
 }
 
