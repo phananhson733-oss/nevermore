@@ -1,26 +1,37 @@
-// @input  -- normalized scope plus one sanitized DFS outcome per competitor and optional GSC rows
-// @output -- one deterministic, versioned competitor keyword gap report
+// @input  -- normalized scope, the sample rule, one sanitized DFS outcome per competitor and optional GSC rows
+// @output -- one deterministic competitor keyword gap report on the v3 contract, pre-screen attached per row
 // @pos    -- pure merger that keeps provider failure, silence, zero, and first-party evidence distinct
 
 import {
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS,
   COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
   COMPETITOR_KEYWORD_GAP_TOOL,
 } from "./types.ts";
+import { preScreenCompetitorKeyword } from "./pre-screen.ts";
 import {
   MIN_DIMENSION_COVERAGE,
   queryPageCoverage,
 } from "../gsc-analytics/page-reader.ts";
 import type {
   CompetitorKeywordGapCompetitorCoverage,
+  CompetitorKeywordGapCompetitorPage,
   CompetitorKeywordGapEnvelope,
   CompetitorKeywordGapGscEvidence,
   CompetitorKeywordGapGscPageStatus,
   CompetitorKeywordGapGscOverlayStatus,
   CompetitorKeywordGapMetric,
+  CompetitorKeywordGapPreScreenBand,
   CompetitorKeywordGapRow,
   CompetitorKeywordGapRunStatus,
+  CompetitorKeywordGapSampleRule,
+  CompetitorKeywordGapSearchVolumeTrend,
+  CompetitorKeywordGapSerpSnapshot,
 } from "./types.ts";
 
+/**
+ * Mirrors the sanitized sources row field for field; the public-tools package
+ * must not import `@sf/sources`, so the shape is restated here.
+ */
 export interface CompetitorKeywordGapProviderRow {
   readonly keyword: string;
   readonly searchVolume: number | null;
@@ -29,6 +40,14 @@ export interface CompetitorKeywordGapProviderRow {
   readonly providerIntent: string | null;
   readonly firstDomainRank: number;
   readonly secondDomainRank: number | null;
+  readonly firstDomainUrl: string | null;
+  readonly firstDomainTitle: string | null;
+  readonly firstDomainEtv: number | null;
+  readonly coreKeyword: string | null;
+  readonly searchVolumeTrend: CompetitorKeywordGapSearchVolumeTrend | null;
+  /** null is provider silence; an empty list is a reported, empty snapshot. */
+  readonly serpItemTypes: readonly string[] | null;
+  readonly serpUpdatedAt: string | null;
 }
 
 /** Sanitized provider outcome. Credentials and raw provider JSON never enter here. */
@@ -68,6 +87,8 @@ export interface CompetitorKeywordGapReportInput {
   readonly marketCode: string;
   readonly languageCode: string;
   readonly competitorDomains: readonly string[];
+  /** Echoed verbatim so the surface can state what the sample was, not what it wishes it were. */
+  readonly sampleRule: CompetitorKeywordGapSampleRule;
   readonly competitors: readonly CompetitorKeywordGapDataForSeoResult[];
   readonly gsc: CompetitorKeywordGapGscRead | null;
 }
@@ -149,6 +170,66 @@ function intentFrom(evidence: readonly ProviderEvidence[]): string | null {
     if (intent) return intent;
   }
   return null;
+}
+
+/** The first evidence in rank order whose field is not provider silence. */
+function firstWith<T>(
+  evidence: readonly ProviderEvidence[],
+  read: (row: CompetitorKeywordGapProviderRow) => T | null,
+): T | null {
+  for (const item of evidence) {
+    const value = read(item.row);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+/** Each competitor's best-rank page; the keys are exactly the domains in `competitorRanks`. */
+function competitorPagesFrom(
+  rankEntries: readonly (readonly [string, number])[],
+  evidence: readonly ProviderEvidence[],
+): Readonly<Record<string, CompetitorKeywordGapCompetitorPage>> {
+  return Object.freeze(
+    Object.fromEntries(
+      rankEntries.map(([domain]) => {
+        const best = evidence.find((item) => item.domain === domain);
+        return [
+          domain,
+          Object.freeze({
+            url: best?.row.firstDomainUrl ?? null,
+            title: best?.row.firstDomainTitle ?? null,
+            etv: best?.row.firstDomainEtv ?? null,
+          }),
+        ];
+      }),
+    ),
+  );
+}
+
+function trendFrom(
+  evidence: readonly ProviderEvidence[],
+): CompetitorKeywordGapSearchVolumeTrend | null {
+  const trend = firstWith(evidence, (row) => row.searchVolumeTrend);
+  return trend === null
+    ? null
+    : Object.freeze({
+        monthly: trend.monthly,
+        quarterly: trend.quarterly,
+        yearly: trend.yearly,
+      });
+}
+
+/** Null only when every evidence row is silent; an empty item list is a reported snapshot. */
+function serpSnapshotFrom(
+  evidence: readonly ProviderEvidence[],
+): CompetitorKeywordGapSerpSnapshot | null {
+  const source = evidence.find((item) => item.row.serpItemTypes !== null);
+  return source === undefined
+    ? null
+    : Object.freeze({
+        itemTypes: Object.freeze([...(source.row.serpItemTypes ?? [])]),
+        updatedAt: source.row.serpUpdatedAt,
+      });
 }
 
 function queryAggregates(
@@ -411,6 +492,61 @@ function runStatus(
     : "partial";
 }
 
+/** Band order inside a lane is owned by the contract's band list, so it is not restated here. */
+function bandPriority(band: CompetitorKeywordGapPreScreenBand): number {
+  return COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS.indexOf(band);
+}
+
+function gapRow(
+  aggregate: MutableAggregate,
+  input: CompetitorKeywordGapReportInput,
+  queries: ReadonlyMap<string, GscQueryAggregate>,
+  pages: ReadonlyMap<string, ReadonlyMap<string, GscPageAggregate>>,
+): CompetitorKeywordGapRow {
+  const evidence = aggregate.evidence.toSorted(compareEvidence);
+  const bestEvidence = evidence[0];
+  if (bestEvidence === undefined) {
+    throw new Error("Competitor keyword aggregate has no evidence");
+  }
+  const rankEntries = [...aggregate.ranks.entries()].toSorted(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const competitorRanks = Object.freeze(Object.fromEntries(rankEntries));
+  const competitorPages = competitorPagesFrom(rankEntries, evidence);
+  const bestCompetitorRank = Math.min(...rankEntries.map(([, rank]) => rank));
+  const searchVolume = metricFrom(evidence, (row) => row.searchVolume);
+  const cpc = metricFrom(evidence, (row) => row.cpc);
+  const keywordDifficulty = metricFrom(evidence, (row) => row.keywordDifficulty);
+  const providerIntent = intentFrom(evidence);
+
+  return Object.freeze({
+    keyword:
+      aggregate.displaysByDomain.get(bestEvidence.domain) ?? aggregate.key,
+    competitorRanks,
+    competitorPages,
+    competitorCount: rankEntries.length,
+    bestCompetitorRank,
+    ownState: "not_observed_in_provider_rankings",
+    searchVolume,
+    cpc,
+    keywordDifficulty,
+    providerIntent,
+    coreKeyword: firstWith(evidence, (row) => row.coreKeyword),
+    searchVolumeTrend: trendFrom(evidence),
+    serpSnapshot: serpSnapshotFrom(evidence),
+    preScreen: preScreenCompetitorKeyword({
+      keyword: aggregate.key,
+      keywordDifficulty,
+      searchVolume,
+      bestCompetitorRank,
+      providerIntent,
+      competitorPages,
+      competitorDomains: input.competitorDomains,
+    }),
+    gsc: gscEvidence(aggregate.key, input.gsc, queries, pages),
+  });
+}
+
 function rowSort(a: CompetitorKeywordGapRow, b: CompetitorKeywordGapRow) {
   const nextStepPriority: Readonly<Record<CompetitorKeywordGapGscEvidence["nextStep"], number>> = {
     optimize_existing: 0,
@@ -436,6 +572,9 @@ function rowSort(a: CompetitorKeywordGapRow, b: CompetitorKeywordGapRow) {
     if (aImpressions === null) return 1;
     if (bImpressions === null) return -1;
     return bImpressions - aImpressions;
+  }
+  if (a.preScreen.band !== b.preScreen.band) {
+    return bandPriority(a.preScreen.band) - bandPriority(b.preScreen.band);
   }
   if (a.competitorCount !== b.competitorCount) {
     return b.competitorCount - a.competitorCount;
@@ -536,35 +675,7 @@ export function buildCompetitorKeywordGapReport(
   const queries = queryAggregates(input.gsc);
   const pages = pageAggregates(input.gsc);
   const rows = [...aggregates.values()]
-    .map((aggregate): CompetitorKeywordGapRow => {
-      const evidence = aggregate.evidence.toSorted(compareEvidence);
-      const bestEvidence = evidence[0];
-      if (bestEvidence === undefined) {
-        throw new Error("Competitor keyword aggregate has no evidence");
-      }
-      const rankEntries = [...aggregate.ranks.entries()].toSorted(([a], [b]) =>
-        a.localeCompare(b),
-      );
-      const competitorRanks = Object.freeze(Object.fromEntries(rankEntries));
-      const ranks = rankEntries.map(([, rank]) => rank);
-
-      return Object.freeze({
-        keyword:
-          aggregate.displaysByDomain.get(bestEvidence.domain) ?? aggregate.key,
-        competitorRanks,
-        competitorCount: rankEntries.length,
-        bestCompetitorRank: Math.min(...ranks),
-        ownState: "not_observed_in_provider_rankings",
-        searchVolume: metricFrom(evidence, (row) => row.searchVolume),
-        cpc: metricFrom(evidence, (row) => row.cpc),
-        keywordDifficulty: metricFrom(
-          evidence,
-          (row) => row.keywordDifficulty,
-        ),
-        providerIntent: intentFrom(evidence),
-        gsc: gscEvidence(aggregate.key, input.gsc, queries, pages),
-      });
-    })
+    .map((aggregate) => gapRow(aggregate, input, queries, pages))
     .toSorted(rowSort);
 
   const completedCompetitors = competitorCoverage.filter(
@@ -596,6 +707,7 @@ export function buildCompetitorKeywordGapReport(
       competitorDomains: Object.freeze([...input.competitorDomains]),
       marketCode: input.marketCode,
       languageCode: input.languageCode,
+      sampleRule: Object.freeze({ ...input.sampleRule }),
       requestedCompetitors,
       completedCompetitors,
       unavailableCompetitors: requestedCompetitors - completedCompetitors,
@@ -607,6 +719,12 @@ export function buildCompetitorKeywordGapReport(
       overlayStatus: gscStatus,
       gscQueryTruncated: input.gsc?.queryTruncated ?? false,
       gscQueryPageTruncated: input.gsc?.queryPageTruncated ?? false,
+      gscQueryRowCount:
+        input.gsc?.status === "available" ? input.gsc.queryRows.length : null,
+      gscQueryPageRowCount:
+        input.gsc?.status === "available"
+          ? input.gsc.queryPageRows.length
+          : null,
     }),
   });
 }
