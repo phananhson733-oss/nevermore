@@ -538,6 +538,7 @@ function SignalPathEvidence({
           id="ctr-baseline"
           state={ctrLane.state}
           name={t("evidence.paths.ctrBaseline.name")}
+          finding={null}
           requirement={t("evidence.paths.laneRequirement", {
             requirement: t("evidence.paths.ctrBaseline.requirement"),
           })}
@@ -579,6 +580,12 @@ function SignalPathEvidence({
                   `evidence.paths.lanes.${path.copyKey}.requirement`,
                 ),
               })}
+              // The precondition says what could be asked; the hit condition
+              // says what would have counted as an answer. A reader needs both
+              // to work out why their query is not on the page.
+              finding={t("evidence.paths.laneFinding", {
+                finding: t(`evidence.paths.lanes.${path.copyKey}.finding`),
+              })}
               outcome={
                 state === "unavailable" || counts === null
                   ? t("evidence.paths.laneUnavailable")
@@ -594,6 +601,7 @@ function SignalPathEvidence({
           id="page-attribution"
           state={withheld === null ? "unavailable" : "evaluated"}
           name={t("evidence.paths.pageAttribution.name")}
+          finding={null}
           requirement={null}
           outcome={
             withheld === null
@@ -611,6 +619,7 @@ function SignalPathEvidence({
 }
 
 function PathLine({
+  finding,
   id,
   name,
   outcome,
@@ -619,6 +628,7 @@ function PathLine({
 }: {
   readonly id: string;
   readonly name: string;
+  readonly finding: string | null;
   readonly outcome: string;
   readonly requirement: string | null;
   readonly state: DailyBriefingLaneState;
@@ -635,6 +645,11 @@ function PathLine({
       {requirement === null ? null : (
         <p className="mt-1 max-w-4xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
           {requirement}
+        </p>
+      )}
+      {finding === null ? null : (
+        <p className="mt-0.5 max-w-4xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          {finding}
         </p>
       )}
       <p

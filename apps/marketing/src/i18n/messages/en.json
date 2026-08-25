@@ -1889,7 +1889,7 @@
       },
       "evidence": {
         "title": "Why there were not more signals",
-        "thresholdSummary": "The three paired paths require the same query to carry at least 100 impressions in each of the two windows: a stable-position click decline needs clicks down by both 15 percent and 3 with average position moving no more than 0.5; a move into the 1-10 band needs the prior window outside 10, the current window inside it, and at least 1.5 positions of improvement; a slide from the actionable band needs at least 3 positions of decline with at least one window inside the top 30. Two paths do not use that paired floor. Click opportunity does not look at the prior window at all; it needs a leave-one-out CTR baseline the property’s own rows can supply for that query. A first-observed pair needs the query and page pair to reach 100 impressions in the current window at an average position between 8 and 21, current query-to-page coverage of at least 80 percent, and the pair to be absent from the prior window’s list; if the query does have a prior row, that row must itself reach 100 impressions with at least 80 percent coverage, or the pair counts as not evaluable. The site-wide trend carries its own noise floor: the move must reach 2x the square root of the prior window base.",
+        "thresholdSummary": "The three paired paths require the same query to carry at least 100 impressions in each of the two windows; click opportunity and first-observed pairs each have their own gate. Every path states its precondition and its hit condition under Evaluation paths below. The site-wide trend carries its own noise floor: the move must reach 2x the square root of the prior window base.",
         "coverageTitle": "Query-to-page coverage · current window",
         "coverageObserved": "{covered} of {eligible} eligible queries had a page carrying at least {floor} of their visible impressions.",
         "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
@@ -1917,23 +1917,28 @@
           "lanes": {
             "clickOpportunity": {
               "name": "Click opportunity",
-              "requirement": "confirmed brand terms, and the query sitting inside a usable CTR baseline band"
+              "requirement": "confirmed brand terms, and the query sitting inside a usable CTR baseline band",
+              "finding": "observed clicks fall at least 3 short of the band baseline, and the gap reaches 15 percent of it"
             },
             "stableDecline": {
               "name": "Stable-position click decline",
-              "requirement": "at least 100 impressions in each window, and at least 3 clicks in the prior one"
+              "requirement": "at least 100 impressions in each window, and at least 3 clicks in the prior one",
+              "finding": "clicks fall by both 15 percent and 3, with average presented position moving no more than 0.5"
             },
             "pageOneBand": {
               "name": "Move into the 1-10 band",
-              "requirement": "at least 100 impressions in each window, with the prior average presented position outside 10"
+              "requirement": "at least 100 impressions in each window, with the prior average presented position outside 10",
+              "finding": "the current window sits inside the 1-10 band, at least 1.5 positions better than the prior one"
             },
             "positionDecline": {
               "name": "Slide from the actionable band",
-              "requirement": "at least 100 impressions in each window, with at least one window inside the top 30"
+              "requirement": "at least 100 impressions in each window, with at least one window inside the top 30",
+              "finding": "average presented position falls by at least 3"
             },
             "firstObserved": {
               "name": "First-observed query and page pair (counted below by query)",
-              "requirement": "page attribution usable in the current window, the pair reaching 100 impressions at an average position between 8 and 21, and the pair being absent from the prior window’s list; if the query has a prior row, that row must itself reach 100 impressions with usable coverage, or the pair counts as not evaluable"
+              "requirement": "page attribution usable in the current window, the pair reaching 100 impressions at an average position between 8 and 21, and the pair being absent from the prior window’s list; if the query has a prior row, that row must itself reach 100 impressions with usable coverage, or the pair counts as not evaluable",
+              "finding": "the query and page pair is absent from the prior window’s list"
             }
           },
           "pageAttribution": {
@@ -1941,7 +1946,8 @@
             "observed": "{count} records had their landing page withheld because no single page carried enough comparable evidence. That affects page attribution and handoff only; a query-level signal that was already established survives.",
             "none": "No candidate had its landing page withheld this run.",
             "unavailable": "Page attribution evidence is unavailable, so the withheld count cannot be reported. It is not zero."
-          }
+          },
+          "laneFinding": "Hits when: {finding}"
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",

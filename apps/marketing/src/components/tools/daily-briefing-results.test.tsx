@@ -695,7 +695,13 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(noise?.textContent).not.toContain("null");
     expect(noise?.textContent).not.toMatch(/\b0\b/);
     expect(paths?.textContent).not.toContain("null");
-    expect(paths?.textContent).not.toMatch(/\b0\b/);
+    // Scoped to the outcome lines: those are the rendered counts. The static
+    // requirement and hit-condition copy legitimately names thresholds such
+    // as 0.5, which is a constant, not a measurement.
+    for (const outcome of paths?.querySelectorAll("[data-path-outcome]") ?? []) {
+      expect(outcome.textContent).not.toContain("null");
+      expect(outcome.textContent).not.toMatch(/\b0\b/);
+    }
     expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
   });
 

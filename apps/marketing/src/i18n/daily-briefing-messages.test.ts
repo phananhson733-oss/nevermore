@@ -196,6 +196,7 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.paths.rowSplit",
   "evidence.paths.laneUnavailable",
   "evidence.paths.laneRequirement",
+  "evidence.paths.laneFinding",
   "evidence.paths.ctrBaseline.name",
   "evidence.paths.ctrBaseline.requirement",
   "evidence.paths.ctrBaseline.evaluated",
@@ -384,9 +385,11 @@ describe("Daily Briefing message catalogs", () => {
       ).toEqual(expect.any(Object));
     }
     for (const key of ["clickOpportunity", "stableDecline", "pageOneBand", "positionDecline", "firstObserved"] as const) {
-      expect(evidencePathLanes[key], `missing evidence path ${key}`).toEqual(
-        expect.any(Object),
-      );
+      const lane = evidencePathLanes[key] as Readonly<Record<string, string>>;
+      expect(lane, `missing evidence path ${key}`).toEqual(expect.any(Object));
+      // Both halves: what could be asked, and what would have counted.
+      expect(lane.requirement, `${key}.requirement`).toEqual(expect.any(String));
+      expect(lane.finding, `${key}.finding`).toEqual(expect.any(String));
     }
     for (const band of OBSERVATION_BANDS) {
       expect(observationBands[band], `missing observation band ${band}`).toEqual(
