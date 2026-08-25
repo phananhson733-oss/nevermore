@@ -130,20 +130,32 @@ function isPageDestination(
  * return such a pair, so refusing it costs nothing and closes the gap between
  * "this is a URL" and "this is a URL this property could have produced".
  */
+function withoutRootDot(host: string): string {
+  const lower = host.toLowerCase();
+  return lower.endsWith(".") ? lower.slice(0, -1) : lower;
+}
+
 function pageBelongsToProperty(property: string, page: unknown): boolean {
   if (!isSafeHttpPage(page)) return false;
   try {
     const url = new URL(page.trim());
-    const host = url.hostname.toLowerCase();
+    // Compared as hostnames, not as strings. `URL` lowercases and punycodes
+    // in one step, so an IDN property written in Unicode still matches the
+    // page Search Console returns in its ASCII form; a trailing dot on either
+    // side names the same host and must not decide the answer.
+    const host = withoutRootDot(url.hostname);
     if (property.startsWith("sc-domain:")) {
-      const domain = property.slice("sc-domain:".length).trim().toLowerCase();
+      const raw = property.slice("sc-domain:".length).trim();
+      if (raw === "") return false;
+      const domain = withoutRootDot(new URL(`https://${raw}`).hostname);
       if (domain === "") return false;
       return host === domain || host.endsWith(`.${domain}`);
     }
     const prefix = new URL(property.trim());
     if (
       prefix.protocol !== url.protocol ||
-      prefix.host.toLowerCase() !== url.host.toLowerCase()
+      withoutRootDot(prefix.hostname) !== host ||
+      prefix.port !== url.port
     ) {
       return false;
     }

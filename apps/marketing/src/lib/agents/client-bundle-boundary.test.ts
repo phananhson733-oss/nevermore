@@ -67,13 +67,16 @@ interface Reference {
  * Line position cannot decide lexical context. TypeScript already ships the
  * scanner that can, so this asks it.
  */
-function referencesIn(source: string): readonly Reference[] {
+function referencesIn(source: string, fileName = "module.tsx"): readonly Reference[] {
+  // Parsed as what it is. A `.ts` file read as TSX loses angle-bracket casts,
+  // and a file that fails to parse yields no references at all — which is the
+  // shape of a guard passing because it went blind.
   const file = ts.createSourceFile(
-    "module.tsx",
+    fileName,
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TSX,
+    fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
   const found: Reference[] = [];
 
@@ -93,6 +96,15 @@ function referencesIn(source: string): readonly Reference[] {
       }
     } else if (ts.isExportDeclaration(node)) {
       const specifier = literal(node.moduleSpecifier);
+      if (specifier !== null) {
+        found.push({ specifier, typeOnly: node.isTypeOnly });
+      }
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference)
+    ) {
+      // `import x = require("y")`. Rare in this codebase and never erased.
+      const specifier = literal(node.moduleReference.expression);
       if (specifier !== null) {
         found.push({ specifier, typeOnly: node.isTypeOnly });
       }
@@ -193,7 +205,7 @@ function clientClosure(): ReadonlyMap<string, readonly Reference[]> {
   while (pending.length > 0) {
     const file = pending.pop();
     if (file === undefined || seen.has(file)) continue;
-    const references = referencesIn(readFileSync(file, "utf8"));
+    const references = referencesIn(readFileSync(file, "utf8"), file);
     seen.set(file, references);
     for (const reference of references) {
       const resolved = resolveRelative(file, reference.specifier);
@@ -277,6 +289,33 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
       { specifier: "@sf/engine", typeOnly: true },
       { specifier: "@sf/engine", typeOnly: false },
     ]);
+  });
+
+  it("parses every file it walks, instead of going blind on one", () => {
+    // `createSourceFile` does not throw. A file it cannot parse comes back as
+    // a tree with no imports, which reads exactly like a file that has none —
+    // so the guard would go blind one file at a time and still pass. The
+    // condition to detect is the parse failure itself, not a guess from the
+    // text about which files "should" have imports.
+    const unparsed: string[] = [];
+    for (const file of closure.keys()) {
+      const parsed = ts.createSourceFile(
+        file,
+        readFileSync(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+      ) as ts.SourceFile & {
+        readonly parseDiagnostics?: readonly ts.Diagnostic[];
+      };
+      if ((parsed.parseDiagnostics?.length ?? 0) > 0) {
+        unparsed.push(file.slice(SOURCE_ROOT.length));
+      }
+    }
+    expect(
+      unparsed,
+      `the scanner could not parse these, so it saw no imports in them:\n${unparsed.join("\n")}`,
+    ).toEqual([]);
   });
 
   it("follows the aliased imports this app actually writes", () => {

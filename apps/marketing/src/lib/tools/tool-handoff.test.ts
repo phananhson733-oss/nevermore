@@ -548,6 +548,32 @@ describe("tool handoff storage", () => {
     }
   });
 
+  it.each([
+    // Search Console returns the ASCII form of an internationalized host; a
+    // property written in Unicode names the same site.
+    [
+      "an IDN property against the punycode page",
+      "sc-domain:bücher.example",
+      "https://www.bücher.example/guide",
+    ],
+    ["a root-dot page", "sc-domain:example.com", "https://example.com./guide"],
+    [
+      "a root-dot url-prefix property",
+      "https://example.com./about/",
+      "https://example.com/about/team",
+    ],
+  ])("treats %s as the same host", (_label, property, page) => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_760_000_000_000, {
+        ...pagePayload(),
+        property,
+        page,
+      }),
+    ).toBe(true);
+  });
+
   it("binds the query_page scope to its property too", () => {
     const session = storage();
 
