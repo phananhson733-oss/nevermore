@@ -9,6 +9,8 @@ import { useTranslations } from "next-intl";
 import {
   COMPETITOR_KEYWORD_GAP_ERROR_CODES,
   COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS,
+  COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+  COMPETITOR_KEYWORD_GAP_TOOL,
   normalizeCompetitorKeywordGapDomain,
   type CompetitorKeywordGapEnvelope,
   type CompetitorKeywordGapErrorCode,
@@ -61,20 +63,131 @@ function responseErrorCode(body: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumberOrNull(value: unknown): boolean {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isMetric(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.availability === "available" ||
+      value.availability === "explicit_zero" ||
+      value.availability === "provider_no_data") &&
+    isFiniteNumberOrNull(value.value)
+  );
+}
+
+function isV2GscEvidence(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    [
+      "observed_strong",
+      "observed_weak",
+      "not_observed_in_gsc_query_sample",
+      "gsc_query_sample_not_read",
+    ].includes(String(value.queryStatus)) &&
+    (value.evidenceBasis === "query" ||
+      value.evidenceBasis === "query_page" ||
+      value.evidenceBasis === null) &&
+    isFiniteNumberOrNull(value.queryImpressions) &&
+    isFiniteNumberOrNull(value.queryPosition) &&
+    [
+      "observed_sufficient",
+      "observed_partial",
+      "not_observed_in_gsc_query_page_sample",
+      "gsc_query_page_sample_not_read",
+    ].includes(String(value.pageStatus)) &&
+    (value.pageUrl === null || typeof value.pageUrl === "string") &&
+    isFiniteNumberOrNull(value.pageImpressions) &&
+    isFiniteNumberOrNull(value.pagePosition) &&
+    isFiniteNumberOrNull(value.queryPageCoverage) &&
+    [
+      "optimize_existing",
+      "review_existing_query",
+      "review_content_gap",
+      "verify_own_coverage",
+    ].includes(String(value.nextStep))
+  );
+}
+
+function isV2Row(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.keyword === "string" &&
+    isRecord(value.competitorRanks) &&
+    Object.values(value.competitorRanks).every(
+      (rank) => typeof rank === "number" && Number.isFinite(rank),
+    ) &&
+    typeof value.competitorCount === "number" &&
+    Number.isFinite(value.competitorCount) &&
+    typeof value.bestCompetitorRank === "number" &&
+    Number.isFinite(value.bestCompetitorRank) &&
+    value.ownState === "not_observed_in_provider_rankings" &&
+    isMetric(value.searchVolume) &&
+    isMetric(value.cpc) &&
+    isMetric(value.keywordDifficulty) &&
+    (value.providerIntent === null || typeof value.providerIntent === "string") &&
+    isV2GscEvidence(value.gsc)
+  );
+}
+
+function isCompetitorCoverage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.domain === "string" &&
+    (value.status === "complete" || value.status === "unavailable") &&
+    typeof value.returnedRows === "number" &&
+    Number.isFinite(value.returnedRows) &&
+    isFiniteNumberOrNull(value.totalCount) &&
+    typeof value.truncated === "boolean" &&
+    (value.failureCode === null ||
+      value.failureCode === "keyword_source_unavailable")
+  );
+}
+
 function responseEnvelope(body: unknown): CompetitorKeywordGapEnvelope | null {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+  if (!isRecord(body) || !isRecord(body.data)) return null;
+  const { data } = body;
+  if (!isRecord(data.run) || !isRecord(data.result)) return null;
+  const { run, result } = data;
+  if (
+    run.tool !== COMPETITOR_KEYWORD_GAP_TOOL ||
+    run.schemaVersion !== COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION ||
+    run.mode !== "public_preview" ||
+    run.scope !== "site" ||
+    run.persistence !== "none" ||
+    typeof run.completedAt !== "string" ||
+    !["complete", "partial", "unavailable"].includes(String(run.status)) ||
+    typeof result.capturedAt !== "string" ||
+    typeof result.siteDomain !== "string" ||
+    !Array.isArray(result.competitorDomains) ||
+    !result.competitorDomains.every((domain) => typeof domain === "string") ||
+    typeof result.marketCode !== "string" ||
+    typeof result.languageCode !== "string" ||
+    typeof result.requestedCompetitors !== "number" ||
+    !Number.isFinite(result.requestedCompetitors) ||
+    typeof result.completedCompetitors !== "number" ||
+    !Number.isFinite(result.completedCompetitors) ||
+    typeof result.unavailableCompetitors !== "number" ||
+    !Number.isFinite(result.unavailableCompetitors) ||
+    !Array.isArray(result.competitors) ||
+    !result.competitors.every(isCompetitorCoverage) ||
+    !Array.isArray(result.rows) ||
+    !result.rows.every(isV2Row) ||
+    typeof result.resultTruncated !== "boolean" ||
+    !["not_requested", "available", "partial", "unavailable"].includes(
+      String(result.overlayStatus),
+    ) ||
+    typeof result.gscQueryTruncated !== "boolean" ||
+    typeof result.gscQueryPageTruncated !== "boolean"
+  ) {
     return null;
   }
-  const data = (body as { readonly data?: unknown }).data;
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    return null;
-  }
-  const run = (data as { readonly run?: unknown }).run;
-  const result = (data as { readonly result?: unknown }).result;
-  return typeof run === "object" && run !== null &&
-    typeof result === "object" && result !== null
-    ? (data as CompetitorKeywordGapEnvelope)
-    : null;
+  return data as unknown as CompetitorKeywordGapEnvelope;
 }
 
 function propertySiteDomain(property: string): string | null {
@@ -117,11 +230,13 @@ export function CompetitorKeywordGapTool({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [envelope, setEnvelope] =
     useState<CompetitorKeywordGapEnvelope | null>(null);
+  const [resultProperty, setResultProperty] = useState("");
   const startedAt = useRef(0);
   const mounted = useRef(true);
   const submissionLocked = useRef(false);
   const activeRequest = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  const propertyRef = useRef<HTMLSelectElement | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -232,6 +347,8 @@ export function CompetitorKeywordGapTool({
     setErrorCode(null);
     submissionLocked.current = true;
     setEnvelope(null);
+    setResultProperty("");
+    const requestedProperty = property;
     const controller = new AbortController();
     activeRequest.current = controller;
     setPhase("running");
@@ -261,7 +378,7 @@ export function CompetitorKeywordGapTool({
         tool_name: "competitor_keyword_gap",
       });
       const requestBody = {
-        ...(property === "" ? {} : { property }),
+        ...(requestedProperty === "" ? {} : { property: requestedProperty }),
         siteDomain: normalizedSite,
         competitorDomains,
         marketCode,
@@ -287,6 +404,7 @@ export function CompetitorKeywordGapTool({
         setPhase("idle");
         return;
       }
+      setResultProperty(requestedProperty);
       setEnvelope(nextEnvelope);
       setPhase("done");
       trackMarketingEvent("tool_complete", {
@@ -347,6 +465,7 @@ export function CompetitorKeywordGapTool({
           <select
             id="competitor-gap-property"
             name="property"
+            ref={propertyRef}
             value={property}
             onChange={(event) => selectProperty(event.target.value)}
             disabled={phase === "running"}
@@ -518,7 +637,12 @@ export function CompetitorKeywordGapTool({
           data-competitor-gap-results
           className="min-w-0 scroll-mt-24"
         >
-          <CompetitorKeywordGapResults envelope={envelope} locale={locale} />
+          <CompetitorKeywordGapResults
+            envelope={envelope}
+            locale={locale}
+            selectedProperty={resultProperty}
+            onFocusProperty={() => propertyRef.current?.focus()}
+          />
         </div>
       ) : null}
       <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />

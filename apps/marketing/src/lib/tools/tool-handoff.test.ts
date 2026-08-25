@@ -47,6 +47,20 @@ function propertyPayload() {
   };
 }
 
+function competitorGapPayload() {
+  return {
+    source: "competitor-keyword-gap" as const,
+    destination: "on-page-seo-check" as const,
+    scope: "query_page" as const,
+    property: "sc-domain:example.com",
+    query: "pricing automation",
+    page: "https://example.com/pricing",
+    evidenceId: "gap:pricing-automation:observed-sufficient",
+    marketCode: "GB",
+    languageCode: "en",
+  };
+}
+
 describe("tool handoff storage", () => {
   it("uses one fixed tab-scoped key and a ten-minute lifetime", () => {
     expect(TOOL_HANDOFF_KEY).toBe("gengrowth.tool-handoff.v1");
@@ -71,6 +85,44 @@ describe("tool handoff storage", () => {
       expiresAt: now + TOOL_HANDOFF_TTL_MS,
     });
     expect(consumeToolHandoff(session, now + 2, "on-page-seo-check")).toBeNull();
+  });
+
+  it("writes and consumes one competitor-gap handoff with its full private context", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(writeToolHandoff(session, now, competitorGapPayload())).toBe(true);
+
+    expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toEqual({
+      source: "competitor-keyword-gap",
+      destination: "on-page-seo-check",
+      scope: "query_page",
+      property: "sc-domain:example.com",
+      query: "pricing automation",
+      page: "https://example.com/pricing",
+      evidenceId: "gap:pricing-automation:observed-sufficient",
+      marketCode: "GB",
+      languageCode: "en",
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+    expect(consumeToolHandoff(session, now + 2, "on-page-seo-check")).toBeNull();
+  });
+
+  it("keeps unsupported but well-shaped gap market context for the consumer to resolve", () => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...competitorGapPayload(),
+        marketCode: "ZZ",
+        languageCode: "zz",
+      }),
+    ).toBe(true);
+    expect(consumeToolHandoff(session, 1_001, "on-page-seo-check")).toMatchObject({
+      marketCode: "ZZ",
+      languageCode: "zz",
+    });
   });
 
   it("writes one property-scoped handoff with no invented query or page", () => {
@@ -133,6 +185,103 @@ describe("tool handoff storage", () => {
 
     expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
     expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it.each([
+    [
+      "a non-On-Page destination",
+      { ...competitorGapPayload(), destination: "seo-quick-wins" },
+    ],
+    ["a non-query-page scope", { ...competitorGapPayload(), scope: "property" }],
+    ["a blank property", { ...competitorGapPayload(), property: "   " }],
+    [
+      "an oversized property",
+      { ...competitorGapPayload(), property: "x".repeat(513) },
+    ],
+    ["a blank query", { ...competitorGapPayload(), query: "   " }],
+    [
+      "an oversized query",
+      { ...competitorGapPayload(), query: "x".repeat(513) },
+    ],
+    ["a blank evidence id", { ...competitorGapPayload(), evidenceId: "   " }],
+    [
+      "an oversized evidence id",
+      { ...competitorGapPayload(), evidenceId: "x".repeat(257) },
+    ],
+    [
+      "a missing market",
+      (({ marketCode: _marketCode, ...rest }) => rest)(competitorGapPayload()),
+    ],
+    ["an oversized market", { ...competitorGapPayload(), marketCode: "USA" }],
+    ["a lowercase market", { ...competitorGapPayload(), marketCode: "gb" }],
+    [
+      "a missing language",
+      (({ languageCode: _languageCode, ...rest }) => rest)(
+        competitorGapPayload(),
+      ),
+    ],
+    ["an oversized language", { ...competitorGapPayload(), languageCode: "eng" }],
+    ["an uppercase language", { ...competitorGapPayload(), languageCode: "EN" }],
+    ["a relative page", { ...competitorGapPayload(), page: "/pricing" }],
+    ["a non-http page", { ...competitorGapPayload(), page: "javascript:alert(1)" }],
+    [
+      "an oversized page",
+      {
+        ...competitorGapPayload(),
+        page: `https://example.com/${"x".repeat(2_048)}`,
+      },
+    ],
+    [
+      "a credential-bearing page",
+      { ...competitorGapPayload(), page: "https://user:secret@example.com/pricing" },
+    ],
+    ["an extra field", { ...competitorGapPayload(), privateExtra: "no" }],
+  ] as const)(
+    "rejects competitor-gap payload with %s on write and removes it on consume",
+    (_label, candidate) => {
+      const written = storage();
+      const stored = storage();
+
+      expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+      stored.setItem(
+        TOOL_HANDOFF_KEY,
+        JSON.stringify({
+          ...candidate,
+          createdAt: 1_000,
+          expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+        }),
+      );
+
+      expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
+      expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    },
+  );
+
+  it("does not let gap-only fields loosen the Daily Briefing exact-key contract", () => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...payload(),
+        marketCode: "GB",
+        languageCode: "en",
+      } as never),
+    ).toBe(false);
+  });
+
+  it("expires and removes a competitor-gap handoff at the shared TTL", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(writeToolHandoff(session, now, competitorGapPayload())).toBe(true);
+    expect(
+      consumeToolHandoff(
+        session,
+        now + TOOL_HANDOFF_TTL_MS,
+        "on-page-seo-check",
+      ),
+    ).toBeNull();
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
   });
 
   it("leaves the payload untouched for a different destination", () => {

@@ -8,7 +8,7 @@ import type {
 } from "../contract.ts";
 
 export const COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION =
-  "competitor_keyword_gap.v1";
+  "competitor_keyword_gap.v2";
 export const COMPETITOR_KEYWORD_GAP_TOOL = "competitor_keyword_gap";
 export const COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT = 100;
 
@@ -72,15 +72,33 @@ export type CompetitorKeywordGapGscQueryStatus =
   | "not_observed_in_gsc_query_sample"
   | "gsc_query_sample_not_read";
 
+export type CompetitorKeywordGapGscEvidenceBasis =
+  | "query"
+  | "query_page"
+  | null;
+
+export type CompetitorKeywordGapGscPageStatus =
+  | "observed_sufficient"
+  | "observed_partial"
+  | "not_observed_in_gsc_query_page_sample"
+  | "gsc_query_page_sample_not_read";
+
 export type CompetitorKeywordGapNextStep =
   | "optimize_existing"
-  | "review_content_gap";
+  | "review_existing_query"
+  | "review_content_gap"
+  | "verify_own_coverage";
 
 export interface CompetitorKeywordGapGscEvidence {
   readonly queryStatus: CompetitorKeywordGapGscQueryStatus;
+  readonly evidenceBasis: CompetitorKeywordGapGscEvidenceBasis;
   readonly queryImpressions: number | null;
   readonly queryPosition: number | null;
+  readonly pageStatus: CompetitorKeywordGapGscPageStatus;
   readonly pageUrl: string | null;
+  readonly pageImpressions: number | null;
+  readonly pagePosition: number | null;
+  readonly queryPageCoverage: number | null;
   readonly nextStep: CompetitorKeywordGapNextStep;
 }
 
@@ -109,7 +127,7 @@ export interface CompetitorKeywordGapRow {
   readonly gsc: CompetitorKeywordGapGscEvidence;
 }
 
-export interface CompetitorKeywordGapResultV1 {
+export interface CompetitorKeywordGapResultV2 {
   readonly capturedAt: string;
   readonly siteDomain: string;
   readonly competitorDomains: readonly string[];
@@ -128,10 +146,11 @@ export interface CompetitorKeywordGapResultV1 {
 
 export interface CompetitorKeywordGapRun
   extends PublicToolRun<typeof COMPETITOR_KEYWORD_GAP_TOOL, "site"> {
+  readonly schemaVersion: typeof COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION;
   readonly status: CompetitorKeywordGapRunStatus;
 }
 
 export interface CompetitorKeywordGapEnvelope {
   readonly run: CompetitorKeywordGapRun;
-  readonly result: CompetitorKeywordGapResultV1;
+  readonly result: CompetitorKeywordGapResultV2;
 }

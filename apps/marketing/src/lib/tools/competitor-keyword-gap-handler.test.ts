@@ -768,9 +768,14 @@ describe("handleCompetitorKeywordGapRequest", () => {
           rows: Array<{
             gsc: {
               queryStatus: string;
+              evidenceBasis: string | null;
               queryImpressions: number | null;
               queryPosition: number | null;
+              pageStatus: string;
               pageUrl: string | null;
+              pageImpressions: number | null;
+              pagePosition: number | null;
+              queryPageCoverage: number | null;
               nextStep: string;
             };
           }>;
@@ -781,9 +786,14 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(body.data.result.overlayStatus).toBe("available");
     expect(body.data.result.rows[0]?.gsc).toEqual({
       queryStatus: "observed_weak",
+      evidenceBasis: "query",
       queryImpressions: 120,
       queryPosition: 22.5,
+      pageStatus: "observed_sufficient",
       pageUrl: "https://acme.com/existing",
+      pageImpressions: 120,
+      pagePosition: 22.5,
+      queryPageCoverage: 1,
       nextStep: "optimize_existing",
     });
     expect(readCoverageQueries).toHaveBeenCalledWith({

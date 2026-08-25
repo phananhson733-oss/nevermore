@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
-// @input  -- complete, partial, unavailable, and empty competitor-gap envelopes
-// @output -- honest DFS/GSC summary, metric, rank, link, truncation, and table semantics
-// @pos    -- read-only result contract for the Marketing competitor keyword gap tool
+// @input  -- production-shaped competitor-gap envelopes
+// @output -- compact six-column results, qualified actions, and bounded evidence rendering
+// @pos    -- result-surface verification for the Marketing competitor keyword gap tool
 
-import { act, type ComponentType } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompetitorKeywordGapEnvelope } from "@sf/public-tools/competitor-keyword-gap";
-
-type ResultsProps = {
-  readonly envelope: CompetitorKeywordGapEnvelope;
-  readonly locale: string;
-};
+import type {
+  CompetitorKeywordGapEnvelope,
+  CompetitorKeywordGapRow,
+} from "@sf/public-tools/competitor-keyword-gap";
+import { TOOL_HANDOFF_KEY } from "../../lib/tools/tool-handoff";
+import { CompetitorKeywordGapResults } from "./competitor-keyword-gap-results";
 
 vi.mock("next-intl", () => ({
   useTranslations: () =>
@@ -25,21 +25,10 @@ vi.mock("next-intl", () => ({
     },
 }));
 
-let Results: ComponentType<ResultsProps>;
-try {
-  const modulePath = "./competitor-keyword-gap-results.tsx";
-  ({ CompetitorKeywordGapResults: Results } = await import(
-    /* @vite-ignore */ modulePath
-  ));
-} catch {
-  const MissingResults: ComponentType<ResultsProps> = () => <div />;
-  Results = MissingResults;
-}
-
 const BASE: CompetitorKeywordGapEnvelope = {
   run: {
     tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v1",
+    schemaVersion: "competitor_keyword_gap.v2",
     mode: "public_preview",
     scope: "site",
     persistence: "none",
@@ -82,16 +71,18 @@ const BASE: CompetitorKeywordGapEnvelope = {
         ownState: "not_observed_in_provider_rankings",
         searchVolume: { availability: "available", value: 2900 },
         cpc: { availability: "explicit_zero", value: 0 },
-        keywordDifficulty: {
-          availability: "provider_no_data",
-          value: null,
-        },
+        keywordDifficulty: { availability: "provider_no_data", value: null },
         providerIntent: "commercial",
         gsc: {
           queryStatus: "observed_weak",
+          evidenceBasis: "query",
           queryImpressions: 318,
           queryPosition: 34,
+          pageStatus: "observed_sufficient",
           pageUrl: "https://example.com/product",
+          pageImpressions: 300,
+          pagePosition: 12.4,
+          queryPageCoverage: 0.94,
           nextStep: "optimize_existing",
         },
       },
@@ -107,9 +98,14 @@ const BASE: CompetitorKeywordGapEnvelope = {
         providerIntent: null,
         gsc: {
           queryStatus: "not_observed_in_gsc_query_sample",
+          evidenceBasis: null,
           queryImpressions: null,
           queryPosition: null,
-          pageUrl: "javascript:alert(1)",
+          pageStatus: "not_observed_in_gsc_query_page_sample",
+          pageUrl: null,
+          pageImpressions: null,
+          pagePosition: null,
+          queryPageCoverage: null,
           nextStep: "review_content_gap",
         },
       },
@@ -122,11 +118,19 @@ const BASE: CompetitorKeywordGapEnvelope = {
 };
 
 let root: Root | null = null;
+const writeTextMock = vi.fn();
 
 beforeEach(() => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  sessionStorage.clear();
+  writeTextMock.mockReset();
+  writeTextMock.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: writeTextMock },
+  });
 });
 
 afterEach(async () => {
@@ -135,18 +139,37 @@ afterEach(async () => {
     root = null;
   }
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
-async function renderResults(
-  envelope: CompetitorKeywordGapEnvelope = BASE,
-): Promise<HTMLElement> {
-  const host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () => {
-    root?.render(<Results envelope={envelope} locale="en" />);
-  });
-  return host;
+function row(
+  index: number,
+  overrides: Partial<CompetitorKeywordGapEnvelope["result"]["rows"][number]> = {},
+): CompetitorKeywordGapEnvelope["result"]["rows"][number] {
+  return {
+    keyword: `keyword ${String(index).padStart(2, "0")}`,
+    competitorRanks: { "alpha.example": index + 1 },
+    competitorCount: 1,
+    bestCompetitorRank: index + 1,
+    ownState: "not_observed_in_provider_rankings",
+    searchVolume: { availability: "available", value: 1000 + index },
+    cpc: { availability: "available", value: 1 + index / 10 },
+    keywordDifficulty: { availability: "available", value: 20 + index },
+    providerIntent: "commercial",
+    gsc: {
+      queryStatus: "not_observed_in_gsc_query_sample",
+      evidenceBasis: null,
+      queryImpressions: null,
+      queryPosition: null,
+      pageStatus: "not_observed_in_gsc_query_page_sample",
+      pageUrl: null,
+      pageImpressions: null,
+      pagePosition: null,
+      queryPageCoverage: null,
+      nextStep: "review_content_gap",
+    },
+    ...overrides,
+  };
 }
 
 function withResult(
@@ -159,18 +182,145 @@ function withResult(
   };
 }
 
+function rowWithGsc(
+  index: number,
+  gsc: Partial<CompetitorKeywordGapRow["gsc"]>,
+  overrides: Partial<Omit<CompetitorKeywordGapRow, "gsc">> = {},
+): CompetitorKeywordGapRow {
+  const base = row(index);
+  return {
+    ...base,
+    ...overrides,
+    gsc: { ...base.gsc, ...gsc },
+  };
+}
+
+function productionRows(): readonly CompetitorKeywordGapRow[] {
+  const optimize = Array.from({ length: 5 }, (_, index) =>
+    rowWithGsc(
+      index,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query",
+        queryImpressions: 100 + index * 100,
+        queryPosition: 20 + index,
+        pageStatus: "observed_sufficient",
+        pageUrl: `https://example.com/optimize/${index}`,
+        pageImpressions: 90 + index * 90,
+        pagePosition: 19 + index,
+        queryPageCoverage: 0.9,
+        nextStep: "optimize_existing",
+      },
+      { keyword: `optimize-${String(index).padStart(2, "0")}` },
+    ),
+  );
+  const reviewExisting = Array.from({ length: 5 }, (_, index) =>
+    rowWithGsc(
+      index + 5,
+      {
+        queryStatus: index === 0 ? "observed_strong" : "observed_weak",
+        evidenceBasis: index === 4 ? "query_page" : "query",
+        queryImpressions: index === 4 ? null : 500 - index * 30,
+        queryPosition: index === 4 ? null : 5 + index,
+        pageStatus: index === 0 ? "observed_sufficient" : "observed_partial",
+        pageUrl: `https://example.com/review/${index}`,
+        pageImpressions: 200 - index * 10,
+        pagePosition: 6 + index,
+        queryPageCoverage: index === 0 ? 0.9 : 0.5,
+        nextStep: "review_existing_query",
+      },
+      { keyword: `review-existing-${String(index).padStart(2, "0")}` },
+    ),
+  );
+  const contentGap = Array.from({ length: 88 }, (_, index) =>
+    rowWithGsc(
+      index + 10,
+      {},
+      { keyword: `content-gap-${String(index).padStart(2, "0")}` },
+    ),
+  );
+  const verify = Array.from({ length: 2 }, (_, index) =>
+    rowWithGsc(
+      index + 98,
+      {
+        queryStatus: "gsc_query_sample_not_read",
+        pageStatus: "gsc_query_page_sample_not_read",
+        nextStep: "verify_own_coverage",
+      },
+      { keyword: `verify-${String(index).padStart(2, "0")}` },
+    ),
+  );
+  return [...optimize, ...reviewExisting, ...contentGap, ...verify];
+}
+
+async function renderResults(
+  envelope: CompetitorKeywordGapEnvelope = BASE,
+  options?: {
+    readonly locale?: string;
+    readonly selectedProperty?: string;
+    readonly onFocusProperty?: () => void;
+  },
+): Promise<HTMLElement> {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(
+      <CompetitorKeywordGapResults
+        envelope={envelope}
+        locale={options?.locale ?? "en"}
+        selectedProperty={
+          options?.selectedProperty ?? "sc-domain:example.com"
+        }
+        onFocusProperty={options?.onFocusProperty ?? vi.fn()}
+      />,
+    );
+  });
+  return host;
+}
+
+async function click(element: Element | null): Promise<boolean> {
+  if (!(element instanceof HTMLElement)) {
+    expect(element, "expected clickable element").not.toBeNull();
+    return true;
+  }
+  let allowed = true;
+  await act(async () => {
+    allowed = element.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await Promise.resolve();
+  });
+  return allowed;
+}
+
+function tableRow(host: HTMLElement, keyword: string): HTMLTableRowElement {
+  const result = [...host.querySelectorAll<HTMLTableRowElement>("tbody tr")].find(
+    (candidate) => candidate.textContent?.includes(keyword),
+  );
+  if (result === undefined) throw new Error(`No row for ${keyword}`);
+  return result;
+}
+
+function buttonFor(host: HTMLElement, label: string): HTMLButtonElement {
+  const result = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) => candidate.textContent?.includes(label),
+  );
+  if (result === undefined) throw new Error(`No button for ${label}`);
+  return result;
+}
+
 describe("CompetitorKeywordGapResults", () => {
-  it("renders the captured site-versus-competitors scope before its source legend", async () => {
+  it("renders the compact six-column table, stable overview metrics, and one legend for provider own-state", async () => {
     const host = await renderResults();
     const scope = host.querySelector("[data-scope-strip]");
     const legend = host.querySelector("[data-source-legend]");
+    const table = host.querySelector("table") as HTMLTableElement;
+    const wrapper = table.parentElement as HTMLElement;
+    const tableSurface = host.querySelector("[data-results-table]");
 
     expect(host.querySelector('[data-run-status="complete"]')).not.toBeNull();
-    expect(scope).not.toBeNull();
     expect(scope?.textContent).toContain("example.com");
-    expect(scope?.querySelector("[data-scope-versus]")?.textContent).toBe(
-      "summary.versus",
-    );
     expect(scope?.textContent).toContain("alpha.example");
     expect(scope?.textContent).toContain("beta.example");
     expect(scope?.textContent).toContain("US");
@@ -178,133 +328,558 @@ describe("CompetitorKeywordGapResults", () => {
     expect(scope?.querySelector("time")?.getAttribute("datetime")).toBe(
       BASE.result.capturedAt,
     );
+    expect(host.querySelectorAll("[data-summary-metric]")).toHaveLength(3);
+    expect(
+      host.querySelector('[data-summary-metric="returned-gap-rows"]')?.textContent,
+    ).toContain("2");
+    expect(
+      host.querySelector('[data-summary-metric="completed-competitors"]')?.textContent,
+    ).toContain("2 / 2");
+    expect(
+      host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+    ).toContain("1");
     expect(legend?.querySelector('[data-source="dfs"]')?.textContent).toContain(
       "sources.dfs",
     );
     expect(legend?.querySelector('[data-source="gsc"]')?.textContent).toContain(
       "sources.gsc",
     );
-    expect(
-      scope !== null && legend !== null
-        ? Boolean(
-            scope.compareDocumentPosition(legend) &
-              Node.DOCUMENT_POSITION_FOLLOWING,
-          )
-        : false,
-    ).toBe(true);
+    expect(host.textContent?.match(/legend\.ownState/g)).toHaveLength(1);
+    expect(host.textContent).not.toContain(
+      "ownState.not_observed_in_provider_rankings",
+    );
+
+    const headers = [...host.querySelectorAll('thead th[scope="col"]')].map(
+      (header) => header.textContent?.trim(),
+    );
+    expect(headers).toEqual([
+      "table.keyword",
+      "table.monthlySearchVolume",
+      "table.competitorCoverage",
+      "table.yourStatus",
+      "table.opportunitySignals",
+      "table.nextCheck",
+    ]);
+    expect(table.querySelector("caption")?.textContent).toContain("table.caption");
+    expect(wrapper.tabIndex).toBe(0);
+    expect(wrapper.className).toContain("overflow-x-auto");
+    expect(wrapper.className).toContain("focus-visible:outline-2");
+    expect(table.className).toContain("min-w-[1080px]");
+    expect(tableSurface?.className).toContain("max-w-[1440px]");
+    expect(tableSurface?.className).toContain("w-[calc(100vw-32px)]");
+    expect(table.className).toContain("text-[13px]");
+    expect(table.className).toContain("leading-[1.45]");
+    expect(table.querySelector("tbody p")).toBeNull();
+    expect(table.querySelector("[data-keyword]")?.className).toContain(
+      "text-[15.5px]",
+    );
+    expect(table.querySelector("[data-keyword]")?.className).toContain(
+      "leading-[1.25]",
+    );
+    expect(table.querySelector("[data-monthly-volume]")?.className).toContain(
+      "tabular-nums",
+    );
+    expect(table.querySelector("[data-next-step-copy]")?.className).toContain(
+      "text-[13px]",
+    );
+    expect(host.firstElementChild?.className).not.toMatch(
+      /(?:min-w-screen|w-screen|overflow-x-(?:auto|scroll))/,
+    );
   });
 
-  it("renders three stable overview metrics without turning returned rows into a total", async () => {
+  it("keeps monthly volume to one DFS number and moves KD into opportunity signals", async () => {
     const host = await renderResults();
-    const rows = host.querySelector(
-      '[data-summary-metric="returned-gap-rows"]',
-    );
-    const competitors = host.querySelector(
-      '[data-summary-metric="completed-competitors"]',
-    );
-    const gsc = host.querySelector(
-      '[data-summary-metric="gsc-observed-rows"]',
-    );
+    const cells = host.querySelectorAll("tbody tr:first-child td");
 
-    expect(host.querySelectorAll("[data-summary-metric]")).toHaveLength(3);
-    expect(rows?.textContent).toContain("overview.returnedGapRows");
-    expect(rows?.textContent).toContain("2");
-    expect(rows?.textContent).toContain("overview.returnedGapRowsBody");
-    expect(competitors?.textContent).toContain("2 / 2");
-    expect(gsc?.textContent).toContain("1");
+    expect(cells).toHaveLength(6);
+    expect(cells[1]?.textContent).toContain("2,900");
+    expect(cells[1]?.textContent).not.toContain("metrics.difficulty");
+    expect(cells[1]?.textContent).not.toContain("metrics.cpc");
+    expect(cells[4]?.textContent).toContain("signals.difficulty");
+    expect(cells[4]?.textContent).toContain("signals.bestRank");
   });
-
-  it.each(["not_requested", "unavailable"] as const)(
-    "shows the GSC overview metric as unavailable when the overlay is %s",
-    async (overlayStatus) => {
-      const host = await renderResults(withResult({ overlayStatus }));
-      const gsc = host.querySelector(
-        '[data-summary-metric="gsc-observed-rows"]',
-      );
-
-      expect(gsc?.textContent).toContain("—");
-      expect(gsc?.textContent).toContain(`sources.status.${overlayStatus}`);
-    },
-  );
 
   it("keeps provider null distinct from explicit zero and renders every competitor rank", async () => {
     const host = await renderResults();
-    const firstRow = host.querySelectorAll("tbody tr")[0] as HTMLTableRowElement;
-    const secondRow = host.querySelectorAll("tbody tr")[1] as HTMLTableRowElement;
+    const first = tableRow(host, "approval workflow software");
+    const second = tableRow(host, "approval policy template");
 
-    expect(firstRow.textContent).toContain("2,900");
-    expect(firstRow.textContent).toContain("0");
-    expect(firstRow.textContent).toContain("—");
-    expect(
-      firstRow.querySelectorAll("[data-competitor-rank]"),
-    ).toHaveLength(2);
-    expect(firstRow.textContent).toContain("alpha.example");
-    expect(firstRow.textContent).toContain("#4");
-    expect(firstRow.textContent).toContain("beta.example");
-    expect(firstRow.textContent).toContain("#9");
-    expect(firstRow.textContent).toContain("intent.commercial");
-    expect(firstRow.textContent).toContain("metrics.searchVolume");
-    expect(firstRow.textContent).toContain("metrics.cpc");
-    expect(secondRow.textContent).toContain("0");
+    expect(first.querySelector("[data-monthly-volume]")?.textContent).toBe(
+      "2,900",
+    );
+    expect(first.querySelectorAll("[data-competitor-rank]")).toHaveLength(2);
+    expect(first.textContent).toContain("alpha.example #4");
+    expect(first.textContent).toContain("beta.example #9");
+    expect(first.textContent).toContain("signals.difficulty:value=—");
+    expect(second.querySelector("[data-monthly-volume]")?.textContent).toBe("0");
+    expect(second.textContent).toContain("signals.difficulty:value=17");
   });
 
-  it("renders GSC facts, a safe page link, and plain-text recommendations without action CTAs", async () => {
-    const host = await renderResults();
-    const rows = host.querySelectorAll("tbody tr");
-    const safeLink = rows[0]?.querySelector("a");
-    const recommendation = rows[0]?.querySelector("td:last-child");
+  it("bounds long keyword and domain text inside the horizontal region", async () => {
+    const longDomain = `${"very-long-segment-".repeat(8)}.example`;
+    const host = await renderResults(
+      withResult({
+        rows: [
+          row(0, {
+            keyword: "long keyword ".repeat(30).trim(),
+            competitorRanks: { [longDomain]: 7 },
+            competitorCount: 1,
+            bestCompetitorRank: 7,
+          }),
+        ],
+      }),
+    );
 
-    expect(rows[0]?.textContent).toContain("gsc.observed_weak");
-    expect(rows[0]?.textContent).toContain("318");
-    expect(rows[0]?.textContent).toContain("34");
-    expect(safeLink?.getAttribute("href")).toBe("https://example.com/product");
-    expect(safeLink?.getAttribute("rel")).toContain("noopener");
-    expect(recommendation?.textContent).toContain(
-      "nextSteps.optimize_existing",
+    expect(host.querySelector("[data-keyword]")?.className).toMatch(
+      /(?:break-words|overflow-wrap-anywhere)/,
     );
-    expect(recommendation?.querySelector("a, button")).toBeNull();
-    expect(rows[1]?.textContent).toContain(
-      "gsc.not_observed_in_gsc_query_sample",
+    expect(host.querySelector("[data-competitor-rank]")?.className).toMatch(
+      /(?:max-w-|break-all|break-words|truncate)/,
     );
-    expect(rows[1]?.textContent).toContain("nextSteps.review_content_gap");
-    expect(rows[1]?.querySelector("a")).toBeNull();
   });
 
-  it("renders semantic table structure with overflow constrained to its wrapper", async () => {
-    const host = await renderResults();
-    const table = host.querySelector("table") as HTMLTableElement;
-    const wrapper = table.parentElement as HTMLElement;
+  it.each(["not_requested", "unavailable"] as const)(
+    "shows GSC overview as unavailable when overlay status is %s",
+    async (overlayStatus) => {
+      const host = await renderResults(withResult({ overlayStatus }));
+      expect(
+        host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+      ).toContain("—");
+      expect(
+        host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+      ).toContain(`sources.status.${overlayStatus}`);
+    },
+  );
 
-    expect(table.querySelector("caption")?.textContent).toContain(
-      "table.caption",
+  it("keeps contract order, shows ten of 100 rows, and reports exact four-lane counts", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const filters = host.querySelector("[data-next-step-filters]");
+    const allFilter = host.querySelector('[data-next-step-filter="all"]');
+    const contentFilter = host.querySelector(
+      '[data-next-step-filter="review_content_gap"]',
     );
-    expect(table.querySelector("thead")).not.toBeNull();
-    expect(table.querySelectorAll('thead th[scope="col"]')).toHaveLength(5);
+
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(allFilter?.getAttribute("aria-pressed")).toBe("true");
+    expect(contentFilter?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector("tbody tr:first-child")?.textContent).toContain(
+      "optimize-00",
+    );
+    expect(filters?.textContent).toContain("filters.all · 100");
+    expect(filters?.textContent).toContain("filters.optimize_existing · 5");
+    expect(filters?.textContent).toContain("filters.review_existing_query · 5");
+    expect(filters?.textContent).toContain("filters.review_content_gap · 88");
+    expect(filters?.textContent).toContain("filters.verify_own_coverage · 2");
+    expect(host.textContent).toContain("actions.remaining:count=90");
+
+    await click(buttonFor(host, "actions.showAll"));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
+    expect(host.textContent).toContain("actions.showingAll:count=100");
+    await click(buttonFor(host, "actions.showLess"));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+
+    await click(contentFilter);
+    expect(allFilter?.getAttribute("aria-pressed")).toBe("false");
+    expect(contentFilter?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(host.textContent).toContain("actions.remaining:count=78");
+    await click(buttonFor(host, "actions.showAll"));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(88);
+    await click(host.querySelector('[data-next-step-filter="all"]'));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(host.textContent).toContain("actions.remaining:count=90");
+  });
+
+  it("writes a bounded private handoff through a locale-only checker link", async () => {
+    const host = await renderResults(BASE, {
+      locale: "zh",
+      selectedProperty: "sc-domain:example.com",
+    });
+    const checker = tableRow(host, "approval workflow software").querySelector(
+      '[data-row-action="open-checker"]',
+    ) as HTMLAnchorElement;
+
+    expect(checker).toBeInstanceOf(HTMLAnchorElement);
+    expect(checker.getAttribute("href")).toBe("/zh/tools/on-page-seo-check");
+    expect(checker.getAttribute("href")).not.toContain("?");
+    checker.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await click(checker);
+
+    const stored = JSON.parse(String(sessionStorage.getItem(TOOL_HANDOFF_KEY))) as {
+      readonly property: string;
+      readonly query: string;
+      readonly page: string;
+      readonly evidenceId: string;
+    };
+
+    expect(stored.property).toBe("sc-domain:example.com");
+    expect(stored.query).toBe("approval workflow software");
+    expect(stored.page).toBe("https://example.com/product");
+    expect(stored.evidenceId.length).toBeLessThanOrEqual(256);
+    expect(JSON.stringify(BASE)).not.toContain("sc-domain:example.com");
+  });
+
+  it("prevents checker navigation and reports an inline error when storage fails", async () => {
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
+    const host = await renderResults(BASE, {
+      selectedProperty: "sc-domain:example.com",
+    });
+    const checker = tableRow(host, "approval workflow software").querySelector(
+      '[data-row-action="open-checker"]',
+    );
+
+    expect(await click(checker)).toBe(false);
+    expect(setItem).toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "actions.handoffFailed",
+    );
+  });
+
+  it("keeps a long keyword handoff id bounded and deterministic", async () => {
+    // Longer than the old keyword-derived 256-char evidence id, but still
+    // inside the handoff contract's 512-char query bound.
+    const longKeyword = "long handoff keyword ".repeat(14).trim();
+    const host = await renderResults(
+      withResult({
+        rows: [
+          {
+            ...BASE.result.rows[0]!,
+            keyword: longKeyword,
+          },
+        ],
+      }),
+      { selectedProperty: "sc-domain:example.com" },
+    );
+    const checker = host.querySelector('[data-row-action="open-checker"]');
+
+    checker?.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await click(checker);
+    const stored = JSON.parse(String(sessionStorage.getItem(TOOL_HANDOFF_KEY))) as {
+      readonly query: string;
+      readonly evidenceId: string;
+    };
+    expect(stored.query).toBe(longKeyword);
+    expect(stored.evidenceId.length).toBeLessThanOrEqual(256);
+
+    const firstEvidenceId = stored.evidenceId;
+    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
+    checker?.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await click(checker);
+    const repeated = JSON.parse(
+      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
+    ) as { readonly evidenceId: string };
+    expect(repeated.evidenceId).toBe(firstEvidenceId);
+  });
+
+  it("offers checker for sufficient strong evidence and a safe new-window page for partial evidence", async () => {
+    const strong = rowWithGsc(
+      0,
+      {
+        queryStatus: "observed_strong",
+        evidenceBasis: "query",
+        queryImpressions: 1_000,
+        queryPosition: 4,
+        pageStatus: "observed_sufficient",
+        pageUrl: "https://example.com/strong",
+        pageImpressions: 900,
+        pagePosition: 4.2,
+        queryPageCoverage: 0.9,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "strong sufficient" },
+    );
+    const partial = rowWithGsc(
+      1,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query_page",
+        queryImpressions: null,
+        queryPosition: null,
+        pageStatus: "observed_partial",
+        pageUrl: "https://example.com/partial",
+        pageImpressions: 12,
+        pagePosition: 9.2,
+        queryPageCoverage: null,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "partial page" },
+    );
+    const unsafe = rowWithGsc(
+      2,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query_page",
+        pageStatus: "observed_partial",
+        pageUrl: "javascript:alert(1)",
+        pageImpressions: 3,
+        pagePosition: 8,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "unsafe page" },
+    );
+    const host = await renderResults(withResult({ rows: [strong, partial, unsafe] }), {
+      selectedProperty: "sc-domain:example.com",
+    });
+
     expect(
-      [...table.querySelectorAll('thead th[scope="col"]')].map((header) =>
-        header.textContent?.trim(),
+      tableRow(host, "strong sufficient").querySelector(
+        '[data-row-action="open-checker"]',
       ),
-    ).toEqual([
-      "table.keyword",
-      "table.dfsEstimates",
-      "table.competitorRanks",
-      "table.ownSiteGsc",
-      "table.recommendation",
-    ]);
-    expect(wrapper.classList.contains("overflow-x-auto")).toBe(true);
-    expect(wrapper.tabIndex).toBe(0);
-    expect(wrapper.getAttribute("aria-labelledby")).toBe(
-      "competitor-keyword-gap-table-title",
+    ).toBeInstanceOf(HTMLAnchorElement);
+    const pageLink = tableRow(host, "partial page").querySelector(
+      '[data-row-action="open-observed-page"]',
+    ) as HTMLAnchorElement;
+    expect(pageLink).toBeInstanceOf(HTMLAnchorElement);
+    expect(pageLink.getAttribute("href")).toBe("https://example.com/partial");
+    expect(pageLink.getAttribute("target")).toBe("_blank");
+    expect(pageLink.getAttribute("rel")).toContain("noopener");
+    expect(tableRow(host, "unsafe page").textContent).not.toContain(
+      "actions.openObservedPage",
     );
-    expect(
-      host.querySelector("#competitor-keyword-gap-table-title")?.textContent,
-    ).toContain("table.title");
-    expect(wrapper.className).toContain("focus-visible:outline-2");
-    expect(table.className).toContain("min-w-[760px]");
-    expect(host.firstElementChild?.className).not.toContain("overflow-x-auto");
   });
 
-  it("moves technical coverage after the table and opens it for partial or truncated evidence", async () => {
+  it("does not let an empty property hide a safe observed page", async () => {
+    const partial = rowWithGsc(
+      0,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query_page",
+        pageStatus: "observed_partial",
+        pageUrl: "https://example.com/partial",
+        pageImpressions: 12,
+        pagePosition: 9.2,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "partial without property" },
+    );
+    const sufficient = {
+      ...BASE.result.rows[0]!,
+      keyword: "sufficient without property",
+    };
+    const host = await renderResults(
+      withResult({ rows: [partial, sufficient] }),
+      { selectedProperty: "" },
+    );
+
+    for (const keyword of [
+      "partial without property",
+      "sufficient without property",
+    ]) {
+      expect(
+        tableRow(host, keyword).querySelector(
+          '[data-row-action="open-observed-page"]',
+        ),
+      ).toBeInstanceOf(HTMLAnchorElement);
+    }
+    expect(host.textContent).not.toContain("actions.openChecker");
+  });
+
+  it("supports copy and focus-property actions for their evidence lanes", async () => {
+    const focusProperty = vi.fn();
+    const host = await renderResults(
+      withResult({
+        rows: [
+          row(0, {
+            keyword: "copy target",
+          }),
+          row(1, {
+            keyword: "focus target",
+            gsc: {
+              queryStatus: "gsc_query_sample_not_read",
+              evidenceBasis: null,
+              queryImpressions: null,
+              queryPosition: null,
+              pageStatus: "gsc_query_page_sample_not_read",
+              pageUrl: null,
+              pageImpressions: null,
+              pagePosition: null,
+              queryPageCoverage: null,
+              nextStep: "verify_own_coverage",
+            },
+          }),
+        ],
+      }),
+      {
+        selectedProperty: "sc-domain:example.com",
+        onFocusProperty: focusProperty,
+      },
+    );
+
+    await click(
+      [...tableRow(host, "copy target").querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("actions.copyKeyword"),
+      ) ?? null,
+    );
+    expect(writeTextMock).toHaveBeenCalledWith("copy target");
+
+    await click(
+      [...tableRow(host, "focus target").querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("actions.focusProperty"),
+      ) ?? null,
+    );
+    expect(focusProperty).toHaveBeenCalledOnce();
+
+    writeTextMock.mockRejectedValueOnce(new Error("denied"));
+    await click(
+      [...tableRow(host, "copy target").querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("actions.copyKeyword"),
+      ) ?? null,
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "actions.copyFailed",
+    );
+  });
+
+  it("renders all four GSC states, labels evidence basis, and never promotes query-page totals", async () => {
+    const rows = [
+      BASE.result.rows[0]!,
+      rowWithGsc(
+        1,
+        {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query_page",
+          queryImpressions: null,
+          queryPosition: null,
+          pageStatus: "observed_partial",
+          pageUrl: "https://example.com/page-only",
+          pageImpressions: 42,
+          pagePosition: 18,
+          queryPageCoverage: null,
+          nextStep: "review_existing_query",
+        },
+        { keyword: "query page only" },
+      ),
+      BASE.result.rows[1]!,
+      rowWithGsc(
+        3,
+        {
+          queryStatus: "gsc_query_sample_not_read",
+          pageStatus: "gsc_query_page_sample_not_read",
+          nextStep: "verify_own_coverage",
+        },
+        { keyword: "sample unread" },
+      ),
+      rowWithGsc(
+        4,
+        {
+          queryStatus: "observed_strong",
+          evidenceBasis: "query",
+          queryImpressions: 800,
+          queryPosition: 4,
+          pageStatus: "observed_sufficient",
+          pageUrl: "https://example.com/strong",
+          pageImpressions: 750,
+          pagePosition: 4.2,
+          queryPageCoverage: 0.94,
+          nextStep: "review_existing_query",
+        },
+        { keyword: "strong query" },
+      ),
+      rowWithGsc(
+        5,
+        {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query",
+          queryImpressions: 18,
+          queryPosition: 21,
+          pageStatus: "gsc_query_page_sample_not_read",
+          nextStep: "review_existing_query",
+        },
+        { keyword: "page sample unread" },
+      ),
+    ];
+    const host = await renderResults(withResult({ rows }));
+    const observed = tableRow(host, "approval workflow software");
+    const pageOnly = tableRow(host, "query page only");
+    const miss = tableRow(host, "approval policy template");
+    const unread = tableRow(host, "sample unread");
+    const strong = tableRow(host, "strong query");
+    const pageUnread = tableRow(host, "page sample unread");
+
+    expect(observed.textContent).toContain("gsc.observed_weak");
+    expect(observed.textContent).not.toContain("gsc.evidenceBasis.query");
+    expect(
+      observed
+        .querySelector("[data-gsc-status]")
+        ?.getAttribute("aria-label"),
+    ).toContain("gsc.evidenceBasis.query");
+    expect(observed.textContent).toContain("gsc.pageStatus.observed_sufficient");
+    expect(observed.textContent).not.toContain("gsc.pageMetricLine");
+    expect(pageOnly.textContent).toContain("gsc.evidenceBasis.query_page");
+    expect(pageOnly.textContent).toContain("gsc.pageStatus.observed_partial");
+    expect(pageOnly.textContent).not.toContain("gsc.metricLine");
+    expect(pageOnly.textContent).toContain("gsc.pageMetricLine");
+    expect(pageOnly.textContent).toContain("example.com/page-only");
+    expect(miss.textContent).toContain("gsc.not_observed_in_gsc_query_sample");
+    expect(unread.textContent).toContain("gsc.gsc_query_sample_not_read");
+    expect(strong.textContent).toContain("gsc.observed_strong");
+    expect(pageUnread.textContent).toContain(
+      "gsc.pageStatus.gsc_query_page_sample_not_read",
+    );
+    expect(miss.querySelector("[data-gsc-metrics]")).toBeNull();
+    expect(unread.querySelector("[data-gsc-metrics]")).toBeNull();
+    expect(miss.querySelector("td:nth-child(4)")?.textContent).not.toContain("—");
+    expect(unread.querySelector("td:nth-child(4)")?.textContent).not.toContain("—");
+  });
+
+  it("renders GSC metric lines only for complete non-null pairs and never substitutes zero", async () => {
+    const malformedQueryPair = rowWithGsc(
+      0,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query",
+        queryImpressions: 12,
+        queryPosition: null,
+        pageStatus: "not_observed_in_gsc_query_page_sample",
+        pageUrl: null,
+        pageImpressions: null,
+        pagePosition: null,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "missing query position" },
+    );
+    const malformedPagePair = rowWithGsc(
+      1,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query_page",
+        queryImpressions: null,
+        queryPosition: null,
+        pageStatus: "observed_partial",
+        pageUrl: "https://example.com/incomplete",
+        pageImpressions: 9,
+        pagePosition: null,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "missing page position" },
+    );
+    const host = await renderResults(
+      withResult({ rows: [malformedQueryPair, malformedPagePair] }),
+    );
+
+    expect(tableRow(host, "missing query position").textContent).not.toContain(
+      "gsc.metricLine",
+    );
+    expect(tableRow(host, "missing query position").textContent).toContain(
+      "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
+    );
+    expect(tableRow(host, "missing page position").textContent).not.toContain(
+      "gsc.pageMetricLine",
+    );
+    expect(host.textContent).not.toContain("position=0");
+  });
+
+  it("keeps technical coverage after the table and always states the four durable evidence boundaries", async () => {
     const envelope = withResult(
       {
         completedCompetitors: 1,
@@ -335,20 +910,18 @@ describe("CompetitorKeywordGapResults", () => {
     const host = await renderResults(envelope);
     const table = host.querySelector("table");
     const details = host.querySelector("details[data-coverage-details]");
+    const boundaries = host.querySelector("[data-evidence-boundaries]");
 
-    expect(host.textContent).toContain("status.partial");
-    expect(details).not.toBeNull();
     expect(details?.hasAttribute("open")).toBe(true);
-    expect(details?.textContent).toContain("coverage.unavailable");
-    expect(details?.textContent).toContain("coverage.truncated");
+    expect(host.textContent).toContain("status.partial");
     expect(details?.textContent).toContain(
       "coverage.failure:code=keyword_source_unavailable",
     );
+    expect(details?.textContent).toContain("coverage.truncated");
     expect(details?.textContent).toContain("limitations.resultTruncated");
     expect(details?.textContent).toContain("limitations.gscQueryTruncated");
-    expect(details?.textContent).toContain(
-      "limitations.gscQueryPageTruncated",
-    );
+    expect(details?.textContent).toContain("limitations.gscQueryPageTruncated");
+    expect(boundaries?.querySelectorAll("li")).toHaveLength(4);
     expect(
       table !== null && details !== null
         ? Boolean(
@@ -357,34 +930,6 @@ describe("CompetitorKeywordGapResults", () => {
           )
         : false,
     ).toBe(true);
-  });
-
-  it("keeps complete warning-free technical coverage collapsed by default", async () => {
-    const host = await renderResults();
-    const details = host.querySelector("details[data-coverage-details]");
-
-    expect(details).not.toBeNull();
-    expect(details?.hasAttribute("open")).toBe(false);
-    expect(details?.textContent).toContain("coverage.scope");
-    expect(details?.textContent).toContain("alpha.example");
-    expect(details?.textContent).toContain("beta.example");
-  });
-
-  it("always states four durable evidence boundaries after technical coverage", async () => {
-    const host = await renderResults();
-    const details = host.querySelector("details[data-coverage-details]");
-    const boundaries = host.querySelector("[data-evidence-boundaries]");
-
-    expect(boundaries).not.toBeNull();
-    expect(boundaries?.querySelectorAll("li")).toHaveLength(4);
-    for (const key of [
-      "boundaries.dfsEstimates",
-      "boundaries.gscOwnSample",
-      "boundaries.competitorOutcomesUnavailable",
-      "boundaries.manualSnapshot",
-    ]) {
-      expect(boundaries?.textContent).toContain(key);
-    }
     expect(
       details !== null && boundaries !== null
         ? Boolean(
@@ -395,7 +940,27 @@ describe("CompetitorKeywordGapResults", () => {
     ).toBe(true);
   });
 
-  it("distinguishes an honest empty result from an unavailable run", async () => {
+  it("keeps complete warning-free coverage collapsed and names all four durable boundaries", async () => {
+    const host = await renderResults();
+    const details = host.querySelector("details[data-coverage-details]");
+    const boundaries = host.querySelector("[data-evidence-boundaries]");
+
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(details?.textContent).toContain("coverage.scope");
+    expect(details?.textContent).toContain("alpha.example");
+    expect(details?.textContent).toContain("beta.example");
+    expect(boundaries?.querySelectorAll("li")).toHaveLength(4);
+    for (const key of [
+      "boundaries.dfsEstimates",
+      "boundaries.gscOwnSample",
+      "boundaries.competitorOutcomesUnavailable",
+      "boundaries.manualSnapshot",
+    ]) {
+      expect(boundaries?.textContent).toContain(key);
+    }
+  });
+
+  it("distinguishes a complete empty result from an unavailable run", async () => {
     const empty = await renderResults(withResult({ rows: [] }));
     expect(empty.textContent).toContain("empty.title");
     expect(empty.textContent).toContain("empty.body");
@@ -417,5 +982,6 @@ describe("CompetitorKeywordGapResults", () => {
     );
     expect(unavailable.textContent).toContain("status.unavailable");
     expect(unavailable.textContent).toContain("status.unavailableBody");
+    expect(unavailable.querySelector("table")).toBeNull();
   });
 });

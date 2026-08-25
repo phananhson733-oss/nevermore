@@ -71,7 +71,7 @@ let root: Root | null = null;
 const ENVELOPE: CompetitorKeywordGapEnvelope = {
   run: {
     tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v1",
+    schemaVersion: "competitor_keyword_gap.v2",
     mode: "public_preview",
     scope: "site",
     persistence: "none",
@@ -105,6 +105,39 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
   },
 };
 
+const ACTIONABLE_ENVELOPE: CompetitorKeywordGapEnvelope = {
+  ...ENVELOPE,
+  result: {
+    ...ENVELOPE.result,
+    overlayStatus: "available",
+    rows: [
+      {
+        keyword: "approval workflow software",
+        competitorRanks: { "rival.example": 4 },
+        competitorCount: 1,
+        bestCompetitorRank: 4,
+        ownState: "not_observed_in_provider_rankings",
+        searchVolume: { availability: "available", value: 2_900 },
+        cpc: { availability: "available", value: 4.2 },
+        keywordDifficulty: { availability: "available", value: 31 },
+        providerIntent: "commercial",
+        gsc: {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query",
+          queryImpressions: 318,
+          queryPosition: 34,
+          pageStatus: "observed_sufficient",
+          pageUrl: "https://example.com/product",
+          pageImpressions: 300,
+          pagePosition: 34.2,
+          queryPageCoverage: 0.94,
+          nextStep: "optimize_existing",
+        },
+      },
+    ],
+  },
+};
+
 beforeEach(() => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -112,6 +145,7 @@ beforeEach(() => {
   signInDialogMock.mockClear();
   trackMarketingEventMock.mockReset();
   scrollIntoViewMock.mockReset();
+  sessionStorage.clear();
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     value: scrollIntoViewMock,
@@ -159,9 +193,11 @@ async function renderTool(
   return host;
 }
 
-async function click(button: HTMLButtonElement): Promise<void> {
+async function click(button: HTMLElement): Promise<void> {
   await act(async () => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    button.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
     await Promise.resolve();
   });
 }
@@ -517,6 +553,44 @@ describe("CompetitorKeywordGapTool", () => {
     expect(requestAnimationFrameMock).not.toHaveBeenCalled();
   });
 
+  it("keeps result actions bound to the property used by that completed run", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ signedIn: true }))
+      .mockResolvedValueOnce(Response.json({ data: ACTIONABLE_ENVELOPE }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool([
+      "sc-domain:example.com",
+      "sc-domain:other.example",
+    ]);
+    const property = host.querySelector(
+      'select[name="property"]',
+    ) as HTMLSelectElement;
+
+    await change(property, "sc-domain:example.com");
+    await addCompetitor(host, "rival.example");
+    await click(buttonWith(host, "actions.run"));
+
+    expect(
+      host.querySelector('[data-row-action="open-checker"]'),
+    ).not.toBeNull();
+
+    await change(property, "sc-domain:other.example");
+    const checker = host.querySelector(
+      '[data-row-action="open-checker"]',
+    ) as HTMLAnchorElement;
+    expect(checker).not.toBeNull();
+    checker.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await click(checker);
+
+    const stored = JSON.parse(
+      String(sessionStorage.getItem("gengrowth.tool-handoff.v1")),
+    ) as { readonly property: string };
+    expect(stored.property).toBe("sc-domain:example.com");
+  });
+
   it("keeps old results for local validation errors but clears them before rerun authentication", async () => {
     const rerunAuth = deferred<Response>();
     const fetchMock = vi
@@ -694,6 +768,50 @@ describe("CompetitorKeywordGapTool", () => {
       expect.anything(),
     );
   });
+
+  it.each(["stale-v1", "malformed-v2"] as const)(
+    "rejects a %s success body before rendering or completing analytics",
+    async (kind) => {
+      const staleV1 = {
+        ...ENVELOPE,
+        run: { ...ENVELOPE.run, schemaVersion: "competitor_keyword_gap.v1" },
+      };
+      const actionableRow = ACTIONABLE_ENVELOPE.result.rows[0]!;
+      const { pageStatus: _pageStatus, ...incompleteGsc } =
+        actionableRow.gsc;
+      const malformedV2 = {
+        ...ACTIONABLE_ENVELOPE,
+        result: {
+          ...ACTIONABLE_ENVELOPE.result,
+          rows: [{ ...actionableRow, gsc: incompleteGsc }],
+        },
+      };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ signedIn: true }))
+        .mockResolvedValueOnce(
+          Response.json({ data: kind === "stale-v1" ? staleV1 : malformedV2 }),
+        );
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const host = await renderTool();
+
+      await change(
+        host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+        "example.com",
+      );
+      await addCompetitor(host, "rival.example");
+      await click(buttonWith(host, "actions.run"));
+
+      expect(host.querySelector("[data-competitor-gap-results]")).toBeNull();
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "errors.unknown",
+      );
+      expect(trackMarketingEventMock).not.toHaveBeenCalledWith(
+        "tool_complete",
+        expect.anything(),
+      );
+    },
+  );
 
   it("reports auth unavailability without posting and uses the known-error allow-list", async () => {
     const fetchMock = vi

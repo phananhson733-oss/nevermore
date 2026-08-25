@@ -24,7 +24,7 @@ vi.mock("../components/layout/google-analytics", () => ({
 const ENVELOPE: CompetitorKeywordGapEnvelope = {
   run: {
     tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v1",
+    schemaVersion: "competitor_keyword_gap.v2",
     mode: "public_preview",
     scope: "site",
     persistence: "none",
@@ -71,10 +71,38 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
         providerIntent: "commercial",
         gsc: {
           queryStatus: "not_observed_in_gsc_query_sample",
+          evidenceBasis: null,
           queryImpressions: null,
           queryPosition: null,
+          pageStatus: "not_observed_in_gsc_query_page_sample",
           pageUrl: null,
+          pageImpressions: null,
+          pagePosition: null,
+          queryPageCoverage: null,
           nextStep: "review_content_gap",
+        },
+      },
+      {
+        keyword: "query-page-only evidence",
+        competitorRanks: { "alpha.example": 7 },
+        competitorCount: 1,
+        bestCompetitorRank: 7,
+        ownState: "not_observed_in_provider_rankings",
+        searchVolume: { availability: "available", value: 1_200 },
+        cpc: { availability: "provider_no_data", value: null },
+        keywordDifficulty: { availability: "available", value: 28 },
+        providerIntent: "informational",
+        gsc: {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query_page",
+          queryImpressions: null,
+          queryPosition: null,
+          pageStatus: "observed_partial",
+          pageUrl: "https://example.com/partial",
+          pageImpressions: 12,
+          pagePosition: 18,
+          queryPageCoverage: null,
+          nextStep: "review_existing_query",
         },
       },
     ],
@@ -115,7 +143,12 @@ async function renderLocale(locale: "en" | "zh"): Promise<HTMLElement> {
           properties={["sc-domain:example.com"]}
           markets={["US"]}
         />
-        <CompetitorKeywordGapResults envelope={ENVELOPE} locale={locale} />
+        <CompetitorKeywordGapResults
+          envelope={ENVELOPE}
+          locale={locale}
+          selectedProperty="sc-domain:example.com"
+          onFocusProperty={vi.fn()}
+        />
       </NextIntlClientProvider>,
     );
   });
@@ -133,9 +166,10 @@ describe.each([
     eyebrow: "Competitor keyword gap report",
     versus: "vs",
     returnedRows: "Returned gap rows",
-    recommendationHeader: "Recommendation",
-    recommendation:
-      "Review the competitor gap before deciding whether a new page is warranted.",
+    observedBody:
+      "Returned rows observed in the bounded own-site GSC query or query-page sample.",
+    recommendationHeader: "Next check",
+    recommendation: "Not observed in this sample; review the gap before creating a page.",
     boundaries: "Evidence boundaries",
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
@@ -149,8 +183,9 @@ describe.each([
     eyebrow: "竞品关键词差距报告",
     versus: "对比",
     returnedRows: "本次返回的差距行",
-    recommendationHeader: "下一步检查建议",
-    recommendation: "先检查竞品差距，再决定是否值得新建页面。",
+    observedBody: "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
+    recommendationHeader: "下一步检查",
+    recommendation: "本次样本未观测本站；先复核差距，再决定是否新建。",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
   },
@@ -169,6 +204,7 @@ describe.each([
     expect(scope?.textContent).toContain("beta.example");
     expect(scope?.textContent).toContain(expected.versus);
     expect(host.textContent).toContain(expected.returnedRows);
+    expect(host.textContent).toContain(expected.observedBody);
     expect(host.textContent).toContain(expected.recommendationHeader);
     expect(host.textContent).toContain(expected.recommendation);
     expect(host.textContent).toContain(expected.boundaries);
@@ -177,7 +213,7 @@ describe.each([
     expect(host.textContent).not.toContain("summary.unavailable");
     expect(host.textContent).not.toContain("intent.commercial");
     expect(host.textContent).not.toContain("overview.returnedGapRows");
-    expect(host.textContent).not.toContain("table.recommendation");
+    expect(host.textContent).not.toContain("table.nextCheck");
     expect(host.textContent).not.toContain("boundaries.manualSnapshot");
   });
 });

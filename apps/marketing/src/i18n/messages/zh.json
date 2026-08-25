@@ -823,8 +823,7 @@
         "placeholder": "competitor.com",
         "add": "添加竞品",
         "count": "已添加 {count} / 5 个竞品",
-        "remove": "移除 {domain}",
-        "snapshot": "{count} 个竞品 · 最佳排名 #{bestRank}"
+        "remove": "移除 {domain}"
       },
       "validation": {
         "siteInvalid": "请输入有效的公开网站域名。",
@@ -851,7 +850,17 @@
       },
       "actions": {
         "run": "开始差距分析",
-        "running": "正在分析…"
+        "running": "正在分析…",
+        "openChecker": "打开 On-Page Checker",
+        "openObservedPage": "打开已观测页面",
+        "copyKeyword": "复制关键词",
+        "focusProperty": "定位 GSC 资源",
+        "copyFailed": "浏览器里无法复制这个关键词。",
+        "handoffFailed": "当前标签页里无法写入私有 On-Page 跳转信息。",
+        "remaining": "当前筛选下还有 {count} 行未展开。",
+        "showingAll": "当前筛选下已展开全部 {count} 行。",
+        "showAll": "展开全部",
+        "showLess": "收起"
       },
       "status": {
         "complete": "分析完成",
@@ -903,8 +912,11 @@
         "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
         "completedCompetitors": "完成竞品",
         "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
-        "gscObservedRows": "GSC 已观测行",
-        "gscObservedRowsBody": "本次返回结果中，在有限本站 GSC 查询样本里被强或弱观测到的行数。"
+      "gscObservedRows": "GSC 已观测行",
+      "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
+      },
+    "legend": {
+      "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
       },
       "boundaries": {
         "title": "数据与证据边界",
@@ -914,23 +926,46 @@
         "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。"
       },
       "metrics": {
-        "searchVolume": "搜索量",
         "cpc": "CPC",
-        "difficulty": "难度",
-        "intent": "意图"
+        "difficulty": "难度"
       },
       "gsc": {
-        "observed_strong": "在 GSC 查询样本中观测到较强表现",
-        "observed_weak": "在 GSC 查询样本中观测到较弱表现",
-        "not_observed_in_gsc_query_sample": "本次 GSC 查询样本未观测到",
-        "gsc_query_sample_not_read": "未读取到 GSC 查询样本",
+      "observed_strong": "已观测 · 表现较强",
+      "observed_weak": "有曝光 · 待提升",
+      "not_observed_in_gsc_query_sample": "本次样本未观测",
+      "gsc_query_sample_not_read": "GSC 样本未读取",
+      "evidenceBasis": {
+        "query": "精确 query 证据",
+        "query_page": "query-page 证据"
+      },
+      "pageStatus": {
+        "observed_sufficient": "页面归因充分",
+        "observed_partial": "页面归因不完整",
+        "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
+        "gsc_query_page_sample_not_read": "页面样本未完整读取"
+        },
         "impressions": "曝光",
         "position": "平均排名",
+        "metricLine": "曝光 {impressions} · 均位 {position}",
+        "pageMetricLine": "页面证据：曝光 {impressions} · 均位 {position}",
         "page": "打开已观测页面"
       },
-      "nextSteps": {
-        "optimize_existing": "创建新内容前，先检查已观测到的页面。",
-        "review_content_gap": "先检查竞品差距，再决定是否值得新建页面。"
+      "filters": {
+        "all": "全部",
+        "optimize_existing": "优化现有页",
+        "review_existing_query": "复核现有覆盖",
+        "review_content_gap": "复核内容差距",
+        "verify_own_coverage": "补证据"
+      },
+    "nextSteps": {
+      "optimize_existing": "已有可信落地页，先检查并优化现有页。",
+      "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
+      "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
+      "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
+      },
+      "signals": {
+        "bestRank": "最佳竞品排名 #{rank}",
+        "difficulty": "难度 {value}"
       },
       "table": {
         "title": "差距清单",
@@ -938,10 +973,11 @@
         "legend": "DataForSEO 的竞品结果与可选的本站 Search Console 观测分开呈现。",
         "caption": "带 DataForSEO 指标与可选 GSC 证据的竞品关键词差距",
         "keyword": "关键词",
-        "dfsEstimates": "DataForSEO 估算",
-        "competitorRanks": "竞品排名",
-        "ownSiteGsc": "本站 GSC 证据",
-        "recommendation": "下一步检查建议"
+        "monthlySearchVolume": "月搜索量",
+        "competitorCoverage": "竞品覆盖",
+        "yourStatus": "你的状态",
+        "opportunitySignals": "机会信号",
+        "nextCheck": "下一步检查"
       },
       "ownState": {
         "not_observed_in_provider_rankings": "数据源排名样本未观测到本站"
@@ -950,7 +986,8 @@
         "informational": "信息获取",
         "navigational": "导航访问",
         "commercial": "商业调研",
-        "transactional": "交易转化"
+        "transactional": "交易转化",
+        "unknown": "意图未知"
       },
       "empty": {
         "title": "没有返回差距行",
@@ -2921,7 +2958,7 @@
       "eyebrow": "工具 · 单个页面 · 一组关键词",
       "title": "这个页面真的覆盖了你想被搜到的词吗？",
       "intro": "提交一个页面和最多五个目标关键词，得到每个词在这一页的哪些位置出现、出现多少次，以及哪些事实是公开 HTML 里量不出来的。",
-      "handoffNotice": "已从每日搜索简报带入；尚未在本工具重新运行。",
+      "handoffNotice": "已从其他工具带入；尚未在本工具重新运行。",
       "stages": {
         "target": {
           "eyebrow": "阶段 01",

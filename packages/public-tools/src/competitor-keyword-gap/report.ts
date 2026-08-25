@@ -6,10 +6,15 @@ import {
   COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
   COMPETITOR_KEYWORD_GAP_TOOL,
 } from "./types.ts";
+import {
+  MIN_DIMENSION_COVERAGE,
+  queryPageCoverage,
+} from "../gsc-analytics/page-reader.ts";
 import type {
   CompetitorKeywordGapCompetitorCoverage,
   CompetitorKeywordGapEnvelope,
   CompetitorKeywordGapGscEvidence,
+  CompetitorKeywordGapGscPageStatus,
   CompetitorKeywordGapGscOverlayStatus,
   CompetitorKeywordGapMetric,
   CompetitorKeywordGapRow,
@@ -82,6 +87,12 @@ interface MutableAggregate {
 }
 
 interface GscQueryAggregate {
+  impressions: number;
+  weightedPositions: number;
+}
+
+interface GscPageAggregate {
+  readonly pageUrl: string;
   impressions: number;
   weightedPositions: number;
 }
@@ -168,74 +179,212 @@ function queryAggregates(
   return aggregates;
 }
 
-function supportingPage(
-  key: string,
-  gsc: CompetitorKeywordGapGscRead | null,
-): string | null {
-  if (gsc?.status !== "available" || gsc.queryPageTruncated) return null;
+function safePageUrl(page: string): string | null {
+  const candidate = page.trim();
+  if (candidate === "") return null;
+  try {
+    const url = new URL(candidate);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
 
-  const candidates = gsc.queryPageRows
-    .filter(
-      (row) =>
-        competitorKeywordGapKey(row.query) === key &&
-        row.page.trim() !== "" &&
-        Number.isFinite(row.impressions) &&
-        row.impressions > 0 &&
-        Number.isFinite(row.position) &&
-        row.position >= 0,
-    )
-    .toSorted(
+function pageAggregates(
+  gsc: CompetitorKeywordGapGscRead | null,
+): ReadonlyMap<string, ReadonlyMap<string, GscPageAggregate>> {
+  const aggregates = new Map<string, Map<string, GscPageAggregate>>();
+  if (gsc?.status !== "available") return aggregates;
+
+  for (const row of gsc.queryPageRows) {
+    const key = competitorKeywordGapKey(row.query);
+    const pageUrl = safePageUrl(row.page);
+    if (
+      key === "" ||
+      pageUrl === null ||
+      !Number.isFinite(row.impressions) ||
+      row.impressions <= 0 ||
+      !Number.isFinite(row.position) ||
+      row.position < 0
+    ) {
+      continue;
+    }
+    const pages = aggregates.get(key) ?? new Map<string, GscPageAggregate>();
+    const current = pages.get(pageUrl) ?? {
+      pageUrl,
+      impressions: 0,
+      weightedPositions: 0,
+    };
+    current.impressions += row.impressions;
+    current.weightedPositions += row.position * row.impressions;
+    pages.set(pageUrl, current);
+    aggregates.set(key, pages);
+  }
+  return aggregates;
+}
+
+function bestPage(
+  key: string,
+  pages: ReadonlyMap<string, ReadonlyMap<string, GscPageAggregate>>,
+): GscPageAggregate | null {
+  const queryPages = pages.get(key);
+  if (queryPages === undefined) return null;
+
+  return (
+    [...queryPages.values()].toSorted(
       (a, b) =>
         b.impressions - a.impressions ||
-        a.position - b.position ||
-        a.page.localeCompare(b.page),
-    );
+        a.weightedPositions / a.impressions - b.weightedPositions / b.impressions ||
+        a.pageUrl.localeCompare(b.pageUrl),
+    )[0] ?? null
+  );
+}
 
-  return candidates[0]?.page ?? null;
+function observedFromQuery(
+  observation: GscQueryAggregate | undefined,
+): "observed_strong" | "observed_weak" | null {
+  if (observation === undefined) return null;
+  const position = observation.weightedPositions / observation.impressions;
+  return observation.impressions >= GSC_STRONG_IMPRESSIONS_MIN &&
+      position <= GSC_STRONG_POSITION_MAX
+    ? "observed_strong"
+    : "observed_weak";
+}
+
+function pageStatusFrom(
+  key: string,
+  page: GscPageAggregate | null,
+  query: GscQueryAggregate | undefined,
+  pages: ReadonlyMap<string, ReadonlyMap<string, GscPageAggregate>>,
+  gsc: CompetitorKeywordGapGscRead | null,
+): {
+  readonly pageStatus: CompetitorKeywordGapGscPageStatus;
+  readonly pageImpressions: number | null;
+  readonly pagePosition: number | null;
+  readonly queryPageCoverage: number | null;
+} {
+  if (gsc?.status !== "available") {
+    return {
+      pageStatus: "gsc_query_page_sample_not_read",
+      pageImpressions: null,
+      pagePosition: null,
+      queryPageCoverage: null,
+    };
+  }
+  if (page === null) {
+    return {
+      pageStatus: gsc.queryPageTruncated
+        ? "gsc_query_page_sample_not_read"
+        : "not_observed_in_gsc_query_page_sample",
+      pageImpressions: null,
+      pagePosition: null,
+      queryPageCoverage: null,
+    };
+  }
+
+  const pagePosition = page.weightedPositions / page.impressions;
+  const queryPages = pages.get(key);
+  const coverage =
+    query === undefined || queryPages === undefined
+      ? null
+      : queryPageCoverage(
+          [
+            {
+              query: key,
+              clicks: 0,
+              impressions: query.impressions,
+              position: query.weightedPositions / query.impressions,
+            },
+          ],
+          [...queryPages.values()].map((queryPage) => ({
+            query: key,
+            page: queryPage.pageUrl,
+            clicks: 0,
+            impressions: queryPage.impressions,
+            position:
+              queryPage.weightedPositions / queryPage.impressions,
+          })),
+        ).get(key) ?? null;
+  const sufficient =
+    !gsc.queryPageTruncated &&
+    coverage !== null &&
+    Number.isFinite(coverage) &&
+    coverage >= 0 &&
+    coverage <= 1 &&
+    coverage >= MIN_DIMENSION_COVERAGE;
+
+  return {
+    pageStatus: sufficient ? "observed_sufficient" : "observed_partial",
+    pageImpressions: page.impressions,
+    pagePosition,
+    queryPageCoverage: coverage,
+  };
 }
 
 function gscEvidence(
   key: string,
   gsc: CompetitorKeywordGapGscRead | null,
   queries: ReadonlyMap<string, GscQueryAggregate>,
+  pages: ReadonlyMap<string, ReadonlyMap<string, GscPageAggregate>>,
 ): CompetitorKeywordGapGscEvidence {
-  const pageUrl = supportingPage(key, gsc);
-  const nextStep =
-    pageUrl === null ? "review_content_gap" : "optimize_existing";
-
   if (gsc?.status !== "available") {
     return Object.freeze({
       queryStatus: "gsc_query_sample_not_read",
+      evidenceBasis: null,
       queryImpressions: null,
       queryPosition: null,
+      pageStatus: "gsc_query_page_sample_not_read",
       pageUrl: null,
-      nextStep: "review_content_gap",
+      pageImpressions: null,
+      pagePosition: null,
+      queryPageCoverage: null,
+      nextStep: "verify_own_coverage",
     });
   }
 
   const observation = queries.get(key);
-  if (observation === undefined) {
-    return Object.freeze({
-      queryStatus: gsc.queryTruncated
+  const page = bestPage(key, pages);
+  const observedQueryStatus = observedFromQuery(observation);
+  const queryStatus =
+    observedQueryStatus ??
+    (page !== null
+      ? "observed_weak"
+      : gsc.queryTruncated
         ? "gsc_query_sample_not_read"
-        : "not_observed_in_gsc_query_sample",
-      queryImpressions: null,
-      queryPosition: null,
-      pageUrl,
-      nextStep,
-    });
-  }
+        : "not_observed_in_gsc_query_sample");
+  const evidenceBasis =
+    observedQueryStatus !== null ? "query" : page !== null ? "query_page" : null;
+  const pageFacts = pageStatusFrom(key, page, observation, pages, gsc);
+  const queryPosition =
+    observation === undefined ? null : observation.weightedPositions / observation.impressions;
 
-  const position =
-    observation.weightedPositions / observation.impressions;
-  const strong =
-    observation.impressions >= GSC_STRONG_IMPRESSIONS_MIN &&
-    position <= GSC_STRONG_POSITION_MAX;
+  const nextStep =
+    queryStatus === "observed_strong"
+      ? "review_existing_query"
+      : queryStatus === "observed_weak"
+        ? pageFacts.pageStatus === "observed_sufficient" &&
+            evidenceBasis === "query"
+          ? "optimize_existing"
+          : "review_existing_query"
+        : queryStatus === "not_observed_in_gsc_query_sample" &&
+            pageFacts.pageStatus === "not_observed_in_gsc_query_page_sample"
+          ? "review_content_gap"
+          : "verify_own_coverage";
   return Object.freeze({
-    queryStatus: strong ? "observed_strong" : "observed_weak",
-    queryImpressions: observation.impressions,
-    queryPosition: position,
-    pageUrl,
+    queryStatus,
+    evidenceBasis,
+    queryImpressions:
+      evidenceBasis === "query" ? observation?.impressions ?? null : null,
+    queryPosition: evidenceBasis === "query" ? queryPosition : null,
+    pageStatus: pageFacts.pageStatus,
+    pageUrl: page?.pageUrl ?? null,
+    pageImpressions: pageFacts.pageImpressions,
+    pagePosition: pageFacts.pagePosition,
+    queryPageCoverage: pageFacts.queryPageCoverage,
     nextStep,
   });
 }
@@ -263,6 +412,31 @@ function runStatus(
 }
 
 function rowSort(a: CompetitorKeywordGapRow, b: CompetitorKeywordGapRow) {
+  const nextStepPriority: Readonly<Record<CompetitorKeywordGapGscEvidence["nextStep"], number>> = {
+    optimize_existing: 0,
+    review_existing_query: 1,
+    review_content_gap: 2,
+    verify_own_coverage: 3,
+  };
+  const queryPriority: Readonly<Record<CompetitorKeywordGapGscEvidence["queryStatus"], number>> = {
+    observed_weak: 0,
+    observed_strong: 1,
+    not_observed_in_gsc_query_sample: 2,
+    gsc_query_sample_not_read: 3,
+  };
+  if (nextStepPriority[a.gsc.nextStep] !== nextStepPriority[b.gsc.nextStep]) {
+    return nextStepPriority[a.gsc.nextStep] - nextStepPriority[b.gsc.nextStep];
+  }
+  if (queryPriority[a.gsc.queryStatus] !== queryPriority[b.gsc.queryStatus]) {
+    return queryPriority[a.gsc.queryStatus] - queryPriority[b.gsc.queryStatus];
+  }
+  const aImpressions = a.gsc.queryImpressions ?? a.gsc.pageImpressions;
+  const bImpressions = b.gsc.queryImpressions ?? b.gsc.pageImpressions;
+  if (aImpressions !== bImpressions) {
+    if (aImpressions === null) return 1;
+    if (bImpressions === null) return -1;
+    return bImpressions - aImpressions;
+  }
   if (a.competitorCount !== b.competitorCount) {
     return b.competitorCount - a.competitorCount;
   }
@@ -360,6 +534,7 @@ export function buildCompetitorKeywordGapReport(
   }
 
   const queries = queryAggregates(input.gsc);
+  const pages = pageAggregates(input.gsc);
   const rows = [...aggregates.values()]
     .map((aggregate): CompetitorKeywordGapRow => {
       const evidence = aggregate.evidence.toSorted(compareEvidence);
@@ -387,7 +562,7 @@ export function buildCompetitorKeywordGapReport(
           (row) => row.keywordDifficulty,
         ),
         providerIntent: intentFrom(evidence),
-        gsc: gscEvidence(aggregate.key, input.gsc, queries),
+        gsc: gscEvidence(aggregate.key, input.gsc, queries, pages),
       });
     })
     .toSorted(rowSort);
