@@ -862,8 +862,8 @@
         "showAll": "展开全部",
         "showLess": "收起",
         "openCompetitorPage": "打开竞品页面",
-        "copyPlan": "将 {count} 行复制为计划",
-        "copyPlanDone": "已复制 {count} 行。",
+        "copyPlan": "{count, plural, other {将 # 行复制为计划}}",
+        "copyPlanDone": "{count, plural, other {已复制 # 行。}}",
         "copyPlanFailed": "浏览器里无法复制这份计划。"
       },
       "status": {
@@ -919,9 +919,9 @@
         "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
         "completedCompetitors": "完成竞品",
         "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
-      "gscObservedRows": "GSC 已观测行",
-      "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
-        "gscQueryRows": "该资源在本窗口内 GSC 共返回 {count} 条查询。"
+        "gscObservedRows": "GSC 已观测行",
+        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
+        "gscQueryRows": "{count, plural, other {该资源在本窗口的有限样本内，GSC 返回了 # 条查询。}}"
       },
     "legend": {
       "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
@@ -985,11 +985,11 @@
           "stretch": "可争取",
           "unbanded": "未分带",
           "defer_head_term": "头部词，暂缓",
-          "defer_brand_navigational": "品牌/导航词，跳过"
+          "defer_brand_navigational": "品牌/导航词，暂缓"
         },
         "reason": {
           "kd_low_rank_top10": "难度 ≤ 30 且有竞品在首页。",
-          "kd_mid_rank_top20": "难度中等，或竞品在第二页。",
+          "kd_mid_rank_top20": "不同时满足「难度 ≤ 30 且有竞品在首页」。",
           "kd_high": "难度 > 60，在本样本里属于头部词。",
           "dfs_metric_missing": "数据源未报告难度或搜索量，不分带。",
           "competitor_brand_token": "包含所选竞品的品牌词。",
@@ -1003,7 +1003,7 @@
         "difficulty": "难度 {value}",
         "aiOverviewSnapshot": "AI Overview · DFS 快照 {date}",
         "aiOverviewSnapshotUndated": "AI Overview · DFS 快照，无日期",
-        "competitorTraffic": "竞品页面预估 {value}/月"
+        "competitorTraffic": "竞品页面 DFS 预估 {value}/月"
       },
       "table": {
         "title": "差距清单",

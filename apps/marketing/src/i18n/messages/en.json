@@ -862,8 +862,8 @@
         "showAll": "Show all",
         "showLess": "Show less",
         "openCompetitorPage": "Open competitor page",
-        "copyPlan": "Copy {count} rows as plan",
-        "copyPlanDone": "Copied {count} rows.",
+        "copyPlan": "{count, plural, one {Copy # row as plan} other {Copy # rows as plan}}",
+        "copyPlanDone": "{count, plural, one {Copied # row.} other {Copied # rows.}}",
         "copyPlanFailed": "Could not copy the plan in this browser."
       },
       "status": {
@@ -919,9 +919,9 @@
         "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
         "completedCompetitors": "Completed competitors",
         "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
-      "gscObservedRows": "Own-site GSC observed rows",
-      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample.",
-        "gscQueryRows": "GSC returned {count} query rows for this property."
+        "gscObservedRows": "Own-site GSC observed rows",
+        "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample.",
+        "gscQueryRows": "{count, plural, one {GSC returned # query row in this window's bounded sample for this property.} other {GSC returned # query rows in this window's bounded sample for this property.}}"
       },
     "legend": {
       "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
@@ -985,11 +985,11 @@
           "stretch": "Stretch",
           "unbanded": "Not banded",
           "defer_head_term": "Head term, defer",
-          "defer_brand_navigational": "Brand or navigational, skip"
+          "defer_brand_navigational": "Brand or navigational, defer"
         },
         "reason": {
           "kd_low_rank_top10": "KD at or below 30 and a competitor on page one.",
-          "kd_mid_rank_top20": "Mid KD or a competitor on page two.",
+          "kd_mid_rank_top20": "Not both KD at or below 30 and a competitor on page one.",
           "kd_high": "KD above 60; a head term for this sample.",
           "dfs_metric_missing": "The provider reported no KD or volume, so no band was assigned.",
           "competitor_brand_token": "Contains a requested competitor's brand.",
@@ -1003,7 +1003,7 @@
         "difficulty": "KD {value}",
         "aiOverviewSnapshot": "AI Overview · DFS snapshot {date}",
         "aiOverviewSnapshotUndated": "AI Overview · DFS snapshot, undated",
-        "competitorTraffic": "Competitor page est. {value}/mo"
+        "competitorTraffic": "Competitor page DFS est. {value}/mo"
       },
       "table": {
         "title": "Gap list",
