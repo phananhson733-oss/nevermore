@@ -15,6 +15,7 @@ import {
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
   INDEX_COVERAGE_EVIDENCE_LABELS,
+  INDEX_COVERAGE_LIMITATION_CODES,
   INDEX_COVERAGE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/index-coverage";
 import {
@@ -155,6 +156,7 @@ describe("record vocabulary", () => {
       for (const code of [
         ...SEO_AUDIT_LIMITATION_CODES,
         ...SEARCH_PERFORMANCE_LIMITATION_CODES,
+        ...INDEX_COVERAGE_LIMITATION_CODES,
         ...KEYWORD_EVIDENCE_LIMITATION_CODES,
         ...PAGE_PERFORMANCE_LIMITATION_CODES,
         ...SERP_SHAPE_LIMITATION_CODES,
