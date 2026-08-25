@@ -1,7 +1,7 @@
 # Agent Audit aggregate-record contract fix
 
-Date: 2026-08-25  
-Status: approved — option A  
+Date: 2026-08-25
+Status: approved — option A
 Scope: GenGrowth Marketing SEO/Tech Agent audit response validation
 
 ## Problem
