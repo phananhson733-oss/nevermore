@@ -1805,8 +1805,9 @@
         "weeklyReason": "Daily interpretation is suppressed because the sample or complete-day comparison is insufficient.",
         "quotaAvailable": "{remaining} of {limit} shared runs remain this hour.",
         "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero.",
-        "positionFirstReason": "This property has no click signal that can be evaluated yet, so the briefing reports weekly average-position opportunities instead of daily change detection.",
-        "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it."
+        "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it.",
+        "positionObservationReason": "No strict change lane can be evaluated on this property right now, so this runs weekly as provisional position movement and a watchlist rather than daily change detection.",
+        "currentWatchlistReason": "No query on this property has a comparable prior window, so the briefing can describe current positions only and makes no change judgement."
       },
       "kpis": {
         "title": "Performance at a glance",
@@ -1823,7 +1824,7 @@
       },
       "noise": {
         "label": "Noise filter on",
-        "observed": "{observed} visible queries: {eligible} reached the evaluation sample floor; {selected, plural, one {# strict query/page change was selected} other {# strict query/page changes were selected}}; {observations, plural, one {# observation is shown} other {# observations are shown}}; {trend, plural, one {# site-wide trend is shown} other {# site-wide trends are shown}}.",
+        "observed": "{observed} query rows in the current window, {eligible} of them at 100 impressions. {strictPaired} support a strict two-window position comparison; {clickDecline} carry the prior clicks a decline could be measured against; {provisional} have a prior window of only 50-99 impressions and can be observed only; {currentOnly} have no comparable prior window at all.",
         "partial": "{observed} visible rows in the observed prefix → downstream candidate counts are unavailable. This is not property-wide.",
         "unavailable": "Visible-query signal funnel unavailable. Downstream counts remain unavailable; no zeroes were inferred.",
         "observationOnly": "{count} queries had 50–99 impressions and remain observation-only; they cannot trigger an action."
@@ -1859,7 +1860,6 @@
           "position": "Position",
           "interpretation": "Interpretation"
         },
-        "introPositionFirst": "Click signals do not apply at this traffic level. Rows are ordered by average position, closest to acting on first.",
         "observationBands": {
           "page_one": {
             "body": "Already inside the 1-10 average position band. Check search intent, title and snippet, and whether the carrying page matches the query."
@@ -1874,56 +1874,74 @@
             "body": "A distant-position observation, not a priority for today's work."
           }
         },
-        "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed."
+        "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed.",
+        "introPositionObservation": "No strict change lane could be evaluated this run. What follows is provisional position movement and current-window observation, not an established change.",
+        "introCurrentWatchlist": "There is no comparable prior window this run, so only current-window positions are listed. No row here is a change judgement.",
+        "withheld": "{count} more observation candidates were not shown: {breakdown}. They are not below a threshold; they lost the row budget.",
+        "withheldBands": {
+          "page_one": "{count} in the 1-10 band",
+          "near_page_one": "{count} near the 1-10 band",
+          "mid": "{count} mid-band",
+          "far": "{count} far"
+        }
       },
       "evidence": {
         "title": "Why there were not more signals",
-        "thresholdSummary": "A query or query/page needs at least 100 impressions. A click movement needs at least 15% relative change and 3 absolute clicks. Position is considered stable only within 0.5.",
-        "filteredComplete": "{count} observed query rows were read but did not clear a signal threshold.",
-        "filteredPartial": "{count} rows in the observed prefix did not clear a signal threshold. The count is not property-wide because the read was partial or unavailable.",
+        "thresholdSummary": "A strict change requires the same query to carry at least 100 impressions in each of the two windows. On top of that: a stable-position click decline needs clicks down by both 15 percent and 3, with average position moving no more than 0.5; a move into the 1-10 band needs the prior window outside 10, the current window inside it, and at least 1.5 positions of improvement; a slide inside the actionable band needs at least 3 positions of decline with at least one window inside the top 30; a first-observed pair needs page attribution usable in both windows. The site-wide trend carries its own noise floor: the move must exceed 2x the square root of the prior window base.",
         "coverageTitle": "Query-to-page coverage · current window",
         "coverageObserved": "{covered} of {eligible} eligible queries had a page carrying at least {floor} of their visible impressions.",
         "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
         "anonymizationTitle": "Search Console anonymization · current window",
         "anonymizationObserved": "{impressions} of property impressions and {clicks} of property clicks are absent from visible query rows.",
         "anonymizationUnavailable": "The withheld share is unavailable; it is not zero.",
-        "signalFunnel": {
-          "title": "Independent signal paths",
-          "intro": "These lanes are independent and not additive; do not add the counts together.",
-          "laneUnavailable": "This lane is unavailable for the current evidence state; it is not zero.",
+        "foldSummary": "{changes} query changes · {provisional} provisional position moves · {trend} site trend observations · {shown}/{candidates} observation candidates shown",
+        "paths": {
+          "title": "Signal evaluation and suppression paths",
+          "intro": "Each path stands on its own and the counts cannot be added together. The three tiers below are preconditions, evaluation paths, and attribution suppression.",
+          "rowsIntro": "The current window carries {rows} query rows, and every evaluation path accounts for all of them.",
+          "tiers": {
+            "baseline": "Preconditions and baselines",
+            "lanes": "Evaluation paths",
+            "suppression": "Page attribution suppression"
+          },
+          "rowSplit": "{notEvaluated} not evaluated · {evaluatedNoSignal} evaluated with no signal · {candidates} produced a candidate",
+          "laneUnavailable": "The evidence this path stands on could not be read this run, so it was not evaluated. That is not zero.",
+          "laneRequirement": "Requires: {requirement}",
+          "ctrBaseline": {
+            "name": "The property’s own CTR baseline",
+            "requirement": "confirmed brand terms, plus enough impressions and queries inside one position band to build a leave-one-out baseline from the property’s own rows",
+            "evaluated": "Baseline built, with {bands} usable position bands.",
+            "unavailable": "The evidence needed to build a baseline could not be read this run. That is not zero."
+          },
           "lanes": {
-            "ctrBaseline": {
-              "title": "CTR baseline",
-              "body": "{count} action-eligible queries had a usable leave-one-out property baseline.",
-              "notEvaluated": "Not evaluated for this run; no zero was inferred."
-            },
             "clickOpportunity": {
-              "title": "Click opportunity candidates",
-              "body": "{count} queries cleared the independent CTR-gap candidate lane before final selection."
+              "name": "Click opportunity",
+              "requirement": "confirmed brand terms, and the query sitting inside a usable CTR baseline band"
             },
             "stableDecline": {
-              "title": "Stable-position click declines",
-              "body": "{count} queries cleared the independent stable-position decline lane before final selection."
-            },
-            "firstObserved": {
-              "title": "First-observed pairs",
-              "body": "{count} query/page pairs cleared the independent first-observed lane before final selection."
-            },
-            "pageAttribution": {
-              "title": "Page attribution withheld",
-              "body": "{count} candidates were withheld because one page did not carry enough comparable visible evidence."
+              "name": "Stable-position click decline",
+              "requirement": "at least 100 impressions in each window, and at least 3 clicks in the prior one"
             },
             "pageOneBand": {
-              "title": "Moved into the 1-10 band",
-              "body": "{count} queries moved their average position from outside 10 into the 1-10 band."
+              "name": "Move into the 1-10 band",
+              "requirement": "at least 100 impressions in each window, with the prior average presented position outside 10"
             },
             "positionDecline": {
-              "title": "Declines inside the actionable band",
-              "body": "{count} queries moved materially the wrong way while staying inside the actionable position band."
+              "name": "Slide inside the actionable band",
+              "requirement": "at least 100 impressions in each window, with at least one window inside the top 30"
+            },
+            "firstObserved": {
+              "name": "First-observed query and page pair",
+              "requirement": "page attribution usable in both windows, and the pair reaching 100 impressions in the current window"
             }
+          },
+          "pageAttribution": {
+            "name": "Landing page withheld",
+            "observed": "{count} candidates had their landing page withheld because no single page carried enough coverage. The query-level signal survives.",
+            "none": "No candidate had its landing page withheld this run.",
+            "unavailable": "Page attribution evidence is unavailable, so the withheld count cannot be reported. It is not zero."
           }
-        },
-        "foldSummary": "{changes} changes · {observations} observations · everything else below the floors"
+        }
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -1987,6 +2005,14 @@
         "sitewide_visibility_gain": {
           "title": "Property visibility improved materially",
           "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
+        },
+        "sitewide_click_observation": {
+          "title": "Site-wide click move stays inside its own spread",
+          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. The move does not exceed the spread this sample size carries on its own, so it is recorded rather than called material."
+        },
+        "sitewide_visibility_observation": {
+          "title": "Site-wide impression move stays inside its own spread",
+          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. The move does not exceed the spread this sample size carries on its own, so it is recorded rather than called material."
         }
       },
       "actions": {
@@ -2088,6 +2114,23 @@
           "unknown": "This lane did not run in this comparison."
         },
         "confirmAndRerun": "Confirm brand terms and run again"
+      },
+      "provisional": {
+        "title": "Provisional position movement",
+        "intro": "The prior window for these queries carries {min}-{max} impressions, which is not enough to call the move a change. They are observations only: no entry in today’s actions and no place in the action count.",
+        "note": "The prior window carries only {impressions} impressions, below the strict change floor.",
+        "checkPage": "Check the landing page",
+        "withheld": "{count} more provisional position moves were not shown."
+      },
+      "provisionalMoveKinds": {
+        "provisional_page_one_band_entry": {
+          "title": "Possible move into the 1-10 band",
+          "body": "Average presented position moved from outside 10 into the 1-10 band. Confirm which page carries it before deciding whether it is worth work."
+        },
+        "provisional_actionable_position_decline": {
+          "title": "Possible position slide",
+          "body": "Average presented position slid inside the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
+        }
       }
     },
     "trafficDrop": {

@@ -19,20 +19,22 @@ export type DailyBriefingCadence = "daily" | "weekly";
 /**
  * Which briefing the property can actually support this run.
  *
- * `position_first` is claimed only from evidence: it requires observed query
- * rows in both windows showing that no click-driven lane can be evaluated. A
- * property whose queries have no clicks to lose cannot produce click change
- * evidence, so promising daily change detection there is a promise the data
- * can never keep.
+ * Claimed from measured capability, never from what the tool wishes it had.
+ * `change_detection` requires that at least one strict change lane had the
+ * paired evidence to ask its question. `position_observation` says no strict
+ * lane could be asked but some queries carry a prior window large enough to
+ * watch a position move provisionally. `current_position_watchlist` says only
+ * the current window can be described at all.
  *
- * `unavailable` is not a third kind of briefing: it says the query rows could
- * not be read, so neither claim can be made. Calling that `change_detection`
- * put a mode the data never supported in front of the reader, and let the
- * cadence promise a daily one.
+ * `unavailable` is not a fourth kind of briefing: it says the query rows could
+ * not be read, so no claim can be made. Calling that `change_detection` put a
+ * mode the data never supported in front of the reader, and let the cadence
+ * promise a daily one.
  */
 export type DailyBriefingMode =
   | "change_detection"
-  | "position_first"
+  | "position_observation"
+  | "current_position_watchlist"
   | "unavailable";
 
 export type DailyBriefingEvidenceState =
@@ -187,10 +189,32 @@ export interface DailyBriefingAction {
   readonly page: string;
 }
 
-export type DailyBriefingPropertyChangeKind =
+/**
+ * A property-level move large enough to hand off.
+ *
+ * These three spellings license the words "material decline" and "material
+ * gain". Nothing else does.
+ */
+export type DailyBriefingPropertyActionKind =
   | "sitewide_click_decline"
   | "sitewide_visibility_decline"
   | "sitewide_visibility_gain";
+
+/**
+ * A property-level move that stayed inside its own counting noise.
+ *
+ * The earlier contract encoded these as declines and let the noise floor
+ * decide only whether to dispatch a diagnosis, so a headline asserted a
+ * material decline and the sentence under it withdrew the claim. The kind
+ * itself now carries what the sample can support.
+ */
+export type DailyBriefingPropertyObservationKind =
+  | "sitewide_click_observation"
+  | "sitewide_visibility_observation";
+
+export type DailyBriefingPropertyChangeKind =
+  | DailyBriefingPropertyActionKind
+  | DailyBriefingPropertyObservationKind;
 
 export interface DailyBriefingPropertyChange {
   readonly kind: DailyBriefingPropertyChangeKind;
@@ -225,7 +249,7 @@ export interface DailyBriefingPropertyTrend {
   readonly change: DailyBriefingPropertyChange | null;
   /** Null when the change was observed but stayed inside the noise floor. */
   readonly action: {
-    readonly kind: DailyBriefingPropertyChangeKind;
+    readonly kind: DailyBriefingPropertyActionKind;
     readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
   } | null;
   readonly noiseFloor: DailyBriefingPropertyNoiseFloor | null;
@@ -251,8 +275,21 @@ export interface DailyBriefingLaneCapability {
   readonly clickDeclineCapableQueries: number | null;
   /** Queries the CTR lane could measure against a usable band baseline. */
   readonly ctrOpportunityCapableQueries: number | null;
-  /** Queries inside the actionable average-position band in either window. */
-  readonly positionCapableQueries: number | null;
+  /**
+   * Queries a strict position lane could ask about: both windows at the
+   * sample floor, both average positions readable.
+   */
+  readonly strictPairedPositionQueries: number | null;
+  /**
+   * Queries whose prior window carries 50-99 impressions.
+   *
+   * Enough to watch a position move, never enough to call it a change. Kept
+   * separate so a provisional observation can never be counted as strict
+   * capability.
+   */
+  readonly provisionalPairedPositionQueries: number | null;
+  /** Queries at the current sample floor with no comparable prior window. */
+  readonly currentFloorOnlyQueries: number | null;
   readonly ctrLane: DailyBriefingCtrLane;
   readonly lanes: Readonly<Record<DailyBriefingChangeKind, DailyBriefingLaneState>>;
 }
@@ -270,9 +307,40 @@ export interface DailyBriefingSignalFunnel {
   readonly pageOneBandCandidates: number | null;
   readonly positionDeclineCandidates: number | null;
   readonly firstObservedCandidates: number | null;
+  /** Position moves seen only against a 50-99 impression prior window. */
+  readonly provisionalMoveCandidates: number | null;
   readonly pageAttributionWithheld: number | null;
   readonly selectedQueryChanges: number;
   readonly propertyTrendShown: boolean;
+}
+
+/** What one lane did with the current window's query rows. */
+export interface DailyBriefingLaneRowCounts {
+  /** Rows this lane had no way to ask about. */
+  readonly notEvaluated: number;
+  /** Rows this lane asked about and found nothing in. */
+  readonly evaluatedNoSignal: number;
+  /** Rows this lane produced a candidate from. */
+  readonly candidates: number;
+}
+
+/**
+ * Where the current window's query rows ended up, per lane.
+ *
+ * The single `filteredObservedRows` count this replaces could only be read as
+ * "rows that formed no candidate", and the copy above it read it as "rows that
+ * failed a threshold" - which most of them were never tested against. Rows a
+ * lane never evaluated and rows it evaluated and rejected are different facts
+ * and are now reported as different numbers.
+ */
+export interface DailyBriefingRowAccounting {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly observedRows: number | null;
+  /** Rows that produced a candidate but lost the display budget. */
+  readonly notSelectedVisibleRows: number | null;
+  readonly byLane: Readonly<
+    Record<DailyBriefingChangeKind, DailyBriefingLaneRowCounts>
+  > | null;
 }
 
 /**
@@ -307,6 +375,50 @@ export interface DailyBriefingQueryObservation {
 export interface DailyBriefingQueryWatchlist {
   readonly evidence: "observed" | "partial" | "unavailable";
   readonly items: readonly DailyBriefingQueryObservation[];
+  /** Observations that qualified before the display budget was applied. */
+  readonly candidates: number | null;
+  /**
+   * Qualified observations the display budget left out, by band.
+   *
+   * Without this the page called the rows it dropped "below the threshold",
+   * when several of them had cleared every threshold and simply lost the cut.
+   */
+  readonly withheldByBand: Readonly<
+    Record<DailyBriefingObservationBand, number>
+  > | null;
+}
+
+/**
+ * A position move seen against a prior window too small to call it a change.
+ *
+ * The strict lanes require both windows at the 100-impression floor because an
+ * impression-weighted average position over a handful of impressions is not a
+ * stable quantity. Dropping that floor would reopen the low-sample door this
+ * tool closed on purpose. Reporting the move as an observation - never as a
+ * change, never as an action - is the honest middle.
+ */
+export type DailyBriefingProvisionalMoveKind =
+  | "provisional_page_one_band_entry"
+  | "provisional_actionable_position_decline";
+
+export interface DailyBriefingProvisionalMove {
+  readonly kind: DailyBriefingProvisionalMoveKind;
+  readonly evidence: "observed";
+  readonly query: string;
+  readonly page: string | null;
+  readonly pageEvidence: "observed" | "unavailable";
+  readonly current: GscQueryRow;
+  readonly previous: GscQueryRow;
+  readonly positionDelta: number;
+}
+
+export interface DailyBriefingProvisionalMoves {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly items: readonly DailyBriefingProvisionalMove[];
+  /** Provisional moves found before the display budget was applied. */
+  readonly candidates: number | null;
+  /** The prior-window impression range that makes these provisional. */
+  readonly priorWindowImpressionRange: readonly [number, number];
 }
 
 export type DailyBriefingLimitationCode =
@@ -334,10 +446,9 @@ export interface DailyBriefingResult {
   readonly propertyTrend: DailyBriefingPropertyTrend;
   readonly signalFunnel: DailyBriefingSignalFunnel;
   readonly queryWatchlist: DailyBriefingQueryWatchlist;
-  /** Rows in the observed query read that did not clear any signal threshold. */
-  readonly filteredObservedRows: number;
-  /** False when the count describes only a prefix or no query read happened. */
-  readonly countComplete: boolean;
+  /** Position moves reported as observations, never as changes or actions. */
+  readonly provisionalMoves: DailyBriefingProvisionalMoves;
+  readonly rowAccounting: DailyBriefingRowAccounting;
   readonly coverage: DailyBriefingCoverage;
   readonly anonymization: DailyBriefingAnonymizationWindows;
   readonly limitations: readonly DailyBriefingLimitationCode[];

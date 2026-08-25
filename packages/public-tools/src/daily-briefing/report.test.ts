@@ -5,6 +5,7 @@ import {
   BRIEFING_MATERIAL_CHANGE_RATIO,
   BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE,
   BRIEFING_MIN_ROW_IMPRESSIONS,
+  BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS,
   BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE,
   BRIEFING_PROPERTY_MIN_WEEKLY_IMPRESSIONS,
   BRIEFING_PROPERTY_POSITION_DELTA,
@@ -175,7 +176,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v2");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v3");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -189,7 +190,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v2",
+      schemaVersion: "daily_search_briefing.v3",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -340,8 +341,18 @@ describe("query changes and actions", () => {
         page,
       }),
     ]);
-    expect(result.filteredObservedRows).toBe(5);
-    expect(result.countComplete).toBe(true);
+    // The CTR lane measured all six rows and found one worth reporting; the
+    // five baseline rows were evaluated and rejected, not left untested.
+    expect(result.rowAccounting).toMatchObject({
+      evidence: "observed",
+      observedRows: 6,
+      notSelectedVisibleRows: 0,
+    });
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 5,
+      candidates: 1,
+    });
   });
 
   it("detects a material click decline only while average position is stable", () => {
@@ -624,8 +635,13 @@ describe("query changes and actions", () => {
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
-    expect(result.filteredObservedRows).toBe(0);
-    expect(result.countComplete).toBe(false);
+    // Unconfirmed brand terms leave the CTR lane with nothing to measure, so
+    // every row is untested rather than tested and cleared.
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
     expect(result.limitations).toContain("brand_terms_not_confirmed");
   });
 
@@ -758,8 +774,10 @@ describe("property trend", () => {
       }),
     }).result;
 
+    // Thresholds met, noise floor not cleared: the kind says observation, and
+    // only a cleared floor may say "decline".
     expect(result.propertyTrend.change).toMatchObject({
-      kind: "sitewide_click_decline",
+      kind: "sitewide_click_observation",
       clickChange: -3,
       clickChangeRatio: -0.15,
       positionDelta: 0,
@@ -835,7 +853,7 @@ describe("property trend", () => {
     }).result;
 
     expect(result.propertyTrend.change).toMatchObject({
-      kind: "sitewide_visibility_gain",
+      kind: "sitewide_click_observation",
       clickChange: 3,
       clickChangeRatio: 0.15,
       impressionChange: 0,
@@ -1032,6 +1050,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: 0,
       positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
+      provisionalMoveCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 1,
       propertyTrendShown: false,
@@ -1080,6 +1099,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: 0,
       positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
+      provisionalMoveCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 0,
       propertyTrendShown: false,
@@ -1109,6 +1129,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: null,
       positionDeclineCandidates: null,
       firstObservedCandidates: null,
+      provisionalMoveCandidates: null,
       pageAttributionWithheld: null,
       selectedQueryChanges: 0,
       propertyTrendShown: false,
@@ -1144,6 +1165,7 @@ describe("signal funnel", () => {
         pageOneBandCandidates: null,
         positionDeclineCandidates: null,
         firstObservedCandidates: null,
+        provisionalMoveCandidates: null,
         pageAttributionWithheld: null,
         selectedQueryChanges: 0,
         propertyTrendShown: false,
@@ -1213,6 +1235,7 @@ describe("signal funnel", () => {
     expect(result.signalFunnel).toMatchObject({
       clickOpportunityCandidates: 1,
       firstObservedCandidates: 0,
+      provisionalMoveCandidates: 0,
       pageAttributionWithheld: 2,
       selectedQueryChanges: 1,
     });
@@ -1262,6 +1285,8 @@ describe("query observation watchlist", () => {
           pageEvidence: "observed",
         }),
       ],
+      candidates: 3,
+      withheldByBand: { page_one: 0, near_page_one: 0, mid: 0, far: 0 },
     });
     expect(result.queryWatchlist.items.map((item) => item.query)).not.toContain(
       "below floor",
@@ -1395,7 +1420,10 @@ describe("query observation watchlist", () => {
       "stable_position_click_decline",
       "first_observed",
     ]);
-    expect(result.queryWatchlist).toEqual({ evidence: "observed", items: [] });
+    expect(result.queryWatchlist).toMatchObject({
+      evidence: "observed",
+      items: [],
+    });
   });
 
   it("attributes only pages at the tier floor with at least 80 percent coverage", () => {
@@ -1508,9 +1536,20 @@ describe("query observation watchlist", () => {
       brandTermsConfirmed: false,
     }).result.queryWatchlist;
 
-    expect(partial).toEqual({ evidence: "partial", items: [] });
-    expect(unavailable).toEqual({ evidence: "unavailable", items: [] });
-    expect(mixed).toEqual({ evidence: "unavailable", items: [] });
+    // Counts stay null rather than zero: the rows were never read, so there
+    // is no number of withheld observations to report.
+    for (const [state, watchlist] of [
+      ["partial", partial],
+      ["unavailable", unavailable],
+      ["unavailable", mixed],
+    ] as const) {
+      expect(watchlist).toEqual({
+        evidence: state,
+        items: [],
+        candidates: null,
+        withheldByBand: null,
+      });
+    }
   });
 
   it("keeps the property fallback independent from observation rows", () => {
@@ -1636,7 +1675,7 @@ describe("query evidence boundaries", () => {
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
-    expect(result.countComplete).toBe(false);
+    expect(result.rowAccounting.byLane).toBeNull();
     expect(result.coverage.current.evidence).toBe("partial");
     expect(result.limitations).toContain("query_evidence_partial");
   });
@@ -1750,7 +1789,7 @@ describe("query evidence boundaries", () => {
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
-    expect(result.countComplete).toBe(false);
+    expect(result.rowAccounting.byLane).toBeNull();
     expect(result.limitations).toContain("aggregation_basis_mismatch");
   });
 
@@ -1759,8 +1798,12 @@ describe("query evidence boundaries", () => {
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
-    expect(result.filteredObservedRows).toBe(0);
-    expect(result.countComplete).toBe(false);
+    expect(result.rowAccounting).toEqual({
+      evidence: "unavailable",
+      observedRows: null,
+      notSelectedVisibleRows: null,
+      byLane: null,
+    });
     expect(result.coverage.current.evidence).toBe("unavailable");
     expect(result.anonymization.current.evidence).toBe("unavailable");
     expect(result.limitations).toContain("query_evidence_unavailable");
@@ -1894,9 +1937,12 @@ describe("lane capability and briefing mode", () => {
       ]),
     }).result;
 
-    expect(result.mode).toBe("position_first");
-    // Weekly impressions clear the daily floor, but a property whose click
-    // lanes cannot be evaluated has nothing new to detect each morning.
+    // Both windows carry the sample, so the position lanes really were asked;
+    // the click lanes had nothing to ask about.
+    expect(result.mode).toBe("change_detection");
+    expect(result.laneCapability.strictPairedPositionQueries).toBe(1);
+    // Weekly impressions clear the daily floor, but only the click-driven
+    // lanes move on a daily timescale, and neither could be evaluated.
     expect(result.weekly.current?.impressions).toBeGreaterThanOrEqual(
       DAILY_CADENCE_MIN_IMPRESSIONS,
     );
@@ -1906,6 +1952,49 @@ describe("lane capability and briefing mode", () => {
     expect(result.laneCapability.lanes.stable_position_click_decline).toBe(
       "not_applicable",
     );
+  });
+
+  it("drops to position observation when only a small prior window exists", () => {
+    const query = "one small prior window";
+    // The prior window carries 70 impressions: enough to see the average
+    // position move, never enough for the strict lanes to call it a change.
+    const current = [queryRow(query, 180, 0, 9.7)];
+    const previous = [queryRow(query, 70, 0, 11.8)];
+    const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
+      ...evidence(rows, []),
+      queryPageRead: null,
+    });
+    const result = report({
+      currentQueryEvidence: withoutPages(current),
+      previousQueryEvidence: withoutPages(previous),
+    }).result;
+
+    expect(result.mode).toBe("position_observation");
+    expect(result.laneCapability.strictPairedPositionQueries).toBe(0);
+    expect(result.laneCapability.provisionalPairedPositionQueries).toBe(1);
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.provisionalMoves.items).toMatchObject([
+      { kind: "provisional_page_one_band_entry", query },
+    ]);
+  });
+
+  it("drops to a current-window watchlist when nothing pairs at all", () => {
+    const query = "no prior window";
+    const withoutPages = (rows: readonly ReturnType<typeof queryRow>[]) => ({
+      ...evidence(rows, []),
+      queryPageRead: null,
+    });
+    const result = report({
+      currentQueryEvidence: withoutPages([queryRow(query, 180, 0, 9.7)]),
+      previousQueryEvidence: withoutPages([]),
+    }).result;
+
+    expect(result.mode).toBe("current_position_watchlist");
+    expect(result.laneCapability.currentFloorOnlyQueries).toBe(1);
+    expect(result.laneCapability.provisionalPairedPositionQueries).toBe(0);
+    expect(result.provisionalMoves.items).toEqual([]);
+    expect(result.queryWatchlist.items).toMatchObject([{ query }]);
   });
 
   it("claims change detection once one query carries clicks to lose", () => {
@@ -2074,43 +2163,132 @@ describe("observation bands", () => {
   });
 });
 
+describe("provisional position moves", () => {
+  function provisionalRun(
+    previousImpressions: number,
+    positions: readonly [number, number],
+  ) {
+    const query = "provisional query";
+    const page = "https://example.com/provisional";
+    const current = [queryRow(query, 180, 0, positions[1])];
+    const previous = [queryRow(query, previousImpressions, 0, positions[0])];
+    return report({
+      currentQueryEvidence: evidence(current, [
+        queryPageRow(query, page, 180, 0, positions[1]),
+      ]),
+      previousQueryEvidence: evidence(previous, [
+        queryPageRow(query, page, previousImpressions, 0, positions[0]),
+      ]),
+    }).result;
+  }
+
+  it("never turns a provisional move into a change or an action", () => {
+    const result = provisionalRun(70, [11.8, 9.7]);
+
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.provisionalMoves.items).toMatchObject([
+      { kind: "provisional_page_one_band_entry", positionDelta: 9.7 - 11.8 },
+    ]);
+    // The same query must not also appear as a plain observation: it is
+    // already on the page, naming a movement rather than a position.
+    expect(result.queryWatchlist.items).toEqual([]);
+  });
+
+  it("collects an in-band slide against a small prior window", () => {
+    const result = provisionalRun(60, [20, 24]);
+
+    expect(result.provisionalMoves.items).toMatchObject([
+      { kind: "provisional_actionable_position_decline", positionDelta: 4 },
+    ]);
+    expect(result.actions).toEqual([]);
+  });
+
+  it("keeps 49 below the provisional floor and 100 above it", () => {
+    // 49 leaves the prior window too small even to observe against.
+    expect(provisionalRun(49, [11.8, 9.7]).provisionalMoves.items).toEqual([]);
+    expect(
+      provisionalRun(49, [11.8, 9.7]).laneCapability.currentFloorOnlyQueries,
+    ).toBe(1);
+
+    // At 100 the strict lane owns the comparison and reports a real change.
+    const strict = provisionalRun(100, [11.8, 9.7]);
+
+    expect(strict.provisionalMoves.items).toEqual([]);
+    expect(strict.changes).toMatchObject([
+      { kind: "average_position_crossed_page_one_band" },
+    ]);
+  });
+
+  it("offers a page to check without letting it become an action", () => {
+    const result = provisionalRun(70, [11.8, 9.7]);
+
+    expect(result.provisionalMoves.items[0]).toMatchObject({
+      page: "https://example.com/provisional",
+      pageEvidence: "observed",
+    });
+    expect(result.actions).toEqual([]);
+    expect(result.signalFunnel.provisionalMoveCandidates).toBe(1);
+    expect(result.signalFunnel.selectedQueryChanges).toBe(0);
+  });
+
+  it("reports the prior-window range that makes these provisional", () => {
+    expect(
+      provisionalRun(70, [11.8, 9.7]).provisionalMoves.priorWindowImpressionRange,
+    ).toEqual([BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS, 99]);
+  });
+});
+
 describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
-  // A reduced scenario built from the numbers that run reported, not a replay
-  // of it: five queries instead of a hundred and seventy-seven, synthesised
-  // pages, and no paging, anonymization remainder or transport behaviour. It
-  // pins the ordering rules that run exposed, and proves nothing about a live
-  // read.
+  // A reduced scenario built from the numbers that run reported: six queries
+  // instead of a hundred and seventy-seven, synthesised pages, and no paging,
+  // anonymization remainder or transport behaviour.
+  //
+  // The window sizes are the ones the run actually had. An earlier version of
+  // this fixture gave `manual seo service` two hundred impressions in both
+  // windows so the strict crossing lane would fire; the live run then produced
+  // zero changes, because that query's prior window sits under the sample
+  // floor. A fixture built to reach a branch tests the branch, not the run.
   const BACKLINKS = "backlinks monitor";
   const MANUAL = "manual seo service";
   const BEST = "best all in one seo agency software";
+  const FREE = "free seo company";
+  const CHEAPEST = "cheapest seo tools";
+  const AUDIT = "seo audit price";
 
   function reducedRun() {
     const currentRows = [
       queryRow(BACKLINKS, 400, 0, 91.3),
-      queryRow(MANUAL, 200, 0, 9.7),
+      queryRow(MANUAL, 180, 0, 9.7),
       queryRow(BEST, 150, 0, 78.3),
-      queryRow("sub floor a", 60, 0, 45),
-      queryRow("sub floor b", 55, 0, 62),
+      queryRow(FREE, 80, 0, 10.7),
+      queryRow(CHEAPEST, 70, 0, 15.2),
+      queryRow(AUDIT, 55, 0, 33),
     ];
     const previousRows = [
-      queryRow(BACKLINKS, 400, 0, 86.5),
-      queryRow(MANUAL, 200, 0, 11.8),
-      queryRow(BEST, 150, 0, 77.3),
-      queryRow("sub floor a", 60, 0, 45),
-      queryRow("sub floor b", 55, 0, 62),
+      queryRow(BACKLINKS, 380, 0, 90.7),
+      // Under the hundred-impression floor: this is why the run reported no
+      // change for the one query that visibly moved.
+      queryRow(MANUAL, 70, 0, 11.8),
+      queryRow(BEST, 140, 0, 77.3),
+      queryRow(FREE, 40, 0, 25),
+      queryRow(CHEAPEST, 45, 0, 14.2),
     ];
-    const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
-      rows
-        .filter((row) => row.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS)
-        .map((row) =>
-          queryPageRow(
-            row.query,
-            `https://gengrowth.ai/${row.query.replaceAll(" ", "-")}`,
-            row.impressions,
-            row.clicks,
-            row.position,
-          ),
-        );
+    const url = (query: string) =>
+      `https://gengrowth.ai/${query.replaceAll(" ", "-")}`;
+    // `cheapest seo tools` and `seo audit price` carry no page rows, which is
+    // how the live run came to show one observation without page evidence.
+    const currentPages = [
+      queryPageRow(BACKLINKS, url(BACKLINKS), 400, 0, 91.3),
+      queryPageRow(MANUAL, url(MANUAL), 180, 0, 9.7),
+      queryPageRow(BEST, url(BEST), 150, 0, 78.3),
+      queryPageRow(FREE, url(FREE), 80, 0, 10.7),
+    ];
+    const previousPages = [
+      queryPageRow(BACKLINKS, url(BACKLINKS), 380, 0, 90.7),
+      queryPageRow(MANUAL, url(MANUAL), 70, 0, 11.8),
+      queryPageRow(BEST, url(BEST), 140, 0, 77.3),
+    ];
 
     return report({
       dateRows: propertyDateRows({
@@ -2121,68 +2299,112 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
         previousPosition: 25.3,
         currentPosition: 25.7,
       }),
-      currentQueryEvidence: evidence(currentRows, pages(currentRows)),
-      previousQueryEvidence: evidence(previousRows, pages(previousRows)),
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
       brandTermsConfirmed: false,
     }).result;
   }
 
-  it("leads with the query that moved into the top band", () => {
+  it("reports no change for the query whose prior window is under the floor", () => {
     const result = reducedRun();
 
-    expect(result.changes[0]).toMatchObject({
-      kind: "average_position_crossed_page_one_band",
-      query: MANUAL,
-      positionDelta: 9.7 - 11.8,
-    });
-    expect(result.actions).toMatchObject([
-      { query: MANUAL, destination: "on-page-seo-check" },
+    expect(result.changes).toEqual([]);
+    expect(result.actions).toEqual([]);
+    expect(result.provisionalMoves.items).toMatchObject([
+      {
+        kind: "provisional_page_one_band_entry",
+        query: MANUAL,
+        positionDelta: 9.7 - 11.8,
+        pageEvidence: "observed",
+      },
     ]);
+    expect(result.provisionalMoves.priorWindowImpressionRange).toEqual([50, 99]);
   });
 
-  it("hands out no action for the two far-position queries", () => {
+  it("hands out no action for a provisional move", () => {
     const result = reducedRun();
 
-    expect(
-      result.actions.filter(
-        (action) => action.query === BACKLINKS || action.query === BEST,
-      ),
-    ).toEqual([]);
-    expect(
-      result.changes.filter(
-        (change) => change.query === BACKLINKS || change.query === BEST,
-      ),
-    ).toEqual([]);
+    // The observation may point at a page to check. It may never become an
+    // entry in today's action list, because the sample behind it is not one.
+    expect(result.actions).toEqual([]);
+    expect(result.provisionalMoves.items[0]?.page).toContain("manual-seo");
   });
 
-  it("ranks the far-position observations below the change", () => {
+  it("says which lanes were evaluated rather than reporting zero everywhere", () => {
+    const result = reducedRun();
+
+    expect(result.mode).toBe("change_detection");
+    expect(result.cadence).toBe("weekly");
+    expect(result.laneCapability).toMatchObject({
+      clickDeclineCapableQueries: 0,
+      // Both far-position queries pair at the floor, so the crossing lane
+      // really did ask its question of them.
+      strictPairedPositionQueries: 2,
+      provisionalPairedPositionQueries: 1,
+      currentFloorOnlyQueries: 0,
+    });
+    expect(result.laneCapability.lanes).toEqual({
+      click_opportunity: "not_applicable",
+      stable_position_click_decline: "not_applicable",
+      average_position_crossed_page_one_band: "evaluated",
+      actionable_position_decline: "not_applicable",
+      first_observed: "evaluated",
+    });
+  });
+
+  it("separates rows no lane tested from rows a lane cleared", () => {
+    const result = reducedRun();
+
+    expect(result.rowAccounting.observedRows).toBe(6);
+    expect(result.rowAccounting.byLane?.actionable_position_decline).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+    expect(
+      result.rowAccounting.byLane?.average_position_crossed_page_one_band,
+    ).toEqual({ notEvaluated: 4, evaluatedNoSignal: 2, candidates: 0 });
+    // Every lane accounts for every observed row exactly once.
+    for (const counts of Object.values(result.rowAccounting.byLane ?? {})) {
+      expect(
+        counts.notEvaluated + counts.evaluatedNoSignal + counts.candidates,
+      ).toBe(6);
+    }
+  });
+
+  it("discloses the observations the display budget left out", () => {
     const result = reducedRun();
 
     expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
-      BACKLINKS,
-      BEST,
+      FREE,
+      CHEAPEST,
     ]);
-    expect(result.queryWatchlist.items.every((item) => item.band === "far")).toBe(
-      true,
-    );
+    expect(result.queryWatchlist.candidates).toBe(5);
+    // Two of the withheld rows cleared the sample floor and simply lost the
+    // cut. Calling them "below the threshold" was the lie this count removes.
+    expect(result.queryWatchlist.withheldByBand).toEqual({
+      page_one: 0,
+      near_page_one: 0,
+      mid: 1,
+      far: 2,
+    });
   });
 
-  it("runs as a weekly position-first briefing", () => {
+  it("withholds page evidence for the observation that has none", () => {
     const result = reducedRun();
 
-    expect(result.mode).toBe("position_first");
-    expect(result.cadence).toBe("weekly");
-    expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
-    expect(result.laneCapability.positionCapableQueries).toBe(1);
+    expect(
+      result.queryWatchlist.items.find((item) => item.query === CHEAPEST),
+    ).toMatchObject({ page: null, pageEvidence: "unavailable" });
   });
 
-  it("reports the site-wide decline without dispatching a diagnosis for it", () => {
+  it("reports the site-wide move as an observation, not a decline", () => {
     const result = reducedRun();
 
-    // The trend survives the query-level signal, and seven clicks off a base
-    // of twenty-one stays inside the spread the count carries on its own.
+    // Seven clicks off a base of twenty-one stays inside the spread the count
+    // carries on its own, so the kind stops short of the word "decline".
     expect(result.propertyTrend.change).toMatchObject({
-      kind: "sitewide_click_decline",
+      kind: "sitewide_click_observation",
       clickChange: -7,
     });
     expect(result.propertyTrend.noiseFloor).toMatchObject({
@@ -2235,10 +2457,14 @@ describe("evidence gates on the query rows, not their page attachment", () => {
     const result = crossingWithoutPages();
 
     expect(result.laneCapability.evidence).toBe("observed");
-    expect(result.mode).toBe("position_first");
+    expect(result.mode).toBe("change_detection");
     expect(result.laneCapability.lanes.average_position_crossed_page_one_band).toBe(
       "evaluated",
     );
+    // The page attachment never arrived, so the lane that stands on it says
+    // so instead of reporting a comparison it never made.
+    expect(result.laneCapability.lanes.first_observed).toBe("unavailable");
+    expect(result.cadence).toBe("weekly");
   });
 });
 
