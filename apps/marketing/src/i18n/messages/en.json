@@ -903,7 +903,7 @@
         "rows": "{returned} returned · {total} reported",
         "truncated": "This competitor result hit its row boundary.",
         "failure": "Unavailable reason: {code}",
-        "sampleRule": "Sample rule: competitor rank at or better than #{maxRank}, ordered by the competitor page's estimated traffic, at most {limit} rows per competitor.",
+        "sampleRule": "Sample rule: competitor rank at or better than #{maxRank}, ordered by the competitor page's estimated traffic, highest first, at most {limit} rows per competitor.",
         "rowsInRule": "{returned} returned · {total} reported inside the rule"
       },
       "limitations": {
@@ -930,7 +930,7 @@
         "title": "Evidence boundaries",
         "dfsEstimates": "Search volume, CPC, difficulty, intent, and competitor ranks are DataForSEO estimates from this bounded run.",
         "gscOwnSample": "GSC covers only the selected own-site bounded sample; a missing query row is not zero impressions.",
-        "competitorOutcomesUnavailable": "Competitor traffic and conversion outcomes are unavailable; rankings and estimates do not prove either.",
+        "competitorOutcomesUnavailable": "Actual competitor traffic and conversion outcomes are unavailable; the page traffic shown is a DataForSEO estimate, and rankings and estimates do not prove either.",
         "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh.",
         "dfsSnapshot": "AI Overview and SERP feature marks come from DataForSEO's stored SERP snapshot and carry its date; they are not a live observation from this run.",
         "preScreen": "The DFS pre-screen band orders rows by provider estimates only. It never changes the GSC-derived next step and is not a winnability claim."

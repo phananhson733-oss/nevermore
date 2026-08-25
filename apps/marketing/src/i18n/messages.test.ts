@@ -264,6 +264,12 @@ describe("competitor keyword gap message catalogs", () => {
       expect(
         COMPETITOR_GAP_UNUSED_SHAPE_PATHS.filter((path) => path in leaves),
       ).toEqual([]);
+      // signals.competitorTraffic renders a DataForSEO traffic estimate in the
+      // same report; the outcomes boundary must name that estimate, or the two
+      // contradict on screen.
+      expect(leaves["boundaries.competitorOutcomesUnavailable"]).toMatch(
+        /DataForSEO (?:estimate|估算)/,
+      );
     },
   );
 });

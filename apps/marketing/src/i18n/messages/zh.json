@@ -862,7 +862,7 @@
         "showAll": "展开全部",
         "showLess": "收起",
         "openCompetitorPage": "打开竞品页面",
-        "copyPlan": "复制 {count} 行为计划",
+        "copyPlan": "将 {count} 行复制为计划",
         "copyPlanDone": "已复制 {count} 行。",
         "copyPlanFailed": "浏览器里无法复制这份计划。"
       },
@@ -930,7 +930,7 @@
         "title": "数据与证据边界",
         "dfsEstimates": "搜索量、CPC、难度、意图和竞品排名是 DataForSEO 在本次有限运行中的估算。",
         "gscOwnSample": "GSC 只覆盖所选本站的有限样本；缺少某条查询记录不等于曝光为零。",
-        "competitorOutcomesUnavailable": "竞品流量与转化结果不可用；排名和估算不能证明这些结果。",
+        "competitorOutcomesUnavailable": "竞品的真实流量与转化结果不可用；表中的页面流量是 DataForSEO 估算，排名和估算都不能证明这些结果。",
         "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。",
         "dfsSnapshot": "AI Overview 与 SERP 特性标记来自 DataForSEO 存储的 SERP 快照并带其日期，不是本次运行的实时观测。",
         "preScreen": "DFS 预筛带只按数据源估算排序；它不改变由 GSC 决定的下一步，也不是可赢性结论。"
