@@ -433,6 +433,9 @@ const METRIC = (value: number | null) =>
       ? { availability: "explicit_zero" as const, value: 0 }
       : { availability: "available" as const, value };
 
+/** The row's own page shape, so the report seam passes `row.competitorPages` through untouched. */
+const PAGE = (url: string | null) => ({ url, title: null, etv: null });
+
 function input(overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[0]> = {}) {
   return {
     keyword: "approval workflow software",
@@ -440,7 +443,7 @@ function input(overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[
     searchVolume: METRIC(2_900),
     bestCompetitorRank: 4,
     providerIntent: "commercial",
-    competitorPages: { "one.example": "https://one.example/approval-workflows" },
+    competitorPages: { "one.example": PAGE("https://one.example/approval-workflows") },
     competitorDomains: ["one.example", "two.example"],
     ...overrides,
   };
@@ -481,12 +484,12 @@ describe("preScreenCompetitorKeyword", () => {
   it("recognises a competitor domain-profile page as another brand's navigational term", () => {
     expect(
       preScreenCompetitorKeyword(
-        input({ keyword: "hanime", competitorPages: { "one.example": "https://one.example/website/hanime.tv/overview/" } }),
+        input({ keyword: "hanime", competitorPages: { "one.example": PAGE("https://one.example/website/hanime.tv/overview/") } }),
       ),
     ).toEqual({ band: "defer_brand_navigational", basis: "dfs_estimate", reason: "competitor_domain_profile_page" });
     expect(
       preScreenCompetitorKeyword(
-        input({ keyword: "approval software", competitorPages: { "one.example": "https://one.example/blog/approval-software-guide" } }),
+        input({ keyword: "approval software", competitorPages: { "one.example": PAGE("https://one.example/blog/approval-software-guide") } }),
       ).band,
     ).toBe("prioritize_serp_check");
   });
@@ -583,6 +586,7 @@ Extend `CompetitorKeywordGapRow` with `competitorPages`, `coreKeyword`, `searchV
 // @pos    -- second, orthogonal axis next to the GSC-derived next step; an estimate, never winnability
 
 import type {
+  CompetitorKeywordGapCompetitorPage,
   CompetitorKeywordGapMetric,
   CompetitorKeywordGapPreScreen,
 } from "./types.ts";
@@ -598,8 +602,8 @@ export interface CompetitorKeywordGapPreScreenInput {
   readonly searchVolume: CompetitorKeywordGapMetric;
   readonly bestCompetitorRank: number;
   readonly providerIntent: string | null;
-  /** Competitor domain -> ranking page URL (already sanitised), when known. */
-  readonly competitorPages: Readonly<Record<string, string | null>>;
+  /** Competitor domain -> its ranking page, in the row's own shape so the seam passes it through untouched. */
+  readonly competitorPages: Readonly<Record<string, CompetitorKeywordGapCompetitorPage>>;
   readonly competitorDomains: readonly string[];
 }
 
@@ -627,15 +631,18 @@ function containsToken(keyword: string, token: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(keyword);
 }
 
-function isDomainProfilePage(keyword: string, pages: Readonly<Record<string, string | null>>): boolean {
+function isDomainProfilePage(
+  keyword: string,
+  pages: Readonly<Record<string, CompetitorKeywordGapCompetitorPage>>,
+): boolean {
   const compact = keyword.replace(/\s+/g, "");
   if (compact.length < 3) return false;
   const escaped = compact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const needle = new RegExp(`/${escaped}\\.[a-z]{2,}(?:/|$)`, "i");
-  return Object.values(pages).some((url) => {
-    if (url === null) return false;
+  return Object.values(pages).some((page) => {
+    if (page.url === null) return false;
     try {
-      return needle.test(new URL(url).pathname);
+      return needle.test(new URL(page.url).pathname);
     } catch {
       return false;
     }
@@ -690,6 +697,12 @@ export function preScreenCompetitorKeyword(
 ```
 
 Note on the tests: `"ONE.example login"` must hit `competitor_brand_token` (the token `one` is present) — the order above checks brand tokens before hostname shape, which is what the test expects. The comparative exemption applies to all four navigational checks.
+
+Review rulings folded into the landed `pre-screen.ts` (the snippet above is the starting point, the design doc's decision table is authoritative):
+- `competitorBrandTokens` reads the registrable label from the right (`ahrefs` for `tools.ahrefs.com`, `example` for `blog.example.co.uk`), not the leftmost non-generic label, so a subdomain such as `developers` never becomes a brand token.
+- `domain_like_keyword` skips a keyword whose last label is a file or technology extension (`robots.txt`, `node.js`, `web.config`); see the design doc table row.
+- `competitorPages` takes the row's `{ url, title, etv }` shape, so Task 3 passes `row.competitorPages` through untouched.
+- No module-level state: the brand-token patterns are compiled per row.
 
 Export from `index.ts`: `export * from "./pre-screen.ts";` (check the barrel's existing style — it re-exports three modules).
 
@@ -780,7 +793,7 @@ const serpSnapshot =
       });
 ```
 
-- Hoist `searchVolume`, `cpc`, `keywordDifficulty`, `providerIntent`, `bestCompetitorRank` (currently computed inline in the returned literal at ~L556-564) into `const`s before the call, then `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages: Object.fromEntries(Object.entries(competitorPages).map(([domain, page]) => [domain, page.url])), competitorDomains: input.competitorDomains })`. (There is no `mapValues` helper in this file.)
+- Hoist `searchVolume`, `cpc`, `keywordDifficulty`, `providerIntent`, `bestCompetitorRank` (currently computed inline in the returned literal at ~L556-564) into `const`s before the call, then `preScreen: preScreenCompetitorKeyword({ keyword: aggregate.key, keywordDifficulty, searchVolume, bestCompetitorRank, providerIntent, competitorPages, competitorDomains: input.competitorDomains })`. (`competitorPages` is passed in the row's own `{ url, title, etv }` shape; the pre-screen input type takes it as-is.)
 - `rowSort`: after the impressions comparison and BEFORE `competitorCount`, insert:
 
 ```ts
@@ -815,7 +828,7 @@ Expected: PASS.
 - [ ] **Step 1: Failing tests**
 
 1. Existing "calls the provider" style test: assert `domainIntersection` was called with `{ target1, target2, locationCode, languageCode, intersections: false, limit: 300, maxFirstDomainRank: 20, includeSerpInfo: true }`.
-2. "passes the competitor page and snapshot fields into the report": provider response row with `firstDomainUrl`, `firstDomainTitle`, `firstDomainEtv`, `coreKeyword`, `searchVolumeTrend`, `serpItemTypes: ["organic","ai_overview"]`, `serpUpdatedAt` → envelope row has `competitorPages["one.example"].url`, `serpSnapshot.itemTypes` containing `ai_overview`, `preScreen.basis === "dfs_estimate"`.
+2. "passes the competitor page and snapshot fields into the report": provider response row with `firstDomainUrl`, `firstDomainTitle`, `firstDomainEtv`, `coreKeyword`, `searchVolumeTrend`, `serpItemTypes: ["organic","ai_overview"]`, `serpUpdatedAt` → envelope row has `competitorPages["one.example"].url`, `serpSnapshot.itemTypes` containing `ai_overview`, `preScreen.basis` is `"dfs_estimate"` or `"tool_heuristic"` (from the policy, never set by the handler).
 3. "records the sample rule and GSC row counts in the envelope": `result.sampleRule` equals the constants; with connected GSC returning 2 query rows → `gscQueryRowCount: 2`; without GSC → `null`.
 4. Update `providerResponse()` in the test helpers to include the seven fields (nulls by default).
 5. Assert the final log is unchanged in shape (no new keys) — the log stays sanitised.
@@ -853,7 +866,7 @@ Expected: PASS.
 
 - [ ] **Step 2: Run** `pnpm vitest run --project unit apps/marketing/src/components/tools/competitor-keyword-gap-tool.test.tsx` → FAIL.
 
-- [ ] **Step 3: Implement** `isV3Row` checks: `isRecord(value.competitorPages)` and every value `{ url: string|null, title: string|null, etv: finite|null }`; `coreKeyword` string|null; `searchVolumeTrend` null or record of three finite|null; `serpSnapshot` null or `{ itemTypes: string[], updatedAt: string|null }`; `preScreen` record with `band` in `COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS`, `basis === "dfs_estimate"`, `reason` string. `responseEnvelope` additionally checks `isRecord(result.sampleRule)` with finite `maxCompetitorRank`, `perCompetitorLimit`, boolean `serpSnapshotRequested`, and `isFiniteNumberOrNull(result.gscQueryRowCount)`, `isFiniteNumberOrNull(result.gscQueryPageRowCount)`. Update the header comment to say v3.
+- [ ] **Step 3: Implement** `isV3Row` checks: `isRecord(value.competitorPages)` and every value `{ url: string|null, title: string|null, etv: finite|null }`; `coreKeyword` string|null; `searchVolumeTrend` null or record of three finite|null; `serpSnapshot` null or `{ itemTypes: string[], updatedAt: string|null }`; `preScreen` record with `band` in `COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS`, `basis` in `COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES` (`"dfs_estimate" | "tool_heuristic"`), `reason` string. `responseEnvelope` additionally checks `isRecord(result.sampleRule)` with finite `maxCompetitorRank`, `perCompetitorLimit`, boolean `serpSnapshotRequested`, and `isFiniteNumberOrNull(result.gscQueryRowCount)`, `isFiniteNumberOrNull(result.gscQueryPageRowCount)`. Update the header comment to say v3.
 
 - [ ] **Step 4: Run** the tool test → PASS. **Step 5: Commit** `feat(marketing): validate the v3 competitor gap envelope`.
 
@@ -868,7 +881,7 @@ Expected: PASS.
 - [ ] **Step 1: Add the required paths to the test first** (they fail until the JSON has them):
 
 ```
-"preScreen.title", "preScreen.basis", "preScreen.band.prioritize_serp_check", "preScreen.band.stretch",
+"preScreen.title", "preScreen.basis.dfs_estimate", "preScreen.basis.tool_heuristic", "preScreen.band.prioritize_serp_check", "preScreen.band.stretch",
 "preScreen.band.unbanded", "preScreen.band.defer_head_term", "preScreen.band.defer_brand_navigational",
 "preScreen.reason.kd_low_rank_top10", "preScreen.reason.kd_mid_rank_top20", "preScreen.reason.kd_high",
 "preScreen.reason.dfs_metric_missing", "preScreen.reason.competitor_brand_token",
@@ -888,7 +901,10 @@ Expected: PASS.
 ```json
 "preScreen": {
   "title": "DFS pre-screen",
-  "basis": "DataForSEO estimate; a pre-screen, not SERP winnability.",
+  "basis": {
+    "dfs_estimate": "DataForSEO estimate; a pre-screen, not SERP winnability.",
+    "tool_heuristic": "This tool's text/URL heuristic; a pre-screen, not SERP winnability."
+  },
   "filterAll": "All bands",
   "band": {
     "prioritize_serp_check": "Check SERP first",
@@ -938,7 +954,10 @@ ZH:
 ```json
 "preScreen": {
   "title": "DFS 预筛",
-  "basis": "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
+  "basis": {
+    "dfs_estimate": "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
+    "tool_heuristic": "本工具的文本/URL 启发式；只是预筛，不是 SERP 可赢性。"
+  },
   "filterAll": "全部预筛带",
   "band": {
     "prioritize_serp_check": "优先核 SERP",
@@ -1001,7 +1020,7 @@ Also replace the existing `coverage.rows` usage? Keep `coverage.rows` (still use
 - [ ] **Step 1: Failing tests** (upgrade `BASE` to v3 first: add the row fields, `sampleRule`, counts; the `next-intl` mock renders keys so assertions target keys/attributes)
 
 1. "links each competitor chip to its ranking page when one is known": `[data-competitor-rank="alpha.example"]` is an `<a href="https://alpha.example/...">` with `target="_blank"`, `rel="noopener noreferrer"`, `title` from the provider title; a competitor with `url: null` renders a `<span>`.
-2. "shows the pre-screen band with its basis": `[data-pre-screen="prioritize_serp_check"]` present with `title` containing `preScreen.basis` and `preScreen.reason.kd_low_rank_top10`.
+2. "shows the pre-screen band with its basis": `[data-pre-screen="prioritize_serp_check"]` present with `title` containing `preScreen.basis.dfs_estimate` and `preScreen.reason.kd_low_rank_top10`; a `competitor_brand_token` row's title contains `preScreen.basis.tool_heuristic`.
 3. "shows a dated AI Overview snapshot chip only when the snapshot lists it": row with `serpSnapshot.itemTypes: ["organic","ai_overview"], updatedAt: "2026-05-14T18:17:21.000Z"` → `[data-serp-snapshot="ai_overview"]` text contains `signals.aiOverviewSnapshot`; row with `["organic"]` → no such element; row with `updatedAt: null` → `signals.aiOverviewSnapshotUndated`.
 4. "offers the competitor page next to copy-keyword in the content-gap lane": review_content_gap row with a known URL → both `[data-row-action="copy-keyword"]` and `[data-row-action="open-competitor-page"]` (anchor, `_blank`); with no URL → only copy.
 5. "filters by pre-screen band and by lane together": click `[data-pre-screen-filter="defer_brand_navigational"]` → only the brand row visible; the lane filter count chips keep their totals; clicking `[data-next-step-filter="review_content_gap"]` AND a band → intersection.
@@ -1019,7 +1038,7 @@ In `competitor-keyword-gap-messages.test.tsx` upgrade the fixture and assert the
 - `type BandFilter = "all" | CompetitorKeywordGapPreScreenBand;` second `useState`; `filteredRows` = lane filter AND band filter; `changeFilter` and a `changeBandFilter` both reset `expanded`.
 - Band filter row directly under the lane filter row: `<div data-pre-screen-filters>` with `preScreen.filterAll` + one chip per band in `COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS`, counts computed from rows that pass the *lane* filter, `data-pre-screen-filter={band}`, `aria-pressed`.
 - Competitor chips: `competitorLink(row, domain)` → `safePageUrl(row.competitorPages[domain]?.url ?? null)`; render `<a>` when non-null (`title={row.competitorPages[domain]?.title ?? undefined}`), else `<span>`; keep `data-competitor-rank={domain}` on whichever element renders.
-- Opportunity signals cell: after KD chip add `<span data-pre-screen={row.preScreen.band} title={`${t("preScreen.basis")} ${translated(t, `preScreen.reason.${row.preScreen.reason}`)}`} className={CHIP_TEXT}>{translated(t, `preScreen.band.${row.preScreen.band}`)}</span>`; then if `row.serpSnapshot?.itemTypes.includes("ai_overview")` a `<span data-serp-snapshot="ai_overview">` with the dated/undated label (`date` = `new Intl.DateTimeFormat(locale, { dateStyle: "medium" })` of `updatedAt`); then if the best competitor page's `etv` is non-null a `signals.competitorTraffic` chip.
+- Opportunity signals cell: after KD chip add `<span data-pre-screen={row.preScreen.band} title={`${translated(t, `preScreen.basis.${row.preScreen.basis}`)} ${translated(t, `preScreen.reason.${row.preScreen.reason}`)}`} className={CHIP_TEXT}>{translated(t, `preScreen.band.${row.preScreen.band}`)}</span>`; then if `row.serpSnapshot?.itemTypes.includes("ai_overview")` a `<span data-serp-snapshot="ai_overview">` with the dated/undated label (`date` = `new Intl.DateTimeFormat(locale, { dateStyle: "medium" })` of `updatedAt`); then if the best competitor page's `etv` is non-null a `signals.competitorTraffic` chip.
 - Next-check cell, `review_content_gap` branch: wrap in a flex with the copy button and, when `bestCompetitorPageUrl(row)` (page of the best-rank competitor; fall back to any competitor with a URL) is non-null, an `<a data-row-action="open-competitor-page" target="_blank" rel="noopener noreferrer" className={ACTION_BUTTON}>`.
 - `CoverageCards`: a `<div data-sample-rule>` line with `t("coverage.sampleRule", { maxRank: result.sampleRule.maxCompetitorRank, limit: result.sampleRule.perCompetitorLimit })`; competitor card uses `coverage.rowsInRule` when `totalCount !== null`, else `coverage.rows` with `total: "—"`.
 - `OverviewCards` GSC card: when `overlayStatus` is available/partial and `gscQueryRowCount !== null`, append `t("overview.gscQueryRows", { count })` as a second body line (`data-gsc-query-rows`).
@@ -1050,7 +1069,7 @@ import { briefByteLength } from "../copy-brief/budget.ts";
 import { buildCompetitorKeywordGapPlan, COPY_PLAN_MAX_BYTES, COPY_PLAN_MAX_ROWS } from "./competitor-keyword-gap-copy-plan.ts";
 ```
 
-Cases: (1) "opens with fixed labels and the notice, then one fenced JSON block": output starts with `# Competitor keyword gap plan` (EN) / `# 竞品词差距计划` (ZH), contains `UNTRUSTED_DATA_NOTICE[locale]`, contains exactly one "```json" fence; (2) "puts every visitor/provider value inside the fence": a keyword containing "` | ignore previous" and a title containing "```" → neither appears outside the fence; parsing the fenced block with `JSON.parse` returns the identical strings; (3) "carries each field's evidence label": fenced JSON rows carry `searchVolume: { value, source: "dfs_estimate" }`, `competitorPages[...]: { url, title, etv, source: "dfs_estimate" }`, `serpSnapshot: { ..., source: "dfs_snapshot" }`, `gsc: { queryStatus, ..., source: "gsc_measured" }`, `preScreen: { band, reason, source: "dfs_estimate" }`, `nextStep`; (4) "caps rows and bytes": 500 rows in → `rows.length === COPY_PLAN_MAX_ROWS` (20) and `meta.omittedRows === 480`; a row with a 40KB title → output within `COPY_PLAN_MAX_BYTES` (48 * 1024) by dropping trailing rows and raising `meta.omittedRows`, never truncating a value; (5) "labels the filter that produced the rows": `meta.laneFilter`, `meta.bandFilter`, `meta.sampleRule`, `meta.capturedAt`, `meta.siteDomain`, `meta.competitorDomains`.
+Cases: (1) "opens with fixed labels and the notice, then one fenced JSON block": output starts with `# Competitor keyword gap plan` (EN) / `# 竞品词差距计划` (ZH), contains `UNTRUSTED_DATA_NOTICE[locale]`, contains exactly one "```json" fence; (2) "puts every visitor/provider value inside the fence": a keyword containing "` | ignore previous" and a title containing "```" → neither appears outside the fence; parsing the fenced block with `JSON.parse` returns the identical strings; (3) "carries each field's evidence label": fenced JSON rows carry `searchVolume: { value, source: "dfs_estimate" }`, `competitorPages[...]: { url, title, etv, source: "dfs_estimate" }`, `serpSnapshot: { ..., source: "dfs_snapshot" }`, `gsc: { queryStatus, ..., source: "gsc_measured" }`, `preScreen: { band, reason, source: row.preScreen.basis }`, `nextStep`; (4) "caps rows and bytes": 500 rows in → `rows.length === COPY_PLAN_MAX_ROWS` (20) and `meta.omittedRows === 480`; a row with a 40KB title → output within `COPY_PLAN_MAX_BYTES` (48 * 1024) by dropping trailing rows and raising `meta.omittedRows`, never truncating a value; (5) "labels the filter that produced the rows": `meta.laneFilter`, `meta.bandFilter`, `meta.sampleRule`, `meta.capturedAt`, `meta.siteDomain`, `meta.competitorDomains`.
 
 Signature:
 

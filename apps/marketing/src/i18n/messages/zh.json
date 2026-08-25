@@ -860,7 +860,11 @@
         "remaining": "当前筛选下还有 {count} 行未展开。",
         "showingAll": "当前筛选下已展开全部 {count} 行。",
         "showAll": "展开全部",
-        "showLess": "收起"
+        "showLess": "收起",
+        "openCompetitorPage": "打开竞品页面",
+        "copyPlan": "{count, plural, other {将 # 行复制为计划}}",
+        "copyPlanDone": "{count, plural, other {已复制 # 行。}}",
+        "copyPlanFailed": "浏览器里无法复制这份计划。"
       },
       "status": {
         "complete": "分析完成",
@@ -898,14 +902,17 @@
         "unavailable": "不可用",
         "rows": "返回 {returned} 条 · 数据源报告 {total} 条",
         "truncated": "该竞品结果触及行数边界。",
-        "failure": "不可用原因：{code}"
+        "failure": "不可用原因：{code}",
+        "sampleRule": "采样规则：竞品排名 ≤ #{maxRank}，按竞品页面预估流量降序，每个竞品最多 {limit} 行。",
+        "rowsInRule": "返回 {returned} 条 · 规则内数据源报告 {total} 条"
       },
       "limitations": {
         "title": "证据边界",
         "resultTruncated": "合并结果触及输出边界，可能还有其他关键词行。",
         "gscQueryTruncated": "GSC 查询样本触及行数边界；缺少一条查询不能证明曝光为零。",
         "gscQueryPageTruncated": "GSC query-page 样本触及行数边界；可能遗漏匹配页面。",
-        "gscUnavailable": "可选 GSC 证据层不可用。DataForSEO 竞品行仍然是独立的数据源证据。"
+        "gscUnavailable": "可选 GSC 证据层不可用。DataForSEO 竞品行仍然是独立的数据源证据。",
+        "gscNoRows": "所选资源在本窗口内 GSC 一条查询都没有返回。把任何行读作内容差距之前，先确认资源覆盖的是这个站点。"
       },
       "overview": {
         "returnedGapRows": "本次返回的差距行",
@@ -913,7 +920,8 @@
         "completedCompetitors": "完成竞品",
         "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
         "gscObservedRows": "GSC 已观测行",
-        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
+        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
+        "gscQueryRows": "{count, plural, other {该资源在本窗口的有限样本内，GSC 返回了 # 条查询。}}"
       },
       "legend": {
         "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
@@ -922,8 +930,10 @@
         "title": "数据与证据边界",
         "dfsEstimates": "搜索量、CPC、难度、意图和竞品排名是 DataForSEO 在本次有限运行中的估算。",
         "gscOwnSample": "GSC 只覆盖所选本站的有限样本；缺少某条查询记录不等于曝光为零。",
-        "competitorOutcomesUnavailable": "竞品流量与转化结果不可用；排名和估算不能证明这些结果。",
-        "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。"
+        "competitorOutcomesUnavailable": "竞品的真实流量与转化结果不可用；表中的页面流量是 DataForSEO 估算，排名和估算都不能证明这些结果。",
+        "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。",
+        "dfsSnapshot": "AI Overview 与 SERP 特性标记来自 DataForSEO 存储的 SERP 快照并带其日期，不是本次运行的实时观测。",
+        "preScreen": "DFS 预筛带只按数据源估算排序；它不改变由 GSC 决定的下一步，也不是可赢性结论。"
       },
       "metrics": {
         "cpc": "CPC",
@@ -963,9 +973,37 @@
         "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
         "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
       },
+      "preScreen": {
+        "title": "DFS 预筛",
+        "basis": {
+          "dfs_estimate": "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
+          "tool_heuristic": "本工具的文本/URL 启发式；只是预筛，不是 SERP 可赢性。"
+        },
+        "filterAll": "全部预筛带",
+        "band": {
+          "prioritize_serp_check": "优先核 SERP",
+          "stretch": "难度较高或第二页",
+          "unbanded": "未分带",
+          "defer_head_term": "难度 > 60，暂缓",
+          "defer_brand_navigational": "品牌/导航词，暂缓"
+        },
+        "reason": {
+          "kd_low_rank_top10": "难度 ≤ 30 且有竞品在首页。",
+          "kd_mid_rank_top20": "不同时满足「难度 ≤ 30 且有竞品在首页」。",
+          "kd_high": "难度 > 60，在本样本里属于头部词。",
+          "dfs_metric_missing": "数据源未报告难度或搜索量，不分带。",
+          "competitor_brand_token": "包含所选竞品的品牌词。",
+          "competitor_domain_profile_page": "竞品是用别家品牌的域名档案页排名的。",
+          "domain_like_keyword": "关键词本身是域名形态。",
+          "provider_navigational_intent": "数据源判定为导航意图。"
+        }
+      },
       "signals": {
         "bestRank": "最佳竞品排名 #{rank}",
-        "difficulty": "难度 {value}"
+        "difficulty": "难度 {value}",
+        "aiOverviewSnapshot": "AI Overview · DFS 快照 {date}",
+        "aiOverviewSnapshotUndated": "AI Overview · DFS 快照，无日期",
+        "competitorTraffic": "竞品页面 DFS 预估 {value}/月"
       },
       "table": {
         "title": "差距清单",

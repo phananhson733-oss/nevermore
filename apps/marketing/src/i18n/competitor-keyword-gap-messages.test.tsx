@@ -24,7 +24,7 @@ vi.mock("../components/layout/google-analytics", () => ({
 const ENVELOPE: CompetitorKeywordGapEnvelope = {
   run: {
     tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v2",
+    schemaVersion: "competitor_keyword_gap.v3",
     mode: "public_preview",
     scope: "site",
     persistence: "none",
@@ -37,6 +37,11 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
     competitorDomains: ["alpha.example", "beta.example"],
     marketCode: "US",
     languageCode: "en",
+    sampleRule: {
+      maxCompetitorRank: 20,
+      perCompetitorLimit: 300,
+      serpSnapshotRequested: true,
+    },
     requestedCompetitors: 2,
     completedCompetitors: 1,
     unavailableCompetitors: 1,
@@ -62,6 +67,13 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
       {
         keyword: "approval workflow software",
         competitorRanks: { "alpha.example": 4 },
+        competitorPages: {
+          "alpha.example": {
+            url: "https://alpha.example/approvals",
+            title: "Approval workflow software",
+            etv: 812.4,
+          },
+        },
         competitorCount: 1,
         bestCompetitorRank: 4,
         ownState: "not_observed_in_provider_rankings",
@@ -69,6 +81,17 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
         cpc: { availability: "available", value: 4.2 },
         keywordDifficulty: { availability: "available", value: 31 },
         providerIntent: "commercial",
+        coreKeyword: "approval workflow",
+        searchVolumeTrend: { monthly: 4, quarterly: -2, yearly: 11 },
+        serpSnapshot: {
+          itemTypes: ["organic", "ai_overview"],
+          updatedAt: "2026-05-14T18:17:21.000Z",
+        },
+        preScreen: {
+          band: "stretch",
+          basis: "dfs_estimate",
+          reason: "kd_mid_rank_top20",
+        },
         gsc: {
           queryStatus: "not_observed_in_gsc_query_sample",
           evidenceBasis: null,
@@ -85,6 +108,9 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
       {
         keyword: "query-page-only evidence",
         competitorRanks: { "alpha.example": 7 },
+        competitorPages: {
+          "alpha.example": { url: null, title: null, etv: null },
+        },
         competitorCount: 1,
         bestCompetitorRank: 7,
         ownState: "not_observed_in_provider_rankings",
@@ -92,6 +118,14 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
         cpc: { availability: "provider_no_data", value: null },
         keywordDifficulty: { availability: "available", value: 28 },
         providerIntent: "informational",
+        coreKeyword: null,
+        searchVolumeTrend: null,
+        serpSnapshot: null,
+        preScreen: {
+          band: "prioritize_serp_check",
+          basis: "dfs_estimate",
+          reason: "kd_low_rank_top10",
+        },
         gsc: {
           queryStatus: "observed_weak",
           evidenceBasis: "query_page",
@@ -110,6 +144,8 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
     overlayStatus: "available",
     gscQueryTruncated: false,
     gscQueryPageTruncated: false,
+    gscQueryRowCount: 40,
+    gscQueryPageRowCount: 12,
   },
 };
 
@@ -169,10 +205,15 @@ describe.each([
     observedBody:
       "Returned rows observed in the bounded own-site GSC query or query-page sample.",
     recommendationHeader: "Next check",
-    recommendation: "Not observed in this sample; review the gap before creating a page.",
+    recommendation:
+      "Not observed in this sample; review the gap before creating a page.",
     boundaries: "Evidence boundaries",
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
+    preScreen: "DFS pre-screen",
+    preScreenBasis:
+      "DataForSEO estimate; a pre-screen, not SERP winnability.",
+    sampleRule: "Sample rule:",
   },
   {
     locale: "zh" as const,
@@ -188,6 +229,9 @@ describe.each([
     recommendation: "本次样本未观测本站；先复核差距，再决定是否新建。",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
+    preScreen: "DFS 预筛",
+    preScreenBasis: "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
+    sampleRule: "采样规则",
   },
 ])("competitor keyword gap $locale messages", (expected) => {
   it("renders real localized scope, overview, recommendation, and boundary copy", async () => {
@@ -209,7 +253,18 @@ describe.each([
     expect(host.textContent).toContain(expected.recommendation);
     expect(host.textContent).toContain(expected.boundaries);
     expect(host.textContent).toContain(expected.manualSnapshot);
+    expect(host.textContent).toContain(expected.preScreen);
+    expect(
+      host.querySelector("[data-pre-screen]")?.getAttribute("title"),
+    ).toContain(expected.preScreenBasis);
+    expect(host.textContent).not.toContain(expected.preScreenBasis);
+    expect(host.textContent).toContain(expected.sampleRule);
     expect(host.textContent).not.toContain("tools.competitorKeywordGap");
+    expect(host.textContent).not.toContain("preScreen.band");
+    expect(host.textContent).not.toContain("preScreen.basis");
+    expect(host.textContent).not.toContain("preScreen.reason");
+    expect(host.textContent).not.toContain("coverage.sampleRule");
+    expect(host.textContent).not.toContain("overview.gscQueryRows");
     expect(host.textContent).not.toContain("summary.unavailable");
     expect(host.textContent).not.toContain("intent.commercial");
     expect(host.textContent).not.toContain("overview.returnedGapRows");

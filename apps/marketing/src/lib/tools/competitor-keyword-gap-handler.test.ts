@@ -1,3 +1,7 @@
+import {
+  COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
+  COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+} from "@sf/public-tools";
 import { describe, expect, it, vi } from "vitest";
 
 import { readPublicToolJson } from "./public-tool-request.ts";
@@ -46,6 +50,13 @@ function providerResponse(keyword = "gap keyword", rank = 4) {
         providerIntent: "commercial" as const,
         firstDomainRank: rank,
         secondDomainRank: null,
+        firstDomainUrl: null,
+        firstDomainTitle: null,
+        firstDomainEtv: null,
+        coreKeyword: null,
+        searchVolumeTrend: null,
+        serpItemTypes: null,
+        serpUpdatedAt: null,
       },
     ],
     totalCount: 1,
@@ -400,7 +411,9 @@ describe("handleCompetitorKeywordGapRequest", () => {
             locationCode: 2840,
             languageCode: "en",
             intersections: false,
-            limit: 100,
+            limit: 300,
+            maxFirstDomainRank: 20,
+            includeSerpInfo: true,
           },
           request.signal,
         );
@@ -969,6 +982,148 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(body.data.result.gscQueryTruncated).toBe(true);
     expect(body.data.result.gscQueryPageTruncated).toBe(false);
     expect(dependencies.releaseGsc).toHaveBeenCalledOnce();
+  });
+
+  it("passes the competitor page and snapshot fields into the report", async () => {
+    const base = providerResponse();
+    const domainIntersection = vi.fn().mockResolvedValue({
+      ...base,
+      rows: [
+        {
+          ...base.rows[0],
+          firstDomainUrl: "https://one.example/guides/gap-keyword",
+          firstDomainTitle: "Gap keyword guide",
+          firstDomainEtv: 412.5,
+          coreKeyword: "gap keyword",
+          searchVolumeTrend: { monthly: 5, quarterly: -3, yearly: 12 },
+          serpItemTypes: ["organic", "ai_overview"],
+          serpUpdatedAt: "2026-05-14T18:17:21.000Z",
+        },
+      ],
+    });
+    const dependencies = runnableDependencies({
+      createProvider: vi.fn().mockReturnValue({ domainIntersection }),
+    });
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          rows: Array<{
+            competitorPages: Record<
+              string,
+              { url: string | null; title: string | null; etv: number | null }
+            >;
+            coreKeyword: string | null;
+            searchVolumeTrend: {
+              monthly: number | null;
+              quarterly: number | null;
+              yearly: number | null;
+            } | null;
+            serpSnapshot: {
+              itemTypes: string[];
+              updatedAt: string | null;
+            } | null;
+            preScreen: { band: string; basis: string; reason: string };
+          }>;
+        };
+      };
+    };
+    const row = body.data.result.rows[0];
+    expect(row?.competitorPages).toEqual({
+      "one.example": {
+        url: "https://one.example/guides/gap-keyword",
+        title: "Gap keyword guide",
+        etv: 412.5,
+      },
+    });
+    expect(row?.coreKeyword).toBe("gap keyword");
+    expect(row?.searchVolumeTrend).toEqual({
+      monthly: 5,
+      quarterly: -3,
+      yearly: 12,
+    });
+    expect(row?.serpSnapshot).toEqual({
+      itemTypes: ["organic", "ai_overview"],
+      updatedAt: "2026-05-14T18:17:21.000Z",
+    });
+    expect(row?.serpSnapshot?.itemTypes).toContain("ai_overview");
+    expect(["dfs_estimate", "tool_heuristic"]).toContain(row?.preScreen.basis);
+    expect(typeof row?.preScreen.band).toBe("string");
+    expect(typeof row?.preScreen.reason).toBe("string");
+  });
+
+  it("records the sample rule and GSC row counts in the envelope", async () => {
+    const readCoverageQueries = vi.fn().mockResolvedValue({
+      queryRows: [
+        { query: "gap keyword", impressions: 40, position: 18 },
+        { query: "other query", impressions: 12, position: 30 },
+      ],
+      queryPageRows: [],
+      queryPaging: { pagesFetched: 1, truncated: false },
+      queryPagePaging: { pagesFetched: 1, truncated: false },
+    });
+    const withGsc = connectedGscDependencies({ readCoverageQueries });
+    const withoutGsc = runnableDependencies();
+
+    const connected = await handleCompetitorKeywordGapRequest(
+      post({ ...VALID_INPUT, property: "sc-domain:acme.com" }),
+      withGsc,
+    );
+    const standalone = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      withoutGsc,
+    );
+
+    expect(connected.status).toBe(200);
+    expect(standalone.status).toBe(200);
+    type Envelope = {
+      data: {
+        result: {
+          sampleRule: {
+            maxCompetitorRank: number;
+            perCompetitorLimit: number;
+            serpSnapshotRequested: boolean;
+          };
+          gscQueryRowCount: number | null;
+          gscQueryPageRowCount: number | null;
+        };
+      };
+    };
+    const connectedBody = (await connected.json()) as Envelope;
+    const standaloneBody = (await standalone.json()) as Envelope;
+    const expectedRule = {
+      maxCompetitorRank: COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
+      perCompetitorLimit: COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+      serpSnapshotRequested: true,
+    };
+    expect(expectedRule).toEqual({
+      maxCompetitorRank: 20,
+      perCompetitorLimit: 300,
+      serpSnapshotRequested: true,
+    });
+    expect(connectedBody.data.result.sampleRule).toEqual(expectedRule);
+    expect(standaloneBody.data.result.sampleRule).toEqual(expectedRule);
+    expect(connectedBody.data.result.gscQueryRowCount).toBe(2);
+    expect(connectedBody.data.result.gscQueryPageRowCount).toBe(0);
+    expect(standaloneBody.data.result.gscQueryRowCount).toBeNull();
+    expect(standaloneBody.data.result.gscQueryPageRowCount).toBeNull();
+    expect(withGsc.log).toHaveBeenCalledOnce();
+    expect(Object.keys(withGsc.log.mock.calls[0]?.[0] ?? {}).sort()).toEqual([
+      "completedCompetitors",
+      "costUsd",
+      "gsc",
+      "reportProduced",
+      "requestedCompetitors",
+      "rowCount",
+      "status",
+      "unavailableCompetitors",
+    ]);
   });
 
   it("emits exactly one sanitized final log for an acquired run", async () => {

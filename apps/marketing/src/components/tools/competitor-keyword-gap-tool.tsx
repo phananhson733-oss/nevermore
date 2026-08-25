@@ -1,5 +1,5 @@
 // @input  -- locale, granted GSC properties, supported markets, authenticated APIs
-// @output -- a bounded 1-5 competitor form and honest run states
+// @output -- a bounded 1-5 competitor form, a v3 envelope guard, and honest run states
 // @pos    -- primary client surface for the Marketing competitor keyword gap tool
 
 "use client";
@@ -9,6 +9,8 @@ import { useTranslations } from "next-intl";
 import {
   COMPETITOR_KEYWORD_GAP_ERROR_CODES,
   COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS,
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS,
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES,
   COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
   COMPETITOR_KEYWORD_GAP_TOOL,
   normalizeCompetitorKeywordGapDomain,
@@ -68,7 +70,9 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 function isFiniteNumberOrNull(value: unknown): boolean {
-  return value === null || (typeof value === "number" && Number.isFinite(value));
+  return (
+    value === null || (typeof value === "number" && Number.isFinite(value))
+  );
 }
 
 function isMetric(value: unknown): boolean {
@@ -81,7 +85,7 @@ function isMetric(value: unknown): boolean {
   );
 }
 
-function isV2GscEvidence(value: unknown): boolean {
+function isGscEvidence(value: unknown): boolean {
   return (
     isRecord(value) &&
     [
@@ -114,7 +118,55 @@ function isV2GscEvidence(value: unknown): boolean {
   );
 }
 
-function isV2Row(value: unknown): boolean {
+function isStringOrNull(value: unknown): boolean {
+  return value === null || typeof value === "string";
+}
+
+function isCompetitorPage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isStringOrNull(value.url) &&
+    isStringOrNull(value.title) &&
+    isFiniteNumberOrNull(value.etv)
+  );
+}
+
+function isSearchVolumeTrend(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      isFiniteNumberOrNull(value.monthly) &&
+      isFiniteNumberOrNull(value.quarterly) &&
+      isFiniteNumberOrNull(value.yearly))
+  );
+}
+
+function isSerpSnapshot(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      Array.isArray(value.itemTypes) &&
+      value.itemTypes.every((item) => typeof item === "string") &&
+      isStringOrNull(value.updatedAt))
+  );
+}
+
+function isPreScreen(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.band === "string" &&
+    (COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS as readonly string[]).includes(
+      value.band,
+    ) &&
+    typeof value.basis === "string" &&
+    (COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES as readonly string[]).includes(
+      value.basis,
+    ) &&
+    typeof value.reason === "string"
+  );
+}
+
+function isV3Row(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.keyword === "string" &&
@@ -122,6 +174,8 @@ function isV2Row(value: unknown): boolean {
     Object.values(value.competitorRanks).every(
       (rank) => typeof rank === "number" && Number.isFinite(rank),
     ) &&
+    isRecord(value.competitorPages) &&
+    Object.values(value.competitorPages).every(isCompetitorPage) &&
     typeof value.competitorCount === "number" &&
     Number.isFinite(value.competitorCount) &&
     typeof value.bestCompetitorRank === "number" &&
@@ -130,8 +184,23 @@ function isV2Row(value: unknown): boolean {
     isMetric(value.searchVolume) &&
     isMetric(value.cpc) &&
     isMetric(value.keywordDifficulty) &&
-    (value.providerIntent === null || typeof value.providerIntent === "string") &&
-    isV2GscEvidence(value.gsc)
+    isStringOrNull(value.providerIntent) &&
+    isStringOrNull(value.coreKeyword) &&
+    isSearchVolumeTrend(value.searchVolumeTrend) &&
+    isSerpSnapshot(value.serpSnapshot) &&
+    isPreScreen(value.preScreen) &&
+    isGscEvidence(value.gsc)
+  );
+}
+
+function isSampleRule(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.maxCompetitorRank === "number" &&
+    Number.isFinite(value.maxCompetitorRank) &&
+    typeof value.perCompetitorLimit === "number" &&
+    Number.isFinite(value.perCompetitorLimit) &&
+    typeof value.serpSnapshotRequested === "boolean"
   );
 }
 
@@ -168,6 +237,7 @@ function responseEnvelope(body: unknown): CompetitorKeywordGapEnvelope | null {
     !result.competitorDomains.every((domain) => typeof domain === "string") ||
     typeof result.marketCode !== "string" ||
     typeof result.languageCode !== "string" ||
+    !isSampleRule(result.sampleRule) ||
     typeof result.requestedCompetitors !== "number" ||
     !Number.isFinite(result.requestedCompetitors) ||
     typeof result.completedCompetitors !== "number" ||
@@ -177,13 +247,15 @@ function responseEnvelope(body: unknown): CompetitorKeywordGapEnvelope | null {
     !Array.isArray(result.competitors) ||
     !result.competitors.every(isCompetitorCoverage) ||
     !Array.isArray(result.rows) ||
-    !result.rows.every(isV2Row) ||
+    !result.rows.every(isV3Row) ||
     typeof result.resultTruncated !== "boolean" ||
     !["not_requested", "available", "partial", "unavailable"].includes(
       String(result.overlayStatus),
     ) ||
     typeof result.gscQueryTruncated !== "boolean" ||
-    typeof result.gscQueryPageTruncated !== "boolean"
+    typeof result.gscQueryPageTruncated !== "boolean" ||
+    !isFiniteNumberOrNull(result.gscQueryRowCount) ||
+    !isFiniteNumberOrNull(result.gscQueryPageRowCount)
   ) {
     return null;
   }
@@ -228,8 +300,9 @@ export function CompetitorKeywordGapTool({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [envelope, setEnvelope] =
-    useState<CompetitorKeywordGapEnvelope | null>(null);
+  const [envelope, setEnvelope] = useState<CompetitorKeywordGapEnvelope | null>(
+    null,
+  );
   const [resultProperty, setResultProperty] = useState("");
   const startedAt = useRef(0);
   const mounted = useRef(true);
@@ -430,205 +503,210 @@ export function CompetitorKeywordGapTool({
       className="min-w-0"
     >
       <div data-competitor-gap-form className={PANEL}>
-      <h2 className="text-[17px] font-semibold text-text-dark-primary">
-        {t("form.title")}
-      </h2>
-      <p className="mt-2 max-w-3xl text-[13px] leading-[1.6] text-text-dark-secondary">
-        {t("form.intro")}
-      </p>
+        <h2 className="text-[17px] font-semibold text-text-dark-primary">
+          {t("form.title")}
+        </h2>
+        <p className="mt-2 max-w-3xl text-[13px] leading-[1.6] text-text-dark-secondary">
+          {t("form.intro")}
+        </p>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <label htmlFor="competitor-gap-site-domain">
-          <span className={FIELD_LABEL}>{t("fields.siteDomain.label")}</span>
-          <input
-            id="competitor-gap-site-domain"
-            name="siteDomain"
-            type="text"
-            autoComplete="off"
-            value={siteDomain}
-            onChange={(event) => {
-              setSiteDomain(event.target.value);
-              setValidationKey(null);
-            }}
-            aria-describedby={
-              siteInputInvalid ? "competitor-gap-validation" : undefined
-            }
-            aria-invalid={siteInputInvalid || undefined}
-            placeholder={t("fields.siteDomain.placeholder")}
-            disabled={phase === "running"}
-            className={FIELD}
-          />
-        </label>
-
-        <label htmlFor="competitor-gap-property">
-          <span className={FIELD_LABEL}>{t("fields.property.label")}</span>
-          <select
-            id="competitor-gap-property"
-            name="property"
-            ref={propertyRef}
-            value={property}
-            onChange={(event) => selectProperty(event.target.value)}
-            disabled={phase === "running"}
-            className={FIELD}
-          >
-            <option value="">{t("fields.property.none")}</option>
-            {(properties ?? []).map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label htmlFor="competitor-gap-market">
-          <span className={FIELD_LABEL}>{t("fields.market.label")}</span>
-          <select
-            id="competitor-gap-market"
-            name="marketCode"
-            value={marketCode}
-            onChange={(event) => selectMarket(event.target.value)}
-            disabled={phase === "running"}
-            className={FIELD}
-          >
-            {(markets.length === 0 ? [firstMarket] : markets).map((market) => (
-              <option key={market} value={market}>
-                {market}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label htmlFor="competitor-gap-language">
-          <span className={FIELD_LABEL}>{t("fields.language.label")}</span>
-          <select
-            id="competitor-gap-language"
-            name="languageCode"
-            value={languageCode}
-            onChange={(event) => setLanguageCode(event.target.value)}
-            disabled={phase === "running"}
-            className={FIELD}
-          >
-            {LANGUAGES.map((language) => (
-              <option key={language} value={language}>
-                {language}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="mt-5">
-        <div className="flex items-end justify-between gap-4">
-          <label htmlFor="competitor-gap-competitor" className="min-w-0 flex-1">
-            <span className={FIELD_LABEL}>{t("competitors.label")}</span>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <label htmlFor="competitor-gap-site-domain">
+            <span className={FIELD_LABEL}>{t("fields.siteDomain.label")}</span>
             <input
-              id="competitor-gap-competitor"
-              name="competitorDomain"
+              id="competitor-gap-site-domain"
+              name="siteDomain"
               type="text"
               autoComplete="off"
-              value={competitorInput}
+              value={siteDomain}
               onChange={(event) => {
-                setCompetitorInput(event.target.value);
+                setSiteDomain(event.target.value);
                 setValidationKey(null);
               }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                addCompetitor();
-              }}
-              placeholder={t("competitors.placeholder")}
               aria-describedby={
-                competitorInputInvalid
-                  ? "competitor-gap-validation"
-                  : undefined
+                siteInputInvalid ? "competitor-gap-validation" : undefined
               }
-              aria-invalid={competitorInputInvalid || undefined}
+              aria-invalid={siteInputInvalid || undefined}
+              placeholder={t("fields.siteDomain.placeholder")}
               disabled={phase === "running"}
               className={FIELD}
             />
           </label>
-          <button
-            type="button"
-            onClick={addCompetitor}
-            disabled={phase === "running"}
-            className={SECONDARY_BUTTON}
-          >
-            {t("competitors.add")}
-          </button>
+
+          <label htmlFor="competitor-gap-property">
+            <span className={FIELD_LABEL}>{t("fields.property.label")}</span>
+            <select
+              id="competitor-gap-property"
+              name="property"
+              ref={propertyRef}
+              value={property}
+              onChange={(event) => selectProperty(event.target.value)}
+              disabled={phase === "running"}
+              className={FIELD}
+            >
+              <option value="">{t("fields.property.none")}</option>
+              {(properties ?? []).map((candidate) => (
+                <option key={candidate} value={candidate}>
+                  {candidate}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label htmlFor="competitor-gap-market">
+            <span className={FIELD_LABEL}>{t("fields.market.label")}</span>
+            <select
+              id="competitor-gap-market"
+              name="marketCode"
+              value={marketCode}
+              onChange={(event) => selectMarket(event.target.value)}
+              disabled={phase === "running"}
+              className={FIELD}
+            >
+              {(markets.length === 0 ? [firstMarket] : markets).map(
+                (market) => (
+                  <option key={market} value={market}>
+                    {market}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+
+          <label htmlFor="competitor-gap-language">
+            <span className={FIELD_LABEL}>{t("fields.language.label")}</span>
+            <select
+              id="competitor-gap-language"
+              name="languageCode"
+              value={languageCode}
+              onChange={(event) => setLanguageCode(event.target.value)}
+              disabled={phase === "running"}
+              className={FIELD}
+            >
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {language}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-        <p className="mt-2 text-right font-mono text-[11px] text-text-dark-secondary">
-          {t("competitors.count", { count: competitorDomains.length })}
-        </p>
-        {competitorDomains.length > 0 ? (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {competitorDomains.map((domain) => (
-              <li
-                key={domain}
-                data-competitor-chip
-                className="inline-flex items-center gap-2 rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1.5 font-mono text-[11px] text-text-dark-primary"
-              >
-                <span>{domain}</span>
-                <button
-                  type="button"
-                  data-remove-competitor={domain}
-                  onClick={() => removeCompetitor(domain)}
-                  disabled={phase === "running"}
-                  aria-label={t("competitors.remove", { domain })}
-                  className="rounded-full px-1 text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent"
+
+        <div className="mt-5">
+          <div className="flex items-end justify-between gap-4">
+            <label
+              htmlFor="competitor-gap-competitor"
+              className="min-w-0 flex-1"
+            >
+              <span className={FIELD_LABEL}>{t("competitors.label")}</span>
+              <input
+                id="competitor-gap-competitor"
+                name="competitorDomain"
+                type="text"
+                autoComplete="off"
+                value={competitorInput}
+                onChange={(event) => {
+                  setCompetitorInput(event.target.value);
+                  setValidationKey(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  addCompetitor();
+                }}
+                placeholder={t("competitors.placeholder")}
+                aria-describedby={
+                  competitorInputInvalid
+                    ? "competitor-gap-validation"
+                    : undefined
+                }
+                aria-invalid={competitorInputInvalid || undefined}
+                disabled={phase === "running"}
+                className={FIELD}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={addCompetitor}
+              disabled={phase === "running"}
+              className={SECONDARY_BUTTON}
+            >
+              {t("competitors.add")}
+            </button>
+          </div>
+          <p className="mt-2 text-right font-mono text-[11px] text-text-dark-secondary">
+            {t("competitors.count", { count: competitorDomains.length })}
+          </p>
+          {competitorDomains.length > 0 ? (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {competitorDomains.map((domain) => (
+                <li
+                  key={domain}
+                  data-competitor-chip
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1.5 font-mono text-[11px] text-text-dark-primary"
                 >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <span>{domain}</span>
+                  <button
+                    type="button"
+                    data-remove-competitor={domain}
+                    onClick={() => removeCompetitor(domain)}
+                    disabled={phase === "running"}
+                    aria-label={t("competitors.remove", { domain })}
+                    className="rounded-full px-1 text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        {validationKey !== null ? (
+          <p
+            id="competitor-gap-validation"
+            role="alert"
+            className="mt-4 text-[12.5px] text-brand-error"
+          >
+            {t(validationKey as Parameters<typeof t>[0])}
+          </p>
         ) : null}
-      </div>
 
-      {validationKey !== null ? (
-        <p
-          id="competitor-gap-validation"
-          role="alert"
-          className="mt-4 text-[12.5px] text-brand-error"
+        {errorCode !== null ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
+          >
+            {t(
+              `errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}` as Parameters<
+                typeof t
+              >[0],
+            )}
+          </p>
+        ) : null}
+
+        {phase === "running" ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-4 text-[12.5px] text-text-dark-secondary"
+          >
+            {t("running.elapsed", { seconds: elapsedSeconds })}
+          </p>
+        ) : phase === "done" ? (
+          <p role="status" aria-live="polite" className="sr-only">
+            {t("running.complete")}
+          </p>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={phase === "running"}
+          className={`${BUTTON} mt-6`}
         >
-          {t(validationKey as Parameters<typeof t>[0])}
-        </p>
-      ) : null}
-
-      {errorCode !== null ? (
-        <p
-          role="alert"
-          className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
-        >
-          {t(
-            `errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}` as Parameters<
-              typeof t
-            >[0],
-          )}
-        </p>
-      ) : null}
-
-      {phase === "running" ? (
-        <p
-          role="status"
-          aria-live="polite"
-          className="mt-4 text-[12.5px] text-text-dark-secondary"
-        >
-          {t("running.elapsed", { seconds: elapsedSeconds })}
-        </p>
-      ) : phase === "done" ? (
-        <p role="status" aria-live="polite" className="sr-only">
-          {t("running.complete")}
-        </p>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={() => void run()}
-        disabled={phase === "running"}
-        className={`${BUTTON} mt-6`}
-      >
-        {phase === "running" ? t("actions.running") : t("actions.run")}
-      </button>
+          {phase === "running" ? t("actions.running") : t("actions.run")}
+        </button>
       </div>
 
       {envelope !== null ? (

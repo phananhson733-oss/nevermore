@@ -3,19 +3,26 @@
 // @output -- compact six-column results, qualified actions, and bounded evidence rendering
 // @pos    -- result-surface verification for the Marketing competitor keyword gap tool
 
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  CompetitorKeywordGapEnvelope,
-  CompetitorKeywordGapRow,
-} from "@sf/public-tools/competitor-keyword-gap";
+import { describe, expect, it, vi } from "vitest";
 import { TOOL_HANDOFF_KEY } from "../../lib/tools/tool-handoff";
-import { CompetitorKeywordGapResults } from "./competitor-keyword-gap-results";
+import {
+  BASE,
+  buttonFor,
+  click,
+  installResultsHarness,
+  productionRows,
+  renderResults,
+  row,
+  rowWithGsc,
+  tableRow,
+  unmountResults,
+  withResult,
+  writeTextMock,
+} from "./competitor-keyword-gap-results-harness";
 
 vi.mock("next-intl", () => ({
-  useTranslations: () =>
-    (key: string, values?: Readonly<Record<string, unknown>>) => {
+  useTranslations:
+    () => (key: string, values?: Readonly<Record<string, unknown>>) => {
       const rendered = values
         ? Object.entries(values)
             .map(([name, value]) => `${name}=${String(value)}`)
@@ -25,290 +32,7 @@ vi.mock("next-intl", () => ({
     },
 }));
 
-const BASE: CompetitorKeywordGapEnvelope = {
-  run: {
-    tool: "competitor_keyword_gap",
-    schemaVersion: "competitor_keyword_gap.v2",
-    mode: "public_preview",
-    scope: "site",
-    persistence: "none",
-    completedAt: "2026-08-24T12:00:00.000Z",
-    status: "complete",
-  },
-  result: {
-    capturedAt: "2026-08-24T12:00:00.000Z",
-    siteDomain: "example.com",
-    competitorDomains: ["alpha.example", "beta.example"],
-    marketCode: "US",
-    languageCode: "en",
-    requestedCompetitors: 2,
-    completedCompetitors: 2,
-    unavailableCompetitors: 0,
-    competitors: [
-      {
-        domain: "alpha.example",
-        status: "complete",
-        returnedRows: 2,
-        totalCount: 2,
-        truncated: false,
-        failureCode: null,
-      },
-      {
-        domain: "beta.example",
-        status: "complete",
-        returnedRows: 1,
-        totalCount: 1,
-        truncated: false,
-        failureCode: null,
-      },
-    ],
-    rows: [
-      {
-        keyword: "approval workflow software",
-        competitorRanks: { "alpha.example": 4, "beta.example": 9 },
-        competitorCount: 2,
-        bestCompetitorRank: 4,
-        ownState: "not_observed_in_provider_rankings",
-        searchVolume: { availability: "available", value: 2900 },
-        cpc: { availability: "explicit_zero", value: 0 },
-        keywordDifficulty: { availability: "provider_no_data", value: null },
-        providerIntent: "commercial",
-        gsc: {
-          queryStatus: "observed_weak",
-          evidenceBasis: "query",
-          queryImpressions: 318,
-          queryPosition: 34,
-          pageStatus: "observed_sufficient",
-          pageUrl: "https://example.com/product",
-          pageImpressions: 300,
-          pagePosition: 12.4,
-          queryPageCoverage: 0.94,
-          nextStep: "optimize_existing",
-        },
-      },
-      {
-        keyword: "approval policy template",
-        competitorRanks: { "alpha.example": 12 },
-        competitorCount: 1,
-        bestCompetitorRank: 12,
-        ownState: "not_observed_in_provider_rankings",
-        searchVolume: { availability: "explicit_zero", value: 0 },
-        cpc: { availability: "provider_no_data", value: null },
-        keywordDifficulty: { availability: "available", value: 17 },
-        providerIntent: null,
-        gsc: {
-          queryStatus: "not_observed_in_gsc_query_sample",
-          evidenceBasis: null,
-          queryImpressions: null,
-          queryPosition: null,
-          pageStatus: "not_observed_in_gsc_query_page_sample",
-          pageUrl: null,
-          pageImpressions: null,
-          pagePosition: null,
-          queryPageCoverage: null,
-          nextStep: "review_content_gap",
-        },
-      },
-    ],
-    resultTruncated: false,
-    overlayStatus: "available",
-    gscQueryTruncated: false,
-    gscQueryPageTruncated: false,
-  },
-};
-
-let root: Root | null = null;
-const writeTextMock = vi.fn();
-
-beforeEach(() => {
-  (
-    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
-  sessionStorage.clear();
-  writeTextMock.mockReset();
-  writeTextMock.mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText: writeTextMock },
-  });
-});
-
-afterEach(async () => {
-  if (root !== null) {
-    await act(async () => root?.unmount());
-    root = null;
-  }
-  document.body.replaceChildren();
-  vi.restoreAllMocks();
-});
-
-function row(
-  index: number,
-  overrides: Partial<CompetitorKeywordGapEnvelope["result"]["rows"][number]> = {},
-): CompetitorKeywordGapEnvelope["result"]["rows"][number] {
-  return {
-    keyword: `keyword ${String(index).padStart(2, "0")}`,
-    competitorRanks: { "alpha.example": index + 1 },
-    competitorCount: 1,
-    bestCompetitorRank: index + 1,
-    ownState: "not_observed_in_provider_rankings",
-    searchVolume: { availability: "available", value: 1000 + index },
-    cpc: { availability: "available", value: 1 + index / 10 },
-    keywordDifficulty: { availability: "available", value: 20 + index },
-    providerIntent: "commercial",
-    gsc: {
-      queryStatus: "not_observed_in_gsc_query_sample",
-      evidenceBasis: null,
-      queryImpressions: null,
-      queryPosition: null,
-      pageStatus: "not_observed_in_gsc_query_page_sample",
-      pageUrl: null,
-      pageImpressions: null,
-      pagePosition: null,
-      queryPageCoverage: null,
-      nextStep: "review_content_gap",
-    },
-    ...overrides,
-  };
-}
-
-function withResult(
-  result: Partial<CompetitorKeywordGapEnvelope["result"]>,
-  status: CompetitorKeywordGapEnvelope["run"]["status"] = BASE.run.status,
-): CompetitorKeywordGapEnvelope {
-  return {
-    run: { ...BASE.run, status },
-    result: { ...BASE.result, ...result },
-  };
-}
-
-function rowWithGsc(
-  index: number,
-  gsc: Partial<CompetitorKeywordGapRow["gsc"]>,
-  overrides: Partial<Omit<CompetitorKeywordGapRow, "gsc">> = {},
-): CompetitorKeywordGapRow {
-  const base = row(index);
-  return {
-    ...base,
-    ...overrides,
-    gsc: { ...base.gsc, ...gsc },
-  };
-}
-
-function productionRows(): readonly CompetitorKeywordGapRow[] {
-  const optimize = Array.from({ length: 5 }, (_, index) =>
-    rowWithGsc(
-      index,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query",
-        queryImpressions: 100 + index * 100,
-        queryPosition: 20 + index,
-        pageStatus: "observed_sufficient",
-        pageUrl: `https://example.com/optimize/${index}`,
-        pageImpressions: 90 + index * 90,
-        pagePosition: 19 + index,
-        queryPageCoverage: 0.9,
-        nextStep: "optimize_existing",
-      },
-      { keyword: `optimize-${String(index).padStart(2, "0")}` },
-    ),
-  );
-  const reviewExisting = Array.from({ length: 5 }, (_, index) =>
-    rowWithGsc(
-      index + 5,
-      {
-        queryStatus: index === 0 ? "observed_strong" : "observed_weak",
-        evidenceBasis: index === 4 ? "query_page" : "query",
-        queryImpressions: index === 4 ? null : 500 - index * 30,
-        queryPosition: index === 4 ? null : 5 + index,
-        pageStatus: index === 0 ? "observed_sufficient" : "observed_partial",
-        pageUrl: `https://example.com/review/${index}`,
-        pageImpressions: 200 - index * 10,
-        pagePosition: 6 + index,
-        queryPageCoverage: index === 0 ? 0.9 : 0.5,
-        nextStep: "review_existing_query",
-      },
-      { keyword: `review-existing-${String(index).padStart(2, "0")}` },
-    ),
-  );
-  const contentGap = Array.from({ length: 88 }, (_, index) =>
-    rowWithGsc(
-      index + 10,
-      {},
-      { keyword: `content-gap-${String(index).padStart(2, "0")}` },
-    ),
-  );
-  const verify = Array.from({ length: 2 }, (_, index) =>
-    rowWithGsc(
-      index + 98,
-      {
-        queryStatus: "gsc_query_sample_not_read",
-        pageStatus: "gsc_query_page_sample_not_read",
-        nextStep: "verify_own_coverage",
-      },
-      { keyword: `verify-${String(index).padStart(2, "0")}` },
-    ),
-  );
-  return [...optimize, ...reviewExisting, ...contentGap, ...verify];
-}
-
-async function renderResults(
-  envelope: CompetitorKeywordGapEnvelope = BASE,
-  options?: {
-    readonly locale?: string;
-    readonly selectedProperty?: string;
-    readonly onFocusProperty?: () => void;
-  },
-): Promise<HTMLElement> {
-  const host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () => {
-    root?.render(
-      <CompetitorKeywordGapResults
-        envelope={envelope}
-        locale={options?.locale ?? "en"}
-        selectedProperty={
-          options?.selectedProperty ?? "sc-domain:example.com"
-        }
-        onFocusProperty={options?.onFocusProperty ?? vi.fn()}
-      />,
-    );
-  });
-  return host;
-}
-
-async function click(element: Element | null): Promise<boolean> {
-  if (!(element instanceof HTMLElement)) {
-    expect(element, "expected clickable element").not.toBeNull();
-    return true;
-  }
-  let allowed = true;
-  await act(async () => {
-    allowed = element.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true }),
-    );
-    await Promise.resolve();
-  });
-  return allowed;
-}
-
-function tableRow(host: HTMLElement, keyword: string): HTMLTableRowElement {
-  const result = [...host.querySelectorAll<HTMLTableRowElement>("tbody tr")].find(
-    (candidate) => candidate.textContent?.includes(keyword),
-  );
-  if (result === undefined) throw new Error(`No row for ${keyword}`);
-  return result;
-}
-
-function buttonFor(host: HTMLElement, label: string): HTMLButtonElement {
-  const result = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-    (candidate) => candidate.textContent?.includes(label),
-  );
-  if (result === undefined) throw new Error(`No button for ${label}`);
-  return result;
-}
+installResultsHarness();
 
 describe("CompetitorKeywordGapResults", () => {
   it("renders the compact six-column table, stable overview metrics, and one legend for provider own-state", async () => {
@@ -330,13 +54,16 @@ describe("CompetitorKeywordGapResults", () => {
     );
     expect(host.querySelectorAll("[data-summary-metric]")).toHaveLength(3);
     expect(
-      host.querySelector('[data-summary-metric="returned-gap-rows"]')?.textContent,
+      host.querySelector('[data-summary-metric="returned-gap-rows"]')
+        ?.textContent,
     ).toContain("2");
     expect(
-      host.querySelector('[data-summary-metric="completed-competitors"]')?.textContent,
+      host.querySelector('[data-summary-metric="completed-competitors"]')
+        ?.textContent,
     ).toContain("2 / 2");
     expect(
-      host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+      host.querySelector('[data-summary-metric="gsc-observed-rows"]')
+        ?.textContent,
     ).toContain("1");
     expect(legend?.querySelector('[data-source="dfs"]')?.textContent).toContain(
       "sources.dfs",
@@ -360,7 +87,9 @@ describe("CompetitorKeywordGapResults", () => {
       "table.opportunitySignals",
       "table.nextCheck",
     ]);
-    expect(table.querySelector("caption")?.textContent).toContain("table.caption");
+    expect(table.querySelector("caption")?.textContent).toContain(
+      "table.caption",
+    );
     expect(wrapper.tabIndex).toBe(0);
     expect(wrapper.className).toContain("overflow-x-auto");
     expect(wrapper.className).toContain("focus-visible:outline-2");
@@ -411,7 +140,9 @@ describe("CompetitorKeywordGapResults", () => {
     expect(first.textContent).toContain("alpha.example #4");
     expect(first.textContent).toContain("beta.example #9");
     expect(first.textContent).toContain("signals.difficulty:value=—");
-    expect(second.querySelector("[data-monthly-volume]")?.textContent).toBe("0");
+    expect(second.querySelector("[data-monthly-volume]")?.textContent).toBe(
+      "0",
+    );
     expect(second.textContent).toContain("signals.difficulty:value=17");
   });
 
@@ -443,10 +174,12 @@ describe("CompetitorKeywordGapResults", () => {
     async (overlayStatus) => {
       const host = await renderResults(withResult({ overlayStatus }));
       expect(
-        host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+        host.querySelector('[data-summary-metric="gsc-observed-rows"]')
+          ?.textContent,
       ).toContain("—");
       expect(
-        host.querySelector('[data-summary-metric="gsc-observed-rows"]')?.textContent,
+        host.querySelector('[data-summary-metric="gsc-observed-rows"]')
+          ?.textContent,
       ).toContain(`sources.status.${overlayStatus}`);
     },
   );
@@ -507,7 +240,9 @@ describe("CompetitorKeywordGapResults", () => {
     });
     await click(checker);
 
-    const stored = JSON.parse(String(sessionStorage.getItem(TOOL_HANDOFF_KEY))) as {
+    const stored = JSON.parse(
+      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
+    ) as {
       readonly property: string;
       readonly query: string;
       readonly page: string;
@@ -562,7 +297,9 @@ describe("CompetitorKeywordGapResults", () => {
       once: true,
     });
     await click(checker);
-    const stored = JSON.parse(String(sessionStorage.getItem(TOOL_HANDOFF_KEY))) as {
+    const stored = JSON.parse(
+      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
+    ) as {
       readonly query: string;
       readonly evidenceId: string;
     };
@@ -627,9 +364,12 @@ describe("CompetitorKeywordGapResults", () => {
       },
       { keyword: "unsafe page" },
     );
-    const host = await renderResults(withResult({ rows: [strong, partial, unsafe] }), {
-      selectedProperty: "sc-domain:example.com",
-    });
+    const host = await renderResults(
+      withResult({ rows: [strong, partial, unsafe] }),
+      {
+        selectedProperty: "sc-domain:example.com",
+      },
+    );
 
     expect(
       tableRow(host, "strong sufficient").querySelector(
@@ -809,11 +549,11 @@ describe("CompetitorKeywordGapResults", () => {
     expect(observed.textContent).toContain("gsc.observed_weak");
     expect(observed.textContent).not.toContain("gsc.evidenceBasis.query");
     expect(
-      observed
-        .querySelector("[data-gsc-status]")
-        ?.getAttribute("aria-label"),
+      observed.querySelector("[data-gsc-status]")?.getAttribute("aria-label"),
     ).toContain("gsc.evidenceBasis.query");
-    expect(observed.textContent).toContain("gsc.pageStatus.observed_sufficient");
+    expect(observed.textContent).toContain(
+      "gsc.pageStatus.observed_sufficient",
+    );
     expect(observed.textContent).not.toContain("gsc.pageMetricLine");
     expect(pageOnly.textContent).toContain("gsc.evidenceBasis.query_page");
     expect(pageOnly.textContent).toContain("gsc.pageStatus.observed_partial");
@@ -828,8 +568,12 @@ describe("CompetitorKeywordGapResults", () => {
     );
     expect(miss.querySelector("[data-gsc-metrics]")).toBeNull();
     expect(unread.querySelector("[data-gsc-metrics]")).toBeNull();
-    expect(miss.querySelector("td:nth-child(4)")?.textContent).not.toContain("—");
-    expect(unread.querySelector("td:nth-child(4)")?.textContent).not.toContain("—");
+    expect(miss.querySelector("td:nth-child(4)")?.textContent).not.toContain(
+      "—",
+    );
+    expect(unread.querySelector("td:nth-child(4)")?.textContent).not.toContain(
+      "—",
+    );
   });
 
   it("renders GSC metric lines only for complete non-null pairs and never substitutes zero", async () => {
@@ -879,7 +623,7 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.textContent).not.toContain("position=0");
   });
 
-  it("keeps technical coverage after the table and always states the four durable evidence boundaries", async () => {
+  it("keeps technical coverage after the table and always states the six durable evidence boundaries", async () => {
     const envelope = withResult(
       {
         completedCompetitors: 1,
@@ -921,12 +665,12 @@ describe("CompetitorKeywordGapResults", () => {
     expect(details?.textContent).toContain("limitations.resultTruncated");
     expect(details?.textContent).toContain("limitations.gscQueryTruncated");
     expect(details?.textContent).toContain("limitations.gscQueryPageTruncated");
-    expect(boundaries?.querySelectorAll("li")).toHaveLength(4);
+    expect(boundaries?.querySelectorAll("li")).toHaveLength(6);
     expect(
       table !== null && details !== null
         ? Boolean(
             table.compareDocumentPosition(details) &
-              Node.DOCUMENT_POSITION_FOLLOWING,
+            Node.DOCUMENT_POSITION_FOLLOWING,
           )
         : false,
     ).toBe(true);
@@ -934,13 +678,13 @@ describe("CompetitorKeywordGapResults", () => {
       details !== null && boundaries !== null
         ? Boolean(
             details.compareDocumentPosition(boundaries) &
-              Node.DOCUMENT_POSITION_FOLLOWING,
+            Node.DOCUMENT_POSITION_FOLLOWING,
           )
         : false,
     ).toBe(true);
   });
 
-  it("keeps complete warning-free coverage collapsed and names all four durable boundaries", async () => {
+  it("keeps complete warning-free coverage collapsed and names all six durable boundaries", async () => {
     const host = await renderResults();
     const details = host.querySelector("details[data-coverage-details]");
     const boundaries = host.querySelector("[data-evidence-boundaries]");
@@ -949,12 +693,14 @@ describe("CompetitorKeywordGapResults", () => {
     expect(details?.textContent).toContain("coverage.scope");
     expect(details?.textContent).toContain("alpha.example");
     expect(details?.textContent).toContain("beta.example");
-    expect(boundaries?.querySelectorAll("li")).toHaveLength(4);
+    expect(boundaries?.querySelectorAll("li")).toHaveLength(6);
     for (const key of [
       "boundaries.dfsEstimates",
       "boundaries.gscOwnSample",
       "boundaries.competitorOutcomesUnavailable",
       "boundaries.manualSnapshot",
+      "boundaries.dfsSnapshot",
+      "boundaries.preScreen",
     ]) {
       expect(boundaries?.textContent).toContain(key);
     }
@@ -965,9 +711,7 @@ describe("CompetitorKeywordGapResults", () => {
     expect(empty.textContent).toContain("empty.title");
     expect(empty.textContent).toContain("empty.body");
 
-    await act(async () => root?.unmount());
-    root = null;
-    document.body.replaceChildren();
+    await unmountResults();
 
     const unavailable = await renderResults(
       withResult(
@@ -983,5 +727,98 @@ describe("CompetitorKeywordGapResults", () => {
     expect(unavailable.textContent).toContain("status.unavailable");
     expect(unavailable.textContent).toContain("status.unavailableBody");
     expect(unavailable.querySelector("table")).toBeNull();
+  });
+
+  it("copies the current filter as one fenced plan and reports the copied count", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const copyPlan = (): Element | null =>
+      host.querySelector('[data-row-action="copy-plan"]');
+
+    // Collapsed: only the ten rows on screen are copied; the other ninety in
+    // the filter are counted as omitted, never carried into the plan.
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=10");
+    expect(host.querySelector('[role="status"]')).toBeNull();
+
+    await click(copyPlan());
+    expect(writeTextMock).toHaveBeenCalledOnce();
+    const collapsed = String(writeTextMock.mock.calls[0]?.[0]);
+    expect(collapsed.startsWith("# Competitor keyword gap plan")).toBe(true);
+    expect(collapsed.match(/```json/g)).toHaveLength(1);
+    expect(collapsed).toContain('"laneFilter": "all"');
+    expect(collapsed).toContain('"bandFilter": "all"');
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(collapsed).not.toContain('"keyword": "content-gap-00"');
+    expect(collapsed).toContain('"omittedRows": 90');
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=10",
+    );
+
+    // Expanded: the plan follows the filter's full order up to the cap.
+    const showAll = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("actions.showAll"),
+    );
+    await click(showAll ?? null);
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
+    await click(copyPlan());
+    const markdown = String(writeTextMock.mock.calls[1]?.[0]);
+    expect(markdown).toContain('"keyword": "content-gap-09"');
+    expect(markdown).not.toContain('"keyword": "content-gap-10"');
+    expect(markdown).toContain('"omittedRows": 80');
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=20",
+    );
+
+    await click(
+      host.querySelector('[data-next-step-filter="verify_own_coverage"]'),
+    );
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=2");
+
+    await click(copyPlan());
+    const filtered = String(writeTextMock.mock.calls[2]?.[0]);
+    expect(filtered).toContain('"laneFilter": "verify_own_coverage"');
+    expect(filtered).toContain('"keyword": "verify-01"');
+    expect(filtered).not.toContain("optimize-00");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
+      "actions.copyPlanDone:count=2",
+    );
+  });
+
+  it("disables the plan button when the lane and band filter match nothing", async () => {
+    const host = await renderResults();
+    const copyPlan = (): HTMLButtonElement | null =>
+      host.querySelector<HTMLButtonElement>('[data-row-action="copy-plan"]');
+
+    expect(copyPlan()?.disabled).toBe(false);
+
+    await click(
+      host.querySelector('[data-next-step-filter="optimize_existing"]'),
+    );
+    await click(host.querySelector('[data-pre-screen-filter="stretch"]'));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
+    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=0");
+    expect(copyPlan()?.disabled).toBe(true);
+
+    await click(copyPlan());
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it("writes the Chinese plan for zh locales and reports a clipboard failure inline", async () => {
+    const host = await renderResults(BASE, { locale: "zh" });
+    const copyPlan = host.querySelector('[data-row-action="copy-plan"]');
+
+    await click(copyPlan);
+    expect(
+      String(writeTextMock.mock.calls[0]?.[0]).startsWith("# 竞品词差距计划"),
+    ).toBe(true);
+    expect(host.querySelector('[role="status"]')).not.toBeNull();
+
+    writeTextMock.mockRejectedValueOnce(new Error("denied"));
+    await click(copyPlan);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "actions.copyPlanFailed",
+    );
+    expect(host.querySelector('[role="status"]')).toBeNull();
   });
 });

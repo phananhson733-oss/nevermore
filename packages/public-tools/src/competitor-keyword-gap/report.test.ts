@@ -4,12 +4,14 @@ import {
   buildCompetitorKeywordGapReport,
   type CompetitorKeywordGapDataForSeoResult,
   type CompetitorKeywordGapGscRead,
+  type CompetitorKeywordGapProviderRow,
 } from "./report.ts";
 import {
   COMPETITOR_KEYWORD_GAP_ERROR_CODES,
   COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
   type CompetitorKeywordGapEnvelope,
-  type CompetitorKeywordGapResultV2,
+  type CompetitorKeywordGapResultV3,
+  type CompetitorKeywordGapSampleRule,
 } from "./types.ts";
 
 const BASE = {
@@ -18,7 +20,44 @@ const BASE = {
   marketCode: "US",
   languageCode: "en",
   competitorDomains: ["one.example", "two.example", "three.example"],
+  sampleRule: {
+    maxCompetitorRank: 20,
+    perCompetitorLimit: 300,
+    serpSnapshotRequested: true,
+  },
 } as const;
+
+const GSC_AVAILABLE_EMPTY: CompetitorKeywordGapGscRead = {
+  status: "available",
+  queryRows: [],
+  queryPageRows: [],
+  queryTruncated: false,
+  queryPageTruncated: false,
+};
+
+/** One provider row with every paid-for v3 field silent unless the case says otherwise. */
+function row(
+  overrides: Partial<CompetitorKeywordGapProviderRow> & {
+    readonly keyword: string;
+    readonly firstDomainRank: number;
+  },
+): CompetitorKeywordGapProviderRow {
+  return {
+    searchVolume: 1_000,
+    cpc: 1,
+    keywordDifficulty: 20,
+    providerIntent: "commercial",
+    secondDomainRank: null,
+    firstDomainUrl: null,
+    firstDomainTitle: null,
+    firstDomainEtv: null,
+    coreKeyword: null,
+    searchVolumeTrend: null,
+    serpItemTypes: null,
+    serpUpdatedAt: null,
+    ...overrides,
+  };
+}
 
 function providerResult(
   domain: string,
@@ -40,9 +79,11 @@ function reportFor(options?: {
   readonly competitors?: readonly CompetitorKeywordGapDataForSeoResult[];
   readonly gsc?: CompetitorKeywordGapGscRead | null;
   readonly competitorDomains?: readonly string[];
+  readonly sampleRule?: CompetitorKeywordGapSampleRule;
 }) {
   return buildCompetitorKeywordGapReport({
     ...BASE,
+    sampleRule: options?.sampleRule ?? BASE.sampleRule,
     competitorDomains:
       options?.competitorDomains ?? ["one.example", "two.example"],
     competitors:
@@ -50,29 +91,27 @@ function reportFor(options?: {
       [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "best crm",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 3,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
         providerResult("two.example", {
           rows: [
-            {
+            row({
               keyword: "best crm",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 7,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -83,18 +122,36 @@ function reportFor(options?: {
 }
 
 describe("buildCompetitorKeywordGapReport", () => {
-  it("publishes the v2 schema version", () => {
+  it("publishes the v3 schema version and the sample rule", () => {
     const report = reportFor();
 
     expect(report.run.status).toBe("complete");
-    expect(report.run.schemaVersion).toBe("competitor_keyword_gap.v2");
+    expect(report.run.schemaVersion).toBe("competitor_keyword_gap.v3");
     expect(report.run.schemaVersion).toBe(COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION);
+    expect(report.result.sampleRule).toEqual({
+      maxCompetitorRank: 20,
+      perCompetitorLimit: 300,
+      serpSnapshotRequested: true,
+    });
     expectTypeOf<CompetitorKeywordGapEnvelope["result"]>().toEqualTypeOf<
-      CompetitorKeywordGapResultV2
+      CompetitorKeywordGapResultV3
     >();
     expectTypeOf<
       CompetitorKeywordGapEnvelope["run"]["schemaVersion"]
     >().toEqualTypeOf<typeof COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION>();
+
+    const narrower = reportFor({
+      sampleRule: {
+        maxCompetitorRank: 10,
+        perCompetitorLimit: 50,
+        serpSnapshotRequested: false,
+      },
+    });
+    expect(narrower.result.sampleRule).toEqual({
+      maxCompetitorRank: 10,
+      perCompetitorLimit: 50,
+      serpSnapshotRequested: false,
+    });
   });
 
   it("freezes the envelope and nested public result paths", () => {
@@ -103,38 +160,377 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "frozen term",
               searchVolume: 100,
               cpc: 2,
               keywordDifficulty: 8,
               providerIntent: "commercial",
               firstDomainRank: 4,
-              secondDomainRank: null,
-            },
+              firstDomainUrl: "https://one.example/frozen",
+              firstDomainTitle: "Frozen",
+              firstDomainEtv: 12,
+              serpItemTypes: ["organic"],
+              serpUpdatedAt: "2026-05-14T18:17:21.000Z",
+            }),
           ],
           totalCount: 1,
         }),
       ],
     });
 
-    const row = report.result.rows[0];
+    const gapRow = report.result.rows[0];
     const coverage = report.result.competitors[0];
-    expect(row).toBeDefined();
+    expect(gapRow).toBeDefined();
     expect(coverage).toBeDefined();
+    expect(gapRow?.serpSnapshot).not.toBeNull();
     for (const value of [
       report,
       report.run,
       report.result,
       report.result.rows,
       report.result.competitors,
-      row,
-      row?.competitorRanks,
-      row?.gsc,
+      report.result.sampleRule,
+      gapRow,
+      gapRow?.competitorRanks,
+      gapRow?.competitorPages,
+      gapRow?.competitorPages["one.example"],
+      gapRow?.serpSnapshot,
+      gapRow?.serpSnapshot?.itemTypes,
+      gapRow?.preScreen,
+      gapRow?.gsc,
       coverage,
     ]) {
       expect(Object.isFrozen(value)).toBe(true);
     }
+  });
+
+  it("keeps each competitor's best-rank page", () => {
+    const report = reportFor({
+      competitorDomains: ["one.example", "two.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({
+              keyword: "crm software",
+              firstDomainRank: 9,
+              firstDomainUrl: "https://one.example/blog/crm-software",
+              firstDomainTitle: "CRM software explained",
+              firstDomainEtv: 40,
+            }),
+            row({
+              keyword: "crm software",
+              firstDomainRank: 3,
+              firstDomainUrl: "https://one.example/crm",
+              firstDomainTitle: "CRM software",
+              firstDomainEtv: 900,
+            }),
+          ],
+          totalCount: 2,
+        }),
+        providerResult("two.example", {
+          rows: [row({ keyword: "crm software", firstDomainRank: 5 })],
+          totalCount: 1,
+        }),
+      ],
+    });
+
+    const gapRow = report.result.rows[0];
+    expect(gapRow?.competitorPages).toEqual({
+      "one.example": {
+        url: "https://one.example/crm",
+        title: "CRM software",
+        etv: 900,
+      },
+      "two.example": { url: null, title: null, etv: null },
+    });
+    expect(Object.keys(gapRow?.competitorPages ?? {})).toEqual(
+      Object.keys(gapRow?.competitorRanks ?? {}),
+    );
+  });
+
+  it("takes core keyword, trend and serp snapshot from the best evidence that has them", () => {
+    const trend = { monthly: 5, quarterly: -10, yearly: 20 };
+    const report = reportFor({
+      competitorDomains: ["one.example", "two.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [row({ keyword: "crm tools", firstDomainRank: 2 })],
+          totalCount: 1,
+        }),
+        providerResult("two.example", {
+          rows: [
+            row({
+              keyword: "crm tools",
+              firstDomainRank: 5,
+              coreKeyword: "crm",
+              searchVolumeTrend: trend,
+              serpItemTypes: ["organic", "ai_overview"],
+              serpUpdatedAt: "2026-05-14T18:17:21.000Z",
+            }),
+          ],
+          totalCount: 1,
+        }),
+      ],
+    });
+
+    expect(report.result.rows[0]).toMatchObject({
+      keyword: "crm tools",
+      bestCompetitorRank: 2,
+      coreKeyword: "crm",
+      searchVolumeTrend: trend,
+      serpSnapshot: {
+        itemTypes: ["organic", "ai_overview"],
+        updatedAt: "2026-05-14T18:17:21.000Z",
+      },
+    });
+  });
+
+  it("keeps provider silence on the serp snapshot distinct from an empty snapshot", () => {
+    const silent = reportFor({
+      competitorDomains: ["one.example", "two.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [row({ keyword: "silent serp", firstDomainRank: 2 })],
+          totalCount: 1,
+        }),
+        providerResult("two.example", {
+          rows: [row({ keyword: "silent serp", firstDomainRank: 6 })],
+          totalCount: 1,
+        }),
+      ],
+    });
+    const empty = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({
+              keyword: "empty serp",
+              firstDomainRank: 2,
+              serpItemTypes: [],
+              serpUpdatedAt: "2026-05-14T18:17:21.000Z",
+            }),
+          ],
+          totalCount: 1,
+        }),
+      ],
+    });
+
+    expect(silent.result.rows[0]).toMatchObject({
+      coreKeyword: null,
+      searchVolumeTrend: null,
+      serpSnapshot: null,
+    });
+    expect(empty.result.rows[0]?.serpSnapshot).toEqual({
+      itemTypes: [],
+      updatedAt: "2026-05-14T18:17:21.000Z",
+    });
+  });
+
+  it("attaches a pre-screen to every row and never lets it change the GSC lane", () => {
+    const report = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({
+              keyword: "vendor login",
+              firstDomainRank: 2,
+              providerIntent: "navigational",
+            }),
+            row({ keyword: "crm tools", firstDomainRank: 2 }),
+          ],
+          totalCount: 2,
+        }),
+      ],
+      gsc: {
+        ...GSC_AVAILABLE_EMPTY,
+        queryRows: [{ query: "vendor login", impressions: 40, position: 4.2 }],
+      },
+    });
+
+    const navigational = report.result.rows.find(
+      (gapRow) => gapRow.keyword === "vendor login",
+    );
+    const gap = report.result.rows.find(
+      (gapRow) => gapRow.keyword === "crm tools",
+    );
+    expect(navigational).toMatchObject({
+      gsc: { queryStatus: "observed_strong", nextStep: "review_existing_query" },
+      preScreen: {
+        band: "defer_brand_navigational",
+        basis: "dfs_estimate",
+        reason: "provider_navigational_intent",
+      },
+    });
+    expect(gap).toMatchObject({
+      gsc: { nextStep: "review_content_gap" },
+      preScreen: {
+        band: "prioritize_serp_check",
+        basis: "dfs_estimate",
+        reason: "kd_low_rank_top10",
+      },
+    });
+  });
+
+  it("orders bands inside a lane before the DFS tie-breaks", () => {
+    // Every DFS tie-break (rank, volume, alphabetical key) favours the reverse
+    // of the band order, so the band must be what decides.
+    const report = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({
+              keyword: "alpha brand",
+              firstDomainRank: 1,
+              searchVolume: 5_000,
+              keywordDifficulty: 10,
+              providerIntent: "navigational",
+            }),
+            row({
+              keyword: "bravo head",
+              firstDomainRank: 2,
+              searchVolume: 4_000,
+              keywordDifficulty: 70,
+            }),
+            row({
+              keyword: "charlie unbanded",
+              firstDomainRank: 3,
+              searchVolume: 3_000,
+              keywordDifficulty: null,
+            }),
+            row({
+              keyword: "delta stretch",
+              firstDomainRank: 4,
+              searchVolume: 2_000,
+              keywordDifficulty: 45,
+            }),
+            row({
+              keyword: "echo prioritize",
+              firstDomainRank: 5,
+              searchVolume: 1_000,
+              keywordDifficulty: 10,
+            }),
+          ],
+          totalCount: 5,
+        }),
+      ],
+      gsc: GSC_AVAILABLE_EMPTY,
+    });
+
+    expect(new Set(report.result.rows.map((gapRow) => gapRow.gsc.nextStep))).toEqual(
+      new Set(["review_content_gap"]),
+    );
+    expect(report.result.rows.map((gapRow) => gapRow.keyword)).toEqual([
+      "echo prioritize",
+      "delta stretch",
+      "charlie unbanded",
+      "bravo head",
+      "alpha brand",
+    ]);
+    expect(report.result.rows.map((gapRow) => gapRow.preScreen.band)).toEqual([
+      "prioritize_serp_check",
+      "stretch",
+      "unbanded",
+      "defer_head_term",
+      "defer_brand_navigational",
+    ]);
+
+    const sameBand = reportFor({
+      competitorDomains: ["one.example", "two.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({
+              keyword: "solo crm",
+              firstDomainRank: 1,
+              searchVolume: 9_000,
+              keywordDifficulty: 10,
+            }),
+            row({
+              keyword: "shared crm",
+              firstDomainRank: 8,
+              searchVolume: 100,
+              keywordDifficulty: 10,
+            }),
+          ],
+          totalCount: 2,
+        }),
+        providerResult("two.example", {
+          rows: [
+            row({
+              keyword: "shared crm",
+              firstDomainRank: 9,
+              searchVolume: 100,
+              keywordDifficulty: 10,
+            }),
+          ],
+          totalCount: 1,
+        }),
+      ],
+      gsc: GSC_AVAILABLE_EMPTY,
+    });
+
+    expect(sameBand.result.rows.map((gapRow) => gapRow.preScreen.band)).toEqual([
+      "prioritize_serp_check",
+      "prioritize_serp_check",
+    ]);
+    expect(sameBand.result.rows.map((gapRow) => gapRow.keyword)).toEqual([
+      "shared crm",
+      "solo crm",
+    ]);
+  });
+
+  it("reports GSC row counts", () => {
+    const competitor = providerResult("one.example", {
+      rows: [row({ keyword: "counted term", firstDomainRank: 3 })],
+      totalCount: 1,
+    });
+    const available = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [competitor],
+      gsc: {
+        ...GSC_AVAILABLE_EMPTY,
+        queryRows: [
+          { query: "counted term", impressions: 10, position: 3 },
+          { query: "zero impressions", impressions: 0, position: 0 },
+          { query: "other term", impressions: 4, position: 20 },
+        ],
+        queryPageRows: [
+          {
+            query: "counted term",
+            page: "https://acme.com/counted",
+            impressions: 8,
+            position: 3,
+          },
+          {
+            query: "other term",
+            page: "https://acme.com/other",
+            impressions: 4,
+            position: 20,
+          },
+        ],
+      },
+    });
+    const notRequested = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [competitor],
+      gsc: null,
+    });
+    const unavailable = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [competitor],
+      gsc: { ...GSC_AVAILABLE_EMPTY, status: "unavailable" },
+    });
+
+    expect(available.result.gscQueryRowCount).toBe(3);
+    expect(available.result.gscQueryPageRowCount).toBe(2);
+    expect(notRequested.result.gscQueryRowCount).toBeNull();
+    expect(notRequested.result.gscQueryPageRowCount).toBeNull();
+    expect(unavailable.result.gscQueryRowCount).toBeNull();
+    expect(unavailable.result.gscQueryPageRowCount).toBeNull();
   });
 
   it("keeps provider null metrics distinct from explicit zero values", () => {
@@ -143,29 +539,27 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "zero volume",
               searchVolume: 0,
               cpc: 0,
               keywordDifficulty: 14,
               providerIntent: "informational",
               firstDomainRank: 4,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
         providerResult("two.example", {
           rows: [
-            {
+            row({
               keyword: "unknown volume",
               searchVolume: null,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 9,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -193,43 +587,40 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "Best CRM",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 3,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
         providerResult("two.example", {
           rows: [
-            {
+            row({
               keyword: "best   crm",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 7,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
         providerResult("three.example", {
           rows: [
-            {
+            row({
               keyword: "BEST CRM",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 11,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -257,38 +648,35 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("two.example", {
           rows: [
-            {
+            row({
               keyword: "stable term",
               searchVolume: 20,
               cpc: 2,
               keywordDifficulty: 22,
               providerIntent: "commercial",
               firstDomainRank: 5,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "Stable Term",
               searchVolume: 10,
               cpc: 1,
               keywordDifficulty: 11,
               providerIntent: "informational",
               firstDomainRank: 5,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "stable  term",
               searchVolume: 10,
               cpc: 1,
               keywordDifficulty: 11,
               providerIntent: "informational",
               firstDomainRank: 3,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 2,
         }),
@@ -317,15 +705,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "shared term",
               searchVolume: 120,
               cpc: 2.1,
               keywordDifficulty: 9,
               providerIntent: "commercial",
               firstDomainRank: 6,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 4,
         }),
@@ -487,15 +874,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "best crm",
               searchVolume: 1_900,
               cpc: 4.4,
               keywordDifficulty: 32,
               providerIntent: "commercial",
               firstDomainRank: 3,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -539,15 +925,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "brand crm",
               searchVolume: 500,
               cpc: 2.2,
               keywordDifficulty: 20,
               providerIntent: "navigational",
               firstDomainRank: 2,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -582,15 +967,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "low sample",
               searchVolume: 90,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 3,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -618,15 +1002,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "weak crm",
               searchVolume: 110,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -664,15 +1047,14 @@ describe("buildCompetitorKeywordGapReport", () => {
         competitors: [
           providerResult("one.example", {
             rows: [
-              {
+              row({
                 keyword: "coverage boundary",
                 searchVolume: 110,
                 cpc: 1.2,
                 keywordDifficulty: 18,
                 providerIntent: "informational",
                 firstDomainRank: 8,
-                secondDomainRank: null,
-              },
+              }),
             ],
             totalCount: 1,
           }),
@@ -713,15 +1095,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "multi page coverage",
               searchVolume: 110,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -767,15 +1148,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "contradictory coverage",
               searchVolume: 110,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -812,15 +1192,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "truncated page term",
               searchVolume: 500,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -862,15 +1241,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "page only term",
               searchVolume: 500,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -914,15 +1292,14 @@ describe("buildCompetitorKeywordGapReport", () => {
         competitors: [
           providerResult("one.example", {
             rows: [
-              {
+              row({
                 keyword: "query without page",
                 searchVolume: 500,
                 cpc: 1.2,
                 keywordDifficulty: 18,
                 providerIntent: "informational",
                 firstDomainRank: 8,
-                secondDomainRank: null,
-              },
+              }),
             ],
             totalCount: 1,
           }),
@@ -966,15 +1343,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "weighted term",
               searchVolume: 100,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 2,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1030,15 +1406,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "missing term",
               searchVolume: 90,
               cpc: 1,
               keywordDifficulty: 8,
               providerIntent: "informational",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1067,15 +1442,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "unverified term",
               searchVolume: 90,
               cpc: 1,
               keywordDifficulty: 8,
               providerIntent: "informational",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1093,15 +1467,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "truncated miss",
               searchVolume: 90,
               cpc: 1,
               keywordDifficulty: 8,
               providerIntent: "informational",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1136,15 +1509,14 @@ describe("buildCompetitorKeywordGapReport", () => {
   it("keeps all GSC metrics null when the overlay was not requested or unavailable", () => {
     const competitor = providerResult("one.example", {
       rows: [
-        {
+        row({
           keyword: "unread evidence",
           searchVolume: 90,
           cpc: 1,
           keywordDifficulty: 8,
           providerIntent: "informational",
           firstDomainRank: 10,
-          secondDomainRank: null,
-        },
+        }),
       ],
       totalCount: 1,
     });
@@ -1186,15 +1558,14 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "unsafe page term",
               searchVolume: 500,
               cpc: 1.2,
               keywordDifficulty: 18,
               providerIntent: "informational",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1233,51 +1604,46 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "review content gap",
               searchVolume: 200,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "commercial",
               firstDomainRank: 8,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "review existing weak higher impressions",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "commercial",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "review existing weak lower impressions",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "commercial",
               firstDomainRank: 11,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "review existing strong",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "commercial",
               firstDomainRank: 9,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "optimize existing",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "commercial",
               firstDomainRank: 7,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 5,
         }),
@@ -1345,24 +1711,22 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "lower page impressions",
               searchVolume: 1_000,
               cpc: 2,
               keywordDifficulty: 30,
               providerIntent: "commercial",
               firstDomainRank: 1,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "higher page impressions",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "informational",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 2,
         }),
@@ -1419,33 +1783,30 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "verify own coverage",
               searchVolume: 1_000,
               cpc: 2,
               keywordDifficulty: 30,
               providerIntent: "commercial",
               firstDomainRank: 1,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "review existing query",
               searchVolume: 100,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "informational",
               firstDomainRank: 9,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "optimize existing query",
               searchVolume: 80,
               cpc: 1,
               keywordDifficulty: 10,
               providerIntent: "informational",
               firstDomainRank: 10,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 3,
         }),
@@ -1495,47 +1856,43 @@ describe("buildCompetitorKeywordGapReport", () => {
       competitors: [
         providerResult("one.example", {
           rows: [
-            {
+            row({
               keyword: "zulu",
               searchVolume: 500,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 4,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "null volume",
               searchVolume: null,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 5,
-              secondDomainRank: null,
-            },
-            {
+            }),
+            row({
               keyword: "alpha",
               searchVolume: 100,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 5,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 3,
         }),
         providerResult("two.example", {
           rows: [
-            {
+            row({
               keyword: "zulu",
               searchVolume: 500,
               cpc: null,
               keywordDifficulty: null,
               providerIntent: null,
               firstDomainRank: 9,
-              secondDomainRank: null,
-            },
+            }),
           ],
           totalCount: 1,
         }),
@@ -1551,6 +1908,33 @@ describe("buildCompetitorKeywordGapReport", () => {
     expect(new Set(report.result.rows.map((row) => row.gsc.nextStep))).toEqual(
       new Set(["verify_own_coverage"]),
     );
+  });
+
+  it("enforces the echoed sample rule on provider rows it did not filter", () => {
+    const report = reportFor({
+      competitorDomains: ["one.example"],
+      competitors: [
+        providerResult("one.example", {
+          rows: [
+            row({ keyword: "in rule", firstDomainRank: 20 }),
+            row({ keyword: "past the rank ceiling", firstDomainRank: 21 }),
+            row({ keyword: "past the cap", firstDomainRank: 3 }),
+          ],
+          totalCount: 3,
+        }),
+      ],
+      sampleRule: {
+        maxCompetitorRank: 20,
+        perCompetitorLimit: 2,
+        serpSnapshotRequested: false,
+      },
+      gsc: null,
+    });
+
+    expect(report.result.rows.map((entry) => entry.keyword)).toEqual([
+      "in rule",
+    ]);
+    expect(report.result.competitors[0]?.returnedRows).toBe(3);
   });
 
   it("keeps every localized public error code covered", () => {

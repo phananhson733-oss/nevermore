@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COMPETITOR_KEYWORD_GAP_ERROR_CODES } from "@sf/public-tools/competitor-keyword-gap";
+import {
+  COMPETITOR_KEYWORD_GAP_ERROR_CODES,
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS,
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES,
+  COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS,
+} from "@sf/public-tools/competitor-keyword-gap";
 import enMessages from "./messages/en.json";
 import zhMessages from "./messages/zh.json";
 
@@ -85,6 +90,23 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "nextSteps.review_existing_query",
   "nextSteps.review_content_gap",
   "nextSteps.verify_own_coverage",
+  // preScreen.band.*, preScreen.basis.* and preScreen.reason.* are derived
+  // from the contract arrays below, not hand-listed here.
+  "preScreen.title",
+  "preScreen.filterAll",
+  "signals.aiOverviewSnapshot",
+  "signals.aiOverviewSnapshotUndated",
+  "signals.competitorTraffic",
+  "actions.openCompetitorPage",
+  "actions.copyPlan",
+  "actions.copyPlanDone",
+  "actions.copyPlanFailed",
+  "coverage.sampleRule",
+  "coverage.rowsInRule",
+  "overview.gscQueryRows",
+  "limitations.gscNoRows",
+  "boundaries.dfsSnapshot",
+  "boundaries.preScreen",
 ] as const;
 
 const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
@@ -215,6 +237,48 @@ describe("competitor keyword gap message catalogs", () => {
         "unknown",
       ]);
       expect(copy.summary.unavailable).toMatch(/\{count(?:,|\})/);
+    }
+  });
+
+  /**
+   * The engine exports the band, basis and reason arrays so a value cannot be
+   * added or renamed without a place in the surface. Keyed against those
+   * arrays, not a hand-typed list: a hand-typed list passes an engine rename
+   * and ships the literal key path on the page.
+   */
+  it("localizes exactly the contract's pre-screen bands, bases and reasons", () => {
+    for (const messages of [enMessages, zhMessages]) {
+      const copy = messages.tools.competitorKeywordGap.preScreen;
+      expect(Object.keys(copy.band).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS].sort(),
+      );
+      expect(Object.keys(copy.basis).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES].sort(),
+      );
+      expect(Object.keys(copy.reason).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS].sort(),
+      );
+    }
+  });
+
+  it("pluralizes the row-count messages", () => {
+    for (const messages of [enMessages, zhMessages]) {
+      const copy = messages.tools.competitorKeywordGap;
+      expect(copy.actions.copyPlan).toMatch(/\{count, plural,/);
+      expect(copy.actions.copyPlanDone).toMatch(/\{count, plural,/);
+      expect(copy.overview.gscQueryRows).toMatch(/\{count, plural,/);
+    }
+  });
+
+  // signals.competitorTraffic renders a DataForSEO traffic estimate in the
+  // same report; the outcomes boundary must name that estimate, or the two
+  // contradict on screen.
+  it("names the DataForSEO estimate in the outcomes boundary", () => {
+    for (const messages of [enMessages, zhMessages]) {
+      const copy = messages.tools.competitorKeywordGap.boundaries;
+      expect(copy.competitorOutcomesUnavailable).toMatch(
+        /DataForSEO (?:estimate|估算)/,
+      );
     }
   });
 

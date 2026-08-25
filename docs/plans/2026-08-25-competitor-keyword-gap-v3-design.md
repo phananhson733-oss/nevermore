@@ -100,7 +100,7 @@ Evaluated in order; the first match wins.
 | Condition | Band | Reason |
 |---|---|---|
 | keyword contains a competitor brand token (registrable label of a requested competitor) and no comparative token (`alternative(s)`, `vs`, `versus`, `competitor(s)`, `替代`, `对比`) | `defer_brand_navigational` | `competitor_brand_token` |
-| keyword looks like a hostname (`^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$` after key normalisation) | `defer_brand_navigational` | `domain_like_keyword` |
+| keyword looks like a hostname (`^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$` after key normalisation) and its last label is not a file or technology extension (`txt`, `xml`, `js`, `json`, `html`, `htm`, `css`, `pdf`, `config`, `csv`, `php`, `yaml`, `yml`; so `robots.txt` and `node.js` stay in the metric lane while `now.gg` does not) | `defer_brand_navigational` | `domain_like_keyword` |
 | a competitor's ranking page path contains `/<keyword>.<tld>/` (a domain-profile page for another brand, e.g. `semrush.com/website/hanime.tv/overview/`) | `defer_brand_navigational` | `competitor_domain_profile_page` |
 | provider intent is `navigational` | `defer_brand_navigational` | `provider_navigational_intent` |
 | KD or search volume is `provider_no_data` | `unbanded` | `dfs_metric_missing` |
@@ -110,6 +110,12 @@ Evaluated in order; the first match wins.
 
 Band order inside a GSC lane: prioritize → stretch → unbanded → head → brand.
 Then the existing tie-breaks (competitor count, best rank, volume, keyword).
+
+`preScreen.basis` names where the reason came from: `dfs_estimate` for the
+KD/volume/rank/intent reasons (provider estimates), `tool_heuristic` for the
+brand-token, hostname-shape and domain-profile-page reasons (this tool's own
+text/URL heuristics). The surface shows the basis next to the reason; neither
+is ever called winnability.
 
 ### Provider request
 
@@ -137,6 +143,32 @@ volume-ordered head is dominated by domain-profile pages for other brands.
 `DataForSeoDomainIntersectionRequest` gains two optional, typed bounds
 (`maxFirstDomainRank`, `includeSerpInfo`); the client composes the provider
 filter array. No free-form filter string crosses the boundary.
+
+The report enforces the same rule on the rows it receives (rank above
+`maxCompetitorRank` or beyond `perCompetitorLimit` is dropped) so the echoed
+`sampleRule` is a promise the envelope keeps even if the provider drifts.
+
+A `serp_item_types` list with any malformed entry is treated as unreported
+(`serpSnapshot: null`), never as a shorter or empty list: an empty list is a
+reported fact, silence is not.
+
+## Cross-model review (2026-08-25)
+
+Codex review of the source diff returned two P1 and four P2 findings; all six
+were acted on before merge:
+
+- Band copy said more than the rule knows: `stretch` was "可争取" and KD > 60
+  was "head term". Labels now describe the inputs only ("Higher KD or page
+  two" / "难度较高或第二页"; "KD above 60, defer" / "难度 > 60，暂缓").
+- The copy plan's legend called `dfs_snapshot` a "provider SERP observation";
+  it now says "stored SERP snapshot, not an observation made in this run".
+- The plan exported up to 20 rows while the table showed 10; it now copies
+  exactly the rows on screen and counts the collapsed rows as `omittedRows`.
+- Hosted competitors (`acme.github.io`) yielded the platform as the brand
+  token; a short platform-suffix list reads the customer label instead. The
+  ordinary-word brand case (`linear.app` vs "linear regression") remains a
+  documented limitation of the visible skip lane.
+- Sample-rule enforcement and malformed-snapshot silence, above.
 
 ## Surface changes
 

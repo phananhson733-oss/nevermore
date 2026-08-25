@@ -4,6 +4,7 @@
 
 import {
   buildCompetitorKeywordGapReport,
+  COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
   COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
   createPublicToolError,
   keywordCoverageProperty,
@@ -11,6 +12,7 @@ import {
   parseCompetitorKeywordGapInput,
   type CompetitorKeywordGapDataForSeoResult,
   type CompetitorKeywordGapGscRead,
+  type CompetitorKeywordGapSampleRule,
   type KeywordCoverageRead,
 } from "@sf/public-tools";
 import {
@@ -42,6 +44,16 @@ import {
 } from "./traffic-drop-session.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
+/**
+ * The paid sample this handler asks the provider for. Echoed verbatim into
+ * the envelope so the surface states what was sampled, never what it wishes
+ * had been sampled.
+ */
+const SAMPLE_RULE: CompetitorKeywordGapSampleRule = Object.freeze({
+  maxCompetitorRank: COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
+  perCompetitorLimit: COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+  serpSnapshotRequested: true,
+});
 
 interface DataForSeoCredentials {
   readonly login: string;
@@ -122,6 +134,13 @@ function completedProviderResult(
               providerIntent: row.providerIntent,
               firstDomainRank: row.firstDomainRank,
               secondDomainRank: row.secondDomainRank,
+              firstDomainUrl: row.firstDomainUrl,
+              firstDomainTitle: row.firstDomainTitle,
+              firstDomainEtv: row.firstDomainEtv,
+              coreKeyword: row.coreKeyword,
+              searchVolumeTrend: row.searchVolumeTrend,
+              serpItemTypes: row.serpItemTypes,
+              serpUpdatedAt: row.serpUpdatedAt,
             },
           ],
     ),
@@ -349,7 +368,9 @@ export async function handleCompetitorKeywordGapRequest(
               locationCode: market.locationCode,
               languageCode: market.languageCode,
               intersections: false,
-              limit: COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+              limit: SAMPLE_RULE.perCompetitorLimit,
+              maxFirstDomainRank: SAMPLE_RULE.maxCompetitorRank,
+              includeSerpInfo: SAMPLE_RULE.serpSnapshotRequested,
             },
             request.signal,
           ),
@@ -401,6 +422,7 @@ export async function handleCompetitorKeywordGapRequest(
       marketCode: parsed.value.marketCode,
       languageCode: market.languageCode,
       competitorDomains: parsed.value.competitorDomains,
+      sampleRule: SAMPLE_RULE,
       competitors: providerResults,
       gsc,
     });

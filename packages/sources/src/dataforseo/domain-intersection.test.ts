@@ -287,7 +287,7 @@ describe("HttpDataForSeoClient domain-intersection operation", () => {
     expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
   });
 
-  it("drops junk snapshot list entries but fails closed on wrong-typed snapshot and trend shapes", async () => {
+  it("treats a snapshot list with junk entries as unreported and fails closed on wrong-typed snapshot and trend shapes", async () => {
     const item = (keywordInfo: Record<string, unknown>, serpInfo: unknown) => ({
       keyword_data: {
         keyword: "snapshot shapes",
@@ -319,7 +319,17 @@ describe("HttpDataForSeoClient domain-intersection operation", () => {
         },
       ),
     ]).domainIntersection(REQUEST);
-    expect(junk.rows[0]?.serpItemTypes).toEqual([
+    // Any malformed entry makes the whole list silence: a junk-only list must
+    // not become a reported empty snapshot.
+    expect(junk.rows[0]?.serpItemTypes).toBeNull();
+
+    const clean = await clientFor([
+      item(
+        {},
+        { serp_item_types: [" organic ", "ai_overview", "x".repeat(80)] },
+      ),
+    ]).domainIntersection(REQUEST);
+    expect(clean.rows[0]?.serpItemTypes).toEqual([
       "organic",
       "ai_overview",
       "x".repeat(64),
