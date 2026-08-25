@@ -14,6 +14,10 @@ const VALID_INPUT = {
   competitorDomains: ["one.example"],
   marketCode: "US",
   languageCode: "en",
+  // Required, and every real client sends it: the version guard has to cover
+  // the bundles that predate the field, not only the ones new enough to
+  // declare it. See the "does not declare a contract version" case below.
+  acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
 } as const;
 const MARKET = {
   locationCode: 2840,
@@ -380,16 +384,25 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.log).toHaveBeenCalledOnce();
   });
 
-  it("still serves a legacy request that does not declare a contract version", async () => {
+  it("refuses a request that does not declare a contract version, before spending", async () => {
     const dependencies = runnableDependencies();
+    const { acceptSchemaVersion: _omitted, ...withoutVersion } = VALID_INPUT;
 
     const response = await handleCompetitorKeywordGapRequest(
-      post(VALID_INPUT),
+      post(withoutVersion),
       dependencies,
     );
 
-    expect(response.status).toBe(200);
-    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    // Not `invalid_input`: a bundle too old to send the field needs to be
+    // told to reload, and it must hear that before the run is paid for --
+    // which is the population the optional field used to miss entirely.
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: { code: "client_out_of_date" },
+    });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+    expect(dependencies.acquireSlot).not.toHaveBeenCalled();
+    expect(dependencies.resolveMarket).not.toHaveBeenCalled();
   });
 
   it("returns a namespaced per-account conflict without constructing the provider", async () => {

@@ -14,6 +14,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example", "https://www.two.example./"],
         marketCode: "us",
         languageCode: "EN",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -23,6 +24,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example", "two.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
     });
   });
@@ -37,6 +39,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         ),
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -51,6 +54,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         ],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
     });
   });
@@ -63,6 +67,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -72,22 +77,22 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
     });
   });
 
-  it("omits an absent acceptSchemaVersion from the parsed value", () => {
-    const parsed = parseCompetitorKeywordGapInput({
-      siteDomain: "acme.com",
-      competitorDomains: ["one.example"],
-      marketCode: "US",
-      languageCode: "en",
-    });
-
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) {
-      expect(Object.hasOwn(parsed.value, "acceptSchemaVersion")).toBe(false);
-    }
+  it("rejects a request that declares no contract version at all", () => {
+    // The field is required precisely because the bundles that omit it are
+    // the ones too old to read the answer they would have paid for.
+    expect(
+      parseCompetitorKeywordGapInput({
+        siteDomain: "acme.com",
+        competitorDomains: ["one.example"],
+        marketCode: "US",
+        languageCode: "en",
+      }).ok,
+    ).toBe(false);
   });
 
   it.each([

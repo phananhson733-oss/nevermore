@@ -1000,6 +1000,10 @@
           "dfs_estimate": "DataForSEO estimate; a pre-screen, not SERP winnability.",
           "tool_heuristic": "This tool's text/URL heuristic; a pre-screen, not SERP winnability."
         },
+        "basisShort": {
+          "dfs_estimate": "estimate",
+          "tool_heuristic": "tool rule"
+        },
         "filterAll": "All bands",
         "band": {
           "prioritize_serp_check": "Check SERP first",

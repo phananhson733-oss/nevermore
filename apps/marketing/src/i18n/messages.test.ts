@@ -278,6 +278,11 @@ describe("competitor keyword gap message catalogs", () => {
       expect(Object.keys(copy.basis).sort()).toEqual(
         [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES].sort(),
       );
+      // The short form is rendered on every band chip, so a basis without one
+      // would show the reader a raw key.
+      expect(Object.keys(copy.basisShort).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES].sort(),
+      );
       expect(Object.keys(copy.reason).sort()).toEqual(
         [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS].sort(),
       );

@@ -57,10 +57,14 @@ export function chipTone(tone: ChipTone): string {
 export const COLUMN_BADGE =
   "ml-1.5 inline-flex items-center rounded-full border px-1.5 py-px font-mono text-[9.5px] leading-[1.5] tracking-[0.03em] normal-case";
 
-export const COLUMN_BADGE_TONE: Readonly<Record<"dfs" | "gsc", string>> = {
-  dfs: "border-brand-info/35 bg-brand-info/[0.10] text-brand-info",
-  gsc: "border-brand-success/35 bg-brand-success/[0.10] text-brand-success",
-};
+export const COLUMN_BADGE_TONE: Readonly<Record<"dfs" | "gsc" | "tool", string>> =
+  {
+    dfs: "border-brand-info/35 bg-brand-info/[0.10] text-brand-info",
+    gsc: "border-brand-success/35 bg-brand-success/[0.10] text-brand-success",
+    // Distinct from `dfs` on purpose: a band this tool derived from its own
+    // text and URL heuristics is not something the provider reported.
+    tool: "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary",
+  };
 export const ACTION_BUTTON =
   "inline-flex items-center whitespace-nowrap rounded-[10px] border border-brand-border-strong bg-brand-panel-raised px-3 py-2 text-[12px] font-medium text-text-dark-primary transition hover:border-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
 export const PRIMARY_ACTION_BUTTON =

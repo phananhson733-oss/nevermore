@@ -148,9 +148,23 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(brandChip?.getAttribute("title")).toContain(
       "preScreen.reason.competitor_brand_token",
     );
-    // The basis and reason live in the chip title only; no row text repeats them.
+    // The basis is VISIBLE on the chip, in short form. It has to be: three of
+    // the reasons that produce a band come from this tool's own text and URL
+    // heuristics rather than the provider, so a single column-level "estimate"
+    // badge would state the wrong source for those rows.
+    expect(
+      prioritizedChip
+        ?.querySelector('[data-pre-screen-basis="dfs_estimate"]')
+        ?.textContent?.trim(),
+    ).toBe("preScreen.basisShort.dfs_estimate");
+    expect(
+      brandChip
+        ?.querySelector('[data-pre-screen-basis="tool_heuristic"]')
+        ?.textContent?.trim(),
+    ).toBe("preScreen.basisShort.tool_heuristic");
+    // The long sentence and the reason stay in the title only.
     expect(host.querySelector("[data-pre-screen-reason]")).toBeNull();
-    expect(host.textContent).not.toContain("preScreen.basis");
+    expect(host.textContent).not.toContain("preScreen.basis.");
     expect(host.textContent).not.toContain("preScreen.reason");
   });
 

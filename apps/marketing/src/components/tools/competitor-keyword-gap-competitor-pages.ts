@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap row and the viewer locale
-// @output -- rank-ordered competitor pages, the best safe page URL and its domain, the best-rank traffic estimate, and the snapshot date label
+// @output -- rank-ordered competitor pages, the best safe page URL and the host it opens, the best-rank traffic estimate, and the snapshot date label
 // @pos    -- pure row derivations shared by the competitor gap chips and results table
 
 import type {
@@ -50,18 +50,28 @@ export function bestCompetitorPageUrl(
 }
 
 /**
- * The domain whose page `bestCompetitorPageUrl` returned, so a button can name
- * where it is about to send the reader. Kept next to that function because the
- * two must agree: naming one competitor and opening another's page is exactly
- * the kind of quiet mismatch a link label is trusted not to have.
+ * The host `bestCompetitorPageUrl` will actually open, so a button can name
+ * where it is about to send the reader.
+ *
+ * Derived from the URL, NOT from the map key it is filed under. The provider
+ * reports whatever URL ranked for the competitor it was asked about, and that
+ * URL is not bound to the competitor's own hostname -- a redirector or a
+ * third-party landing page arrives filed under `beta.example` all the same.
+ * Reading the key would let the button say "open beta.example's page" and
+ * then open somewhere else, which is exactly the quiet mismatch a link label
+ * is trusted not to have.
  */
-export function bestCompetitorPageDomain(
+export function bestCompetitorPageHost(
   row: CompetitorKeywordGapRow,
 ): string | null {
-  for (const entry of rankedCompetitorPages(row)) {
-    if (safePageUrl(entry.page?.url ?? null) !== null) return entry.domain;
+  const url = bestCompetitorPageUrl(row);
+  if (url === null) return null;
+  try {
+    const { hostname } = new URL(url);
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** Provider traffic estimate for the best-rank competitor's page only; never a fallback to another page. */

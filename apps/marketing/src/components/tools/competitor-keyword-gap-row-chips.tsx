@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap row, the viewer locale, and the tool translator
-// @output -- competitor rank chips linked to known pages, and tone-graded opportunity signal chips with the pre-screen basis in the band chip title
+// @output -- competitor rank chips linked to known pages, and tone-graded opportunity signal chips carrying the pre-screen basis as a visible badge
 // @pos    -- stateless row cells for the Marketing competitor gap results table
 
 import type {
@@ -14,6 +14,8 @@ import {
 } from "./competitor-keyword-gap-competitor-pages";
 import {
   chipTone,
+  COLUMN_BADGE,
+  COLUMN_BADGE_TONE,
   DATA_CHIP,
   META_TEXT,
   number,
@@ -117,6 +119,16 @@ export function SignalChips({
         className={`${DATA_CHIP} ${chipTone(bandTone(row.preScreen.band))}`}
       >
         {translated(t, `preScreen.band.${row.preScreen.band}`)}
+        {/* The basis rides on the chip, not on the column header. Three of the
+            reasons that produce a band are this tool's own text and URL
+            heuristics rather than provider estimates, so one badge over the
+            whole column would state the wrong source for those rows. */}
+        <span
+          data-pre-screen-basis={row.preScreen.basis}
+          className={`${COLUMN_BADGE} ${COLUMN_BADGE_TONE[row.preScreen.basis === "dfs_estimate" ? "dfs" : "tool"]}`}
+        >
+          {translated(t, `preScreen.basisShort.${row.preScreen.basis}`)}
+        </span>
       </span>
       <span className={`${DATA_CHIP} ${chipTone("neutral")}`}>
         {t("signals.bestRank", { rank: row.bestCompetitorRank })}

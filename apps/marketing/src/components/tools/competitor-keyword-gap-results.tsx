@@ -20,7 +20,7 @@ import {
   type BandFilter,
 } from "./competitor-keyword-gap-band-filters";
 import {
-  bestCompetitorPageDomain,
+  bestCompetitorPageHost,
   bestCompetitorPageUrl,
 } from "./competitor-keyword-gap-competitor-pages";
 import { CopyPlanButton } from "./competitor-keyword-gap-copy-plan-button";
@@ -181,6 +181,10 @@ function SourceBadge({
  * surface stated a competitor failure that the same card's own counters
  * disproved two lines below. Nothing here is new contract data: the three
  * causes are already distinguishable from the counters and the overlay status.
+ *
+ * `unspecified` is not reachable from today's report builder, which only marks
+ * a run partial when one of the three holds. It exists so that a future status
+ * rule cannot make this function assert a cause it has not established.
  */
 function partialCause(
   result: CompetitorKeywordGapResultV3,
@@ -415,14 +419,14 @@ function rowActions(
   }
   if (row.gsc.nextStep === "review_content_gap") {
     const href = bestCompetitorPageUrl(row);
-    const domain = bestCompetitorPageDomain(row);
-    return href === null || domain === null
+    const host = bestCompetitorPageHost(row);
+    return href === null || host === null
       ? { primary: copy, secondary: null }
       : {
           primary: {
             kind: "competitor",
             href,
-            label: t("actions.openCompetitorPageNamed", { domain }),
+            label: t("actions.openCompetitorPageNamed", { domain: host }),
           },
           secondary: copy,
         };
@@ -496,7 +500,9 @@ function ResultsTable({
       : laneRows.filter((row) => row.preScreen.band === band);
   const visibleRows = expanded ? filteredRows : filteredRows.slice(0, 10);
   const remaining = Math.max(0, filteredRows.length - visibleRows.length);
-  const noticeLanes = lanesPresent(filteredRows);
+  // visibleRows, not filteredRows: a collapsed row is not on screen, and a
+  // lane note above an empty lane describes something the reader cannot see.
+  const noticeLanes = lanesPresent(visibleRows);
 
   function changeFilter(next: Filter): void {
     setFilter(next);
@@ -673,7 +679,10 @@ function ResultsTable({
                   ["monthlySearchVolume", "dfs"],
                   ["competitorCoverage", "dfs"],
                   ["yourStatus", "gsc"],
-                  ["opportunitySignals", "dfs"],
+                  // No column badge: this column mixes provider estimates with
+                  // this tool's own heuristics, so the basis belongs on the
+                  // pre-screen chip that varies, not on the whole column.
+                  ["opportunitySignals", null],
                   ["nextAction", null],
                 ] as const
               ).map(([column, source]) => (

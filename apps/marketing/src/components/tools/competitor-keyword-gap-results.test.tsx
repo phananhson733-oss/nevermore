@@ -89,11 +89,14 @@ describe("CompetitorKeywordGapResults", () => {
     ]);
     // Provenance is asked while reading a cell, so it sits in the header the
     // cell belongs to rather than in a legend the reader has scrolled past.
+    // Opportunity signals deliberately carries NO column badge: it mixes
+    // provider estimates with this tool's own heuristics, so the basis rides
+    // on the pre-screen chip that varies instead.
     expect(
       [...host.querySelectorAll("thead [data-column-source]")].map((badge) =>
         badge.getAttribute("data-column-source"),
       ),
-    ).toEqual(["dfs", "dfs", "gsc", "dfs"]);
+    ).toEqual(["dfs", "dfs", "gsc"]);
     expect(table.querySelector("caption")?.textContent).toContain(
       "table.caption",
     );

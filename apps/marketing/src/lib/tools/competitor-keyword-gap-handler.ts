@@ -340,6 +340,15 @@ const DEFAULT_DEPENDENCIES: CompetitorKeywordGapHandlerDependencies = {
   log: defaultLog,
 };
 
+/** The raw client-declared contract version, or null when the body carries none. */
+function declaredSchemaVersion(body: unknown): string | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const declared = (body as Record<string, unknown>)["acceptSchemaVersion"];
+  return typeof declared === "string" ? declared : null;
+}
+
 function json(body: unknown, status: number): Response {
   return Response.json(body, {
     status,
@@ -387,23 +396,27 @@ export async function handleCompetitorKeywordGapRequest(
     return json(createPublicToolError(body.code), status);
   }
 
+  // A client bundle declares the contract version it was built against, and a
+  // mismatch is refused HERE -- before parsing, market resolution,
+  // credentials, slot admission, and every provider/GSC call -- because the
+  // visitor must not be charged for a paid DataForSEO run whose result their
+  // stale page cannot read. It precedes acquireSlot too, so a request that
+  // never ran emits no run telemetry. Unlike conflict(), no Retry-After:
+  // retrying from the same stale bundle can never succeed; reload is the
+  // only remedy, and the copy for this code says so.
+  //
+  // Read from the RAW body, and before `parse`, for one reason: a MISSING
+  // field must land here rather than in `invalid_input`. While the field was
+  // optional, the only bundles the guard did not cover were the ones old
+  // enough to predate it -- precisely the population that used to pay for a
+  // run and then fail to read the answer.
+  if (declaredSchemaVersion(body.value) !== COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION) {
+    return json(createPublicToolError("client_out_of_date"), 409);
+  }
+
   const parsed = parseCompetitorKeywordGapInput(body.value);
   if (!parsed.ok) {
     return json(createPublicToolError("invalid_input"), 400);
-  }
-
-  // A client bundle declares the contract version it was built against. A
-  // mismatch is refused HERE -- before market resolution, credentials, slot
-  // admission, and every provider/GSC call -- because the visitor must not
-  // be charged for a paid DataForSEO run whose result their stale page
-  // cannot read. It also precedes acquireSlot so a request that never ran
-  // emits no run telemetry. Unlike conflict(), no Retry-After: retrying
-  // from the same stale bundle can never succeed; the remedy is a reload.
-  if (
-    parsed.value.acceptSchemaVersion !== undefined &&
-    parsed.value.acceptSchemaVersion !== COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION
-  ) {
-    return json(createPublicToolError("client_out_of_date"), 409);
   }
 
   const market = dependencies.resolveMarket(

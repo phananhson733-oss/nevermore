@@ -60,19 +60,33 @@ interface Reference {
  * wolf about its own comment is one people learn to mute.
  *
  * Anchoring rather than stripping comments: `import` and `export` are
- * statements, so a real one always begins a line, while a comment line that
- * mentions one never does (` * ...`, `// ...`). Stripping would mean tracking
- * strings, templates and regex literals -- and this app parses text, so a
- * regex holding an unbalanced quote would desynchronise the stripper and hide
- * a real import. A missed import is the failure mode that matters here.
+ * statements, so a real one always follows a statement boundary -- the start
+ * of a line, or a `;`/`}` -- while a comment line that mentions one does not
+ * (` * ...`, `// ...`). Stripping would mean tracking strings, templates and
+ * regex literals, and this app parses text, so a regex holding an unbalanced
+ * quote would desynchronise the stripper and hide a real import.
+ *
+ * The `;`/`}` alternative is deliberate and asymmetric. `const a = 1; import
+ * "@sf/sources";` is legal -- a static import must be top-level but need not
+ * begin a physical line -- and a line-start-only anchor walked straight past
+ * it. It does re-admit one false positive, a comment that spells `;` before
+ * the word `import`, and that is the trade taken on purpose: a MISSED import
+ * fails later as an unreadable Turbopack chunking error, while a false
+ * positive fails here with the offending file named.
  *
  * The dynamic form stays unanchored: `await import("x")` is legitimately
  * mid-expression, and missing one of those is worse than the rare false
  * positive from a comment that spells a call.
  */
-const STATIC_IMPORT =
-  /^[ \t]*(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/gm;
-const SIDE_EFFECT_IMPORT = /^[ \t]*import\s+['"`]([^'"`]+)['"`]/gm;
+const STATEMENT_START = "(?:^|[;}])[ \\t]*";
+const STATIC_IMPORT = new RegExp(
+  `${STATEMENT_START}(?:import|export)\\s+(type\\s+)?[\\s\\S]*?from\\s*['"\`]([^'"\`]+)['"\`]`,
+  "gm",
+);
+const SIDE_EFFECT_IMPORT = new RegExp(
+  `${STATEMENT_START}import\\s+['"\`]([^'"\`]+)['"\`]`,
+  "gm",
+);
 const DYNAMIC_IMPORT = /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g;
 
 function referencesIn(source: string): readonly Reference[] {
@@ -200,6 +214,16 @@ describe("the reference scanner reads code, not prose", () => {
     ].join("\n");
 
     expect(referencesIn(source)).toEqual([]);
+  });
+
+  it("sees a static import that shares a line with an earlier statement", () => {
+    // Legal ECMAScript: a static import must be top-level, not line-leading.
+    expect(referencesIn('const marker = 1; import "@sf/sources";')).toEqual([
+      { specifier: "@sf/sources", typeOnly: false },
+    ]);
+    expect(
+      referencesIn('function f() {} import { a } from "@sf/engine";'),
+    ).toEqual([{ specifier: "@sf/engine", typeOnly: false }]);
   });
 
   it("still reports the real thing on the line below one", () => {
