@@ -238,6 +238,54 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect(isAgentAuditSuccessEnvelope(withSearchPerformance())).toBe(true);
     });
 
+    it("accepts the live aggregate shape with 361 tested, 3 affected, and 4 rows", () => {
+      const records = structuredClone(searchPerformanceRecords) as unknown as Array<{
+        id: string;
+        tested: number;
+        affected: number;
+        observations: Array<{
+          url: string | null;
+          values: Array<{ label: string; value: unknown }>;
+        }>;
+      }>;
+      const abandoned = records.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      const aggregate = abandoned?.observations[0];
+      const detail = abandoned?.observations[1];
+      if (!abandoned || !aggregate || !detail) {
+        throw new Error("missing abandoned impression fixture");
+      }
+
+      abandoned.tested = 361;
+      abandoned.affected = 3;
+      abandoned.observations = [
+        aggregate,
+        detail,
+        { ...structuredClone(detail), url: "https://acme.test/retired-2" },
+        { ...structuredClone(detail), url: "https://acme.test/retired-3" },
+      ];
+
+      expect(abandoned.observations).toHaveLength(4);
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance(records))).toBe(true);
+    });
+
+    it("rejects a known aggregate that drops its summary and matches the generic invariant", () => {
+      const records = structuredClone(searchPerformanceRecords) as unknown as Array<{
+        id: string;
+        affected: number;
+        observations: unknown[];
+      }>;
+      const abandoned = records.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      if (!abandoned) throw new Error("missing abandoned impression fixture");
+      abandoned.observations = abandoned.observations.slice(1);
+      expect(abandoned.observations).toHaveLength(abandoned.affected);
+
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance(records))).toBe(false);
+    });
+
     it("rejects a region missing the index coverage record", () => {
       expect(
         isAgentAuditSuccessEnvelope(

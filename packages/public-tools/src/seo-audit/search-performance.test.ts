@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { evaluateAgentAuditScope } from "../agent-audit/evaluate.ts";
-import { isSearchPerformanceRecord } from "./contract.ts";
 import {
   buildSearchPerformanceRecords,
   type SearchPerformanceRaw,
@@ -82,81 +81,6 @@ describe("search performance records", () => {
       buildSearchPerformanceRecords(null, [page("https://acme.test/")]),
     ).toEqual([]);
     expect(buildSearchPerformanceRecords(undefined, [])).toEqual([]);
-  });
-
-  it("keeps one aggregate summary before each abandoned URL detail row", () => {
-    const record = byId(
-      buildSearchPerformanceRecords(
-        raw({
-          pages: [
-            row("https://acme.test/live", 80, 4),
-            row("https://acme.test/retired", 10, 8),
-          ],
-        }),
-        [
-          page("https://acme.test/live"),
-          { ...page("https://acme.test/retired"), finalStatus: 410 },
-        ],
-      ),
-      "abandoned_url_impression_share",
-    );
-
-    expect(record?.state).toBe("observed");
-    expect(record?.affected).toBe(1);
-    expect(record?.observations).toHaveLength(2);
-    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
-    expect(isSearchPerformanceRecord(record)).toBe(true);
-  });
-
-  it("accepts an observed abandoned-share record with only its aggregate summary", () => {
-    const record = byId(
-      buildSearchPerformanceRecords(
-        raw({
-          pages: [
-            row("https://acme.test/live-a", 80, 4),
-            row("https://acme.test/live-b", 10, 8),
-          ],
-        }),
-        [page("https://acme.test/live-a"), page("https://acme.test/live-b")],
-      ),
-      "abandoned_url_impression_share",
-    );
-
-    expect(record?.state).toBe("observed");
-    expect(record?.affected).toBe(0);
-    expect(record?.observations).toHaveLength(1);
-    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
-    expect(isSearchPerformanceRecord(record)).toBe(true);
-  });
-
-  it("rejects an abandoned-share record whose detail rows were replaced by a second aggregate", () => {
-    const record = structuredClone(
-      byId(
-        buildSearchPerformanceRecords(
-          raw({
-            pages: [
-              row("https://acme.test/live", 80, 4),
-              row("https://acme.test/retired", 10, 8),
-            ],
-          }),
-          [
-            page("https://acme.test/live"),
-            { ...page("https://acme.test/retired"), finalStatus: 410 },
-          ],
-        ),
-        "abandoned_url_impression_share",
-      ),
-    ) as unknown as {
-      observations: Array<{ url: string | null; values: Array<{ label: string; value: unknown }> }>;
-    } | undefined;
-
-    if (!record) throw new Error("missing abandoned share record");
-    record.observations[1] = {
-      url: "sc-domain:acme.test",
-      values: record.observations[0]!.values,
-    };
-
-    expect(isSearchPerformanceRecord(record)).toBe(false);
   });
 
   it("does not read a zero-impression row as coverage", () => {

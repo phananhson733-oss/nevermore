@@ -8,7 +8,10 @@ import {
   buildIndexCoverageRecords,
   type IndexCoverageEntry,
 } from "../seo-audit/index-coverage.ts";
-import { isSearchPerformanceRecord } from "../seo-audit/contract.ts";
+import {
+  isSeoAuditRecord,
+  isSearchPerformanceRecord,
+} from "../seo-audit/contract.ts";
 import { evaluateAgentAuditScope } from "./evaluate.ts";
 
 function a1(entries: readonly IndexCoverageEntry[] | null, gap?: never) {
@@ -25,6 +28,47 @@ const census = (indexed: number, total: number): IndexCoverageEntry[] =>
     verdict: i < indexed ? "PASS" : "NEUTRAL",
   }));
 
+type MutableEvidenceEntry = {
+  label: string;
+  value: unknown;
+};
+
+type MutableObservation = {
+  url: string | null;
+  values: MutableEvidenceEntry[];
+};
+
+type MutableAuditRecord = {
+  id: string;
+  category: string;
+  state: string;
+  unit: string;
+  population: string;
+  targetTested: boolean | null;
+  tested: number;
+  affected: number;
+  observations: MutableObservation[];
+  limitation: string | null;
+};
+
+function mutableObservedIndexCoverageRecord(): MutableAuditRecord {
+  const record = buildIndexCoverageRecords([
+    { url: "https://acme.test/indexed", verdict: "PASS" },
+    { url: "https://acme.test/missing", verdict: "NEUTRAL" },
+  ])[0];
+  if (!record) throw new Error("missing index coverage record");
+  return structuredClone(record) as unknown as MutableAuditRecord;
+}
+
+function evidence(
+  observation: MutableObservation,
+  label: string,
+): MutableEvidenceEntry {
+  const entry = observation.values.find((candidate) => candidate.label === label);
+  if (!entry) throw new Error(`missing ${label} evidence`);
+  return entry;
+}
+
 describe("A1 — index coverage over the declared population", () => {
   it("keeps one aggregate summary before each URL outside the index", () => {
     const record = buildIndexCoverageRecords([
@@ -33,6 +77,7 @@ describe("A1 — index coverage over the declared population", () => {
     ])[0];
 
     expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(2);
     expect(record?.affected).toBe(1);
     expect(record?.observations).toHaveLength(2);
     expect(record?.observations[0]?.url).toBeNull();
@@ -46,30 +91,71 @@ describe("A1 — index coverage over the declared population", () => {
     ])[0];
 
     expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(2);
     expect(record?.affected).toBe(0);
     expect(record?.observations).toHaveLength(1);
     expect(record?.observations[0]?.url).toBeNull();
     expect(isSearchPerformanceRecord(record)).toBe(true);
   });
 
-  it("rejects index coverage when the aggregate row is malformed", () => {
-    const record = structuredClone(
-      buildIndexCoverageRecords([
-        { url: "https://acme.test/a", verdict: "PASS" },
-        { url: "https://acme.test/missing", verdict: "NEUTRAL" },
-      ])[0],
-    ) as unknown as {
-      observations: Array<{ url: string | null; values: Array<{ label: string; value: unknown }> }>;
-    } | undefined;
+  it("keeps the producer's unverified shape on the existing generic path", () => {
+    const record = buildIndexCoverageRecords(null, "source_not_configured")[0];
 
-    if (!record) throw new Error("missing index coverage record");
-    record.observations[0] = {
-      url: null,
-      values: [
-        { label: "index_coverage_rate", value: 1.5 },
-        { label: "sitemap_urls_inspected", value: 2 },
-      ],
-    };
+    expect(record).toMatchObject({
+      state: "unverified",
+      tested: 0,
+      affected: 0,
+      observations: [],
+    });
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("does not accept the per-user aggregate record through the crawl guard", () => {
+    const record = mutableObservedIndexCoverageRecord();
+    record.category = "crawl";
+
+    expect(isSeoAuditRecord(record)).toBe(false);
+  });
+
+  it.each([
+    ["aggregate summary was removed", (record: MutableAuditRecord) => {
+      record.observations.shift();
+    }],
+    ["affected count was changed to match the aggregate-inclusive row count", (record: MutableAuditRecord) => {
+      record.affected = record.observations.length;
+    }],
+    ["aggregate coverage exceeds one", (record: MutableAuditRecord) => {
+      evidence(record.observations[0]!, "index_coverage_rate").value = 1.01;
+    }],
+    ["aggregate evidence label is unknown", (record: MutableAuditRecord) => {
+      evidence(record.observations[0]!, "sitemap_urls_inspected").label = "urls_inspected";
+    }],
+    ["detail URL is empty", (record: MutableAuditRecord) => {
+      record.observations[1]!.url = "";
+    }],
+    ["limitation differs from the producer contract", (record: MutableAuditRecord) => {
+      record.limitation = "future_index_coverage_method";
+    }],
+    ["unit differs from the producer contract", (record: MutableAuditRecord) => {
+      record.unit = "site_resource";
+    }],
+    ["population differs from the producer contract", (record: MutableAuditRecord) => {
+      record.population = "every_collected_page";
+    }],
+    ["targetTested differs from the producer contract", (record: MutableAuditRecord) => {
+      record.targetTested = true;
+    }],
+    ["detail claims Google's PASS verdict", (record: MutableAuditRecord) => {
+      evidence(record.observations[1]!, "index_status_verdict").value = "PASS";
+    }],
+    ["known aggregate is relabeled not_observed", (record: MutableAuditRecord) => {
+      record.state = "not_observed";
+      record.affected = 0;
+      record.observations = [];
+    }],
+  ] as const)("rejects an observed aggregate when %s", (_case, corrupt) => {
+    const record = mutableObservedIndexCoverageRecord();
+    corrupt(record);
 
     expect(isSearchPerformanceRecord(record)).toBe(false);
   });
