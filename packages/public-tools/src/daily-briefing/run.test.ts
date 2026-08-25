@@ -202,14 +202,10 @@ describe("runDailyBriefing read plan", () => {
     );
   });
 
-  it("invokes the shared optional-read cancellation seam exactly once on failures", async () => {
-    const cancelOptionalReads = vi.fn();
+  it("keeps query evidence when only the query-page reads fail", async () => {
     const client: GscQueryClient = async (request) => {
-      if (
-        request.startDate === "2026-08-15" &&
-        (request.dimensions[0] === "query" || request.dimensions.length === 2)
-      ) {
-        throw new Error("optional read failed");
+      if (request.dimensions.length === 2) {
+        throw new Error("query-page read failed");
       }
       return responseFor(request);
     };
@@ -219,19 +215,21 @@ describe("runDailyBriefing read plan", () => {
       now: NOW,
       brandTerms: [],
       brandTermsConfirmed: true,
-      cancelOptionalReads,
     });
 
-    expect(cancelOptionalReads).toHaveBeenCalledTimes(1);
     expect(envelope.result.weekly.evidence).toBe("observed");
     expect(envelope.result.coverage.current.evidence).toBe("unavailable");
-    expect(envelope.result.changes).toEqual([]);
-    expect(envelope.result.limitations).toContain("query_evidence_unavailable");
+    expect(envelope.result.laneCapability.evidence).toBe("observed");
+    expect(envelope.result.limitations).not.toContain(
+      "query_evidence_unavailable",
+    );
+    expect(envelope.result.limitations).toContain(
+      "query_page_coverage_below_floor",
+    );
   });
 
   it("does not cancel delayed query evidence when only property totals fail", async () => {
     const calls: GscQueryRequest[] = [];
-    const cancelOptionalReads = vi.fn();
     let releaseQueryReads = (): void => undefined;
     const queryReadsReleased = new Promise<void>((resolve) => {
       releaseQueryReads = resolve;
@@ -280,14 +278,12 @@ describe("runDailyBriefing read plan", () => {
       now: NOW,
       brandTerms: [],
       brandTermsConfirmed: true,
-      cancelOptionalReads,
     });
 
     await vi.waitFor(() => expect(calls).toHaveLength(7));
     releaseQueryReads();
     const envelope = await pending;
 
-    expect(cancelOptionalReads).not.toHaveBeenCalled();
     expect(envelope.result.actions[0]).toMatchObject({
       kind: "click_opportunity",
       query: "pricing automation",

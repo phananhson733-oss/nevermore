@@ -324,6 +324,25 @@ function queryWindowsComparable(
   );
 }
 
+/**
+ * Whether this window's page attachment can attribute a query to a page.
+ *
+ * A truncated page read is a prefix of the pages a query has, so the page it
+ * names as dominant may simply be the first one returned. Coverage already
+ * reports that as partial; the attribution built on it must not read as
+ * observed, and must not become a handoff.
+ */
+function pageAttributionUsable(
+  evidence: DailyBriefingQueryEvidence | null,
+): boolean {
+  return (
+    evidence?.queryPageRead != null &&
+    !evidence.queryPageRead.paging.truncated &&
+    !evidence.queryRead?.paging.truncated &&
+    queryEvidenceBasisComparable(evidence)
+  );
+}
+
 function queryEvidenceBasisComparable(
   evidence: DailyBriefingQueryEvidence | null,
 ): boolean {
@@ -534,10 +553,7 @@ function pageForQuery(
 ): string | null {
   if (evidence.queryRead === null || evidence.queryPageRead === null)
     return null;
-  // Page attribution crosses the two reads, so it stays invalid when Search
-  // Console aggregated them differently, even though each read is internally
-  // fine and the query-level signal survives.
-  if (!queryEvidenceBasisComparable(evidence)) return null;
+  if (!pageAttributionUsable(evidence)) return null;
   const queryPages = validQueryPageRows(evidence.queryPageRead.rows);
   const coverage = queryPageCoverage(
     validQueryRows(evidence.queryRead.rows),
@@ -568,10 +584,7 @@ function pageForObservation(
 ): string | null {
   if (evidence.queryRead === null || evidence.queryPageRead === null)
     return null;
-  // Page attribution crosses the two reads, so it stays invalid when Search
-  // Console aggregated them differently, even though each read is internally
-  // fine and the query-level signal survives.
-  if (!queryEvidenceBasisComparable(evidence)) return null;
+  if (!pageAttributionUsable(evidence)) return null;
   const queryPages = validQueryPageRows(evidence.queryPageRead.rows);
   const coverage = queryPageCoverage(
     validQueryRows(evidence.queryRead.rows),
@@ -857,13 +870,13 @@ function candidatesFor(
     (a, b) => b.order - a.order || a.query.localeCompare(b.query),
   );
 
-  const pairBasisComparable =
-    queryEvidenceBasisComparable(currentEvidence) &&
-    queryEvidenceBasisComparable(previousEvidence);
-  const currentQueryPages = pairBasisComparable
+  const pairAttributionUsable =
+    pageAttributionUsable(currentEvidence) &&
+    pageAttributionUsable(previousEvidence);
+  const currentQueryPages = pairAttributionUsable
     ? validQueryPageRows(currentEvidence.queryPageRead?.rows ?? [])
     : [];
-  const previousQueryPages = pairBasisComparable
+  const previousQueryPages = pairAttributionUsable
     ? validQueryPageRows(previousEvidence.queryPageRead?.rows ?? [])
     : [];
   const currentCoverage = queryPageCoverage(currentRows, currentQueryPages);
@@ -1218,11 +1231,13 @@ function noiseFloorFor(
   basis: DailyBriefingPropertyNoiseFloor["basis"],
   previousValue: number,
   observedChange: number,
-): DailyBriefingPropertyNoiseFloor {
+): DailyBriefingPropertyNoiseFloor | null {
+  // Without a positive base there is no spread to measure against. Returning
+  // an infinite floor would satisfy the type and then serialize to null over
+  // the wire, so the trend is withheld instead.
+  if (!(Number.isFinite(previousValue) && previousValue > 0)) return null;
   const minimumForAction =
-    Number.isFinite(previousValue) && previousValue > 0
-      ? BRIEFING_PROPERTY_NOISE_SIGMA * Math.sqrt(previousValue)
-      : Number.POSITIVE_INFINITY;
+    BRIEFING_PROPERTY_NOISE_SIGMA * Math.sqrt(previousValue);
   return {
     basis,
     observedChange,
@@ -1426,8 +1441,6 @@ export function buildDailyBriefing(
   const weekly = compareKpis(currentWeek, previousWeek);
   const currentEvidence = input.currentQueryEvidence ?? null;
   const previousEvidence = input.previousQueryEvidence ?? null;
-  const currentState = queryEvidenceState(currentEvidence);
-  const previousState = queryEvidenceState(previousEvidence);
   const currentRowsState = queryRowsState(currentEvidence);
   const previousRowsState = queryRowsState(previousEvidence);
   const comparableQueryWindows = queryWindowsComparable(
@@ -1462,7 +1475,8 @@ export function buildDailyBriefing(
   if (
     currentRowsState !== "unavailable" &&
     previousRowsState !== "unavailable" &&
-    (currentState === "unavailable" || previousState === "unavailable")
+    (!pageAttributionUsable(currentEvidence) ||
+      !pageAttributionUsable(previousEvidence))
   ) {
     limitations.add("query_page_coverage_below_floor");
   }
@@ -1583,11 +1597,12 @@ export function buildDailyBriefing(
     brandTermsConfirmed: input.brandTermsConfirmed,
   });
   const mode: DailyBriefingMode =
-    capabilityCounts !== null &&
-    capabilityCounts.clickDeclineCapableQueries === 0 &&
-    capabilityCounts.ctrOpportunityCapableQueries === 0
-      ? "position_first"
-      : "change_detection";
+    capabilityCounts === null
+      ? "unavailable"
+      : capabilityCounts.clickDeclineCapableQueries === 0 &&
+          capabilityCounts.ctrOpportunityCapableQueries === 0
+        ? "position_first"
+        : "change_detection";
 
   const queryWatchlist = queryWatchlistFor({
     changes,
@@ -1634,10 +1649,12 @@ export function buildDailyBriefing(
       day,
       weekly,
       mode,
-      // A property whose click lanes cannot be evaluated has nothing new to
-      // detect each morning, so it is not offered a daily cadence.
+      // A daily cadence is a claim that each morning brings something new to
+      // detect. It is offered only when a click lane was actually evaluated:
+      // a property that cannot support one, and a run that could not read the
+      // rows to tell, are both told to come back next week.
       cadence:
-        mode === "position_first" ||
+        mode !== "change_detection" ||
         day.evidence === "unavailable" ||
         currentWeek === null ||
         currentWeek.impressions < DAILY_CADENCE_MIN_IMPRESSIONS

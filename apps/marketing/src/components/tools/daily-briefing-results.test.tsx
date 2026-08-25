@@ -336,7 +336,11 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
   });
 
   it("renders four metric cards with latest-day and seven-day values", async () => {
-    const host = await renderResults();
+    // Day-level values are shown only on a daily briefing, which requires a
+    // click lane that could actually be evaluated.
+    const host = await renderResults(
+      envelope({ mode: "change_detection", cadence: "daily" }),
+    );
     const cards = [...host.querySelectorAll("[data-kpi]")];
 
     expect(cards).toHaveLength(4);

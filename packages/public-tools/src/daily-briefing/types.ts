@@ -25,11 +25,15 @@ export type DailyBriefingCadence = "daily" | "weekly";
  * evidence, so promising daily change detection there is a promise the data
  * can never keep.
  *
- * `change_detection` is also the neutral default when the query rows could not
- * be read at all. Read it together with `laneCapability.evidence`: the mode is
- * a measured claim only when that says `observed`.
+ * `unavailable` is not a third kind of briefing: it says the query rows could
+ * not be read, so neither claim can be made. Calling that `change_detection`
+ * put a mode the data never supported in front of the reader, and let the
+ * cadence promise a daily one.
  */
-export type DailyBriefingMode = "change_detection" | "position_first";
+export type DailyBriefingMode =
+  | "change_detection"
+  | "position_first"
+  | "unavailable";
 
 export type DailyBriefingEvidenceState =
   | "observed"
