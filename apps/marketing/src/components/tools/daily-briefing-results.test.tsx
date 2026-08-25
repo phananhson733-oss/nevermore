@@ -576,6 +576,9 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(row?.textContent).toContain(
       "Query/page evidence did not support a specific attribution",
     );
+    expect(
+      row?.querySelector("[data-site-trend-action-link]")?.getAttribute("href"),
+    ).toBe("#daily-briefing-actions");
     expect(row?.querySelector("[data-action-link]")).toBeNull();
     expect(cells).toHaveLength(0);
   });

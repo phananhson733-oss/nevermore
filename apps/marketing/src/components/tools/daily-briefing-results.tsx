@@ -731,9 +731,13 @@ export function DailyBriefingResults({
                 ),
               })}
             </p>
-            <p className="mt-3 text-[11.5px] leading-[1.6] text-brand-accent-text">
+            <a
+              data-site-trend-action-link
+              href="#daily-briefing-actions"
+              className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            >
               {t("siteTrend.actionListed")}
-            </p>
+            </a>
           </div>
         </section>
       ) : null}
