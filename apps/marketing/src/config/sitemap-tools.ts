@@ -17,6 +17,7 @@ export const SITEMAP_TOOLS = [
   "seo-quick-wins",
   "traffic-drop-diagnosis",
   "low-competition-keywords",
+  "competitor-keyword-gap",
   "on-page-seo-check",
   "internal-link-audit",
 ] as const;

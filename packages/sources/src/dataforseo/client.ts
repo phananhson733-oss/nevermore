@@ -14,6 +14,9 @@ export const DATAFORSEO_RANKED_KEYWORDS_LIVE_URL =
 /** Official Google Labs endpoint for domain-level organic SERP competitors. */
 export const DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL =
   "https://api.dataforseo.com/v3/dataforseo_labs/google/competitors_domain/live";
+/** Official Google Labs endpoint for pairwise domain keyword comparison. */
+export const DATAFORSEO_DOMAIN_INTERSECTION_LIVE_URL =
+  "https://api.dataforseo.com/v3/dataforseo_labs/google/domain_intersection/live";
 /** Official Google Labs endpoint for seed-keyword SERP competitor discovery. */
 export const DATAFORSEO_SERP_COMPETITORS_LIVE_URL =
   "https://api.dataforseo.com/v3/dataforseo_labs/google/serp_competitors/live";
@@ -241,6 +244,44 @@ export interface DataForSeoCompetitorsDomainClient {
     request: DataForSeoCompetitorsDomainRequest,
     signal?: AbortSignal,
   ): Promise<DataForSeoCompetitorsDomainResponse>;
+}
+
+/** Credential-free pairwise comparison input for one fixed Labs live task. */
+export interface DataForSeoDomainIntersectionRequest {
+  readonly target1: string;
+  readonly target2: string;
+  readonly locationCode?: number;
+  readonly locationName?: string;
+  readonly languageCode: string;
+  readonly intersections: boolean;
+  readonly limit: number;
+}
+
+/** Sanitized facts retained from one domain-intersection keyword item. */
+export interface DataForSeoDomainIntersectionRow {
+  readonly keyword: string;
+  readonly searchVolume: number | null;
+  readonly cpc: number | null;
+  readonly keywordDifficulty: number | null;
+  readonly providerIntent: DataForSeoProviderSearchIntent | null;
+  readonly firstDomainRank: number | null;
+  readonly secondDomainRank: number | null;
+}
+
+/** Sanitized pairwise result with no provider prose or authentication. */
+export interface DataForSeoDomainIntersectionResponse {
+  readonly rows: readonly DataForSeoDomainIntersectionRow[];
+  readonly totalCount: number;
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+}
+
+export interface DataForSeoDomainIntersectionClient {
+  domainIntersection(
+    request: DataForSeoDomainIntersectionRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoDomainIntersectionResponse>;
 }
 
 export interface DataForSeoSerpCompetitorsRequest {
@@ -524,6 +565,7 @@ function transportError(
   operation:
     | "ranked-keywords"
     | "competitors-domain"
+    | "domain-intersection"
     | "serp-competitors"
     | "ai-citation"
     | "backlink-summary"
@@ -679,6 +721,101 @@ function normalizeCompetitorsDomainRequest(
     ...(value.maximumRankGroup === undefined
       ? {}
       : { maximumRankGroup: value.maximumRankGroup }),
+  };
+  return locationCode !== undefined
+    ? { ...common, locationCode }
+    : { ...common, locationName: (locationName as string).trim() };
+}
+
+function normalizeDomainIntersectionRequest(
+  value: DataForSeoDomainIntersectionRequest,
+): DataForSeoDomainIntersectionRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection request must be an object.",
+    );
+  }
+
+  let target1: string;
+  let target2: string;
+  try {
+    target1 = canonicalProviderDomain(
+      value.target1,
+      "DataForSEO domain-intersection target1",
+    );
+    target2 = canonicalProviderDomain(
+      value.target2,
+      "DataForSEO domain-intersection target2",
+    );
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection targets must be valid public hostnames.",
+    );
+  }
+
+  const locationCode = value.locationCode;
+  const locationName = value.locationName;
+  if (
+    (locationCode === undefined && locationName === undefined) ||
+    (locationCode !== undefined && locationName !== undefined)
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection request must contain exactly one location selector.",
+    );
+  }
+  if (
+    locationCode !== undefined &&
+    (!Number.isSafeInteger(locationCode) || locationCode <= 0)
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection locationCode must be a positive integer.",
+    );
+  }
+  if (
+    locationName !== undefined &&
+    (typeof locationName !== "string" || locationName.trim() === "")
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection locationName must be a non-empty string.",
+    );
+  }
+  if (
+    typeof value.languageCode !== "string" ||
+    !/^[A-Za-z]{2,3}$/.test(value.languageCode.trim())
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection languageCode must be a primary language code.",
+    );
+  }
+  if (typeof value.intersections !== "boolean") {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO domain-intersection intersections must be a boolean.",
+    );
+  }
+  if (
+    !Number.isSafeInteger(value.limit) ||
+    value.limit < 1 ||
+    value.limit > MAX_DATAFORSEO_LIMIT
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `DataForSEO domain-intersection limit must be an integer from 1 to ${MAX_DATAFORSEO_LIMIT}.`,
+    );
+  }
+
+  const common = {
+    target1,
+    target2,
+    languageCode: value.languageCode.trim().toLowerCase(),
+    intersections: value.intersections,
+    limit: value.limit,
   };
   return locationCode !== undefined
     ? { ...common, locationCode }
@@ -934,6 +1071,260 @@ function parseCompetitorDomainRow(
       organicMetrics.etv,
       `DataForSEO competitor item ${index}.competitor_metrics.organic.etv`,
     ),
+  };
+}
+
+function domainIntersectionRank(
+  value: unknown,
+  context: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  const element = asRecord(value, context);
+  const rank = nullableIntegerInRange(
+    element.rank_group,
+    1,
+    100,
+    `${context}.rank_group`,
+  );
+  if (rank === null) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a rank_group.`,
+    );
+  }
+  return rank;
+}
+
+function parseDomainIntersectionRow(
+  value: unknown,
+  index: number,
+): DataForSeoDomainIntersectionRow {
+  const item = asRecord(value, `DataForSEO domain-intersection item ${index}`);
+  const keywordData = asRecord(
+    item.keyword_data,
+    `DataForSEO domain-intersection item ${index}.keyword_data`,
+  );
+  const keyword = keywordData.keyword;
+  if (typeof keyword !== "string" || keyword.trim() === "") {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO domain-intersection item ${index} did not contain a keyword.`,
+    );
+  }
+  const keywordInfo =
+    keywordData.keyword_info === undefined || keywordData.keyword_info === null
+      ? null
+      : asRecord(
+          keywordData.keyword_info,
+          `DataForSEO domain-intersection item ${index}.keyword_info`,
+        );
+  const keywordProperties =
+    keywordData.keyword_properties === undefined ||
+    keywordData.keyword_properties === null
+      ? null
+      : asRecord(
+          keywordData.keyword_properties,
+          `DataForSEO domain-intersection item ${index}.keyword_properties`,
+        );
+  const searchIntentInfo =
+    keywordData.search_intent_info === undefined ||
+    keywordData.search_intent_info === null
+      ? null
+      : asRecord(
+          keywordData.search_intent_info,
+          `DataForSEO domain-intersection item ${index}.search_intent_info`,
+        );
+
+  return {
+    keyword: keyword.trim(),
+    searchVolume: nullableNonNegativeNumber(
+      keywordInfo?.search_volume,
+      `DataForSEO domain-intersection item ${index}.search_volume`,
+    ),
+    cpc: nullableNonNegativeNumber(
+      keywordInfo?.cpc,
+      `DataForSEO domain-intersection item ${index}.cpc`,
+    ),
+    keywordDifficulty: nullableIntegerInRange(
+      keywordProperties?.keyword_difficulty,
+      0,
+      100,
+      `DataForSEO domain-intersection item ${index}.keyword_difficulty`,
+    ),
+    providerIntent: nullableProviderSearchIntent(
+      searchIntentInfo?.main_intent,
+      `DataForSEO domain-intersection item ${index}.main_intent`,
+    ),
+    firstDomainRank: domainIntersectionRank(
+      item.first_domain_serp_element,
+      `DataForSEO domain-intersection item ${index}.first_domain_serp_element`,
+    ),
+    secondDomainRank: domainIntersectionRank(
+      item.second_domain_serp_element,
+      `DataForSEO domain-intersection item ${index}.second_domain_serp_element`,
+    ),
+  };
+}
+
+function emptyDomainIntersectionResponse(
+  providerStatusCode: number,
+  taskStatusCode: number,
+  costUsd: number,
+): DataForSeoDomainIntersectionResponse {
+  return {
+    rows: [],
+    totalCount: 0,
+    costUsd,
+    providerStatusCode,
+    taskStatusCode,
+  };
+}
+
+function parseDomainIntersectionResponse(
+  payload: unknown,
+): DataForSeoDomainIntersectionResponse {
+  const envelope = asRecord(payload, "DataForSEO response");
+  const providerStatusCode = asStatusCode(
+    envelope.status_code,
+    "DataForSEO response",
+  );
+  if (
+    providerStatusCode !== SUCCESS_STATUS &&
+    providerStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(providerStatusCode, "request");
+  }
+  const envelopeCost = asNonNegativeNumber(
+    envelope.cost,
+    "DataForSEO response cost",
+  );
+  if (providerStatusCode === EMPTY_RESULT_STATUS) {
+    return emptyDomainIntersectionResponse(
+      providerStatusCode,
+      EMPTY_RESULT_STATUS,
+      envelopeCost,
+    );
+  }
+
+  if (!Array.isArray(envelope.tasks) || envelope.tasks.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO response did not contain exactly one task.",
+    );
+  }
+  const task = asRecord(envelope.tasks[0], "DataForSEO task");
+  const taskStatusCode = asStatusCode(task.status_code, "DataForSEO task");
+  if (
+    taskStatusCode !== SUCCESS_STATUS &&
+    taskStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(taskStatusCode, "task");
+  }
+  const taskCost = asNonNegativeNumber(task.cost, "DataForSEO task cost");
+  if (taskStatusCode === EMPTY_RESULT_STATUS) {
+    return emptyDomainIntersectionResponse(
+      providerStatusCode,
+      taskStatusCode,
+      taskCost,
+    );
+  }
+
+  if (task.result === null || task.result === undefined) {
+    if (task.result_count === 0) {
+      return emptyDomainIntersectionResponse(
+        providerStatusCode,
+        taskStatusCode,
+        taskCost,
+      );
+    }
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO task omitted its domain-intersection result.",
+    );
+  }
+  if (!Array.isArray(task.result)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection task result was not an array.",
+    );
+  }
+  const resultCount =
+    task.result_count === null || task.result_count === undefined
+      ? undefined
+      : asNonNegativeInteger(
+          task.result_count,
+          "DataForSEO domain-intersection task result_count",
+        );
+  if (resultCount !== undefined && resultCount !== task.result.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection task result_count did not match the returned results.",
+    );
+  }
+  if (task.result.length === 0) {
+    return emptyDomainIntersectionResponse(
+      providerStatusCode,
+      taskStatusCode,
+      taskCost,
+    );
+  }
+  if (task.result.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection task did not contain exactly one result.",
+    );
+  }
+
+  const result = asRecord(
+    task.result[0],
+    "DataForSEO domain-intersection result",
+  );
+  const rawItems = result.items;
+  if (rawItems !== null && rawItems !== undefined && !Array.isArray(rawItems)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection result items was not an array.",
+    );
+  }
+  const rows = (rawItems ?? []).map(parseDomainIntersectionRow);
+  const itemsCount =
+    result.items_count === null || result.items_count === undefined
+      ? rows.length
+      : asNonNegativeInteger(
+          result.items_count,
+          "DataForSEO domain-intersection result items_count",
+        );
+  if (itemsCount !== rows.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection result items_count did not match the returned items.",
+    );
+  }
+  const totalCount =
+    result.total_count === null || result.total_count === undefined
+      ? itemsCount === 0
+        ? 0
+        : asNonNegativeInteger(
+            result.total_count,
+            "DataForSEO domain-intersection result total_count",
+          )
+      : asNonNegativeInteger(
+          result.total_count,
+          "DataForSEO domain-intersection result total_count",
+        );
+  if (totalCount < rows.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO domain-intersection result total_count was smaller than the returned items.",
+    );
+  }
+
+  return {
+    rows,
+    totalCount,
+    costUsd: taskCost,
+    providerStatusCode,
+    taskStatusCode,
   };
 }
 
@@ -2208,6 +2599,26 @@ function toCompetitorsDomainProviderTask(
   };
 }
 
+function toDomainIntersectionProviderTask(
+  request: DataForSeoDomainIntersectionRequest,
+): JsonRecord {
+  const normalized = normalizeDomainIntersectionRequest(request);
+  return {
+    target1: normalized.target1,
+    target2: normalized.target2,
+    ...(normalized.locationCode !== undefined
+      ? { location_code: normalized.locationCode }
+      : { location_name: normalized.locationName }),
+    language_code: normalized.languageCode,
+    intersections: normalized.intersections,
+    item_types: ["organic"],
+    include_clickstream_data: false,
+    order_by: ["keyword_data.keyword_info.search_volume,desc"],
+    limit: normalized.limit,
+    offset: 0,
+  };
+}
+
 function toSerpCompetitorsProviderTask(
   request: DataForSeoSerpCompetitorsRequest,
 ): JsonRecord {
@@ -2262,6 +2673,7 @@ export class HttpDataForSeoClient
   implements
     DataForSeoClient,
     DataForSeoCompetitorsDomainClient,
+    DataForSeoDomainIntersectionClient,
     DataForSeoSerpCompetitorsClient,
     DataForSeoAiCitationClient,
     DataForSeoBacklinksClient
@@ -2372,6 +2784,49 @@ export class HttpDataForSeoClient
       return parseCompetitorsDomainResponse(payload);
     } catch (error) {
       throw transportError(error, "competitors-domain");
+    } finally {
+      abortScope.cleanup();
+    }
+  }
+
+  async domainIntersection(
+    request: DataForSeoDomainIntersectionRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoDomainIntersectionResponse> {
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [
+      this.signal,
+      signal,
+    ]);
+    try {
+      const response = await this.fetchImpl(
+        DATAFORSEO_DOMAIN_INTERSECTION_LIVE_URL,
+        {
+          method: "POST",
+          headers: {
+            Authorization: this.authorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify([toDomainIntersectionProviderTask(request)]),
+          redirect: "error",
+          signal: abortScope.signal,
+        },
+      );
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          httpErrorCode(response.status),
+          `DataForSEO domain-intersection request failed with HTTP ${response.status}.`,
+        );
+      }
+      const payload = await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        "DataForSEO domain-intersection response",
+        abortScope.signal,
+      );
+      return parseDomainIntersectionResponse(payload);
+    } catch (error) {
+      throw transportError(error, "domain-intersection");
     } finally {
       abortScope.cleanup();
     }

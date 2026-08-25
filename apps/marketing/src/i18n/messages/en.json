@@ -801,6 +801,166 @@
     "productCtaTitle": "Your SEO work should not restart at every tool.",
     "productCtaBody": "Join the waitlist if you want an email when the broader connected workflow opens. Until then, use the public Agents and supporting tools on this site.",
     "productCta": "Join the waitlist for product access",
+    "competitorKeywordGap": {
+      "form": {
+        "title": "Set up your competitor keyword gap",
+        "intro": "Enter your site and one to five competitor domains. This runs only when you ask; competitor facts come from DataForSEO, while a selected Search Console property adds an optional own-site overlay."
+      },
+      "fields": {
+        "siteDomain": {
+          "label": "Your site domain",
+          "placeholder": "example.com"
+        },
+        "property": {
+          "label": "Search Console property (optional)",
+          "none": "Do not add a GSC overlay"
+        },
+        "market": {
+          "label": "Market"
+        },
+        "language": {
+          "label": "Language"
+        }
+      },
+      "competitors": {
+        "label": "Competitor domain",
+        "placeholder": "competitor.com",
+        "add": "Add competitor",
+        "count": "{count} / 5 competitors",
+        "remove": "Remove {domain}",
+        "snapshot": "{count, plural, one {# competitor} other {# competitors}} · best #{bestRank}"
+      },
+      "validation": {
+        "siteInvalid": "Enter a valid public site domain.",
+        "competitorsRequired": "Add at least one competitor before running the analysis.",
+        "competitorInvalid": "Enter a valid public competitor domain.",
+        "competitorSelf": "Your own site cannot also be a competitor.",
+        "competitorDuplicate": "That competitor is already in this run.",
+        "competitorLimit": "A run can compare no more than five competitors."
+      },
+      "errors": {
+        "invalid_input": "Check the site, competitor, market, and language fields.",
+        "invalid_request": "The analysis request could not be read.",
+        "payload_too_large": "The submitted request is too large.",
+        "unsupported_media_type": "Send the request as JSON.",
+        "auth_required": "Sign in to run the competitor analysis.",
+        "auth_unavailable": "Sign-in status is temporarily unavailable. Try again shortly.",
+        "search_in_progress": "Another competitor analysis is already running for this account. Wait for it to finish, then try again.",
+        "keyword_source_unavailable": "DataForSEO could not provide a usable competitor ranking sample for this run.",
+        "unknown": "The competitor analysis could not be completed."
+      },
+      "running": {
+        "elapsed": "Analyzing competitors… {seconds}s elapsed",
+        "complete": "Competitor keyword gap analysis complete."
+      },
+      "actions": {
+        "run": "Run gap analysis",
+        "running": "Analyzing…"
+      },
+      "status": {
+        "complete": "Analysis complete",
+        "completeBody": "Every requested competitor returned a usable DataForSEO result.",
+        "partial": "Partial result",
+        "partialBody": "At least one competitor completed and at least one was unavailable. Read the coverage before using the rows.",
+        "unavailable": "Analysis unavailable",
+        "unavailableBody": "No requested competitor returned a usable ranking sample. This is not evidence that the competitors have no keywords."
+      },
+      "summary": {
+        "eyebrow": "Competitor keyword gap report",
+        "title": "Run summary",
+        "versus": "vs",
+        "scope": "{site} · {market} · {language}",
+        "competitors": "{completed} of {requested} competitors completed",
+        "unavailable": "{count, plural, one {# competitor unavailable} other {# competitors unavailable}}",
+        "capturedAt": "Captured"
+      },
+      "sources": {
+        "dfs": "DataForSEO estimate",
+        "gsc": "GSC observation",
+        "status": {
+          "available": "available",
+          "partial": "partial",
+          "unavailable": "unavailable",
+          "not_requested": "not requested"
+        }
+      },
+      "coverage": {
+        "title": "Competitor coverage",
+        "detailsSummary": "Technical coverage and limits",
+        "scope": "{completed} of {requested} competitors returned usable provider rows.",
+        "requested": "{count} competitors requested",
+        "complete": "complete",
+        "unavailable": "unavailable",
+        "rows": "{returned} returned · {total} reported",
+        "truncated": "This competitor result hit its row boundary.",
+        "failure": "Unavailable reason: {code}"
+      },
+      "limitations": {
+        "title": "Evidence boundaries",
+        "resultTruncated": "The combined result hit its output boundary, so additional keyword rows may exist.",
+        "gscQueryTruncated": "The GSC query sample hit its row boundary; a missing query is not proof of zero exposure.",
+        "gscQueryPageTruncated": "The GSC query-page sample hit its row boundary; a matching page may be missing.",
+        "gscUnavailable": "The optional GSC overlay was unavailable. DataForSEO competitor rows remain separate provider evidence."
+      },
+      "overview": {
+        "returnedGapRows": "Returned gap rows",
+        "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
+        "completedCompetitors": "Completed competitors",
+        "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
+        "gscObservedRows": "Own-site GSC observed rows",
+        "gscObservedRowsBody": "Returned rows observed strongly or weakly in the bounded own-site GSC query sample."
+      },
+      "boundaries": {
+        "title": "Evidence boundaries",
+        "dfsEstimates": "Search volume, CPC, difficulty, intent, and competitor ranks are DataForSEO estimates from this bounded run.",
+        "gscOwnSample": "GSC covers only the selected own-site bounded sample; a missing query row is not zero impressions.",
+        "competitorOutcomesUnavailable": "Competitor traffic and conversion outcomes are unavailable; rankings and estimates do not prove either.",
+        "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh."
+      },
+      "metrics": {
+        "searchVolume": "Search volume",
+        "cpc": "CPC",
+        "difficulty": "Difficulty",
+        "intent": "Intent"
+      },
+      "gsc": {
+        "observed_strong": "Observed strongly in the GSC query sample",
+        "observed_weak": "Observed weakly in the GSC query sample",
+        "not_observed_in_gsc_query_sample": "Not observed in this GSC query sample",
+        "gsc_query_sample_not_read": "GSC query sample was not read",
+        "impressions": "Impressions",
+        "position": "Average position",
+        "page": "Open observed page"
+      },
+      "nextSteps": {
+        "optimize_existing": "Review the observed page before creating anything new.",
+        "review_content_gap": "Review the competitor gap before deciding whether a new page is warranted."
+      },
+      "table": {
+        "title": "Gap list",
+        "subtitle": "Grouped by keyword so you can compare competitor reach, your own bounded GSC evidence, and the immediate next step in one scan.",
+        "legend": "DataForSEO rows remain separate from optional Search Console observations about your own site.",
+        "caption": "Competitor keyword gaps with DataForSEO metrics and optional GSC evidence",
+        "keyword": "Keyword",
+        "dfsEstimates": "DataForSEO estimates",
+        "competitorRanks": "Competitor ranks",
+        "ownSiteGsc": "Own-site GSC evidence",
+        "recommendation": "Recommendation"
+      },
+      "ownState": {
+        "not_observed_in_provider_rankings": "Your site was not observed in the provider ranking sample"
+      },
+      "intent": {
+        "informational": "Informational",
+        "navigational": "Navigational",
+        "commercial": "Commercial",
+        "transactional": "Transactional"
+      },
+      "empty": {
+        "title": "No gap rows returned",
+        "body": "The completed competitor reads returned no keywords inside this run’s ranking and row boundaries."
+      }
+    },
     "abTest": {
       "title": "A/B Test Sample Size Calculator",
       "description": "Calculate the required sample size for your A/B test based on baseline conversion rate, minimum detectable effect, and statistical parameters.",

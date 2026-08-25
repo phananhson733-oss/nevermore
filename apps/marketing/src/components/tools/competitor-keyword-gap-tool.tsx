@@ -1,0 +1,527 @@
+// @input  -- locale, granted GSC properties, supported markets, authenticated APIs
+// @output -- a bounded 1-5 competitor form and honest run states
+// @pos    -- primary client surface for the Marketing competitor keyword gap tool
+
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import {
+  COMPETITOR_KEYWORD_GAP_ERROR_CODES,
+  COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS,
+  normalizeCompetitorKeywordGapDomain,
+  type CompetitorKeywordGapEnvelope,
+  type CompetitorKeywordGapErrorCode,
+} from "@sf/public-tools/competitor-keyword-gap";
+import { SignInDialog } from "../auth/sign-in-dialog";
+import { trackMarketingEvent } from "../layout/google-analytics";
+import { keywordMapSiteUrl } from "./keyword-map-property";
+import { CompetitorKeywordGapResults } from "./competitor-keyword-gap-results";
+
+const PANEL =
+  "rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+const FIELD_LABEL =
+  "block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+const FIELD =
+  "mt-2 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
+const BUTTON =
+  "inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
+const SECONDARY_BUTTON =
+  "inline-flex h-12.5 items-center justify-center rounded-[10px] border border-brand-border-strong px-5 text-[13px] font-medium text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
+
+const LANGUAGES = ["en", "de", "fr", "nl", "sv"] as const;
+const MARKET_LANGUAGE: Readonly<Record<string, string>> = {
+  US: "en",
+  GB: "en",
+  CA: "en",
+  AU: "en",
+  DE: "de",
+  FR: "fr",
+  NL: "nl",
+  SE: "sv",
+};
+
+type Phase = "idle" | "running" | "done";
+
+function isKnownErrorCode(code: string): code is CompetitorKeywordGapErrorCode {
+  return (COMPETITOR_KEYWORD_GAP_ERROR_CODES as readonly string[]).includes(
+    code,
+  );
+}
+
+function responseErrorCode(body: unknown): string | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const error = (body as { readonly error?: unknown }).error;
+  if (typeof error !== "object" || error === null || Array.isArray(error)) {
+    return null;
+  }
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+function responseEnvelope(body: unknown): CompetitorKeywordGapEnvelope | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const data = (body as { readonly data?: unknown }).data;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return null;
+  }
+  const run = (data as { readonly run?: unknown }).run;
+  const result = (data as { readonly result?: unknown }).result;
+  return typeof run === "object" && run !== null &&
+    typeof result === "object" && result !== null
+    ? (data as CompetitorKeywordGapEnvelope)
+    : null;
+}
+
+function propertySiteDomain(property: string): string | null {
+  const siteUrl = keywordMapSiteUrl(property);
+  if (siteUrl === null) return null;
+  try {
+    return normalizeCompetitorKeywordGapDomain(new URL(siteUrl).hostname);
+  } catch {
+    return null;
+  }
+}
+
+export interface CompetitorKeywordGapToolProps {
+  readonly locale: string;
+  readonly properties: readonly string[] | null;
+  readonly markets: readonly string[];
+}
+
+export function CompetitorKeywordGapTool({
+  locale,
+  properties,
+  markets,
+}: CompetitorKeywordGapToolProps) {
+  const t = useTranslations("tools.competitorKeywordGap");
+  const firstMarket = markets[0] ?? "US";
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [siteDomain, setSiteDomain] = useState("");
+  const [property, setProperty] = useState("");
+  const [marketCode, setMarketCode] = useState(firstMarket);
+  const [languageCode, setLanguageCode] = useState(
+    MARKET_LANGUAGE[firstMarket] ?? "en",
+  );
+  const [competitorInput, setCompetitorInput] = useState("");
+  const [competitorDomains, setCompetitorDomains] = useState<readonly string[]>(
+    [],
+  );
+  const [validationKey, setValidationKey] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [envelope, setEnvelope] =
+    useState<CompetitorKeywordGapEnvelope | null>(null);
+  const startedAt = useRef(0);
+  const mounted = useRef(true);
+  const submissionLocked = useRef(false);
+  const activeRequest = useRef<AbortController | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      submissionLocked.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "running") return;
+    startedAt.current = Date.now();
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)),
+      );
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [phase]);
+
+  useEffect(() => {
+    if (envelope === null) return;
+    resultsRef.current?.scrollIntoView({ block: "start" });
+  }, [envelope]);
+
+  const siteInputInvalid = validationKey === "validation.siteInvalid";
+  const competitorInputInvalid =
+    validationKey === "validation.competitorsRequired" ||
+    validationKey === "validation.competitorInvalid" ||
+    validationKey === "validation.competitorSelf" ||
+    validationKey === "validation.competitorDuplicate" ||
+    validationKey === "validation.competitorLimit";
+
+  function addCompetitor(): void {
+    setValidationKey(null);
+    const normalized = normalizeCompetitorKeywordGapDomain(competitorInput);
+    if (normalized === null) {
+      setValidationKey("validation.competitorInvalid");
+      return;
+    }
+    const normalizedSite = normalizeCompetitorKeywordGapDomain(siteDomain);
+    if (normalizedSite !== null && normalized === normalizedSite) {
+      setValidationKey("validation.competitorSelf");
+      return;
+    }
+    if (competitorDomains.includes(normalized)) {
+      setValidationKey("validation.competitorDuplicate");
+      return;
+    }
+    if (competitorDomains.length >= COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS) {
+      setValidationKey("validation.competitorLimit");
+      return;
+    }
+    setCompetitorDomains([...competitorDomains, normalized]);
+    setCompetitorInput("");
+  }
+
+  function removeCompetitor(domain: string): void {
+    setCompetitorDomains(
+      competitorDomains.filter((candidate) => candidate !== domain),
+    );
+    setValidationKey(null);
+  }
+
+  function selectMarket(next: string): void {
+    setMarketCode(next);
+    setLanguageCode(MARKET_LANGUAGE[next] ?? "en");
+  }
+
+  function selectProperty(next: string): void {
+    setProperty(next);
+    if (next === "") return;
+    const derivedDomain = propertySiteDomain(next);
+    if (derivedDomain !== null) {
+      setSiteDomain(derivedDomain);
+      setValidationKey(null);
+    }
+  }
+
+  function isCurrent(controller: AbortController): boolean {
+    return (
+      mounted.current &&
+      activeRequest.current === controller &&
+      !controller.signal.aborted
+    );
+  }
+
+  async function run(): Promise<void> {
+    if (submissionLocked.current) return;
+    const normalizedSite = normalizeCompetitorKeywordGapDomain(siteDomain);
+    if (normalizedSite === null) {
+      setValidationKey("validation.siteInvalid");
+      return;
+    }
+    if (competitorDomains.length === 0) {
+      setValidationKey("validation.competitorsRequired");
+      return;
+    }
+    if (competitorDomains.includes(normalizedSite)) {
+      setValidationKey("validation.competitorSelf");
+      return;
+    }
+
+    setValidationKey(null);
+    setErrorCode(null);
+    submissionLocked.current = true;
+    setEnvelope(null);
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setPhase("running");
+    let stage: "auth" | "tool" = "auth";
+    try {
+      const sessionResponse = await fetch("/api/auth/session", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const sessionBody = (await sessionResponse.json()) as {
+        readonly signedIn?: unknown;
+      };
+      if (!isCurrent(controller)) return;
+      if (!sessionResponse.ok || typeof sessionBody.signedIn !== "boolean") {
+        setErrorCode("auth_unavailable");
+        setPhase("idle");
+        return;
+      }
+      if (!sessionBody.signedIn) {
+        setSignInOpen(true);
+        setPhase("idle");
+        return;
+      }
+
+      stage = "tool";
+      trackMarketingEvent("tool_start", {
+        tool_name: "competitor_keyword_gap",
+      });
+      const requestBody = {
+        ...(property === "" ? {} : { property }),
+        siteDomain: normalizedSite,
+        competitorDomains,
+        marketCode,
+        languageCode,
+      };
+      const response = await fetch("/api/tools/competitor-keyword-gap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(requestBody),
+      });
+      const body: unknown = await response.json();
+      if (!isCurrent(controller)) return;
+      const nextEnvelope = responseEnvelope(body);
+      if (!response.ok || nextEnvelope === null) {
+        const nextCode = responseErrorCode(body);
+        setErrorCode(
+          nextCode !== null && isKnownErrorCode(nextCode)
+            ? nextCode
+            : "unknown",
+        );
+        if (nextCode === "auth_required") setSignInOpen(true);
+        setPhase("idle");
+        return;
+      }
+      setEnvelope(nextEnvelope);
+      setPhase("done");
+      trackMarketingEvent("tool_complete", {
+        tool_name: "competitor_keyword_gap",
+      });
+    } catch {
+      if (!isCurrent(controller)) return;
+      setErrorCode(stage === "auth" ? "auth_unavailable" : "unknown");
+      setPhase("idle");
+    } finally {
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        submissionLocked.current = false;
+      }
+    }
+  }
+
+  return (
+    <section
+      id="competitor-keyword-gap-tool"
+      data-locale={locale}
+      aria-busy={phase === "running"}
+      className="min-w-0"
+    >
+      <div data-competitor-gap-form className={PANEL}>
+      <h2 className="text-[17px] font-semibold text-text-dark-primary">
+        {t("form.title")}
+      </h2>
+      <p className="mt-2 max-w-3xl text-[13px] leading-[1.6] text-text-dark-secondary">
+        {t("form.intro")}
+      </p>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <label htmlFor="competitor-gap-site-domain">
+          <span className={FIELD_LABEL}>{t("fields.siteDomain.label")}</span>
+          <input
+            id="competitor-gap-site-domain"
+            name="siteDomain"
+            type="text"
+            autoComplete="off"
+            value={siteDomain}
+            onChange={(event) => {
+              setSiteDomain(event.target.value);
+              setValidationKey(null);
+            }}
+            aria-describedby={
+              siteInputInvalid ? "competitor-gap-validation" : undefined
+            }
+            aria-invalid={siteInputInvalid || undefined}
+            placeholder={t("fields.siteDomain.placeholder")}
+            disabled={phase === "running"}
+            className={FIELD}
+          />
+        </label>
+
+        <label htmlFor="competitor-gap-property">
+          <span className={FIELD_LABEL}>{t("fields.property.label")}</span>
+          <select
+            id="competitor-gap-property"
+            name="property"
+            value={property}
+            onChange={(event) => selectProperty(event.target.value)}
+            disabled={phase === "running"}
+            className={FIELD}
+          >
+            <option value="">{t("fields.property.none")}</option>
+            {(properties ?? []).map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label htmlFor="competitor-gap-market">
+          <span className={FIELD_LABEL}>{t("fields.market.label")}</span>
+          <select
+            id="competitor-gap-market"
+            name="marketCode"
+            value={marketCode}
+            onChange={(event) => selectMarket(event.target.value)}
+            disabled={phase === "running"}
+            className={FIELD}
+          >
+            {(markets.length === 0 ? [firstMarket] : markets).map((market) => (
+              <option key={market} value={market}>
+                {market}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label htmlFor="competitor-gap-language">
+          <span className={FIELD_LABEL}>{t("fields.language.label")}</span>
+          <select
+            id="competitor-gap-language"
+            name="languageCode"
+            value={languageCode}
+            onChange={(event) => setLanguageCode(event.target.value)}
+            disabled={phase === "running"}
+            className={FIELD}
+          >
+            {LANGUAGES.map((language) => (
+              <option key={language} value={language}>
+                {language}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-end justify-between gap-4">
+          <label htmlFor="competitor-gap-competitor" className="min-w-0 flex-1">
+            <span className={FIELD_LABEL}>{t("competitors.label")}</span>
+            <input
+              id="competitor-gap-competitor"
+              name="competitorDomain"
+              type="text"
+              autoComplete="off"
+              value={competitorInput}
+              onChange={(event) => {
+                setCompetitorInput(event.target.value);
+                setValidationKey(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                addCompetitor();
+              }}
+              placeholder={t("competitors.placeholder")}
+              aria-describedby={
+                competitorInputInvalid
+                  ? "competitor-gap-validation"
+                  : undefined
+              }
+              aria-invalid={competitorInputInvalid || undefined}
+              disabled={phase === "running"}
+              className={FIELD}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={addCompetitor}
+            disabled={phase === "running"}
+            className={SECONDARY_BUTTON}
+          >
+            {t("competitors.add")}
+          </button>
+        </div>
+        <p className="mt-2 text-right font-mono text-[11px] text-text-dark-secondary">
+          {t("competitors.count", { count: competitorDomains.length })}
+        </p>
+        {competitorDomains.length > 0 ? (
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {competitorDomains.map((domain) => (
+              <li
+                key={domain}
+                data-competitor-chip
+                className="inline-flex items-center gap-2 rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1.5 font-mono text-[11px] text-text-dark-primary"
+              >
+                <span>{domain}</span>
+                <button
+                  type="button"
+                  data-remove-competitor={domain}
+                  onClick={() => removeCompetitor(domain)}
+                  disabled={phase === "running"}
+                  aria-label={t("competitors.remove", { domain })}
+                  className="rounded-full px-1 text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {validationKey !== null ? (
+        <p
+          id="competitor-gap-validation"
+          role="alert"
+          className="mt-4 text-[12.5px] text-brand-error"
+        >
+          {t(validationKey as Parameters<typeof t>[0])}
+        </p>
+      ) : null}
+
+      {errorCode !== null ? (
+        <p
+          role="alert"
+          className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
+        >
+          {t(
+            `errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}` as Parameters<
+              typeof t
+            >[0],
+          )}
+        </p>
+      ) : null}
+
+      {phase === "running" ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-4 text-[12.5px] text-text-dark-secondary"
+        >
+          {t("running.elapsed", { seconds: elapsedSeconds })}
+        </p>
+      ) : phase === "done" ? (
+        <p role="status" aria-live="polite" className="sr-only">
+          {t("running.complete")}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={phase === "running"}
+        className={`${BUTTON} mt-6`}
+      >
+        {phase === "running" ? t("actions.running") : t("actions.run")}
+      </button>
+      </div>
+
+      {envelope !== null ? (
+        <div
+          ref={resultsRef}
+          data-competitor-gap-results
+          className="min-w-0 scroll-mt-24"
+        >
+          <CompetitorKeywordGapResults envelope={envelope} locale={locale} />
+        </div>
+      ) : null}
+      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+    </section>
+  );
+}

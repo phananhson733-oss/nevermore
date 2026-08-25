@@ -9,7 +9,8 @@ export type ConnectedTool =
   | "daily-search-briefing"
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
-  | "low-competition-keywords";
+  | "low-competition-keywords"
+  | "competitor-keyword-gap";
 
 /**
  * The union as a value, so a test can walk every member.
@@ -23,6 +24,7 @@ export const CONNECTED_TOOLS = [
   "seo-quick-wins",
   "traffic-drop-diagnosis",
   "low-competition-keywords",
+  "competitor-keyword-gap",
 ] as const satisfies readonly ConnectedTool[];
 
 type MissingConnectedTool = Exclude<
@@ -478,6 +480,89 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
     ],
   },
+  "competitor-keyword-gap": {
+    path: "/tools/competitor-keyword-gap",
+    eyebrow: "Competitive search planning",
+    title: "Find keyword gaps across up to five competitors",
+    description:
+      "Sign in, enter one to five competitor domains, and run an on-demand DataForSEO comparison. Competitor rankings stay separate from the optional Search Console evidence for your own site.",
+    sourceLabel: "A GenGrowth sign-in is required",
+    sourceDetail:
+      "Competitor facts come from DataForSEO. If you already connected Search Console, you can optionally add your own observed query and page evidence; competitor data never comes from GSC.",
+    cta: "Sign in to analyze competitors",
+    trust:
+      "No scheduled refresh, no saved report history, and no fixed credit claim. Each run states which competitor reads completed, which were unavailable, and where either provider sample was truncated.",
+    workflowTitle: "How the competitor gap is built",
+    steps: [
+      {
+        name: "Name your site and one to five competitors",
+        text: "Domains are normalized and deduplicated before the run. Your own domain cannot also be submitted as a competitor, and the five-domain ceiling is enforced by the API as well as the form.",
+      },
+      {
+        name: "Choose one market and language",
+        text: "DataForSEO reads each competitor against your site in the same organic-ranking scope. The tool combines repeated keywords into one row while preserving every observed competitor rank.",
+      },
+      {
+        name: "Add your own Search Console evidence when available",
+        text: "A connected property can add observed impressions, average position, and a page for your site. A query missing from the bounded GSC sample stays ‘not observed in this sample’; it is never turned into zero exposure.",
+      },
+      {
+        name: "Read one on-demand result",
+        text: "The report separates complete, partial, and unavailable reads, keeps missing provider metrics blank, and records when limits shortened the returned set. It does not refresh itself in the background.",
+      },
+    ],
+    outputTitle: "What one run gives you",
+    outputs: [
+      {
+        label: "A multi-competitor gap table",
+        body: "One row per normalized keyword, with every observed competitor domain and rank plus DataForSEO search volume, CPC, difficulty, and intent when those fields are available.",
+      },
+      {
+        label: "An optional own-site overlay",
+        body: "Search Console observations for your site appear in their own column and keep their own source label. They do not replace or rewrite the DataForSEO competitor facts.",
+      },
+      {
+        label: "Honest coverage",
+        body: "Each competitor reports whether its read completed, returned rows, and whether it was truncated. One failed domain makes the run partial; it never becomes a claim that the competitor has no keywords.",
+      },
+      {
+        label: "A bounded manual snapshot",
+        body: "Results are computed when you ask for them, are not auto-refreshed, and are not presented as a weekly change report or saved history. The capture time remains visible on the result.",
+      },
+    ],
+    faq: [
+      {
+        question: "Where does competitor data come from?",
+        answer:
+          "From DataForSEO organic-ranking datasets for the market and language you select. Search Console is used only for optional first-party evidence about your own verified property; it cannot provide a competitor’s private query data.",
+      },
+      {
+        question: "Do I have to connect Search Console?",
+        answer:
+          "No. A GenGrowth sign-in is required, but the DataForSEO competitor comparison can run without a GSC property. Connecting one adds an optional own-site overlay rather than changing the competitor result.",
+      },
+      {
+        question: "Why can I enter only five competitors?",
+        answer:
+          "Each domain requires its own bounded provider comparison. The five-domain limit keeps one manual run understandable and protects shared provider capacity; submitting more is rejected before any provider work begins.",
+      },
+      {
+        question: "Does the report refresh automatically?",
+        answer:
+          "No. It runs only when you submit the form. There is no cron job, next-refresh promise, or automatic weekly history behind this tool.",
+      },
+      {
+        question: "Does a missing GSC row mean zero impressions?",
+        answer:
+          "No. Search Console can omit low-volume or anonymized queries, and a bounded read can be truncated. The report says the query was not observed in this sample, or that the sample was unavailable, instead of changing absence into zero.",
+      },
+      {
+        question: "How many credits does a run cost?",
+        answer:
+          "This beta page does not show or promise a fixed credit charge. Any future price must be defined for this specific tool before the interface claims it.",
+      },
+    ],
+  },
 };
 
 const ZH: Record<ConnectedTool, ConnectedToolContent> = {
@@ -881,6 +966,89 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         question: "要跑多久？",
         answer:
           "站点读取最多覆盖 20 个页面。随后会按每波最多 10 个并行，继续核价并检查除明确核价为零以外的每个候选词，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
+      },
+    ],
+  },
+  "competitor-keyword-gap": {
+    path: "/tools/competitor-keyword-gap",
+    eyebrow: "竞品搜索规划",
+    title: "比较最多五个竞品的关键词差距",
+    description:
+      "登录后手动输入 1–5 个竞品域名，按需运行一次 DataForSEO 对比。竞品排名与本站可选的 Search Console 证据会分开呈现。",
+    sourceLabel: "需要登录 GenGrowth",
+    sourceDetail:
+      "竞品事实来自 DataForSEO。如果你已经连接 Search Console，可以为本站补充查询与页面观测；竞品数据不会来自 GSC。",
+    cta: "登录并分析竞品",
+    trust:
+      "没有定时刷新、没有服务端报告历史，也不声称固定扣除多少积分。每次运行都会说明哪些竞品读取完成、哪些不可用，以及任一数据样本是否被截断。",
+    workflowTitle: "竞品关键词差距是怎样生成的",
+    steps: [
+      {
+        name: "填写本站与 1–5 个竞品",
+        text: "运行前会统一域名格式并去重。本站不能同时作为竞品提交，最多五个的限制会在表单和 API 两侧共同执行。",
+      },
+      {
+        name: "选择一个市场和语言",
+        text: "DataForSEO 会在同一自然排名范围内逐个比较竞品与本站。重复关键词会合并为一行，同时保留每个被观测到的竞品排名。",
+      },
+      {
+        name: "可选叠加本站 Search Console 证据",
+        text: "已连接的资源可以为本站补充观测到的曝光、平均排名和页面。查询没有出现在有限 GSC 样本里时，只会写成「本次样本未观测到」，绝不会变成零曝光。",
+      },
+      {
+        name: "读取一次按需结果",
+        text: "报告区分完整、部分和不可用读取，数据源缺失指标保持空白，并标出因限制而缩短的结果集。工具不会在后台自动刷新。",
+      },
+    ],
+    outputTitle: "一次运行会给你什么",
+    outputs: [
+      {
+        label: "多竞品差距表",
+        body: "每个标准化关键词一行，列出所有被观测到的竞品域名与排名，并在 DataForSEO 有返回时展示搜索量、CPC、难度与意图。",
+      },
+      {
+        label: "可选的本站证据层",
+        body: "本站 Search Console 观测会在独立列中显示，并保留独立来源标签；它不会替代或改写 DataForSEO 的竞品事实。",
+      },
+      {
+        label: "如实呈现覆盖范围",
+        body: "每个竞品都会说明读取是否完成、返回多少行以及是否截断。一个域名失败会让本次结果成为「部分」，不会被写成该竞品没有关键词。",
+      },
+      {
+        label: "有边界的手动快照",
+        body: "结果只在你提交时计算，不自动刷新，也不会伪装成周度变化报告或已保存历史；本次采集时间会保留在结果中。",
+      },
+    ],
+    faq: [
+      {
+        question: "竞品数据来自哪里？",
+        answer:
+          "来自你所选市场与语言下的 DataForSEO 自然排名数据。Search Console 只用于本站已验证资源的可选第一方证据，无法提供竞品的私有查询数据。",
+      },
+      {
+        question: "一定要连接 Search Console 吗？",
+        answer:
+          "不需要。运行工具必须登录 GenGrowth，但即使没有 GSC 资源，也能运行 DataForSEO 竞品对比。连接资源只是增加可选的本站证据层，不会改变竞品结果。",
+      },
+      {
+        question: "为什么最多只能填五个竞品？",
+        answer:
+          "每个域名都需要独立、有限的提供商对比。五个的上限让一次手动结果仍然容易阅读，也保护共享数据源容量；超过上限的请求会在任何数据源调用前被拒绝。",
+      },
+      {
+        question: "报告会自动刷新吗？",
+        answer:
+          "不会。只有提交表单时才会运行；这个工具没有定时任务、下次刷新承诺或自动生成的每周历史。",
+      },
+      {
+        question: "GSC 没有返回一行就代表曝光为零吗？",
+        answer:
+          "不代表。Search Console 可能隐藏低量或匿名查询，有限读取也可能被截断。报告会写成「本次样本未观测到」或「样本不可用」，不会把缺失改写成零。",
+      },
+      {
+        question: "一次运行消耗多少积分？",
+        answer:
+          "这个 Beta 页面不展示、也不承诺固定积分价格。未来只有在本工具自己的价格合同确定后，界面才会声称会扣费。",
       },
     ],
   },

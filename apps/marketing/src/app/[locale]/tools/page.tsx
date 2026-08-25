@@ -89,6 +89,19 @@ const PLANNING_TOOLS = [
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "planning",
   },
+  {
+    slug: "competitor-keyword-gap",
+    title: {
+      en: "Competitor Keyword Gap",
+      zh: "竞品关键词差距分析",
+    },
+    description: {
+      en: "Sign in and compare your site with one to five competitor domains using DataForSEO, with an optional GSC overlay for your own site.",
+      zh: "登录后用 DataForSEO 将本站与 1–5 个竞品域名做按需对比，并可选叠加本站 GSC 证据。",
+    },
+    cta: { en: "Analyze competitors", zh: "分析竞品" },
+    category: "planning",
+  },
 ] as const;
 
 export async function generateMetadata({
