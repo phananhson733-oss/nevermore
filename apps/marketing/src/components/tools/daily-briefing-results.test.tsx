@@ -978,6 +978,24 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(empty?.textContent).not.toContain("page check offered");
   });
 
+  it("does not deny every handoff when the row budget hides a provisional move", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        // The budget showed none of them, but a hidden candidate can still
+        // carry a page, so "no handoff is justified" would be false.
+        provisionalMoves: provisionalMoves([], { candidates: 2 }),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(empty?.textContent).toContain(
+      "2 provisional position moves were left out by the row budget",
+    );
+    expect(empty?.textContent).not.toContain("No automated handoff");
+  });
+
   it("counts one withheld sample-building row with singular grammar", async () => {
     const host = await renderResults(
       envelope({
@@ -1535,7 +1553,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(empty?.tagName).toBe("DIV");
     expect(empty?.className).toContain("border");
     expect(empty?.textContent).toContain(
-      "No automated handoff is justified by the evidence available in this run",
+      "No action carries strict evidence this run",
     );
     expect(section?.querySelector("[data-actions-list]")).toBeNull();
     expect(section?.querySelector("[data-action-link]")).toBeNull();

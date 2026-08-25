@@ -1417,15 +1417,23 @@ export function DailyBriefingResults({
         {queryActions.length === 0 && propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t(
-                shownProvisional.length === 0
-                  ? "actions.empty"
-                  : // A provisional row without page evidence offers no check
-                    // link, so the sentence must not point at one.
+              {shownProvisional.length === 0
+                ? // A hidden provisional candidate may still carry a page, so
+                  // this branch may not claim no handoff is justified. It
+                  // reports the absence of a strict action and what the row
+                  // budget left out.
+                  withheldProvisional > 0
+                  ? t("actions.emptyWithWithheldProvisional", {
+                      count: withheldProvisional,
+                    })
+                  : t("actions.empty")
+                : // A provisional row without page evidence offers no check
+                  // link, so the sentence must not point at one.
+                  t(
                     shownProvisional.some((move) => move.page !== null)
-                    ? "actions.emptyWithProvisionalCheck"
-                    : "actions.emptyWithProvisional",
-              )}
+                      ? "actions.emptyWithProvisionalCheck"
+                      : "actions.emptyWithProvisional",
+                  )}
             </p>
           </div>
         ) : (

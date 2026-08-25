@@ -1889,7 +1889,7 @@
       },
       "evidence": {
         "title": "Why there were not more signals",
-        "thresholdSummary": "The three paired paths require the same query to carry at least 100 impressions in each of the two windows; click opportunity and first-observed pairs each have their own gate. Every path states its precondition and its hit condition under Evaluation paths below. The site-wide trend carries its own noise floor: the move must reach 2x the square root of the prior window base.",
+        "thresholdSummary": "The three paired paths require the same query to carry at least 100 impressions in each of the two windows; click opportunity and first-observed pairs each have their own gate — the latter needs page attribution to be readable and usable in both windows, or the whole path counts as not evaluated. Every path states its precondition and its hit condition under Evaluation paths below. The site-wide trend carries its own noise floor: the move must reach 2x the square root of the prior window base.",
         "coverageTitle": "Query-to-page coverage · current window",
         "coverageObserved": "{covered} of {eligible} eligible queries had a page carrying at least {floor} of their visible impressions.",
         "coverageUnavailable": "Comparable query-to-page coverage is unavailable; no missing page was inferred.",
@@ -1937,7 +1937,7 @@
             },
             "firstObserved": {
               "name": "First-observed query and page pair (counted below by query)",
-              "requirement": "page attribution usable in the current window, the pair reaching 100 impressions at an average position between 8 and 21, and the pair being absent from the prior window’s list; if the query has a prior row, that row must itself reach 100 impressions with usable coverage, or the pair counts as not evaluable",
+              "requirement": "page attribution readable and usable in both windows; the pair reaching 100 impressions in the current window at an average position between 8 and 21 with current query-to-page coverage of at least 80 percent; and, if the query has a prior row, that row itself reaching 100 impressions with at least 80 percent coverage, or the pair counts as not evaluable",
               "finding": "the query and page pair is absent from the prior window’s list"
             }
           },
@@ -2031,14 +2031,15 @@
       "actions": {
         "title": "Today's recommended actions",
         "intro": "Only strict evidence-backed actions are listed, in deterministic order. The list is not padded to three.",
-        "empty": "No automated handoff is justified by the evidence available in this run.",
+        "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
         "evidence": "Evidence carried privately to the next tool",
         "propertyEvidence": "Property-level evidence carried privately to the next tool",
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
-        "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action."
+        "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action.",
+        "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions."
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
