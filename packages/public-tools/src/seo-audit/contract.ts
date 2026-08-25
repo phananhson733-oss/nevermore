@@ -55,6 +55,24 @@ function isEvidenceValue(
   );
 }
 
+type EvidenceEntry = Readonly<{
+  label: string;
+  value: string | number | boolean | null;
+}>;
+
+type RecordObservation = Readonly<{
+  url: string | null;
+  values: readonly EvidenceEntry[];
+}>;
+
+type AggregateRecordCandidate = Readonly<{
+  id: string;
+  state: string;
+  tested: number;
+  affected: number;
+  observations: readonly RecordObservation[];
+}>;
+
 /**
  * Every population value, proved complete at compile time.
  *
@@ -130,6 +148,135 @@ export function isSerpShapeRecord(value: unknown): value is SeoAuditRecord {
   return isRecordOfCategory(value, ["serp_shape"]);
 }
 
+function hasExactEvidenceLabels(
+  values: readonly EvidenceEntry[],
+  labels: readonly string[],
+): boolean {
+  return (
+    values.length === labels.length &&
+    labels.every((label) => values.some((entry) => entry.label === label))
+  );
+}
+
+function evidenceValue(
+  observation: RecordObservation,
+  label: string,
+): string | number | boolean | null | undefined {
+  return observation.values.find((entry) => entry.label === label)?.value;
+}
+
+function isAbandonedUrlImpressionShareRecord(
+  value: AggregateRecordCandidate,
+): boolean {
+  if (value.id !== "abandoned_url_impression_share") return false;
+  if (value.state !== "observed" || value.tested === 0) return false;
+  if (value.observations.length !== value.affected + 1) return false;
+
+  const [aggregate, ...details] = value.observations as readonly RecordObservation[];
+  if (
+    aggregate === undefined ||
+    typeof aggregate.url !== "string" ||
+    aggregate.url.length === 0 ||
+    !hasExactEvidenceLabels(aggregate.values, [
+      "abandoned_url_impression_share",
+      "impressions_in_band",
+      "impressions_total",
+      "property",
+    ])
+  ) {
+    return false;
+  }
+
+  const share = evidenceValue(aggregate, "abandoned_url_impression_share");
+  const inBand = evidenceValue(aggregate, "impressions_in_band");
+  const total = evidenceValue(aggregate, "impressions_total");
+  const property = evidenceValue(aggregate, "property");
+  if (
+    typeof share !== "number" ||
+    !Number.isFinite(share) ||
+    share < 0 ||
+    share > 1 ||
+    !isNonNegativeInteger(inBand) ||
+    !isNonNegativeInteger(total) ||
+    inBand > total ||
+    property !== aggregate.url
+  ) {
+    return false;
+  }
+
+  return details.every(
+    (observation) =>
+      typeof observation.url === "string" &&
+      observation.url.length > 0 &&
+      hasExactEvidenceLabels(observation.values, [
+        "impressions",
+        "final_status",
+      ]) &&
+      isNonNegativeInteger(evidenceValue(observation, "impressions")) &&
+      isNonNegativeInteger(evidenceValue(observation, "final_status")),
+  );
+}
+
+const INDEX_STATUS_VERDICTS: Readonly<Record<string, true>> = {
+  VERDICT_UNSPECIFIED: true,
+  PASS: true,
+  PARTIAL: true,
+  FAIL: true,
+  NEUTRAL: true,
+};
+
+function isSitemapUrlNotIndexedRecord(
+  value: AggregateRecordCandidate,
+): boolean {
+  if (value.id !== "sitemap_url_not_indexed") return false;
+  if (value.state !== "observed" || value.tested === 0) return false;
+  if (value.observations.length !== value.affected + 1) return false;
+
+  const [aggregate, ...details] = value.observations as readonly RecordObservation[];
+  if (
+    aggregate === undefined ||
+    aggregate.url !== null ||
+    !hasExactEvidenceLabels(aggregate.values, [
+      "index_coverage_rate",
+      "sitemap_urls_inspected",
+    ])
+  ) {
+    return false;
+  }
+
+  const coverageRate = evidenceValue(aggregate, "index_coverage_rate");
+  const inspected = evidenceValue(aggregate, "sitemap_urls_inspected");
+  if (
+    typeof coverageRate !== "number" ||
+    !Number.isFinite(coverageRate) ||
+    coverageRate < 0 ||
+    coverageRate > 1 ||
+    inspected !== value.tested
+  ) {
+    return false;
+  }
+
+  return details.every((observation) => {
+    const verdict = evidenceValue(observation, "index_status_verdict");
+    return (
+      typeof observation.url === "string" &&
+      observation.url.length > 0 &&
+      hasExactEvidenceLabels(observation.values, ["index_status_verdict"]) &&
+      typeof verdict === "string" &&
+      Object.prototype.hasOwnProperty.call(INDEX_STATUS_VERDICTS, verdict)
+    );
+  });
+}
+
+function isAggregateBackedObservedRecord(
+  value: AggregateRecordCandidate,
+): boolean {
+  return (
+    isAbandonedUrlImpressionShareRecord(value) ||
+    isSitemapUrlNotIndexedRecord(value)
+  );
+}
+
 function isRecordOfCategory(
   value: unknown,
   categories: readonly string[],
@@ -172,10 +319,20 @@ function isRecordOfCategory(
 
   if (!observationsAreValid) return false;
 
+  const record: AggregateRecordCandidate = {
+    id: value.id as string,
+    state: value.state as string,
+    tested: value.tested as number,
+    affected: value.affected as number,
+    observations: value.observations as readonly RecordObservation[],
+  };
   return (
-    value.affected === value.observations.length &&
     value.affected <= value.tested &&
-    (value.state === "observed" ? value.affected > 0 : value.affected === 0)
+    (isAggregateBackedObservedRecord(record) ||
+      (value.affected === value.observations.length &&
+        (value.state === "observed"
+          ? value.affected > 0
+          : value.affected === 0)))
   );
 }
 

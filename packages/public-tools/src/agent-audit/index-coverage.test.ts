@@ -52,6 +52,28 @@ describe("A1 — index coverage over the declared population", () => {
     expect(isSearchPerformanceRecord(record)).toBe(true);
   });
 
+  it("rejects index coverage when the aggregate row is malformed", () => {
+    const record = structuredClone(
+      buildIndexCoverageRecords([
+        { url: "https://acme.test/a", verdict: "PASS" },
+        { url: "https://acme.test/missing", verdict: "NEUTRAL" },
+      ])[0],
+    ) as unknown as {
+      observations: Array<{ url: string | null; values: Array<{ label: string; value: unknown }> }>;
+    } | undefined;
+
+    if (!record) throw new Error("missing index coverage record");
+    record.observations[0] = {
+      url: null,
+      values: [
+        { label: "index_coverage_rate", value: 1.5 },
+        { label: "sitemap_urls_inspected", value: 2 },
+      ],
+    };
+
+    expect(isSearchPerformanceRecord(record)).toBe(false);
+  });
+
   it("passes a site at or above the published 90%", () => {
     expect(a1(census(90, 100))?.result).toBe("pass");
   });
