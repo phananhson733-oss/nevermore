@@ -143,21 +143,35 @@ export interface CompetitorKeywordGapSerpSnapshot {
   readonly updatedAt: string | null;
 }
 
-export type CompetitorKeywordGapPreScreenBand =
-  | "prioritize_serp_check"
-  | "stretch"
-  | "unbanded"
-  | "defer_head_term"
-  | "defer_brand_navigational";
-
-/** Display order inside a GSC lane: prioritize, stretch, unbanded, head, brand. */
+/**
+ * Display order inside a GSC lane: prioritize, stretch, unbanded, head, brand.
+ * The union is derived from this array so a band cannot exist without a place
+ * in the order.
+ */
 export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS = [
   "prioritize_serp_check",
   "stretch",
   "unbanded",
   "defer_head_term",
   "defer_brand_navigational",
-] as const satisfies readonly CompetitorKeywordGapPreScreenBand[];
+] as const;
+
+export type CompetitorKeywordGapPreScreenBand =
+  (typeof COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS)[number];
+
+/**
+ * Where a pre-screen reason comes from. KD/volume/rank/intent reasons are
+ * provider estimates; the brand-token, hostname-shape and domain-profile-page
+ * reasons are this tool's own text/URL heuristics and must be labelled as such.
+ */
+export type CompetitorKeywordGapPreScreenBasis =
+  | "dfs_estimate"
+  | "tool_heuristic";
+
+export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES = [
+  "dfs_estimate",
+  "tool_heuristic",
+] as const satisfies readonly CompetitorKeywordGapPreScreenBasis[];
 
 /**
  * The single check that decided the band. `kd_mid_rank_top20` is the fallthrough for
@@ -176,10 +190,10 @@ export type CompetitorKeywordGapPreScreenReason =
   | "domain_like_keyword"
   | "provider_navigational_intent";
 
-/** Second, orthogonal axis next to `nextStep`; a DFS estimate, never winnability. */
+/** Second, orthogonal axis next to `nextStep`; an estimate or a heuristic, never winnability. */
 export interface CompetitorKeywordGapPreScreen {
   readonly band: CompetitorKeywordGapPreScreenBand;
-  readonly basis: "dfs_estimate";
+  readonly basis: CompetitorKeywordGapPreScreenBasis;
   readonly reason: CompetitorKeywordGapPreScreenReason;
 }
 

@@ -53,6 +53,10 @@ const FILE_EXTENSION_LABELS = new Set([
   "txt",
   "xml",
   "js",
+  "jsx",
+  "ts",
+  "tsx",
+  "vue",
   "json",
   "html",
   "htm",
@@ -63,6 +67,18 @@ const FILE_EXTENSION_LABELS = new Set([
   "php",
   "yaml",
   "yml",
+  "md",
+  "ico",
+  "svg",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "zip",
+  "exe",
+  "dmg",
+  "apk",
 ]);
 const MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX = 3;
 const MIN_BRAND_TOKEN_LENGTH = 3;
@@ -138,22 +154,49 @@ function isDomainProfilePage(
 ): boolean {
   const compact = keyword.replace(/\s+/g, "");
   if (compact.length < MIN_PROFILE_KEYWORD_LENGTH) return false;
-  const needle = new RegExp(`/${escapeRegExp(compact)}\\.[a-z]{2,}(?:/|$)`, "i");
+  // A page file such as `/products/crm.html` has the same shape with a file
+  // extension where the TLD would be; it is a page about the keyword, not a
+  // profile page about another brand.
+  const needle = new RegExp(
+    `/${escapeRegExp(compact)}\\.([a-z]{2,})(?:/|$)`,
+    "i",
+  );
   return Object.values(pages).some((page) => {
     if (page.url === null) return false;
     try {
-      return needle.test(new URL(page.url).pathname);
+      const match = needle.exec(new URL(page.url).pathname);
+      return (
+        match !== null &&
+        !FILE_EXTENSION_LABELS.has((match[1] ?? "").toLowerCase())
+      );
     } catch {
       return false;
     }
   });
 }
 
+/** Which source a reason comes from: the label the surface must show next to it. */
+const REASON_BASIS: Readonly<
+  Record<
+    CompetitorKeywordGapPreScreen["reason"],
+    CompetitorKeywordGapPreScreen["basis"]
+  >
+> = {
+  kd_low_rank_top10: "dfs_estimate",
+  kd_mid_rank_top20: "dfs_estimate",
+  kd_high: "dfs_estimate",
+  dfs_metric_missing: "dfs_estimate",
+  provider_navigational_intent: "dfs_estimate",
+  competitor_brand_token: "tool_heuristic",
+  competitor_domain_profile_page: "tool_heuristic",
+  domain_like_keyword: "tool_heuristic",
+};
+
 function decide(
   band: CompetitorKeywordGapPreScreen["band"],
   reason: CompetitorKeywordGapPreScreen["reason"],
 ): CompetitorKeywordGapPreScreen {
-  return Object.freeze({ band, basis: "dfs_estimate", reason });
+  return Object.freeze({ band, basis: REASON_BASIS[reason], reason });
 }
 
 /** The four brand/navigational checks, skipped entirely for comparative queries. */

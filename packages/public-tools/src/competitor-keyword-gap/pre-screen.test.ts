@@ -85,7 +85,7 @@ describe("preScreenCompetitorKeyword", () => {
       preScreenCompetitorKeyword(input({ keyword: "ONE.example login" })),
     ).toEqual({
       band: "defer_brand_navigational",
-      basis: "dfs_estimate",
+      basis: "tool_heuristic",
       reason: "competitor_brand_token",
     });
     expect(
@@ -127,10 +127,14 @@ describe("preScreenCompetitorKeyword", () => {
         input({ keyword: "robots.txt", keywordDifficulty: METRIC(45) }),
       ).band,
     ).toBe("stretch");
-    // A real TLD keeps the hostname reading.
-    expect(
-      preScreenCompetitorKeyword(input({ keyword: "now.gg" })).reason,
-    ).toBe("domain_like_keyword");
+    // A real TLD keeps the hostname reading, labelled as this tool's heuristic.
+    expect(preScreenCompetitorKeyword(input({ keyword: "socket.io" }))).toEqual(
+      {
+        band: "defer_brand_navigational",
+        basis: "tool_heuristic",
+        reason: "domain_like_keyword",
+      },
+    );
   });
 
   it("recognises a competitor domain-profile page as another brand's navigational term", () => {
@@ -147,9 +151,24 @@ describe("preScreenCompetitorKeyword", () => {
       ),
     ).toEqual({
       band: "defer_brand_navigational",
-      basis: "dfs_estimate",
+      basis: "tool_heuristic",
       reason: "competitor_domain_profile_page",
     });
+    // A page file has the same `/<keyword>.<ext>` shape and is not a profile page.
+    for (const url of [
+      "https://one.example/products/crm.html",
+      "https://one.example/docs/crm.php",
+      "https://one.example/downloads/crm.pdf",
+    ]) {
+      expect(
+        preScreenCompetitorKeyword(
+          input({
+            keyword: "crm",
+            competitorPages: { "one.example": PAGE(url) },
+          }),
+        ).reason,
+      ).toBe("kd_low_rank_top10");
+    }
     expect(
       preScreenCompetitorKeyword(
         input({
@@ -258,5 +277,20 @@ describe("preScreenCompetitorKeyword", () => {
       basis: "dfs_estimate",
       reason: "kd_low_rank_top10",
     });
+  });
+
+  it("labels provider-derived reasons as estimates and text/URL reasons as this tool's heuristics", () => {
+    expect(
+      preScreenCompetitorKeyword(input({ providerIntent: "navigational" }))
+        .basis,
+    ).toBe("dfs_estimate");
+    expect(
+      preScreenCompetitorKeyword(input({ keywordDifficulty: METRIC(null) }))
+        .basis,
+    ).toBe("dfs_estimate");
+    expect(
+      preScreenCompetitorKeyword(input({ keyword: "one webmaster tools" }))
+        .basis,
+    ).toBe("tool_heuristic");
   });
 });

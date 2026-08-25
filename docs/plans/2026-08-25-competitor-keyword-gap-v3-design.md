@@ -111,6 +111,12 @@ Evaluated in order; the first match wins.
 Band order inside a GSC lane: prioritize → stretch → unbanded → head → brand.
 Then the existing tie-breaks (competitor count, best rank, volume, keyword).
 
+`preScreen.basis` names where the reason came from: `dfs_estimate` for the
+KD/volume/rank/intent reasons (provider estimates), `tool_heuristic` for the
+brand-token, hostname-shape and domain-profile-page reasons (this tool's own
+text/URL heuristics). The surface shows the basis next to the reason; neither
+is ever called winnability.
+
 ### Provider request
 
 ```json
