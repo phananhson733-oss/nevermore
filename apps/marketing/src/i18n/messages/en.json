@@ -1884,7 +1884,8 @@
           "near_page_one": "{count} near the 1-10 band",
           "mid": "{count} mid-band",
           "far": "{count} far"
-        }
+        },
+        "priorBelowFloor": "prior window too small"
       },
       "evidence": {
         "title": "Why there were not more signals",

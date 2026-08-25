@@ -1183,7 +1183,14 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
-            {shownObservations.map((observation) => (
+            {shownObservations.map((observation) => {
+              // "Not observed" is false for a query whose prior window exists
+              // and is merely too small to compare against.
+              const priorFallback =
+                observation.previousBelowFloor === null
+                  ? t("changes.notObserved")
+                  : t("review.priorBelowFloor");
+              return (
               <div
                 key={`observation:${observation.kind}:${observation.query}`}
                 role="row"
@@ -1222,7 +1229,7 @@ export function DailyBriefingResults({
                       observation.previous?.clicks ?? null,
                       observation.current.clicks,
                       (value) => number(locale, value),
-                      t("changes.notObserved"),
+                      priorFallback,
                     )}
                   </p>
                 </div>
@@ -1238,7 +1245,7 @@ export function DailyBriefingResults({
                         Number.isFinite(value)
                           ? value.toFixed(1)
                           : t("kpis.unavailable"),
-                      t("changes.notObserved"),
+                      priorFallback,
                     )}
                   </p>
                 </div>
@@ -1251,7 +1258,8 @@ export function DailyBriefingResults({
                   </p>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {shownProvisional.length > 0 ? (

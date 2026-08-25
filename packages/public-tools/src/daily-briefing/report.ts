@@ -1060,19 +1060,8 @@ function candidatesFor(
       (a.page ?? "").localeCompare(b.page ?? ""),
   );
 
-  // A query a strict lane already produced a candidate for is not provisional:
-  // the strict statement is the one the page will make about it, and leaving
-  // it in both places let the same query hold an action while the provisional
-  // note under it promised there was none.
-  const strictCandidateQueries = new Set(
-    [...opportunities, ...declines, ...pageOneCrossings, ...positionDeclines, ...firstObserved].map(
-      (candidate) => candidate.query,
-    ),
-  );
-
   // Resolved after the loop because page attribution needs the whole read.
   const provisionalMoves: DailyBriefingProvisionalMove[] = provisionalPairs
-    .filter((entry) => !strictCandidateQueries.has(entry.current.query))
     .sort(
       (a, b) =>
         PROVISIONAL_KIND_RANK[a.kind] - PROVISIONAL_KIND_RANK[b.kind] ||
@@ -1416,10 +1405,16 @@ function queryWatchlistFor({
       // comparison, and rendering "11.8 -> 9.7" from a 49-impression week is
       // exactly the low-sample claim the floors exist to refuse.
       const priorWindow = previousByQuery.get(current.query);
-      const previous =
+      const priorComparable =
         priorWindow !== undefined &&
-        priorWindow.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS
-          ? priorWindow
+        priorWindow.impressions >= BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS;
+      const previous = priorComparable ? (priorWindow ?? null) : null;
+      // Refusing the comparison must not also erase that a prior window
+      // existed: "not observed" and "observed, too small to compare" are
+      // different facts and the row would otherwise report the wrong one.
+      const previousBelowFloor =
+        priorWindow !== undefined && !priorComparable
+          ? priorWindow.impressions
           : null;
       return [
         {
@@ -1430,6 +1425,7 @@ function queryWatchlistFor({
           pageEvidence: page === null ? "unavailable" : "observed",
           current,
           previous,
+          previousBelowFloor,
           positionDelta:
             previous === null ||
             !Number.isFinite(current.position) ||
@@ -1897,10 +1893,20 @@ export function buildDailyBriefing(
     0,
     DAILY_BRIEFING_ACTION_LIMIT - changes.length,
   );
+  // A query the page is about to report as a change is not also provisional:
+  // the same query would hold an action while the provisional note under it
+  // promised there was none. Filtered against the *selected* changes rather
+  // than the candidate set, so a candidate that lost the display budget keeps
+  // its provisional row instead of falling out of both lists.
+  const selectedChangeQueries = new Set(changes.map((change) => change.query));
+  const eligibleProvisionalMoves = allProvisionalMoves.filter(
+    (move) => !selectedChangeQueries.has(move.query),
+  );
   const provisionalMoves: DailyBriefingProvisionalMoves = {
     evidence: funnelEvidence,
-    items: allProvisionalMoves.slice(0, provisionalBudget),
-    candidates: funnelEvidence === "observed" ? allProvisionalMoves.length : null,
+    items: eligibleProvisionalMoves.slice(0, provisionalBudget),
+    candidates:
+      funnelEvidence === "observed" ? eligibleProvisionalMoves.length : null,
     priorWindowImpressionRange: [
       BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS,
       BRIEFING_MIN_ROW_IMPRESSIONS - 1,
@@ -1911,8 +1917,8 @@ export function buildDailyBriefing(
     currentEvidence,
     evidence: funnelEvidence,
     excludedQueries: new Set([
-      ...changes.map((change) => change.query),
-      ...allProvisionalMoves.map((move) => move.query),
+      ...selectedChangeQueries,
+      ...eligibleProvisionalMoves.map((move) => move.query),
     ]),
     previousEvidence,
   });

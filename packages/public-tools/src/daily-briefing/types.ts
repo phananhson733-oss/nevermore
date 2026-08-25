@@ -368,7 +368,15 @@ export interface DailyBriefingQueryObservation {
   readonly page: string | null;
   readonly pageEvidence: "observed" | "unavailable";
   readonly current: GscQueryRow;
+  /** Null when no prior window exists, or when it is too small to compare. */
   readonly previous: GscQueryRow | null;
+  /**
+   * Prior-window impressions when a row existed but was too small to compare.
+   *
+   * Without it the page reports "not observed" for a query Search Console did
+   * observe, which is the same substitution the tool refuses everywhere else.
+   */
+  readonly previousBelowFloor: number | null;
   readonly positionDelta: number | null;
 }
 

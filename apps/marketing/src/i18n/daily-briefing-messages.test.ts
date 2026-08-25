@@ -166,6 +166,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.partial",
   "review.unavailable",
   "review.pageUnavailable",
+  "review.priorBelowFloor",
   "review.introUnavailable",
   "review.introPositionObservation",
   "review.introCurrentWatchlist",

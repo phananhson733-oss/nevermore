@@ -1884,7 +1884,8 @@
           "near_page_one": "{count} 条接近 1–10 区间",
           "mid": "{count} 条在中段",
           "far": "{count} 条在远排名"
-        }
+        },
+        "priorBelowFloor": "上一窗口样本过小"
       },
       "evidence": {
         "title": "为什么没有更多信号",

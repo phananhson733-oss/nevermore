@@ -2284,7 +2284,59 @@ describe("lane state stands on per-query evidence, not on an aggregate", () => {
     expect(result.cadence).toBe("weekly");
   });
 
-  it("keeps a query the strict lanes already speak about out of the provisional layer", () => {
+  it("keeps a provisional row for a strict candidate that lost the budget", () => {
+    // Filtering the provisional layer against strict *candidates* rather than
+    // the selected changes dropped such a query out of both lists. It is not
+    // reported as a change, so the provisional statement is the only one the
+    // page can still make about it.
+    const target = "budget loser";
+    const url = (query: string) =>
+      `https://example.com/${query.replaceAll(" ", "-")}`;
+    // Four CTR opportunities; the target carries the smallest click gap and
+    // sorts out of the three-row budget.
+    const gaps = [
+      { query: "gap a", impressions: 4_000 },
+      { query: "gap b", impressions: 3_000 },
+      { query: "gap c", impressions: 2_000 },
+      { query: target, impressions: 1_000 },
+    ];
+    const current = [
+      ...gaps.map((entry) => queryRow(entry.query, entry.impressions, 0, 9.7)),
+      ...baselineRows("base"),
+    ];
+    const previous = [
+      ...gaps
+        .filter((entry) => entry.query !== target)
+        .map((entry) => queryRow(entry.query, entry.impressions, 0, 9.7)),
+      // Under the strict floor, over the provisional one, and crossing.
+      queryRow(target, 70, 0, 11.8),
+      ...baselineRows("base"),
+    ];
+    const pagesFor = (rows: readonly ReturnType<typeof queryRow>[]) =>
+      rows.map((row) =>
+        queryPageRow(
+          row.query,
+          url(row.query),
+          row.impressions,
+          row.clicks,
+          row.position,
+        ),
+      );
+    const result = report({
+      currentQueryEvidence: evidence(current, pagesFor(current)),
+      previousQueryEvidence: evidence(previous, pagesFor(previous)),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toHaveLength(3);
+    expect(result.changes.map((change) => change.query)).not.toContain(target);
+    // The three changes consume the whole row budget, so the provisional row
+    // is disclosed as withheld rather than shown - but it is still counted,
+    // which is what filtering against the candidate set destroyed.
+    expect(result.provisionalMoves.candidates).toBe(1);
+  });
+
+  it("keeps a query the page reports as a change out of the provisional layer", () => {
     // The CTR lane needs only the current window, so a query whose prior
     // window sits at 50-99 can hold a strict change and an action while the
     // provisional note under it promises there is none.

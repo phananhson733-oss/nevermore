@@ -318,6 +318,7 @@ function observation(
     page: `https://example.com/watch-${index}`,
     pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 120, position: 9.2 },
+    previousBelowFloor: null,
     previous: { query, clicks: 8, impressions: 110, position: 9.5 },
     positionDelta: -0.3,
     ...overrides,
@@ -857,6 +858,26 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
         evidenceId: "daily:provisional:provisional_page_one_band_entry",
       }),
     );
+  });
+
+  it("calls an under-floor prior window too small rather than unobserved", async () => {
+    const host = await renderResults(
+      envelope({
+        queryWatchlist: watchlist("observed", [
+          observation("sample_floor_reached", 7, {
+            previous: null,
+            previousBelowFloor: 49,
+            positionDelta: null,
+          }),
+        ]),
+      }),
+    );
+    const row = host.querySelector("[data-observation-row]");
+
+    // Search Console did observe that week; it is the comparison that the
+    // sample cannot carry, and the two are different facts.
+    expect(row?.textContent).toContain("prior window too small");
+    expect(row?.textContent).not.toContain("Not observed");
   });
 
   it("says which withheld observations cleared the threshold and lost the cut", async () => {
