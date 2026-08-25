@@ -6,7 +6,10 @@
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompetitorKeywordGapEnvelope } from "@sf/public-tools/competitor-keyword-gap";
+import {
+  COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+  type CompetitorKeywordGapEnvelope,
+} from "@sf/public-tools/competitor-keyword-gap";
 
 type ToolProps = {
   readonly locale: string;
@@ -501,6 +504,7 @@ describe("CompetitorKeywordGapTool", () => {
           competitorDomains: ["rival.example"],
           marketCode: "US",
           languageCode: "en",
+          acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
         }),
       },
     );
@@ -566,6 +570,7 @@ describe("CompetitorKeywordGapTool", () => {
       competitorDomains: ["rival.example"],
       marketCode: "US",
       languageCode: "en",
+      acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
     });
     expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
     expect(scrollIntoViewMock.mock.calls).toEqual([
@@ -792,7 +797,6 @@ describe("CompetitorKeywordGapTool", () => {
   });
 
   it.each([
-    "stale-v2",
     "malformed-gsc",
     "unknown-pre-screen-band",
     "non-string-competitor-page-url",
@@ -809,13 +813,6 @@ describe("CompetitorKeywordGapTool", () => {
         result: { ...ACTIONABLE_ENVELOPE.result, rows },
       });
       const bodies: Record<typeof kind, unknown> = {
-        "stale-v2": {
-          ...ACTIONABLE_ENVELOPE,
-          run: {
-            ...ACTIONABLE_ENVELOPE.run,
-            schemaVersion: "competitor_keyword_gap.v2",
-          },
-        },
         "malformed-gsc": withRows([{ ...actionableRow, gsc: incompleteGsc }]),
         "unknown-pre-screen-band": withRows([
           {
@@ -863,6 +860,71 @@ describe("CompetitorKeywordGapTool", () => {
       );
     },
   );
+
+  it.each(["competitor_keyword_gap.v2", "competitor_keyword_gap.v99"] as const)(
+    "renders the stale-client message, not unknown, for a mismatched %s success body",
+    async (schemaVersion) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ signedIn: true }))
+        .mockResolvedValueOnce(
+          Response.json({
+            data: {
+              ...ACTIONABLE_ENVELOPE,
+              run: { ...ACTIONABLE_ENVELOPE.run, schemaVersion },
+            },
+          }),
+        );
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      const host = await renderTool();
+
+      await change(
+        host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+        "example.com",
+      );
+      await addCompetitor(host, "rival.example");
+      await click(buttonWith(host, "actions.run"));
+
+      expect(host.querySelector("[data-competitor-gap-results]")).toBeNull();
+      const alert = host.querySelector('[role="alert"]');
+      expect(alert?.textContent).toContain("errors.client_out_of_date");
+      expect(alert?.textContent).not.toContain("errors.unknown");
+      expect(trackMarketingEventMock).not.toHaveBeenCalledWith(
+        "tool_complete",
+        expect.anything(),
+      );
+    },
+  );
+
+  it("renders the stale-client message for a 409 client_out_of_date refusal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ signedIn: true }))
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { code: "client_out_of_date" } },
+          { status: 409 },
+        ),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await change(
+      host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+      "example.com",
+    );
+    await addCompetitor(host, "rival.example");
+    await click(buttonWith(host, "actions.run"));
+
+    expect(host.querySelector("[data-competitor-gap-results]")).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "errors.client_out_of_date",
+    );
+    expect(trackMarketingEventMock).not.toHaveBeenCalledWith(
+      "tool_complete",
+      expect.anything(),
+    );
+  });
 
   it("reports auth unavailability without posting and uses the known-error allow-list", async () => {
     const fetchMock = vi

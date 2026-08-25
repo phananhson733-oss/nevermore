@@ -84,39 +84,39 @@ function reportFor(options?: {
   return buildCompetitorKeywordGapReport({
     ...BASE,
     sampleRule: options?.sampleRule ?? BASE.sampleRule,
-    competitorDomains:
-      options?.competitorDomains ?? ["one.example", "two.example"],
-    competitors:
-      options?.competitors ??
-      [
-        providerResult("one.example", {
-          rows: [
-            row({
-              keyword: "best crm",
-              searchVolume: 1_900,
-              cpc: 4.4,
-              keywordDifficulty: 32,
-              providerIntent: "commercial",
-              firstDomainRank: 3,
-            }),
-          ],
-          totalCount: 1,
-        }),
-        providerResult("two.example", {
-          rows: [
-            row({
-              keyword: "best crm",
-              searchVolume: 1_900,
-              cpc: 4.4,
-              keywordDifficulty: 32,
-              providerIntent: "commercial",
-              firstDomainRank: 7,
-            }),
-          ],
-          totalCount: 1,
-        }),
-        providerResult("three.example"),
-      ],
+    competitorDomains: options?.competitorDomains ?? [
+      "one.example",
+      "two.example",
+    ],
+    competitors: options?.competitors ?? [
+      providerResult("one.example", {
+        rows: [
+          row({
+            keyword: "best crm",
+            searchVolume: 1_900,
+            cpc: 4.4,
+            keywordDifficulty: 32,
+            providerIntent: "commercial",
+            firstDomainRank: 3,
+          }),
+        ],
+        totalCount: 1,
+      }),
+      providerResult("two.example", {
+        rows: [
+          row({
+            keyword: "best crm",
+            searchVolume: 1_900,
+            cpc: 4.4,
+            keywordDifficulty: 32,
+            providerIntent: "commercial",
+            firstDomainRank: 7,
+          }),
+        ],
+        totalCount: 1,
+      }),
+      providerResult("three.example"),
+    ],
     gsc: options?.gsc ?? null,
   });
 }
@@ -127,15 +127,17 @@ describe("buildCompetitorKeywordGapReport", () => {
 
     expect(report.run.status).toBe("complete");
     expect(report.run.schemaVersion).toBe("competitor_keyword_gap.v3");
-    expect(report.run.schemaVersion).toBe(COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION);
+    expect(report.run.schemaVersion).toBe(
+      COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    );
     expect(report.result.sampleRule).toEqual({
       maxCompetitorRank: 20,
       perCompetitorLimit: 300,
       serpSnapshotRequested: true,
     });
-    expectTypeOf<CompetitorKeywordGapEnvelope["result"]>().toEqualTypeOf<
-      CompetitorKeywordGapResultV3
-    >();
+    expectTypeOf<
+      CompetitorKeywordGapEnvelope["result"]
+    >().toEqualTypeOf<CompetitorKeywordGapResultV3>();
     expectTypeOf<
       CompetitorKeywordGapEnvelope["run"]["schemaVersion"]
     >().toEqualTypeOf<typeof COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION>();
@@ -357,7 +359,10 @@ describe("buildCompetitorKeywordGapReport", () => {
       (gapRow) => gapRow.keyword === "crm tools",
     );
     expect(navigational).toMatchObject({
-      gsc: { queryStatus: "observed_strong", nextStep: "review_existing_query" },
+      gsc: {
+        queryStatus: "observed_strong",
+        nextStep: "review_existing_query",
+      },
       preScreen: {
         band: "defer_brand_navigational",
         basis: "dfs_estimate",
@@ -420,9 +425,9 @@ describe("buildCompetitorKeywordGapReport", () => {
       gsc: GSC_AVAILABLE_EMPTY,
     });
 
-    expect(new Set(report.result.rows.map((gapRow) => gapRow.gsc.nextStep))).toEqual(
-      new Set(["review_content_gap"]),
-    );
+    expect(
+      new Set(report.result.rows.map((gapRow) => gapRow.gsc.nextStep)),
+    ).toEqual(new Set(["review_content_gap"]));
     expect(report.result.rows.map((gapRow) => gapRow.keyword)).toEqual([
       "echo prioritize",
       "delta stretch",
@@ -473,10 +478,9 @@ describe("buildCompetitorKeywordGapReport", () => {
       gsc: GSC_AVAILABLE_EMPTY,
     });
 
-    expect(sameBand.result.rows.map((gapRow) => gapRow.preScreen.band)).toEqual([
-      "prioritize_serp_check",
-      "prioritize_serp_check",
-    ]);
+    expect(sameBand.result.rows.map((gapRow) => gapRow.preScreen.band)).toEqual(
+      ["prioritize_serp_check", "prioritize_serp_check"],
+    );
     expect(sameBand.result.rows.map((gapRow) => gapRow.keyword)).toEqual([
       "shared crm",
       "solo crm",
@@ -1206,7 +1210,9 @@ describe("buildCompetitorKeywordGapReport", () => {
       ],
       gsc: {
         status: "available",
-        queryRows: [{ query: "truncated page term", impressions: 20, position: 18 }],
+        queryRows: [
+          { query: "truncated page term", impressions: 20, position: 18 },
+        ],
         queryPageRows: [
           {
             query: "truncated page term",
@@ -1572,7 +1578,9 @@ describe("buildCompetitorKeywordGapReport", () => {
       ],
       gsc: {
         status: "available",
-        queryRows: [{ query: "unsafe page term", impressions: 20, position: 18 }],
+        queryRows: [
+          { query: "unsafe page term", impressions: 20, position: 18 },
+        ],
         queryPageRows: [
           {
             query: "unsafe page term",
@@ -1653,8 +1661,16 @@ describe("buildCompetitorKeywordGapReport", () => {
       gsc: {
         status: "available",
         queryRows: [
-          { query: "review existing weak higher impressions", impressions: 30, position: 14 },
-          { query: "review existing weak lower impressions", impressions: 20, position: 15 },
+          {
+            query: "review existing weak higher impressions",
+            impressions: 30,
+            position: 14,
+          },
+          {
+            query: "review existing weak lower impressions",
+            impressions: 20,
+            position: 15,
+          },
           { query: "review existing strong", impressions: 40, position: 5 },
           { query: "optimize existing", impressions: 20, position: 12 },
         ],
@@ -1947,6 +1963,7 @@ describe("buildCompetitorKeywordGapReport", () => {
       "auth_unavailable",
       "search_in_progress",
       "keyword_source_unavailable",
+      "client_out_of_date",
     ]);
   });
 });

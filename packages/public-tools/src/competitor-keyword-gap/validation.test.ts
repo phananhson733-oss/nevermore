@@ -11,10 +11,7 @@ describe("parseCompetitorKeywordGapInput", () => {
       parseCompetitorKeywordGapInput({
         property: "  sc-domain:acme.com  ",
         siteDomain: " https://WWW.Acme.com./ ",
-        competitorDomains: [
-          "one.example",
-          "https://www.two.example./",
-        ],
+        competitorDomains: ["one.example", "https://www.two.example./"],
         marketCode: "us",
         languageCode: "EN",
       }),
@@ -76,6 +73,66 @@ describe("parseCompetitorKeywordGapInput", () => {
         marketCode: "US",
         languageCode: "en",
       },
+    });
+  });
+
+  it("omits an absent acceptSchemaVersion from the parsed value", () => {
+    const parsed = parseCompetitorKeywordGapInput({
+      siteDomain: "acme.com",
+      competitorDomains: ["one.example"],
+      marketCode: "US",
+      languageCode: "en",
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(Object.hasOwn(parsed.value, "acceptSchemaVersion")).toBe(false);
+    }
+  });
+
+  it.each([
+    ["the current contract version", "competitor_keyword_gap.v3"],
+    ["a 64-character version", "v".repeat(64)],
+  ])(
+    "carries %s through as the declared acceptSchemaVersion",
+    (_label, acceptSchemaVersion) => {
+      expect(
+        parseCompetitorKeywordGapInput({
+          siteDomain: "acme.com",
+          competitorDomains: ["one.example"],
+          marketCode: "US",
+          languageCode: "en",
+          acceptSchemaVersion,
+        }),
+      ).toEqual({
+        ok: true,
+        value: {
+          siteDomain: "acme.com",
+          competitorDomains: ["one.example"],
+          marketCode: "US",
+          languageCode: "en",
+          acceptSchemaVersion,
+        },
+      });
+    },
+  );
+
+  it.each([
+    ["an empty acceptSchemaVersion", ""],
+    ["a non-string acceptSchemaVersion", 123],
+    ["a 65-character acceptSchemaVersion", "v".repeat(65)],
+  ])("rejects %s", (_label, acceptSchemaVersion) => {
+    expect(
+      parseCompetitorKeywordGapInput({
+        siteDomain: "acme.com",
+        competitorDomains: ["one.example"],
+        marketCode: "US",
+        languageCode: "en",
+        acceptSchemaVersion,
+      }),
+    ).toEqual({
+      ok: false,
+      code: "invalid_input",
     });
   });
 

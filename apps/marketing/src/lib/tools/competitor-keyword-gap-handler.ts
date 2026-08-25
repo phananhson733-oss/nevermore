@@ -6,6 +6,7 @@ import {
   buildCompetitorKeywordGapReport,
   COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
   COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+  COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
   createPublicToolError,
   keywordCoverageProperty,
   normalizeCompetitorKeywordGapDomain,
@@ -106,9 +107,7 @@ function providerCredentials(): DataForSeoCredentials | null {
 }
 
 function defaultLog(record: CompetitorKeywordGapFinalLog): void {
-  console.info(
-    JSON.stringify({ event: "competitor_keyword_gap", ...record }),
-  );
+  console.info(JSON.stringify({ event: "competitor_keyword_gap", ...record }));
 }
 
 function inflightKey(userId: string): string {
@@ -181,9 +180,7 @@ function gscLogStatus(
 ): CompetitorKeywordGapFinalLog["gsc"] {
   if (gsc === null) return "not_requested";
   if (gsc.status === "unavailable") return "unavailable";
-  return gsc.queryTruncated || gsc.queryPageTruncated
-    ? "partial"
-    : "available";
+  return gsc.queryTruncated || gsc.queryPageTruncated ? "partial" : "available";
 }
 
 function propertyMatchesSite(property: string, siteDomain: string): boolean {
@@ -209,19 +206,13 @@ async function readOptionalGsc(
   clientIp: string,
   dependencies: Pick<
     CompetitorKeywordGapHandlerDependencies,
-    | "readGscSession"
-    | "openGscGate"
-    | "resolveGscGrant"
-    | "readCoverageQueries"
+    "readGscSession" | "openGscGate" | "resolveGscGrant" | "readCoverageQueries"
   >,
 ): Promise<CompetitorKeywordGapGscRead> {
   let release: (() => void) | null = null;
   try {
     const session = await dependencies.readGscSession();
-    if (
-      session.properties === null ||
-      !session.properties.includes(property)
-    ) {
+    if (session.properties === null || !session.properties.includes(property)) {
       return unavailableGscRead();
     }
     if (!propertyMatchesSite(property, siteDomain)) {
@@ -233,10 +224,7 @@ async function readOptionalGsc(
     release = gate.release;
 
     const grant = await dependencies.resolveGscGrant();
-    if (
-      grant.kind !== "grant" ||
-      !grant.properties.includes(property)
-    ) {
+    if (grant.kind !== "grant" || !grant.properties.includes(property)) {
       return unavailableGscRead();
     }
 
@@ -324,6 +312,20 @@ export async function handleCompetitorKeywordGapRequest(
   const parsed = parseCompetitorKeywordGapInput(body.value);
   if (!parsed.ok) {
     return json(createPublicToolError("invalid_input"), 400);
+  }
+
+  // A client bundle declares the contract version it was built against. A
+  // mismatch is refused HERE -- before market resolution, credentials, slot
+  // admission, and every provider/GSC call -- because the visitor must not
+  // be charged for a paid DataForSEO run whose result their stale page
+  // cannot read. It also precedes acquireSlot so a request that never ran
+  // emits no run telemetry. Unlike conflict(), no Retry-After: retrying
+  // from the same stale bundle can never succeed; the remedy is a reload.
+  if (
+    parsed.value.acceptSchemaVersion !== undefined &&
+    parsed.value.acceptSchemaVersion !== COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION
+  ) {
+    return json(createPublicToolError("client_out_of_date"), 409);
   }
 
   const market = dependencies.resolveMarket(

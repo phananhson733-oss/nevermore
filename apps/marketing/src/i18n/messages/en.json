@@ -842,6 +842,7 @@
         "auth_unavailable": "Sign-in status is temporarily unavailable. Try again shortly.",
         "search_in_progress": "Another competitor analysis is already running for this account. Wait for it to finish, then try again.",
         "keyword_source_unavailable": "DataForSEO could not provide a usable competitor ranking sample for this run.",
+        "client_out_of_date": "This tool was updated while your page was open. Refresh the page, then run the analysis again.",
         "unknown": "The competitor analysis could not be completed."
       },
       "running": {

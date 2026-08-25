@@ -240,6 +240,17 @@ describe("competitor keyword gap message catalogs", () => {
     }
   });
 
+  // The only recovery from a stale bundle is a page reload; both catalogs
+  // must actually say so, not merely have some string under the key.
+  it("tells a stale client to refresh the page in both catalogs", () => {
+    expect(
+      enMessages.tools.competitorKeywordGap.errors.client_out_of_date,
+    ).toMatch(/Refresh the page/);
+    expect(
+      zhMessages.tools.competitorKeywordGap.errors.client_out_of_date,
+    ).toMatch(/刷新页面/);
+  });
+
   /**
    * The engine exports the band, basis and reason arrays so a value cannot be
    * added or renamed without a place in the surface. Keyed against those
