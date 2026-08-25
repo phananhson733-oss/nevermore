@@ -48,7 +48,12 @@ export type ToolHandoffPayload =
        * `query_page` would hand the next tool a query the briefing never saw.
        */
       readonly source: "daily-search-briefing";
-      readonly destination: ToolHandoffDestination;
+      /**
+       * Only the two the page lanes can produce. `seo-quick-wins` ranks query
+       * opportunities and has nothing to do with a page carrying no query, so
+       * accepting it here would admit a handoff no lane can generate.
+       */
+      readonly destination: Exclude<ToolHandoffDestination, "seo-quick-wins">;
       readonly scope: "page";
       readonly property: string;
       readonly query: null;
@@ -109,6 +114,41 @@ function isDestination(value: unknown): value is ToolHandoffDestination {
     value === "traffic-drop-diagnosis" ||
     value === "on-page-seo-check"
   );
+}
+
+function isPageDestination(
+  value: unknown,
+): value is Exclude<ToolHandoffDestination, "seo-quick-wins"> {
+  return value === "traffic-drop-diagnosis" || value === "on-page-seo-check";
+}
+
+/**
+ * Whether the page is inside the property the handoff claims to describe.
+ *
+ * A syntactically safe URL from another site would attach a Daily Briefing
+ * measurement to a page the briefing never read. Search Console will not
+ * return such a pair, so refusing it costs nothing and closes the gap between
+ * "this is a URL" and "this is a URL this property could have produced".
+ */
+function pageBelongsToProperty(property: string, page: unknown): boolean {
+  if (!isSafeHttpPage(page)) return false;
+  try {
+    const url = new URL(page.trim());
+    const host = url.hostname.toLowerCase();
+    if (property.startsWith("sc-domain:")) {
+      const domain = property.slice("sc-domain:".length).trim().toLowerCase();
+      if (domain === "") return false;
+      return host === domain || host.endsWith(`.${domain}`);
+    }
+    const prefix = new URL(property.trim());
+    return (
+      prefix.protocol === url.protocol &&
+      prefix.host.toLowerCase() === url.host.toLowerCase() &&
+      url.pathname.startsWith(prefix.pathname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isPropertyDestination(
@@ -214,11 +254,13 @@ function hasValidPayloadFields(
 
     if (value.scope === "page") {
       // The page is the entire payload here, and the destination will fetch
-      // it, so it is validated as a URL rather than merely as a string.
+      // it, so it is checked as a URL, as a URL this property could have
+      // produced, and against the two destinations a page lane can name.
       return (
-        isDestination(value.destination) &&
+        isPageDestination(value.destination) &&
         value.query === null &&
-        isSafeHttpPage(value.page)
+        typeof value.property === "string" &&
+        pageBelongsToProperty(value.property, value.page)
       );
     }
 

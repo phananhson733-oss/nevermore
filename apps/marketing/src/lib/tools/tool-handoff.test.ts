@@ -518,6 +518,19 @@ describe("tool handoff storage", () => {
     }
   });
 
+  it("accepts a subdomain of an sc-domain property", () => {
+    const session = storage();
+    const now = 1_760_000_000_000;
+    const payload = {
+      ...pagePayload(),
+      page: "https://www.example.com/guide",
+    };
+
+    // sc-domain covers every subdomain, so refusing www would refuse the most
+    // common shape a real property returns.
+    expect(writeToolHandoff(session, now, payload)).toBe(true);
+  });
+
   it("carries a page with no query for a page-dimension signal", () => {
     const session = storage();
     const now = 1_760_000_000_000;
@@ -527,6 +540,25 @@ describe("tool handoff storage", () => {
       consumeToolHandoff(session, now + 1, "traffic-drop-diagnosis"),
     ).toEqual({
       ...pagePayload(),
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+  });
+
+  it("carries the other supported page destination too", () => {
+    const session = storage();
+    const now = 1_760_000_000_000;
+    const payload = {
+      ...pagePayload(),
+      destination: "on-page-seo-check" as const,
+      evidenceId: "daily:page:page_first_observed",
+    };
+
+    // Both page lanes must survive. A validator narrowed to Traffic Drop alone
+    // would pass every negative case below and still break the other lane.
+    expect(writeToolHandoff(session, now, payload)).toBe(true);
+    expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toEqual({
+      ...payload,
       createdAt: now,
       expiresAt: now + TOOL_HANDOFF_TTL_MS,
     });
@@ -542,6 +574,22 @@ describe("tool handoff storage", () => {
     [
       "a page carrying credentials",
       { ...pagePayload(), page: "https://user:pw@example.com/guide" },
+    ],
+    // No page lane produces this pairing: Quick Wins ranks query
+    // opportunities, and a page signal carries no query to rank.
+    [
+      "a destination no page lane can name",
+      { ...pagePayload(), destination: "seo-quick-wins" },
+    ],
+    // A syntactically safe URL from somewhere else would attach a measurement
+    // to a page this property never reported.
+    [
+      "a page outside the property",
+      { ...pagePayload(), page: "https://unrelated.test/guide" },
+    ],
+    [
+      "a lookalike domain suffix",
+      { ...pagePayload(), page: "https://notexample.com/guide" },
     ],
   ])("refuses %s", (_label, payload) => {
     const session = storage();

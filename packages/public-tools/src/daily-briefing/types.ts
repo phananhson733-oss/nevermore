@@ -251,7 +251,17 @@ export interface DailyBriefingPageChange {
 
 export interface DailyBriefingPageAction {
   readonly kind: DailyBriefingPageChangeKind;
-  readonly destination: DailyBriefingActionDestination;
+  /**
+   * Narrower than the query destinations on purpose.
+   *
+   * `seo-quick-wins` ranks query opportunities, and a page signal carries no
+   * query for it to rank. Stating that here rather than only in the lane table
+   * means a downstream contract cannot be widened by accident.
+   */
+  readonly destination: Extract<
+    DailyBriefingActionDestination,
+    "traffic-drop-diagnosis" | "on-page-seo-check"
+  >;
   readonly page: string;
 }
 
@@ -437,6 +447,16 @@ export interface DailyBriefingPageAccounting {
   readonly observedRows: number | null;
   /** Page rows that produced a candidate but lost the display budget. */
   readonly notSelectedVisibleRows: number | null;
+  /**
+   * Page candidates suppressed because a query change already names the page.
+   *
+   * Not folded into `notSelectedVisibleRows`: those lost the budget and appear
+   * nowhere, while these are on the page under a more precise heading. Kept as
+   * its own number because without it the lane could report a candidate, show
+   * no page row, and claim nothing was withheld — three statements a reader
+   * cannot reconcile.
+   */
+  readonly suppressedByQueryChange: number | null;
   readonly byLane: Readonly<
     Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
   > | null;

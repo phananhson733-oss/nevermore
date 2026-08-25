@@ -665,6 +665,19 @@ function SignalPathEvidence({
             />
           );
         })}
+        {/* Without this the lane can report a candidate, show no page row, and
+            report nothing withheld — three numbers a reader cannot reconcile. */}
+        {pageAccounting.suppressedByQueryChange !== null &&
+        pageAccounting.suppressedByQueryChange > 0 ? (
+          <p
+            data-page-suppressed
+            className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("evidence.paths.pageSuppressed", {
+              count: pageAccounting.suppressedByQueryChange,
+            })}
+          </p>
+        ) : null}
       </PathTier>
 
       <PathTier title={t("evidence.paths.selectionTitle")}>
@@ -866,13 +879,21 @@ export function DailyBriefingResults({
   // they are listed after every evidence-backed action and labelled as what
   // they are. Only the checks whose row is actually on screen are offered.
   const suggestedChecks = result.suggestedChecks.items;
-  const notCheckable = result.suggestedChecks.notCheckable ?? 0;
+  // Left as null when nothing was read. Coercing to zero here would have the
+  // checks panel say "no shown row failed to become a check" about a run that
+  // showed none.
+  const notCheckable = result.suggestedChecks.notCheckable;
+  const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Only the click-driven lanes move on a daily timescale, which is what
   // decides both the cadence and the sentence explaining it.
+  // The page click lane counts here too. Leaving it out let a run whose page
+  // clicks were measured, and which went weekly purely on the impression
+  // floor, explain itself with "only position paths could be evaluated".
   const clickLaneEvaluated =
     result.laneCapability.lanes.click_opportunity === "evaluated" ||
-    result.laneCapability.lanes.stable_position_click_decline === "evaluated";
+    result.laneCapability.lanes.stable_position_click_decline === "evaluated" ||
+    result.laneCapability.pageLanes.page_click_decline === "evaluated";
 
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -1868,17 +1889,24 @@ export function DailyBriefingResults({
             ) : null}
           </div>
         )}
-        {suggestedChecks.length > 0 ? (
+        {suggestedChecks.length > 0 || uncheckableShown ? (
           <div
             data-suggested-checks
             className="mt-6 border-t border-brand-border pt-5"
           >
-            <h4 className="text-[15px] font-semibold text-text-dark-primary">
-              {t("checks.title")}
-            </h4>
-            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-              {t("checks.intro")}
-            </p>
+            {/* The heading belongs to the checks. When every shown row failed
+                to become one there is nothing to introduce, only a gap to
+                explain, so the panel narrows to that sentence. */}
+            {suggestedChecks.length > 0 ? (
+              <>
+                <h4 className="text-[15px] font-semibold text-text-dark-primary">
+                  {t("checks.title")}
+                </h4>
+                <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                  {t("checks.intro")}
+                </p>
+              </>
+            ) : null}
             <div className="mt-3 grid gap-3">
               {suggestedChecks.map((check) => {
                 const target = destination(check.destination);
@@ -1918,12 +1946,12 @@ export function DailyBriefingResults({
                 );
               })}
             </div>
-            {notCheckable > 0 ? (
+            {uncheckableShown ? (
               <p
                 data-checks-not-checkable
                 className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
               >
-                {t("checks.notCheckable", { count: notCheckable })}
+                {t("checks.notCheckable", { count: notCheckable ?? 0 })}
               </p>
             ) : null}
           </div>

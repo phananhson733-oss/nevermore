@@ -53,67 +53,22 @@ interface Reference {
 }
 
 /**
- * Strip comments before anything looks for an import.
+ * Why the statement patterns are anchored to the start of a line.
  *
- * The patterns below scan raw text, so prose describing a module reads exactly
- * like an import of it: the sentence "must not import `@sf/sources`" in a doc
- * comment matched the side-effect-import pattern and reported the file that
- * documents the rule as the file that breaks it. Scanned character by
- * character rather than by regex because a `//` inside "https://..." is not a
- * comment, and a `/*` inside a string is not one either.
+ * They scan raw text, so prose describing a module reads exactly like an
+ * import of it: the sentence "must not import `@sf/sources`" in a doc comment
+ * matched the side-effect pattern and reported the file that documents the
+ * rule as the file that breaks it. Anchoring is what a comment cannot satisfy
+ * — block-comment lines carry a leading `*`, line comments a leading `//` —
+ * and unlike stripping comments first it needs no lexer, so a `/*` inside a
+ * regex literal cannot swallow a real import and make this guard pass.
  */
-function withoutComments(source: string): string {
-  let out = "";
-  let index = 0;
-  let quote: string | null = null;
-  while (index < source.length) {
-    const char = source[index] ?? "";
-    const next = source[index + 1] ?? "";
-    if (quote !== null) {
-      out += char;
-      if (char === "\\") {
-        out += next;
-        index += 2;
-        continue;
-      }
-      if (char === quote) quote = null;
-      index += 1;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === "`") {
-      quote = char;
-      out += char;
-      index += 1;
-      continue;
-    }
-    if (char === "/" && next === "/") {
-      while (index < source.length && source[index] !== "\n") index += 1;
-      continue;
-    }
-    if (char === "/" && next === "*") {
-      index += 2;
-      while (
-        index < source.length &&
-        !(source[index] === "*" && source[index + 1] === "/")
-      ) {
-        index += 1;
-      }
-      index += 2;
-      continue;
-    }
-    out += char;
-    index += 1;
-  }
-  return out;
-}
-
-function referencesIn(rawSource: string): readonly Reference[] {
-  const source = withoutComments(rawSource);
+function referencesIn(source: string): readonly Reference[] {
   const found: Reference[] = [];
   // `import type { A } from "x"` and `import { type A } from "x"` differ: only
   // the first erases the whole statement. The second still emits the import.
   for (const match of source.matchAll(
-    /\b(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/g,
+    /^[ \t]*(?:import|export)\s+(type\s+)?[\s\S]*?from\s*['"`]([^'"`]+)['"`]/gm,
   )) {
     if (match[2] !== undefined) {
       found.push({ specifier: match[2], typeOnly: match[1] !== undefined });
@@ -121,7 +76,7 @@ function referencesIn(rawSource: string): readonly Reference[] {
   }
   // A side-effect import has no `from` and is never erased: `import "x"` runs
   // the whole module. The `from`-only pattern above walked straight past it.
-  for (const match of source.matchAll(/\bimport\s+['"`]([^'"`]+)['"`]/g)) {
+  for (const match of source.matchAll(/^[ \t]*import\s+['"]([^'"]+)['"]/gm)) {
     if (match[1] !== undefined) {
       found.push({ specifier: match[1], typeOnly: false });
     }

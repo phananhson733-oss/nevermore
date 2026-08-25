@@ -2012,7 +2012,8 @@
               "finding": "当前平均展示位置在 30 以内的可行动区间内"
             }
           },
-          "pageRowsIntro": "本轮当前窗口共 {rows} 条页面记录。这与上面的查询记录是两个不同的统计口径，不能相加。"
+          "pageRowsIntro": "本轮当前窗口共 {rows} 条页面记录。这与上面的查询记录是两个不同的统计口径，不能相加。",
+          "pageSuppressed": "另有 {count} 条页面候选没有单独展示：同一页面已经由上面的查询词变化指名，那条记录更精确。"
         },
         "foldObservationsShown": "展示 {shown}/{candidates} 条观察候选",
         "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",

@@ -1840,8 +1840,15 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(row?.textContent).toContain("Whole page, across every query");
     expect(row?.textContent).toContain(PAGE_CHANGE_URL);
     expect(row?.textContent).toContain("20 → 8");
-    // The queries behind a page move are anonymized, so no query may appear.
-    expect(row?.textContent).not.toContain("evidence query");
+    // Stated as the exact composition of the cell rather than a blocklist:
+    // the queries behind a page move are anonymized, so ANY query text here
+    // would be invented, and naming the ones we happen to expect would miss
+    // the ones we do not.
+    const queryPageCell = [...(row?.querySelectorAll('[role="cell"]') ?? [])][1];
+    expect(queryPageCell?.textContent).toBe(
+      `${en.tools.dailyBriefing.review.columns.queryPage}` +
+        `${en.tools.dailyBriefing.review.pageScope}${PAGE_CHANGE_URL}`,
+    );
   });
 
   it("hands a page action off with a page scope and no query", async () => {
@@ -1883,7 +1890,16 @@ describe("DailyBriefingResults folded explanation", () => {
       envelope({
         changes: [],
         actions: [],
-        queryWatchlist: watchlist("observed", [checkableObservation()]),
+        // Two shown rows, one of which became a check. The count below then
+        // describes the other one instead of restating the fixture.
+        queryWatchlist: watchlist("observed", [
+          checkableObservation(),
+          checkableObservation({
+            query: "buried term",
+            band: "far",
+            page: "https://example.com/buried",
+          }),
+        ]),
         suggestedChecks: {
           evidence: "observed",
           items: [suggestedCheck()],
@@ -1938,6 +1954,77 @@ describe("DailyBriefingResults folded explanation", () => {
       page: CHECK_PAGE,
       evidenceId: "daily:check:sample_floor_reached",
     });
+  });
+
+  it("blames the impression floor, not the lanes, when a page click lane ran", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "change_detection",
+        cadence: "weekly",
+        changes: [],
+        actions: [],
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "evaluated",
+            page_first_observed: "not_applicable",
+          },
+        }),
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+
+    // A click lane WAS evaluated — the page one. The weekly cadence here comes
+    // from the impression floor, and naming the lanes instead would describe a
+    // gate this run never hit.
+    expect(facts?.textContent).not.toContain(
+      "Only position paths could be evaluated",
+    );
+    expect(facts?.textContent).toContain("sample");
+  });
+
+  it("still explains the gap when every shown row failed to become a check", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed", [
+          checkableObservation({ page: null, pageEvidence: "unavailable" }),
+        ]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 1,
+        },
+      }),
+    );
+
+    // The row is on screen and carries no check. Gating the whole panel on
+    // having checks hid the one sentence that explains why.
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("Another 1 shown rows carry no check");
+    expect(host.querySelector("[data-check-row]")).toBeNull();
+  });
+
+  it("says nothing about a gap it never measured", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("partial"),
+        suggestedChecks: {
+          evidence: "partial",
+          items: [],
+          notCheckable: null,
+        },
+      }),
+    );
+
+    // null is not zero. "No shown row failed to become a check" would be a
+    // finding about rows this run never displayed.
+    expect(host.querySelector("[data-suggested-checks]")).toBeNull();
+    expect(host.querySelector("[data-checks-not-checkable]")).toBeNull();
   });
 
   it("says nothing about checks when none could be offered", async () => {

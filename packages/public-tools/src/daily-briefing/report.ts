@@ -1647,29 +1647,39 @@ function propertyTrendFor(
  * Console drops rows from and which therefore understates each page by exactly
  * the amount this dimension exists to recover.
  */
+/**
+ * The basis a page row has to be reported on to mean what these lanes read it
+ * as. Two windows agreeing on the wrong basis agree about the wrong thing:
+ * a property-aggregated response says nothing per page, and comparing two of
+ * them would produce a page-specific claim from rows that are not per page.
+ */
+const PAGE_AGGREGATION_BASIS = "byPage";
+
 function pageRowsState(
   evidence: DailyBriefingQueryEvidence | null,
 ): Exclude<DailyBriefingEvidenceState, "not_observed"> {
   if (evidence === null || evidence.pageRead === null) return "unavailable";
+  // Basis before truncation: a response on the wrong basis is not a prefix of
+  // the right one, so calling it partial would promise the rest is coming.
+  if (evidence.pageRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
+    return "unavailable";
+  }
   if (evidence.pageRead.paging.truncated) return "partial";
-  if (evidence.pageRead.responseAggregationType === null) return "unavailable";
   return "observed";
 }
 
-/** Both page reads on one aggregation basis, so their rows may be subtracted. */
-function pageWindowsComparable(
-  current: DailyBriefingQueryEvidence | null,
-  previous: DailyBriefingQueryEvidence | null,
-): boolean {
-  const currentBasis = current?.pageRead?.responseAggregationType;
-  const previousBasis = previous?.pageRead?.responseAggregationType;
-  return (
-    currentBasis !== null &&
-    currentBasis !== undefined &&
-    previousBasis !== null &&
-    previousBasis !== undefined &&
-    currentBasis === previousBasis
-  );
+interface PageRowSet {
+  readonly rows: readonly GscPageRow[];
+  /**
+   * Pages whose rows were dropped as contradictory or invalid.
+   *
+   * Carried separately because dropping a row and never seeing one are
+   * different facts, and only the second means the page was absent. Folding
+   * them together let a page with two disagreeing prior rows be reported as
+   * first observed — turning unusable evidence into proof of absence, which
+   * is the one substitution this tool exists to refuse.
+   */
+  readonly unusable: ReadonlySet<string>;
 }
 
 /**
@@ -1678,19 +1688,25 @@ function pageWindowsComparable(
  * Same discipline as `validQueryRows`: one URL appearing twice in one window
  * is two readings that disagree, and adding them invents a third.
  */
-function validPageRows(rows: readonly GscPageRow[]): readonly GscPageRow[] {
+function validPageRows(rows: readonly GscPageRow[]): PageRowSet {
   const unique = new Map<string, GscPageRow>();
-  const conflicts = new Set<string>();
+  const unusable = new Set<string>();
   for (const row of rows) {
-    if (row.page.trim() === "" || !isMetricRowValid(row)) continue;
-    if (unique.has(row.page)) {
+    const page = row.page.trim();
+    if (page === "") continue;
+    if (!isMetricRowValid(row)) {
       unique.delete(row.page);
-      conflicts.add(row.page);
+      unusable.add(row.page);
       continue;
     }
-    if (!conflicts.has(row.page)) unique.set(row.page, row);
+    if (unique.has(row.page) || unusable.has(row.page)) {
+      unique.delete(row.page);
+      unusable.add(row.page);
+      continue;
+    }
+    unique.set(row.page, row);
   }
-  return [...unique.values()];
+  return { rows: [...unique.values()], unusable };
 }
 
 interface PageCandidate {
@@ -1747,15 +1763,15 @@ function pageCandidatesFor(
 ): PageCandidateSet | null {
   if (
     pageRowsState(currentEvidence) !== "observed" ||
-    pageRowsState(previousEvidence) !== "observed" ||
-    !pageWindowsComparable(currentEvidence, previousEvidence)
+    pageRowsState(previousEvidence) !== "observed"
   ) {
     return null;
   }
 
-  const currentRows = validPageRows(currentEvidence?.pageRead?.rows ?? []);
-  const previousRows = validPageRows(previousEvidence?.pageRead?.rows ?? []);
-  const previousByPage = new Map(previousRows.map((row) => [row.page, row]));
+  const currentSet = validPageRows(currentEvidence?.pageRead?.rows ?? []);
+  const priorSet = validPageRows(previousEvidence?.pageRead?.rows ?? []);
+  const currentRows = currentSet.rows;
+  const previousByPage = new Map(priorSet.rows.map((row) => [row.page, row]));
 
   const declines: PageCandidate[] = [];
   const firstObserved: PageCandidate[] = [];
@@ -1767,6 +1783,11 @@ function pageCandidatesFor(
   for (const current of currentRows) {
     if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
     pageFloorRows += 1;
+    // A prior row we had to throw away is not a prior window we did not have.
+    // Neither lane may ask about this page: the decline lane has nothing to
+    // subtract from, and the first-observed lane would be reading a discarded
+    // row as absence.
+    if (priorSet.unusable.has(current.page)) continue;
     const previous = previousByPage.get(current.page);
 
     // Absent, not merely small. Search Console does return zero-impression
@@ -1782,7 +1803,11 @@ function pageCandidatesFor(
             kind: "page_first_observed",
             evidence: "observed",
             page: current.page,
-            previous: previous ?? null,
+            // Null, even when a zero-impression row exists. That row carries
+            // no measured position — Search Console cannot weight a position
+            // over no impressions — and rendering it produced "0.0 → 12.0",
+            // an unmeasured value shown as a number.
+            previous: null,
             current,
             clickChange: null,
             clickChangeRatio: null,
@@ -1893,6 +1918,7 @@ function selectPageChanges(
   readonly changes: readonly DailyBriefingPageChange[];
   readonly actions: readonly DailyBriefingPageAction[];
   readonly eligible: number;
+  readonly suppressedByQueryChange: number;
 } {
   const ranked = [...candidates].sort(
     (a, b) => PAGE_KIND_RANK[a.change.kind] - PAGE_KIND_RANK[b.change.kind],
@@ -1900,11 +1926,17 @@ function selectPageChanges(
 
   const seen = new Set<string>();
   const eligible: DailyBriefingPageChange[] = [];
+  const suppressed = new Set<string>();
   for (const candidate of ranked) {
     const page = candidate.change.page;
     // A page a query change already names is not reported twice. The reader
     // would see one page under two headings and count it as two findings.
-    if (excludedPages.has(page) || seen.has(page)) continue;
+    // Counted, not silently dropped: the lane's candidate total includes it.
+    if (excludedPages.has(page)) {
+      suppressed.add(page);
+      continue;
+    }
+    if (seen.has(page)) continue;
     seen.add(page);
     eligible.push(candidate.change);
   }
@@ -1920,6 +1952,7 @@ function selectPageChanges(
       page: change.page,
     })),
     eligible: eligible.length,
+    suppressedByQueryChange: suppressed.size,
   };
 }
 
@@ -1945,16 +1978,29 @@ const CHECKABLE_BANDS: readonly DailyBriefingObservationBand[] = [
  */
 function suggestedChecksFor(
   watchlist: DailyBriefingQueryWatchlist,
+  /**
+   * Pages this run already hands off. A check says "nothing here is known to
+   * have changed"; on a page the same run reports a measured decline for, that
+   * sentence contradicts the finding printed above it.
+   */
+  actionedPages: ReadonlySet<string>,
 ): DailyBriefingSuggestedChecks {
-  if (watchlist.evidence === "unavailable") {
-    return { evidence: "unavailable", items: [], notCheckable: null };
+  // Partial is not observed. The watchlist itself withholds its counts when
+  // the rows were only a prefix, and a zero here would claim we examined every
+  // displayed row and found none un-checkable — on a run that displayed none.
+  if (watchlist.evidence !== "observed") {
+    return { evidence: watchlist.evidence, items: [], notCheckable: null };
   }
 
   const items: DailyBriefingSuggestedCheck[] = [];
   let notCheckable = 0;
   for (const item of watchlist.items) {
     const page = item.page;
-    if (page === null || !CHECKABLE_BANDS.includes(item.band)) {
+    if (
+      page === null ||
+      !CHECKABLE_BANDS.includes(item.band) ||
+      actionedPages.has(page)
+    ) {
       notCheckable += 1;
       continue;
     }
@@ -2279,7 +2325,7 @@ export function buildDailyBriefing(
   );
   const pageSelection =
     pageCandidateSet === null
-      ? { changes: [], actions: [], eligible: 0 }
+      ? { changes: [], actions: [], eligible: 0, suppressedByQueryChange: 0 }
       : selectPageChanges(
           pageCandidateSet.candidates,
           selectedChangePages,
@@ -2290,13 +2336,18 @@ export function buildDailyBriefing(
   const pageAccounting: DailyBriefingPageAccounting =
     pageCandidateSet === null
       ? {
+          // Unavailable dominates partial. A comparison needs both windows,
+          // so one of them missing entirely is not "partly read" however
+          // complete the other one is. Reaching here means at least one window
+          // is not observed, so the remaining case really is a prefix.
           evidence:
-            pageRowsState(currentEvidence) === "partial" ||
-            pageRowsState(previousEvidence) === "partial"
-              ? "partial"
-              : "unavailable",
+            pageRowsState(currentEvidence) === "unavailable" ||
+            pageRowsState(previousEvidence) === "unavailable"
+              ? "unavailable"
+              : "partial",
           observedRows: null,
           notSelectedVisibleRows: null,
+          suppressedByQueryChange: null,
           byLane: null,
         }
       : {
@@ -2306,6 +2357,7 @@ export function buildDailyBriefing(
             0,
             pageSelection.eligible - pageChanges.length,
           ),
+          suppressedByQueryChange: pageSelection.suppressedByQueryChange,
           byLane: pageCandidateSet.byLane,
         };
 
@@ -2347,7 +2399,13 @@ export function buildDailyBriefing(
   });
   // Built from the watchlist that was just displayed, so every check points at
   // a row the reader can see.
-  const suggestedChecks = suggestedChecksFor(queryWatchlist);
+  const suggestedChecks = suggestedChecksFor(
+    queryWatchlist,
+    new Set([
+      ...actions.map((entry) => entry.page),
+      ...pageActions.map((entry) => entry.page),
+    ]),
+  );
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {

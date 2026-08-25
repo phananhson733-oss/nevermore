@@ -2012,7 +2012,8 @@
               "finding": "Current average position sits inside the actionable band of 30 or better"
             }
           },
-          "pageRowsIntro": "{rows} page rows in the current window. These and the query rows above are two separate populations and do not add together."
+          "pageRowsIntro": "{rows} page rows in the current window. These and the query rows above are two separate populations and do not add together.",
+          "pageSuppressed": "{count} page candidates are not listed separately: a query change above already names the same page, and that record is the more precise one."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",

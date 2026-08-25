@@ -118,8 +118,8 @@ export async function runDailyBriefing(
       1,
       "auto",
     ),
-    readPageRows(input.client, windows.current7Days, optionalBudget),
-    readPageRows(input.client, windows.previous7Days, optionalBudget),
+    readPageRows(input.client, windows.current7Days, optionalBudget, "byPage"),
+    readPageRows(input.client, windows.previous7Days, optionalBudget, "byPage"),
     readPropertyTotals(input.client, windows.current7Days, "byPage"),
     readPropertyTotals(input.client, windows.previous7Days, "byPage"),
   ]);

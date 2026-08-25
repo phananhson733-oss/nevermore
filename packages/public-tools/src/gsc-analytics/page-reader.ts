@@ -109,11 +109,18 @@ async function readPaged<T>(
   return { rows, paging: { pagesFetched, truncated }, responseAggregationType };
 }
 
-/** Property pages for the window, one row each. */
+/**
+ * Property pages for the window, one row each.
+ *
+ * `aggregationType` is worth passing: a caller that compares two windows needs
+ * the basis to be a request it made rather than a default it inherited, so it
+ * can reject a response that came back on another one.
+ */
 export function readPageRows(
   client: GscQueryClient,
   window: GscWindow,
   budget?: ReadBudget,
+  aggregationType?: GscAggregationType,
 ): Promise<PagedRead<GscPageRow>> {
   return readPaged(
     client,
@@ -121,7 +128,7 @@ export function readPageRows(
     ["page"],
     (keys, row) => {
       const page = keys[0];
-      if (page === undefined) return null;
+      if (page === undefined || page.trim() === "") return null;
       return {
         page,
         clicks: row.clicks,
@@ -130,6 +137,8 @@ export function readPageRows(
       };
     },
     budget,
+    GSC_MAX_PAGES,
+    aggregationType,
   );
 }
 

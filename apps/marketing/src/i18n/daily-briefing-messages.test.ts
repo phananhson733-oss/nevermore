@@ -181,6 +181,7 @@ const REQUIRED_LEAF_PATHS = [
   "checks.notCheckable",
   "evidence.foldPageChanges",
   "evidence.paths.pageUnavailable",
+  "evidence.paths.pageSuppressed",
   "review.priorBelowFloor",
   "review.introUnavailable",
   "review.introPositionObservation",
