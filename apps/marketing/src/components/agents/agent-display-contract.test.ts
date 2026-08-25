@@ -14,6 +14,10 @@ import {
   SEARCH_PERFORMANCE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
+  INDEX_COVERAGE_EVIDENCE_LABELS,
+  INDEX_COVERAGE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/index-coverage";
+import {
   KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   KEYWORD_EVIDENCE_LIMITATION_CODES,
   KEYWORD_EVIDENCE_RECORD_IDS,
@@ -35,6 +39,7 @@ import zhMessages from "../../i18n/messages/zh.json";
 import {
   AGENT_EVIDENCE_LABELS,
   AGENT_LIMITATION_CODES,
+  AGENT_RECORD_IDS,
   supportsAgentDisplayVocabulary,
 } from "./agent-display-contract";
 
@@ -120,6 +125,7 @@ describe("record vocabulary", () => {
       for (const id of [
         ...SEO_AUDIT_RECORD_IDS,
         ...SEARCH_PERFORMANCE_RECORD_IDS,
+        ...INDEX_COVERAGE_RECORD_IDS,
         ...KEYWORD_EVIDENCE_RECORD_IDS,
         ...PAGE_PERFORMANCE_RECORD_IDS,
         ...SERP_SHAPE_RECORD_IDS,
@@ -128,6 +134,7 @@ describe("record vocabulary", () => {
         if (!entry?.title?.trim() || !entry.description?.trim()) {
           missing.push(`${locale}:${id}`);
         }
+        if (!AGENT_RECORD_IDS.seo.has(id)) missing.push(`seam:${id}`);
       }
     }
     expect(missing).toEqual([]);
@@ -167,6 +174,7 @@ describe("record vocabulary", () => {
       for (const label of [
         ...SEO_AUDIT_EVIDENCE_LABELS,
         ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+        ...INDEX_COVERAGE_EVIDENCE_LABELS,
         ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
         ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
         ...SERP_SHAPE_EVIDENCE_LABELS,

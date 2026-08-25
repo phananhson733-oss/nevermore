@@ -10,6 +10,7 @@ import {
   buildPageWeightRecords,
   buildImageWeightRecords,
 } from "@sf/public-tools/seo-audit/page-performance";
+import { buildIndexCoverageRecords } from "@sf/public-tools/seo-audit/index-coverage";
 import {
   AGENT_PAGE_PERFORMANCE_VERSION,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -20,6 +21,7 @@ import {
   handleAgentAuditRequest,
   type AgentAuditHandlerDependencies,
 } from "./audit-handler.ts";
+import { supportsAgentDisplayVocabulary } from "../../components/agents/agent-display-contract.ts";
 
 // Derived from the producer's ledger. A fourth hand-written copy of it lived
 // here, which is part of why a detector could land in the crawl and this
@@ -246,37 +248,8 @@ describe("handleAgentAuditRequest", () => {
     property: "sc-domain:acme.test",
     startDate: "2026-07-19",
     endDate: "2026-08-15",
-    records: buildSearchPerformanceRecords(
-      {
-        property: "sc-domain:acme.test",
-        startDate: "2026-07-19",
-        endDate: "2026-08-15",
-        pages: [
-          { key: "https://acme.test/", clicks: 3, impressions: 90, position: 4 },
-        ],
-        queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
-        pagesTruncated: false,
-        queriesTruncated: false,
-        targetPageQueries: null,
-        targetPageUrl: null,
-        confirmedQueries: [],
-        targetPageQueriesTruncated: false,
-      },
-      [],
-    ),
-  };
-
-  it("returns a region the client guard actually accepts", async () => {
-    // Built by the real producer and read by the real guard. Both previous
-    // rounds shipped a consumer that refused its own producer's output while
-    // every unit test passed, because the fixtures were written to match the
-    // guard rather than taken from the thing that feeds it.
-    const region = {
-      version: AGENT_SEARCH_PERFORMANCE_VERSION,
-      property: "sc-domain:acme.test",
-      startDate: "2026-07-19",
-      endDate: "2026-08-15",
-      records: buildSearchPerformanceRecords(
+    records: [
+      ...buildSearchPerformanceRecords(
         {
           property: "sc-domain:acme.test",
           startDate: "2026-07-19",
@@ -301,7 +274,16 @@ describe("handleAgentAuditRequest", () => {
         },
         [],
       ),
-    };
+      ...buildIndexCoverageRecords(null, "sitemap_population_incomplete"),
+    ],
+  };
+
+  it("returns a region the client guard actually accepts", async () => {
+    // Built by the real producer and read by the real guard. Both previous
+    // rounds shipped a consumer that refused its own producer's output while
+    // every unit test passed, because the fixtures were written to match the
+    // guard rather than taken from the thing that feeds it.
+    const region = searchRegion;
     const response = await handleAgentAuditRequest(
       request(),
       "seo",
@@ -569,6 +551,41 @@ describe("handleAgentAuditRequest", () => {
     expect(body.data.result.keywordChecks?.records.length).toBeGreaterThan(0);
     expect(body.data.result.pagePerformance?.records).toHaveLength(6);
     expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+  });
+
+  it("accepts the production-shaped 7 search plus 6 page response at the browser seam", async () => {
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({
+        readSearchPerformance: async () => searchRegion,
+        readPagePerformance: async () => ({
+          status: "ok" as const,
+          weight: null,
+          field: {
+            url: "https://acme.test/",
+            sourceLevel: "url" as const,
+            lcp: 2_100,
+            inp: 150,
+            cls: 0.04,
+            ttfb: 600,
+            formFactor: "mobile" as const,
+          },
+        }),
+      }),
+    );
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(isAgentAuditSuccessEnvelope(body)).toBe(true);
+    if (!isAgentAuditSuccessEnvelope(body)) {
+      throw new Error("production-shaped response did not satisfy the contract");
+    }
+    expect(body.data.result.searchPerformance?.records).toHaveLength(7);
+    expect(body.data.result.pagePerformance?.records).toHaveLength(6);
+    expect(body.data.result.keywordChecks).toBeUndefined();
+    expect(body.data.result.serpShape).toBeUndefined();
+    expect(supportsAgentDisplayVocabulary(body.data, "seo")).toBe(true);
   });
 
   it("attaches the visitor's search region beside the crawl ledger", async () => {
