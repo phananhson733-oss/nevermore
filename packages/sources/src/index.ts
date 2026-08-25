@@ -172,6 +172,7 @@ export type {
   DataForSeoDomainIntersectionResponse,
   DataForSeoDomainIntersectionRow,
   DataForSeoFetch,
+  DataForSeoSearchVolumeTrend,
   DataForSeoRankedKeywordsClient,
   DataForSeoRankedKeywordRow,
   DataForSeoRankedKeywordsRequest,
