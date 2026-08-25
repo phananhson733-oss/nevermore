@@ -47,6 +47,27 @@ const MARKET_LANGUAGE: Readonly<Record<string, string>> = {
 
 type Phase = "idle" | "running" | "done";
 
+/**
+ * The refusals raised by the Search Console preflight, every one of which the
+ * visitor can get past immediately by dropping the optional overlay. Listed
+ * explicitly rather than by prefix: `rate_limited`, `quota_unavailable` and
+ * `scan_in_progress` do not carry one, and a prefix test would also swallow
+ * any future GSC code whose remedy is different.
+ */
+const GSC_PREFLIGHT_ERROR_CODES: readonly CompetitorKeywordGapErrorCode[] = [
+  "gsc_property_not_granted",
+  "gsc_property_site_mismatch",
+  "gsc_revoked",
+  "gsc_temporarily_unavailable",
+  "rate_limited",
+  "quota_unavailable",
+  "scan_in_progress",
+];
+
+function isGscPreflightCode(code: string): boolean {
+  return (GSC_PREFLIGHT_ERROR_CODES as readonly string[]).includes(code);
+}
+
 function isKnownErrorCode(code: string): code is CompetitorKeywordGapErrorCode {
   return (COMPETITOR_KEYWORD_GAP_ERROR_CODES as readonly string[]).includes(
     code,
@@ -419,7 +440,13 @@ export function CompetitorKeywordGapTool({
     );
   }
 
-  async function run(): Promise<void> {
+  /**
+   * `overrideProperty` exists for the "run without the GSC layer" recovery:
+   * the state setter has not committed by the time this runs, so the caller
+   * passes the value it just chose rather than letting the closure read the
+   * previous frame.
+   */
+  async function run(overrideProperty?: string): Promise<void> {
     if (submissionLocked.current) return;
     const normalizedSite = normalizeCompetitorKeywordGapDomain(siteDomain);
     if (normalizedSite === null) {
@@ -440,7 +467,7 @@ export function CompetitorKeywordGapTool({
     submissionLocked.current = true;
     setEnvelope(null);
     setResultProperty("");
-    const requestedProperty = property;
+    const requestedProperty = overrideProperty ?? property;
     const controller = new AbortController();
     activeRequest.current = controller;
     setPhase("running");
@@ -697,7 +724,7 @@ export function CompetitorKeywordGapTool({
         ) : null}
 
         {errorCode !== null ? (
-          <p
+          <div
             role="alert"
             className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] text-brand-error"
           >
@@ -706,7 +733,21 @@ export function CompetitorKeywordGapTool({
                 typeof t
               >[0],
             )}
-          </p>
+            {isGscPreflightCode(errorCode) && property !== "" ? (
+              <button
+                type="button"
+                data-run-without-gsc
+                disabled={phase === "running"}
+                onClick={() => {
+                  setProperty("");
+                  void run("");
+                }}
+                className="mt-3 flex items-center rounded-[10px] border border-brand-error/40 px-3 py-2 text-[12px] font-medium text-brand-error transition hover:border-brand-error focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-error disabled:opacity-60"
+              >
+                {t("actions.runWithoutGsc")}
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {phase === "running" ? (

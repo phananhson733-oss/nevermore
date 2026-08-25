@@ -14,6 +14,10 @@ const VALID_INPUT = {
   competitorDomains: ["one.example"],
   marketCode: "US",
   languageCode: "en",
+  // Required, and every real client sends it: the version guard has to cover
+  // the bundles that predate the field, not only the ones new enough to
+  // declare it. See the "does not declare a contract version" case below.
+  acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
 } as const;
 const MARKET = {
   locationCode: 2840,
@@ -358,7 +362,39 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.log).not.toHaveBeenCalled();
   });
 
-  it("runs a request that declares the current contract version exactly like one that omits it", async () => {
+  it("does not let an inherited property satisfy the declared version", async () => {
+    // Injected past `post()` on purpose: JSON.stringify drops inherited
+    // properties, so a test that went through it would pass with or without
+    // the own-property read and prove nothing. This is the shape a polluted
+    // `Object.prototype` produces -- a body that declares nothing while an
+    // ordinary property read still answers with the current version.
+    const body = Object.create({
+      acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    }) as Record<string, unknown>;
+    const { acceptSchemaVersion: _omitted, ...withoutVersion } = VALID_INPUT;
+    Object.assign(body, withoutVersion);
+    expect(body["acceptSchemaVersion"]).toBe(
+      COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    );
+    expect(Object.hasOwn(body, "acceptSchemaVersion")).toBe(false);
+
+    const dependencies = runnableDependencies({
+      readJson: vi.fn().mockResolvedValue({ ok: true, value: body }),
+    });
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      dependencies,
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: { code: "client_out_of_date" },
+    });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+  });
+
+  it("runs a request that declares the current contract version", async () => {
     const dependencies = runnableDependencies();
 
     const response = await handleCompetitorKeywordGapRequest(
@@ -380,16 +416,24 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.log).toHaveBeenCalledOnce();
   });
 
-  it("still serves a legacy request that does not declare a contract version", async () => {
+  it("refuses a request that does not declare a contract version, before spending", async () => {
     const dependencies = runnableDependencies();
+    const { acceptSchemaVersion: _omitted, ...withoutVersion } = VALID_INPUT;
 
     const response = await handleCompetitorKeywordGapRequest(
-      post(VALID_INPUT),
+      post(withoutVersion),
       dependencies,
     );
-
-    expect(response.status).toBe(200);
-    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    // Not `invalid_input`: a bundle too old to send the field needs to be
+    // told to reload, and it must hear that before the run is paid for --
+    // which is the population the optional field used to miss entirely.
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: { code: "client_out_of_date" },
+    });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+    expect(dependencies.acquireSlot).not.toHaveBeenCalled();
+    expect(dependencies.resolveMarket).not.toHaveBeenCalled();
   });
 
   it("returns a namespaced per-account conflict without constructing the provider", async () => {
@@ -589,7 +633,7 @@ describe("handleCompetitorKeywordGapRequest", () => {
     });
   });
 
-  it("does not start or await optional GSC when every DFS call already failed", async () => {
+  it("does not read GSC coverage when every DFS call already failed", async () => {
     const domainIntersection = vi.fn().mockRejectedValue(new Error("DFS down"));
     const readCoverageQueries = vi.fn(
       () => new Promise<never>(() => undefined),
@@ -612,10 +656,13 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(outcome).toBeInstanceOf(Response);
     if (!(outcome instanceof Response)) return;
     expect(outcome.status).toBe(502);
-    expect(dependencies.readGscSession).not.toHaveBeenCalled();
-    expect(dependencies.openGscGate).not.toHaveBeenCalled();
-    expect(dependencies.resolveGscGrant).not.toHaveBeenCalled();
+    // The preflight is what runs before the provider; the read is what does
+    // not, because there is nothing left to overlay.
+    expect(dependencies.readGscSession).toHaveBeenCalledOnce();
+    expect(dependencies.openGscGate).toHaveBeenCalledOnce();
+    expect(dependencies.resolveGscGrant).toHaveBeenCalledOnce();
     expect(readCoverageQueries).not.toHaveBeenCalled();
+    expect(dependencies.releaseGsc).toHaveBeenCalledOnce();
     expect(dependencies.releaseSlot).toHaveBeenCalledOnce();
     expect(dependencies.log).toHaveBeenCalledOnce();
   });
@@ -648,7 +695,7 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.releaseSlot).toHaveBeenCalledOnce();
   });
 
-  it("marks GSC unavailable on an exact-property session mismatch while preserving DFS results", async () => {
+  it("refuses before spending when the session cannot read the selected property", async () => {
     const dependencies = runnableDependencies({
       readGscSession: vi.fn().mockResolvedValue({
         properties: ["sc-domain:other.example"],
@@ -663,31 +710,25 @@ describe("handleCompetitorKeywordGapRequest", () => {
       dependencies,
     );
 
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      data: {
-        run: { status: string };
-        result: { overlayStatus: string; rows: unknown[] };
-      };
-    };
-    expect(body.data.run.status).toBe("partial");
-    expect(body.data.result.overlayStatus).toBe("unavailable");
-    expect(body.data.result.rows).toHaveLength(1);
-    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: { code: "gsc_property_not_granted" },
+    });
+    // The whole point of the refusal: nothing was bought.
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
     expect(dependencies.readGscSession).toHaveBeenCalledOnce();
     expect(dependencies.openGscGate).not.toHaveBeenCalled();
     expect(dependencies.resolveGscGrant).not.toHaveBeenCalled();
     expect(dependencies.readCoverageQueries).not.toHaveBeenCalled();
     expect(dependencies.releaseGsc).not.toHaveBeenCalled();
+    expect(dependencies.releaseSlot).toHaveBeenCalledOnce();
+    expect(dependencies.log).toHaveBeenCalledWith(
+      expect.objectContaining({ gsc: "refused", reportProduced: false }),
+    );
   });
 
-  it("refuses to overlay a granted property that belongs to another site", async () => {
-    const readCoverageQueries = vi.fn().mockResolvedValue({
-      queryRows: [],
-      queryPageRows: [],
-      queryPaging: { pagesFetched: 1, truncated: false },
-      queryPagePaging: { pagesFetched: 1, truncated: false },
-    });
+  it("refuses before spending when a granted property belongs to another site", async () => {
+    const readCoverageQueries = vi.fn();
     const dependencies = connectedGscDependencies({
       readGscSession: vi.fn().mockResolvedValue({
         properties: ["sc-domain:other.com"],
@@ -705,24 +746,15 @@ describe("handleCompetitorKeywordGapRequest", () => {
     });
 
     const response = await handleCompetitorKeywordGapRequest(
-      post({
-        ...VALID_INPUT,
-        property: "sc-domain:other.com",
-      }),
+      post({ ...VALID_INPUT, property: "sc-domain:other.com" }),
       dependencies,
     );
 
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      data: {
-        run: { status: string };
-        result: { overlayStatus: string; rows: unknown[] };
-      };
-    };
-    expect(body.data.run.status).toBe("partial");
-    expect(body.data.result.overlayStatus).toBe("unavailable");
-    expect(body.data.result.rows).toHaveLength(1);
-    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: { code: "gsc_property_site_mismatch" },
+    });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
     expect(dependencies.readGscSession).toHaveBeenCalledOnce();
     expect(dependencies.openGscGate).not.toHaveBeenCalled();
     expect(dependencies.resolveGscGrant).not.toHaveBeenCalled();
@@ -734,6 +766,8 @@ describe("handleCompetitorKeywordGapRequest", () => {
     [
       "the cheap session read throws",
       { readGscSession: vi.fn().mockRejectedValue(new Error("cookie secret")) },
+      503,
+      "gsc_temporarily_unavailable",
       false,
     ],
     [
@@ -746,41 +780,43 @@ describe("handleCompetitorKeywordGapRequest", () => {
           consentNotice: "none",
         }),
       },
+      403,
+      "gsc_property_not_granted",
       false,
     ],
     [
       "the GSC gate throws",
       { openGscGate: vi.fn().mockRejectedValue(new Error("quota store")) },
-      false,
-    ],
-    [
-      "the GSC gate denies admission",
-      {
-        openGscGate: vi.fn().mockResolvedValue({
-          ok: false,
-          response: Response.json({ error: { code: "rate_limited" } }),
-        }),
-      },
+      503,
+      "gsc_temporarily_unavailable",
       false,
     ],
     [
       "grant resolution throws",
       { resolveGscGrant: vi.fn().mockRejectedValue(new Error("oauth down")) },
+      503,
+      "gsc_temporarily_unavailable",
       true,
     ],
     [
       "the grant is absent",
       { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "none" }) },
+      401,
+      "gsc_revoked",
       true,
     ],
     [
       "the grant is revoked",
       { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "revoked" }) },
+      401,
+      "gsc_revoked",
       true,
     ],
     [
       "the grant is temporarily unavailable",
       { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "unavailable" }) },
+      503,
+      "gsc_temporarily_unavailable",
       true,
     ],
     [
@@ -793,16 +829,13 @@ describe("handleCompetitorKeywordGapRequest", () => {
           propertyTotal: 1,
         }),
       },
-      true,
-    ],
-    [
-      "the coverage reader rejects",
-      { readCoverageQueries: vi.fn().mockRejectedValue(new Error("GSC down")) },
+      403,
+      "gsc_property_not_granted",
       true,
     ],
   ])(
-    "degrades only the optional GSC overlay when %s",
-    async (_label, overrides, shouldReleaseGsc) => {
+    "refuses the whole run before any paid call when %s",
+    async (_label, overrides, status, code, shouldReleaseGsc) => {
       const dependencies = connectedGscDependencies(overrides);
 
       const response = await handleCompetitorKeywordGapRequest(
@@ -810,23 +843,75 @@ describe("handleCompetitorKeywordGapRequest", () => {
         dependencies,
       );
 
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as {
-        data: {
-          run: { status: string };
-          result: { overlayStatus: string; rows: unknown[] };
-        };
-      };
-      expect(body.data.run.status).toBe("partial");
-      expect(body.data.result.overlayStatus).toBe("unavailable");
-      expect(body.data.result.rows).toHaveLength(1);
-      expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual({ error: { code } });
+      // A request that named a property asked for both halves. When the
+      // first-party half provably cannot happen, the visitor is not charged
+      // for a report whose "your status" column would be empty.
+      expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+      expect(dependencies.readCoverageQueries).not.toHaveBeenCalled();
       expect(dependencies.releaseGsc).toHaveBeenCalledTimes(
         shouldReleaseGsc ? 1 : 0,
       );
       expect(dependencies.releaseSlot).toHaveBeenCalledOnce();
+      expect(dependencies.log).toHaveBeenCalledWith(
+        expect.objectContaining({ gsc: "refused", reportProduced: false }),
+      );
     },
   );
+
+  it("returns the shared gate's own refusal verbatim, with its Retry-After", async () => {
+    const dependencies = connectedGscDependencies({
+      openGscGate: vi.fn().mockResolvedValue({
+        ok: false,
+        response: Response.json(
+          { error: { code: "rate_limited" } },
+          { status: 429, headers: { "Retry-After": "1800" } },
+        ),
+      }),
+    });
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post({ ...VALID_INPUT, property: "sc-domain:acme.com" }),
+      dependencies,
+    );
+
+    // Passed through rather than re-coded, so the visitor keeps the one piece
+    // of information a rate limit carries: when it resets.
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("1800");
+    expect(await response.json()).toEqual({ error: { code: "rate_limited" } });
+    expect(dependencies.domainIntersection).not.toHaveBeenCalled();
+    // The gate releases its own slot on refusal; the handler must not double-release.
+    expect(dependencies.releaseGsc).not.toHaveBeenCalled();
+  });
+
+  it("still delivers the DataForSEO half when only the coverage read fails", async () => {
+    const dependencies = connectedGscDependencies({
+      readCoverageQueries: vi.fn().mockRejectedValue(new Error("GSC down")),
+    });
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post({ ...VALID_INPUT, property: "sc-domain:acme.com" }),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        run: { status: string };
+        result: { overlayStatus: string; rows: unknown[] };
+      };
+    };
+    // The read is the ONE overlay failure the preflight cannot predict, so it
+    // is the only reason a delivered report may still carry an empty overlay.
+    expect(body.data.run.status).toBe("partial");
+    expect(body.data.result.overlayStatus).toBe("unavailable");
+    expect(body.data.result.rows).toHaveLength(1);
+    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    expect(dependencies.releaseGsc).toHaveBeenCalledOnce();
+    expect(dependencies.releaseSlot).toHaveBeenCalledOnce();
+  });
 
   it("maps a successful GSC query and query-page read into the report", async () => {
     const readCoverageQueries = vi.fn().mockResolvedValue({
@@ -985,7 +1070,7 @@ describe("handleCompetitorKeywordGapRequest", () => {
   });
 
   it.each(["https://other.com/blog/", "https://sub.acme.com/blog/"])(
-    "refuses an exact granted URL-prefix property outside the canonical site host: %s",
+    "refuses before spending on an exact granted URL-prefix property outside the canonical site host: %s",
     async (property) => {
       const readCoverageQueries = vi.fn();
       const dependencies = connectedGscDependencies({
@@ -1008,16 +1093,12 @@ describe("handleCompetitorKeywordGapRequest", () => {
         post({ ...VALID_INPUT, property }),
         dependencies,
       );
-      const body = (await response.json()) as {
-        data: {
-          run: { status: string };
-          result: { overlayStatus: string };
-        };
-      };
 
-      expect(response.status).toBe(200);
-      expect(body.data.run.status).toBe("partial");
-      expect(body.data.result.overlayStatus).toBe("unavailable");
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: { code: "gsc_property_site_mismatch" },
+      });
+      expect(dependencies.domainIntersection).not.toHaveBeenCalled();
       expect(dependencies.openGscGate).not.toHaveBeenCalled();
       expect(dependencies.resolveGscGrant).not.toHaveBeenCalled();
       expect(readCoverageQueries).not.toHaveBeenCalled();

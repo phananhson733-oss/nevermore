@@ -204,7 +204,7 @@ describe.each([
     returnedRows: "Returned gap rows",
     observedBody:
       "Returned rows observed in the bounded own-site GSC query or query-page sample.",
-    recommendationHeader: "Next check",
+    recommendationHeader: "Recommended action",
     recommendation:
       "Not observed in this sample; review the gap before creating a page.",
     boundaries: "Evidence boundaries",
@@ -225,7 +225,7 @@ describe.each([
     versus: "对比",
     returnedRows: "本次返回的差距行",
     observedBody: "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
-    recommendationHeader: "下一步检查",
+    recommendationHeader: "建议",
     recommendation: "本次样本未观测本站；先复核差距，再决定是否新建。",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
@@ -268,7 +268,12 @@ describe.each([
     expect(host.textContent).not.toContain("summary.unavailable");
     expect(host.textContent).not.toContain("intent.commercial");
     expect(host.textContent).not.toContain("overview.returnedGapRows");
-    expect(host.textContent).not.toContain("table.nextCheck");
+    expect(host.textContent).not.toContain("table.nextAction");
+    expect(host.textContent).not.toContain("actions.optimizeObservedPage");
+    expect(host.textContent).not.toContain("actions.openCompetitorPageNamed");
+    expect(host.textContent).not.toContain("sources.short");
+    expect(host.textContent).not.toContain("legend.dfsMeans");
+    expect(host.textContent).not.toContain("status.partialBody");
     expect(host.textContent).not.toContain("boundaries.manualSnapshot");
   });
 });

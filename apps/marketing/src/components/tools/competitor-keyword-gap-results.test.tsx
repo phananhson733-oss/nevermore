@@ -76,17 +76,27 @@ describe("CompetitorKeywordGapResults", () => {
       "ownState.not_observed_in_provider_rankings",
     );
 
-    const headers = [...host.querySelectorAll('thead th[scope="col"]')].map(
-      (header) => header.textContent?.trim(),
-    );
+    const headers = [
+      ...host.querySelectorAll('thead th[scope="col"] [data-column-label]'),
+    ].map((label) => label.textContent?.trim());
     expect(headers).toEqual([
       "table.keyword",
       "table.monthlySearchVolume",
       "table.competitorCoverage",
       "table.yourStatus",
       "table.opportunitySignals",
-      "table.nextCheck",
+      "table.nextAction",
     ]);
+    // Provenance is asked while reading a cell, so it sits in the header the
+    // cell belongs to rather than in a legend the reader has scrolled past.
+    // Opportunity signals deliberately carries NO column badge: it mixes
+    // provider estimates with this tool's own heuristics, so the basis rides
+    // on the pre-screen chip that varies instead.
+    expect(
+      [...host.querySelectorAll("thead [data-column-source]")].map((badge) =>
+        badge.getAttribute("data-column-source"),
+      ),
+    ).toEqual(["dfs", "dfs", "gsc"]);
     expect(table.querySelector("caption")?.textContent).toContain(
       "table.caption",
     );
@@ -108,9 +118,11 @@ describe("CompetitorKeywordGapResults", () => {
     expect(table.querySelector("[data-monthly-volume]")?.className).toContain(
       "tabular-nums",
     );
-    expect(table.querySelector("[data-next-step-copy]")?.className).toContain(
-      "text-[13px]",
-    );
+    // The lane sentence is stated once above the table, not once per row.
+    expect(table.querySelector("[data-next-step-copy]")).toBeNull();
+    expect(
+      table.querySelector('[data-row-action="open-checker"]')?.className,
+    ).toContain("text-[12px]");
     expect(host.firstElementChild?.className).not.toMatch(
       /(?:min-w-screen|w-screen|overflow-x-(?:auto|scroll))/,
     );
@@ -383,9 +395,11 @@ describe("CompetitorKeywordGapResults", () => {
     expect(pageLink.getAttribute("href")).toBe("https://example.com/partial");
     expect(pageLink.getAttribute("target")).toBe("_blank");
     expect(pageLink.getAttribute("rel")).toContain("noopener");
-    expect(tableRow(host, "unsafe page").textContent).not.toContain(
-      "actions.openObservedPage",
-    );
+    expect(
+      tableRow(host, "unsafe page").querySelector(
+        '[data-row-action="open-observed-page"]',
+      ),
+    ).toBeNull();
   });
 
   it("does not let an empty property hide a safe observed page", async () => {
@@ -421,7 +435,7 @@ describe("CompetitorKeywordGapResults", () => {
         ),
       ).toBeInstanceOf(HTMLAnchorElement);
     }
-    expect(host.textContent).not.toContain("actions.openChecker");
+    expect(host.querySelector('[data-row-action="open-checker"]')).toBeNull();
   });
 
   it("supports copy and focus-property actions for their evidence lanes", async () => {

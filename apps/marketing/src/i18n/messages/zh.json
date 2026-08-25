@@ -843,6 +843,13 @@
         "search_in_progress": "该账号已有一次竞品分析正在运行，请等待其完成后再试。",
         "keyword_source_unavailable": "DataForSEO 本次未能提供可用的竞品排名样本。",
         "client_out_of_date": "本工具在你打开页面后有更新。请刷新页面后重新运行分析。",
+        "gsc_property_not_granted": "本工具当前没有读取所选 Search Console 资源的授权，因此没有开始分析。请重新连接 Search Console 并授权该资源，或改为不叠加 GSC 证据层重新运行。",
+        "gsc_property_site_mismatch": "所选 Search Console 资源不覆盖你填写的本站域名，因此没有开始分析。请改选覆盖该域名的资源，或改为不叠加 GSC 证据层重新运行。",
+        "gsc_revoked": "Search Console 授权已失效，因此没有开始分析。请重新连接 Search Console，或改为不叠加 GSC 证据层重新运行。",
+        "gsc_temporarily_unavailable": "暂时无法与 Search Console 通信，因此没有开始分析。请稍后重试，或改为不叠加 GSC 证据层重新运行。",
+        "rate_limited": "每小时的 Search Console 读取额度已用完。该额度由这里所有 Search Console 工具共享，本次没有开始分析。请等窗口重置后重试，或改为不叠加 GSC 证据层重新运行。",
+        "quota_unavailable": "无法核对 Search Console 读取额度，因此没有开始分析，而不是去做一次无人计数的读取。请稍后重试，或改为不叠加 GSC 证据层重新运行。",
+        "scan_in_progress": "同一网络下已有一次 Search Console 读取正在进行，因此没有开始分析。请等它结束后重试，或改为不叠加 GSC 证据层重新运行。",
         "unknown": "本次竞品分析未能完成。"
       },
       "running": {
@@ -852,8 +859,7 @@
       "actions": {
         "run": "开始差距分析",
         "running": "正在分析…",
-        "openChecker": "打开 On-Page Checker",
-        "openObservedPage": "打开已观测页面",
+        "runWithoutGsc": "不叠加 GSC 证据层，重新运行",
         "copyKeyword": "复制关键词",
         "focusProperty": "定位 GSC 资源",
         "copyFailed": "浏览器里无法复制这个关键词。",
@@ -862,7 +868,9 @@
         "showingAll": "当前筛选下已展开全部 {count} 行。",
         "showAll": "展开全部",
         "showLess": "收起",
-        "openCompetitorPage": "打开竞品页面",
+        "openCompetitorPageNamed": "看 {domain} 的页面",
+        "optimizeObservedPage": "优化 {page}",
+        "reviewObservedPage": "核对 {page}",
         "copyPlan": "{count, plural, other {将 # 行复制为计划}}",
         "copyPlanDone": "{count, plural, other {已复制 # 行。}}",
         "copyPlanFailed": "浏览器里无法复制这份计划。"
@@ -871,7 +879,13 @@
         "complete": "分析完成",
         "completeBody": "所有请求的竞品都返回了可用的 DataForSEO 结果。",
         "partial": "部分结果",
-        "partialBody": "至少一个竞品完成、至少一个竞品不可用。使用结果行前请先查看覆盖范围。",
+        "partialBody": {
+          "competitors": "至少一个竞品没有返回可用的排名样本。使用结果行前请先查看覆盖范围。",
+          "gscUnavailable": "所有竞品都已完成。可选的 Search Console 证据层本次没有读到，「你的状态」列不可用。",
+          "gscPartial": "所有竞品都已完成。Search Console 样本触及行数边界，「你的状态」列可能不完整。",
+          "both": "至少一个竞品没有返回可用的排名样本，同时 Search Console 证据层不完整。使用结果行前请先查看覆盖范围。",
+          "unspecified": "本次运行没有完整完成。使用结果行前请先查看覆盖范围。"
+        },
         "unavailable": "分析不可用",
         "unavailableBody": "所有竞品都没有返回可用排名样本；这不代表这些竞品没有关键词。"
       },
@@ -892,6 +906,10 @@
           "partial": "部分可用",
           "unavailable": "不可用",
           "not_requested": "未请求"
+        },
+        "short": {
+          "dfs": "估算",
+          "gsc": "GSC 实测"
         }
       },
       "coverage": {
@@ -925,7 +943,9 @@
         "gscQueryRows": "{count, plural, other {该资源在本窗口的有限样本内，GSC 返回了 # 条查询。}}"
       },
       "legend": {
-        "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
+        "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。",
+        "dfsMeans": "= DataForSEO 第三方数据，本次运行采样",
+        "gscMeans": "= 你自己的 Search Console，28 天窗口"
       },
       "boundaries": {
         "title": "数据与证据边界",
@@ -980,6 +1000,10 @@
           "dfs_estimate": "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
           "tool_heuristic": "本工具的文本/URL 启发式；只是预筛，不是 SERP 可赢性。"
         },
+        "basisShort": {
+          "dfs_estimate": "估算",
+          "tool_heuristic": "本工具判定"
+        },
         "filterAll": "全部预筛带",
         "band": {
           "prioritize_serp_check": "优先核 SERP",
@@ -1009,14 +1033,13 @@
       "table": {
         "title": "差距清单",
         "subtitle": "按关键词聚合，方便一次看清竞品覆盖、本站有限 GSC 证据，以及当前最明确的下一步。",
-        "legend": "DataForSEO 的竞品结果与可选的本站 Search Console 观测分开呈现。",
         "caption": "带 DataForSEO 指标与可选 GSC 证据的竞品关键词差距",
         "keyword": "关键词",
         "monthlySearchVolume": "月搜索量",
         "competitorCoverage": "竞品覆盖",
         "yourStatus": "你的状态",
         "opportunitySignals": "机会信号",
-        "nextCheck": "下一步检查"
+        "nextAction": "建议"
       },
       "ownState": {
         "not_observed_in_provider_rankings": "数据源排名样本未观测到本站"
