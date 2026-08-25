@@ -1,8 +1,9 @@
-// @input  -- one merged gap row's DFS estimates, its competitor pages, and the requested competitor domains
+// @input  -- one merged gap row's DFS estimates, its competitor pages (row shape), and the requested competitor domains
 // @output -- a deterministic pre-screen band with the single reason that decided it
 // @pos    -- second, orthogonal axis next to the GSC-derived next step; an estimate, never winnability
 
 import type {
+  CompetitorKeywordGapCompetitorPage,
   CompetitorKeywordGapMetric,
   CompetitorKeywordGapPreScreen,
 } from "./types.ts";
@@ -18,8 +19,10 @@ export interface CompetitorKeywordGapPreScreenInput {
   readonly searchVolume: CompetitorKeywordGapMetric;
   readonly bestCompetitorRank: number;
   readonly providerIntent: string | null;
-  /** Competitor domain -> ranking page URL (already sanitised), when known. */
-  readonly competitorPages: Readonly<Record<string, string | null>>;
+  /** Competitor domain -> its ranking page, in the row's own shape so the seam passes it through untouched. */
+  readonly competitorPages: Readonly<
+    Record<string, CompetitorKeywordGapCompetitorPage>
+  >;
   readonly competitorDomains: readonly string[];
 }
 
@@ -41,6 +44,22 @@ const SECOND_LEVEL_SUFFIXES = new Set([
   "ac",
   "gov",
   "edu",
+]);
+/** Trailing labels that make a dotted keyword a file or technology name (`robots.txt`, `node.js`), not a hostname. */
+const FILE_EXTENSION_LABELS = new Set([
+  "txt",
+  "xml",
+  "js",
+  "json",
+  "html",
+  "htm",
+  "css",
+  "pdf",
+  "config",
+  "csv",
+  "php",
+  "yaml",
+  "yml",
 ]);
 const MIN_LABELS_FOR_SECOND_LEVEL_SUFFIX = 3;
 const MIN_BRAND_TOKEN_LENGTH = 3;
@@ -71,7 +90,11 @@ function registrableLabel(domain: string): string | undefined {
   return underSecondLevelSuffix ? labels.at(-3) : beforeTld;
 }
 
-/** The label a person would call the competitor by: `ahrefs` for `ahrefs.com`, `seo-tools` for `seo-tools.example`. */
+/**
+ * The label a person would call the competitor by: `ahrefs` for `ahrefs.com`, `seo-tools` for `seo-tools.example`.
+ * An IDN competitor arrives punycoded (`xn--fiqs8s.com`) and yields a token that never matches keyword text,
+ * so the brand check silently does nothing for it; the other three navigational checks still apply.
+ */
 export function competitorBrandTokens(
   domains: readonly string[],
 ): readonly string[] {
@@ -89,25 +112,45 @@ export function competitorBrandTokens(
   return [...tokens].toSorted();
 }
 
-function containsToken(keyword: string, token: string): boolean {
-  return new RegExp(
-    `(^|[^a-z0-9])${escapeRegExp(token)}([^a-z0-9]|$)`,
-    "i",
-  ).test(keyword);
+function tokenPattern(token: string): RegExp {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(token)}([^a-z0-9]|$)`, "i");
+}
+
+interface BrandTokenPatterns {
+  readonly key: string;
+  readonly patterns: readonly RegExp[];
+}
+
+/** Single-entry memo: a run screens hundreds of rows against one constant competitor set. */
+let lastBrandTokenPatterns: BrandTokenPatterns | null = null;
+
+function brandTokenPatterns(domains: readonly string[]): readonly RegExp[] {
+  const key = domains.join("\n");
+  if (lastBrandTokenPatterns?.key === key) return lastBrandTokenPatterns.patterns;
+  const patterns = competitorBrandTokens(domains).map(tokenPattern);
+  lastBrandTokenPatterns = { key, patterns };
+  return patterns;
+}
+
+/** `now.gg` is a hostname; `robots.txt` and `node.js` are a file and a technology and stay in the metric lane. */
+function isHostnameShaped(keyword: string): boolean {
+  if (!HOSTNAME_SHAPE.test(keyword)) return false;
+  const lastLabel = keyword.slice(keyword.lastIndexOf(".") + 1);
+  return !FILE_EXTENSION_LABELS.has(lastLabel);
 }
 
 /** True when a competitor ranks with a `/<keyword>.<tld>/` path, i.e. a profile page about another brand. */
 function isDomainProfilePage(
   keyword: string,
-  pages: Readonly<Record<string, string | null>>,
+  pages: Readonly<Record<string, CompetitorKeywordGapCompetitorPage>>,
 ): boolean {
   const compact = keyword.replace(/\s+/g, "");
   if (compact.length < MIN_PROFILE_KEYWORD_LENGTH) return false;
   const needle = new RegExp(`/${escapeRegExp(compact)}\\.[a-z]{2,}(?:/|$)`, "i");
-  return Object.values(pages).some((url) => {
-    if (url === null) return false;
+  return Object.values(pages).some((page) => {
+    if (page.url === null) return false;
     try {
-      return needle.test(new URL(url).pathname);
+      return needle.test(new URL(page.url).pathname);
     } catch {
       return false;
     }
@@ -127,11 +170,11 @@ function navigationalDecision(
   input: CompetitorKeywordGapPreScreenInput,
 ): CompetitorKeywordGapPreScreen | null {
   if (COMPARATIVE_TOKENS.test(keyword)) return null;
-  const brandTokens = competitorBrandTokens(input.competitorDomains);
-  if (brandTokens.some((token) => containsToken(keyword, token))) {
+  const patterns = brandTokenPatterns(input.competitorDomains);
+  if (patterns.some((pattern) => pattern.test(keyword))) {
     return decide("defer_brand_navigational", "competitor_brand_token");
   }
-  if (HOSTNAME_SHAPE.test(keyword)) {
+  if (isHostnameShaped(keyword)) {
     return decide("defer_brand_navigational", "domain_like_keyword");
   }
   if (isDomainProfilePage(keyword, input.competitorPages)) {
@@ -169,6 +212,6 @@ export function preScreenCompetitorKeyword(
   }
   // Everything that is not both low-KD and page-one lands here, including a
   // low-KD term a competitor only holds on page two; the reason name is pinned
-  // by the contract and must not be read as "mid KD" by UI copy.
+  // by the contract (see its doc in types.ts) and must not be read as "mid KD".
   return decide("stretch", "kd_mid_rank_top20");
 }

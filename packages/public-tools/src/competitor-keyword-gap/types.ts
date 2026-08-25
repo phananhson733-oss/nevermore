@@ -2,10 +2,7 @@
 // @output -- the versioned, provider-safe competitor keyword gap result contract
 // @pos    -- shared evidence boundary for the authenticated Marketing tool
 
-import type {
-  PublicToolErrorEnvelope,
-  PublicToolRun,
-} from "../contract.ts";
+import type { PublicToolErrorEnvelope, PublicToolRun } from "../contract.ts";
 
 export const COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION =
   "competitor_keyword_gap.v3";
@@ -162,6 +159,13 @@ export const COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS = [
   "defer_brand_navigational",
 ] as const satisfies readonly CompetitorKeywordGapPreScreenBand[];
 
+/**
+ * The single check that decided the band. `kd_mid_rank_top20` is the fallthrough for
+ * every row that is not both low-KD and page-one (KD 31-60 on page one, KD <= 30 on
+ * page two, KD 31-60 on page two); it must not be rendered as "mid KD". The "top20"
+ * half is the sample rule (`COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK`), which the
+ * policy does not re-check.
+ */
 export type CompetitorKeywordGapPreScreenReason =
   | "kd_low_rank_top10"
   | "kd_mid_rank_top20"
@@ -192,7 +196,9 @@ export interface CompetitorKeywordGapRow {
   readonly cpc: CompetitorKeywordGapMetric;
   readonly keywordDifficulty: CompetitorKeywordGapMetric;
   readonly providerIntent: string | null;
+  /** DFS-reported `keyword_properties.core_keyword`; null when the provider gave none. */
   readonly coreKeyword: string | null;
+  /** DFS-reported `keyword_info.search_volume_trend` percentages; null when the provider gave none. */
   readonly searchVolumeTrend: CompetitorKeywordGapSearchVolumeTrend | null;
   /** null when the snapshot was not requested or the provider reported none. */
   readonly serpSnapshot: CompetitorKeywordGapSerpSnapshot | null;
@@ -221,8 +227,10 @@ export interface CompetitorKeywordGapResultV3 {
   readonly gscQueryPageRowCount: number | null;
 }
 
-export interface CompetitorKeywordGapRun
-  extends PublicToolRun<typeof COMPETITOR_KEYWORD_GAP_TOOL, "site"> {
+export interface CompetitorKeywordGapRun extends PublicToolRun<
+  typeof COMPETITOR_KEYWORD_GAP_TOOL,
+  "site"
+> {
   readonly schemaVersion: typeof COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION;
   readonly status: CompetitorKeywordGapRunStatus;
 }

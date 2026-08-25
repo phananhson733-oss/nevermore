@@ -11,6 +11,9 @@ const METRIC = (value: number | null) =>
       ? { availability: "explicit_zero" as const, value: 0 }
       : { availability: "available" as const, value };
 
+/** The row's own page shape, so the report seam passes `row.competitorPages` through untouched. */
+const PAGE = (url: string | null) => ({ url, title: null, etv: null });
+
 function input(
   overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[0]> = {},
 ) {
@@ -21,7 +24,7 @@ function input(
     bestCompetitorRank: 4,
     providerIntent: "commercial",
     competitorPages: {
-      "one.example": "https://one.example/approval-workflows",
+      "one.example": PAGE("https://one.example/approval-workflows"),
     },
     competitorDomains: ["one.example", "two.example"],
     ...overrides,
@@ -41,9 +44,9 @@ describe("preScreenCompetitorKeyword", () => {
     expect(
       preScreenCompetitorKeyword(input({ keywordDifficulty: METRIC(45) })).band,
     ).toBe("stretch");
-    expect(preScreenCompetitorKeyword(input({ bestCompetitorRank: 14 })).band).toBe(
-      "stretch",
-    );
+    expect(
+      preScreenCompetitorKeyword(input({ bestCompetitorRank: 14 })).band,
+    ).toBe("stretch");
     expect(
       preScreenCompetitorKeyword(input({ bestCompetitorRank: 14 })).reason,
     ).toBe("kd_mid_rank_top20");
@@ -77,28 +80,57 @@ describe("preScreenCompetitorKeyword", () => {
       preScreenCompetitorKeyword(input({ keyword: "one webmaster tools" }))
         .reason,
     ).toBe("competitor_brand_token");
+    // The brand check runs before the hostname check, so the token decides it.
     expect(
-      preScreenCompetitorKeyword(input({ keyword: "ONE.example login" })).band,
-    ).toBe("defer_brand_navigational");
+      preScreenCompetitorKeyword(input({ keyword: "ONE.example login" })),
+    ).toEqual({
+      band: "defer_brand_navigational",
+      basis: "dfs_estimate",
+      reason: "competitor_brand_token",
+    });
     expect(
       preScreenCompetitorKeyword(input({ keyword: "one alternatives" })).band,
     ).toBe("prioritize_serp_check");
-    expect(preScreenCompetitorKeyword(input({ keyword: "two vs one" })).band).toBe(
-      "prioritize_serp_check",
-    );
-    expect(preScreenCompetitorKeyword(input({ keyword: "one 替代" })).band).toBe(
-      "prioritize_serp_check",
-    );
+    expect(
+      preScreenCompetitorKeyword(input({ keyword: "two vs one" })).band,
+    ).toBe("prioritize_serp_check");
+    expect(
+      preScreenCompetitorKeyword(input({ keyword: "one 替代" })).band,
+    ).toBe("prioritize_serp_check");
   });
 
   it("routes a hostname-shaped keyword and a provider navigational intent to the skip lane", () => {
-    expect(preScreenCompetitorKeyword(input({ keyword: "now.gg" })).reason).toBe(
-      "domain_like_keyword",
-    );
+    expect(
+      preScreenCompetitorKeyword(input({ keyword: "now.gg" })).reason,
+    ).toBe("domain_like_keyword");
     expect(
       preScreenCompetitorKeyword(input({ providerIntent: "navigational" }))
         .reason,
     ).toBe("provider_navigational_intent");
+  });
+
+  it("does not read a file or technology name as a hostname", () => {
+    for (const keyword of [
+      "robots.txt",
+      "sitemap.xml",
+      "node.js",
+      "web.config",
+    ]) {
+      expect(preScreenCompetitorKeyword(input({ keyword }))).toEqual({
+        band: "prioritize_serp_check",
+        basis: "dfs_estimate",
+        reason: "kd_low_rank_top10",
+      });
+    }
+    expect(
+      preScreenCompetitorKeyword(
+        input({ keyword: "robots.txt", keywordDifficulty: METRIC(45) }),
+      ).band,
+    ).toBe("stretch");
+    // A real TLD keeps the hostname reading.
+    expect(
+      preScreenCompetitorKeyword(input({ keyword: "now.gg" })).reason,
+    ).toBe("domain_like_keyword");
   });
 
   it("recognises a competitor domain-profile page as another brand's navigational term", () => {
@@ -107,7 +139,9 @@ describe("preScreenCompetitorKeyword", () => {
         input({
           keyword: "hanime",
           competitorPages: {
-            "one.example": "https://one.example/website/hanime.tv/overview/",
+            "one.example": PAGE(
+              "https://one.example/website/hanime.tv/overview/",
+            ),
           },
         }),
       ),
@@ -121,15 +155,26 @@ describe("preScreenCompetitorKeyword", () => {
         input({
           keyword: "approval software",
           competitorPages: {
-            "one.example": "https://one.example/blog/approval-software-guide",
+            "one.example": PAGE(
+              "https://one.example/blog/approval-software-guide",
+            ),
           },
+        }),
+      ).band,
+    ).toBe("prioritize_serp_check");
+    // A page without a URL cannot vouch for a profile match.
+    expect(
+      preScreenCompetitorKeyword(
+        input({
+          keyword: "hanime",
+          competitorPages: { "one.example": PAGE(null) },
         }),
       ).band,
     ).toBe("prioritize_serp_check");
   });
 
   it("does not let a short or generic-only label act as a brand token", () => {
-    // "a.io" -> "a" is too short; "www.io" -> "www" is generic and "io" is too short.
+    // "a.io" -> registrable label "a" is too short; "www.io" -> registrable label is "www", which is generic.
     expect(
       competitorBrandTokens(["a.io", "www.io", "seo-tools.example"]),
     ).toEqual(["seo-tools"]);
@@ -158,7 +203,10 @@ describe("preScreenCompetitorKeyword", () => {
     ).toBe("prioritize_serp_check");
     expect(
       preScreenCompetitorKeyword(
-        input({ keyword: "seo tools", competitorDomains: ["tools.ahrefs.com"] }),
+        input({
+          keyword: "seo tools",
+          competitorDomains: ["tools.ahrefs.com"],
+        }),
       ).band,
     ).toBe("prioritize_serp_check");
     expect(
@@ -175,9 +223,15 @@ describe("preScreenCompetitorKeyword", () => {
     const reasonFor = (
       overrides: Partial<Parameters<typeof preScreenCompetitorKeyword>[0]>,
     ) => preScreenCompetitorKeyword(input(overrides)).reason;
-    expect(reasonFor({ keywordDifficulty: METRIC(30) })).toBe("kd_low_rank_top10");
-    expect(reasonFor({ keywordDifficulty: METRIC(31) })).toBe("kd_mid_rank_top20");
-    expect(reasonFor({ keywordDifficulty: METRIC(60) })).toBe("kd_mid_rank_top20");
+    expect(reasonFor({ keywordDifficulty: METRIC(30) })).toBe(
+      "kd_low_rank_top10",
+    );
+    expect(reasonFor({ keywordDifficulty: METRIC(31) })).toBe(
+      "kd_mid_rank_top20",
+    );
+    expect(reasonFor({ keywordDifficulty: METRIC(60) })).toBe(
+      "kd_mid_rank_top20",
+    );
     expect(reasonFor({ keywordDifficulty: METRIC(61) })).toBe("kd_high");
     expect(reasonFor({ bestCompetitorRank: 10 })).toBe("kd_low_rank_top10");
     expect(reasonFor({ bestCompetitorRank: 11 })).toBe("kd_mid_rank_top20");
