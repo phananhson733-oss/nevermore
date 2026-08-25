@@ -698,10 +698,18 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     // Scoped to the outcome lines: those are the rendered counts. The static
     // requirement and hit-condition copy legitimately names thresholds such
     // as 0.5, which is a constant, not a measurement.
-    for (const outcome of paths?.querySelectorAll("[data-path-outcome]") ?? []) {
+    const outcomes = [
+      ...(paths?.querySelectorAll("[data-path-outcome]") ?? []),
+      ...(paths?.querySelectorAll("[data-selection-not-shown]") ?? []),
+    ];
+    // Asserted, not assumed: a loop over a selector that stopped matching
+    // would otherwise pass by making no assertion at all.
+    expect(outcomes).toHaveLength(7);
+    for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
     }
+    expect(paths?.textContent).not.toContain("query rows, and every");
     expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
   });
 
@@ -994,6 +1002,25 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "2 provisional position moves were left out by the row budget",
     );
     expect(empty?.textContent).not.toContain("No automated handoff");
+  });
+
+  it("states the selection rules that stand between a candidate and a row", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [change("click_opportunity", 1)],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: 4 }),
+      }),
+    );
+    const rules = host.querySelector("[data-selection-rules]");
+
+    // Passing both stated lines is not sufficient; three presentation rules
+    // stand between a candidate and the table, and they were stated nowhere.
+    expect(rules?.textContent).toContain("One row per query");
+    expect(rules?.textContent).toContain("at most three query rows");
+    expect(rules?.textContent).toContain("gives up its place");
+    expect(
+      host.querySelector("[data-selection-not-shown]")?.textContent,
+    ).toContain("4 rows formed candidates");
   });
 
   it("counts one withheld sample-building row with singular grammar", async () => {

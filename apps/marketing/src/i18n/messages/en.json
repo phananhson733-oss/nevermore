@@ -1917,8 +1917,8 @@
           "lanes": {
             "clickOpportunity": {
               "name": "Click opportunity",
-              "requirement": "confirmed brand terms, and the query sitting inside a usable CTR baseline band",
-              "finding": "observed clicks fall at least 3 short of the band baseline, and the gap reaches 15 percent of it"
+              "requirement": "confirmed brand terms, and the query being non-brand, reaching 100 impressions in the current window, sitting inside a usable CTR baseline band, and leaving that band still able to produce a baseline once the query itself is removed from it",
+              "finding": "observed clicks fall at least 3 short of what the band baseline predicts, and the shortfall reaches 15 percent of that prediction"
             },
             "stableDecline": {
               "name": "Stable-position click decline",
@@ -1937,7 +1937,7 @@
             },
             "firstObserved": {
               "name": "First-observed query and page pair (counted below by query)",
-              "requirement": "page attribution readable and usable in both windows; the pair reaching 100 impressions in the current window at an average position between 8 and 21 with current query-to-page coverage of at least 80 percent; and, if the query has a prior row, that row itself reaching 100 impressions with at least 80 percent coverage, or the pair counts as not evaluable",
+              "requirement": "page attribution readable and usable in both windows; the pair reaching 100 impressions in the current window at an average position from 8 up to but not including 21, with current query-to-page coverage of at least 80 percent; and, if the query has a prior row, that row itself reaching 100 impressions with at least 80 percent coverage, or the pair counts as not evaluable",
               "finding": "the query and page pair is absent from the prior window’s list"
             }
           },
@@ -1947,7 +1947,11 @@
             "none": "No candidate had its landing page withheld this run.",
             "unavailable": "Page attribution evidence is unavailable, so the withheld count cannot be reported. It is not zero."
           },
-          "laneFinding": "Hits when: {finding}"
+          "laneFinding": "Hits when: {finding}",
+          "selectionTitle": "What happens after a candidate forms",
+          "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows. If all three selected rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
+          "selectionNotShown": "{count, plural, one {# row formed a candidate} other {# rows formed candidates}} this run without appearing in the table above.",
+          "selectionAllShown": "Every row that formed a candidate this run appears in the table above."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",

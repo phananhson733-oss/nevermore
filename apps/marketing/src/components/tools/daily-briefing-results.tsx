@@ -596,6 +596,30 @@ function SignalPathEvidence({
         })}
       </PathTier>
 
+      <PathTier title={t("evidence.paths.selectionTitle")}>
+        {/* Passing every stated gate is not the same as reaching the table.
+            Three presentation rules stand between a candidate and a row, and
+            leaving them unstated made the two lines above look sufficient. */}
+        <p
+          data-selection-rules
+          className="border-l border-brand-border pl-3 text-[11.5px] leading-[1.55] text-text-dark-secondary"
+        >
+          {t("evidence.paths.selectionRules")}
+        </p>
+        {rowAccounting.notSelectedVisibleRows === null ? null : (
+          <p
+            data-selection-not-shown
+            className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
+          >
+            {rowAccounting.notSelectedVisibleRows === 0
+              ? t("evidence.paths.selectionAllShown")
+              : t("evidence.paths.selectionNotShown", {
+                  count: rowAccounting.notSelectedVisibleRows,
+                })}
+          </p>
+        )}
+      </PathTier>
+
       <PathTier title={t("evidence.paths.tiers.suppression")}>
         <PathLine
           id="page-attribution"
