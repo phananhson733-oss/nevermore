@@ -250,7 +250,11 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(open.getAttribute("href")).toBe("https://beta.example/best");
     expect(open.getAttribute("target")).toBe("_blank");
     expect(open.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(open.textContent?.trim()).toBe("actions.openCompetitorPage");
+    // The label names the competitor it is about to open, so a reader
+    // scanning the column can tell one row's destination from the next.
+    expect(open.textContent?.trim()).toBe(
+      "actions.openCompetitorPageNamed:domain=beta.example",
+    );
     // The best-rank competitor has no page here, so the link falls back to
     // any competitor page with a safe URL.
     const fallbackOpen = fallbackRow.querySelector(
@@ -260,7 +264,7 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
       "https://alpha.example/fallback",
     );
     expect(fallbackOpen?.textContent?.trim()).toBe(
-      "actions.openCompetitorPage",
+      "actions.openCompetitorPageNamed:domain=alpha.example",
     );
     expect(
       unknownRow.querySelector('[data-row-action="copy-keyword"]'),

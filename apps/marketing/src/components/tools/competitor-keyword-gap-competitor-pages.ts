@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap row and the viewer locale
-// @output -- rank-ordered competitor pages, the best safe page URL, the best-rank traffic estimate, and the snapshot date label
+// @output -- rank-ordered competitor pages, the best safe page URL and its domain, the best-rank traffic estimate, and the snapshot date label
 // @pos    -- pure row derivations shared by the competitor gap chips and results table
 
 import type {
@@ -45,6 +45,21 @@ export function bestCompetitorPageUrl(
   for (const entry of rankedCompetitorPages(row)) {
     const url = safePageUrl(entry.page?.url ?? null);
     if (url !== null) return url;
+  }
+  return null;
+}
+
+/**
+ * The domain whose page `bestCompetitorPageUrl` returned, so a button can name
+ * where it is about to send the reader. Kept next to that function because the
+ * two must agree: naming one competitor and opening another's page is exactly
+ * the kind of quiet mismatch a link label is trusted not to have.
+ */
+export function bestCompetitorPageDomain(
+  row: CompetitorKeywordGapRow,
+): string | null {
+  for (const entry of rankedCompetitorPages(row)) {
+    if (safePageUrl(entry.page?.url ?? null) !== null) return entry.domain;
   }
   return null;
 }

@@ -1,5 +1,5 @@
 // @input  -- nothing at runtime; the tool's next-intl translator type, locale strings, and provider URLs
-// @output -- shared Tailwind class tokens, the narrowed translator type, and number/translate/URL-safety helpers
+// @output -- shared Tailwind class tokens (cards, chips by shape and tone, column provenance badges), the narrowed translator type, and number/translate/URL-safety helpers
 // @pos    -- styling and formatting shared by every Marketing competitor gap results module
 
 import type { useTranslations } from "next-intl";
@@ -14,10 +14,57 @@ export const KEYWORD_TEXT =
   "text-[15.5px] font-semibold leading-[1.25] text-text-dark-primary";
 export const CHIP_TEXT =
   "inline-flex items-center rounded-full border border-brand-border-strong bg-brand-panel-sunken px-2 py-1 font-mono text-[11px] leading-none text-text-dark-primary";
+
+/**
+ * Two chip shapes, and the difference carries meaning.
+ *
+ * A rectangle is a DATUM the provider or Search Console reported -- a rank, a
+ * difficulty, a SERP feature. A pill is a STATE this row is in. Keeping them
+ * visually distinct stops a reader from scanning a stored provider snapshot as
+ * if it were their own measured status, which is the one confusion this table
+ * exists to prevent.
+ */
+export const DATA_CHIP =
+  "inline-flex items-center gap-1 rounded-[6px] border px-2 py-[3px] font-mono text-[11.5px] leading-[1.35]";
+
+export type ChipTone = "neutral" | "positive" | "caution" | "muted";
+
+/**
+ * Tone is reading order, never a verdict. `positive` marks a row the
+ * pre-screen puts near the top of the queue; it does not say the keyword is
+ * winnable, and the chip's own title still names the basis.
+ */
+export function chipTone(tone: ChipTone): string {
+  switch (tone) {
+    case "positive":
+      return "border-brand-success/35 bg-brand-success/[0.10] text-brand-success";
+    case "caution":
+      return "border-brand-warning/35 bg-brand-warning/[0.10] text-brand-warning";
+    case "muted":
+      return "border-brand-border bg-brand-panel-sunken text-text-dark-secondary";
+    case "neutral":
+      return "border-brand-border-strong bg-brand-panel-sunken text-text-dark-primary";
+  }
+}
+
+/**
+ * The provenance badge that sits in a column header.
+ *
+ * It is in the header rather than a legend box because the question it answers
+ * -- "is this number mine or a third party's guess?" -- is asked while reading
+ * a cell, and a legend twenty lines up does not answer it there.
+ */
+export const COLUMN_BADGE =
+  "ml-1.5 inline-flex items-center rounded-full border px-1.5 py-px font-mono text-[9.5px] leading-[1.5] tracking-[0.03em] normal-case";
+
+export const COLUMN_BADGE_TONE: Readonly<Record<"dfs" | "gsc", string>> = {
+  dfs: "border-brand-info/35 bg-brand-info/[0.10] text-brand-info",
+  gsc: "border-brand-success/35 bg-brand-success/[0.10] text-brand-success",
+};
 export const ACTION_BUTTON =
-  "inline-flex items-center rounded-[10px] border border-brand-border-strong px-3 py-2 text-[12px] font-medium text-text-dark-primary transition hover:border-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
+  "inline-flex items-center whitespace-nowrap rounded-[10px] border border-brand-border-strong bg-brand-panel-raised px-3 py-2 text-[12px] font-medium text-text-dark-primary transition hover:border-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
 export const PRIMARY_ACTION_BUTTON =
-  "inline-flex items-center rounded-[10px] bg-brand-accent px-3 py-2 text-[12px] font-semibold text-brand-on-accent transition hover:opacity-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
+  "inline-flex items-center whitespace-nowrap rounded-[10px] bg-brand-accent px-3 py-2 text-[12px] font-semibold text-brand-on-accent transition hover:opacity-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
 
 export type Translate = ReturnType<
   typeof useTranslations<"tools.competitorKeywordGap">
