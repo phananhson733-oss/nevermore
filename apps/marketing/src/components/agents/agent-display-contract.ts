@@ -16,7 +16,6 @@ import {
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
   INDEX_COVERAGE_EVIDENCE_LABELS,
-  INDEX_COVERAGE_LIMITATION_CODES,
   INDEX_COVERAGE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/index-coverage";
 import {
@@ -98,7 +97,6 @@ export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
 export const AGENT_LIMITATION_CODES: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_LIMITATION_CODES,
   ...SEARCH_PERFORMANCE_LIMITATION_CODES,
-  ...INDEX_COVERAGE_LIMITATION_CODES,
   ...KEYWORD_EVIDENCE_LIMITATION_CODES,
   ...PAGE_PERFORMANCE_LIMITATION_CODES,
   ...SERP_SHAPE_LIMITATION_CODES,  "resource_not_observed_does_not_prove_absence",
