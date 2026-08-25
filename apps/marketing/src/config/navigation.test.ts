@@ -10,13 +10,7 @@ import {
   resourcesMenuGroups,
 } from "./navigation.ts";
 
-/**
- * The header audit submenu against the exact destinations it intentionally
- * promotes.
- *
- * `/agents/tech` remains a compatibility route, but the primary menu promotes
- * the restored public Internal Link Audit instead.
- */
+/** The header submenus against the exact catalogue boundaries they promote. */
 
 const AGENTS_ROUTE_DIR = fileURLToPath(
   new URL("../app/[locale]/agents", import.meta.url),
@@ -59,7 +53,7 @@ function lookup(messages: Record<string, unknown>, key: string): unknown {
 }
 
 describe("Website audits submenu", () => {
-  it("promotes the exact two Agents and public Internal Link Audit", () => {
+  it("promotes exactly the two Agents", () => {
     expect(
       agentsMenuGroups.flatMap((group) =>
         group.items.map((item) => ({
@@ -70,19 +64,12 @@ describe("Website audits submenu", () => {
     ).toEqual([
       { slug: "seo", href: "/agents/seo" },
       { slug: "geo", href: "/agents/geo" },
-      {
-        slug: "internal-link-audit",
-        href: "/tools/internal-link-audit",
-      },
     ]);
-
-    expect(agentsMenuGroups[0]?.items[2]).toEqual({
-      slug: "internal-link-audit",
-      href: "/tools/internal-link-audit",
-      labelKey: "nav.agentsMenu.internalLinkAudit.label",
-      descriptionKey: "nav.agentsMenu.internalLinkAudit.description",
-      icon: "Wrench",
-    });
+    expect(
+      agentsMenuGroups.flatMap((group) =>
+        group.items.map((item) => menuItemPath("/agents", item)),
+      ),
+    ).not.toContain("/tools/internal-link-audit");
   });
 
   it("keeps the Tech Agent compatibility route without promoting it", () => {
@@ -154,14 +141,8 @@ describe("Resources submenu", () => {
     ]);
   });
 
-  it("uses explicit destinations when an item crosses catalogue boundaries", () => {
+  it("uses explicit destinations for the Resources catalogues", () => {
     expect(menuItemPath("/agents", { slug: "seo" })).toBe("/agents/seo");
-    expect(
-      menuItemPath("/agents", {
-        slug: "internal-link-audit",
-        href: "/tools/internal-link-audit",
-      }),
-    ).toBe("/tools/internal-link-audit");
     expect(
       menuItemPath("/resources", {
         slug: "prompts",
@@ -213,23 +194,19 @@ describe("Navigation copy", () => {
     }
   });
 
-  it("labels the mixed menu as Website audits and names the public tool", () => {
+  it("keeps Internal Link Audit copy in Tools rather than Agents", () => {
     const en = readMessages("en");
     const zh = readMessages("zh");
 
     expect(lookup(en, "nav.agentsMenu.group")).toBe("Website audits");
     expect(lookup(zh, "nav.agentsMenu.group")).toBe("网站审查");
-    expect(lookup(en, "nav.agentsMenu.internalLinkAudit.label")).toBe(
+    expect(lookup(en, "nav.agentsMenu.internalLinkAudit")).toBeUndefined();
+    expect(lookup(zh, "nav.agentsMenu.internalLinkAudit")).toBeUndefined();
+    expect(lookup(en, "nav.toolsMenu.internalLinkAudit.label")).toBe(
       "Internal Link Audit",
     );
-    expect(lookup(zh, "nav.agentsMenu.internalLinkAudit.label")).toBe(
+    expect(lookup(zh, "nav.toolsMenu.internalLinkAudit.label")).toBe(
       "内链审计",
-    );
-    expect(lookup(en, "nav.agentsMenu.internalLinkAudit.description")).toBe(
-      "Run a public-site crawl without signing in to inspect the internal-link graph, click depth, and orphan-page evidence.",
-    );
-    expect(lookup(zh, "nav.agentsMenu.internalLinkAudit.description")).toBe(
-      "无需登录即可抓取公开网站，查看内链图谱、点击深度与孤岛页证据。",
     );
   });
 });
