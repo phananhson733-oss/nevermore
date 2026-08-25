@@ -2103,7 +2103,7 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Only strict evidence-backed actions are listed, in deterministic order. The list is not padded to three.",
+        "intro": "Only strict evidence-backed actions are listed. Query, page and property actions form their own groups, each ordered by certainty within itself; the groups are not ordered against each other, because they do not measure the same population. Nothing is added to fill a quota.",
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
@@ -2112,11 +2112,14 @@
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
         "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action.",
-        "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions."
+        "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions.",
+        "groupQuery": "Query evidence",
+        "groupPage": "Page evidence",
+        "groupProperty": "Property evidence"
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
-        "actions": "Run the briefing to generate up to three actions tied to observed evidence."
+        "actions": "Every action carries its evidence straight into the matching tool, with no URL to move by hand."
       },
       "actionKinds": {
         "click_opportunity": {
@@ -2246,7 +2249,7 @@
         "title": "No evidence of change, still worth a look",
         "intro": "These entries come from the rows already shown above. They say where these queries currently sit and nothing more: no change is claimed, and none of them is an evidence-backed action.",
         "evidence": "Current standing, not evidence of change",
-        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, the current position is far enough back that nothing done to the page this week changes the outcome, or the page already appears in an action above."
+        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, the current position falls outside the band this check covers, or the page already appears in an action above."
       }
     },
     "trafficDrop": {

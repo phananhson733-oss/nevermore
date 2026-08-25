@@ -1755,6 +1755,15 @@ export function DailyBriefingResults({
           </div>
         ) : (
           <div data-actions-list className="mt-4 grid gap-3">
+            {/* Grouped in the rendering, not only in the code. Resetting each
+                group's numbers internally left one flat list on screen, where
+                query action 3 still sat above page action 1 under a heading
+                that claims a certainty order. */}
+            {queryActions.length > 0 ? (
+              <p data-action-group="query" className={EYEBROW}>
+                {t("actions.groupQuery")}
+              </p>
+            ) : null}
             {queryActions.map(({ action, change }, index) => {
               const target = destination(action.destination);
               return (
@@ -1808,10 +1817,16 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
-            {/* Numbered from one again. A single sequence running through
-                query, page and property actions reads as one priority order
-                over three different populations, and nothing measured says a
-                query action outranks a page one. Each group orders itself. */}
+            {/* Numbered from one again, under its own heading. A single
+                sequence running through query, page and property actions
+                reads as one priority order over three different populations,
+                and nothing measured says a query action outranks a page
+                one. */}
+            {pageActions.length > 0 ? (
+              <p data-action-group="page" className={EYEBROW}>
+                {t("actions.groupPage")}
+              </p>
+            ) : null}
             {pageActions.map(({ action, change }, index) => {
               const target = destination(action.destination);
               const rank = index + 1;
@@ -1872,6 +1887,13 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
+            {propertyAction !== null &&
+            propertyComparisons !== null &&
+            propertyTarget !== null ? (
+              <p data-action-group="property" className={EYEBROW}>
+                {t("actions.groupProperty")}
+              </p>
+            ) : null}
             {propertyAction !== null &&
             propertyComparisons !== null &&
             propertyTarget !== null ? (

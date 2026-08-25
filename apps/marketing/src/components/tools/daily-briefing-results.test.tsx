@@ -1857,16 +1857,25 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(pageLine?.textContent).toContain("2 further page records");
   });
 
-  it("withholds a not-shown count it could not measure, on either side", async () => {
+  it.each([
+    ["the query side", null, 0, "UnavailableQuery", "AllShownPage"],
+    ["the page side", 0, null, "AllShownQuery", "UnavailablePage"],
+  ])("withholds a not-shown count it could not measure on %s", async (
+    _label,
+    queryCount,
+    pageCount,
+    queryKey,
+    pageKey,
+  ) => {
     const host = await renderResults(
       envelope({
         changes: [],
         actions: [],
-        rowAccounting: rowAccounting({ notSelectedVisibleRows: null }),
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: queryCount }),
         pageAccounting: {
           evidence: "observed",
           observedRows: 2,
-          notSelectedVisibleRows: 0,
+          notSelectedVisibleRows: pageCount,
           unreadableRows: 0,
           byLane: {
             page_click_decline: laneRows(2, 0, 0),
@@ -1876,15 +1885,18 @@ describe("DailyBriefingResults folded explanation", () => {
         queryWatchlist: watchlist("observed"),
       }),
     );
+    const copy = en.tools.dailyBriefing.evidence.paths as unknown as Readonly<
+      Record<string, string>
+    >;
 
-    // A null on one side is not a zero on the other, and summing them produced
-    // an exact-looking total out of one unknown.
+    // A null on one side is not a zero on the other, in either direction, and
+    // summing them produced an exact-looking total out of one unknown.
     expect(
       host.querySelector('[data-selection-not-shown="query"]')?.textContent,
-    ).toBe(en.tools.dailyBriefing.evidence.paths.selectionUnavailableQuery);
+    ).toBe(copy[`selection${queryKey}`]);
     expect(
       host.querySelector('[data-selection-not-shown="page"]')?.textContent,
-    ).toBe(en.tools.dailyBriefing.evidence.paths.selectionAllShownPage);
+    ).toBe(copy[`selection${pageKey}`]);
   });
 
   it("names a row it could not read rather than shrinking the denominator", async () => {
@@ -1969,6 +1981,45 @@ describe("DailyBriefingResults folded explanation", () => {
 
     // Three actions over three populations, each numbered within its own.
     expect(ranks).toEqual(["1", "1", "1"]);
+    // And the grouping is on screen, not only in the numbering: without a
+    // visible boundary, query action 3 still reads as ranked above page
+    // action 1 under a heading that claims a certainty order.
+    expect(
+      [...host.querySelectorAll("[data-action-group]")].map((node) =>
+        node.getAttribute("data-action-group"),
+      ),
+    ).toEqual(["query", "page", "property"]);
+    expect(host.querySelector('[data-result-section="actions"]')?.textContent)
+      .toContain("the groups are not ordered against each other");
+  });
+
+  it("renders both budgets at once without either capping the other", async () => {
+    const queryChanges = [1, 2, 3].map((index) =>
+      change("stable_position_click_decline", index),
+    );
+    const host = await renderResults(
+      envelope({
+        changes: queryChanges,
+        actions: queryChanges.map((source) =>
+          action(source, "traffic-drop-diagnosis"),
+        ),
+        pageChanges: [
+          pageChange(),
+          pageChange({ page: "https://example.com/second" }),
+        ],
+        pageActions: [
+          pageAction(),
+          pageAction({ page: "https://example.com/second" }),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    // Three query rows saturate the query budget. Slicing page rows from what
+    // the query rows left over would show none of these.
+    expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
+    expect(host.querySelectorAll("[data-page-change]")).toHaveLength(2);
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(5);
   });
 
   it("names a page change as a whole page instead of inventing a query", async () => {

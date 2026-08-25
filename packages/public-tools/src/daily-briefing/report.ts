@@ -1827,6 +1827,7 @@ function pageCandidatesFor(
   let pairedPageRows = 0;
   let declineCapableRows = 0;
   let firstObservedCapableRows = 0;
+  let absenceBlockedRows = 0;
 
   for (const current of currentRows) {
     if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
@@ -1844,7 +1845,13 @@ function pageCandidatesFor(
     // calling that "first observed" would be a different claim than the one
     // this lane is allowed to make.
     if (previous === undefined || previous.impressions === 0) {
-      if (!priorAbsenceProvable) continue;
+      if (!priorAbsenceProvable) {
+        // This row, and only this row, is the one the unattributable prior
+        // record leaves undecided. Counting the whole prior drop against the
+        // lane said it could not speak for rows it had in fact resolved.
+        absenceBlockedRows += 1;
+        continue;
+      }
       firstObservedCapableRows += 1;
       if (withinActionableBand(current.position)) {
         firstObserved.push({
@@ -1933,14 +1940,16 @@ function pageCandidatesFor(
   // Current-window rows we could not read still happened. Leaving them out of
   // the denominator made "0 of 0 rows" out of a window that returned one, and
   // made an unreadable page indistinguishable from an absent one.
-  // Every record the window returned, however far it got. Rows the reader
-  // could not map are included through `pageRead.unreadableRows`, because a
-  // record erased before the report saw it still arrived.
-  const unreadableCurrentRows =
-    currentSet.unusable.size +
-    currentSet.blank +
+  // Records returned, counted as records. Deriving this from the identities
+  // that survived meant two contradictory rows for one URL reported as one
+  // record returned and one unreadable — two rows arrived and two were
+  // discarded. Reader drops are added because a record erased before the
+  // report saw it still arrived.
+  const observedRows =
+    (currentEvidence?.pageRead?.rows.length ?? 0) +
     (currentEvidence?.pageRead?.unreadableRows ?? 0);
-  const observedRows = currentRows.length + unreadableCurrentRows;
+  // Everything that arrived and did not become a usable row.
+  const unreadableCurrentRows = Math.max(0, observedRows - currentRows.length);
   return {
     // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
     // relies on a stable sort to keep each lane's own magnitude order.
@@ -1963,11 +1972,7 @@ function pageCandidatesFor(
       page_first_observed: pageLaneState(
         firstObservedCapableRows,
         currentRows.length,
-        unreadableCurrentRows +
-          (priorAbsenceProvable
-            ? 0
-            : priorSet.blank +
-              (previousEvidence?.pageRead?.unreadableRows ?? 0)),
+        unreadableCurrentRows + absenceBlockedRows,
       ),
     },
     // Both lanes carry the unreadable rows in `notEvaluated`, which is what

@@ -3380,6 +3380,22 @@ describe("page dimension lanes", () => {
     );
   });
 
+  it("does not blame a lane for a prior record no current row needed", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12)],
+      // One unattributable prior record, and the only current page already
+      // has a readable prior match. Nothing about it is undecided.
+      { previousPageUnreadable: 1 },
+    );
+
+    // Passing the whole prior drop into the lane state said the path could
+    // not speak for rows it had in fact resolved.
+    expect(result.laneCapability.pageLanes.page_first_observed).toBe(
+      "not_applicable",
+    );
+  });
+
   it("counts a record the reader could not map at all", () => {
     const result = pageReport(
       [pageRow(PAGE, 300, 2, 12)],
@@ -3448,15 +3464,21 @@ describe("page dimension lanes", () => {
   ) => {
     const result = pageReport(rows.current, rows.previous);
 
-    // The window returned a row. Leaving it out of the denominator turned
-    // "one row we could not read" into "no such page", which is the same
-    // substitution the prior-window fix exists to prevent.
-    expect(result.pageAccounting.observedRows).toBe(1);
-    expect(result.pageAccounting.unreadableRows).toBe(1);
-    expect(result.pageAccounting.byLane?.page_click_decline.notEvaluated).toBe(1);
-    expect(result.pageAccounting.byLane?.page_first_observed.notEvaluated).toBe(
-      1,
-    );
+    // The window returned records. Leaving them out of the denominator turned
+    // "rows we could not read" into "no such page", which is the same
+    // substitution the prior-window fix exists to prevent — and the count is
+    // of records returned, so two contradictory rows are two, not one.
+    expect(result.pageAccounting.observedRows).toBe(rows.current.length);
+    expect(result.pageAccounting.unreadableRows).toBe(rows.current.length);
+    // Every returned record lands in `notEvaluated`, so the three buckets
+    // still sum to the denominator above them.
+    for (const lane of ["page_click_decline", "page_first_observed"] as const) {
+      expect(result.pageAccounting.byLane?.[lane]).toEqual({
+        notEvaluated: rows.current.length,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      });
+    }
     expect(result.pageChanges).toEqual([]);
   });
 
