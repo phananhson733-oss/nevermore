@@ -16,6 +16,9 @@ import {
   type GeoContextInputV1,
   type GeoContextSnapshotV1,
 } from "./geo-context.ts";
+// The gate a real run passes through, so an edit is checked against the thing
+// that refuses it rather than against a second copy of the derivation.
+import { validateGeoRunInput } from "./geo-run-handler.ts";
 import {
   geoPlannedCallCount,
   isGeoQuerySetConfirmed,
@@ -619,7 +622,7 @@ describe("buildGeoCoreQuerySet", () => {
 describe("editGeoQueryText", () => {
   const CLOCK = (): Date => new Date("2026-08-18T09:00:00.000Z");
 
-  async function set(): Promise<GeoQuerySetV1> {
+  async function context(): Promise<GeoContextSnapshotV1> {
     const snapshot = await confirmGeoContext(
       {
         targetUrl: "https://acme.test/",
@@ -645,13 +648,17 @@ describe("editGeoQueryText", () => {
         targetQueryLanguage: "en",
         sourceProfileVersion: "agent-profile.v3",
         sourceSummary: [
-      { field: "category", source: "user_edit", limitationCode: null },
-    ],
+          { field: "category", source: "user_edit", limitationCode: null },
+        ],
       },
       CLOCK,
     );
     if (!snapshot.ok) throw new Error(snapshot.rejections.join(","));
-    const built = await buildGeoCoreQuerySet(snapshot.snapshot, CLOCK);
+    return snapshot.snapshot;
+  }
+
+  async function set(): Promise<GeoQuerySetV1> {
+    const built = await buildGeoCoreQuerySet(await context(), CLOCK);
     if (!built.ok) throw new Error("expected a set");
     return built.querySet;
   }
@@ -665,6 +672,7 @@ describe("editGeoQueryText", () => {
       original,
       probe.queryId,
       "Which seo tools do enterprise teams trust?",
+      await context(),
     );
 
     expect(result.ok).toBe(true);
@@ -687,6 +695,7 @@ describe("editGeoQueryText", () => {
       original,
       original.queries[0]!.queryId,
       "Which seo tools do enterprise teams trust?",
+      await context(),
     );
 
     expect(result.ok).toBe(true);
@@ -704,6 +713,7 @@ describe("editGeoQueryText", () => {
       original,
       original.queries[0]!.queryId,
       "a".repeat(600),
+      await context(),
     );
 
     expect(result.ok).toBe(false);
@@ -713,13 +723,135 @@ describe("editGeoQueryText", () => {
   });
 
   it("refuses an unknown query id", async () => {
-    const result = await editGeoQueryText(await set(), "nope", "Anything?");
+    const result = await editGeoQueryText(
+      await set(),
+      "nope",
+      "Anything?",
+      await context(),
+    );
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.rejections).toEqual([
         { code: "unknown_query", queryId: "nope" },
       ]);
+    }
+  });
+
+  /*
+   * The stance travels with the text, because the server derives it again.
+   *
+   * `geo-run-handler` re-derives every question's brand stance from the text it
+   * was sent and refuses the whole run when the client's label disagrees. An
+   * edit that carried the old label forward therefore did not produce a
+   * mislabelled run — it produced an unrunnable one, refused before billing with
+   * an error the visitor could do nothing about.
+   */
+  it("re-derives the stance when an edit introduces the customer's own name", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const unbranded = original.queries.find(
+      (query) => query.brandStance === "unbranded",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      unbranded.queryId,
+      "Is Acme Analytics any good for seo?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === unbranded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("brand");
+  });
+
+  it("re-derives the stance when an edit removes the customer's own name", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const branded = original.queries.find(
+      (query) => query.brandStance === "brand",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      branded.queryId,
+      "Which seo tools do enterprise teams trust?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === branded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("unbranded");
+  });
+
+  it("re-derives the stance when an edit names a confirmed competitor", async () => {
+    const snapshot = await context();
+    const original = await set();
+    const unbranded = original.queries.find(
+      (query) => query.brandStance === "unbranded",
+    )!;
+
+    const result = await editGeoQueryText(
+      original,
+      unbranded.queryId,
+      "Which seo tools are cheaper than semrush?",
+      snapshot,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const edited = result.querySet.queries.find(
+      (query) => query.queryId === unbranded.queryId,
+    )!;
+    expect(edited.brandStance).toBe("mixed");
+  });
+
+  /*
+   * The real gate, not a second copy of the derivation.
+   *
+   * Comparing the edited stance against `deriveGeoBrandStance` here would only
+   * prove that two callers of one function agree — it would pass even if the
+   * server refused every one of these sets. `validateGeoRunInput` is what
+   * actually stands between an edit and eighteen billed calls, so the edited
+   * set is put in front of it. A stance the edit failed to re-derive comes back
+   * as `geo_brand_stance_mismatch`, which is exactly what visitors hit.
+   */
+  it("produces a set the run handler accepts, whatever the edit did to the names", async () => {
+    const snapshot = await context();
+    const original = await set();
+
+    for (const text of [
+      "Is Acme Analytics any good for seo?",
+      "Which seo tools are cheaper than semrush?",
+      "How do teams pick between Acme Analytics and semrush?",
+      "Which seo tools do enterprise teams trust?",
+    ]) {
+      const result = await editGeoQueryText(
+        original,
+        original.queries[0]!.queryId,
+        text,
+        snapshot,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const confirmed = await confirmGeoQuerySet(result.querySet, CLOCK);
+      const validated = await validateGeoRunInput({
+        context: snapshot,
+        querySet: confirmed,
+      });
+
+      expect(
+        validated.ok ? null : validated.code,
+        `the handler refused an edit to "${text}"`,
+      ).toBeNull();
     }
   });
 });

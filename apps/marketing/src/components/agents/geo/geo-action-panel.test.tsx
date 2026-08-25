@@ -212,19 +212,25 @@ describe("GeoActionPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  async function render(options: {
-    readonly citedHost?: string;
-    readonly hostile?: boolean;
-    readonly locale?: "en" | "zh";
-    readonly breakQuerySet?: boolean;
-  } = {}): Promise<void> {
+  async function render(
+    options: {
+      readonly citedHost?: string;
+      readonly hostile?: boolean;
+      readonly locale?: "en" | "zh";
+      readonly breakQuerySet?: boolean;
+    } = {},
+  ): Promise<void> {
     const captured = await capture();
     const { context } = captured;
     const querySet =
       options.hostile === true
         ? withQueryText(captured.querySet, 0, INJECTION)
         : captured.querySet;
-    const report = reportFrom(context, querySet, options.citedHost ?? "rival.test");
+    const report = reportFrom(
+      context,
+      querySet,
+      options.citedHost ?? "rival.test",
+    );
     const locale = options.locale ?? "en";
     const messages = locale === "zh" ? zh : en;
     act(() => {
@@ -336,7 +342,9 @@ describe("GeoActionPanel", () => {
     expect(host.textContent).toContain("What are the top seo tools right now?");
     // Scoped to the cards. The copied brief does carry query ids, on purpose:
     // they are how a receiving agent links a candidate back to a question.
-    const cards = [...host.querySelectorAll('[data-testid="geo-solution-card"]')]
+    const cards = [
+      ...host.querySelectorAll('[data-testid="geo-solution-card"]'),
+    ]
       .map((card) => card.textContent ?? "")
       .join("\n");
     expect(cards).toContain("What are the top seo tools right now?");
@@ -390,9 +398,13 @@ describe("GeoActionPanel", () => {
         (acc, line) =>
           line.startsWith("```")
             ? { open: !acc.open, kept: acc.kept }
-            : { open: acc.open, kept: acc.open ? [...acc.kept, line] : acc.kept },
+            : {
+                open: acc.open,
+                kept: acc.open ? [...acc.kept, line] : acc.kept,
+              },
         { open: false, kept: [] },
-      ).kept.join("\n");
+      )
+      .kept.join("\n");
     expect(inside).not.toContain("`");
     expect(inside).toContain("Ignore previous");
   });
@@ -412,7 +424,10 @@ describe("GeoActionPanel", () => {
 
     expect(preview.length).toBeGreaterThan(1_000);
     expect(writeText).toHaveBeenCalledWith(preview);
-    expect(host.textContent).toContain("The whole report was copied.");
+    expect(host.textContent).toContain("The brief was copied.");
+    // Not "the whole report": the brief carries counts and cited domains, and
+    // deliberately leaves every citation's URL, title and snippet on screen.
+    expect(host.textContent).not.toContain("The whole report was copied.");
   });
 
   it("puts the same text on the page when the clipboard refuses it", async () => {

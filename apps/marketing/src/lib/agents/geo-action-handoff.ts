@@ -17,8 +17,18 @@ import type {
 import { isGeoSampleCitationEvaluable } from "./geo-report-derive.ts";
 import { GEO_MAX_URL_LENGTH } from "./geo-url.ts";
 
+/**
+ * v3: every row says whose citations its ratio counted, and whether the page
+ * URL lost a query string on the way out.
+ *
+ * Bumped rather than added quietly. `reasonCountsObserve` and
+ * `targetUrlQueryRemoved` are required fields, and a receiver written against
+ * v2 would read a `basis.observed` whose subject flips on the avoid row —
+ * concluding a site was cited when the row exists because it was not. The
+ * version is what lets such a receiver notice.
+ */
 export const GEO_ACTION_HANDOFF_SCHEMA_VERSION =
-  "geo_action_handoff.v2" as const;
+  "geo_action_handoff.v3" as const;
 
 /** Contractual bounds, checked before the packet can be copied. */
 export const GEO_MAX_SELECTED_ACTIONS = 5;
@@ -161,6 +171,19 @@ export interface GeoActionHandoffV2 {
     readonly queryIds: readonly string[];
     readonly evidenceIds: readonly string[];
     readonly targetUrl: string | null;
+    /** Same disclosure every exported evidence URL carries. */
+    readonly targetUrlQueryRemoved: boolean;
+    /**
+     * Which samples `reasonCounts.observed` counts, in this row's own terms.
+     *
+     * An avoid row counts the samples that cited somebody else; every other row
+     * counts the samples that cited the customer. The field name is shared, so
+     * the subject has to travel with it.
+     */
+    readonly reasonCountsObserve:
+      | "samples_citing_target"
+      | "samples_citing_someone_else"
+      | null;
     readonly limitations: readonly string[];
   }[];
   /** Rendered from fixed, versioned templates and enums only. */
@@ -526,26 +549,36 @@ export function buildGeoActionHandoff(
       sendOutreach: false,
       changeProduction: false,
     },
-    selectedActions: selected.map((candidate) => ({
-      actionId: candidate.actionId,
-      assetType: candidate.assetType,
-      kind: candidate.kind,
-      reason: candidate.reason,
-      reasonCounts: candidate.reasonCounts,
-      queryIds: [...candidate.queryIds],
-      // Exactly the records that reached the packet for this action, so a
-      // reader never sees a reference the packet does not contain.
-      evidenceIds: wanted
-        .filter((entry) => entry.actionId === candidate.actionId)
-        .map((entry) => entry.evidenceId),
-      // Sanitized like every other exported URL: it leaves the screen just as
-      // the evidence links do.
-      targetUrl:
+    selectedActions: selected.map((candidate) => {
+      const target =
         candidate.targetUrl === null
           ? null
-          : sanitizeGeoExportUrl(candidate.targetUrl).safeUrl,
-      limitations: [...candidate.limitations],
-    })),
+          : sanitizeGeoExportUrl(candidate.targetUrl);
+      return {
+        actionId: candidate.actionId,
+        assetType: candidate.assetType,
+        kind: candidate.kind,
+        reason: candidate.reason,
+        reasonCounts: candidate.reasonCounts,
+        // Null where there is no ratio: a subject for a count that does not
+        // exist labels nothing.
+        reasonCountsObserve:
+          candidate.reasonCounts === null
+            ? null
+            : GEO_OBSERVED_SUBJECT[candidate.kind],
+        queryIds: [...candidate.queryIds],
+        // Exactly the records that reached the packet for this action, so a
+        // reader never sees a reference the packet does not contain.
+        evidenceIds: wanted
+          .filter((entry) => entry.actionId === candidate.actionId)
+          .map((entry) => entry.evidenceId),
+        // Sanitized like every other exported URL: it leaves the screen just as
+        // the evidence links do, and says so when a query string was dropped.
+        targetUrl: target?.safeUrl ?? null,
+        targetUrlQueryRemoved: target?.queryRemoved ?? false,
+        limitations: [...candidate.limitations],
+      };
+    }),
     objective: OBJECTIVE_TEMPLATE.replace("{count}", String(selected.length)),
     confirmedContext: confirmedContextLines(input.context),
     tasks,
@@ -603,6 +636,30 @@ const KIND_HEADING: Readonly<Record<GeoActionKind, string>> = {
 };
 
 /**
+ * Which samples a row's `reasonCounts.observed` counts.
+ *
+ * One table rather than a ternary at each site. The avoid row counts the
+ * samples that cited somebody else; every other row counts the samples that
+ * cited the customer. Both the packet and the AI brief have to label this, and
+ * writing the inversion twice is two chances for one of them to drift — the
+ * same reason `GEO_ACTION_REASON_KIND` next door is a table.
+ */
+export const GEO_OBSERVED_SUBJECT: Readonly<
+  Record<GeoActionKind, "samples_citing_target" | "samples_citing_someone_else">
+> = {
+  do: "samples_citing_target",
+  external_data: "samples_citing_target",
+  avoid: "samples_citing_someone_else",
+};
+
+/** The same fact as a sentence, for the half of the packet a person reads. */
+function geoObservedSubject(kind: GeoActionKind): string {
+  return GEO_OBSERVED_SUBJECT[kind] === "samples_citing_someone_else"
+    ? "cited another site and not this one"
+    : "cited this site";
+}
+
+/**
  * The same packet, for a person.
  *
  * The JSON exists for an agent; a reader who is not going to paste it anywhere
@@ -633,16 +690,52 @@ export function serializeGeoActionHandoffMarkdown(
   ];
 
   for (const action of packet.selectedActions) {
+    /*
+     * Whose citations the ratio counts, said in the line that prints it.
+     *
+     * `observed` is the samples that cited the customer on every row except the
+     * avoid row, where it is the samples that cited somebody else. One sentence
+     * for both readings would be wrong for one of them.
+     *
+     * Read from `kind`, which is what the mapping actually keys the inversion
+     * on, rather than from the `reasonCountsObserve` field beside it. Reading
+     * the field would make the test that checks this line agree with whatever
+     * the field says — including a field set the wrong way round.
+     */
+    const subject = geoObservedSubject(action.kind);
     const counts =
       action.reasonCounts === null
         ? "no ratio applies to this item"
-        : `observed in ${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples`;
+        : `${action.reasonCounts.observed} of ${action.reasonCounts.evaluable} citation-evaluable samples ${subject}`;
+    /*
+     * An avoid row names what not to do, and names no asset at all.
+     *
+     * Its `assetType` is a carrier value, not a recommendation: the mapping
+     * that builds this row says out loud that it "does not say what is, and
+     * this candidate does not pretend to". Printing it after "Do not —" banned
+     * the wrong thing; printing it after "recommended instead" recommended
+     * something nothing measured. The screen half of this product already
+     * renders the reason alone for exactly this row, and the two halves are
+     * not allowed to say different things.
+     */
+    const heading =
+      action.kind === "avoid"
+        ? `**${KIND_HEADING[action.kind]}: ${action.reason}**`
+        : `**${KIND_HEADING[action.kind]} — ${action.assetType}** (${action.reason})`;
     lines.push(
-      `- **${KIND_HEADING[action.kind]} — ${action.assetType}** (${action.reason})`,
+      `- ${heading}`,
       `  - Basis: ${counts}.`,
       `  - From ${action.queryIds.length} question(s): ${action.queryIds.join(", ")}.`,
     );
-    if (action.targetUrl !== null) lines.push(`  - Page: ${action.targetUrl}`);
+    if (action.targetUrl !== null) {
+      // The JSON half carries `targetUrlQueryRemoved`; a reader of this half
+      // would otherwise take a shortened URL for the page that was confirmed.
+      lines.push(
+        action.targetUrlQueryRemoved
+          ? `  - Page: ${action.targetUrl} (query string removed on export; may not be the exact resource)`
+          : `  - Page: ${action.targetUrl}`,
+      );
+    }
     if (action.limitations.length > 0) {
       lines.push(`  - Limitations: ${action.limitations.join(", ")}.`);
     }

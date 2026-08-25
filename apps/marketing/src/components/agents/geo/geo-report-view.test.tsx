@@ -9,9 +9,17 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import en from "../../../i18n/messages/en.json";
-import type { GeoConfirmedAliasV1 } from "../../../lib/agents/geo-context";
+import zh from "../../../i18n/messages/zh.json";
+import { deriveGeoSourceLandscape } from "../../../lib/agents/geo-source-landscape";
+import type {
+  GeoConfirmedAliasV1,
+  GeoContextSnapshotV1,
+} from "../../../lib/agents/geo-context";
 import type { GeoProviderObservation } from "../../../lib/agents/geo-provider";
-import type { GeoQueryUnitV1 } from "../../../lib/agents/geo-query-contract";
+import type {
+  GeoQuerySetV1,
+  GeoQueryUnitV1,
+} from "../../../lib/agents/geo-query-contract";
 import type {
   GeoQuestionObservationV3,
   GeoReportDataV3,
@@ -284,7 +292,9 @@ describe("GeoReportView", () => {
     // Scoped to the table. Both hosts already appear in the identity and
     // per-sample rows, so an unscoped substring match stays green with the
     // table's body removed.
-    const table = host.querySelector('[data-testid="geo-sources-retrieval_probe"]');
+    const table = host.querySelector(
+      '[data-testid="geo-sources-retrieval_probe"]',
+    );
     const text = table?.textContent ?? "";
 
     expect(host.textContent).toContain("Who these answers actually cited");
@@ -329,7 +339,12 @@ describe("GeoReportView", () => {
     render(await buildReport());
     const text = host.textContent ?? "";
 
-    for (const invented of ["Community", "Marketplace", "Editorial", "Vendor"]) {
+    for (const invented of [
+      "Community",
+      "Marketplace",
+      "Editorial",
+      "Vendor",
+    ]) {
       expect(text).not.toContain(invented);
     }
   });
@@ -394,13 +409,16 @@ describe("GeoReportView", () => {
     expect(numberUnder("Attempted")).toBe("4");
   });
 
-  it("puts the per-question detail after the solutions, not before them", async () => {
-    // Eight questions at three samples each filled several screens before a
-    // reader reached the part that says what to do. The evidence is the proof,
-    // not the point. Rendered WITH the capture, because without it the
-    // solutions panel is absent and the assertion would be about two other
-    // sections entirely.
-    const report = await buildReport();
+  /**
+   * The confirmed context and query set the solutions panel needs.
+   *
+   * Without a capture that panel does not render at all, so any assertion about
+   * where the solutions sit would be about two other sections entirely.
+   */
+  async function capture(): Promise<{
+    readonly context: GeoContextSnapshotV1;
+    readonly querySet: GeoQuerySetV1;
+  }> {
     const confirmed = await confirmGeoContext(
       {
         targetUrl: "https://acme.test/",
@@ -437,7 +455,15 @@ describe("GeoReportView", () => {
       () => new Date("2026-08-19T09:00:00.000Z"),
     );
     if (!built.ok) throw new Error("fixture query set");
+    return { context: confirmed.snapshot, querySet: built.querySet };
+  }
 
+  it("renders the sections in the order the report was approved in", async () => {
+    // Eight questions at three samples each filled several screens before a
+    // reader reached the part that says what to do. The evidence is the proof,
+    // not the point.
+    const report = await buildReport();
+    const captured = await capture();
     act(() => {
       root.render(
         <NextIntlClientProvider
@@ -447,10 +473,7 @@ describe("GeoReportView", () => {
         >
           <GeoReportView
             report={report}
-            capture={{
-              context: confirmed.snapshot,
-              querySet: built.querySet,
-            }}
+            capture={captured}
             locale="en"
             onRestart={() => undefined}
           />
@@ -460,16 +483,112 @@ describe("GeoReportView", () => {
     const text = host.textContent ?? "";
 
     expect(text).toContain("What to do about it");
-    expect(text.indexOf("What this run reached")).toBeLessThan(
-      text.indexOf("What this run found"),
+    /*
+     * The whole approved order, not the two adjacent pairs.
+     *
+     * The earlier version pinned overview < problems and solutions < per-
+     * question, which left the source table and the copy block free to move
+     * anywhere — including past the per-question detail — with this test still
+     * green. The order is: overview, sources, problems, solutions, copy,
+     * per-question, limitations.
+     */
+    const order = [
+      "What this run reached",
+      "Who these answers actually cited",
+      "What this run found",
+      "What to do about it",
+      "Copy report for AI",
+      "Question by question",
+      "What this cannot tell you",
+    ];
+
+    /*
+     * Matched against heading elements, not the page's whole text.
+     *
+     * Two of these strings appear twice on the page: "Copy report for AI" is
+     * the section heading and the button inside it, and "Question by question"
+     * is the eyebrow above its own title. A first-substring search over
+     * `textContent` would then keep passing after the real heading moved or
+     * was deleted, because the other copy still sits in roughly the right
+     * place.
+     */
+    const headings = [...host.querySelectorAll("h2, h3, h4")];
+    const nodes = order.map((title) => {
+      const node = headings.find(
+        (candidate) => candidate.textContent?.trim() === title,
+      );
+      expect(node, `no heading element reads "${title}"`).toBeDefined();
+      return node!;
+    });
+    for (let index = 1; index < nodes.length; index += 1) {
+      const previous = nodes[index - 1]!;
+      const current = nodes[index]!;
+      const relation = previous.compareDocumentPosition(current);
+      expect(
+        relation & Node.DOCUMENT_POSITION_FOLLOWING,
+        `"${order[index]}" must come after "${order[index - 1]}"`,
+      ).toBeTruthy();
+    }
+  });
+
+  it("lists the URLs observed on a cited host, one click down", async () => {
+    const report = await buildReport();
+    render(report);
+
+    // The table aggregates to the host, so "acme.test cited in 3 of 3" cannot
+    // say whether that was one page three times or three pages once. The
+    // disclosure that answers it had a contract field, a derivation and both
+    // translations for weeks, and no renderer.
+    const sources = deriveGeoSourceLandscape(report);
+    const withUrls = Object.values(sources.byMode)
+      .flatMap((mode) => mode.sources)
+      .filter((source) => source.urls.length > 0);
+    expect(withUrls.length).toBeGreaterThan(0);
+
+    const summaries = [...host.querySelectorAll("summary")].map((node) =>
+      node.textContent?.trim(),
     );
-    expect(text.indexOf("What to do about it")).toBeLessThan(
-      text.indexOf("Question by question"),
-    );
-    // And the caveats still close the report.
-    expect(text.indexOf("Question by question")).toBeLessThan(
-      text.indexOf("What this cannot tell you"),
-    );
+    expect(summaries).toContain("Show the one URL on this host");
+
+    for (const url of withUrls[0]!.urls) {
+      expect(host.textContent).toContain(url);
+    }
+  });
+
+  /*
+   * The same report in the other locale.
+   *
+   * Every other test here renders `en`, and next-intl renders a missing key as
+   * its own path rather than throwing — so a zh key deleted or renamed would
+   * ship a report with `agents.geo.results.overviewTitle` printed in it and
+   * this file would stay green.
+   */
+  it("renders the same report in Chinese without leaking a key path", async () => {
+    const report = await buildReport();
+    const captured = await capture();
+    act(() => {
+      root.render(
+        <NextIntlClientProvider
+          locale="zh"
+          timeZone="UTC"
+          messages={{ agents: zh.agents }}
+        >
+          <GeoReportView
+            report={report}
+            capture={captured}
+            locale="zh"
+            onRestart={() => undefined}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("这些回答实际在引谁");
+    expect(text).toContain("检测到的 GEO 问题");
+    expect(text).toContain("逐题结果");
+    // A rendered key path is what a missing translation looks like on screen.
+    expect(text).not.toMatch(/agents\.geo\./);
   });
 
   it("shows one line per sample and keeps the exact evidence one click down", async () => {
@@ -615,7 +734,18 @@ describe("GeoReportView", () => {
     expect(host.textContent).toContain(
       "Report contents, provider answers and evidence are not stored server-side",
     );
-    expect(host.textContent).toContain("existing credits system");
+    // Where the retained metadata actually lives. The credits system was named
+    // here for a year and never touched a GEO run: no CreditToolSlug, no ledger
+    // row, no import. Naming a system that is not involved is the same defect
+    // as naming a persistence that does not happen.
+    expect(host.textContent).toContain("retained server-side");
+    expect(host.textContent).not.toContain("credits system");
+    // What the restore feature actually offers: eligibility to be restored in
+    // this tab, for up to fifteen minutes, where the browser permits storage.
+    // Not a retention promise — nothing deletes the report at fifteen minutes,
+    // and nothing guarantees the write succeeded.
+    expect(host.textContent).toContain("where the browser allows it");
+    expect(host.textContent).toContain("up to fifteen minutes");
   });
 
   it("avoids the words the contract cannot support", async () => {
