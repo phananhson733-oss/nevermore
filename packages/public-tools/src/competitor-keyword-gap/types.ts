@@ -21,6 +21,15 @@ export interface CompetitorKeywordGapRequestV1 {
   readonly competitorDomains: readonly string[];
   readonly marketCode: string;
   readonly languageCode: string;
+  /**
+   * The result contract version the CLIENT was built against
+   * (`COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION` in its bundle). Optional because
+   * older clients do not send it; when present and different from the
+   * server's version, the request is refused (`client_out_of_date`) before
+   * any paid provider call, so a stale tab never pays for a result its
+   * bundle cannot read.
+   */
+  readonly acceptSchemaVersion?: string;
 }
 
 export type CompetitorKeywordGapErrorCode =
@@ -31,7 +40,8 @@ export type CompetitorKeywordGapErrorCode =
   | "auth_required"
   | "auth_unavailable"
   | "search_in_progress"
-  | "keyword_source_unavailable";
+  | "keyword_source_unavailable"
+  | "client_out_of_date";
 
 /** Every public code the Marketing surface must have localized copy for. */
 export const COMPETITOR_KEYWORD_GAP_ERROR_CODES = [
@@ -43,6 +53,7 @@ export const COMPETITOR_KEYWORD_GAP_ERROR_CODES = [
   "auth_unavailable",
   "search_in_progress",
   "keyword_source_unavailable",
+  "client_out_of_date",
 ] as const satisfies readonly CompetitorKeywordGapErrorCode[];
 
 export type CompetitorKeywordGapErrorEnvelope =

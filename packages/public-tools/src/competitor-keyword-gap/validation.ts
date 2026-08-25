@@ -5,6 +5,8 @@
 import type { CompetitorKeywordGapRequestV1 } from "./types.ts";
 
 export const COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS = 5;
+/** Bounds the optional client-declared contract version, not a format check. */
+const ACCEPT_SCHEMA_VERSION_MAX_LENGTH = 64;
 
 export type ParsedCompetitorKeywordGapInput = CompetitorKeywordGapRequestV1;
 
@@ -39,20 +41,14 @@ function isIpv4(hostname: string): boolean {
 }
 
 function isPublicHostname(hostname: string): boolean {
-  if (
-    hostname.length > 253 ||
-    hostname.includes(":") ||
-    isIpv4(hostname)
-  ) {
+  if (hostname.length > 253 || hostname.includes(":") || isIpv4(hostname)) {
     return false;
   }
 
   const labels = hostname.split(".");
   return (
     labels.length >= 2 &&
-    labels.every(
-      (label) => label.length <= 63 && DOMAIN_LABEL.test(label),
-    )
+    labels.every((label) => label.length <= 63 && DOMAIN_LABEL.test(label))
   );
 }
 
@@ -158,6 +154,7 @@ export function parseCompetitorKeywordGapInput(
   const competitorDomains = input["competitorDomains"];
   const marketCode = input["marketCode"];
   const languageCode = input["languageCode"];
+  const acceptSchemaVersion = input["acceptSchemaVersion"];
 
   if (
     typeof siteDomain !== "string" ||
@@ -167,7 +164,11 @@ export function parseCompetitorKeywordGapInput(
     typeof marketCode !== "string" ||
     typeof languageCode !== "string" ||
     (property !== undefined &&
-      (typeof property !== "string" || property.trim() === ""))
+      (typeof property !== "string" || property.trim() === "")) ||
+    (acceptSchemaVersion !== undefined &&
+      (typeof acceptSchemaVersion !== "string" ||
+        acceptSchemaVersion === "" ||
+        acceptSchemaVersion.length > ACCEPT_SCHEMA_VERSION_MAX_LENGTH))
   ) {
     return INVALID_INPUT;
   }
@@ -178,8 +179,7 @@ export function parseCompetitorKeywordGapInput(
   if (
     !TWO_LETTER_CODE.test(trimmedMarketCode) ||
     !TWO_LETTER_CODE.test(trimmedLanguageCode) ||
-    (trimmedProperty !== undefined &&
-      !isSearchConsoleProperty(trimmedProperty))
+    (trimmedProperty !== undefined && !isSearchConsoleProperty(trimmedProperty))
   ) {
     return INVALID_INPUT;
   }
@@ -203,11 +203,14 @@ export function parseCompetitorKeywordGapInput(
     normalizedCompetitors.push(normalized);
   }
 
+  // exactOptionalPropertyTypes: spread the optional field in conditionally
+  // rather than ever writing `acceptSchemaVersion: undefined`.
   const common = {
     siteDomain: normalizedSite,
     competitorDomains: normalizedCompetitors,
     marketCode: trimmedMarketCode.toUpperCase(),
     languageCode: trimmedLanguageCode.toLowerCase(),
+    ...(acceptSchemaVersion === undefined ? {} : { acceptSchemaVersion }),
   };
 
   return {

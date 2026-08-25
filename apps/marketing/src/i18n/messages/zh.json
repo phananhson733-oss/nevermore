@@ -842,6 +842,7 @@
         "auth_unavailable": "暂时无法读取登录状态，请稍后重试。",
         "search_in_progress": "该账号已有一次竞品分析正在运行，请等待其完成后再试。",
         "keyword_source_unavailable": "DataForSEO 本次未能提供可用的竞品排名样本。",
+        "client_out_of_date": "本工具在你打开页面后有更新。请刷新页面后重新运行分析。",
         "unknown": "本次竞品分析未能完成。"
       },
       "running": {

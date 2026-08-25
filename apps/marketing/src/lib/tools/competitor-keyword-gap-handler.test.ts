@@ -1,6 +1,7 @@
 import {
   COMPETITOR_KEYWORD_GAP_MAX_COMPETITOR_RANK,
   COMPETITOR_KEYWORD_GAP_PROVIDER_LIMIT,
+  COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
 } from "@sf/public-tools";
 import { describe, expect, it, vi } from "vitest";
 
@@ -166,7 +167,10 @@ describe("handleCompetitorKeywordGapRequest", () => {
   });
 
   it.each([
-    ["returns unavailable", vi.fn().mockResolvedValue({ status: "unavailable" })],
+    [
+      "returns unavailable",
+      vi.fn().mockResolvedValue({ status: "unavailable" }),
+    ],
     ["throws", vi.fn().mockRejectedValue(new Error("auth outage"))],
   ])(
     "returns auth_unavailable before any other work when authentication %s",
@@ -281,13 +285,16 @@ describe("handleCompetitorKeywordGapRequest", () => {
     const resolveMarket = vi.fn().mockReturnValue(null);
     const credentials = vi.fn();
     const acquireSlot = vi.fn();
-    const response = await handleCompetitorKeywordGapRequest(post(VALID_INPUT), {
-      getServerAuthenticatedUser: authenticated,
-      readJson: readPublicToolJson,
-      resolveMarket,
-      credentials,
-      acquireSlot,
-    });
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      {
+        getServerAuthenticatedUser: authenticated,
+        readJson: readPublicToolJson,
+        resolveMarket,
+        credentials,
+        acquireSlot,
+      },
+    );
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
@@ -301,17 +308,20 @@ describe("handleCompetitorKeywordGapRequest", () => {
   it("fails closed before admission when DataForSEO credentials are absent", async () => {
     const credentials = vi.fn().mockReturnValue(null);
     const acquireSlot = vi.fn();
-    const response = await handleCompetitorKeywordGapRequest(post(VALID_INPUT), {
-      getServerAuthenticatedUser: authenticated,
-      readJson: readPublicToolJson,
-      resolveMarket: vi.fn().mockReturnValue({
-        locationCode: 2840,
-        locationName: "United States",
-        languageCode: "en",
-      }),
-      credentials,
-      acquireSlot,
-    });
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      {
+        getServerAuthenticatedUser: authenticated,
+        readJson: readPublicToolJson,
+        resolveMarket: vi.fn().mockReturnValue({
+          locationCode: 2840,
+          locationName: "United States",
+          languageCode: "en",
+        }),
+        credentials,
+        acquireSlot,
+      },
+    );
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
@@ -319,6 +329,67 @@ describe("handleCompetitorKeywordGapRequest", () => {
     });
     expect(credentials).toHaveBeenCalledOnce();
     expect(acquireSlot).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stale client's declared contract version before any paid, gated, or logged work", async () => {
+    const dependencies = runnableDependencies();
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post({
+        ...VALID_INPUT,
+        acceptSchemaVersion: "competitor_keyword_gap.v2",
+      }),
+      dependencies,
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, private");
+    // No Retry-After: retrying from the same stale bundle can never succeed.
+    expect(response.headers.get("Retry-After")).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "client_out_of_date" },
+    });
+    expect(dependencies.resolveMarket).not.toHaveBeenCalled();
+    expect(dependencies.credentials).not.toHaveBeenCalled();
+    expect(dependencies.createProvider).not.toHaveBeenCalled();
+    expect(dependencies.acquireSlot).not.toHaveBeenCalled();
+    expect(dependencies.readGscSession).not.toHaveBeenCalled();
+    expect(dependencies.readCoverageQueries).not.toHaveBeenCalled();
+    expect(dependencies.log).not.toHaveBeenCalled();
+  });
+
+  it("runs a request that declares the current contract version exactly like one that omits it", async () => {
+    const dependencies = runnableDependencies();
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post({
+        ...VALID_INPUT,
+        acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+      }),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { run: { schemaVersion: string } };
+    };
+    expect(body.data.run.schemaVersion).toBe(
+      COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
+    );
+    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
+    expect(dependencies.log).toHaveBeenCalledOnce();
+  });
+
+  it("still serves a legacy request that does not declare a contract version", async () => {
+    const dependencies = runnableDependencies();
+
+    const response = await handleCompetitorKeywordGapRequest(
+      post(VALID_INPUT),
+      dependencies,
+    );
+
+    expect(response.status).toBe(200);
+    expect(dependencies.domainIntersection).toHaveBeenCalledOnce();
   });
 
   it("returns a namespaced per-account conflict without constructing the provider", async () => {
@@ -697,8 +768,16 @@ describe("handleCompetitorKeywordGapRequest", () => {
       { resolveGscGrant: vi.fn().mockRejectedValue(new Error("oauth down")) },
       true,
     ],
-    ["the grant is absent", { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "none" }) }, true],
-    ["the grant is revoked", { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "revoked" }) }, true],
+    [
+      "the grant is absent",
+      { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "none" }) },
+      true,
+    ],
+    [
+      "the grant is revoked",
+      { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "revoked" }) },
+      true,
+    ],
     [
       "the grant is temporarily unavailable",
       { resolveGscGrant: vi.fn().mockResolvedValue({ kind: "unavailable" }) },
@@ -751,9 +830,7 @@ describe("handleCompetitorKeywordGapRequest", () => {
 
   it("maps a successful GSC query and query-page read into the report", async () => {
     const readCoverageQueries = vi.fn().mockResolvedValue({
-      queryRows: [
-        { query: "gap keyword", impressions: 120, position: 22.5 },
-      ],
+      queryRows: [{ query: "gap keyword", impressions: 120, position: 22.5 }],
       queryPageRows: [
         {
           query: "gap keyword",
@@ -907,10 +984,7 @@ describe("handleCompetitorKeywordGapRequest", () => {
     expect(dependencies.releaseGsc).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    "https://other.com/blog/",
-    "https://sub.acme.com/blog/",
-  ])(
+  it.each(["https://other.com/blog/", "https://sub.acme.com/blog/"])(
     "refuses an exact granted URL-prefix property outside the canonical site host: %s",
     async (property) => {
       const readCoverageQueries = vi.fn();

@@ -69,6 +69,25 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Belt and braces behind the request-side acceptSchemaVersion declaration: a
+ * 200 that failed the envelope guard because it names a DIFFERENT contract
+ * version than this bundle (a cached response, or a server that predates the
+ * request-side check). Read defensively -- only a non-empty schemaVersion
+ * string that differs from this build's constant counts.
+ */
+function hasMismatchedRunSchemaVersion(body: unknown): boolean {
+  if (!isRecord(body) || !isRecord(body.data)) return false;
+  const run = body.data.run;
+  if (!isRecord(run)) return false;
+  const schemaVersion = run.schemaVersion;
+  return (
+    typeof schemaVersion === "string" &&
+    schemaVersion !== "" &&
+    schemaVersion !== COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION
+  );
+}
+
 function isFiniteNumberOrNull(value: unknown): boolean {
   return (
     value === null || (typeof value === "number" && Number.isFinite(value))
@@ -456,6 +475,9 @@ export function CompetitorKeywordGapTool({
         competitorDomains,
         marketCode,
         languageCode,
+        // The contract version this bundle was built against; the server
+        // refuses a mismatch before spending anything on the run.
+        acceptSchemaVersion: COMPETITOR_KEYWORD_GAP_SCHEMA_VERSION,
       };
       const response = await fetch("/api/tools/competitor-keyword-gap", {
         method: "POST",
@@ -471,7 +493,9 @@ export function CompetitorKeywordGapTool({
         setErrorCode(
           nextCode !== null && isKnownErrorCode(nextCode)
             ? nextCode
-            : "unknown",
+            : nextEnvelope === null && hasMismatchedRunSchemaVersion(body)
+              ? "client_out_of_date"
+              : "unknown",
         );
         if (nextCode === "auth_required") setSignInOpen(true);
         setPhase("idle");
