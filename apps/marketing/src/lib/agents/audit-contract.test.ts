@@ -16,6 +16,7 @@ import {
   SEARCH_PERFORMANCE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
 import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
+import type { SeoAuditPage } from "@sf/public-tools/seo-audit/types";
 import {
   AGENT_SEARCH_PERFORMANCE_VERSION,
   AGENT_SERP_SHAPE_VERSION,
@@ -29,6 +30,36 @@ import {
 // guard in this very file could start refusing real payloads with these tests
 // green.
 const RECORD_SPECS = Object.entries(AGENT_AUDIT_RECORD_CATEGORIES);
+
+function searchPage(
+  path: string,
+  finalStatus: number,
+  redirectHops = 0,
+): SeoAuditPage {
+  const url = `https://acme.test${path}`;
+  return {
+    url,
+    subjectUrl: url,
+    finalUrl: url,
+    depth: 1,
+    initialStatus: finalStatus,
+    finalStatus,
+    redirectHops,
+    contentType: "text/html; charset=utf-8",
+    robotsDirectiveState: "noindex_not_observed",
+    canonicalTarget: url,
+    title: "Acme",
+    metaDescription: "Acme page",
+    h1Count: 1,
+    headingsCount: 1,
+    wordCount: 300,
+    inboundLinks: 1,
+    outboundLinks: 1,
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+  };
+}
 
 const success = {
   data: {
@@ -103,8 +134,14 @@ const searchPerformanceRecords = [
         {
           key: "https://acme.test/",
           clicks: 3,
-          impressions: 90,
+          impressions: 80,
           position: 4,
+        },
+        {
+          key: "https://acme.test/retired",
+          clicks: 0,
+          impressions: 10,
+          position: 8,
         },
       ],
       queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
@@ -115,9 +152,16 @@ const searchPerformanceRecords = [
       confirmedQueries: [],
       targetPageQueriesTruncated: false,
     },
-    [],
+    [
+      searchPage("/", 200),
+      searchPage("/retired", 410),
+      searchPage("/without-impressions", 200),
+    ],
   ),
-  ...buildIndexCoverageRecords(null, "sitemap_population_incomplete"),
+  ...buildIndexCoverageRecords([
+    { url: "https://acme.test/", verdict: "PASS" },
+    { url: "https://acme.test/retired", verdict: "NEUTRAL" },
+  ]),
 ];
 
 function withSearchPerformance(
@@ -171,9 +215,26 @@ describe("isAgentAuditSuccessEnvelope", () => {
 
   describe("the derived Search Performance region", () => {
     it("accepts the complete producer ledger including index coverage", () => {
+      const abandoned = searchPerformanceRecords.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      const indexCoverage = searchPerformanceRecords.find(
+        (record) => record.id === "sitemap_url_not_indexed",
+      );
+
       expect(searchPerformanceRecords).toHaveLength(
         SEARCH_PERFORMANCE_RECORD_IDS.length + INDEX_COVERAGE_RECORD_IDS.length,
       );
+      expect(abandoned).toMatchObject({
+        state: "observed",
+        affected: 1,
+      });
+      expect(abandoned?.observations).toHaveLength(2);
+      expect(indexCoverage).toMatchObject({
+        state: "observed",
+        affected: 1,
+      });
+      expect(indexCoverage?.observations).toHaveLength(2);
       expect(isAgentAuditSuccessEnvelope(withSearchPerformance())).toBe(true);
     });
 

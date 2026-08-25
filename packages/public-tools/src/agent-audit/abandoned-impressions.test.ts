@@ -8,6 +8,7 @@ import {
   buildSearchPerformanceRecords,
   type SearchPerformanceRaw,
 } from "../seo-audit/search-performance.ts";
+import { isSearchPerformanceRecord } from "../seo-audit/contract.ts";
 import type { SeoAuditPage } from "../seo-audit/types.ts";
 import { evaluateAgentAuditScope } from "./evaluate.ts";
 
@@ -39,7 +40,7 @@ function page(
     sitemapMember: true,
     jsonLdTypes: [],
     jsonLdErrorCount: 0,
-  } as unknown as SeoAuditPage;
+  };
 }
 
 function raw(
@@ -77,9 +78,51 @@ function a2(
   }).checks.find((entry) => entry.check.id === "A2");
 }
 
+function abandonedRecord(
+  rows: readonly { path: string; impressions: number }[],
+  pages: readonly SeoAuditPage[],
+) {
+  return buildSearchPerformanceRecords(raw(rows), pages).find(
+    (record) => record.id === "abandoned_url_impression_share",
+  );
+}
+
 const LIVE = [page("/a", 200), page("/b", 200), page("/c", 200)];
 
 describe("A2 — impressions on URLs the site no longer serves", () => {
+  it("keeps one aggregate summary before the resolved retired URL details", () => {
+    const record = abandonedRecord(
+      [
+        { path: "/a", impressions: 700 },
+        { path: "/gone", impressions: 200 },
+        { path: "/moved", impressions: 100 },
+      ],
+      [page("/a", 200), page("/gone", 410), page("/moved", 200, 1)],
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.affected).toBe(2);
+    expect(record?.observations).toHaveLength(3);
+    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("accepts a measurable zero-gone record with its aggregate summary only", () => {
+    const record = abandonedRecord(
+      [
+        { path: "/a", impressions: 900 },
+        { path: "/b", impressions: 100 },
+      ],
+      [page("/a", 200), page("/b", 200)],
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.affected).toBe(0);
+    expect(record?.observations).toHaveLength(1);
+    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
   it("passes a site whose ranking URLs all still resolve", () => {
     expect(
       a2(
