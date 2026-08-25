@@ -629,7 +629,9 @@ export function DailyBriefingResults({
                 ? t("facts.dailyReason")
                 : result.mode === "position_first"
                   ? t("facts.positionFirstReason")
-                  : t("facts.weeklyReason")
+                  : result.mode === "unavailable"
+                    ? t("facts.unavailableReason")
+                    : t("facts.weeklyReason")
             }
           />
           <FactCard
@@ -697,7 +699,9 @@ export function DailyBriefingResults({
           {t(
             result.mode === "position_first"
               ? "review.introPositionFirst"
-              : "review.intro",
+              : result.mode === "unavailable"
+                ? "review.introUnavailable"
+                : "review.intro",
           )}
         </p>
         {ctrLane.state !== "evaluated" ? (

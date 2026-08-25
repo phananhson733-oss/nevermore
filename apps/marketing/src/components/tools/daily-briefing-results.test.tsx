@@ -1194,3 +1194,20 @@ describe("DailyBriefingResults page-local manual checks", () => {
     expect(host.textContent).toContain("Not confirmed on this page");
   });
 });
+
+describe("DailyBriefingResults unread query evidence", () => {
+  it("explains that the lanes never ran rather than blaming the sample", async () => {
+    const host = await renderResults(
+      envelope({ mode: "unavailable", cadence: "weekly" }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+    const changes = host.querySelector('[data-result-section="changes"]');
+
+    expect(facts?.textContent).toContain("query evidence could not be read");
+    expect(facts?.textContent).not.toContain(
+      "Daily interpretation is suppressed because the sample",
+    );
+    expect(changes?.textContent).toContain("none of the lanes below were run");
+    expect(changes?.textContent).not.toContain("Strict changes appear first");
+  });
+});

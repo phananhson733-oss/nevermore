@@ -912,11 +912,11 @@
         "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
         "completedCompetitors": "完成竞品",
         "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
-      "gscObservedRows": "GSC 已观测行",
-      "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
+        "gscObservedRows": "GSC 已观测行",
+        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。"
       },
-    "legend": {
-      "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
+      "legend": {
+        "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。"
       },
       "boundaries": {
         "title": "数据与证据边界",
@@ -930,19 +930,19 @@
         "difficulty": "难度"
       },
       "gsc": {
-      "observed_strong": "已观测 · 表现较强",
-      "observed_weak": "有曝光 · 待提升",
-      "not_observed_in_gsc_query_sample": "本次样本未观测",
-      "gsc_query_sample_not_read": "GSC 样本未读取",
-      "evidenceBasis": {
-        "query": "精确 query 证据",
-        "query_page": "query-page 证据"
-      },
-      "pageStatus": {
-        "observed_sufficient": "页面归因充分",
-        "observed_partial": "页面归因不完整",
-        "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
-        "gsc_query_page_sample_not_read": "页面样本未完整读取"
+        "observed_strong": "已观测 · 表现较强",
+        "observed_weak": "有曝光 · 待提升",
+        "not_observed_in_gsc_query_sample": "本次样本未观测",
+        "gsc_query_sample_not_read": "GSC 样本未读取",
+        "evidenceBasis": {
+          "query": "精确 query 证据",
+          "query_page": "query-page 证据"
+        },
+        "pageStatus": {
+          "observed_sufficient": "页面归因充分",
+          "observed_partial": "页面归因不完整",
+          "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
+          "gsc_query_page_sample_not_read": "页面样本未完整读取"
         },
         "impressions": "曝光",
         "position": "平均排名",
@@ -957,11 +957,11 @@
         "review_content_gap": "复核内容差距",
         "verify_own_coverage": "补证据"
       },
-    "nextSteps": {
-      "optimize_existing": "已有可信落地页，先检查并优化现有页。",
-      "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
-      "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
-      "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
+      "nextSteps": {
+        "optimize_existing": "已有可信落地页，先检查并优化现有页。",
+        "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
+        "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
+        "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
       },
       "signals": {
         "bestRank": "最佳竞品排名 #{rank}",
@@ -1805,7 +1805,8 @@
         "weeklyReason": "样本量或完整日对比不足，因此抑制日级解读。",
         "quotaAvailable": "本小时共享额度还剩 {remaining}/{limit} 次。",
         "quotaUnavailable": "剩余共享次数当前不可得；这不等于 0。",
-        "positionFirstReason": "本站当前没有可评估的点击类信号，因此按周给出平均展示位置机会，而不是每日变化检测。"
+        "positionFirstReason": "本站当前没有可评估的点击类信号，因此按周给出平均展示位置机会，而不是每日变化检测。",
+        "unavailableReason": "本次没有读到查询词证据，因此无法判断这个站点适合每日还是每周节奏；日级解读同时被抑制。"
       },
       "kpis": {
         "title": "表现概览",
@@ -1872,7 +1873,8 @@
           "far": {
             "body": "远排名观察，不作为今日优化的优先项。"
           }
-        }
+        },
+        "introUnavailable": "本次没有读到可比的查询词证据，下面的判断路径都没有运行过。这不等于证明没有发生变化。"
       },
       "evidence": {
         "title": "证据门槛与可观察覆盖",

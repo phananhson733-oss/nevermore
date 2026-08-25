@@ -912,11 +912,11 @@
         "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
         "completedCompetitors": "Completed competitors",
         "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
-      "gscObservedRows": "Own-site GSC observed rows",
-      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
+        "gscObservedRows": "Own-site GSC observed rows",
+        "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
       },
-    "legend": {
-      "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
+      "legend": {
+        "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
       },
       "boundaries": {
         "title": "Evidence boundaries",
@@ -930,19 +930,19 @@
         "difficulty": "Difficulty"
       },
       "gsc": {
-      "observed_strong": "Observed · performing well",
-      "observed_weak": "Impressions · needs improvement",
-      "not_observed_in_gsc_query_sample": "Not observed in this sample",
-      "gsc_query_sample_not_read": "GSC sample not read",
-      "evidenceBasis": {
-        "query": "Exact-query evidence",
-        "query_page": "Query-page evidence"
-      },
-      "pageStatus": {
-        "observed_sufficient": "Page attribution sufficient",
-        "observed_partial": "Page attribution partial",
-        "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
-        "gsc_query_page_sample_not_read": "Page sample not fully read"
+        "observed_strong": "Observed · performing well",
+        "observed_weak": "Impressions · needs improvement",
+        "not_observed_in_gsc_query_sample": "Not observed in this sample",
+        "gsc_query_sample_not_read": "GSC sample not read",
+        "evidenceBasis": {
+          "query": "Exact-query evidence",
+          "query_page": "Query-page evidence"
+        },
+        "pageStatus": {
+          "observed_sufficient": "Page attribution sufficient",
+          "observed_partial": "Page attribution partial",
+          "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
+          "gsc_query_page_sample_not_read": "Page sample not fully read"
         },
         "impressions": "Impressions",
         "position": "Average position",
@@ -957,11 +957,11 @@
         "review_content_gap": "Review content gap",
         "verify_own_coverage": "Need evidence"
       },
-    "nextSteps": {
-      "optimize_existing": "Trusted existing page; check and optimize it first.",
-      "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
-      "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
-      "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
+      "nextSteps": {
+        "optimize_existing": "Trusted existing page; check and optimize it first.",
+        "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
+        "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
+        "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
       },
       "signals": {
         "bestRank": "Best competitor #{rank}",
@@ -1805,7 +1805,8 @@
         "weeklyReason": "Daily interpretation is suppressed because the sample or complete-day comparison is insufficient.",
         "quotaAvailable": "{remaining} of {limit} shared runs remain this hour.",
         "quotaUnavailable": "Remaining shared runs are unavailable; this is not zero.",
-        "positionFirstReason": "This property has no click signal that can be evaluated yet, so the briefing reports weekly average-position opportunities instead of daily change detection."
+        "positionFirstReason": "This property has no click signal that can be evaluated yet, so the briefing reports weekly average-position opportunities instead of daily change detection.",
+        "unavailableReason": "The query evidence could not be read, so there is no basis for calling this property daily or weekly. Day-level interpretation is suppressed with it."
       },
       "kpis": {
         "title": "Performance at a glance",
@@ -1872,7 +1873,8 @@
           "far": {
             "body": "A distant-position observation, not a priority for today's work."
           }
-        }
+        },
+        "introUnavailable": "Comparable query evidence could not be read, so none of the lanes below were run. That is not proof that nothing changed."
       },
       "evidence": {
         "title": "Evidence floor and observable coverage",
