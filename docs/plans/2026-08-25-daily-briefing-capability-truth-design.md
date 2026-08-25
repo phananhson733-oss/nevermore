@@ -1,8 +1,10 @@
 # Daily Briefing：把「能力」说成能力，把「没看」说成没看
 
-状态：设计已裁决，未开工
+状态：已落地（契约 `daily_search_briefing.v3`），未 push
 分支：`feat/daily-briefing-capability-truth-20260825`（基于 `0bb08d59`）
 上游：PR #205 / #206 已上生产（契约 `daily_search_briefing.v2`）
+
+落地结果见本文末「落地记录」。
 
 ## 起因
 
@@ -160,3 +162,28 @@ Owner 指定复刻 artifact `52101854-4486-424e-9b50-bcdb4b172615`（每日搜�
   时标题不含「实质」；fold summary 的分母能对上；`manual seo service` 出现在
   provisional 观察层且不产生 action
 - `pnpm build`、两个 project tsc、改动文件 eslint、相关 vitest
+
+## 落地记录（2026-08-25）
+
+A1–A8、B1–B4 与新观察层全部实现，契约 bump 到 `daily_search_briefing.v3`。
+
+设计阶段没预料到、实现时才定的三件事：
+
+1. **`change_detection` 比预想的更常见。** mode 改为「任一严格 lane 为 `evaluated`
+   即 change_detection」。用真跑数据跑出来是 `change_detection`——因为两个 far 带词
+   确实双窗口各 ≥100，跨入 lane 真的问过它们。这是实话，不是回退：诚实的收益在于
+   漏斗现在说「移入 1–10 区间：4 条未评估 · 2 条已评估但无信号 · 0 条形成候选」，
+   而不是七格「已观察 · 0」。
+2. **cadence 必须与 mode 解耦。** v2 的 `mode !== "change_detection"` 之所以成立，
+   是因为当时 mode 就等于「点击类有输入」。mode 变宽后再读它，会给 14 次周点击的
+   站点承诺日更。现在直接问两条点击 lane。
+3. **lane 的 `continue` 短路可以删掉且行为不变**（三条位置/点击 lane 的判定条件
+   互斥），删掉后每条 lane 才能对全部记录做分账，A8 的三分法才成立。
+
+自查（对着真跑渲染看版式）又抓到三处我自己新引入的问题，已在同分支修掉：折叠摘要
+把「没读到」写成 `0/0`、站点趋势正文重复噪声句、`pageAttributionWithheld` 的两种
+来源被同一句话概括。
+
+**验收方式的教训**：把 lane 分账写成「三个数相加等于总行数」是恒真断言——三个数
+本来就是互相相减得到的。改成逐 lane 字面值（可对着夹具手算）之后，立刻抓出我把
+`first_observed` 的可评估数记多了一条。
