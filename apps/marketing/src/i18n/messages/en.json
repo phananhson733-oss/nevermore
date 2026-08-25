@@ -860,7 +860,11 @@
         "remaining": "{count} more rows hidden in this filter.",
         "showingAll": "Showing all {count} rows in this filter.",
         "showAll": "Show all",
-        "showLess": "Show less"
+        "showLess": "Show less",
+        "openCompetitorPage": "Open competitor page",
+        "copyPlan": "Copy {count} rows as plan",
+        "copyPlanDone": "Copied {count} rows.",
+        "copyPlanFailed": "Could not copy the plan in this browser."
       },
       "status": {
         "complete": "Analysis complete",
@@ -898,14 +902,17 @@
         "unavailable": "unavailable",
         "rows": "{returned} returned · {total} reported",
         "truncated": "This competitor result hit its row boundary.",
-        "failure": "Unavailable reason: {code}"
+        "failure": "Unavailable reason: {code}",
+        "sampleRule": "Sample rule: competitor rank at or better than #{maxRank}, ordered by the competitor page's estimated traffic, at most {limit} rows per competitor.",
+        "rowsInRule": "{returned} returned · {total} reported inside the rule"
       },
       "limitations": {
         "title": "Evidence boundaries",
         "resultTruncated": "The combined result hit its output boundary, so additional keyword rows may exist.",
         "gscQueryTruncated": "The GSC query sample hit its row boundary; a missing query is not proof of zero exposure.",
         "gscQueryPageTruncated": "The GSC query-page sample hit its row boundary; a matching page may be missing.",
-        "gscUnavailable": "The optional GSC overlay was unavailable. DataForSEO competitor rows remain separate provider evidence."
+        "gscUnavailable": "The optional GSC overlay was unavailable. DataForSEO competitor rows remain separate provider evidence.",
+        "gscNoRows": "GSC returned no query rows for the selected property in this window. Check that the property covers this site before reading any row as a content gap."
       },
       "overview": {
         "returnedGapRows": "Returned gap rows",
@@ -913,7 +920,8 @@
         "completedCompetitors": "Completed competitors",
         "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
       "gscObservedRows": "Own-site GSC observed rows",
-      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample."
+      "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample.",
+        "gscQueryRows": "GSC returned {count} query rows for this property."
       },
     "legend": {
       "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence."
@@ -923,7 +931,9 @@
         "dfsEstimates": "Search volume, CPC, difficulty, intent, and competitor ranks are DataForSEO estimates from this bounded run.",
         "gscOwnSample": "GSC covers only the selected own-site bounded sample; a missing query row is not zero impressions.",
         "competitorOutcomesUnavailable": "Competitor traffic and conversion outcomes are unavailable; rankings and estimates do not prove either.",
-        "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh."
+        "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh.",
+        "dfsSnapshot": "AI Overview and SERP feature marks come from DataForSEO's stored SERP snapshot and carry its date; they are not a live observation from this run.",
+        "preScreen": "The DFS pre-screen band orders rows by provider estimates only. It never changes the GSC-derived next step and is not a winnability claim."
       },
       "metrics": {
         "cpc": "CPC",
@@ -963,9 +973,37 @@
       "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
       "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
       },
+      "preScreen": {
+        "title": "DFS pre-screen",
+        "basis": {
+          "dfs_estimate": "DataForSEO estimate; a pre-screen, not SERP winnability.",
+          "tool_heuristic": "This tool's text/URL heuristic; a pre-screen, not SERP winnability."
+        },
+        "filterAll": "All bands",
+        "band": {
+          "prioritize_serp_check": "Check SERP first",
+          "stretch": "Stretch",
+          "unbanded": "Not banded",
+          "defer_head_term": "Head term, defer",
+          "defer_brand_navigational": "Brand or navigational, skip"
+        },
+        "reason": {
+          "kd_low_rank_top10": "KD at or below 30 and a competitor on page one.",
+          "kd_mid_rank_top20": "Mid KD or a competitor on page two.",
+          "kd_high": "KD above 60; a head term for this sample.",
+          "dfs_metric_missing": "The provider reported no KD or volume, so no band was assigned.",
+          "competitor_brand_token": "Contains a requested competitor's brand.",
+          "competitor_domain_profile_page": "The competitor ranks with a domain profile page for another brand.",
+          "domain_like_keyword": "The keyword is shaped like a hostname.",
+          "provider_navigational_intent": "The provider labels the intent navigational."
+        }
+      },
       "signals": {
         "bestRank": "Best competitor #{rank}",
-        "difficulty": "KD {value}"
+        "difficulty": "KD {value}",
+        "aiOverviewSnapshot": "AI Overview · DFS snapshot {date}",
+        "aiOverviewSnapshotUndated": "AI Overview · DFS snapshot, undated",
+        "competitorTraffic": "Competitor page est. {value}/mo"
       },
       "table": {
         "title": "Gap list",
