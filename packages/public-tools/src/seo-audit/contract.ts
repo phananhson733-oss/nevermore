@@ -26,6 +26,18 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
+function isFiniteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isHttpResponseStatus(value: unknown): value is number {
+  return (
+    Number.isSafeInteger(value) &&
+    (value as number) >= 100 &&
+    (value as number) < 600
+  );
+}
+
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
@@ -67,10 +79,15 @@ type RecordObservation = Readonly<{
 
 type AggregateRecordCandidate = Readonly<{
   id: string;
+  category: string;
   state: string;
+  unit: string;
+  population: string;
+  targetTested: boolean | null;
   tested: number;
   affected: number;
   observations: readonly RecordObservation[];
+  limitation: string | null;
 }>;
 
 /**
@@ -154,7 +171,7 @@ function hasExactEvidenceLabels(
 ): boolean {
   return (
     values.length === labels.length &&
-    labels.every((label) => values.some((entry) => entry.label === label))
+    labels.every((label, index) => values[index]?.label === label)
   );
 }
 
@@ -169,10 +186,23 @@ function isAbandonedUrlImpressionShareRecord(
   value: AggregateRecordCandidate,
 ): boolean {
   if (value.id !== "abandoned_url_impression_share") return false;
-  if (value.state !== "observed" || value.tested === 0) return false;
-  if (value.observations.length !== value.affected + 1) return false;
+  if (
+    value.category !== "search_performance" ||
+    value.state !== "observed" ||
+    value.unit !== "pages" ||
+    value.population !== "every_collected_page" ||
+    value.targetTested !== null ||
+    value.tested === 0 ||
+    value.affected > value.tested ||
+    value.observations.length !== value.affected + 1 ||
+    value.limitation !==
+      "abandoned_share_counts_only_urls_this_crawl_fetched_and_resolved"
+  ) {
+    return false;
+  }
 
-  const [aggregate, ...details] = value.observations as readonly RecordObservation[];
+  const [aggregate, ...details] =
+    value.observations as readonly RecordObservation[];
   if (
     aggregate === undefined ||
     typeof aggregate.url !== "string" ||
@@ -196,9 +226,11 @@ function isAbandonedUrlImpressionShareRecord(
     !Number.isFinite(share) ||
     share < 0 ||
     share > 1 ||
-    !isNonNegativeInteger(inBand) ||
-    !isNonNegativeInteger(total) ||
+    !isFiniteNonNegativeNumber(inBand) ||
+    !isFiniteNonNegativeNumber(total) ||
     inBand > total ||
+    typeof property !== "string" ||
+    property.length === 0 ||
     property !== aggregate.url
   ) {
     return false;
@@ -212,14 +244,13 @@ function isAbandonedUrlImpressionShareRecord(
         "impressions",
         "final_status",
       ]) &&
-      isNonNegativeInteger(evidenceValue(observation, "impressions")) &&
-      isNonNegativeInteger(evidenceValue(observation, "final_status")),
+      isFiniteNonNegativeNumber(evidenceValue(observation, "impressions")) &&
+      isHttpResponseStatus(evidenceValue(observation, "final_status")),
   );
 }
 
 const INDEX_STATUS_VERDICTS: Readonly<Record<string, true>> = {
   VERDICT_UNSPECIFIED: true,
-  PASS: true,
   PARTIAL: true,
   FAIL: true,
   NEUTRAL: true,
@@ -229,10 +260,23 @@ function isSitemapUrlNotIndexedRecord(
   value: AggregateRecordCandidate,
 ): boolean {
   if (value.id !== "sitemap_url_not_indexed") return false;
-  if (value.state !== "observed" || value.tested === 0) return false;
-  if (value.observations.length !== value.affected + 1) return false;
+  if (
+    value.category !== "search_performance" ||
+    value.state !== "observed" ||
+    value.unit !== "pages" ||
+    value.population !== "site_resource" ||
+    value.targetTested !== null ||
+    value.tested === 0 ||
+    value.affected > value.tested ||
+    value.observations.length !== value.affected + 1 ||
+    value.limitation !==
+      "index_status_is_googles_own_verdict_per_declared_url"
+  ) {
+    return false;
+  }
 
-  const [aggregate, ...details] = value.observations as readonly RecordObservation[];
+  const [aggregate, ...details] =
+    value.observations as readonly RecordObservation[];
   if (
     aggregate === undefined ||
     aggregate.url !== null ||
@@ -274,6 +318,12 @@ function isAggregateBackedObservedRecord(
   return (
     isAbandonedUrlImpressionShareRecord(value) ||
     isSitemapUrlNotIndexedRecord(value)
+  );
+}
+
+function isAggregateBackedRecordId(id: string): boolean {
+  return (
+    id === "abandoned_url_impression_share" || id === "sitemap_url_not_indexed"
   );
 }
 
@@ -321,19 +371,34 @@ function isRecordOfCategory(
 
   const record: AggregateRecordCandidate = {
     id: value.id as string,
+    category: value.category as string,
     state: value.state as string,
+    unit: value.unit as string,
+    population: value.population as string,
+    targetTested: value.targetTested as boolean | null,
     tested: value.tested as number,
     affected: value.affected as number,
     observations: value.observations as readonly RecordObservation[],
+    limitation: value.limitation as string | null,
   };
-  return (
+  const genericInvariant =
     value.affected <= value.tested &&
-    (isAggregateBackedObservedRecord(record) ||
-      (value.affected === value.observations.length &&
-        (value.state === "observed"
-          ? value.affected > 0
-          : value.affected === 0)))
-  );
+    value.affected === value.observations.length &&
+    (value.state === "observed" ? value.affected > 0 : value.affected === 0);
+
+  if (isAggregateBackedRecordId(record.id)) {
+    const isSearchPerformanceGuard =
+      categories.length === 1 &&
+      categories[0] === "search_performance" &&
+      record.category === "search_performance";
+    if (!isSearchPerformanceGuard) return false;
+    if (record.state === "unverified") return genericInvariant;
+    return (
+      record.state === "observed" && isAggregateBackedObservedRecord(record)
+    );
+  }
+
+  return genericInvariant;
 }
 
 function isCoverage(value: unknown): value is SeoAuditCoverage {
