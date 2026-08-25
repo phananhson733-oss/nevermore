@@ -15,6 +15,10 @@ import {
   SEARCH_PERFORMANCE_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/search-performance";
 import {
+  INDEX_COVERAGE_EVIDENCE_LABELS,
+  INDEX_COVERAGE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/index-coverage";
+import {
   KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   KEYWORD_EVIDENCE_LIMITATION_CODES,
   KEYWORD_EVIDENCE_RECORD_IDS,
@@ -47,6 +51,7 @@ const NEUTRAL_AGENT_RECORD_IDS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_RECORD_IDS,
   // Derived per visitor rather than crawled, and rendered by the same seam.
   ...SEARCH_PERFORMANCE_RECORD_IDS,
+  ...INDEX_COVERAGE_RECORD_IDS,
   ...KEYWORD_EVIDENCE_RECORD_IDS,
   ...PAGE_PERFORMANCE_RECORD_IDS,
   ...SERP_SHAPE_RECORD_IDS,
@@ -74,6 +79,7 @@ export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> 
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([
   ...SEO_AUDIT_EVIDENCE_LABELS,
   ...SEARCH_PERFORMANCE_EVIDENCE_LABELS,
+  ...INDEX_COVERAGE_EVIDENCE_LABELS,
   ...KEYWORD_EVIDENCE_EVIDENCE_LABELS,
   ...PAGE_PERFORMANCE_EVIDENCE_LABELS,
   ...SERP_SHAPE_EVIDENCE_LABELS,

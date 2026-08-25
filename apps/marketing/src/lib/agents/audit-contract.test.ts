@@ -8,6 +8,18 @@ import {
   TEXT_UNITS_VERSION,
 } from "@sf/public-tools/seo-audit/keyword-evidence/types";
 import {
+  buildIndexCoverageRecords,
+  INDEX_COVERAGE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/index-coverage";
+import {
+  buildSearchPerformanceRecords,
+  SEARCH_PERFORMANCE_RECORD_IDS,
+} from "@sf/public-tools/seo-audit/search-performance";
+import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
+import type { SeoAuditPage } from "@sf/public-tools/seo-audit/types";
+import {
+  AGENT_SEARCH_PERFORMANCE_VERSION,
+  AGENT_SERP_SHAPE_VERSION,
   isAgentAuditSuccessEnvelope,
   type AgentAuditSuccessEnvelope,
   AGENT_AUDIT_RECORD_CATEGORIES,
@@ -18,6 +30,36 @@ import {
 // guard in this very file could start refusing real payloads with these tests
 // green.
 const RECORD_SPECS = Object.entries(AGENT_AUDIT_RECORD_CATEGORIES);
+
+function searchPage(
+  path: string,
+  finalStatus: number,
+  redirectHops = 0,
+): SeoAuditPage {
+  const url = `https://acme.test${path}`;
+  return {
+    url,
+    subjectUrl: url,
+    finalUrl: url,
+    depth: 1,
+    initialStatus: finalStatus,
+    finalStatus,
+    redirectHops,
+    contentType: "text/html; charset=utf-8",
+    robotsDirectiveState: "noindex_not_observed",
+    canonicalTarget: url,
+    title: "Acme",
+    metaDescription: "Acme page",
+    h1Count: 1,
+    headingsCount: 1,
+    wordCount: 300,
+    inboundLinks: 1,
+    outboundLinks: 1,
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+  };
+}
 
 const success = {
   data: {
@@ -82,6 +124,76 @@ const success = {
   },
 } satisfies AgentAuditSuccessEnvelope;
 
+const searchPerformanceRecords = [
+  ...buildSearchPerformanceRecords(
+    {
+      property: "sc-domain:acme.test",
+      startDate: "2026-07-19",
+      endDate: "2026-08-15",
+      pages: [
+        {
+          key: "https://acme.test/",
+          clicks: 3,
+          impressions: 80,
+          position: 4,
+        },
+        {
+          key: "https://acme.test/retired",
+          clicks: 0,
+          impressions: 10,
+          position: 8,
+        },
+      ],
+      queries: [{ key: "acme", clicks: 3, impressions: 90, position: 4 }],
+      pagesTruncated: false,
+      queriesTruncated: false,
+      targetPageQueries: null,
+      targetPageUrl: null,
+      confirmedQueries: [],
+      targetPageQueriesTruncated: false,
+    },
+    [
+      searchPage("/", 200),
+      searchPage("/retired", 410),
+      searchPage("/without-impressions", 200),
+    ],
+  ),
+  ...buildIndexCoverageRecords([
+    { url: "https://acme.test/", verdict: "PASS" },
+    { url: "https://acme.test/retired", verdict: "NEUTRAL" },
+  ]),
+];
+
+function withSearchPerformance(
+  records: readonly unknown[] = searchPerformanceRecords,
+  version: string = AGENT_SEARCH_PERFORMANCE_VERSION,
+): unknown {
+  return {
+    data: {
+      ...success.data,
+      result: {
+        ...success.data.result,
+        searchPerformance: {
+          version,
+          property: "sc-domain:acme.test",
+          startDate: "2026-07-19",
+          endDate: "2026-08-15",
+          records,
+        },
+      },
+    },
+  };
+}
+
+function withSerpShape(serpShape: unknown): unknown {
+  return {
+    data: {
+      ...success.data,
+      result: { ...success.data.result, serpShape },
+    },
+  };
+}
+
 describe("isAgentAuditSuccessEnvelope", () => {
   it.each(["seo", "tech"] as const)(
     "accepts the same complete neutral ledger for the %s Agent",
@@ -100,6 +212,128 @@ describe("isAgentAuditSuccessEnvelope", () => {
       expect("pages" in envelope.data.result).toBe(false);
     },
   );
+
+  describe("the derived Search Performance region", () => {
+    it("accepts the complete producer ledger including index coverage", () => {
+      const abandoned = searchPerformanceRecords.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      const indexCoverage = searchPerformanceRecords.find(
+        (record) => record.id === "sitemap_url_not_indexed",
+      );
+
+      expect(searchPerformanceRecords).toHaveLength(
+        SEARCH_PERFORMANCE_RECORD_IDS.length + INDEX_COVERAGE_RECORD_IDS.length,
+      );
+      expect(abandoned).toMatchObject({
+        state: "observed",
+        affected: 1,
+      });
+      expect(abandoned?.observations).toHaveLength(2);
+      expect(indexCoverage).toMatchObject({
+        state: "observed",
+        affected: 1,
+      });
+      expect(indexCoverage?.observations).toHaveLength(2);
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance())).toBe(true);
+    });
+
+    it("accepts the live aggregate shape with 361 tested, 3 affected, and 4 rows", () => {
+      const records = structuredClone(searchPerformanceRecords) as unknown as Array<{
+        id: string;
+        tested: number;
+        affected: number;
+        observations: Array<{
+          url: string | null;
+          values: Array<{ label: string; value: unknown }>;
+        }>;
+      }>;
+      const abandoned = records.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      const aggregate = abandoned?.observations[0];
+      const detail = abandoned?.observations[1];
+      if (!abandoned || !aggregate || !detail) {
+        throw new Error("missing abandoned impression fixture");
+      }
+
+      abandoned.tested = 361;
+      abandoned.affected = 3;
+      abandoned.observations = [
+        aggregate,
+        detail,
+        { ...structuredClone(detail), url: "https://acme.test/retired-2" },
+        { ...structuredClone(detail), url: "https://acme.test/retired-3" },
+      ];
+
+      expect(abandoned.observations).toHaveLength(4);
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance(records))).toBe(true);
+    });
+
+    it("rejects a known aggregate that drops its summary and matches the generic invariant", () => {
+      const records = structuredClone(searchPerformanceRecords) as unknown as Array<{
+        id: string;
+        affected: number;
+        observations: unknown[];
+      }>;
+      const abandoned = records.find(
+        (record) => record.id === "abandoned_url_impression_share",
+      );
+      if (!abandoned) throw new Error("missing abandoned impression fixture");
+      abandoned.observations = abandoned.observations.slice(1);
+      expect(abandoned.observations).toHaveLength(abandoned.affected);
+
+      expect(isAgentAuditSuccessEnvelope(withSearchPerformance(records))).toBe(false);
+    });
+
+    it("rejects a region missing the index coverage record", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSearchPerformance(
+            searchPerformanceRecords.filter(
+              (record) => record.id !== INDEX_COVERAGE_RECORD_IDS[0],
+            ),
+          ),
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects an extra or stale Search Performance ledger", () => {
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSearchPerformance([
+            ...searchPerformanceRecords,
+            searchPerformanceRecords[0],
+          ]),
+        ),
+      ).toBe(false);
+      expect(
+        isAgentAuditSuccessEnvelope(
+          withSearchPerformance(
+            searchPerformanceRecords,
+            "search_performance.agent.v1",
+          ),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe("the derived SERP shape region", () => {
+    const records = buildSerpShapeRecords(null, "source_not_configured");
+    const current = { version: AGENT_SERP_SHAPE_VERSION, records };
+
+    it("accepts the complete current producer region", () => {
+      expect(isAgentAuditSuccessEnvelope(withSerpShape(current))).toBe(true);
+    });
+
+    it.each([
+      ["stale version", { ...current, version: "serp_shape.agent.v0" }],
+      ["incomplete ledger", { ...current, records: records.slice(0, -1) }],
+      ["malformed region", { ...current, records: "not-an-array" }],
+    ])("rejects a %s", (_case, region) => {
+      expect(isAgentAuditSuccessEnvelope(withSerpShape(region))).toBe(false);
+    });
+  });
 
   it("rejects an unknown neutral record", () => {
     const malformed = structuredClone(success) as unknown as {

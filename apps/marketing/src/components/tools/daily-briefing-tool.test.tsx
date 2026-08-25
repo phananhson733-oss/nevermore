@@ -459,3 +459,18 @@ describe("DailyBriefingTool request states and errors", () => {
     expect(host.textContent).not.toContain("gsc_revoked");
   });
 });
+
+describe("report shape the client accepts", () => {
+  it("matches the version the package produces", async () => {
+    // The client holds the version as a literal so a value import cannot pull
+    // the package barrel into its bundle. This is what keeps the two equal.
+    const { DAILY_BRIEFING_SCHEMA_VERSION } = await import("@sf/public-tools");
+    const { CLIENT_DAILY_BRIEFING_SCHEMA_VERSION } = await import(
+      "./daily-briefing-tool.tsx"
+    );
+
+    expect(CLIENT_DAILY_BRIEFING_SCHEMA_VERSION).toBe(
+      DAILY_BRIEFING_SCHEMA_VERSION,
+    );
+  });
+});

@@ -121,7 +121,7 @@ describe("createDailyBriefingReader", () => {
     expect(captures.clientOptions[0]?.signal?.aborted).toBe(true);
   });
 
-  it("aborts sibling transports when an optional attachment fails", async () => {
+  it("leaves a sibling transport in flight when one attachment fails", async () => {
     let optionalCalls = 0;
     let siblingAborts = 0;
     const fetchImpl = vi.fn((_: string, init?: RequestInit) => {
@@ -133,7 +133,9 @@ describe("createDailyBriefingReader", () => {
       }
 
       optionalCalls += 1;
-      if (optionalCalls === 1) {
+      // Fail only the query/page attachment, which is the read whose loss
+      // must not take the query rows with it.
+      if (body.dimensions.length === 2) {
         return Promise.reject(new Error("optional attachment unavailable"));
       }
 
@@ -159,12 +161,15 @@ describe("createDailyBriefingReader", () => {
       fetchImpl,
     });
 
-    const envelope = await reader(input(() => REQUEST_BUDGET_MS));
+    await reader(input(() => REQUEST_BUDGET_MS));
 
+    // The six attachments share one request scope but not one fate.
+    // Aborting the siblings of a failed page read deletes the query rows
+    // that would have carried this run's only signals.
     expect(optionalCalls).toBe(6);
-    expect(siblingAborts).toBeGreaterThan(0);
+    expect(siblingAborts).toBe(0);
+    // The scope is still closed once the report has finished.
     expect(captures.clientOptions[0]?.signal?.aborted).toBe(true);
-    expect(envelope.result.limitations).toContain("query_evidence_unavailable");
   });
 
   it("still throws a required-read failure and aborts its request scope", async () => {

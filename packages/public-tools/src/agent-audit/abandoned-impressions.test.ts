@@ -8,6 +8,10 @@ import {
   buildSearchPerformanceRecords,
   type SearchPerformanceRaw,
 } from "../seo-audit/search-performance.ts";
+import {
+  isSeoAuditRecord,
+  isSearchPerformanceRecord,
+} from "../seo-audit/contract.ts";
 import type { SeoAuditPage } from "../seo-audit/types.ts";
 import { evaluateAgentAuditScope } from "./evaluate.ts";
 
@@ -39,7 +43,7 @@ function page(
     sitemapMember: true,
     jsonLdTypes: [],
     jsonLdErrorCount: 0,
-  } as unknown as SeoAuditPage;
+  };
 }
 
 function raw(
@@ -77,9 +81,170 @@ function a2(
   }).checks.find((entry) => entry.check.id === "A2");
 }
 
+function abandonedRecord(
+  rows: readonly { path: string; impressions: number }[],
+  pages: readonly SeoAuditPage[],
+) {
+  return buildSearchPerformanceRecords(raw(rows), pages).find(
+    (record) => record.id === "abandoned_url_impression_share",
+  );
+}
+
+type MutableEvidenceEntry = {
+  label: string;
+  value: unknown;
+};
+
+type MutableObservation = {
+  url: string | null;
+  values: MutableEvidenceEntry[];
+};
+
+type MutableAuditRecord = {
+  id: string;
+  category: string;
+  state: string;
+  unit: string;
+  population: string;
+  targetTested: boolean | null;
+  tested: number;
+  affected: number;
+  observations: MutableObservation[];
+  limitation: string | null;
+};
+
+function mutableObservedAbandonedRecord(): MutableAuditRecord {
+  const record = abandonedRecord(
+    [
+      { path: "/a", impressions: 700 },
+      { path: "/gone", impressions: 200 },
+      { path: "/moved", impressions: 100 },
+    ],
+    [page("/a", 200), page("/gone", 410), page("/moved", 200, 1)],
+  );
+  if (!record) throw new Error("missing abandoned impression record");
+  return structuredClone(record) as unknown as MutableAuditRecord;
+}
+
+function evidence(
+  observation: MutableObservation,
+  label: string,
+): MutableEvidenceEntry {
+  const entry = observation.values.find((candidate) => candidate.label === label);
+  if (!entry) throw new Error(`missing ${label} evidence`);
+  return entry;
+}
+
 const LIVE = [page("/a", 200), page("/b", 200), page("/c", 200)];
 
 describe("A2 — impressions on URLs the site no longer serves", () => {
+  it("keeps one aggregate summary before the resolved retired URL details", () => {
+    const record = abandonedRecord(
+      [
+        { path: "/a", impressions: 700 },
+        { path: "/gone", impressions: 200 },
+        { path: "/moved", impressions: 100 },
+      ],
+      [page("/a", 200), page("/gone", 410), page("/moved", 200, 1)],
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(3);
+    expect(record?.affected).toBe(2);
+    expect(record?.observations).toHaveLength(3);
+    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("accepts a measurable zero-gone record with its aggregate summary only", () => {
+    const record = abandonedRecord(
+      [
+        { path: "/a", impressions: 900 },
+        { path: "/b", impressions: 100 },
+      ],
+      [page("/a", 200), page("/b", 200)],
+    );
+
+    expect(record?.state).toBe("observed");
+    expect(record?.tested).toBe(2);
+    expect(record?.affected).toBe(0);
+    expect(record?.observations).toHaveLength(1);
+    expect(record?.observations[0]?.url).toBe("sc-domain:acme.test");
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("keeps the producer's unverified shape on the existing generic path", () => {
+    const record = abandonedRecord(
+      [{ path: "/a", impressions: 0 }],
+      [page("/a", 200)],
+    );
+
+    expect(record).toMatchObject({
+      state: "unverified",
+      tested: 0,
+      affected: 0,
+      observations: [],
+    });
+    expect(isSearchPerformanceRecord(record)).toBe(true);
+  });
+
+  it("does not accept the per-user aggregate record through the crawl guard", () => {
+    const record = mutableObservedAbandonedRecord();
+    record.category = "crawl";
+
+    expect(isSeoAuditRecord(record)).toBe(false);
+  });
+
+  it.each([
+    ["aggregate summary was removed", (record: MutableAuditRecord) => {
+      record.observations.shift();
+    }],
+    ["affected count was changed to match the aggregate-inclusive row count", (record: MutableAuditRecord) => {
+      record.affected = record.observations.length;
+    }],
+    ["aggregate share exceeds one", (record: MutableAuditRecord) => {
+      evidence(record.observations[0]!, "abandoned_url_impression_share").value = 1.01;
+    }],
+    ["aggregate evidence label is unknown", (record: MutableAuditRecord) => {
+      evidence(record.observations[0]!, "impressions_total").label = "total_impressions";
+    }],
+    ["aggregate evidence labels are reordered", (record: MutableAuditRecord) => {
+      const values = record.observations[0]!.values;
+      record.observations[0]!.values = [values[1]!, values[0]!, ...values.slice(2)];
+    }],
+    ["detail row was replaced by another aggregate summary", (record: MutableAuditRecord) => {
+      record.observations[1] = structuredClone(record.observations[0]!);
+    }],
+    ["detail URL is empty", (record: MutableAuditRecord) => {
+      record.observations[1]!.url = "";
+    }],
+    ["limitation differs from the producer contract", (record: MutableAuditRecord) => {
+      record.limitation = "future_abandoned_share_method";
+    }],
+    ["unit differs from the producer contract", (record: MutableAuditRecord) => {
+      record.unit = "site_resource";
+    }],
+    ["population differs from the producer contract", (record: MutableAuditRecord) => {
+      record.population = "site_resource";
+    }],
+    ["targetTested differs from the producer contract", (record: MutableAuditRecord) => {
+      record.targetTested = true;
+    }],
+    ["detail status is outside the HTTP response range", (record: MutableAuditRecord) => {
+      evidence(record.observations[1]!, "final_status").value = 999;
+    }],
+    ["known aggregate is relabeled not_observed", (record: MutableAuditRecord) => {
+      record.state = "not_observed";
+      record.affected = 0;
+      record.observations = [];
+    }],
+  ] as const)("rejects an observed aggregate when %s", (_case, corrupt) => {
+    const record = mutableObservedAbandonedRecord();
+    corrupt(record);
+
+    expect(isSearchPerformanceRecord(record)).toBe(false);
+  });
+
   it("passes a site whose ranking URLs all still resolve", () => {
     expect(
       a2(

@@ -62,7 +62,6 @@ export function createDailyBriefingReader(options: {
         brandTerms,
         brandTermsConfirmed,
         budget: { isExpired: () => remainingMs() <= 0 },
-        cancelOptionalReads: () => abort.abort(),
       });
     } finally {
       // Idempotent. It closes sibling transport on failure and marks the

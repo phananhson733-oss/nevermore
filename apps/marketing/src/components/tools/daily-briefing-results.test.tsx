@@ -13,9 +13,14 @@ import {
   type DailyBriefingAction,
   type DailyBriefingChange,
   type DailyBriefingEnvelope,
+  type DailyBriefingLaneCapability,
   type DailyBriefingLimitationCode,
-  type DailyBriefingPropertyFallback,
+  type DailyBriefingPropertyTrend,
+  type DailyBriefingProvisionalMove,
   type DailyBriefingQueryObservation,
+  type DailyBriefingProvisionalMoves,
+  type DailyBriefingQueryWatchlist,
+  type DailyBriefingRowAccounting,
   type DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import en from "../../i18n/messages/en.json";
@@ -90,6 +95,7 @@ function change(
     evidence: kind === "first_observed" ? "not_observed" : "observed",
     query,
     page,
+    pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 240, position: 8.2 },
     previous:
       kind === "first_observed"
@@ -112,7 +118,7 @@ function action(
     kind: source.kind,
     destination,
     query: source.query,
-    page: source.page,
+    page: source.page ?? "",
   };
 }
 
@@ -123,7 +129,7 @@ function envelope(
     ...BASE_ENVELOPE,
     result: {
       ...BASE_ENVELOPE.result,
-      propertyFallback: null,
+      propertyTrend: { change: null, action: null, noiseFloor: null },
       ...overrides,
     },
   };
@@ -140,17 +146,127 @@ function signalFunnel(
     ctrBaselineRows: 0,
     clickOpportunityCandidates: 0,
     stableDeclineCandidates: 0,
+    pageOneBandCandidates: 0,
+    positionDeclineCandidates: 0,
     firstObservedCandidates: 0,
+    provisionalMoveCandidates: 0,
     pageAttributionWithheld: 0,
     selectedQueryChanges: 0,
-    propertyFallbackShown: false,
+    propertyTrendShown: false,
     ...overrides,
   };
 }
 
-function propertyFallback(
-  overrides: Partial<DailyBriefingPropertyFallback> = {},
-): DailyBriefingPropertyFallback {
+function laneCapability(
+  overrides: Partial<DailyBriefingLaneCapability> = {},
+): DailyBriefingLaneCapability {
+  return {
+    evidence: "observed",
+    clickDeclineCapableQueries: 0,
+    ctrOpportunityCapableQueries: 0,
+    strictPairedPositionQueries: 0,
+    provisionalPairedPositionQueries: 0,
+    currentFloorOnlyQueries: 0,
+    ctrLane: {
+      state: "not_applicable",
+      blockers: ["brand_terms_not_confirmed"],
+      usableBaselineBands: 0,
+    },
+    lanes: {
+      click_opportunity: "not_applicable",
+      stable_position_click_decline: "not_applicable",
+      average_position_crossed_page_one_band: "not_applicable",
+      actionable_position_decline: "not_applicable",
+      first_observed: "not_applicable",
+    },
+    ...overrides,
+  };
+}
+
+function laneRows(
+  notEvaluated: number,
+  evaluatedNoSignal = 0,
+  candidates = 0,
+) {
+  return { notEvaluated, evaluatedNoSignal, candidates };
+}
+
+function rowAccounting(
+  overrides: Partial<DailyBriefingRowAccounting> = {},
+): DailyBriefingRowAccounting {
+  return {
+    evidence: "observed",
+    observedRows: 540,
+    notSelectedVisibleRows: 0,
+    byLane: {
+      click_opportunity: laneRows(540),
+      stable_position_click_decline: laneRows(540),
+      average_position_crossed_page_one_band: laneRows(540),
+      actionable_position_decline: laneRows(540),
+      first_observed: laneRows(540),
+    },
+    ...overrides,
+  };
+}
+
+function provisionalMove(
+  kind: DailyBriefingProvisionalMove["kind"],
+  index: number,
+  overrides: Partial<DailyBriefingProvisionalMove> = {},
+): DailyBriefingProvisionalMove {
+  const query = `provisional query ${index}`;
+  return {
+    kind,
+    evidence: "observed",
+    query,
+    page: `https://example.com/provisional-${index}`,
+    pageEvidence: "observed",
+    current: { query, clicks: 0, impressions: 180, position: 9.7 },
+    previous: { query, clicks: 0, impressions: 70, position: 11.8 },
+    positionDelta: -2.1,
+    ...overrides,
+  };
+}
+
+function provisionalMoves(
+  items: readonly DailyBriefingProvisionalMove[] = [],
+  overrides: Partial<DailyBriefingProvisionalMoves> = {},
+): DailyBriefingProvisionalMoves {
+  return {
+    evidence: "observed",
+    items,
+    candidates: items.length,
+    priorWindowImpressionRange: [50, 99],
+    ...overrides,
+  };
+}
+
+function watchlist(
+  evidence: DailyBriefingQueryWatchlist["evidence"],
+  items: readonly DailyBriefingQueryObservation[] = [],
+  overrides: Partial<DailyBriefingQueryWatchlist> = {},
+): DailyBriefingQueryWatchlist {
+  return {
+    evidence,
+    items,
+    // Counts stay null when nothing was read: a withheld count of zero would
+    // claim we looked and found nothing to withhold.
+    candidates: evidence === "observed" ? items.length : null,
+    withheldByBand:
+      evidence === "observed"
+        ? { page_one: 0, near_page_one: 0, mid: 0, far: 0 }
+        : null,
+    withheldByKind:
+      evidence === "observed"
+        ? { sample_floor_reached: 0, sample_building: 0 }
+        : null,
+    ...overrides,
+  };
+}
+
+function propertyTrend(
+  overrides: Partial<DailyBriefingPropertyTrend> = {},
+): DailyBriefingPropertyTrend {
   return {
     change: {
       kind: "sitewide_click_decline",
@@ -179,6 +295,12 @@ function propertyFallback(
       kind: "sitewide_click_decline",
       destination: "traffic-drop-diagnosis",
     },
+    noiseFloor: {
+      basis: "clicks",
+      observedChange: -14,
+      minimumForAction: 2 * Math.sqrt(49),
+      cleared: true,
+    },
     ...overrides,
   };
 }
@@ -191,11 +313,14 @@ function observation(
   const query = `watch query ${index}`;
   return {
     kind,
+    band: "page_one",
     query,
     page: `https://example.com/watch-${index}`,
     pageEvidence: "observed",
     current: { query, clicks: 12, impressions: 120, position: 9.2 },
+    previousBelowFloor: null,
     previous: { query, clicks: 8, impressions: 110, position: 9.5 },
+    positionDelta: -0.3,
     ...overrides,
   };
 }
@@ -263,13 +388,15 @@ async function click(element: HTMLElement) {
 }
 
 describe("DailyBriefingResults KPI and evidence facts", () => {
-  it("puts the noise summary and decision sections directly after KPIs", async () => {
+  it("leads with what to look at and folds the method statement to the end", async () => {
     const host = await renderResults(
       envelope({
         signalFunnel: signalFunnel({
           observedQueryRows: 17,
           actionEligibleQueries: 2,
         }),
+        laneCapability: laneCapability({ currentFloorOnlyQueries: 2 }),
+        rowAccounting: rowAccounting({ observedRows: 17 }),
       }),
     );
     const order = [...host.querySelectorAll("[data-result-section]")].map(
@@ -277,23 +404,38 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     );
     const noise = host.querySelector('[data-result-section="noise"]');
 
+    // No site-wide trend cleared its gates in this fixture, so the reading
+    // path runs KPIs -> what to look at -> actions, and the noise strip is
+    // nested inside the collapsed explanation near the end.
     expect(order).toEqual([
       "facts",
       "kpis",
-      "noise",
       "changes",
       "actions",
       "manual",
       "evidence",
+      "noise",
       "limitations",
       "methodology",
     ]);
+    // The strip that used to open the results now lives inside the collapsed
+    // explanation, so the page no longer answers for itself before it reports.
+    expect(
+      host.querySelector('[data-result-section="evidence"] [data-result-section="noise"]'),
+    ).not.toBeNull();
+    expect(host.querySelector("[data-evidence-details]")).not.toBeNull();
     expect(noise?.textContent).toContain("Noise filter on");
-    expect(noise?.textContent).toContain("17 visible queries");
-    expect(noise?.textContent).toContain("2 reached the evaluation sample floor");
-    expect(noise?.textContent).toContain("0 strict query/page changes");
-    expect(noise?.textContent).toContain("0 observations are shown");
-    expect(noise?.textContent).toContain("0 site-wide trends are shown");
+    // The sample floor and the comparison conditions are separate facts. The
+    // strip used to report the first and label it the second.
+    expect(noise?.textContent).toContain("17 query rows in the current window");
+    expect(noise?.textContent).toContain("2 of them at 100 impressions");
+    expect(noise?.textContent).toContain(
+      "0 support a strict two-window position comparison",
+    );
+    expect(noise?.textContent).toContain(
+      "2 have no comparable prior window at all",
+    );
+    expect(noise?.textContent).not.toContain("evaluation sample floor");
   });
 
   it("reports the number of changes actually shown after the three-row cap", async () => {
@@ -306,17 +448,40 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           change("first_observed", 4),
         ],
         signalFunnel: signalFunnel({ selectedQueryChanges: 3 }),
+        queryWatchlist: watchlist("observed"),
       }),
     );
-    const noise = host.querySelector('[data-result-section="noise"]');
+    const summary = host.querySelector("[data-evidence-fold-summary]");
 
     expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
-    expect(noise?.textContent).toContain("3 strict query/page changes");
-    expect(noise?.textContent).not.toContain("4 strict query/page changes");
+    expect(summary?.textContent).toContain("3 query changes");
+    expect(summary?.textContent).not.toContain("4 query changes");
+  });
+
+  it("counts the site trend in the fold summary instead of calling it nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        propertyTrend: propertyTrend(),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
+        queryWatchlist: watchlist("observed", [], { candidates: 8 }),
+      }),
+    );
+    const summary = host.querySelector("[data-evidence-fold-summary]");
+
+    // "0 changes" over a page that also says the site declined was the copy
+    // this line replaces.
+    expect(summary?.textContent).toContain("0 query changes");
+    expect(summary?.textContent).toContain("1 site trend observation");
+    expect(summary?.textContent).toContain("0/8 observation candidates shown");
+    expect(summary?.textContent).not.toContain("below the threshold");
   });
 
   it("renders four metric cards with latest-day and seven-day values", async () => {
-    const host = await renderResults();
+    // Day-level values are shown only on a daily briefing, which requires a
+    // click lane that could actually be evaluated.
+    const host = await renderResults(
+      envelope({ mode: "change_detection", cadence: "daily" }),
+    );
     const cards = [...host.querySelectorAll("[data-kpi]")];
 
     expect(cards).toHaveLength(4);
@@ -396,6 +561,8 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           ctrBaselineRows: null,
           clickOpportunityCandidates: null,
           stableDeclineCandidates: null,
+          pageOneBandCandidates: null,
+          positionDeclineCandidates: null,
           firstObservedCandidates: null,
           pageAttributionWithheld: null,
         }),
@@ -434,25 +601,72 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           actionEligibleQueries: 2,
           ctrBaselineRows: null,
           selectedQueryChanges: 0,
-          propertyFallbackShown: true,
+          propertyTrendShown: true,
         }),
-        propertyFallback: propertyFallback(),
+        laneCapability: laneCapability(),
+        rowAccounting: rowAccounting(),
+        propertyTrend: propertyTrend(),
       }),
     );
     const noise = host.querySelector('[data-result-section="noise"]');
-    const funnel = host.querySelector("[data-signal-funnel]");
+    const paths = host.querySelector("[data-signal-paths]");
 
     expect(noise?.textContent).toContain(
-      "540 visible queries: 2 reached the evaluation sample floor; 0 strict query/page changes were selected; 0 observations are shown; 1 site-wide trend is shown",
+      "540 query rows in the current window, 2 of them at 100 impressions",
     );
     expect(noise?.textContent).toContain("18 queries had 50–99 impressions");
     expect(noise?.textContent).toContain("observation-only");
-    expect(noise?.textContent).toContain("cannot trigger an action");
-    expect(funnel?.textContent).toContain("Independent signal paths");
-    expect(funnel?.textContent).toContain("not additive");
-    expect(funnel?.textContent).toContain("CTR baseline");
-    expect(funnel?.textContent).toContain("Not evaluated");
-    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+    expect(paths?.textContent).toContain("Signal evaluation and suppression");
+    expect(paths?.textContent).toContain("cannot be added together");
+    // Every path carries its own requirement, so a reader can check why it
+    // did or did not run instead of reading a badge that says "observed".
+    expect(paths?.textContent).toContain("Requires:");
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
+  });
+
+  it("tells a path that could not run from a path that found nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        signalFunnel: signalFunnel({
+          observedQueryRows: 540,
+          pageAttributionWithheld: 0,
+        }),
+        laneCapability: laneCapability({
+          strictPairedPositionQueries: 2,
+          lanes: {
+            click_opportunity: "not_applicable",
+            stable_position_click_decline: "not_applicable",
+            average_position_crossed_page_one_band: "evaluated",
+            actionable_position_decline: "not_applicable",
+            first_observed: "unavailable",
+          },
+        }),
+        rowAccounting: rowAccounting({
+          byLane: {
+            click_opportunity: laneRows(540),
+            stable_position_click_decline: laneRows(540),
+            average_position_crossed_page_one_band: laneRows(538, 2, 0),
+            actionable_position_decline: laneRows(540),
+            first_observed: laneRows(540),
+          },
+        }),
+      }),
+    );
+    const paths = host.querySelector("[data-signal-paths]");
+    const crossing = paths?.querySelector('[data-signal-path="page-one-band"]');
+    const firstObserved = paths?.querySelector(
+      '[data-signal-path="first-observed"]',
+    );
+
+    expect(crossing?.getAttribute("data-path-state")).toBe("evaluated");
+    expect(crossing?.textContent).toContain(
+      "538 not evaluated · 2 evaluated with no signal · 0 produced a candidate",
+    );
+    // The lane that stands on the page attachment says it could not look,
+    // rather than reporting a comparison it never made.
+    expect(firstObserved?.getAttribute("data-path-state")).toBe("unavailable");
+    expect(firstObserved?.textContent).toContain("could not be read this run");
+    expect(firstObserved?.textContent).not.toMatch(/\b540\b/);
   });
 
   it("keeps unavailable funnel counts unavailable rather than rendering null as zero", async () => {
@@ -466,57 +680,92 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
           ctrBaselineRows: null,
           clickOpportunityCandidates: null,
           stableDeclineCandidates: null,
+          pageOneBandCandidates: null,
+          positionDeclineCandidates: null,
           firstObservedCandidates: null,
           pageAttributionWithheld: null,
         }),
       }),
     );
     const noise = host.querySelector('[data-result-section="noise"]');
-    const funnel = host.querySelector("[data-signal-funnel]");
+    const paths = host.querySelector("[data-signal-paths]");
 
     expect(noise?.textContent).toContain("Visible-query signal funnel unavailable");
     expect(noise?.textContent).toContain("no zeroes were inferred");
     expect(noise?.textContent).not.toContain("null");
     expect(noise?.textContent).not.toMatch(/\b0\b/);
-    expect(funnel?.textContent).not.toContain("null");
-    expect(funnel?.textContent).not.toMatch(/\b0\b/);
-    expect(funnel?.querySelectorAll("[data-signal-lane]")).toHaveLength(5);
+    expect(paths?.textContent).not.toContain("null");
+    // Scoped to the outcome lines: those are the rendered counts. The static
+    // requirement and hit-condition copy legitimately names thresholds such
+    // as 0.5, which is a constant, not a measurement.
+    const outcomes = [
+      ...(paths?.querySelectorAll("[data-path-outcome]") ?? []),
+      ...(paths?.querySelectorAll("[data-selection-not-shown]") ?? []),
+    ];
+    // Asserted, not assumed: a loop over a selector that stopped matching
+    // would otherwise pass by making no assertion at all.
+    expect(outcomes).toHaveLength(7);
+    for (const outcome of outcomes) {
+      expect(outcome.textContent).not.toContain("null");
+      expect(outcome.textContent).not.toMatch(/\b0\b/);
+    }
+    expect(paths?.textContent).not.toContain("query rows, and every");
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
   });
 
-  it("reports independent signal lanes without implying they add up", async () => {
+  it("accounts for every observed row inside each evaluation path", async () => {
     const host = await renderResults(
       envelope({
         signalFunnel: signalFunnel({
-          ctrBaselineRows: 1,
-          clickOpportunityCandidates: 2,
-          stableDeclineCandidates: 3,
-          firstObservedCandidates: 4,
+          observedQueryRows: 12,
           pageAttributionWithheld: 5,
+        }),
+        laneCapability: laneCapability({
+          ctrLane: {
+            state: "evaluated",
+            blockers: [],
+            usableBaselineBands: 3,
+          },
+          lanes: {
+            click_opportunity: "evaluated",
+            stable_position_click_decline: "evaluated",
+            average_position_crossed_page_one_band: "not_applicable",
+            actionable_position_decline: "not_applicable",
+            first_observed: "evaluated",
+          },
+        }),
+        rowAccounting: rowAccounting({
+          observedRows: 12,
+          byLane: {
+            click_opportunity: laneRows(9, 1, 2),
+            stable_position_click_decline: laneRows(6, 3, 3),
+            average_position_crossed_page_one_band: laneRows(12),
+            actionable_position_decline: laneRows(12),
+            first_observed: laneRows(8, 0, 4),
+          },
         }),
       }),
     );
-    const funnel = host.querySelector("[data-signal-funnel]");
+    const paths = host.querySelector("[data-signal-paths]");
+    const textOf = (id: string) =>
+      paths?.querySelector(`[data-signal-path="${id}"]`)?.textContent ?? "";
 
-    expect(funnel?.textContent).toContain("These lanes are independent");
-    expect(funnel?.textContent).toContain("do not add the counts together");
-    expect(
-      funnel?.querySelector('[data-signal-lane="ctr-baseline"]')?.textContent,
-    ).toContain("1");
-    expect(
-      funnel?.querySelector('[data-signal-lane="click-opportunity"]')
-        ?.textContent,
-    ).toContain("2");
-    expect(
-      funnel?.querySelector('[data-signal-lane="stable-decline"]')?.textContent,
-    ).toContain("3");
-    expect(
-      funnel?.querySelector('[data-signal-lane="first-observed"]')?.textContent,
-    ).toContain("4");
-    expect(
-      funnel?.querySelector('[data-signal-lane="page-attribution"]')
-        ?.textContent,
-    ).toContain("5");
+    expect(paths?.textContent).toContain("12 query rows");
+    expect(textOf("ctr-baseline")).toContain("3 usable position bands");
+    expect(textOf("click-opportunity")).toContain(
+      "9 not evaluated · 1 evaluated with no signal · 2 produced a candidate",
+    );
+    expect(textOf("stable-decline")).toContain(
+      "6 not evaluated · 3 evaluated with no signal · 3 produced a candidate",
+    );
+    // A path with nothing to measure reports twelve untested rows, not twelve
+    // rows it cleared.
+    expect(textOf("position-decline")).toContain(
+      "12 not evaluated · 0 evaluated with no signal · 0 produced a candidate",
+    );
+    expect(textOf("page-attribution")).toContain("5 records");
   });
+
 });
 
 describe("DailyBriefingResults changes, actions, and limitations", () => {
@@ -530,7 +779,298 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     "aggregation_basis_mismatch",
     "anonymization_gap_uncomputable",
     "brand_terms_not_confirmed",
+    "property_change_inside_noise_floor",
   ];
+
+  it("shows a provisional move as an observation, never as an action", async () => {
+    const move = provisionalMove("provisional_page_one_band_entry", 1);
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        changes: [],
+        actions: [],
+        provisionalMoves: provisionalMoves([move]),
+      }),
+    );
+    const row = host.querySelector("[data-provisional-row]");
+
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain(move.query);
+    expect(row?.textContent).toContain("Possible move into the 1-10 band");
+    // The prior window is why this is not a change, so the row says so.
+    expect(row?.textContent).toContain("prior window carries only 70");
+    // No action row, no action rank, and the empty action panel still shows.
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(0);
+    expect(host.querySelector("[data-action-empty]")).not.toBeNull();
+    expect(host.querySelector("[data-provisional-note-intro]")?.textContent)
+      .toContain("observations only");
+  });
+
+  it("keeps provisional wording clear of established-change language", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        provisionalMoves: provisionalMoves([
+          provisionalMove("provisional_actionable_position_decline", 2, {
+            current: {
+              query: "provisional query 2",
+              clicks: 0,
+              impressions: 180,
+              position: 24,
+            },
+            previous: {
+              query: "provisional query 2",
+              clicks: 0,
+              impressions: 60,
+              position: 20,
+            },
+            positionDelta: 4,
+          }),
+        ]),
+      }),
+    );
+    const row = host.querySelector("[data-provisional-row]");
+
+    for (const banned of ["Material", "material", "opportunity is established"]) {
+      expect(row?.textContent).not.toContain(banned);
+    }
+    expect(host.textContent).toContain(
+      "No strict change path could be evaluated this run",
+    );
+    // Neither the cadence explanation nor the intro may promise that a
+    // movement is listed: the mode proves only that a comparison was possible.
+    expect(host.textContent).not.toContain("provisional position movement and a watchlist");
+    // The mode proves only that a provisional comparison was possible, so the
+    // intro must not promise that a movement is listed below it.
+    expect(host.textContent).not.toContain("what follows is");
+  });
+
+  it("hands off a provisional page check without counting it as an action", async () => {
+    writeToolHandoffMock.mockReturnValue(true);
+    const move = provisionalMove("provisional_page_one_band_entry", 3);
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        provisionalMoves: provisionalMoves([move]),
+      }),
+    );
+    const link = host.querySelector<HTMLAnchorElement>(
+      "[data-provisional-check-link]",
+    )!;
+
+    await act(async () => {
+      link.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(writeToolHandoffMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Number),
+      expect.objectContaining({
+        destination: "on-page-seo-check",
+        page: move.page,
+        query: move.query,
+        evidenceId: "daily:provisional:provisional_page_one_band_entry",
+      }),
+    );
+  });
+
+  it("calls an under-floor prior window too small rather than unobserved", async () => {
+    const host = await renderResults(
+      envelope({
+        queryWatchlist: watchlist("observed", [
+          observation("sample_floor_reached", 7, {
+            previous: null,
+            previousBelowFloor: 49,
+            positionDelta: null,
+          }),
+        ]),
+      }),
+    );
+    const row = host.querySelector("[data-observation-row]");
+
+    // Search Console did observe that week; it is the comparison that the
+    // sample cannot carry, and the two are different facts.
+    expect(row?.textContent).toContain("prior window too small");
+    expect(row?.textContent).not.toContain("Not observed");
+  });
+
+  it("says which withheld observations cleared the threshold and lost the cut", async () => {
+    const host = await renderResults(
+      envelope({
+        queryWatchlist: watchlist(
+          "observed",
+          [observation("sample_building", 1)],
+          {
+            candidates: 4,
+            withheldByBand: { page_one: 0, near_page_one: 0, mid: 1, far: 2 },
+            withheldByKind: { sample_floor_reached: 1, sample_building: 2 },
+          },
+        ),
+      }),
+    );
+    const withheld = host.querySelector("[data-observations-withheld]");
+
+    expect(withheld?.textContent).toContain("3 more observation candidates");
+    expect(withheld?.textContent).toContain("1 mid-band");
+    expect(withheld?.textContent).toContain("2 far");
+    // "They cleared every threshold" is true of one sample tier and false of
+    // the other, so the sentence names both instead of asserting either.
+    expect(withheld?.textContent).toContain(
+      "1 of them had reached the strict 100-impression sample floor",
+    );
+    expect(withheld?.textContent).toContain("2 sit at 50-99 impressions");
+    expect(withheld?.textContent).not.toContain("not below a threshold");
+  });
+
+  it("names the lane, not the sample, when only position paths ran", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "change_detection",
+        cadence: "weekly",
+        laneCapability: laneCapability({
+          strictPairedPositionQueries: 2,
+          lanes: {
+            click_opportunity: "not_applicable",
+            stable_position_click_decline: "not_applicable",
+            average_position_crossed_page_one_band: "evaluated",
+            actionable_position_decline: "not_applicable",
+            first_observed: "not_applicable",
+          },
+        }),
+      }),
+    );
+
+    // The weekly-because-small-sample sentence names a gate this run never
+    // hit: the property can have plenty of impressions and still have no
+    // click lane to evaluate.
+    expect(host.textContent).toContain("Only position paths could be evaluated");
+    expect(host.textContent).not.toContain("the sample or complete-day comparison");
+  });
+
+  it("does not claim there is nothing to hand off while offering a page check", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        provisionalMoves: provisionalMoves([
+          provisionalMove("provisional_page_one_band_entry", 9),
+        ]),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(host.querySelector("[data-provisional-check-link]")).not.toBeNull();
+    expect(empty?.textContent).toContain("observational and is not counted");
+  });
+
+  it("does not point at a page check when no provisional row carries a page", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        provisionalMoves: provisionalMoves([
+          provisionalMove("provisional_page_one_band_entry", 11, {
+            page: null,
+            pageEvidence: "unavailable",
+          }),
+        ]),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(host.querySelector("[data-provisional-check-link]")).toBeNull();
+    expect(empty?.textContent).toContain("is an observation");
+    expect(empty?.textContent).not.toContain("page check offered");
+  });
+
+  it("does not deny every handoff when the row budget hides a provisional move", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "position_observation",
+        actions: [],
+        // The budget showed none of them, but a hidden candidate can still
+        // carry a page, so "no handoff is justified" would be false.
+        provisionalMoves: provisionalMoves([], { candidates: 2 }),
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+
+    expect(empty?.textContent).toContain(
+      "2 provisional position moves were left out by the row budget",
+    );
+    expect(empty?.textContent).not.toContain("No automated handoff");
+  });
+
+  it("states the selection rules that stand between a candidate and a row", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [change("click_opportunity", 1)],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: 4 }),
+      }),
+    );
+    const rules = host.querySelector("[data-selection-rules]");
+
+    // Passing both stated lines is not sufficient; three presentation rules
+    // stand between a candidate and the table, and they were stated nowhere.
+    expect(rules?.textContent).toContain("One row per query");
+    expect(rules?.textContent).toContain("at most three query rows");
+    expect(rules?.textContent).toContain("gives up its place");
+    expect(
+      host.querySelector("[data-selection-not-shown]")?.textContent,
+    ).toContain("4 rows formed candidates");
+  });
+
+  it("counts one withheld sample-building row with singular grammar", async () => {
+    const host = await renderResults(
+      envelope({
+        queryWatchlist: watchlist(
+          "observed",
+          [observation("sample_building", 21)],
+          {
+            candidates: 3,
+            withheldByBand: { page_one: 0, near_page_one: 0, mid: 0, far: 2 },
+            withheldByKind: { sample_floor_reached: 1, sample_building: 1 },
+          },
+        ),
+      }),
+    );
+    const withheld = host.querySelector("[data-observations-withheld]");
+
+    expect(withheld?.textContent).toContain("1 sits at 50-99 impressions");
+    expect(withheld?.textContent).not.toContain("1 sit at 50-99");
+  });
+
+  it("never prints an unread observation count as a total of zero", async () => {
+    const host = await renderResults(
+      envelope({ queryWatchlist: watchlist("unavailable") }),
+    );
+    const summary = host.querySelector("[data-evidence-fold-summary]");
+
+    // Not one query-derived zero may appear: the rows were never read.
+    expect(summary?.textContent).toContain(
+      "query evidence unavailable, so change and observation counts are unavailable",
+    );
+    expect(summary?.textContent).not.toContain("query changes");
+    expect(summary?.textContent).not.toContain("0/0");
+  });
+
+  it("explains a current-window watchlist run in its own terms", async () => {
+    const host = await renderResults(
+      envelope({ mode: "current_position_watchlist" }),
+    );
+    // Both the cadence explanation and the review intro must name the real
+    // reason: not "no click signal", which was the only reason v2 could give.
+    expect(host.textContent).toContain(
+      "No query on this property has a comparable prior window",
+    );
+    expect(host.textContent).toContain(
+      "There is no comparable prior window this run",
+    );
+    expect(host.textContent).not.toContain("position-first");
+  });
 
   it("humanizes every limitation and never renders a raw machine code", async () => {
     const host = await renderResults(envelope({ limitations: LIMITATIONS }));
@@ -543,15 +1083,15 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("renders the site-wide trend outside the query-page review table", async () => {
-    const fallback = propertyFallback();
-    const watch = observation("evaluation_eligible", 1);
+    const fallback = propertyTrend();
+    const watch = observation("sample_floor_reached", 1);
     const host = await renderResults(
       envelope({
         changes: [],
         actions: [],
-        propertyFallback: fallback,
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
-        queryWatchlist: { evidence: "observed", items: [watch] },
+        propertyTrend: fallback,
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
+        queryWatchlist: watchlist("observed", [watch]),
       }),
     );
     const table = host.querySelector('[role="table"]');
@@ -592,10 +1132,13 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
         queryWatchlist: {
           evidence: "observed",
           items: [
-            observation("evaluation_eligible", 2),
+            observation("sample_floor_reached", 2),
             observation("sample_building", 3),
             observation("sample_building", 4),
           ],
+          candidates: null,
+          withheldByBand: null,
+          withheldByKind: null,
         },
       }),
     );
@@ -608,7 +1151,10 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rows[0]?.textContent).toContain(strict.query);
     expect(rows[1]?.hasAttribute("data-observation-row")).toBe(true);
     expect(rows[1]?.textContent).toContain("watch query 2");
-    expect(rows[1]?.textContent).toContain("Watch");
+    expect(rows[1]?.textContent).toContain("Observation");
+    expect(rows[1]?.textContent).toContain(
+      "Already inside the 1-10 average position band",
+    );
     expect(rows[2]?.textContent).toContain("watch query 3");
     expect(rows[2]?.textContent).toContain("Building sample");
     expect(host.textContent).not.toContain("watch query 4");
@@ -622,7 +1168,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     });
     const host = await renderResults(
       envelope({
-        queryWatchlist: { evidence: "observed", items: [watch] },
+        queryWatchlist: watchlist("observed", [watch]),
       }),
     );
     const row = host.querySelector<HTMLElement>("[data-observation-row]");
@@ -634,19 +1180,21 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("renders unavailable property positions without inventing a rank", async () => {
-    const fallback = propertyFallback();
+    const fallback = propertyTrend();
+    const baseChange = fallback.change;
+    if (baseChange === null) throw new Error("fixture must carry a change");
     const host = await renderResults(
       envelope({
-        propertyFallback: {
+        propertyTrend: {
           ...fallback,
           change: {
-            ...fallback.change,
-            current: { ...fallback.change.current, position: null },
-            previous: { ...fallback.change.previous, position: null },
+            ...baseChange,
+            current: { ...baseChange.current, position: null },
+            previous: { ...baseChange.previous, position: null },
             positionDelta: null,
           },
         },
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const row = host.querySelector<HTMLElement>("[data-site-trend]");
@@ -662,8 +1210,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       envelope({
         changes: [],
         actions: [],
-        propertyFallback: propertyFallback(),
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        propertyTrend: propertyTrend(),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const row = host.querySelector<HTMLElement>(
@@ -710,12 +1258,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   });
 
   it("routes a property visibility gain to Quick Wins without URL evidence", async () => {
-    const base = propertyFallback();
+    const base = propertyTrend();
+    const baseGainChange = base.change;
+    if (baseGainChange === null) throw new Error("fixture must carry a change");
     const host = await renderResults(
       envelope({
-        propertyFallback: {
+        propertyTrend: {
           change: {
-            ...base.change,
+            ...baseGainChange,
             kind: "sitewide_visibility_gain",
             current: {
               clicks: 100,
@@ -739,8 +1289,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
             kind: "sitewide_visibility_gain",
             destination: "seo-quick-wins",
           },
+          noiseFloor: {
+            basis: "clicks",
+            observedChange: 50,
+            minimumForAction: 2 * Math.sqrt(50),
+            cleared: true,
+          },
         },
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const link = host.querySelector<HTMLAnchorElement>(
@@ -753,37 +1309,42 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(link?.getAttribute("href")).not.toContain(PROPERTY);
   });
 
-  it("gives query rows and exact query actions precedence over a contradictory property fallback", async () => {
+  it("shows the property trend alongside an exact query action", async () => {
     const source = change("click_opportunity", 1);
     const host = await renderResults(
       envelope({
         changes: [source],
         actions: [action(source, "seo-quick-wins")],
-        propertyFallback: propertyFallback(),
+        propertyTrend: propertyTrend(),
         signalFunnel: signalFunnel({
           selectedQueryChanges: 1,
-          propertyFallbackShown: true,
+          propertyTrendShown: true,
         }),
+        queryWatchlist: watchlist("observed"),
       }),
     );
 
     expect(host.querySelectorAll("[data-change]")).toHaveLength(1);
-    expect(host.querySelector("[data-property-change]")).toBeNull();
-    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(1);
-    expect(host.querySelector("[data-property-action]")).toBeNull();
     expect(host.textContent).toContain(source.query);
-    expect(host.textContent).not.toContain("Entire Search Console property");
+    // The query signal keeps the first action slot; the site-wide fact keeps
+    // its own place instead of being deleted by it.
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(2);
+    const propertyAction = host.querySelector("[data-property-action]");
+
+    expect(propertyAction).not.toBeNull();
+    expect(propertyAction?.getAttribute("data-action-rank")).toBe("2");
+    expect(host.querySelector("[data-site-trend]")).not.toBeNull();
     expect(
-      host.querySelector('[data-result-section="noise"]')?.textContent,
-    ).toContain("0 site-wide trends are shown");
+      host.querySelector("[data-evidence-fold-summary]")?.textContent,
+    ).toContain("1 site trend observation");
   });
 
   it("blocks property-action navigation when the private handoff cannot be stored", async () => {
     writeToolHandoffMock.mockReturnValue(false);
     const host = await renderResults(
       envelope({
-        propertyFallback: propertyFallback(),
-        signalFunnel: signalFunnel({ propertyFallbackShown: true }),
+        propertyTrend: propertyTrend(),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
     const link = host.querySelector<HTMLAnchorElement>(
@@ -902,9 +1463,9 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const host = await renderResults(
       envelope({
         changes: [],
-        propertyFallback: null,
+        propertyTrend: { change: null, action: null, noiseFloor: null },
         signalFunnel: signalFunnel(),
-        queryWatchlist: { evidence: "observed", items: [] },
+        queryWatchlist: watchlist("observed"),
       }),
     );
     const section = host.querySelector('[data-result-section="changes"]');
@@ -922,10 +1483,9 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
   it("distinguishes partial and unavailable watchlist evidence", async () => {
     const partialHost = await renderResults(
       envelope({
-        queryWatchlist: {
-          evidence: "partial",
-          items: [observation("evaluation_eligible", 99)],
-        },
+        queryWatchlist: watchlist("partial", [
+          observation("sample_floor_reached", 99),
+        ]),
       }),
     );
     expect(partialHost.querySelector("[data-change-empty]")?.textContent).toContain(
@@ -939,7 +1499,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     const unavailableHost = await renderResults(
       envelope({
-        queryWatchlist: { evidence: "unavailable", items: [] },
+        queryWatchlist: watchlist("unavailable"),
       }),
     );
     expect(
@@ -1020,7 +1580,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(empty?.tagName).toBe("DIV");
     expect(empty?.className).toContain("border");
     expect(empty?.textContent).toContain(
-      "No automated handoff is justified by the evidence available in this run",
+      "No action carries strict evidence this run",
     );
     expect(section?.querySelector("[data-actions-list]")).toBeNull();
     expect(section?.querySelector("[data-action-link]")).toBeNull();
@@ -1145,5 +1705,36 @@ describe("DailyBriefingResults page-local manual checks", () => {
     await click(buttonWith(host, "Mark checked for this page"));
     expect(host.textContent).toContain("Marked on this page: no notification seen");
     expect(host.textContent).toContain("Not confirmed on this page");
+  });
+});
+
+describe("DailyBriefingResults unread query evidence", () => {
+  it("explains that the lanes never ran rather than blaming the sample", async () => {
+    const host = await renderResults(
+      envelope({ mode: "unavailable", cadence: "weekly" }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+    const changes = host.querySelector('[data-result-section="changes"]');
+
+    expect(facts?.textContent).toContain("query evidence could not be read");
+    expect(facts?.textContent).not.toContain(
+      "Daily interpretation is suppressed because the sample",
+    );
+    expect(changes?.textContent).toContain("none of the lanes below were run");
+    expect(changes?.textContent).not.toContain("Strict changes appear first");
+  });
+});
+
+describe("DailyBriefingResults folded explanation", () => {
+  it("labels the fold with the question it answers", async () => {
+    const host = await renderResults();
+    const details = host.querySelector("[data-evidence-details]");
+
+    // The section holds the noise strip, the signal funnel, coverage and
+    // anonymization. A reader opens it to find out why the briefing was
+    // thin, not to read the name of a threshold.
+    expect(details?.querySelector("summary")?.textContent).toContain(
+      "Why there were not more signals",
+    );
   });
 });

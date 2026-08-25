@@ -14,6 +14,7 @@ import {
 import { sanitizeForPrompt } from "../tools/keyword-prompts.ts";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES,
   isAgentProfileRefreshFields,
   type AgentProfileRefreshAgent,
   type AgentProfileRefreshField,
@@ -30,7 +31,6 @@ export const PROFILE_REFRESH_SITE_CONTENT_OPEN =
 export const PROFILE_REFRESH_SITE_CONTENT_CLOSE =
   "</profile_site_content>" as const;
 
-const MAX_PROMPT_PAGES = 14;
 const MAX_PAGE_URL_CHARS = 2_048;
 const MAX_PAGE_TITLE_CHARS = 200;
 const MAX_PAGE_HEADINGS = 12;
@@ -119,7 +119,7 @@ function preparePages(
   const prepared: PreparedPage[] = [];
   const seen = new Set<string>();
   for (const page of pages) {
-    if (prepared.length === MAX_PROMPT_PAGES) break;
+    if (prepared.length === AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES) break;
     const url = quotableUrl(page.url);
     if (url === null || seen.has(url)) continue;
     seen.add(url);

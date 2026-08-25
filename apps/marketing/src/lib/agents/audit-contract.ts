@@ -3,7 +3,6 @@
 // @pos    -- shared wire contract for the SEO Agent API and UI, both focuses
 
 import type {
-  SeoAuditCategory,
   SeoAuditCoverage,
   SeoAuditPayload,
   SeoAuditReport,
@@ -37,6 +36,7 @@ import {
   SEO_AUDIT_RECORD_IDS,
 } from "@sf/public-tools/seo-audit/record-ledger";
 import { SEARCH_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/search-performance";
+import { INDEX_COVERAGE_RECORD_IDS } from "@sf/public-tools/seo-audit/index-coverage";
 import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-evidence/records";
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
@@ -128,6 +128,10 @@ export const AGENT_AUDIT_SOURCE_SCOPE =
 export { SEO_AUDIT_RECORD_CATEGORIES as AGENT_AUDIT_RECORD_CATEGORIES } from "@sf/public-tools/seo-audit/record-ledger";
 
 const AGENT_AUDIT_RECORD_IDS = SEO_AUDIT_RECORD_IDS;
+const AGENT_SEARCH_PERFORMANCE_RECORD_IDS = [
+  ...SEARCH_PERFORMANCE_RECORD_IDS,
+  ...INDEX_COVERAGE_RECORD_IDS,
+];
 
 export interface AgentAuditSourceProvenance {
   readonly tool: "seo_audit";
@@ -371,11 +375,10 @@ function isAgentSearchPerformance(
   // a check that decided when its record was simply missing. Ids come from the
   // producer rather than a second list beside it.
   const ids = value.records.map((record) => record.id).sort();
+  const expected = AGENT_SEARCH_PERFORMANCE_RECORD_IDS.slice().sort();
   return (
-    ids.length === SEARCH_PERFORMANCE_RECORD_IDS.length &&
-    ids.every(
-      (id, index) => id === SEARCH_PERFORMANCE_RECORD_IDS.slice().sort()[index],
-    )
+    ids.length === expected.length &&
+    ids.every((id, index) => id === expected[index])
   );
 }
 
@@ -735,6 +738,9 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     !(
       value.serpLandscape === undefined ||
       isSerpLandscapeShape(value.serpLandscape)
+    ) ||
+    !(
+      value.serpShape === undefined || isAgentSerpShape(value.serpShape)
     )
   ) {
     return false;

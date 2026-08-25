@@ -92,6 +92,15 @@ function parseBrandTerms(input: string): readonly string[] {
     .filter((term) => term !== "");
 }
 
+/**
+ * The report shape this client knows how to read.
+ *
+ * Held as a literal, not imported: a value import from the package barrel
+ * pulls server-only code into this client bundle. A contract test keeps it
+ * equal to the package's own constant.
+ */
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v3";
+
 export function DailyBriefingTool({
   locale,
   properties,
@@ -138,6 +147,15 @@ export function DailyBriefingTool({
       const body = (await response.json()) as DailyBriefingResponse;
       if (!response.ok || body.data === undefined) {
         setErrorCode(knownErrorCode(body.error?.code));
+        return;
+      }
+      // A rolling deploy can answer this page from a build that speaks a
+      // different report shape. Fail closed here rather than reading fields
+      // off a result that was never promised.
+      if (
+        body.data.run?.schemaVersion !== CLIENT_DAILY_BRIEFING_SCHEMA_VERSION
+      ) {
+        setErrorCode("unknown");
         return;
       }
       setPayload({

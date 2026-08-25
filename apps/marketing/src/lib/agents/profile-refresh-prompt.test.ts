@@ -10,6 +10,7 @@ import type {
 import { KeywordLlmError } from "../tools/keyword-llm-client.ts";
 import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES,
   type AgentProfileRefreshField,
   type AgentProfileRefreshFieldPath,
 } from "./profile-refresh-contract.ts";
@@ -161,6 +162,27 @@ describe("profile refresh prompt", () => {
     expect(prompt).toContain(PRICING);
     expect(prompt).not.toContain("projectId");
     expect(prompt).not.toContain("workspaceId");
+  });
+
+  it("characterizes the prompt as the first 14 of 20 diagnostic pages", () => {
+    const pages = Array.from({ length: 20 }, (_, index) => ({
+      url: `https://acme.example/page-${index}`,
+      title: `Page ${index}`,
+      headings: [`Heading ${index}`],
+      text: `Context ${index}`,
+    }));
+    const prompt = buildAgentProfileRefreshUserPrompt({ ...INPUT, pages });
+
+    expect(prompt.match(/^\[page url=/gmu)).toHaveLength(
+      AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES,
+    );
+    expect(prompt).toContain(
+      `https://acme.example/page-${AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES - 1}`,
+    );
+    expect(prompt).not.toContain(
+      `https://acme.example/page-${AGENT_PROFILE_REFRESH_MAX_PROMPT_PAGES}`,
+    );
+    expect(prompt).not.toContain("https://acme.example/page-19");
   });
 
   it("neutralises tag-breaking instructions inside crawled text", () => {

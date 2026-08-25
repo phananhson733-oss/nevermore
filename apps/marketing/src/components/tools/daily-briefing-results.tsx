@@ -4,7 +4,11 @@
 
 "use client";
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import {
   ArrowUpRight,
   Check,
@@ -20,11 +24,18 @@ import { useTranslations } from "next-intl";
 import type {
   DailyBriefingAction,
   DailyBriefingChange,
+  DailyBriefingChangeKind,
   DailyBriefingEnvelope,
   DailyBriefingKpiComparison,
+  DailyBriefingLaneCapability,
+  DailyBriefingLaneState,
+  DailyBriefingMode,
+  DailyBriefingObservationBand,
   DailyBriefingPropertyChange,
-  DailyBriefingPropertyFallback,
+  DailyBriefingPropertyTrend,
+  DailyBriefingProvisionalMove,
   DailyBriefingQueryWatchlist,
+  DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
@@ -34,6 +45,8 @@ const CARD =
   "rounded-[12px] border border-brand-border-card bg-brand-bg p-4 md:p-[18px]";
 const EYEBROW =
   "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+/** Query rows this page will show, changes and observations together. */
+const DISPLAY_ROW_LIMIT = 3;
 const TABLE_HEADER =
   "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
 
@@ -59,9 +72,13 @@ interface ResultPreviewSectionProps {
 
 interface NoiseSummaryProps {
   readonly funnel: DailyBriefingSignalFunnel;
-  readonly observationsShown: number;
-  readonly selectedQueryChanges: number;
-  readonly siteTrendShown: boolean;
+  readonly laneCapability: DailyBriefingLaneCapability;
+}
+
+interface SignalPathEvidenceProps {
+  readonly funnel: DailyBriefingSignalFunnel;
+  readonly laneCapability: DailyBriefingLaneCapability;
+  readonly rowAccounting: DailyBriefingRowAccounting;
 }
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
@@ -226,6 +243,78 @@ function reviewEmptyMessageKey(
   }
 }
 
+/**
+ * Why this run is weekly, in the terms of the evidence that decided it.
+ *
+ * Written as an exhaustive switch so adding a mode fails the build instead of
+ * silently rendering the sentence that explains a different one.
+ */
+function cadenceDetailKey(
+  mode: DailyBriefingMode,
+  dailyCadence: boolean,
+  clickLaneEvaluated: boolean,
+): string {
+  if (dailyCadence) return "facts.dailyReason";
+  switch (mode) {
+    case "change_detection":
+      // A property with plenty of impressions and no click lane is weekly
+      // because of the lane, not the sample. Saying "the sample is too small"
+      // there names a gate the run never hit.
+      return clickLaneEvaluated
+        ? "facts.weeklyReason"
+        : "facts.noClickLaneReason";
+    case "position_observation":
+      return "facts.positionObservationReason";
+    case "current_position_watchlist":
+      return "facts.currentWatchlistReason";
+    case "unavailable":
+      return "facts.unavailableReason";
+  }
+}
+
+function reviewIntroKey(mode: DailyBriefingMode): string {
+  switch (mode) {
+    case "change_detection":
+      return "review.intro";
+    case "position_observation":
+      return "review.introPositionObservation";
+    case "current_position_watchlist":
+      return "review.introCurrentWatchlist";
+    case "unavailable":
+      return "review.introUnavailable";
+  }
+}
+
+const OBSERVATION_BANDS: readonly DailyBriefingObservationBand[] = [
+  "page_one",
+  "near_page_one",
+  "mid",
+  "far",
+];
+
+/**
+ * Name the observations the row budget dropped, band by band.
+ *
+ * A row that cleared every threshold and lost the cut is not a row that fell
+ * below one, and the fold summary used to call both of them the same thing.
+ */
+function withheldBreakdown(
+  t: ReturnType<typeof useTranslations>,
+  locale: string,
+  withheldByBand: Readonly<
+    Record<DailyBriefingObservationBand, number>
+  > | null,
+): string | null {
+  if (withheldByBand === null) return null;
+  const parts = OBSERVATION_BANDS.filter(
+    (band) => withheldByBand[band] > 0,
+  ).map((band) =>
+    t(`review.withheldBands.${band}`, { count: withheldByBand[band] }),
+  );
+  if (parts.length === 0) return null;
+  return parts.join(locale === "zh" ? "、" : ", ");
+}
+
 function propertyWeeklyComparisons(
   t: ReturnType<typeof useTranslations>,
   locale: string,
@@ -314,147 +403,285 @@ function ResultPreviewSection({
   );
 }
 
-function NoiseSummary({
-  funnel,
-  observationsShown,
-  selectedQueryChanges,
-  siteTrendShown,
-}: NoiseSummaryProps) {
+function NoiseSummary({ funnel, laneCapability }: NoiseSummaryProps) {
   const t = useTranslations("tools.dailyBriefing");
-  const hasObservedSummary =
+  const strictPaired = laneCapability.strictPairedPositionQueries;
+  const clickDecline = laneCapability.clickDeclineCapableQueries;
+  const provisional = laneCapability.provisionalPairedPositionQueries;
+  const currentOnly = laneCapability.currentFloorOnlyQueries;
+  // The impression floor says a row carries a sample. It never says a lane
+  // looked at the row, which is why the counts beside it are the ones that
+  // answer "was anything actually compared".
+  const observedSummary =
     funnel.evidence === "observed" &&
     funnel.observedQueryRows !== null &&
-    funnel.actionEligibleQueries !== null;
-  const hasPartialSummary =
-    funnel.evidence === "partial" && funnel.observedQueryRows !== null;
+    funnel.actionEligibleQueries !== null &&
+    strictPaired !== null &&
+    clickDecline !== null &&
+    provisional !== null &&
+    currentOnly !== null
+      ? t("noise.observed", {
+          observed: funnel.observedQueryRows,
+          eligible: funnel.actionEligibleQueries,
+          strictPaired,
+          clickDecline,
+          provisional,
+          currentOnly,
+        })
+      : null;
+  const partialSummary =
+    funnel.evidence === "partial" && funnel.observedQueryRows !== null
+      ? t("noise.partial", { observed: funnel.observedQueryRows })
+      : null;
 
   return (
     <section
       aria-labelledby="daily-briefing-noise"
       data-result-section="noise"
-      className="rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft px-4 py-3"
+      className="mt-5 rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft px-4 py-3.5"
     >
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
-        <h3
-          id="daily-briefing-noise"
-          className={`${EYEBROW} shrink-0 text-brand-accent-text`}
-        >
-          {t("noise.label")}
-        </h3>
-        <div className="min-w-0 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          <p>
-            {hasObservedSummary
-              ? t("noise.observed", {
-                  observed: funnel.observedQueryRows,
-                  observations: observationsShown,
-                  eligible: funnel.actionEligibleQueries,
-                  selected: selectedQueryChanges,
-                  trend: siteTrendShown ? 1 : 0,
-                })
-              : hasPartialSummary
-                ? t("noise.partial", { observed: funnel.observedQueryRows })
-                : t("noise.unavailable")}
-          </p>
-          {hasObservedSummary && funnel.observationCandidates !== null ? (
-            <p className="mt-1">
-              {t("noise.observationOnly", {
-                count: funnel.observationCandidates,
-              })}
-            </p>
-          ) : null}
-        </div>
-      </div>
+      <h4
+        id="daily-briefing-noise"
+        className={`${EYEBROW} text-brand-accent-text`}
+      >
+        {t("noise.label")}
+      </h4>
+      <p className="mt-2 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+        {observedSummary ?? partialSummary ?? t("noise.unavailable")}
+      </p>
+      {observedSummary !== null && funnel.observationCandidates !== null ? (
+        <p className="mt-1.5 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+          {t("noise.observationOnly", { count: funnel.observationCandidates })}
+        </p>
+      ) : null}
     </section>
   );
 }
 
-function SignalFunnelEvidence({
-  funnel,
+const SIGNAL_PATHS: readonly {
+  readonly key: string;
+  readonly copyKey: string;
+  readonly kind: DailyBriefingChangeKind;
+}[] = [
+  {
+    key: "click-opportunity",
+    copyKey: "clickOpportunity",
+    kind: "click_opportunity",
+  },
+  {
+    key: "stable-decline",
+    copyKey: "stableDecline",
+    kind: "stable_position_click_decline",
+  },
+  {
+    key: "page-one-band",
+    copyKey: "pageOneBand",
+    kind: "average_position_crossed_page_one_band",
+  },
+  {
+    key: "position-decline",
+    copyKey: "positionDecline",
+    kind: "actionable_position_decline",
+  },
+  {
+    key: "first-observed",
+    copyKey: "firstObserved",
+    kind: "first_observed",
+  },
+];
+
+function PathTier({
+  title,
+  children,
 }: {
-  readonly funnel: DailyBriefingSignalFunnel;
+  readonly title: string;
+  readonly children: ReactNode;
 }) {
+  return (
+    <div className="mt-5">
+      <h5 className={EYEBROW}>{title}</h5>
+      <div className="mt-2.5 grid gap-3">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Which paths ran, which could not, and where every row went.
+ *
+ * This replaces a seven-cell grid whose every cell read "observed - 0". That
+ * grid could not tell a path with nothing to measure from a path that never
+ * ran, and it stamped "observed" on both. Each line here carries its own
+ * requirement and its own row split, so the distinction is readable rather
+ * than encoded in a badge.
+ */
+function SignalPathEvidence({
+  funnel,
+  laneCapability,
+  rowAccounting,
+}: SignalPathEvidenceProps) {
   const t = useTranslations("tools.dailyBriefing");
-  const observed = funnel.evidence === "observed";
-  const lanes = [
-    {
-      key: "ctr-baseline",
-      title: t("evidence.signalFunnel.lanes.ctrBaseline.title"),
-      count: funnel.ctrBaselineRows,
-      bodyKey: "evidence.signalFunnel.lanes.ctrBaseline.body" as const,
-      unavailable: t("evidence.signalFunnel.lanes.ctrBaseline.notEvaluated"),
-    },
-    {
-      key: "click-opportunity",
-      title: t("evidence.signalFunnel.lanes.clickOpportunity.title"),
-      count: funnel.clickOpportunityCandidates,
-      bodyKey: "evidence.signalFunnel.lanes.clickOpportunity.body" as const,
-      unavailable: t("evidence.signalFunnel.laneUnavailable"),
-    },
-    {
-      key: "stable-decline",
-      title: t("evidence.signalFunnel.lanes.stableDecline.title"),
-      count: funnel.stableDeclineCandidates,
-      bodyKey: "evidence.signalFunnel.lanes.stableDecline.body" as const,
-      unavailable: t("evidence.signalFunnel.laneUnavailable"),
-    },
-    {
-      key: "first-observed",
-      title: t("evidence.signalFunnel.lanes.firstObserved.title"),
-      count: funnel.firstObservedCandidates,
-      bodyKey: "evidence.signalFunnel.lanes.firstObserved.body" as const,
-      unavailable: t("evidence.signalFunnel.laneUnavailable"),
-    },
-    {
-      key: "page-attribution",
-      title: t("evidence.signalFunnel.lanes.pageAttribution.title"),
-      count: funnel.pageAttributionWithheld,
-      bodyKey: "evidence.signalFunnel.lanes.pageAttribution.body" as const,
-      unavailable: t("evidence.signalFunnel.laneUnavailable"),
-    },
-  ];
+  const byLane = rowAccounting.byLane;
+  const ctrLane = laneCapability.ctrLane;
+  const withheld = funnel.pageAttributionWithheld;
 
   return (
-    <div
-      data-signal-funnel
-      className="mt-5 rounded-[10px] border border-brand-border-card bg-brand-panel px-4 py-4"
-    >
+    <div data-signal-paths className="mt-6 border-t border-brand-border pt-5">
       <h4 className="text-[13px] font-semibold text-text-dark-primary">
-        {t("evidence.signalFunnel.title")}
+        {t("evidence.paths.title")}
       </h4>
-      <p className="mt-1.5 max-w-3xl text-[12px] leading-[1.6] text-text-dark-secondary">
-        {t("evidence.signalFunnel.intro")}
+      <p className="mt-1.5 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("evidence.paths.intro")}
       </p>
-      <div className="mt-4 grid gap-x-5 gap-y-3 md:grid-cols-2">
-        {lanes.map((lane) => {
-          const count = observed ? lane.count : null;
-          const available = count !== null;
+
+      <PathTier title={t("evidence.paths.tiers.baseline")}>
+        <PathLine
+          id="ctr-baseline"
+          state={ctrLane.state}
+          name={t("evidence.paths.ctrBaseline.name")}
+          finding={null}
+          requirement={t("evidence.paths.laneRequirement", {
+            requirement: t("evidence.paths.ctrBaseline.requirement"),
+          })}
+          outcome={
+            ctrLane.state === "evaluated" && ctrLane.usableBaselineBands !== null
+              ? t("evidence.paths.ctrBaseline.evaluated", {
+                  bands: ctrLane.usableBaselineBands,
+                })
+              : ctrLane.state === "unavailable"
+                ? t("evidence.paths.ctrBaseline.unavailable")
+                : ctrLane.blockers.length === 0
+                  ? t("ctrLane.blockers.unknown")
+                  : ctrLane.blockers
+                      .map((blocker) => t(`ctrLane.blockers.${blocker}`))
+                      .join(" ")
+          }
+        />
+      </PathTier>
+
+      <PathTier title={t("evidence.paths.tiers.lanes")}>
+        {rowAccounting.observedRows !== null ? (
+          <p className="text-[12px] leading-[1.6] text-text-dark-secondary">
+            {t("evidence.paths.rowsIntro", {
+              rows: rowAccounting.observedRows,
+            })}
+          </p>
+        ) : null}
+        {SIGNAL_PATHS.map((path) => {
+          const state = laneCapability.lanes[path.kind];
+          const counts = byLane === null ? null : byLane[path.kind];
           return (
-            <div
-              key={lane.key}
-              data-signal-lane={lane.key}
-              className="border-t border-brand-border pt-3"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h5 className="text-[12.5px] font-semibold text-text-dark-primary">
-                  {lane.title}
-                </h5>
-                <span className="font-mono text-[9.5px] tracking-[0.06em] text-brand-accent-text uppercase">
-                  {t(
-                    available
-                      ? "evidenceStates.observed"
-                      : "evidenceStates.unavailable",
-                  )}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-                {available
-                  ? t(lane.bodyKey, { count })
-                  : lane.unavailable}
-              </p>
-            </div>
+            <PathLine
+              key={path.key}
+              id={path.key}
+              state={state}
+              name={t(`evidence.paths.lanes.${path.copyKey}.name`)}
+              requirement={t("evidence.paths.laneRequirement", {
+                requirement: t(
+                  `evidence.paths.lanes.${path.copyKey}.requirement`,
+                ),
+              })}
+              // The precondition says what could be asked; the hit condition
+              // says what would have counted as an answer. A reader needs both
+              // to work out why their query is not on the page.
+              finding={t("evidence.paths.laneFinding", {
+                finding: t(`evidence.paths.lanes.${path.copyKey}.finding`),
+              })}
+              outcome={
+                state === "unavailable" || counts === null
+                  ? t("evidence.paths.laneUnavailable")
+                  : t("evidence.paths.rowSplit", { ...counts })
+              }
+            />
           );
         })}
-      </div>
+      </PathTier>
+
+      <PathTier title={t("evidence.paths.selectionTitle")}>
+        {/* Passing every stated gate is not the same as reaching the table.
+            Three presentation rules stand between a candidate and a row, and
+            leaving them unstated made the two lines above look sufficient. */}
+        <p
+          data-selection-rules
+          className="border-l border-brand-border pl-3 text-[11.5px] leading-[1.55] text-text-dark-secondary"
+        >
+          {t("evidence.paths.selectionRules")}
+        </p>
+        {rowAccounting.notSelectedVisibleRows === null ? null : (
+          <p
+            data-selection-not-shown
+            className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
+          >
+            {rowAccounting.notSelectedVisibleRows === 0
+              ? t("evidence.paths.selectionAllShown")
+              : t("evidence.paths.selectionNotShown", {
+                  count: rowAccounting.notSelectedVisibleRows,
+                })}
+          </p>
+        )}
+      </PathTier>
+
+      <PathTier title={t("evidence.paths.tiers.suppression")}>
+        <PathLine
+          id="page-attribution"
+          state={withheld === null ? "unavailable" : "evaluated"}
+          name={t("evidence.paths.pageAttribution.name")}
+          finding={null}
+          requirement={null}
+          outcome={
+            withheld === null
+              ? t("evidence.paths.pageAttribution.unavailable")
+              : withheld === 0
+                ? t("evidence.paths.pageAttribution.none")
+                : t("evidence.paths.pageAttribution.observed", {
+                    count: withheld,
+                  })
+          }
+        />
+      </PathTier>
+    </div>
+  );
+}
+
+function PathLine({
+  finding,
+  id,
+  name,
+  outcome,
+  requirement,
+  state,
+}: {
+  readonly id: string;
+  readonly name: string;
+  readonly finding: string | null;
+  readonly outcome: string;
+  readonly requirement: string | null;
+  readonly state: DailyBriefingLaneState;
+}) {
+  return (
+    <div
+      data-signal-path={id}
+      data-path-state={state}
+      className="border-l border-brand-border pl-3"
+    >
+      <p className="text-[12.5px] leading-[1.5] font-semibold text-text-dark-primary">
+        {name}
+      </p>
+      {requirement === null ? null : (
+        <p className="mt-1 max-w-4xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          {requirement}
+        </p>
+      )}
+      {finding === null ? null : (
+        <p className="mt-0.5 max-w-4xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
+          {finding}
+        </p>
+      )}
+      <p
+        data-path-outcome
+        className="mt-1 max-w-4xl font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
+      >
+        {outcome}
+      </p>
     </div>
   );
 }
@@ -496,27 +723,88 @@ export function DailyBriefingResults({
   const dailyAvailable =
     result.cadence === "daily" && result.day.evidence === "observed";
   const queryActions = matchingActions(envelope);
+  // The site-wide trend is the property's own fact. It used to be dropped the
+  // moment any query signal was selected, which deleted the only whole-site
+  // statement in the briefing exactly when the briefing had the most to say.
+  const propertyChange = result.propertyTrend.change;
+  const propertyAction = result.propertyTrend.action;
+  const propertyNoiseFloor = result.propertyTrend.noiseFloor;
+  const propertyComparisons =
+    propertyChange === null
+      ? null
+      : propertyWeeklyComparisons(t, locale, propertyChange);
+  const propertyTarget =
+    propertyAction === null ? null : destination(propertyAction.destination);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
-  const shownChanges = result.changes.slice(0, 3);
+  const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
+  // Provisional moves name a movement, so they outrank rows that only name a
+  // position. The engine already applies this budget; the page applies it
+  // again so no contract change can put a fourth row on screen.
+  const shownProvisional = result.provisionalMoves.items.slice(
+    0,
+    Math.max(0, DISPLAY_ROW_LIMIT - shownChanges.length),
+  );
   const watchlistItems =
     result.queryWatchlist.evidence === "observed"
       ? result.queryWatchlist.items
       : [];
   const shownObservations = watchlistItems.slice(
     0,
-    Math.max(0, 3 - shownChanges.length),
+    Math.max(
+      0,
+      DISPLAY_ROW_LIMIT - shownChanges.length - shownProvisional.length,
+    ),
   );
-  const propertyFallback =
-    shownChanges.length === 0 ? result.propertyFallback : null;
-  const propertyComparisons =
-    propertyFallback === null
-      ? null
-      : propertyWeeklyComparisons(t, locale, propertyFallback.change);
-  const propertyTarget =
-    propertyFallback === null
-      ? null
-      : destination(propertyFallback.action.destination);
+  const withheldObservations = Math.max(
+    0,
+    (result.queryWatchlist.candidates ?? 0) - shownObservations.length,
+  );
+  const withheldObservationBands = withheldBreakdown(
+    t,
+    locale,
+    result.queryWatchlist.withheldByBand,
+  );
+  const withheldProvisional = Math.max(
+    0,
+    (result.provisionalMoves.candidates ?? 0) - shownProvisional.length,
+  );
+  const ctrLane = result.laneCapability.ctrLane;
+  // Only the click-driven lanes move on a daily timescale, which is what
+  // decides both the cadence and the sentence explaining it.
+  const clickLaneEvaluated =
+    result.laneCapability.lanes.click_opportunity === "evaluated" ||
+    result.laneCapability.lanes.stable_position_click_decline === "evaluated";
+
+  // Every count in the summary is query-derived, so when the query rows were
+  // never read none of them may be printed: a run that could not look is not
+  // a run that found nothing. The shown counts are also labelled as shown,
+  // never as the category total the display budget cut them down from.
+  const queryEvidenceRead = result.queryWatchlist.candidates !== null;
+  const provisionalCandidates = result.provisionalMoves.candidates ?? 0;
+  const foldSummary = (
+    queryEvidenceRead
+      ? [
+          t("evidence.foldChanges", { count: shownChanges.length }),
+          provisionalCandidates > 0
+            ? t("evidence.foldProvisional", {
+                shown: shownProvisional.length,
+                candidates: provisionalCandidates,
+              })
+            : null,
+          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          t("evidence.foldObservationsShown", {
+            shown: shownObservations.length,
+            candidates: result.queryWatchlist.candidates ?? 0,
+          }),
+        ]
+      : [
+          t("evidence.foldQueryEvidenceUnavailable"),
+          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+        ]
+  )
+    .filter((part): part is string => part !== null)
+    .join(" · ");
 
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
@@ -543,20 +831,56 @@ export function DailyBriefingResults({
     }
   }
 
-  function propertyHandoff(
+  function provisionalHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
-    fallback: DailyBriefingPropertyFallback,
+    move: DailyBriefingProvisionalMove,
   ) {
     let written = false;
     try {
+      if (move.page === null) {
+        event.preventDefault();
+        setHandoffFailed(true);
+        return;
+      }
       written = writeToolHandoff(window.sessionStorage, Date.now(), {
         source: "daily-search-briefing",
-        destination: fallback.action.destination,
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        property,
+        query: move.query,
+        page: move.page,
+        // Deliberately not an action index: this row never entered the action
+        // list and must not be counted as one downstream.
+        evidenceId: `daily:provisional:${move.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function propertyHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    trend: DailyBriefingPropertyTrend,
+  ) {
+    let written = false;
+    try {
+      if (trend.action === null || trend.change === null) {
+        event.preventDefault();
+        setHandoffFailed(true);
+        return;
+      }
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: trend.action.destination,
         scope: "property",
         property,
         query: null,
         page: null,
-        evidenceId: `daily:property:${fallback.change.kind}`,
+        evidenceId: `daily:property:${trend.change.kind}`,
       });
     } catch {
       written = false;
@@ -602,11 +926,13 @@ export function DailyBriefingResults({
             value={
               result.cadence === "daily" ? t("facts.daily") : t("facts.weekly")
             }
-            detail={
-              result.cadence === "daily"
-                ? t("facts.dailyReason")
-                : t("facts.weeklyReason")
-            }
+            detail={t(
+              cadenceDetailKey(
+                result.mode,
+                result.cadence === "daily",
+                clickLaneEvaluated,
+              ),
+            )}
           />
           <FactCard
             icon={<ShieldCheck aria-hidden="true" className="size-4" />}
@@ -658,89 +984,6 @@ export function DailyBriefingResults({
         </div>
       </section>
 
-      <NoiseSummary
-        funnel={result.signalFunnel}
-        observationsShown={shownObservations.length}
-        selectedQueryChanges={Math.min(
-          result.signalFunnel.selectedQueryChanges,
-          shownChanges.length,
-        )}
-        siteTrendShown={propertyFallback !== null}
-      />
-
-      {propertyFallback !== null && propertyComparisons !== null ? (
-        <section
-          aria-labelledby="daily-briefing-site-trend"
-          data-result-section="site-trend"
-          data-site-trend
-        >
-          <h3
-            id="daily-briefing-site-trend"
-            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-          >
-            {t("siteTrend.title")}
-          </h3>
-          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-            {t("siteTrend.intro")}
-          </p>
-          <div className={`${CARD} mt-4`}>
-            <p className={`${EYEBROW} text-brand-accent-text`}>
-              {t("siteTrend.evidence")}
-            </p>
-            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
-              {t(
-                `propertyChangeKinds.${propertyFallback.change.kind}.title`,
-              )}
-            </h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                [t("kpis.clicks"), propertyComparisons.clicks],
-                [t("kpis.impressions"), propertyComparisons.impressions],
-                [t("kpis.ctr"), propertyComparisons.ctr],
-                [t("kpis.averagePosition"), propertyComparisons.position],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
-                >
-                  <p className={EYEBROW}>{label}</p>
-                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
-              {t(`propertyChangeKinds.${propertyFallback.change.kind}.body`, {
-                clicks: signedMetric(
-                  locale,
-                  propertyFallback.change.clickChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                impressions: signedMetric(
-                  locale,
-                  propertyFallback.change.impressionChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                position: signedMetric(
-                  locale,
-                  propertyFallback.change.positionDelta,
-                  t("kpis.unavailable"),
-                ),
-              })}
-            </p>
-            <a
-              data-site-trend-action-link
-              href="#daily-briefing-actions"
-              className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-            >
-              {t("siteTrend.actionListed")}
-            </a>
-          </div>
-        </section>
-      ) : null}
 
       <section
         aria-labelledby="daily-briefing-changes"
@@ -753,9 +996,37 @@ export function DailyBriefingResults({
           {t("review.title")}
         </h3>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("review.intro")}
+          {t(reviewIntroKey(result.mode))}
         </p>
-        {shownChanges.length === 0 && shownObservations.length === 0 ? (
+        {ctrLane.state !== "evaluated" ? (
+          <div
+            data-ctr-lane-blocked
+            className={`${CARD} mt-4 border-brand-warning/30 bg-brand-warning/[0.06]`}
+          >
+            <p className={`${EYEBROW} text-brand-warning`}>
+              {t("ctrLane.notEvaluated")}
+            </p>
+            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {ctrLane.blockers.length === 0
+                ? t("ctrLane.blockers.unknown")
+                : ctrLane.blockers
+                    .map((blocker) => t(`ctrLane.blockers.${blocker}`))
+                    .join(" ")}
+            </p>
+            {ctrLane.blockers.includes("brand_terms_not_confirmed") ? (
+              <a
+                data-ctr-lane-confirm-link
+                href="#daily-briefing-brand-terms"
+                className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                {t("ctrLane.confirmAndRerun")}
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+        {shownChanges.length === 0 &&
+        shownProvisional.length === 0 &&
+        shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {t(reviewEmptyMessageKey(result.queryWatchlist.evidence))}
@@ -821,7 +1092,9 @@ export function DailyBriefingResults({
                     {change.query}
                   </p>
                   <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
-                    {change.page}
+                    {change.pageEvidence === "observed" && change.page !== null
+                      ? change.page
+                      : t("review.pageUnavailable")}
                   </p>
                 </div>
                 <div role="cell" className="min-w-0">
@@ -863,7 +1136,100 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
-            {shownObservations.map((observation) => (
+            {shownProvisional.map((move) => (
+              <div
+                key={`provisional:${move.kind}:${move.query}`}
+                role="row"
+                data-review-row
+                data-provisional-row
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.status")}
+                  </span>
+                  <p className="mt-2 inline-flex rounded-full border border-dashed border-brand-border bg-transparent px-2.5 py-1 text-[11px] font-semibold text-text-dark-secondary md:mt-0">
+                    {t(`provisionalMoveKinds.${move.kind}.title`)}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.queryPage")}
+                  </span>
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {move.query}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {move.pageEvidence === "observed" && move.page !== null
+                      ? move.page
+                      : t("review.pageUnavailable")}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      move.previous.clicks,
+                      move.current.clicks,
+                      (value) => number(locale, value),
+                      t("changes.notObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      move.previous.position,
+                      move.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("changes.notObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`provisionalMoveKinds.${move.kind}.body`)}
+                  </p>
+                  <p
+                    data-provisional-note
+                    className="mt-1.5 break-words text-[11.5px] leading-[1.55] text-text-dark-secondary"
+                  >
+                    {t("provisional.note", {
+                      impressions: number(locale, move.previous.impressions),
+                    })}
+                  </p>
+                  {move.page !== null ? (
+                    <Link
+                      data-provisional-check-link
+                      href={localePath(locale, "/tools/on-page-seo-check")}
+                      onClick={(event) => provisionalHandoff(event, move)}
+                      className="mt-2 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                    >
+                      {t("provisional.checkPage")}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            {shownObservations.map((observation) => {
+              // "Not observed" is false for a query whose prior window exists
+              // and is merely too small to compare against.
+              const priorFallback =
+                observation.previousBelowFloor === null
+                  ? t("changes.notObserved")
+                  : t("review.priorBelowFloor");
+              return (
               <div
                 key={`observation:${observation.kind}:${observation.query}`}
                 role="row"
@@ -902,7 +1268,7 @@ export function DailyBriefingResults({
                       observation.previous?.clicks ?? null,
                       observation.current.clicks,
                       (value) => number(locale, value),
-                      t("changes.notObserved"),
+                      priorFallback,
                     )}
                   </p>
                 </div>
@@ -918,7 +1284,7 @@ export function DailyBriefingResults({
                         Number.isFinite(value)
                           ? value.toFixed(1)
                           : t("kpis.unavailable"),
-                      t("changes.notObserved"),
+                      priorFallback,
                     )}
                   </p>
                 </div>
@@ -927,14 +1293,137 @@ export function DailyBriefingResults({
                     {t("review.columns.interpretation")}
                   </span>
                   <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
-                    {t(`review.observationKinds.${observation.kind}.body`)}
+                    {t(`review.observationBands.${observation.band}.body`)}
                   </p>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
+        {shownProvisional.length > 0 ? (
+          <p
+            data-provisional-note-intro
+            className="mt-3 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("provisional.intro", {
+              min: result.provisionalMoves.priorWindowImpressionRange[0],
+              max: result.provisionalMoves.priorWindowImpressionRange[1],
+            })}
+          </p>
+        ) : null}
+        {withheldProvisional > 0 ? (
+          <p
+            data-provisional-withheld
+            className="mt-1.5 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("provisional.withheld", { count: withheldProvisional })}
+          </p>
+        ) : null}
+        {withheldObservations > 0 && withheldObservationBands !== null ? (
+          <p
+            data-observations-withheld
+            className="mt-1.5 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("review.withheld", {
+              count: withheldObservations,
+              breakdown: withheldObservationBands,
+              atFloor:
+                result.queryWatchlist.withheldByKind?.sample_floor_reached ?? 0,
+              building:
+                result.queryWatchlist.withheldByKind?.sample_building ?? 0,
+            })}
+          </p>
+        ) : null}
       </section>
+
+      {propertyChange !== null && propertyComparisons !== null ? (
+        <section
+          aria-labelledby="daily-briefing-site-trend"
+          data-result-section="site-trend"
+          data-site-trend
+        >
+          <h3
+            id="daily-briefing-site-trend"
+            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+          >
+            {t("siteTrend.title")}
+          </h3>
+          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("siteTrend.intro")}
+          </p>
+          <div className={`${CARD} mt-4`}>
+            <p className={`${EYEBROW} text-brand-accent-text`}>
+              {t("siteTrend.evidence")}
+            </p>
+            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
+              {t(
+                `propertyChangeKinds.${propertyChange.kind}.title`,
+              )}
+            </h4>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                [t("kpis.clicks"), propertyComparisons.clicks],
+                [t("kpis.impressions"), propertyComparisons.impressions],
+                [t("kpis.ctr"), propertyComparisons.ctr],
+                [t("kpis.averagePosition"), propertyComparisons.position],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
+                >
+                  <p className={EYEBROW}>{label}</p>
+                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {t(`propertyChangeKinds.${propertyChange.kind}.body`, {
+                clicks: signedMetric(
+                  locale,
+                  propertyChange.clickChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                impressions: signedMetric(
+                  locale,
+                  propertyChange.impressionChange,
+                  t("kpis.unavailable"),
+                  0,
+                ),
+                position: signedMetric(
+                  locale,
+                  propertyChange.positionDelta,
+                  t("kpis.unavailable"),
+                ),
+              })}
+            </p>
+            {propertyAction !== null ? (
+              <a
+                data-site-trend-action-link
+                href="#daily-briefing-actions"
+                className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              >
+                {t("siteTrend.actionListed")}
+              </a>
+            ) : propertyNoiseFloor !== null ? (
+              <p
+                data-site-trend-noise-floor
+                className="mt-3 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("siteTrend.insideNoiseFloor", {
+                  observed: Math.abs(propertyNoiseFloor.observedChange).toFixed(
+                    0,
+                  ),
+                  minimum: propertyNoiseFloor.minimumForAction.toFixed(1),
+                })}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section
         aria-labelledby="daily-briefing-actions"
@@ -949,10 +1438,26 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("actions.intro")}
         </p>
-        {queryActions.length === 0 && propertyFallback === null ? (
+        {queryActions.length === 0 && propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t("actions.empty")}
+              {shownProvisional.length === 0
+                ? // A hidden provisional candidate may still carry a page, so
+                  // this branch may not claim no handoff is justified. It
+                  // reports the absence of a strict action and what the row
+                  // budget left out.
+                  withheldProvisional > 0
+                  ? t("actions.emptyWithWithheldProvisional", {
+                      count: withheldProvisional,
+                    })
+                  : t("actions.empty")
+                : // A provisional row without page evidence offers no check
+                  // link, so the sentence must not point at one.
+                  t(
+                    shownProvisional.some((move) => move.page !== null)
+                      ? "actions.emptyWithProvisionalCheck"
+                      : "actions.emptyWithProvisional",
+                  )}
             </p>
           </div>
         ) : (
@@ -990,7 +1495,7 @@ export function DailyBriefingResults({
                           {change.query}
                         </p>
                         <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                          {change.page}
+                          {change.page ?? t("review.pageUnavailable")}
                         </p>
                         <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {metricsLine(t, locale, change.current)}
@@ -1010,32 +1515,34 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
-            {propertyFallback !== null &&
+            {propertyAction !== null &&
             propertyComparisons !== null &&
             propertyTarget !== null ? (
               <article
                 data-action-row
                 data-property-action
-                data-action-rank={1}
+                data-action-rank={queryActions.length + 1}
                 className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-3.5">
                   <span
                     data-action-rank-badge
-                    aria-label={t("actions.rank", { rank: 1 })}
+                    aria-label={t("actions.rank", {
+                      rank: queryActions.length + 1,
+                    })}
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
                   >
-                    1
+                    {queryActions.length + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="text-[16px] font-semibold text-text-dark-primary">
                       {t(
-                        `propertyActionKinds.${propertyFallback.action.kind}.title`,
+                        `propertyActionKinds.${propertyAction.kind}.title`,
                       )}
                     </h4>
                     <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                       {t(
-                        `propertyActionKinds.${propertyFallback.action.kind}.body`,
+                        `propertyActionKinds.${propertyAction.kind}.body`,
                       )}
                     </p>
                     <div
@@ -1055,7 +1562,7 @@ export function DailyBriefingResults({
                 <Link
                   data-action-link
                   href={localePath(locale, propertyTarget.path)}
-                  onClick={(event) => propertyHandoff(event, propertyFallback)}
+                  onClick={(event) => propertyHandoff(event, result.propertyTrend)}
                   className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                 >
                   {t(propertyTarget.labelKey)}
@@ -1111,16 +1618,33 @@ export function DailyBriefingResults({
         data-result-section="evidence"
         className={CARD}
       >
-        <h3
-          id="daily-briefing-evidence"
-          className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-        >
-          {t("evidence.title")}
-        </h3>
+        <details data-evidence-details>
+          <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-3 gap-y-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+            <h3
+              id="daily-briefing-evidence"
+              className="text-[18px] font-semibold tracking-[-0.02em] text-text-dark-primary"
+            >
+              {t("evidence.title")}
+            </h3>
+            <span
+              data-evidence-fold-summary
+              className="text-[12px] leading-[1.6] text-text-dark-secondary"
+            >
+              {foldSummary}
+            </span>
+          </summary>
         <p className="mt-3 max-w-4xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {t("evidence.thresholdSummary")}
         </p>
-        <SignalFunnelEvidence funnel={result.signalFunnel} />
+        <NoiseSummary
+          funnel={result.signalFunnel}
+          laneCapability={result.laneCapability}
+        />
+        <SignalPathEvidence
+          funnel={result.signalFunnel}
+          laneCapability={result.laneCapability}
+          rowAccounting={result.rowAccounting}
+        />
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <EvidenceCard
             title={t("evidence.coverageTitle")}
@@ -1154,6 +1678,7 @@ export function DailyBriefingResults({
             }
           />
         </div>
+        </details>
       </section>
 
       <section
