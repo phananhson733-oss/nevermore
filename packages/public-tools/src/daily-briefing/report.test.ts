@@ -1259,6 +1259,72 @@ describe("query observation watchlist", () => {
     expect(result.queryWatchlist.items[2]?.previous).toBeNull();
   });
 
+  it("uses impressions and query as the final stable sort tie-breakers", () => {
+    const currentRows = [
+      queryRow("zeta tie", 200, 10, 30),
+      queryRow("higher impressions", 300, 10, 30),
+      queryRow("alpha tie", 200, 10, 30),
+    ];
+    const previousRows = currentRows.map((row) => ({ ...row, clicks: 5 }));
+    const pages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, pages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTermsConfirmed: false,
+    }).result;
+
+    expect(result.queryWatchlist.items.map((item) => item.query)).toEqual([
+      "higher impressions",
+      "alpha tie",
+      "zeta tie",
+    ]);
+  });
+
+  it("returns no observations when three strict changes consume every slot", () => {
+    const ctrTarget = queryRow("ctr target", 1_000, 0, 9);
+    const decline = queryRow("brand decline", 200, 10, 5.2);
+    const firstObserved = queryRow("new pair", 200, 20, 13);
+    const leftover = queryRow("leftover eligible", 150, 15, 30);
+    const baselines = baselineRows("baseline");
+    const currentRows = [
+      ctrTarget,
+      decline,
+      firstObserved,
+      leftover,
+      ...baselines,
+    ];
+    const previousRows = [
+      ctrTarget,
+      queryRow(decline.query, 200, 20, 5),
+      { ...leftover, clicks: 14 },
+      ...baselines,
+    ];
+    const currentPages = currentRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const previousPages = previousRows.map((row) =>
+      queryPageRow(row.query, `https://example.com/${row.query.replaceAll(" ", "-")}`, row.impressions, row.clicks, row.position),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, currentPages),
+      previousQueryEvidence: evidence(previousRows, previousPages),
+      brandTerms: [decline.query],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes.map((change) => change.kind)).toEqual([
+      "click_opportunity",
+      "stable_position_click_decline",
+      "first_observed",
+    ]);
+    expect(result.queryWatchlist).toEqual({ evidence: "observed", items: [] });
+  });
+
   it("attributes only pages at the tier floor with at least 80 percent coverage", () => {
     const currentRows = [
       queryRow("coverage below", 1_000, 10, 30),
