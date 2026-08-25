@@ -122,9 +122,53 @@ and open the follow-up PR. Lesson recorded in memory: verify
 `git branch --show-current` and `git rev-parse origin/<branch>` against HEAD
 before creating a PR from a worktree that subagents have committed in.
 
-## Production run
+## Production run (after PR #209, main `d6cd2740`, deployment `dpl_4QkeJj5k`)
 
-_Pending; recorded below after the follow-up PR merges._
+`gengrowth.ai/zh/tools/competitor-keyword-gap`, site `gengrowth.ai`, property
+`sc-domain:gengrowth.ai`, competitors `okara.ai`, `semrush.com`, `ahrefs.com`,
+US/en, 2026-08-25 14:09Z.
+
+Runtime log:
+
+```
+{"event":"competitor_keyword_gap","status":"complete","requestedCompetitors":3,
+ "completedCompetitors":3,"unavailableCompetitors":0,"rowCount":653,
+ "costUsd":0.12,"gsc":"available","reportProduced":true}
+```
+
+`$0.12 = okara.ai (100 rows, $0.024) + semrush.com (300, $0.048) + ahrefs.com
+(300, $0.048)`: billed per returned row, inside the `$0.144` ceiling.
+
+Surface, as rendered:
+
+- Coverage states the rule verbatim ("竞品排名 ≤ #20，按竞品页面预估流量降序，
+  每个竞品最多 300 行") and per competitor "返回 300 条 · 规则内数据源报告
+  68,642 条" (semrush), 25,330 (ahrefs), 100/100 (okara, its whole in-rule set).
+- GSC card: "GSC 返回了 382 条查询", 0 observed among the 653 gap rows, so the
+  zero-row limitation did not fire and the miss is a real miss.
+- Lanes: 复核内容差距 653 (site has no GSC hit on any competitor term).
+  Bands: 优先核 SERP 96 · 难度较高或第二页 266 · 未分带 0 · 难度 > 60，暂缓 109 ·
+  品牌/导航词，暂缓 182.
+- First rows: "rewrite sentence" 49,500/mo, ahrefs #1, KD 18, 优先核 SERP,
+  competitor page est. 15,048/mo, actions 复制关键词 + 打开竞品页面. "googlebot
+  video" and "search operator" carry "AI Overview · DFS 快照 2026年7月30日 /
+  2026年6月17日".
+- "将 10 行复制为计划" present; six boundary sentences rendered, including the
+  dated-snapshot and pre-screen sentences.
+
+Compared with the 13:13Z run before this work (288 rows, one lane, one action,
+`$0.072`): the row set is rank-bounded and etv-ordered, every row carries a
+band with its basis and reason, the competitor's ranking page is one click
+away, and the operator can copy the rows on screen as a fenced plan.
+
+Follow-ups noticed on the live page, not blocking:
+
+- Near-duplicate rows ("rewrite sentence", "rewrite sentences", "sentence
+  rewriter", "sentences rewrite") sit as four rows; `coreKeyword` is in the
+  contract but the table does not yet group them visually.
+- 182 of 653 rows are brand/navigational; the skip lane works as designed but
+  the brand-token heuristic still counts `ahrefs`/`semrush` product terms
+  such as "ahrefs webmaster tools" there, by design.
 
 ## Deferred to PR B
 
