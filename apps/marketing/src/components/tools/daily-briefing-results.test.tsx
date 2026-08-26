@@ -2058,8 +2058,110 @@ describe("DailyBriefingResults folded explanation", () => {
     // The page paths ran and found nothing. Saying comparable query/page
     // evidence is unavailable prints one dimension's failure over the other's
     // measured result.
-    expect(card?.textContent).toContain("The page dimension was read this run");
-    expect(card?.textContent).not.toBe(en.tools.dailyBriefing.review.unavailable);
+    expect(card?.textContent).toBe(
+      en.tools.dailyBriefing.review.unavailableQueryRead,
+    );
+  });
+
+  it("does not say a path judged rows when it settled none of them", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "partially_readable",
+            page_first_observed: "partially_readable",
+          },
+        }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const line = host.querySelector(
+      '[data-signal-path="page-click-decline"] [data-path-outcome]',
+    );
+
+    // "This path judged the ones it could read" is false of a path whose only
+    // row was unreadable.
+    expect(line?.textContent).toContain(
+      en.tools.dailyBriefing.evidence.paths.lanePartiallyReadableNone,
+    );
+    expect(line?.textContent).not.toContain(
+      en.tools.dailyBriefing.evidence.paths.lanePartiallyReadable,
+    );
+  });
+
+  it("does not call the cadence daily off a page lane that settled nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        mode: "change_detection",
+        cadence: "weekly",
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "partially_readable",
+            page_first_observed: "not_applicable",
+          },
+        }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+
+    // No click lane settled anything, so the weekly reading really is about
+    // the lanes rather than the impression floor.
+    expect(facts?.textContent).toContain(
+      en.tools.dailyBriefing.facts.noClickLaneReason,
+    );
+  });
+
+  it("does not say the page paths settled anything when they settled nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [],
+        pageActions: [],
+        queryWatchlist: watchlist("unavailable"),
+        // The read succeeded and its one record was unreadable. "Its paths
+        // settled the records in it" would describe a run that settled none.
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+      }),
+    );
+
+    expect(host.querySelector("[data-change-empty]")?.textContent).toBe(
+      en.tools.dailyBriefing.review.unavailable,
+    );
   });
 
   it("keeps every query row inside the query boundary, page rows after it", async () => {
@@ -2243,6 +2345,18 @@ describe("DailyBriefingResults folded explanation", () => {
             page_first_observed: "not_applicable",
           },
         }),
+        // The accounting has to agree with the state: a lane that settled no
+        // row has not evaluated a click lane, whatever its state string says.
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 4,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(0, 4, 0),
+            page_first_observed: laneRows(4, 0, 0),
+          },
+        },
         queryWatchlist: watchlist("observed"),
       }),
     );

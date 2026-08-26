@@ -1743,14 +1743,22 @@ const PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
 ];
 
 /**
- * Whether a page lane actually asked its question of anything.
+ * Whether a page lane actually settled a row.
  *
- * `partially_readable` means it asked and answered for the rows it could read.
- * Treating only `evaluated` as "ran" would downgrade a run to
- * `current_position_watchlist` because one record in the window was unreadable.
+ * Asked of the counts, not the state. `partially_readable` covers two cases —
+ * the lane settled some rows and could not read others, and the lane settled
+ * NONE because the only rows it had were unreadable — and reading it as "ran"
+ * let a window whose single page had contradictory prior rows drive
+ * `change_detection` and a daily cadence off zero settled rows.
  */
-function pageLaneRan(state: DailyBriefingPageLaneState): boolean {
-  return state === "evaluated" || state === "partially_readable";
+function pageLaneSettledRows(
+  counts: DailyBriefingLaneRowCounts | null | undefined,
+): boolean {
+  return (
+    counts !== null &&
+    counts !== undefined &&
+    counts.evaluatedNoSignal + counts.candidates > 0
+  );
 }
 
 /** A measured decline outranks a page that has only just appeared. */
@@ -2224,7 +2232,7 @@ function modeFor(
   // run as `unavailable` would deny a detection the tool just performed.
   if (
     pages !== null &&
-    PAGE_CHANGE_LANES.some((lane) => pageLaneRan(pages.lanes[lane]))
+    PAGE_CHANGE_LANES.some((lane) => pageLaneSettledRows(pages.byLane[lane]))
   ) {
     return "change_detection";
   }
@@ -2550,7 +2558,7 @@ export function buildDailyBriefing(
       cadence:
         (laneCapability.lanes.click_opportunity !== "evaluated" &&
           laneCapability.lanes.stable_position_click_decline !== "evaluated" &&
-          !pageLaneRan(laneCapability.pageLanes.page_click_decline)) ||
+          !pageLaneSettledRows(pageAccounting.byLane?.page_click_decline)) ||
         day.evidence === "unavailable" ||
         currentWeek === null ||
         currentWeek.impressions < DAILY_CADENCE_MIN_IMPRESSIONS

@@ -3289,6 +3289,10 @@ describe("page dimension lanes", () => {
       page_click_decline: "partially_readable",
       page_first_observed: "partially_readable",
     });
+    // Neither lane settled a row, so neither may drive a briefing that claims
+    // to detect change, nor a cadence that promises something new each day.
+    expect(result.mode).not.toBe("change_detection");
+    expect(result.cadence).toBe("weekly");
     // Both lanes, not just the one that would have fired. A decline lane that
     // recorded "evaluated, no signal" would be claiming it looked.
     expect(result.pageAccounting.byLane).toEqual({
@@ -3999,8 +4003,11 @@ describe("suggested checks", () => {
     expect(result.suggestedChecks.items).toMatchObject([
       { query: watched, page },
     ]);
+    // The actioned query is absent from the watchlist itself, which is where
+    // checks come from — a different fact from the one asserted above, and the
+    // reason no exclusion is needed here at all.
     expect(
-      result.suggestedChecks.items.some((check) => check.query === actioned),
+      result.queryWatchlist.items.some((item) => item.query === actioned),
     ).toBe(false);
   });
 

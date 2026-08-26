@@ -1934,8 +1934,8 @@
         "pageNotObserved": "上一窗口无可比的页面记录",
         "pageGroup": "页面维度记录",
         "queryGroup": "查询词记录",
-        "unavailableQueryRead": "可比的查询词证据不可得，因此没有推断查询词观察清单，也没有把缺失数量显示成 0。页面维度本轮读到了，两条页面级路径运行后没有形成记录。",
-        "partialQueryRead": "查询词读取只有部分前缀，不能据此生成代表整个站点的观察清单。页面维度本轮读到了，两条页面级路径运行后没有形成记录。"
+        "unavailableQueryRead": "可比的查询词证据不可得,因此没有推断查询词观察清单,也没有把缺失数量显示成 0。页面维度本轮读到了,两条页面级路径判断过其中的记录后没有形成结果。",
+        "partialQueryRead": "查询词读取只有部分前缀,不能据此生成代表整个站点的观察清单。页面维度本轮读到了,两条页面级路径判断过其中的记录后没有形成结果。"
       },
       "evidence": {
         "title": "为什么没有更多信号",
@@ -2022,7 +2022,8 @@
           "selectionNotShownPage": "另有 {count} 条页面记录形成了候选但没有展示。",
           "selectionUnavailableQuery": "查询记录的候选分账本轮读不到，因此没有报告未展示数量。",
           "selectionUnavailablePage": "页面记录的候选分账本轮读不到，因此没有报告未展示数量。",
-          "lanePartiallyReadable": "本轮有部分页面记录读不出来。这条路径只对读得出来的行做了判断，不能代表其余的行。"
+          "lanePartiallyReadable": "本轮有部分页面记录读不出来。这条路径只对读得出来的行做了判断，不能代表其余的行。",
+          "lanePartiallyReadableNone": "本轮有页面记录读不出来,这条路径一行也没能判断;这不等于没有变化。"
         },
         "foldObservationsShown": "展示 {shown}/{candidates} 条观察候选",
         "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",
@@ -2111,8 +2112,8 @@
         "empty": "本轮没有严格证据支持的动作。",
         "rank": "优先级 {rank}",
         "why": "为何出现这项动作",
-        "evidence": "随本次跳转私密传递的内容",
-        "propertyEvidence": "随本次跳转私密传递的站点",
+        "evidence": "本条动作依据的证据",
+        "propertyEvidence": "本条动作依据的站点级证据",
         "propertyWeekly": "前 7 天 → 当前 7 天：点击 {clicks}；曝光 {impressions}；平均排名 {position}。",
         "emptyWithProvisional": "本轮没有严格证据支持的动作。上方「待确认的位置移动」只是观察记录，不计入今日动作。",
         "emptyWithProvisionalCheck": "本轮没有严格证据支持的动作。上方「待确认的位置移动」给出的检查入口是观察性的，不计入今日动作。",
@@ -2132,7 +2133,7 @@
         },
         "stable_position_click_decline": {
           "title": "检查点击损失是否持续",
-          "body": "打开 Traffic Drop Diagnosis，并私密带上这个站点（该工具按站点诊断，不接收查询词或页面）。下面的数字要在那边重新读取。"
+          "body": "打开 Traffic Drop Diagnosis。本次跳转会私密带上站点、查询词和页面,但该工具按站点诊断,只会用到站点;下面的数字要在那边重新读取。"
         },
         "first_observed": {
           "title": "按目标查询词检查页面",
@@ -2144,7 +2145,7 @@
         },
         "actionable_position_decline": {
           "title": "诊断可行动区间内的位置下滑",
-          "body": "打开 Traffic Drop Diagnosis，并私密带上这个站点（该工具按站点诊断，不接收查询词或页面）。下面的数字要在那边重新读取。"
+          "body": "打开 Traffic Drop Diagnosis。本次跳转会私密带上站点、查询词和页面,但该工具按站点诊断,只会用到站点;下面的数字要在那边重新读取。"
         }
       },
       "propertyActionKinds": {
@@ -2242,7 +2243,7 @@
       "pageActionKinds": {
         "page_click_decline": {
           "title": "诊断这个页面的点击下降",
-          "body": "打开 Traffic Drop Diagnosis，并私密带上这个站点（该工具按站点诊断，不接收页面）。下面的周度数字要在那边重新读取；本简报没有把下降归因到任何一个查询词。"
+          "body": "打开 Traffic Drop Diagnosis。本次跳转会私密带上站点和这个页面,但该工具按站点诊断,只会用到站点;下面的周度数字要在那边重新读取。本简报没有把下降归因到任何一个查询词。"
         },
         "page_first_observed": {
           "title": "对本次首次出现的页面做一次检查",

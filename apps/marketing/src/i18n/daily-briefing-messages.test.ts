@@ -188,6 +188,7 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.paths.pageUnavailable",
   "evidence.paths.pageUnreadableRows",
   "evidence.paths.lanePartiallyReadable",
+  "evidence.paths.lanePartiallyReadableNone",
   "evidence.paths.selectionAllShownQuery",
   "evidence.paths.selectionNotShownQuery",
   "evidence.paths.selectionAllShownPage",

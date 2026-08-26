@@ -252,6 +252,16 @@ function signedMetric(
  * "comparable query/page evidence is unavailable" — one population's failure
  * printed over the other's measured result.
  */
+/** Whether either page lane settled a row, as opposed to merely being read. */
+function pageLanesSettledRows(
+  byLane: DailyBriefingPageAccounting["byLane"],
+): boolean {
+  if (byLane === null) return false;
+  return Object.values(byLane).some(
+    (counts) => counts.evaluatedNoSignal + counts.candidates > 0,
+  );
+}
+
 function reviewEmptyMessageKey(
   evidence: DailyBriefingQueryWatchlist["evidence"],
   pageRead: boolean,
@@ -691,9 +701,16 @@ function SignalPathEvidence({
                   ? t("evidence.paths.laneUnavailable")
                   : // The split still applies to the rows it could read, so it
                     // is printed beside the caveat rather than replaced by it.
+                    // Which caveat depends on whether anything was settled:
+                    // "judged the ones it could read" is false of a lane whose
+                    // only rows were unreadable.
                     `${t("evidence.paths.rowSplit", { ...counts })}${
                       state === "partially_readable"
-                        ? ` ${t("evidence.paths.lanePartiallyReadable")}`
+                        ? ` ${t(
+                            counts.evaluatedNoSignal + counts.candidates > 0
+                              ? "evidence.paths.lanePartiallyReadable"
+                              : "evidence.paths.lanePartiallyReadableNone",
+                          )}`
                         : ""
                     }`
               }
@@ -930,8 +947,10 @@ export function DailyBriefingResults({
   const clickLaneEvaluated =
     result.laneCapability.lanes.click_opportunity === "evaluated" ||
     result.laneCapability.lanes.stable_position_click_decline === "evaluated" ||
-    result.laneCapability.pageLanes.page_click_decline === "evaluated" ||
-    result.laneCapability.pageLanes.page_click_decline === "partially_readable";
+    (result.pageAccounting.byLane !== null &&
+      result.pageAccounting.byLane.page_click_decline.evaluatedNoSignal +
+        result.pageAccounting.byLane.page_click_decline.candidates >
+        0);
 
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -1259,7 +1278,10 @@ export function DailyBriefingResults({
               {t(
                 reviewEmptyMessageKey(
                   result.queryWatchlist.evidence,
-                  result.pageAccounting.evidence === "observed",
+                  // Settled rows, not merely a read that succeeded. A window
+                  // whose only page row was unreadable was announced as one
+                  // whose paths ran and found nothing.
+                  pageLanesSettledRows(result.pageAccounting.byLane),
                 ),
               )}
             </p>

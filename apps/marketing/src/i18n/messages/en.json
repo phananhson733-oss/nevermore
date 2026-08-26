@@ -1934,8 +1934,8 @@
         "pageNotObserved": "No comparable page record in the prior window",
         "pageGroup": "Page-dimension records",
         "queryGroup": "Query records",
-        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and its two paths ran without producing a record.",
-        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and its two paths ran without producing a record."
+        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and its two paths settled the records in it without producing a result.",
+        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and its two paths settled the records in it without producing a result."
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -2022,7 +2022,8 @@
           "selectionNotShownPage": "{count} further page records formed a candidate and are not shown.",
           "selectionUnavailableQuery": "The query-record candidate split could not be read this run, so no not-shown count is reported.",
           "selectionUnavailablePage": "The page-record candidate split could not be read this run, so no not-shown count is reported.",
-          "lanePartiallyReadable": "Some page records could not be read this run. This path judged the ones it could read and cannot speak for the rest."
+          "lanePartiallyReadable": "Some page records could not be read this run. This path judged the ones it could read and cannot speak for the rest.",
+          "lanePartiallyReadableNone": "Page records could not be read this run and this path settled no row at all. That is not the same as no change."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
@@ -2111,8 +2112,8 @@
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
-        "evidence": "Carried privately into this handoff",
-        "propertyEvidence": "Property carried privately into this handoff",
+        "evidence": "Evidence behind this action",
+        "propertyEvidence": "Property-level evidence behind this action",
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
         "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action.",
@@ -2132,7 +2133,7 @@
         },
         "stable_position_click_decline": {
           "title": "Check whether the click loss is sustained",
-          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no query or page. The figures below have to be read again there."
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
         },
         "first_observed": {
           "title": "Inspect the page against the target query",
@@ -2144,7 +2145,7 @@
         },
         "actionable_position_decline": {
           "title": "Diagnose the in-band position decline",
-          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no query or page. The figures below have to be read again there."
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
         }
       },
       "propertyActionKinds": {
@@ -2242,7 +2243,7 @@
       "pageActionKinds": {
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
-          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no page. The weekly figures below have to be read again there; this briefing has not attributed the decline to any query."
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. This briefing has not attributed the decline to any query."
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
