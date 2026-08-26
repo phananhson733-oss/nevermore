@@ -1104,6 +1104,7 @@
         "scan_in_progress": "A scan is already running from this network address. If you did not start one, someone sharing your connection may have — the limit is per address, not per browser. Wait for it to finish, then try again.",
         "robots_disallowed": "This site's robots.txt asks crawlers not to fetch its pages, so nothing was crawled. That is the site owner's choice and says nothing about the site's SEO.",
         "robots_unreachable": "This site's robots.txt could not be read, so nothing was crawled. A crawler that cannot read the rules has to assume it is not allowed. Try again once the site responds normally.",
+        "target_redirected": "This URL resolves to a different page. The submitted page was not scored.",
         "rate_limited": "This network has run several crawls recently. Each one fetches hundreds of pages from the target site, so there is an hourly ceiling. Try again shortly.",
         "target_busy": "This site has been crawled several times in the last hour, by you or by someone else. The limit protects the site being audited from repeated automated traffic. Try again shortly.",
         "quota_unavailable": "Something on our side is down: the service that enforces usage limits is not responding, and this tool will not crawl a site without a working limit in place. This is not about your usage — nothing you did caused it, and nothing has been counted against you. Please try again shortly.",
@@ -3227,7 +3228,11 @@
         "copyReport": "Copy report for an assistant",
         "copyDone": "Copied.",
         "copyFailed": "Could not reach the clipboard. Select the report and copy it.",
-        "openAgent": "Open the SEO Agent for the whole site"
+        "openAgent": "Open the SEO Agent for the whole site",
+        "useDestinationUrl": "Use destination URL"
+      },
+      "redirect": {
+        "destination": "Resolved destination"
       },
       "boundaries": {
         "accountFree": "Account required, free while the tools are being tested.",
