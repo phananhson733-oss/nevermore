@@ -19,6 +19,7 @@ const LIMITATION_CODES = [
   "anonymization_gap_uncomputable",
   "brand_terms_not_confirmed",
   "property_change_inside_noise_floor",
+  "page_evidence_unavailable",
 ] as const;
 
 const ERROR_CODES = [
@@ -40,6 +41,12 @@ const CHANGE_KINDS = [
   "average_position_crossed_page_one_band",
   "actionable_position_decline",
   "first_observed",
+] as const;
+
+/** Page-dimension kinds. Every one of them is dispatchable, unlike the site ones. */
+const PAGE_CHANGE_KINDS = [
+  "page_click_decline",
+  "page_first_observed",
 ] as const;
 
 const OBSERVATION_BANDS = [
@@ -166,6 +173,28 @@ const REQUIRED_LEAF_PATHS = [
   "review.partial",
   "review.unavailable",
   "review.pageUnavailable",
+  "review.pageScope",
+  "review.pageGroup",
+  "review.queryGroup",
+  "review.partialQueryRead",
+  "review.unavailableQueryRead",
+  "review.pageNotObserved",
+  "checks.title",
+  "checks.intro",
+  "checks.evidence",
+  "checks.notCheckable",
+  "evidence.foldPageChanges",
+  "evidence.foldTrendUnavailable",
+  "evidence.paths.pageUnavailable",
+  "evidence.paths.pageUnreadableRows",
+  "evidence.paths.lanePartiallyReadable",
+  "evidence.paths.lanePartiallyReadableNone",
+  "evidence.paths.selectionAllShownQuery",
+  "evidence.paths.selectionNotShownQuery",
+  "evidence.paths.selectionAllShownPage",
+  "evidence.paths.selectionNotShownPage",
+  "evidence.paths.selectionUnavailableQuery",
+  "evidence.paths.selectionUnavailablePage",
   "review.priorBelowFloor",
   "review.introUnavailable",
   "review.introPositionObservation",
@@ -199,8 +228,6 @@ const REQUIRED_LEAF_PATHS = [
   "evidence.paths.laneFinding",
   "evidence.paths.selectionTitle",
   "evidence.paths.selectionRules",
-  "evidence.paths.selectionNotShown",
-  "evidence.paths.selectionAllShown",
   "evidence.paths.ctrBaseline.name",
   "evidence.paths.ctrBaseline.requirement",
   "evidence.paths.ctrBaseline.evaluated",
@@ -246,6 +273,9 @@ const REQUIRED_LEAF_PATHS = [
   "actions.rank",
   "actions.why",
   "actions.evidence",
+  "actions.groupQuery",
+  "actions.groupPage",
+  "actions.groupProperty",
   "actions.propertyEvidence",
   "actions.propertyWeekly",
   "propertyActionKinds.sitewide_click_decline.title",
@@ -383,6 +413,26 @@ describe("Daily Briefing message catalogs", () => {
         undefined,
       );
     }
+    const pageChangeKinds = recordAt(namespace, "pageChangeKinds");
+    const pageActionKinds = recordAt(namespace, "pageActionKinds");
+    for (const kind of PAGE_CHANGE_KINDS) {
+      expect(pageChangeKinds[kind], `missing page change kind ${kind}`).toEqual(
+        expect.any(Object),
+      );
+      // Unlike the site-trend observation kinds, a page change is only ever
+      // emitted once it has cleared its floor, so each one is dispatchable and
+      // each one needs action copy.
+      expect(pageActionKinds[kind], `missing page action kind ${kind}`).toEqual(
+        expect.any(Object),
+      );
+    }
+    const pageLanes = recordAt(namespace, "evidence.paths.pageLanes");
+    for (const key of ["pageClickDecline", "pageFirstObserved"] as const) {
+      const lane = pageLanes[key] as Readonly<Record<string, string>>;
+      expect(lane, `missing page path ${key}`).toEqual(expect.any(Object));
+      expect(lane.requirement, `${key}.requirement`).toEqual(expect.any(String));
+      expect(lane.finding, `${key}.finding`).toEqual(expect.any(String));
+    }
     for (const kind of PROVISIONAL_MOVE_KINDS) {
       expect(
         provisionalMoveKinds[kind],
@@ -415,6 +465,121 @@ describe("Daily Briefing message catalogs", () => {
       expect(evidenceStates[state], `missing evidence state ${state}`).toEqual(
         expect.any(String),
       );
+    }
+  });
+
+  it("never ranks the page population against the query one", () => {
+    // A leaf-parity check proves the Chinese string exists, not what it says.
+    // These two sentences were the ones that ranked a query row above a page
+    // measurement, and they are in different files from the code that stopped
+    // doing it.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const namespace = (
+        catalog as unknown as Record<string, Record<string, unknown>>
+      ).tools?.dailyBriefing;
+      const text = JSON.stringify(namespace);
+      for (const banned of ["more precise", "更精确", "更准确"]) {
+        expect(text, `${locale} still ranks one population above the other`)
+          .not.toContain(banned);
+      }
+    }
+  });
+
+  it("does not promise the next tool anything the handoff does not carry", () => {
+    // The handoff carries the property, and where applicable a query and page.
+    // It carries no metrics, no deltas and no baseline, and Traffic Drop reads
+    // only the property from it — so no copy may say a comparison travels.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const namespace = (
+        catalog as unknown as Record<string, Record<string, unknown>>
+      ).tools.dailyBriefing;
+      const text = JSON.stringify(namespace);
+      for (const banned of [
+        // Nothing but the property, and where the signal has them a query and
+        // a page, ever travels. Traffic Drop reads only the property.
+        "carrying the page and the weekly comparison",
+        "with the property and weekly comparison",
+        "carries its evidence straight into",
+        "Take the query and page into",
+        "carries the query and page",
+        "weekly comparison into",
+        "Query and page carried",
+        "携带页面与周度对比",
+        "携带站点和周度对比",
+        "都带着证据直接跳到",
+        "把查询词和页面带进",
+        "随本次跳转私密传递的查询词与页面",
+      ]) {
+        expect(text, `${locale} promises a transfer that does not happen`)
+          .not.toContain(banned);
+      }
+    }
+  });
+
+  it("keeps the page-path claim existential, matching the predicate", () => {
+    // The card is selected when AT LEAST ONE page lane settled a row. Copy
+    // saying "its two paths settled the records" describes a run where both
+    // did, which is not the condition that selected it.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const review = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "review",
+      );
+      for (const key of ["unavailableQueryRead", "partialQueryRead"] as const) {
+        expect(review[key], `${locale} ${key}`).toContain(
+          locale === "en" ? "at least one page path" : "至少有一条页面级路径",
+        );
+        expect(review[key], `${locale} ${key}`).not.toContain(
+          locale === "en" ? "its two paths" : "两条页面级路径",
+        );
+      }
+    }
+  });
+
+  it("calls the action order what it is rather than a measurement", () => {
+    // KIND_RANK is a fixed product priority, not a confidence anyone computed.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const actions = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "actions",
+      );
+      expect(actions.intro, `${locale} action intro`).not.toContain(
+        locale === "en" ? "certainty" : "确定性",
+      );
+    }
+  });
+
+  it("keeps the page-first-observed copy inside the comparison it made", () => {
+    // The lane compares two windows. "First time" and 首次出现 without a
+    // qualifier claim the page never drew impressions before either of them.
+    const pairs = [
+      [en, "this comparison"],
+      [zh, "本次对比"],
+    ] as const;
+    for (const [catalog, qualifier] of pairs) {
+      const kinds = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "pageChangeKinds",
+      );
+      const firstObserved = kinds.page_first_observed as Readonly<
+        Record<string, string>
+      >;
+      expect(firstObserved.title).toContain(qualifier);
     }
   });
 

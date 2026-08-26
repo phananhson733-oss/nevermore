@@ -1907,7 +1907,7 @@
       },
       "review": {
         "title": "Queries and pages to review today",
-        "intro": "Strict changes appear first; observation-only rows fill the remaining space. At most three real query/page rows are shown.",
+        "intro": "Strict changes first, with observation-only records filling what is left; at most three query records, plus up to two page-dimension records of their own.",
         "empty": "No strict change or query observation reached the available display floors in this run. That is not proof that nothing changed.",
         "partial": "The query read is partial, so a property-wide watchlist cannot be ranked from the observed prefix.",
         "unavailable": "Comparable query/page evidence is unavailable, so no watchlist was inferred and no missing count was shown as zero.",
@@ -1953,7 +1953,13 @@
           "mid": "{count} mid-band",
           "far": "{count} far"
         },
-        "priorBelowFloor": "prior window too small"
+        "priorBelowFloor": "prior window too small",
+        "pageScope": "Whole page, across every query",
+        "pageNotObserved": "No comparable page record in the prior window",
+        "pageGroup": "Page-dimension records",
+        "queryGroup": "Query records",
+        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and at least one page path settled records in it without producing a result.",
+        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and at least one page path settled records in it without producing a result."
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -1971,7 +1977,8 @@
           "tiers": {
             "baseline": "Preconditions and baselines",
             "lanes": "Evaluation paths",
-            "suppression": "Page attribution suppression"
+            "suppression": "Page attribution suppression",
+            "pageLanes": "Page-dimension paths"
           },
           "rowSplit": "{notEvaluated} not evaluated · {evaluatedNoSignal} evaluated with no signal · {candidates} produced a candidate",
           "laneUnavailable": "The evidence this path stands on could not be read this run, so it was not evaluated. That is not zero.",
@@ -2017,16 +2024,39 @@
           },
           "laneFinding": "Hits when: {finding}",
           "selectionTitle": "What happens after a candidate forms",
-          "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows. If all three selected rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
-          "selectionNotShown": "{count, plural, one {# row formed a candidate} other {# rows formed candidates}} this run without appearing in the table above.",
-          "selectionAllShown": "Every row that formed a candidate this run appears in the table above."
+          "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows; page rows have their own budget of at most two and do not compete for those slots. If all three selected query rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
+          "pageUnavailable": "No comparable pair of page windows this run, so the two paths below did not run. That is not the same as the page dimension returning nothing.",
+          "pageLanes": {
+            "pageClickDecline": {
+              "name": "Page click decline",
+              "requirement": "At least 100 impressions for the page in each window, and at least 3 clicks in the prior one",
+              "finding": "Clicks fell by both 15% and 3, and the drop reached 2 x the square root of the prior window's clicks"
+            },
+            "pageFirstObserved": {
+              "name": "Page first appears in this comparison",
+              "requirement": "At least 100 impressions now, and whether the page appeared in the prior window is decidable",
+              "finding": "No row for the page in the prior window, or a row shown zero times, and a current average position inside the actionable band of 30 or better"
+            }
+          },
+          "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
+          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. Neither path evaluated them, which is not the same as their not being there.",
+          "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
+          "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
+          "selectionAllShownPage": "Every page record that formed a candidate this run appears in the table above.",
+          "selectionNotShownPage": "{count} further page records formed a candidate and are not shown.",
+          "selectionUnavailableQuery": "The query-record candidate split could not be read this run, so no not-shown count is reported.",
+          "selectionUnavailablePage": "The page-record candidate split could not be read this run, so no not-shown count is reported.",
+          "lanePartiallyReadable": "Some page records could not be read this run. This path judged the ones it could read and cannot speak for the rest.",
+          "lanePartiallyReadableNone": "Page records could not be read this run and this path settled no row at all. That is not the same as no change."
         },
         "foldObservationsShown": "{shown}/{candidates} observation candidates shown",
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
         "foldChanges": "{count, plural, one {# query change} other {# query changes}}",
         "foldProvisional": "{shown}/{candidates} provisional position moves shown",
         "foldTrend": "{count, plural, one {# site trend observation} other {# site trend observations}}",
-        "foldQueryEvidenceUnavailable": "query evidence unavailable, so change and observation counts are unavailable (not zero)"
+        "foldQueryEvidenceUnavailable": "query evidence unavailable, so change and observation counts are unavailable (not zero)",
+        "foldPageChanges": "{count, plural, one {# page-dimension change} other {# page-dimension changes}}",
+        "foldTrendUnavailable": "site trend not readable this run, no observation count reported"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -2102,20 +2132,23 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Only strict evidence-backed actions are listed, in deterministic order. The list is not padded to three.",
+        "intro": "Only strict evidence-backed actions are listed. Query, page and property actions form their own groups, each in a fixed path order within itself; the groups are not ordered against each other, because they do not measure the same population. Nothing is added to fill a quota.",
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
-        "evidence": "Evidence carried privately to the next tool",
-        "propertyEvidence": "Property-level evidence carried privately to the next tool",
+        "evidence": "Evidence behind this action",
+        "propertyEvidence": "Property-level evidence behind this action",
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
         "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action.",
-        "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions."
+        "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions.",
+        "groupQuery": "Query evidence",
+        "groupPage": "Page evidence",
+        "groupProperty": "Property evidence"
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
-        "actions": "Run the briefing to generate up to three actions tied to observed evidence."
+        "actions": "Every action opens the matching tool and privately carries whatever the signal names — the property, and a query or page where it has them — with no URL to move by hand."
       },
       "actionKinds": {
         "click_opportunity": {
@@ -2124,7 +2157,7 @@
         },
         "stable_position_click_decline": {
           "title": "Check whether the click loss is sustained",
-          "body": "Open Traffic Drop Diagnosis to place this evidence inside a longer history and separate observed patterns from unavailable causes."
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
         },
         "first_observed": {
           "title": "Inspect the page against the target query",
@@ -2136,21 +2169,21 @@
         },
         "actionable_position_decline": {
           "title": "Diagnose the in-band position decline",
-          "body": "Take this query and page into the traffic drop diagnosis and work through the possible causes."
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
         }
       },
       "propertyActionKinds": {
         "sitewide_click_decline": {
           "title": "Diagnose the property-wide click decline",
-          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_decline": {
           "title": "Diagnose the property-wide visibility decline",
-          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_gain": {
           "title": "Inspect the property-wide visibility gain",
-          "body": "Open GSC Opportunity Finder with the property and weekly comparison. It must rank query opportunities independently; this briefing did not invent a query or page."
+          "body": "Opens GSC Opportunity Finder carrying the property privately. The next tool ranks query opportunities independently; this briefing invented no query or page."
         }
       },
       "actionDestinations": {
@@ -2183,7 +2216,8 @@
         "aggregation_basis_mismatch": "Search Console aggregated the compared reads on different bases. Coverage and withheld-share ratios are unavailable.",
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
-        "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action."
+        "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
+        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The two page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2219,6 +2253,32 @@
           "title": "Possible slide from the actionable band",
           "body": "Average presented position slid relative to the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
         }
+      },
+      "pageChangeKinds": {
+        "page_click_decline": {
+          "title": "Page clicks fell",
+          "body": "This page cleared the sample floor in both windows and lost more clicks than its own week-to-week spread accounts for. Page data is not subject to query anonymization, so the clicks here are complete; this briefing has not judged why they fell."
+        },
+        "page_first_observed": {
+          "title": "Page first appears in this comparison",
+          "body": "The prior window carries no row for this page (or a row shown zero times), and the current window clears the sample floor with an average position inside the actionable band. This compares two windows and says nothing about whether the page ever drew impressions before them. It is the moment to calibrate the title, snippet and internal links, not a promise about rank."
+        }
+      },
+      "pageActionKinds": {
+        "page_click_decline": {
+          "title": "Diagnose this page's click decline",
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. This briefing has not attributed the decline to any query."
+        },
+        "page_first_observed": {
+          "title": "Check the page this comparison saw first",
+          "body": "Opens On-Page Checker carrying the page URL privately. It checks the page itself and makes no claim about where any single query ranks."
+        }
+      },
+      "checks": {
+        "title": "No query-level change known, still worth a look",
+        "intro": "These entries come from the query records already shown above. They say where those **queries** currently sit and nothing more: no change is claimed for them, and none is an evidence-backed action. What the page dimension found is a separate question and does not contradict this.",
+        "evidence": "Where this query currently sits, not evidence of change",
+        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, or the current position falls outside the band this check covers."
       }
     },
     "trafficDrop": {

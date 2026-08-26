@@ -7,7 +7,12 @@ import {
   readPageRows,
   readQueryPageRows,
 } from "./page-reader.ts";
-import type { GscQueryRequest, GscQueryResponse, GscRawRow } from "./types.ts";
+import type {
+  GscQueryClient,
+  GscQueryRequest,
+  GscQueryResponse,
+  GscRawRow,
+} from "./types.ts";
 
 const WINDOW = { startDate: "2026-07-06", endDate: "2026-08-02" };
 
@@ -37,6 +42,29 @@ function clientReturning(pages: readonly (readonly GscRawRow[])[]) {
 }
 
 describe("readPageRows", () => {
+  it("counts a record it could not attribute instead of dropping it", async () => {
+    const client: GscQueryClient = async () => ({
+      rows: [
+        { keys: [], clicks: 1, impressions: 100, position: 10 },
+        { keys: ["   "], clicks: 1, impressions: 100, position: 10 },
+        {
+          keys: ["https://example.com/a"],
+          clicks: 2,
+          impressions: 200,
+          position: 9,
+        },
+      ],
+      responseAggregationType: "byPage",
+    });
+
+    const result = await readPageRows(client, WINDOW);
+
+    // A record erased here can never be recovered downstream: the caller sees
+    // a window that returned less than it did, and reports it as emptier.
+    expect(result.rows).toHaveLength(1);
+    expect(result.unreadableRows).toBe(2);
+  });
+
   it("asks for the page dimension and maps rows onto the page key", async () => {
     const { client, calls } = clientReturning([
       [pageRow("https://example.com/a", 2000, 100)],

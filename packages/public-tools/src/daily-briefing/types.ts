@@ -4,6 +4,7 @@
 
 import type { PublicToolResultEnvelope } from "../contract.ts";
 import type {
+  GscPageRow,
   GscQueryPageRow,
 } from "../gsc-analytics/page-reader.ts";
 import type {
@@ -51,6 +52,22 @@ export type DailyBriefingChangeKind =
   | "first_observed";
 
 /**
+ * Signals read from the page dimension rather than the query dimension.
+ *
+ * Search Console anonymizes low-volume *queries*, not pages, so on a small
+ * property the page rows carry click evidence the query rows will never show:
+ * one measured run saw 9 of 37 weekly clicks at query level and all 37 at page
+ * level. These lanes exist to read that remainder.
+ *
+ * They are deliberately weaker than the query lanes about *why*: a page's
+ * average position is blended across every query it ranks for, so these say
+ * what moved and hand the cause to the next tool.
+ */
+export type DailyBriefingPageChangeKind =
+  | "page_click_decline"
+  | "page_first_observed";
+
+/**
  * Whether a lane produced evidence, could not apply, or could not be read.
  *
  * `not_applicable` and `unavailable` both yield zero signals and must stay
@@ -61,6 +78,20 @@ export type DailyBriefingLaneState =
   | "evaluated"
   | "not_applicable"
   | "unavailable";
+
+/**
+ * A page lane's state, which has one more case than a query lane's.
+ *
+ * `not_applicable` asserts the property has nothing this lane could ever
+ * measure. A window that returned records this run could not read has not
+ * established that, and neither has it established "we could not look" while
+ * other records in the same window were read and judged. `partially_readable`
+ * is that middle: the lane ran on what it could read and cannot speak for the
+ * rest.
+ */
+export type DailyBriefingPageLaneState =
+  | DailyBriefingLaneState
+  | "partially_readable";
 
 /** Why the CTR opportunity lane could not run, in the operator's terms. */
 export type DailyBriefingCtrLaneBlocker =
@@ -122,9 +153,26 @@ export interface DailyBriefingQueryPageRead {
   readonly responseAggregationType: string | null;
 }
 
+export interface DailyBriefingPageRead {
+  readonly rows: readonly GscPageRow[];
+  /** Records the response carried that could not be turned into a page row. */
+  readonly unreadableRows: number;
+  readonly paging: GscReadPaging;
+  readonly responseAggregationType: string | null;
+}
+
 export interface DailyBriefingQueryEvidence {
   readonly queryRead: QueryRowsRead | null;
   readonly queryPageRead: DailyBriefingQueryPageRead | null;
+  /**
+   * The page dimension on its own. Null means it was not read.
+   *
+   * Not derivable from `queryPageRead`: Search Console drops rows from the
+   * `[query,page]` split, so summing that split understates every page by the
+   * anonymized remainder. The two reads answer different questions and the
+   * page lanes must use this one.
+   */
+  readonly pageRead: DailyBriefingPageRead | null;
   readonly propertyTotals: PropertyTotals | null;
 }
 
@@ -190,6 +238,50 @@ export interface DailyBriefingAction {
 }
 
 /**
+ * A page-dimension change. It names a page and never a query.
+ *
+ * Kept in its own array rather than widened into `DailyBriefingChange` so the
+ * query field there can stay required: a page signal that filled it with null
+ * would look like a query signal whose query went missing.
+ */
+export interface DailyBriefingPageChange {
+  readonly kind: DailyBriefingPageChangeKind;
+  readonly evidence: "observed";
+  readonly page: string;
+  readonly current: GscPageRow;
+  /** Null when the page carried no comparable prior window. */
+  readonly previous: GscPageRow | null;
+  readonly clickChange: number | null;
+  readonly clickChangeRatio: number | null;
+  readonly impressionChange: number | null;
+  readonly impressionChangeRatio: number | null;
+  readonly positionDelta: number | null;
+  /**
+   * Populated for lanes measured on a count; null for lanes that are not.
+   *
+   * `page_first_observed` has no prior base to take a square root of, so it
+   * carries null here rather than a floor it was never asked to clear.
+   */
+  readonly noiseFloor: DailyBriefingNoiseFloor | null;
+}
+
+export interface DailyBriefingPageAction {
+  readonly kind: DailyBriefingPageChangeKind;
+  /**
+   * Narrower than the query destinations on purpose.
+   *
+   * `seo-quick-wins` ranks query opportunities, and a page signal carries no
+   * query for it to rank. Stating that here rather than only in the lane table
+   * means a downstream contract cannot be widened by accident.
+   */
+  readonly destination: Extract<
+    DailyBriefingActionDestination,
+    "traffic-drop-diagnosis" | "on-page-seo-check"
+  >;
+  readonly page: string;
+}
+
+/**
  * A property-level move large enough to hand off.
  *
  * These three spellings license the words "material decline" and "material
@@ -231,14 +323,16 @@ export interface DailyBriefingPropertyChange {
 }
 
 /**
- * The counting-noise floor a property-level change must clear to drive action.
+ * The counting-noise floor a change must clear before it drives an action.
  *
- * Weekly totals are counts, so their run-to-run spread grows with the square
- * root of the base. A fifteen percent move on twenty-one clicks sits inside
- * that spread; calling it a material decline and dispatching a diagnosis is a
- * claim the sample cannot support.
+ * Clicks and impressions are counts, so their run-to-run spread grows with the
+ * square root of the base. A fifteen percent move on twenty-one clicks sits
+ * inside that spread; calling it a material decline and dispatching a
+ * diagnosis is a claim the sample cannot support. Applied to property totals
+ * and to page rows alike — it scales with whatever base it is given, which is
+ * why no fixed volume threshold sits in front of it.
  */
-export interface DailyBriefingPropertyNoiseFloor {
+export interface DailyBriefingNoiseFloor {
   readonly basis: "clicks" | "impressions";
   readonly observedChange: number;
   readonly minimumForAction: number;
@@ -252,7 +346,7 @@ export interface DailyBriefingPropertyTrend {
     readonly kind: DailyBriefingPropertyActionKind;
     readonly destination: "traffic-drop-diagnosis" | "seo-quick-wins";
   } | null;
-  readonly noiseFloor: DailyBriefingPropertyNoiseFloor | null;
+  readonly noiseFloor: DailyBriefingNoiseFloor | null;
 }
 
 export interface DailyBriefingCtrLane {
@@ -292,6 +386,19 @@ export interface DailyBriefingLaneCapability {
   readonly currentFloorOnlyQueries: number | null;
   readonly ctrLane: DailyBriefingCtrLane;
   readonly lanes: Readonly<Record<DailyBriefingChangeKind, DailyBriefingLaneState>>;
+  /**
+   * Pages present in both windows at the sample floor.
+   *
+   * A separate denominator from every query count above it. Pages and queries
+   * are different populations, and one run's numbers are not comparable to the
+   * other's; adding them would invent a total that measures nothing.
+   */
+  readonly pairedPageRows: number | null;
+  /** Current-window page rows that cleared the sample floor. */
+  readonly pageFloorRows: number | null;
+  readonly pageLanes: Readonly<
+    Record<DailyBriefingPageChangeKind, DailyBriefingPageLaneState>
+  >;
 }
 
 export interface DailyBriefingSignalFunnel {
@@ -340,6 +447,25 @@ export interface DailyBriefingRowAccounting {
   readonly notSelectedVisibleRows: number | null;
   readonly byLane: Readonly<
     Record<DailyBriefingChangeKind, DailyBriefingLaneRowCounts>
+  > | null;
+}
+
+/**
+ * Where the current window's PAGE rows ended up, per page lane.
+ *
+ * Deliberately not merged into `DailyBriefingRowAccounting`: that one counts
+ * query rows, this one counts page rows, and a single table summing both would
+ * present two populations as one. The two `observedRows` are both correct and
+ * are not addends.
+ */
+export interface DailyBriefingPageAccounting {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly observedRows: number | null;
+  /** Page rows that produced a candidate but lost the display budget. */
+  readonly notSelectedVisibleRows: number | null;
+  readonly unreadableRows: number | null;
+  readonly byLane: Readonly<
+    Record<DailyBriefingPageChangeKind, DailyBriefingLaneRowCounts>
   > | null;
 }
 
@@ -407,6 +533,43 @@ export interface DailyBriefingQueryWatchlist {
 }
 
 /**
+ * A page worth opening today on the strength of where it currently sits.
+ *
+ * A check is not a weak action, it is a different kind of statement. An action
+ * says "this changed, and here is the evidence". A check says "nothing here is
+ * known to have changed; this is where the property currently stands, and the
+ * standing is worth a look". Nothing in a check is a causal claim, which is
+ * what lets it be offered on evidence no lane could turn into a change.
+ *
+ * This exists because the honest answer for a small property was arriving as
+ * a contradiction: three rows the page had just called worth looking at, above
+ * a heading that said nothing was worth doing. Both sentences were true and
+ * the pair read as a broken tool.
+ */
+export interface DailyBriefingSuggestedCheck {
+  readonly query: string;
+  readonly page: string;
+  readonly band: DailyBriefingObservationBand;
+  /** Which sample tier the observation came from; never a claim of evidence. */
+  readonly sampleKind: DailyBriefingQueryObservationKind;
+  readonly destination: "on-page-seo-check";
+}
+
+export interface DailyBriefingSuggestedChecks {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly items: readonly DailyBriefingSuggestedCheck[];
+  /**
+   * Displayed watchlist rows that could NOT become a check, and so are absent.
+   *
+   * A count of the checks themselves would only ever restate `items.length`,
+   * which explains nothing. This one explains the shortfall the reader can
+   * see: three rows above, two checks, one row too far down to be worth
+   * opening or carrying no page to open.
+   */
+  readonly notCheckable: number | null;
+}
+
+/**
  * A position move seen against a prior window too small to call it a change.
  *
  * The strict lanes require both windows at the 100-impression floor because an
@@ -449,7 +612,8 @@ export type DailyBriefingLimitationCode =
   | "aggregation_basis_mismatch"
   | "anonymization_gap_uncomputable"
   | "brand_terms_not_confirmed"
-  | "property_change_inside_noise_floor";
+  | "property_change_inside_noise_floor"
+  | "page_evidence_unavailable";
 
 export interface DailyBriefingResult {
   readonly windows: DailyBriefingWindows;
@@ -460,6 +624,9 @@ export interface DailyBriefingResult {
   readonly laneCapability: DailyBriefingLaneCapability;
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
+  /** Page-dimension changes; a separate population from `changes`. */
+  readonly pageChanges: readonly DailyBriefingPageChange[];
+  readonly pageActions: readonly DailyBriefingPageAction[];
   /** Always evaluated; never suppressed by query-level signals. */
   readonly propertyTrend: DailyBriefingPropertyTrend;
   readonly signalFunnel: DailyBriefingSignalFunnel;
@@ -467,6 +634,9 @@ export interface DailyBriefingResult {
   /** Position moves reported as observations, never as changes or actions. */
   readonly provisionalMoves: DailyBriefingProvisionalMoves;
   readonly rowAccounting: DailyBriefingRowAccounting;
+  readonly pageAccounting: DailyBriefingPageAccounting;
+  /** Offered on current standing; never claims anything changed. */
+  readonly suggestedChecks: DailyBriefingSuggestedChecks;
   readonly coverage: DailyBriefingCoverage;
   readonly anonymization: DailyBriefingAnonymizationWindows;
   readonly limitations: readonly DailyBriefingLimitationCode[];

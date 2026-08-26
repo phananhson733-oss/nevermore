@@ -39,6 +39,28 @@ export type ToolHandoffPayload =
       readonly evidenceId: string;
     }
   | {
+      /**
+       * A page with no query behind it.
+       *
+       * The page-dimension lanes name a page and nothing else — Search Console
+       * anonymizes the queries that made it move — so neither `query_page` nor
+       * `property` fits. Filling `query` with an empty string to reuse
+       * `query_page` would hand the next tool a query the briefing never saw.
+       */
+      readonly source: "daily-search-briefing";
+      /**
+       * Only the two the page lanes can produce. `seo-quick-wins` ranks query
+       * opportunities and has nothing to do with a page carrying no query, so
+       * accepting it here would admit a handoff no lane can generate.
+       */
+      readonly destination: Exclude<ToolHandoffDestination, "seo-quick-wins">;
+      readonly scope: "page";
+      readonly property: string;
+      readonly query: null;
+      readonly page: string;
+      readonly evidenceId: string;
+    }
+  | {
       readonly source: "competitor-keyword-gap";
       readonly destination: "on-page-seo-check";
       readonly scope: "query_page";
@@ -92,6 +114,123 @@ function isDestination(value: unknown): value is ToolHandoffDestination {
     value === "traffic-drop-diagnosis" ||
     value === "on-page-seo-check"
   );
+}
+
+function isPageDestination(
+  value: unknown,
+): value is Exclude<ToolHandoffDestination, "seo-quick-wins"> {
+  return value === "traffic-drop-diagnosis" || value === "on-page-seo-check";
+}
+
+/**
+ * Whether the page is inside the property the handoff claims to describe.
+ *
+ * A syntactically safe URL from another site would attach a Daily Briefing
+ * measurement to a page the briefing never read. Search Console will not
+ * return such a pair, so refusing it costs nothing and closes the gap between
+ * "this is a URL" and "this is a URL this property could have produced".
+ */
+/**
+ * Decode only the escapes that carry no meaning.
+ *
+ * `decodeURI` over the whole path is not injective: it turns `/%252F/` into
+ * `/%2F/`, so a property and a page whose serialized paths differ start
+ * comparing equal. RFC 3986 says a percent-encoded unreserved octet is
+ * equivalent to the character itself and nothing else is, so only those are
+ * folded.
+ */
+const UNRESERVED_ESCAPE = /%(?:2[DdEe]|3[0-9]|4[1-9A-Fa-f]|5[0-9Aa]|5[Ff]|6[1-9A-Fa-f]|7[0-9Aa]|7[Ee])/g;
+
+function canonicalPath(pathname: string): string {
+  return pathname.replace(UNRESERVED_ESCAPE, (escape) => {
+    const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+    return /[A-Za-z0-9\-._~]/.test(char) ? char : escape;
+  });
+}
+
+/** A Search Console domain property is a bare host and nothing else. */
+const BARE_HOSTNAME = /^[a-z0-9\u00a1-\uffff](?:[a-z0-9\-._\u00a1-\uffff]*[a-z0-9\u00a1-\uffff])?$/iu;
+
+function withoutRootDot(host: string): string {
+  const lower = host.toLowerCase();
+  return lower.endsWith(".") ? lower.slice(0, -1) : lower;
+}
+
+/** Whether the string is a Search Console property identifier at all. */
+function isProperty(property: string): boolean {
+  const trimmed = property.trim();
+  if (trimmed.startsWith("sc-domain:")) {
+    return BARE_HOSTNAME.test(trimmed.slice("sc-domain:".length).trim());
+  }
+  try {
+    const url = new URL(trimmed);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname !== "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+function pageBelongsToProperty(property: string, page: unknown): boolean {
+  if (!isProperty(property)) return false;
+  if (!isSafeHttpPage(page)) return false;
+  try {
+    const url = new URL(page.trim());
+    // Compared as hostnames, not as strings. `URL` lowercases and punycodes
+    // in one step, so an IDN property written in Unicode still matches the
+    // page Search Console returns in its ASCII form; a trailing dot on either
+    // side names the same host and must not decide the answer.
+    const host = withoutRootDot(url.hostname);
+    if (property.startsWith("sc-domain:")) {
+      const raw = property.slice("sc-domain:".length).trim();
+      // A bare host, checked before it is handed to `URL`. Otherwise
+      // `sc-domain:user:pw@example.com`, `sc-domain:example.com/path` and
+      // `sc-domain:example.com?x=1` all reduce to the hostname buried in them
+      // and are accepted as the property they merely contain.
+      if (!BARE_HOSTNAME.test(raw)) return false;
+      const domain = withoutRootDot(new URL(`https://${raw}`).hostname);
+      if (domain === "") return false;
+      return host === domain || host.endsWith(`.${domain}`);
+    }
+    const prefix = new URL(property.trim());
+    // A property identifier is a prefix, not a request: credentials, a query
+    // or a fragment mean the string is not one, and matching only its host and
+    // path would let `https://user:pw@example.com/about?x=1#f` stand in for
+    // the property it merely resembles.
+    if (
+      prefix.username !== "" ||
+      prefix.password !== "" ||
+      prefix.search !== "" ||
+      prefix.hash !== ""
+    ) {
+      return false;
+    }
+    if (
+      prefix.protocol !== url.protocol ||
+      withoutRootDot(prefix.hostname) !== host ||
+      prefix.port !== url.port
+    ) {
+      return false;
+    }
+    // On a segment boundary, not a character one. A bare `startsWith` accepts
+    // `/aboutus` for a property scoped to `/about`, which is a different
+    // section of the site.
+    // Compared after decoding the escapes that carry no meaning, so `/%7Eteam`
+    // and `/~team` are the one path they name. Decoding can throw on a
+    // malformed escape; the raw forms are then compared instead.
+    const prefixPath = canonicalPath(prefix.pathname);
+    const pagePath = canonicalPath(url.pathname);
+    const base = prefixPath.endsWith("/") ? prefixPath : `${prefixPath}/`;
+    return pagePath === prefixPath || pagePath.startsWith(base);
+  } catch {
+    return false;
+  }
 }
 
 function isPropertyDestination(
@@ -188,18 +327,42 @@ function hasValidPayloadFields(
 
   if (value.source === "daily-search-briefing") {
     if (value.scope === "query_page") {
+      // Bound to the property for the same reason the page scope is: a
+      // syntactically safe URL from another site would attach Search Console
+      // evidence to a page this property never returned. Applied only to the
+      // daily-briefing source — a competitor gap handoff carries a competitor's
+      // page on purpose, and binding that one would break it.
       return (
         isDestination(value.destination) &&
         nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
-        nonEmptyString(value.page, MAX_PAGE_LENGTH)
+        typeof value.property === "string" &&
+        pageBelongsToProperty(value.property, value.page)
+      );
+    }
+
+    if (value.scope === "page") {
+      // The page is the entire payload here, and the destination will fetch
+      // it, so it is checked as a URL, as a URL this property could have
+      // produced, and against the two destinations a page lane can name.
+      return (
+        isPageDestination(value.destination) &&
+        value.query === null &&
+        typeof value.property === "string" &&
+        pageBelongsToProperty(value.property, value.page)
       );
     }
 
     if (value.scope === "property") {
+      // The property identifier is checked here too. Every other daily
+      // briefing scope proves the property parses before it uses it, and a
+      // scope that carries the property alone should not be the one that
+      // skips the check.
       return (
         isPropertyDestination(value.destination) &&
         value.query === null &&
-        value.page === null
+        value.page === null &&
+        typeof value.property === "string" &&
+        isProperty(value.property)
       );
     }
   }
@@ -258,6 +421,18 @@ export function writeToolHandoff(
             scope: payload.scope,
             property: payload.property.trim(),
             query: payload.query.trim(),
+            page: payload.page.trim(),
+            evidenceId: payload.evidenceId.trim(),
+            createdAt: now,
+            expiresAt: now + TOOL_HANDOFF_TTL_MS,
+          }
+        : payload.scope === "page"
+        ? {
+            source: payload.source,
+            destination: payload.destination,
+            scope: payload.scope,
+            property: payload.property.trim(),
+            query: null,
             page: payload.page.trim(),
             evidenceId: payload.evidenceId.trim(),
             createdAt: now,

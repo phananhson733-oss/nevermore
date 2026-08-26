@@ -218,6 +218,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         Date.now(),
         "on-page-seo-check",
       );
+      // A page-scope handoff carries no query, so the query field is left
+      // for the visitor rather than filled with an invented one.
+      if (handoff?.scope === "page") {
+        setUrl(handoff.page);
+        setHandoffImported(true);
+      }
       if (handoff?.scope === "query_page") {
         setUrl(handoff.page);
         setQueryText(handoff.query);

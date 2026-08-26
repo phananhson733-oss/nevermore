@@ -185,8 +185,10 @@ export function TrafficDropTool({
         "traffic-drop-diagnosis",
       );
       if (handoff === null || !properties?.includes(handoff.property)) return;
-      // Both legal scopes select only a granted property here; neither starts
-      // the diagnosis or carries old answers across sites.
+      // All three legal scopes select only a granted property here; none
+      // starts the diagnosis or carries old answers across sites. A page-scope
+      // handoff's page is deliberately dropped: this tool diagnoses a property
+      // and has no page input to put it in.
       selectProperty(handoff.property);
       setHandoffImported(true);
     } catch {

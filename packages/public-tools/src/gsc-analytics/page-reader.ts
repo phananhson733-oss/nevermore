@@ -47,6 +47,16 @@ export interface GscQueryPageRow {
 
 interface PagedRead<T> {
   readonly rows: readonly T[];
+  /**
+   * Rows the response carried that `map` could not turn into a row.
+   *
+   * Dropping them silently made a response that returned records reach the
+   * caller as an empty read, and no count added downstream can recover a row
+   * erased here. A caller that reports totals has to be able to say "the
+   * window returned records I could not read" instead of "the window was
+   * empty".
+   */
+  readonly unreadableRows: number;
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
 }
@@ -68,6 +78,7 @@ async function readPaged<T>(
   aggregationType?: GscAggregationType,
 ): Promise<PagedRead<T>> {
   const rows: T[] = [];
+  let unreadableRows = 0;
   let pagesFetched = 0;
   let truncated = false;
   let responseAggregationType: string | null = null;
@@ -99,21 +110,37 @@ async function readPaged<T>(
 
     for (const raw of response.rows) {
       const mapped = map(raw.keys, raw);
-      if (mapped !== null) rows.push(mapped);
+      if (mapped === null) {
+        unreadableRows += 1;
+        continue;
+      }
+      rows.push(mapped);
     }
 
     if (response.rows.length < GSC_ROW_LIMIT) break;
     if (page === pageCap - 1) truncated = true;
   }
 
-  return { rows, paging: { pagesFetched, truncated }, responseAggregationType };
+  return {
+    rows,
+    unreadableRows,
+    paging: { pagesFetched, truncated },
+    responseAggregationType,
+  };
 }
 
-/** Property pages for the window, one row each. */
+/**
+ * Property pages for the window, one row each.
+ *
+ * `aggregationType` is worth passing: a caller that compares two windows needs
+ * the basis to be a request it made rather than a default it inherited, so it
+ * can reject a response that came back on another one.
+ */
 export function readPageRows(
   client: GscQueryClient,
   window: GscWindow,
   budget?: ReadBudget,
+  aggregationType?: GscAggregationType,
 ): Promise<PagedRead<GscPageRow>> {
   return readPaged(
     client,
@@ -121,7 +148,7 @@ export function readPageRows(
     ["page"],
     (keys, row) => {
       const page = keys[0];
-      if (page === undefined) return null;
+      if (page === undefined || page.trim() === "") return null;
       return {
         page,
         clicks: row.clicks,
@@ -130,6 +157,8 @@ export function readPageRows(
       };
     },
     budget,
+    GSC_MAX_PAGES,
+    aggregationType,
   );
 }
 

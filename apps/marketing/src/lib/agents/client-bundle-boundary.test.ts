@@ -6,6 +6,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -53,81 +54,74 @@ interface Reference {
 }
 
 /**
- * How an import is recognised, and why it is not just `\bimport\b`.
+ * Read module references with the compiler's own parser.
  *
- * A regex cannot tell code from prose. A JSDoc line reading "must not import
- * `@sf/sources`" matched the side-effect pattern, and this guard reported the
- * file that DOCUMENTS the rule as the file that breaks it. A guard that cries
- * wolf about its own comment is one people learn to mute.
+ * Two hand-rolled versions failed in opposite directions. Scanning raw text
+ * matched prose: the sentence "must not import `@sf/sources`" in a doc comment
+ * reported the file documenting the rule as the file breaking it. Anchoring
+ * the patterns to a line start silenced that and quietly failed OPEN instead —
+ * `from /* server-only *\/ "@sf/sources"`, a comment inside a multi-line
+ * import, and `"use client"; import ...` on one line all stopped being seen,
+ * and a guard that stops seeing imports passes everything.
  *
- * Three rules, each answering a way the naive version was wrong:
- *
- * 1. STATEMENT_START -- a real `import`/`export` statement begins a line;
- *    a comment line that mentions one does not (` * ...`, `// ...`).
- *
- * 2. IMPORT_CLAUSE -- what may sit between the keyword and `from` is an
- *    import clause and nothing else: bindings, at most one braced group, no
- *    `;`, no `=`, no stray brace. The old `[\s\S]*?` crossed statement
- *    boundaries, so `export type Local = {...}` on the line above a real
- *    value import swallowed it and reported it as TYPE-ONLY -- a false
- *    NEGATIVE in the one direction that matters, since the offender check
- *    then skips it and the forbidden barrel ships.
- *
- * 3. The keyword may be followed by punctuation instead of whitespace.
- *    `import{a}from"x"`, `import"x"`, `export{a}from"x"` and `export*from"x"`
- *    are all legal and all used to be invisible here.
- *
- * Stripping comments and strings instead of anchoring would mean tracking
- * templates and regex literals, and this app parses text: a regex holding an
- * unbalanced quote would desynchronise a stripper and hide a real import.
- *
- * Known gap, accepted: a static import that shares a line with an earlier
- * statement (`const a = 1; import "@sf/sources";`) is not seen. It is legal
- * but the repository's formatter never emits it, and admitting a `;` boundary
- * to catch it made every string and comment containing "; import ... from"
- * a false positive -- including the code examples this marketing app ships.
- * The production build still fails on a missed barrel; this guard is the
- * earlier of two nets, not the only one.
+ * Line position cannot decide lexical context. TypeScript already ships the
+ * scanner that can, so this asks it.
  */
-const STATEMENT_START = "^[ \\t]*";
-/** Bindings and at most one braced group -- never a `;`, `=`, or stray brace. */
-const IMPORT_CLAUSE = "[^;={}]*(?:\\{[^{}]*\\})?[^;={}]*";
-const STATIC_IMPORT = new RegExp(
-  `${STATEMENT_START}(?:import|export)(?:\\s+(type\\s+)?|(?=[{*]))${IMPORT_CLAUSE}from\\s*['"\`]([^'"\`]+)['"\`]`,
-  "gm",
-);
-const SIDE_EFFECT_IMPORT = new RegExp(
-  `${STATEMENT_START}import(?:\\s+|(?=['"\`]))['"\`]([^'"\`]+)['"\`]`,
-  "gm",
-);
-/**
- * Unanchored on purpose: `await import("x")` is legitimately mid-expression,
- * and missing one is worse than the rare false positive from a comment that
- * spells a call.
- */
-const DYNAMIC_IMPORT = /(?:require|import)\s*\(\s*['"`]([^'"`]+)['"`]/g;
-
-function referencesIn(source: string): readonly Reference[] {
+function referencesIn(source: string, fileName = "module.tsx"): readonly Reference[] {
+  // Parsed as what it is. A `.ts` file read as TSX loses angle-bracket casts,
+  // and a file that fails to parse yields no references at all — which is the
+  // shape of a guard passing because it went blind.
+  const file = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
   const found: Reference[] = [];
-  // `import type { A } from "x"` and `import { type A } from "x"` differ: only
-  // the first erases the whole statement. The second still emits the import.
-  for (const match of source.matchAll(STATIC_IMPORT)) {
-    if (match[2] !== undefined) {
-      found.push({ specifier: match[2], typeOnly: match[1] !== undefined });
+
+  const literal = (node: ts.Node | undefined): string | null =>
+    node !== undefined && ts.isStringLiteralLike(node) ? node.text : null;
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const specifier = literal(node.moduleSpecifier);
+      if (specifier !== null) {
+        // `import type { A } from "x"` erases the whole statement.
+        // `import { type A } from "x"` does not: the import still emits.
+        found.push({
+          specifier,
+          typeOnly: node.importClause?.isTypeOnly === true,
+        });
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      const specifier = literal(node.moduleSpecifier);
+      if (specifier !== null) {
+        found.push({ specifier, typeOnly: node.isTypeOnly });
+      }
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference)
+    ) {
+      // `import x = require("y")`. Rare in this codebase and never erased.
+      const specifier = literal(node.moduleReference.expression);
+      if (specifier !== null) {
+        found.push({ specifier, typeOnly: node.isTypeOnly });
+      }
+    } else if (ts.isCallExpression(node)) {
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire =
+        ts.isIdentifier(node.expression) && node.expression.text === "require";
+      if (isDynamicImport || isRequire) {
+        const specifier = literal(node.arguments[0]);
+        // Neither form is ever erased: both run the module.
+        if (specifier !== null) found.push({ specifier, typeOnly: false });
+      }
     }
-  }
-  // A side-effect import has no `from` and is never erased: `import "x"` runs
-  // the whole module. The `from`-only pattern above walked straight past it.
-  for (const match of source.matchAll(SIDE_EFFECT_IMPORT)) {
-    if (match[1] !== undefined) {
-      found.push({ specifier: match[1], typeOnly: false });
-    }
-  }
-  for (const match of source.matchAll(DYNAMIC_IMPORT)) {
-    if (match[1] !== undefined) {
-      found.push({ specifier: match[1], typeOnly: false });
-    }
-  }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(file, visit);
   return found;
 }
 
@@ -211,7 +205,7 @@ function clientClosure(): ReadonlyMap<string, readonly Reference[]> {
   while (pending.length > 0) {
     const file = pending.pop();
     if (file === undefined || seen.has(file)) continue;
-    const references = referencesIn(readFileSync(file, "utf8"));
+    const references = referencesIn(readFileSync(file, "utf8"), file);
     seen.set(file, references);
     for (const reference of references) {
       const resolved = resolveRelative(file, reference.specifier);
@@ -331,6 +325,79 @@ describe("modules the browser bundle reaches stay off the package barrels", () =
     expect(
       offenders,
       `use a subpath export instead:\n${offenders.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("reads every import spelling this codebase writes, and no prose", () => {
+    // Both hand-rolled scanners failed here: the first matched prose, the
+    // second stopped seeing real imports. Every line below is a case one of
+    // them got wrong.
+    const source = [
+      'import { a } from "@sf/public-tools";',
+      'import type { B } from "@sf/engine";',
+      "import {",
+      '  c, // re-exported from "./decoy"',
+      '} from "@sf/sources";',
+      'export { d } from "@sf/public-tools";',
+      'export * from "@sf/engine";',
+      'import "@sf/sources";',
+      'import { e } from /* server-only */ "@sf/sources";',
+      '"use client"; import { f } from "@sf/public-tools";',
+      "async function lazy() {",
+      '  return (await import("@sf/sources")).x;',
+      "}",
+      "const re = /[/*]/;",
+      '// import "@sf/engine";',
+      "/*",
+      '  import "@sf/engine";',
+      "*/",
+      "/**",
+      " * must not import `@sf/engine`, so the shape is restated here.",
+      " */",
+    ].join("\n");
+
+    const references = referencesIn(source);
+    const runtime = references
+      .filter((reference) => !reference.typeOnly)
+      .map((reference) => reference.specifier);
+
+    // Three barrels named in code; every `@sf/engine` mention in a comment is
+    // not a reference, and the decoy specifier inside a comment is not either.
+    expect(runtime.filter((v) => v === "@sf/public-tools")).toHaveLength(3);
+    expect(runtime.filter((v) => v === "@sf/sources")).toHaveLength(4);
+    expect(runtime).not.toContain("./decoy");
+    // The only `@sf/engine` references are the type-only import and the
+    // re-export; none of the three commented mentions count.
+    expect(references.filter((r) => r.specifier === "@sf/engine")).toEqual([
+      { specifier: "@sf/engine", typeOnly: true },
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
+  });
+
+  it("parses every file it walks, instead of going blind on one", () => {
+    // `createSourceFile` does not throw. A file it cannot parse comes back as
+    // a tree with no imports, which reads exactly like a file that has none —
+    // so the guard would go blind one file at a time and still pass. The
+    // condition to detect is the parse failure itself, not a guess from the
+    // text about which files "should" have imports.
+    const unparsed: string[] = [];
+    for (const file of closure.keys()) {
+      const parsed = ts.createSourceFile(
+        file,
+        readFileSync(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+      ) as ts.SourceFile & {
+        readonly parseDiagnostics?: readonly ts.Diagnostic[];
+      };
+      if ((parsed.parseDiagnostics?.length ?? 0) > 0) {
+        unparsed.push(file.slice(SOURCE_ROOT.length));
+      }
+    }
+    expect(
+      unparsed,
+      `the scanner could not parse these, so it saw no imports in them:\n${unparsed.join("\n")}`,
     ).toEqual([]);
   });
 

@@ -17,7 +17,10 @@ import {
   type DailyBriefingLimitationCode,
   type DailyBriefingPropertyTrend,
   type DailyBriefingProvisionalMove,
+  type DailyBriefingPageAction,
+  type DailyBriefingPageChange,
   type DailyBriefingQueryObservation,
+  type DailyBriefingSuggestedCheck,
   type DailyBriefingProvisionalMoves,
   type DailyBriefingQueryWatchlist,
   type DailyBriefingRowAccounting,
@@ -179,6 +182,14 @@ function laneCapability(
       actionable_position_decline: "not_applicable",
       first_observed: "not_applicable",
     },
+    // Page evidence defaults to unread, so a fixture that says nothing about
+    // pages does not assert the property has none.
+    pairedPageRows: null,
+    pageFloorRows: null,
+    pageLanes: {
+      page_click_decline: "unavailable",
+      page_first_observed: "unavailable",
+    },
     ...overrides,
   };
 }
@@ -237,6 +248,75 @@ function provisionalMoves(
     items,
     candidates: items.length,
     priorWindowImpressionRange: [50, 99],
+    ...overrides,
+  };
+}
+
+const PAGE_CHANGE_URL = "https://example.com/guide";
+const CHECK_QUERY = "messi zodiac sign";
+const CHECK_PAGE = "https://example.com/wiki/messi";
+
+function pageChange(
+  overrides: Partial<DailyBriefingPageChange> = {},
+): DailyBriefingPageChange {
+  return {
+    kind: "page_click_decline",
+    evidence: "observed",
+    page: PAGE_CHANGE_URL,
+    current: { page: PAGE_CHANGE_URL, clicks: 8, impressions: 380, position: 9.4 },
+    previous: { page: PAGE_CHANGE_URL, clicks: 20, impressions: 400, position: 9.1 },
+    clickChange: -12,
+    clickChangeRatio: -0.6,
+    impressionChange: -20,
+    impressionChangeRatio: -0.05,
+    positionDelta: 0.3,
+    noiseFloor: {
+      basis: "clicks",
+      observedChange: -12,
+      minimumForAction: 2 * Math.sqrt(20),
+      cleared: true,
+    },
+    ...overrides,
+  };
+}
+
+function pageAction(
+  overrides: Partial<DailyBriefingPageAction> = {},
+): DailyBriefingPageAction {
+  return {
+    kind: "page_click_decline",
+    destination: "traffic-drop-diagnosis",
+    page: PAGE_CHANGE_URL,
+    ...overrides,
+  };
+}
+
+function checkableObservation(
+  overrides: Partial<DailyBriefingQueryObservation> = {},
+): DailyBriefingQueryObservation {
+  return {
+    kind: "sample_floor_reached",
+    band: "page_one",
+    query: CHECK_QUERY,
+    page: CHECK_PAGE,
+    pageEvidence: "observed",
+    current: { query: CHECK_QUERY, clicks: 0, impressions: 185, position: 8.2 },
+    previous: null,
+    previousBelowFloor: null,
+    positionDelta: null,
+    ...overrides,
+  };
+}
+
+function suggestedCheck(
+  overrides: Partial<DailyBriefingSuggestedCheck> = {},
+): DailyBriefingSuggestedCheck {
+  return {
+    query: CHECK_QUERY,
+    page: CHECK_PAGE,
+    band: "page_one",
+    sampleKind: "sample_floor_reached",
+    destination: "on-page-seo-check",
     ...overrides,
   };
 }
@@ -339,6 +419,11 @@ afterEach(async () => {
     root = null;
   }
   document.body.replaceChildren();
+  // The privacy-mode test replaces the sessionStorage getter with one that
+  // throws. Without this, every test declared after it inherits a broken
+  // global and its handoff clicks fail silently — which is exactly how it
+  // was found.
+  vi.restoreAllMocks();
 });
 
 async function renderResults(
@@ -621,7 +706,7 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     // Every path carries its own requirement, so a reader can check why it
     // did or did not run instead of reading a badge that says "observed".
     expect(paths?.textContent).toContain("Requires:");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
   });
 
   it("tells a path that could not run from a path that found nothing", async () => {
@@ -704,13 +789,14 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     ];
     // Asserted, not assumed: a loop over a selector that stopped matching
     // would otherwise pass by making no assertion at all.
-    expect(outcomes).toHaveLength(7);
+    // Seven lane outcomes plus the two per-population selection lines.
+    expect(outcomes).toHaveLength(11);
     for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
     }
     expect(paths?.textContent).not.toContain("query rows, and every");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(7);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
   });
 
   it("accounts for every observed row inside each evaluation path", async () => {
@@ -1019,8 +1105,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(rules?.textContent).toContain("at most three query rows");
     expect(rules?.textContent).toContain("gives up its place");
     expect(
-      host.querySelector("[data-selection-not-shown]")?.textContent,
-    ).toContain("4 rows formed candidates");
+      host.querySelector('[data-selection-not-shown="query"]')?.textContent,
+    ).toContain("4 further query records");
   });
 
   it("counts one withheld sample-building row with singular grammar", async () => {
@@ -1332,7 +1418,10 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const propertyAction = host.querySelector("[data-property-action]");
 
     expect(propertyAction).not.toBeNull();
-    expect(propertyAction?.getAttribute("data-action-rank")).toBe("2");
+    // Each group orders itself. A sequence running 1, 2, 3 through query,
+    // page and property actions would read as one priority order over three
+    // different populations, and nothing measured supports that ordering.
+    expect(propertyAction?.getAttribute("data-action-rank")).toBe("1");
     expect(host.querySelector("[data-site-trend]")).not.toBeNull();
     expect(
       host.querySelector("[data-evidence-fold-summary]")?.textContent,
@@ -1736,5 +1825,619 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(details?.querySelector("summary")?.textContent).toContain(
       "Why there were not more signals",
     );
+  });
+
+  it("counts page candidates in the not-shown line, not only query ones", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: 0 }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 6,
+          notSelectedVisibleRows: 2,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(2, 0, 4),
+            page_first_observed: laneRows(6, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const queryLine = host.querySelector('[data-selection-not-shown="query"]');
+    const pageLine = host.querySelector('[data-selection-not-shown="page"]');
+
+    // One line per population, never their sum: the query side really did show
+    // everything, and the page side did not.
+    expect(queryLine?.textContent).toBe(
+      en.tools.dailyBriefing.evidence.paths.selectionAllShownQuery,
+    );
+    expect(pageLine?.textContent).toContain("2 further page records");
+  });
+
+  it.each([
+    ["the query side", null, 0, "UnavailableQuery", "AllShownPage"],
+    ["the page side", 0, null, "AllShownQuery", "UnavailablePage"],
+  ])("withholds a not-shown count it could not measure on %s", async (
+    _label,
+    queryCount,
+    pageCount,
+    queryKey,
+    pageKey,
+  ) => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        rowAccounting: rowAccounting({ notSelectedVisibleRows: queryCount }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 2,
+          notSelectedVisibleRows: pageCount,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(2, 0, 0),
+            page_first_observed: laneRows(2, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const copy = en.tools.dailyBriefing.evidence.paths as unknown as Readonly<
+      Record<string, string>
+    >;
+
+    // A null on one side is not a zero on the other, in either direction, and
+    // summing them produced an exact-looking total out of one unknown.
+    expect(
+      host.querySelector('[data-selection-not-shown="query"]')?.textContent,
+    ).toBe(copy[`selection${queryKey}`]);
+    expect(
+      host.querySelector('[data-selection-not-shown="page"]')?.textContent,
+    ).toBe(copy[`selection${pageKey}`]);
+  });
+
+  it("names a row it could not read rather than shrinking the denominator", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        // Three readable rows below the floor plus two unreadable ones: the
+        // lanes did establish they had nothing to measure, so the split
+        // renders rather than the "could not look" sentence.
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "not_applicable",
+            page_first_observed: "not_applicable",
+          },
+        }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 5,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 2,
+          byLane: {
+            page_click_decline: laneRows(5, 0, 0),
+            page_first_observed: laneRows(5, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const intro = host.querySelector("[data-page-rows-intro]");
+    const paths = host.querySelector("[data-signal-paths]");
+
+    expect(intro?.textContent).toContain("5 page records returned");
+    expect(intro?.textContent).toContain(
+      "2 of them did not become a usable page record",
+    );
+    // Named accurately: a duplicated URL is rejected for being duplicated, not
+    // for figures that contradict each other.
+    expect(intro?.textContent).toContain("returned more than once");
+    expect(intro?.textContent).toContain("Neither path evaluated them");
+    // And the lanes must carry them, not just the sentence above: an
+    // unreadable row is a row neither lane could ask about.
+    for (const id of ["page-click-decline", "page-first-observed"]) {
+      expect(
+        paths?.querySelector(`[data-signal-path="${id}"]`)?.textContent,
+      ).toContain("5 not evaluated");
+    }
+  });
+
+  it("withholds the site-trend count when the weekly comparison was unread", async () => {
+    const base = envelope();
+    const host = await renderResults({
+      ...base,
+      result: {
+        ...base.result,
+        weekly: { ...base.result.weekly, evidence: "unavailable" },
+        propertyTrend: { change: null, action: null, noiseFloor: null },
+        queryWatchlist: watchlist("observed"),
+      },
+    });
+    const summary = host.querySelector("[data-evidence-fold-summary]");
+
+    // "0 site trend observations" is a measurement. A weekly comparison that
+    // could not be read did not measure zero of them, and the trend is null in
+    // both cases.
+    expect(summary?.textContent).toContain(
+      en.tools.dailyBriefing.evidence.foldTrendUnavailable,
+    );
+    expect(summary?.textContent).not.toContain("0 site trend observation");
+  });
+
+  it("orders each action group from one instead of ranking across them", async () => {
+    const source = change("click_opportunity", 1);
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [action(source, "seo-quick-wins")],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        propertyTrend: propertyTrend(),
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const ranks = [
+      ...host.querySelectorAll<HTMLElement>("[data-action-row]"),
+    ].map((row) => row.getAttribute("data-action-rank"));
+
+    // Three actions over three populations, each numbered within its own.
+    expect(ranks).toEqual(["1", "1", "1"]);
+    // And the grouping is on screen, not only in the numbering: without a
+    // visible boundary, query action 3 still reads as ranked above page
+    // action 1 under a heading that claims a certainty order.
+    expect(
+      [...host.querySelectorAll("[data-action-group]")].map((node) =>
+        node.getAttribute("data-action-group"),
+      ),
+    ).toEqual(["query", "page", "property"]);
+    expect(host.querySelector('[data-result-section="actions"]')?.textContent)
+      .toContain("the groups are not ordered against each other");
+  });
+
+  it("renders both budgets at once without either capping the other", async () => {
+    const queryChanges = [1, 2, 3].map((index) =>
+      change("stable_position_click_decline", index),
+    );
+    const host = await renderResults(
+      envelope({
+        changes: queryChanges,
+        actions: queryChanges.map((source) =>
+          action(source, "traffic-drop-diagnosis"),
+        ),
+        pageChanges: [
+          pageChange(),
+          pageChange({ page: "https://example.com/second" }),
+        ],
+        pageActions: [
+          pageAction(),
+          pageAction({ page: "https://example.com/second" }),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    // Three query rows saturate the query budget. Slicing page rows from what
+    // the query rows left over would show none of these.
+    expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
+    expect(host.querySelectorAll("[data-page-change]")).toHaveLength(2);
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(5);
+    expect(host.querySelector('[data-review-group="page"]')).not.toBeNull();
+    expect(
+      [...host.querySelectorAll("[data-page-row-rank]")].map(
+        (badge) => badge.textContent,
+      ),
+    ).toEqual(["01", "02"]);
+  });
+
+  it("does not print the query read's failure over a measured page result", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [],
+        pageActions: [],
+        queryWatchlist: watchlist("unavailable"),
+        // The reachable asymmetric case: a page whose prior window holds 50
+        // impressions is settled as not-new by the first-observed lane, while
+        // the decline lane cannot ask against a window that small. Only one
+        // path settled the row, so the message may only claim "at least one".
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(0, 1, 0),
+          },
+        },
+      }),
+    );
+    const card = host.querySelector("[data-change-empty]");
+
+    // The page paths ran and found nothing. Saying comparable query/page
+    // evidence is unavailable prints one dimension's failure over the other's
+    // measured result.
+    expect(card?.textContent).toBe(
+      en.tools.dailyBriefing.review.unavailableQueryRead,
+    );
+  });
+
+  it("does not say a path judged rows when it settled none of them", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "partially_readable",
+            page_first_observed: "partially_readable",
+          },
+        }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const line = host.querySelector(
+      '[data-signal-path="page-click-decline"] [data-path-outcome]',
+    );
+
+    // "This path judged the ones it could read" is false of a path whose only
+    // row was unreadable.
+    expect(line?.textContent).toContain(
+      en.tools.dailyBriefing.evidence.paths.lanePartiallyReadableNone,
+    );
+    expect(line?.textContent).not.toContain(
+      en.tools.dailyBriefing.evidence.paths.lanePartiallyReadable,
+    );
+  });
+
+  it("does not call the cadence daily off a page lane that settled nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        mode: "change_detection",
+        cadence: "weekly",
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "partially_readable",
+            page_first_observed: "not_applicable",
+          },
+        }),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+
+    // No click lane settled anything, so the weekly reading really is about
+    // the lanes rather than the impression floor.
+    expect(facts?.textContent).toContain(
+      en.tools.dailyBriefing.facts.noClickLaneReason,
+    );
+  });
+
+  it("does not say the page paths settled anything when they settled nothing", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [],
+        pageActions: [],
+        queryWatchlist: watchlist("unavailable"),
+        // The read succeeded and its one record was unreadable. "Its paths
+        // settled the records in it" would describe a run that settled none.
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 1,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+      }),
+    );
+
+    expect(host.querySelector("[data-change-empty]")?.textContent).toBe(
+      en.tools.dailyBriefing.review.unavailable,
+    );
+  });
+
+  it("keeps every query row inside the query boundary, page rows after it", async () => {
+    const source = change("stable_position_click_decline", 1);
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        // A row on the query side that renders AFTER the page rows would have
+        // under the old single mid-table heading.
+        queryWatchlist: watchlist("observed", [checkableObservation()]),
+      }),
+    );
+    const groups = [
+      ...host.querySelectorAll("[data-review-row], [data-review-group]"),
+    ].map(
+      (row) =>
+        row.getAttribute("data-review-group") ??
+        (row.hasAttribute("data-page-change") ? "page-row" : "query-row"),
+    );
+
+    // A single heading in the middle left the query observation rendering
+    // below it, where it reads as part of the page population.
+    expect(groups[0]).toBe("query");
+    expect(groups).toEqual([
+      "query",
+      "query-row",
+      "query-row",
+      "page",
+      "page-row",
+    ]);
+  });
+
+  it("names a page change as a whole page instead of inventing a query", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const row = host.querySelector("[data-page-change]");
+
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("Page clicks fell");
+    expect(row?.textContent).toContain("Whole page, across every query");
+    expect(row?.textContent).toContain(PAGE_CHANGE_URL);
+    expect(row?.textContent).toContain("20 → 8");
+    // Stated as the exact composition of the cell rather than a blocklist:
+    // the queries behind a page move are anonymized, so ANY query text here
+    // would be invented, and naming the ones we happen to expect would miss
+    // the ones we do not.
+    const queryPageCell = [...(row?.querySelectorAll('[role="cell"]') ?? [])][1];
+    expect(queryPageCell?.textContent).toBe(
+      `${en.tools.dailyBriefing.review.columns.queryPage}` +
+        `${en.tools.dailyBriefing.review.pageScope}${PAGE_CHANGE_URL}`,
+    );
+  });
+
+  it("hands a page action off with a page scope and no query", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const row = host.querySelector<HTMLElement>(
+      "[data-action-row][data-page-action]",
+    );
+    const link = row?.querySelector<HTMLAnchorElement>("[data-action-link]");
+    expect(row?.getAttribute("data-action-rank")).toBe("1");
+    expect(row?.textContent).toContain("Diagnose this page's click decline");
+    expect(link?.getAttribute("href")).toBe("/tools/traffic-drop-diagnosis");
+    expect(link?.getAttribute("href")).not.toContain(PAGE_CHANGE_URL);
+
+    link?.addEventListener("click", (event) => event.preventDefault());
+    await click(link!);
+
+    expect(writeToolHandoffMock).toHaveBeenCalledOnce();
+    expect(writeToolHandoffMock.mock.calls[0]?.[2]).toEqual({
+      source: "daily-search-briefing",
+      destination: "traffic-drop-diagnosis",
+      scope: "page",
+      property: PROPERTY,
+      query: null,
+      page: PAGE_CHANGE_URL,
+      evidenceId: "daily:page:page_click_decline",
+    });
+  });
+
+  it("offers checks under the empty action panel instead of leaving it alone", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        // Two shown rows, one of which became a check. The count below then
+        // describes the other one instead of restating the fixture.
+        queryWatchlist: watchlist("observed", [
+          checkableObservation(),
+          checkableObservation({
+            query: "buried term",
+            band: "far",
+            page: "https://example.com/buried",
+          }),
+        ]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 1,
+        },
+      }),
+    );
+    const empty = host.querySelector("[data-action-empty]");
+    const checks = host.querySelector("[data-suggested-checks]");
+
+    // Both, not one or the other. The empty panel is still true — no strict
+    // evidence backs an action — and it is no longer the last word on a page
+    // that just listed a row worth opening.
+    expect(empty).not.toBeNull();
+    expect(checks).not.toBeNull();
+    // Scoped to the query, so a page-level finding on the same URL does not
+    // read as contradicted by it.
+    expect(checks?.textContent).toContain("No query-level change known");
+    expect(checks?.textContent).toContain("no change is claimed for them");
+    expect(checks?.textContent).toContain(CHECK_QUERY);
+    expect(checks?.textContent).toContain(CHECK_PAGE);
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("Another 1 shown rows carry no check");
+    // A check is never counted as an action, here or downstream.
+    expect(host.querySelectorAll("[data-action-row]")).toHaveLength(0);
+  });
+
+  it("marks a check handoff as a check rather than an action index", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed", [checkableObservation()]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 0,
+        },
+      }),
+    );
+    const link = host.querySelector<HTMLAnchorElement>("[data-check-link]");
+
+    expect(link?.getAttribute("href")).toBe("/tools/on-page-seo-check");
+    link?.addEventListener("click", (event) => event.preventDefault());
+    await click(link!);
+
+    expect(writeToolHandoffMock.mock.calls[0]?.[2]).toEqual({
+      source: "daily-search-briefing",
+      destination: "on-page-seo-check",
+      scope: "query_page",
+      property: PROPERTY,
+      query: CHECK_QUERY,
+      page: CHECK_PAGE,
+      evidenceId: "daily:check:sample_floor_reached",
+    });
+  });
+
+  it("blames the impression floor, not the lanes, when a page click lane ran", async () => {
+    const host = await renderResults(
+      envelope({
+        mode: "change_detection",
+        cadence: "weekly",
+        changes: [],
+        actions: [],
+        laneCapability: laneCapability({
+          pageLanes: {
+            page_click_decline: "evaluated",
+            page_first_observed: "not_applicable",
+          },
+        }),
+        // The accounting has to agree with the state: a lane that settled no
+        // row has not evaluated a click lane, whatever its state string says.
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 4,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(0, 4, 0),
+            page_first_observed: laneRows(4, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const facts = host.querySelector('[data-result-section="facts"]');
+
+    // A click lane WAS evaluated — the page one. The weekly cadence here comes
+    // from the impression floor, and naming the lanes instead would describe a
+    // gate this run never hit.
+    expect(facts?.textContent).not.toContain(
+      en.tools.dailyBriefing.facts.noClickLaneReason,
+    );
+    // The literal sentence, not the substring "sample" that half the catalog
+    // contains: the run must attribute its weekly cadence to the floor.
+    expect(facts?.textContent).toContain(
+      en.tools.dailyBriefing.facts.weeklyReason,
+    );
+  });
+
+  it("still explains the gap when every shown row failed to become a check", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed", [
+          checkableObservation({ page: null, pageEvidence: "unavailable" }),
+        ]),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 1,
+        },
+      }),
+    );
+
+    // The row is on screen and carries no check. Gating the whole panel on
+    // having checks hid the one sentence that explains why.
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("Another 1 shown rows carry no check");
+    expect(host.querySelector("[data-check-row]")).toBeNull();
+  });
+
+  it("says nothing about a gap it never measured", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("partial"),
+        suggestedChecks: {
+          evidence: "partial",
+          items: [],
+          notCheckable: null,
+        },
+      }),
+    );
+
+    // null is not zero. "No shown row failed to become a check" would be a
+    // finding about rows this run never displayed.
+    expect(host.querySelector("[data-suggested-checks]")).toBeNull();
+    expect(host.querySelector("[data-checks-not-checkable]")).toBeNull();
+  });
+
+  it("says nothing about checks when none could be offered", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        queryWatchlist: watchlist("observed"),
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 0,
+        },
+      }),
+    );
+
+    expect(host.querySelector("[data-suggested-checks]")).toBeNull();
+    expect(host.querySelector("[data-action-empty]")).not.toBeNull();
   });
 });

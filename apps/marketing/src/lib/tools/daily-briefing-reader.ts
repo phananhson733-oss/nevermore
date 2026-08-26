@@ -17,8 +17,9 @@ const READ_TIMEOUT_MS = 15_000;
 /**
  * Whole-request budget, measured from the handler's start.
  *
- * The required date read plus six optional attachments stay within this budget,
- * and every later page read stops once it is spent.
+ * The required date read plus eight optional attachments stay within this
+ * budget, and every later page read stops once it is spent. The attachments
+ * run concurrently, so adding the page dimension costs a slot, not a round.
  */
 export const REQUEST_BUDGET_MS = 45_000;
 

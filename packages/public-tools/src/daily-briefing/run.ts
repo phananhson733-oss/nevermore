@@ -8,7 +8,10 @@ import {
   readQueryRows,
   type ReadBudget,
 } from "../gsc-analytics/reader.ts";
-import { readQueryPageRows } from "../gsc-analytics/page-reader.ts";
+import {
+  readPageRows,
+  readQueryPageRows,
+} from "../gsc-analytics/page-reader.ts";
 import type { GscQueryClient } from "../gsc-analytics/types.ts";
 import {
   buildDailyBriefing,
@@ -33,11 +36,16 @@ function fulfilledOrNull<T>(result: PromiseSettledResult<T>): T | null {
 }
 
 /**
- * Execute the fixed seven-call plan.
+ * Execute the fixed nine-call plan.
  *
  * The date-dimension read is the report: if it fails, there is no honest KPI
- * result and the rejection propagates. The six query attachments only explain
+ * result and the rejection propagates. The eight attachments only explain
  * which rows deserve attention, so each one degrades independently to null.
+ *
+ * Two of the eight read the page dimension on its own. Search Console
+ * anonymizes low-volume queries but not pages, so these carry click evidence
+ * the query reads structurally cannot: one measured property showed 9 of 37
+ * weekly clicks at query level and all 37 at page level.
  */
 export async function runDailyBriefing(
   input: RunDailyBriefingInput,
@@ -77,6 +85,8 @@ export async function runDailyBriefing(
     previousQuery,
     currentQueryPage,
     previousQueryPage,
+    currentPage,
+    previousPage,
     currentTotals,
     previousTotals,
   ] = await Promise.allSettled([
@@ -108,6 +118,8 @@ export async function runDailyBriefing(
       1,
       "auto",
     ),
+    readPageRows(input.client, windows.current7Days, optionalBudget, "byPage"),
+    readPageRows(input.client, windows.previous7Days, optionalBudget, "byPage"),
     readPropertyTotals(input.client, windows.current7Days, "byPage"),
     readPropertyTotals(input.client, windows.previous7Days, "byPage"),
   ]);
@@ -115,11 +127,13 @@ export async function runDailyBriefing(
   const currentQueryEvidence: DailyBriefingQueryEvidence = {
     queryRead: fulfilledOrNull(currentQuery),
     queryPageRead: fulfilledOrNull(currentQueryPage),
+    pageRead: fulfilledOrNull(currentPage),
     propertyTotals: fulfilledOrNull(currentTotals),
   };
   const previousQueryEvidence: DailyBriefingQueryEvidence = {
     queryRead: fulfilledOrNull(previousQuery),
     queryPageRead: fulfilledOrNull(previousQueryPage),
+    pageRead: fulfilledOrNull(previousPage),
     propertyTotals: fulfilledOrNull(previousTotals),
   };
 

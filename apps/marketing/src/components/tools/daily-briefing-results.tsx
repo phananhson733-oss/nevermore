@@ -29,14 +29,19 @@ import type {
   DailyBriefingKpiComparison,
   DailyBriefingLaneCapability,
   DailyBriefingLaneState,
+  DailyBriefingPageLaneState,
   DailyBriefingMode,
   DailyBriefingObservationBand,
+  DailyBriefingPageAccounting,
+  DailyBriefingPageAction,
+  DailyBriefingPageChangeKind,
   DailyBriefingPropertyChange,
   DailyBriefingPropertyTrend,
   DailyBriefingProvisionalMove,
   DailyBriefingQueryWatchlist,
   DailyBriefingRowAccounting,
   DailyBriefingSignalFunnel,
+  DailyBriefingSuggestedCheck,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
@@ -47,6 +52,14 @@ const EYEBROW =
   "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
 /** Query rows this page will show, changes and observations together. */
 const DISPLAY_ROW_LIMIT = 3;
+/**
+ * Page rows this page will show, counted apart from the query ones.
+ *
+ * A shared budget spent query-first let three query candidates hide every page
+ * measurement, which is the size of one population deciding the visibility of
+ * the other.
+ */
+const DISPLAY_PAGE_ROW_LIMIT = 2;
 const TABLE_HEADER =
   "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
 
@@ -79,6 +92,7 @@ interface SignalPathEvidenceProps {
   readonly funnel: DailyBriefingSignalFunnel;
   readonly laneCapability: DailyBriefingLaneCapability;
   readonly rowAccounting: DailyBriefingRowAccounting;
+  readonly pageAccounting: DailyBriefingPageAccounting;
 }
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
@@ -230,16 +244,47 @@ function signedMetric(
   return digits === 0 ? "0" : (0).toFixed(digits);
 }
 
+/**
+ * Why the page state is asked about at all.
+ *
+ * The two dimensions fail separately. Keying this card on the query state
+ * alone let a run whose page paths ran, and found nothing, announce that
+ * "comparable query/page evidence is unavailable" — one population's failure
+ * printed over the other's measured result.
+ */
+/**
+ * Whether at least one page lane settled a row, as opposed to merely being read.
+ *
+ * Existential on purpose, and the copy it selects is worded to match: one lane
+ * can settle a row while the other has nothing it can ask, and a message
+ * saying "its two paths settled the records" would then describe a run where
+ * only one of them did.
+ */
+function pageLanesSettledRows(
+  byLane: DailyBriefingPageAccounting["byLane"],
+): boolean {
+  if (byLane === null) return false;
+  return Object.values(byLane).some(
+    (counts) => counts.evaluatedNoSignal + counts.candidates > 0,
+  );
+}
+
 function reviewEmptyMessageKey(
   evidence: DailyBriefingQueryWatchlist["evidence"],
-): "review.empty" | "review.partial" | "review.unavailable" {
+  pageRead: boolean,
+):
+  | "review.empty"
+  | "review.partial"
+  | "review.unavailable"
+  | "review.partialQueryRead"
+  | "review.unavailableQueryRead" {
   switch (evidence) {
     case "observed":
       return "review.empty";
     case "partial":
-      return "review.partial";
+      return pageRead ? "review.partialQueryRead" : "review.partial";
     case "unavailable":
-      return "review.unavailable";
+      return pageRead ? "review.unavailableQueryRead" : "review.unavailable";
   }
 }
 
@@ -458,6 +503,23 @@ function NoiseSummary({ funnel, laneCapability }: NoiseSummaryProps) {
   );
 }
 
+const PAGE_SIGNAL_PATHS: readonly {
+  readonly key: string;
+  readonly copyKey: string;
+  readonly kind: DailyBriefingPageChangeKind;
+}[] = [
+  {
+    key: "page-click-decline",
+    copyKey: "pageClickDecline",
+    kind: "page_click_decline",
+  },
+  {
+    key: "page-first-observed",
+    copyKey: "pageFirstObserved",
+    kind: "page_first_observed",
+  },
+];
+
 const SIGNAL_PATHS: readonly {
   readonly key: string;
   readonly copyKey: string;
@@ -518,6 +580,7 @@ function SignalPathEvidence({
   funnel,
   laneCapability,
   rowAccounting,
+  pageAccounting,
 }: SignalPathEvidenceProps) {
   const t = useTranslations("tools.dailyBriefing");
   const byLane = rowAccounting.byLane;
@@ -596,6 +659,73 @@ function SignalPathEvidence({
         })}
       </PathTier>
 
+      <PathTier title={t("evidence.paths.tiers.pageLanes")}>
+        {/* Its own row count, deliberately beside the query one rather than
+            added to it. Pages and queries are different populations and a
+            single total would measure neither. */}
+        {pageAccounting.observedRows !== null ? (
+          <p
+            data-page-rows-intro
+            className="text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("evidence.paths.pageRowsIntro", {
+              rows: pageAccounting.observedRows,
+            })}
+            {pageAccounting.unreadableRows !== null &&
+            pageAccounting.unreadableRows > 0
+              ? ` ${t("evidence.paths.pageUnreadableRows", {
+                  count: pageAccounting.unreadableRows,
+                })}`
+              : null}
+          </p>
+        ) : (
+          <p className="text-[12px] leading-[1.6] text-text-dark-secondary">
+            {t("evidence.paths.pageUnavailable")}
+          </p>
+        )}
+        {PAGE_SIGNAL_PATHS.map((path) => {
+          const state = laneCapability.pageLanes[path.kind];
+          const counts =
+            pageAccounting.byLane === null
+              ? null
+              : pageAccounting.byLane[path.kind];
+          return (
+            <PathLine
+              key={path.key}
+              id={path.key}
+              state={state}
+              name={t(`evidence.paths.pageLanes.${path.copyKey}.name`)}
+              requirement={t("evidence.paths.laneRequirement", {
+                requirement: t(
+                  `evidence.paths.pageLanes.${path.copyKey}.requirement`,
+                ),
+              })}
+              finding={t("evidence.paths.laneFinding", {
+                finding: t(`evidence.paths.pageLanes.${path.copyKey}.finding`),
+              })}
+              outcome={
+                state === "unavailable" || counts === null
+                  ? t("evidence.paths.laneUnavailable")
+                  : // The split still applies to the rows it could read, so it
+                    // is printed beside the caveat rather than replaced by it.
+                    // Which caveat depends on whether anything was settled:
+                    // "judged the ones it could read" is false of a lane whose
+                    // only rows were unreadable.
+                    `${t("evidence.paths.rowSplit", { ...counts })}${
+                      state === "partially_readable"
+                        ? ` ${t(
+                            counts.evaluatedNoSignal + counts.candidates > 0
+                              ? "evidence.paths.lanePartiallyReadable"
+                              : "evidence.paths.lanePartiallyReadableNone",
+                          )}`
+                        : ""
+                    }`
+              }
+            />
+          );
+        })}
+      </PathTier>
+
       <PathTier title={t("evidence.paths.selectionTitle")}>
         {/* Passing every stated gate is not the same as reaching the table.
             Three presentation rules stand between a candidate and a row, and
@@ -606,18 +736,41 @@ function SignalPathEvidence({
         >
           {t("evidence.paths.selectionRules")}
         </p>
-        {rowAccounting.notSelectedVisibleRows === null ? null : (
+        {/* One line per population, never their sum. The two accountings
+            count different things, so adding them invents a total that
+            measures neither — and a null on either side is not a zero on the
+            other. */}
+        {(
+          [
+            ["query", rowAccounting.notSelectedVisibleRows],
+            ["page", pageAccounting.notSelectedVisibleRows],
+          ] as const
+        ).map(([scope, notShown]) => (
           <p
-            data-selection-not-shown
+            key={scope}
+            data-selection-not-shown={scope}
             className="border-l border-brand-border pl-3 font-mono text-[11px] leading-[1.6] text-text-dark-secondary"
           >
-            {rowAccounting.notSelectedVisibleRows === 0
-              ? t("evidence.paths.selectionAllShown")
-              : t("evidence.paths.selectionNotShown", {
-                  count: rowAccounting.notSelectedVisibleRows,
-                })}
+            {notShown === null
+              ? t(
+                  scope === "query"
+                    ? "evidence.paths.selectionUnavailableQuery"
+                    : "evidence.paths.selectionUnavailablePage",
+                )
+              : notShown === 0
+                ? t(
+                    scope === "query"
+                      ? "evidence.paths.selectionAllShownQuery"
+                      : "evidence.paths.selectionAllShownPage",
+                  )
+                : t(
+                    scope === "query"
+                      ? "evidence.paths.selectionNotShownQuery"
+                      : "evidence.paths.selectionNotShownPage",
+                    { count: notShown },
+                  )}
           </p>
-        )}
+        ))}
       </PathTier>
 
       <PathTier title={t("evidence.paths.tiers.suppression")}>
@@ -655,7 +808,7 @@ function PathLine({
   readonly finding: string | null;
   readonly outcome: string;
   readonly requirement: string | null;
-  readonly state: DailyBriefingLaneState;
+  readonly state: DailyBriefingLaneState | DailyBriefingPageLaneState;
 }) {
   return (
     <div
@@ -738,6 +891,11 @@ export function DailyBriefingResults({
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
   const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
+  // Its own budget, not what the query rows left over. Allocating page
+  // evidence from query leftovers made the number of query candidates decide
+  // whether a page measurement was visible at all, which is one population
+  // ranked by the size of the other.
+  const shownPageChanges = result.pageChanges.slice(0, DISPLAY_PAGE_ROW_LIMIT);
   // Provisional moves name a movement, so they outrank rows that only name a
   // position. The engine already applies this budget; the page applies it
   // again so no contract change can put a fourth row on screen.
@@ -769,12 +927,37 @@ export function DailyBriefingResults({
     0,
     (result.provisionalMoves.candidates ?? 0) - shownProvisional.length,
   );
+  const pageActions = result.pageActions
+    .flatMap((action) => {
+      const change = result.pageChanges.find(
+        (candidate) =>
+          candidate.kind === action.kind && candidate.page === action.page,
+      );
+      return change ? [{ action, change }] : [];
+    })
+    .slice(0, DISPLAY_ROW_LIMIT);
+  // Checks are offered against current standing, never against a change, so
+  // they are listed after every evidence-backed action and labelled as what
+  // they are. Only the checks whose row is actually on screen are offered.
+  const suggestedChecks = result.suggestedChecks.items;
+  // Left as null when nothing was read. Coercing to zero here would have the
+  // checks panel say "no shown row failed to become a check" about a run that
+  // showed none.
+  const notCheckable = result.suggestedChecks.notCheckable;
+  const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Only the click-driven lanes move on a daily timescale, which is what
   // decides both the cadence and the sentence explaining it.
+  // The page click lane counts here too. Leaving it out let a run whose page
+  // clicks were measured, and which went weekly purely on the impression
+  // floor, explain itself with "only position paths could be evaluated".
   const clickLaneEvaluated =
     result.laneCapability.lanes.click_opportunity === "evaluated" ||
-    result.laneCapability.lanes.stable_position_click_decline === "evaluated";
+    result.laneCapability.lanes.stable_position_click_decline === "evaluated" ||
+    (result.pageAccounting.byLane !== null &&
+      result.pageAccounting.byLane.page_click_decline.evaluatedNoSignal +
+        result.pageAccounting.byLane.page_click_decline.candidates >
+        0);
 
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -782,17 +965,32 @@ export function DailyBriefingResults({
   // never as the category total the display budget cut them down from.
   const queryEvidenceRead = result.queryWatchlist.candidates !== null;
   const provisionalCandidates = result.provisionalMoves.candidates ?? 0;
+  // Page changes are counted whether or not the query read succeeded: the two
+  // dimensions fail separately, and a run whose queries were unreadable can
+  // still put a page row in the table above this summary.
+  // "0 site trend observations" is a measurement. A weekly comparison that
+  // could not be read did not measure zero of them, and `propertyTrend.change`
+  // is null in both cases.
+  const foldTrend =
+    result.weekly.evidence === "observed"
+      ? t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 })
+      : t("evidence.foldTrendUnavailable");
+  const foldPageChanges =
+    shownPageChanges.length > 0
+      ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
+      : null;
   const foldSummary = (
     queryEvidenceRead
       ? [
           t("evidence.foldChanges", { count: shownChanges.length }),
+          foldPageChanges,
           provisionalCandidates > 0
             ? t("evidence.foldProvisional", {
                 shown: shownProvisional.length,
                 candidates: provisionalCandidates,
               })
             : null,
-          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          foldTrend,
           t("evidence.foldObservationsShown", {
             shown: shownObservations.length,
             candidates: result.queryWatchlist.candidates ?? 0,
@@ -800,7 +998,8 @@ export function DailyBriefingResults({
         ]
       : [
           t("evidence.foldQueryEvidenceUnavailable"),
-          t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 }),
+          foldPageChanges,
+          foldTrend,
         ]
   )
     .filter((part): part is string => part !== null)
@@ -821,6 +1020,59 @@ export function DailyBriefingResults({
         query: action.query,
         page: action.page,
         evidenceId: `daily:${index}:${action.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function pageHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    action: DailyBriefingPageAction,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: action.destination,
+        // A page and no query: the queries that moved it are anonymized, and
+        // inventing one to fit the query_page shape would hand the next tool a
+        // term this briefing never saw.
+        scope: "page",
+        property,
+        query: null,
+        page: action.page,
+        evidenceId: `daily:page:${action.kind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function checkHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    check: DailyBriefingSuggestedCheck,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: check.destination,
+        scope: "query_page",
+        property,
+        query: check.query,
+        page: check.page,
+        // Deliberately not an action index. A check never entered the action
+        // list and must not be counted as one downstream.
+        evidenceId: `daily:check:${check.sampleKind}`,
       });
     } catch {
       written = false;
@@ -1025,11 +1277,20 @@ export function DailyBriefingResults({
           </div>
         ) : null}
         {shownChanges.length === 0 &&
+        shownPageChanges.length === 0 &&
         shownProvisional.length === 0 &&
         shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t(reviewEmptyMessageKey(result.queryWatchlist.evidence))}
+              {t(
+                reviewEmptyMessageKey(
+                  result.queryWatchlist.evidence,
+                  // Settled rows, not merely a read that succeeded. A window
+                  // whose only page row was unreadable was announced as one
+                  // whose paths ran and found nothing.
+                  pageLanesSettledRows(result.pageAccounting.byLane),
+                ),
+              )}
             </p>
           </div>
         ) : (
@@ -1058,6 +1319,25 @@ export function DailyBriefingResults({
                 </div>
               ))}
             </div>
+            {/* Both populations get a boundary, and the page rows come after
+                every query row rather than between them. A single heading in
+                the middle left the query observations rendering below it, so
+                they read as part of the page population. */}
+            {shownPageChanges.length > 0 &&
+            shownChanges.length +
+              shownProvisional.length +
+              shownObservations.length >
+              0 ? (
+              <div
+                role="row"
+                data-review-group="query"
+                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+              >
+                <div role="cell" className={EYEBROW}>
+                  {t("review.queryGroup")}
+                </div>
+              </div>
+            ) : null}
             {shownChanges.map((change, index) => (
               <div
                 key={`change:${index}:${change.kind}`}
@@ -1299,6 +1579,99 @@ export function DailyBriefingResults({
               </div>
               );
             })}
+            {shownPageChanges.length > 0 ? (
+              <div
+                role="row"
+                data-review-group="page"
+                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+              >
+                <div role="cell" className={EYEBROW}>
+                  {t("review.pageGroup")}
+                </div>
+              </div>
+            ) : null}
+            {shownPageChanges.map((change, index) => (
+              <div
+                key={`page-change:${change.kind}:${change.page}`}
+                role="row"
+                data-review-row
+                data-page-change
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.status")}
+                  </span>
+                  <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
+                    <span
+                      data-page-row-rank
+                      className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text"
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
+                        {t(`pageChangeKinds.${change.kind}.title`)}
+                      </h4>
+                      <p className="mt-1.5 font-mono text-[9.5px] leading-[1.4] tracking-[0.04em] text-brand-accent-text uppercase">
+                        {t(`evidenceStates.${change.evidence}`)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.queryPage")}
+                  </span>
+                  {/* Named as a whole page on purpose. This row has no query
+                      behind it, and leaving the cell to imply one would be the
+                      substitution the rest of the page refuses. */}
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {t("review.pageScope")}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {change.page}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.clicks ?? null,
+                      change.current.clicks,
+                      (value) => number(locale, value),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.position ?? null,
+                      change.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`pageChangeKinds.${change.kind}.body`)}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {shownProvisional.length > 0 ? (
@@ -1438,7 +1811,9 @@ export function DailyBriefingResults({
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("actions.intro")}
         </p>
-        {queryActions.length === 0 && propertyAction === null ? (
+        {queryActions.length === 0 &&
+        pageActions.length === 0 &&
+        propertyAction === null ? (
           <div data-action-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {shownProvisional.length === 0
@@ -1462,6 +1837,15 @@ export function DailyBriefingResults({
           </div>
         ) : (
           <div data-actions-list className="mt-4 grid gap-3">
+            {/* Grouped in the rendering, not only in the code. Resetting each
+                group's numbers internally left one flat list on screen, where
+                query action 3 still sat above page action 1 under a heading
+                that claims a certainty order. */}
+            {queryActions.length > 0 ? (
+              <p data-action-group="query" className={EYEBROW}>
+                {t("actions.groupQuery")}
+              </p>
+            ) : null}
             {queryActions.map(({ action, change }, index) => {
               const target = destination(action.destination);
               return (
@@ -1515,24 +1899,101 @@ export function DailyBriefingResults({
                 </article>
               );
             })}
+            {/* Numbered from one again, under its own heading. A single
+                sequence running through query, page and property actions
+                reads as one priority order over three different populations,
+                and nothing measured says a query action outranks a page
+                one. */}
+            {pageActions.length > 0 ? (
+              <p data-action-group="page" className={EYEBROW}>
+                {t("actions.groupPage")}
+              </p>
+            ) : null}
+            {pageActions.map(({ action, change }, index) => {
+              const target = destination(action.destination);
+              const rank = index + 1;
+              return (
+                <article
+                  key={`page-action:${action.kind}:${action.page}`}
+                  data-action-row
+                  data-page-action
+                  data-action-rank={rank}
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                    <span
+                      data-action-rank-badge
+                      aria-label={t("actions.rank", { rank })}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
+                    >
+                      {rank}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-[16px] font-semibold text-text-dark-primary">
+                        {t(`pageActionKinds.${action.kind}.title`)}
+                      </h4>
+                      <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
+                        {t(`pageActionKinds.${action.kind}.body`)}
+                      </p>
+                      <div
+                        data-action-evidence
+                        className="mt-3 border-l border-brand-border pl-3"
+                      >
+                        <p className={EYEBROW}>{t("actions.evidence")}</p>
+                        <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                          {t("review.pageScope")}
+                        </p>
+                        <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {change.page}
+                        </p>
+                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                          {metricsLine(t, locale, {
+                            query: "",
+                            clicks: change.current.clicks,
+                            impressions: change.current.impressions,
+                            position: change.current.position,
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <Link
+                    data-action-link
+                    href={localePath(locale, target.path)}
+                    onClick={(event) => pageHandoff(event, action)}
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                  >
+                    {t(target.labelKey)}
+                    <ArrowUpRight aria-hidden="true" className="size-4 shrink-0" />
+                  </Link>
+                </article>
+              );
+            })}
+            {propertyAction !== null &&
+            propertyComparisons !== null &&
+            propertyTarget !== null ? (
+              <p data-action-group="property" className={EYEBROW}>
+                {t("actions.groupProperty")}
+              </p>
+            ) : null}
             {propertyAction !== null &&
             propertyComparisons !== null &&
             propertyTarget !== null ? (
               <article
                 data-action-row
                 data-property-action
-                data-action-rank={queryActions.length + 1}
+                data-action-rank={1}
                 className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
               >
                 <div className="flex min-w-0 flex-1 items-start gap-3.5">
                   <span
                     data-action-rank-badge
                     aria-label={t("actions.rank", {
-                      rank: queryActions.length + 1,
+                      rank: 1,
                     })}
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-accent/30 bg-brand-accent-soft font-mono text-[11px] font-semibold text-brand-accent-text"
                   >
-                    {queryActions.length + 1}
+                    {1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="text-[16px] font-semibold text-text-dark-primary">
@@ -1572,6 +2033,73 @@ export function DailyBriefingResults({
             ) : null}
           </div>
         )}
+        {suggestedChecks.length > 0 || uncheckableShown ? (
+          <div
+            data-suggested-checks
+            className="mt-6 border-t border-brand-border pt-5"
+          >
+            {/* The heading belongs to the checks. When every shown row failed
+                to become one there is nothing to introduce, only a gap to
+                explain, so the panel narrows to that sentence. */}
+            {suggestedChecks.length > 0 ? (
+              <>
+                <h4 className="text-[15px] font-semibold text-text-dark-primary">
+                  {t("checks.title")}
+                </h4>
+                <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                  {t("checks.intro")}
+                </p>
+              </>
+            ) : null}
+            <div className="mt-3 grid gap-3">
+              {suggestedChecks.map((check) => {
+                const target = destination(check.destination);
+                return (
+                  <article
+                    key={`check:${check.query}:${check.page}`}
+                    data-check-row
+                    className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      {/* Labelled as standing, not as evidence. The whole
+                          point of a check is that it claims no change. */}
+                      <p className={EYEBROW}>{t("checks.evidence")}</p>
+                      <p className="mt-1.5 break-words text-[12.5px] font-medium text-text-dark-primary">
+                        {check.query}
+                      </p>
+                      <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
+                        {check.page}
+                      </p>
+                      <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                        {t(`review.observationBands.${check.band}.body`)}
+                      </p>
+                    </div>
+                    <Link
+                      data-check-link
+                      href={localePath(locale, target.path)}
+                      onClick={(event) => checkHandoff(event, check)}
+                      className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                    >
+                      {t(target.labelKey)}
+                      <ArrowUpRight
+                        aria-hidden="true"
+                        className="size-4 shrink-0"
+                      />
+                    </Link>
+                  </article>
+                );
+              })}
+            </div>
+            {uncheckableShown ? (
+              <p
+                data-checks-not-checkable
+                className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("checks.notCheckable", { count: notCheckable ?? 0 })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {handoffFailed ? (
           <p
             role="alert"
@@ -1644,6 +2172,7 @@ export function DailyBriefingResults({
           funnel={result.signalFunnel}
           laneCapability={result.laneCapability}
           rowAccounting={result.rowAccounting}
+          pageAccounting={result.pageAccounting}
         />
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <EvidenceCard

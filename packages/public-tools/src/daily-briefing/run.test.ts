@@ -42,12 +42,34 @@ function queryPageRows(): readonly GscRawRow[] {
   }));
 }
 
+/** The page whose decline exists only in the page dimension. */
+const PAGE_UNDER_TEST = "https://example.com/page-under-test";
+
+/**
+ * Distinct per window, and distinct from the query-page fixture.
+ *
+ * Identical fixtures would let this suite pass with `pageRead` wired to the
+ * `[query,page]` result, with the two windows swapped, or with one window's
+ * result used for both — every one of which still issues nine calls.
+ */
+function pageRows(window: "current" | "previous"): readonly GscRawRow[] {
+  return [
+    {
+      keys: [PAGE_UNDER_TEST],
+      clicks: window === "current" ? 8 : 20,
+      impressions: window === "current" ? 380 : 400,
+      position: window === "current" ? 9.4 : 9.1,
+    },
+  ];
+}
+
 function responseFor(
   request: GscQueryRequest,
   rows: {
     readonly dates?: readonly GscRawRow[];
     readonly queries?: readonly GscRawRow[];
     readonly queryPages?: readonly GscRawRow[];
+    readonly pages?: readonly GscRawRow[];
   } = {},
 ): GscQueryResponse {
   if (request.dimensions.length === 0) {
@@ -68,6 +90,14 @@ function responseFor(
       responseAggregationType: "byPage",
     };
   }
+  if (request.dimensions[0] === "page") {
+    return {
+      rows:
+        rows.pages ??
+        pageRows(request.startDate === "2026-08-15" ? "current" : "previous"),
+      responseAggregationType: "byPage",
+    };
+  }
   return {
     rows: rows.queries ?? queryRows(),
     responseAggregationType: "byPage",
@@ -75,7 +105,7 @@ function responseFor(
 }
 
 describe("runDailyBriefing read plan", () => {
-  it("uses one required 14-day read and six one-page optional attachments", async () => {
+  it("uses one required 14-day read and eight one-page optional attachments", async () => {
     const calls: GscQueryRequest[] = [];
     const client: GscQueryClient = async (request) => {
       calls.push(request);
@@ -89,7 +119,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
     expect(calls.filter((call) => call.dimensions[0] === "date")).toEqual([
       {
         dimensions: ["date"],
@@ -125,6 +155,45 @@ describe("runDailyBriefing read plan", () => {
       expect.objectContaining({ aggregationType: "byPage" }),
       expect.objectContaining({ aggregationType: "byPage" }),
     ]);
+    // The page dimension on its own, one window each, with the basis stated
+    // in the request rather than inherited — the report rejects a response
+    // that comes back on any other one.
+    expect(
+      calls.filter(
+        (call) => call.dimensions.length === 1 && call.dimensions[0] === "page",
+      ),
+    ).toEqual([
+      {
+        dimensions: ["page"],
+        startDate: "2026-08-15",
+        endDate: "2026-08-21",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+        aggregationType: "byPage",
+      },
+      {
+        dimensions: ["page"],
+        startDate: "2026-08-08",
+        endDate: "2026-08-14",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+        aggregationType: "byPage",
+      },
+    ]);
+    expect(envelope.result.limitations).not.toContain(
+      "page_evidence_unavailable",
+    );
+    // The point of the two extra calls: a decline that exists only in the page
+    // dimension reaches the report. The query rows in this fixture carry no
+    // decline at all, so nothing but the standalone page read can produce it.
+    expect(envelope.result.pageChanges).toMatchObject([
+      {
+        kind: "page_click_decline",
+        page: PAGE_UNDER_TEST,
+        clickChange: -12,
+      },
+    ]);
+    expect(envelope.result.changes).toEqual([]);
     expect(envelope.result.weekly.evidence).toBe("observed");
     expect(envelope.result.limitations).not.toContain("query_evidence_unavailable");
   });
@@ -149,7 +218,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(optionalStarted).toHaveLength(6));
+    await vi.waitFor(() => expect(optionalStarted).toHaveLength(8));
     release();
     await expect(pending).resolves.toBeDefined();
   });
@@ -280,7 +349,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(calls).toHaveLength(7));
+    await vi.waitFor(() => expect(calls).toHaveLength(9));
     releaseQueryReads();
     const envelope = await pending;
 

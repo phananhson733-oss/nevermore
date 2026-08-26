@@ -86,7 +86,7 @@ describe("createDailyBriefingReader", () => {
       fetchImpl,
       signal: expect.any(AbortSignal),
     });
-    expect(requests).toHaveLength(7);
+    expect(requests).toHaveLength(9);
     expect(requests[0]?.body).toEqual({
       dimensions: ["date"],
       startDate: "2026-08-08",
@@ -166,7 +166,7 @@ describe("createDailyBriefingReader", () => {
     // The six attachments share one request scope but not one fate.
     // Aborting the siblings of a failed page read deletes the query rows
     // that would have carried this run's only signals.
-    expect(optionalCalls).toBe(6);
+    expect(optionalCalls).toBe(8);
     expect(siblingAborts).toBe(0);
     // The scope is still closed once the report has finished.
     expect(captures.clientOptions[0]?.signal?.aborted).toBe(true);
