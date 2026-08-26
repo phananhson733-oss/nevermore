@@ -255,7 +255,7 @@ describe("DailyBriefingTool connection boundary", () => {
     await click(buttonWith(host, "Build today's briefing"));
 
     expect(host.querySelectorAll("[data-result-preview]")).toHaveLength(0);
-    expect(host.textContent).toContain("Daily briefing complete");
+    expect(host.textContent).toContain("Search performance trend");
   });
 });
 
@@ -402,7 +402,7 @@ describe("DailyBriefingTool request states and errors", () => {
     expect(region.getAttribute("aria-busy")).toBe("false");
   });
 
-  it("reads shared remaining-run facts from meta and keeps null unavailable", async () => {
+  it("does not surface shared-run quota facts after the result status cards were removed", async () => {
     globalThis.fetch = vi.fn(async () =>
       success({ remaining: null, limit: 10 }),
     ) as typeof fetch;
@@ -410,9 +410,8 @@ describe("DailyBriefingTool request states and errors", () => {
 
     await click(buttonWith(host, "Build today's briefing"));
 
-    expect(host.textContent).toContain(
-      "Remaining shared runs are unavailable; this is not zero.",
-    );
+    expect(host.textContent).toContain("Search performance trend");
+    expect(host.textContent).not.toContain("Remaining shared runs");
     expect(host.textContent).not.toContain("0/10");
   });
 

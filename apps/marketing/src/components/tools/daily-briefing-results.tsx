@@ -1,5 +1,5 @@
-// @input  -- one Daily Briefing envelope, property identity, quota facts, and tab storage
-// @output -- localized KPI, evidence, change, handoff, manual-check, and limitation panels
+// @input  -- one Daily Briefing envelope, property identity, and tab storage
+// @output -- localized trend, evidence, change, handoff, manual-check, and limitation panels
 // @pos    -- non-persistent result artifact inside the Daily Briefing tool
 
 "use client";
@@ -11,12 +11,7 @@ import {
 } from "react";
 import {
   ArrowUpRight,
-  Check,
   CircleAlert,
-  Database,
-  Eye,
-  Gauge,
-  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
@@ -26,7 +21,6 @@ import type {
   DailyBriefingChange,
   DailyBriefingChangeKind,
   DailyBriefingEnvelope,
-  DailyBriefingKpiComparison,
   DailyBriefingLaneCapability,
   DailyBriefingLaneState,
   DailyBriefingPageLaneState,
@@ -45,6 +39,7 @@ import type {
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
 import { writeToolHandoff } from "../../lib/tools/tool-handoff";
+import { DailyBriefingTrendChart } from "./daily-briefing-trend";
 
 const CARD =
   "rounded-[12px] border border-brand-border-card bg-brand-bg p-4 md:p-[18px]";
@@ -63,16 +58,10 @@ const DISPLAY_PAGE_ROW_LIMIT = 2;
 const TABLE_HEADER =
   "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
 
-type RateLimitFacts = {
-  readonly remaining: number | null;
-  readonly limit: number;
-};
-
 interface DailyBriefingResultsProps {
   readonly locale: string;
   readonly property: string;
   readonly envelope: DailyBriefingEnvelope;
-  readonly rateLimit: RateLimitFacts | null;
 }
 
 interface ResultPreviewSectionProps {
@@ -95,15 +84,6 @@ interface SignalPathEvidenceProps {
   readonly pageAccounting: DailyBriefingPageAccounting;
 }
 
-type MetricKey = "clicks" | "impressions" | "ctr" | "position";
-
-const METRICS: readonly MetricKey[] = [
-  "clicks",
-  "impressions",
-  "ctr",
-  "position",
-];
-
 function number(locale: string, value: number): string {
   return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
     maximumFractionDigits: 1,
@@ -114,55 +94,6 @@ function percent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function metricValue(
-  locale: string,
-  comparison: DailyBriefingKpiComparison,
-  metric: MetricKey,
-): string | null {
-  const value = comparison.current?.[metric] ?? null;
-  if (value === null) return null;
-  if (metric === "ctr") return percent(value);
-  if (metric === "position") return value.toFixed(1);
-  return number(locale, value);
-}
-
-function metricDelta(
-  locale: string,
-  comparison: DailyBriefingKpiComparison,
-  metric: MetricKey,
-): string | null {
-  const value = comparison.delta[metric];
-  if (value === null) return null;
-  let absolute: string;
-  switch (metric) {
-    case "ctr":
-      absolute = percent(Math.abs(value));
-      break;
-    case "position":
-      absolute = Math.abs(value).toFixed(1);
-      break;
-    default:
-      absolute = number(locale, Math.abs(value));
-  }
-  if (value > 0) return `+${absolute}`;
-  if (value < 0) return `-${absolute}`;
-  return absolute;
-}
-
-function metricLabel(
-  metric: MetricKey,
-): "kpis.clicks" | "kpis.impressions" | "kpis.ctr" | "kpis.averagePosition" {
-  switch (metric) {
-    case "clicks":
-      return "kpis.clicks";
-    case "impressions":
-      return "kpis.impressions";
-    case "ctr":
-      return "kpis.ctr";
-    case "position":
-      return "kpis.averagePosition";
-  }
-}
 
 function destination(
   actionDestination: DailyBriefingAction["destination"],
@@ -285,35 +216,6 @@ function reviewEmptyMessageKey(
       return pageRead ? "review.partialQueryRead" : "review.partial";
     case "unavailable":
       return pageRead ? "review.unavailableQueryRead" : "review.unavailable";
-  }
-}
-
-/**
- * Why this run is weekly, in the terms of the evidence that decided it.
- *
- * Written as an exhaustive switch so adding a mode fails the build instead of
- * silently rendering the sentence that explains a different one.
- */
-function cadenceDetailKey(
-  mode: DailyBriefingMode,
-  dailyCadence: boolean,
-  clickLaneEvaluated: boolean,
-): string {
-  if (dailyCadence) return "facts.dailyReason";
-  switch (mode) {
-    case "change_detection":
-      // A property with plenty of impressions and no click lane is weekly
-      // because of the lane, not the sample. Saying "the sample is too small"
-      // there names a gate the run never hit.
-      return clickLaneEvaluated
-        ? "facts.weeklyReason"
-        : "facts.noClickLaneReason";
-    case "position_observation":
-      return "facts.positionObservationReason";
-    case "current_position_watchlist":
-      return "facts.currentWatchlistReason";
-    case "unavailable":
-      return "facts.unavailableReason";
   }
 }
 
@@ -866,15 +768,12 @@ export function DailyBriefingResults({
   locale,
   property,
   envelope,
-  rateLimit,
 }: DailyBriefingResultsProps) {
   const t = useTranslations("tools.dailyBriefing");
   const [manualChecked, setManualChecked] = useState(false);
   const [securityChecked, setSecurityChecked] = useState(false);
   const [handoffFailed, setHandoffFailed] = useState(false);
   const { result } = envelope;
-  const dailyAvailable =
-    result.cadence === "daily" && result.day.evidence === "observed";
   const queryActions = matchingActions(envelope);
   // The site-wide trend is the property's own fact. It used to be dropped the
   // moment any query signal was selected, which deleted the only whole-site
@@ -946,19 +845,6 @@ export function DailyBriefingResults({
   const notCheckable = result.suggestedChecks.notCheckable;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
-  // Only the click-driven lanes move on a daily timescale, which is what
-  // decides both the cadence and the sentence explaining it.
-  // The page click lane counts here too. Leaving it out let a run whose page
-  // clicks were measured, and which went weekly purely on the impression
-  // floor, explain itself with "only position paths could be evaluated".
-  const clickLaneEvaluated =
-    result.laneCapability.lanes.click_opportunity === "evaluated" ||
-    result.laneCapability.lanes.stable_position_click_decline === "evaluated" ||
-    (result.pageAccounting.byLane !== null &&
-      result.pageAccounting.byLane.page_click_decline.evaluatedNoSignal +
-        result.pageAccounting.byLane.page_click_decline.candidates >
-        0);
-
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
   // a run that found nothing. The shown counts are also labelled as shown,
@@ -1145,96 +1031,7 @@ export function DailyBriefingResults({
 
   return (
     <div className="mt-8 space-y-8">
-      <p
-        role="status"
-        aria-live="polite"
-        className="flex items-center gap-2 text-[12.5px] text-brand-success"
-      >
-        <Check aria-hidden="true" className="size-4" />
-        {t("runComplete")}
-      </p>
-
-      <section
-        aria-labelledby="daily-briefing-facts"
-        data-result-section="facts"
-      >
-        <h3 id="daily-briefing-facts" className="sr-only">
-          {t("facts.dataThrough")}
-        </h3>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <FactCard
-            icon={<Database aria-hidden="true" className="size-4" />}
-            label={t("facts.dataThrough")}
-            value={result.windows.latestDay.endDate}
-          />
-          <FactCard
-            icon={<Eye aria-hidden="true" className="size-4" />}
-            label={t("facts.timeBasis")}
-            value={t("facts.timeBasisBody")}
-          />
-          <FactCard
-            icon={<Gauge aria-hidden="true" className="size-4" />}
-            label={t("facts.cadence")}
-            value={
-              result.cadence === "daily" ? t("facts.daily") : t("facts.weekly")
-            }
-            detail={t(
-              cadenceDetailKey(
-                result.mode,
-                result.cadence === "daily",
-                clickLaneEvaluated,
-              ),
-            )}
-          />
-          <FactCard
-            icon={<ShieldCheck aria-hidden="true" className="size-4" />}
-            label={t("facts.sharedRuns")}
-            value={
-              rateLimit === null || rateLimit.remaining === null
-                ? t("facts.quotaUnavailable")
-                : t("facts.quotaAvailable", {
-                    remaining: rateLimit.remaining,
-                    limit: rateLimit.limit,
-                  })
-            }
-          />
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="daily-briefing-kpis"
-        data-result-section="kpis"
-      >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <h3
-            id="daily-briefing-kpis"
-            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-          >
-            {t("kpis.title")}
-          </h3>
-          <p className="max-w-xl text-[12.5px] leading-[1.55] text-text-dark-secondary">
-            {t("kpis.positionNote")}
-          </p>
-        </div>
-        {!dailyAvailable ? (
-          <p className="mt-3 text-[12.5px] text-brand-warning">
-            {t("kpis.dailySuppressed")}
-          </p>
-        ) : null}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {METRICS.map((metric) => (
-            <KpiCard
-              key={metric}
-              metric={metric}
-              label={t(metricLabel(metric))}
-              locale={locale}
-              day={result.day}
-              weekly={result.weekly}
-              dailyAvailable={dailyAvailable}
-            />
-          ))}
-        </div>
-      </section>
+      <DailyBriefingTrendChart locale={locale} trend={result.trend} />
 
 
       <section
@@ -2266,108 +2063,6 @@ export function DailyBriefingResults({
           ))}
         </ul>
       </section>
-    </div>
-  );
-}
-
-function FactCard({
-  icon,
-  label,
-  value,
-  detail,
-}: {
-  readonly icon: React.ReactNode;
-  readonly label: string;
-  readonly value: string;
-  readonly detail?: string;
-}) {
-  return (
-    <article className={CARD}>
-      <div className="flex items-center gap-2 text-brand-accent">
-        {icon}
-        <p className={EYEBROW}>{label}</p>
-      </div>
-      <p className="mt-3 text-[14px] leading-[1.45] font-semibold text-text-dark-primary">
-        {value}
-      </p>
-      {detail ? (
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-text-dark-secondary">
-          {detail}
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
-function KpiCard({
-  metric,
-  label,
-  locale,
-  day,
-  weekly,
-  dailyAvailable,
-}: {
-  readonly metric: MetricKey;
-  readonly label: string;
-  readonly locale: string;
-  readonly day: DailyBriefingKpiComparison;
-  readonly weekly: DailyBriefingKpiComparison;
-  readonly dailyAvailable: boolean;
-}) {
-  const t = useTranslations("tools.dailyBriefing");
-  const dayValue = dailyAvailable ? metricValue(locale, day, metric) : null;
-  const dayDelta = dailyAvailable ? metricDelta(locale, day, metric) : null;
-  const weekValue = metricValue(locale, weekly, metric);
-  const weekDelta = metricDelta(locale, weekly, metric);
-
-  return (
-    <article data-kpi={metric} className={`${CARD} min-w-0`}>
-      <p className={EYEBROW}>{label}</p>
-      <div className="mt-4 space-y-4">
-        {dailyAvailable ? (
-          <MetricPeriod
-            period="day"
-            label={t("kpis.latestDay")}
-            value={dayValue ?? t("kpis.unavailable")}
-            delta={dayDelta}
-          />
-        ) : null}
-        <MetricPeriod
-          period="week"
-          label={t("kpis.currentSevenDays")}
-          value={weekValue ?? t("kpis.unavailable")}
-          delta={weekDelta}
-        />
-      </div>
-    </article>
-  );
-}
-
-function MetricPeriod({
-  period,
-  label,
-  value,
-  delta,
-}: {
-  readonly period: "day" | "week";
-  readonly label: string;
-  readonly value: string;
-  readonly delta: string | null;
-}) {
-  const t = useTranslations("tools.dailyBriefing");
-  return (
-    <div data-kpi-period={period}>
-      <p className="text-[11.5px] text-text-dark-secondary">{label}</p>
-      <div className="mt-1 flex min-w-0 items-baseline justify-between gap-2">
-        <p className="truncate text-[22px] leading-none font-semibold tracking-[-0.03em] text-text-dark-primary">
-          {value}
-        </p>
-        <p className="shrink-0 font-mono text-[10px] text-text-dark-secondary">
-          {t("kpis.change", {
-            delta: delta ?? t("kpis.unavailable"),
-          })}
-        </p>
-      </div>
     </div>
   );
 }

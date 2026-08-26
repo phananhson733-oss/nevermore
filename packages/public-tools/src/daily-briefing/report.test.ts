@@ -200,7 +200,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v5");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v6");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -213,7 +213,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v5",
+      schemaVersion: "daily_search_briefing.v6",
       mode: "public_preview",
       scope: "property",
       persistence: "none",

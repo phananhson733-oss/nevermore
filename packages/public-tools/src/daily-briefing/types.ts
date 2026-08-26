@@ -1,4 +1,4 @@
-// @input  -- final Search Console day rows and optional query-level attachments
+// @input  -- final Search Console rows plus optional fresh daily/hourly trend reads
 // @output -- the schema-versioned, non-persistent daily briefing contract
 // @pos    -- public type boundary for the deterministic daily briefing core
 
@@ -136,6 +136,48 @@ export interface DailyBriefingKpiComparison {
   readonly current: DailyBriefingKpis | null;
   readonly previous: DailyBriefingKpis | null;
   readonly delta: DailyBriefingKpiDelta;
+}
+
+/** One all-property metric point plotted in the Daily Briefing trend chart. */
+export interface DailyBriefingTrendPoint {
+  /** PT calendar day for daily points, or Search Console's hour key for hourly points. */
+  readonly key: string;
+  readonly clicks: number;
+  readonly impressions: number;
+  /** Null when the point has no impressions. */
+  readonly ctr: number | null;
+  /** Null when the point has no impressions. */
+  readonly position: number | null;
+}
+
+export interface DailyBriefingTrendSeries {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly points: readonly DailyBriefingTrendPoint[];
+  /** The first incomplete PT day, reported by Search Console when available. */
+  readonly firstIncompleteDate: string | null;
+  /** The first incomplete PT hour, reported by Search Console when available. */
+  readonly firstIncompleteHour: string | null;
+}
+
+/**
+ * Fresh visualisation evidence, deliberately separate from finalised action
+ * evidence. A partial hourly point can inform the chart but cannot dispatch
+ * an SEO action.
+ */
+export interface DailyBriefingTrend {
+  readonly daily: DailyBriefingTrendSeries;
+  readonly hourly: DailyBriefingTrendSeries;
+}
+
+export interface DailyBriefingTrendRead {
+  readonly rows: readonly {
+    readonly key: string;
+    readonly clicks: number;
+    readonly impressions: number;
+    readonly position: number;
+  }[];
+  readonly firstIncompleteDate: string | null;
+  readonly firstIncompleteHour: string | null;
 }
 
 export interface DailyBriefingWindows {
@@ -619,6 +661,8 @@ export interface DailyBriefingResult {
   readonly windows: DailyBriefingWindows;
   readonly day: DailyBriefingKpiComparison;
   readonly weekly: DailyBriefingKpiComparison;
+  /** Fresh daily/hourly display evidence. It does not alter the action lanes. */
+  readonly trend: DailyBriefingTrend;
   readonly mode: DailyBriefingMode;
   readonly cadence: DailyBriefingCadence;
   readonly laneCapability: DailyBriefingLaneCapability;
@@ -651,6 +695,11 @@ export type DailyBriefingEnvelope = PublicToolResultEnvelope<
 export interface BuildDailyBriefingInput {
   readonly now: Date;
   readonly dateRows: readonly DailyBriefingDateRow[];
+  /** Optional trend reads may independently be unavailable without failing the briefing. */
+  readonly trend?: {
+    readonly daily: DailyBriefingTrendRead | null;
+    readonly hourly: DailyBriefingTrendRead | null;
+  };
   readonly currentQueryEvidence?: DailyBriefingQueryEvidence | null;
   readonly previousQueryEvidence?: DailyBriefingQueryEvidence | null;
   readonly brandTerms: readonly string[];

@@ -9,7 +9,11 @@ import {
   type GscPageRow,
   type GscQueryPageRow,
 } from "../gsc-analytics/page-reader.ts";
-import { latestFinalWindow, shiftDate } from "../gsc-analytics/window.ts";
+import {
+  latestFinalWindow,
+  pacificDate,
+  shiftDate,
+} from "../gsc-analytics/window.ts";
 import { buildEvidenceTable } from "../quick-wins/evidence.ts";
 import { aggregationBasesAgree } from "../quick-wins/report.ts";
 import { buildSiteCtrCurve } from "../site-baseline/ctr-curve.ts";
@@ -61,8 +65,10 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v5";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v6";
 export const BRIEFING_WINDOW_DAYS = 7;
+/** Daily points held once so the UI can switch 7/28/90-day views locally. */
+export const DAILY_BRIEFING_TREND_DAYS = 90;
 export const DAILY_CADENCE_MIN_IMPRESSIONS = 1_000;
 export const BRIEFING_MIN_ROW_IMPRESSIONS = 100;
 export const BRIEFING_MATERIAL_CHANGE_RATIO = 0.15;
@@ -157,6 +163,25 @@ export function dailyBriefingWindowsFor(now: Date): DailyBriefingWindows {
   };
 }
 
+/**
+ * Fresh visualisation windows. These never replace `dailyBriefingWindowsFor`:
+ * action evidence remains the finalised 14-day comparison above.
+ */
+export function dailyBriefingTrendWindowsFor(now: Date): {
+  readonly daily: { readonly startDate: string; readonly endDate: string };
+  readonly hourly: { readonly startDate: string; readonly endDate: string };
+} {
+  const endDate = pacificDate(now);
+  return {
+    daily: {
+      startDate: shiftDate(endDate, -(DAILY_BRIEFING_TREND_DAYS - 1)),
+      endDate,
+    },
+    // Two PT calendar dates cover the last 24 hourly buckets across midnight.
+    hourly: { startDate: shiftDate(endDate, -1), endDate },
+  };
+}
+
 function isDateKey(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = Date.parse(`${value}T00:00:00Z`);
@@ -180,6 +205,57 @@ function isMetricRowValid(row: {
     Number.isFinite(row.position) &&
     row.position >= 0
   );
+}
+
+function emptyTrendSeries(): import("./types.ts").DailyBriefingTrendSeries {
+  return {
+    evidence: "unavailable",
+    points: [],
+    firstIncompleteDate: null,
+    firstIncompleteHour: null,
+  };
+}
+
+function trendSeriesFor(
+  read: import("./types.ts").DailyBriefingTrendRead | null | undefined,
+  kind: "daily" | "hourly",
+): import("./types.ts").DailyBriefingTrendSeries {
+  if (read === null || read === undefined) return emptyTrendSeries();
+
+  const points: import("./types.ts").DailyBriefingTrendPoint[] = [];
+  // `hourly_all` explicitly asks Search Console for its freshest hourly
+  // processing state, not for a finalised fact. The metadata narrows where
+  // the incomplete tail begins when Google can report it; its absence must
+  // not upgrade an hourly point to final evidence.
+  let partial =
+    kind === "hourly" ||
+    read.firstIncompleteDate !== null ||
+    read.firstIncompleteHour !== null;
+  const seen = new Set<string>();
+
+  for (const row of read.rows) {
+    const keyIsValid = kind === "daily" ? isDateKey(row.key) : row.key !== "";
+    if (!keyIsValid || seen.has(row.key) || !isMetricRowValid(row)) {
+      partial = true;
+      continue;
+    }
+    seen.add(row.key);
+    points.push({
+      key: row.key,
+      clicks: row.clicks,
+      impressions: row.impressions,
+      ctr: row.impressions > 0 ? row.clicks / row.impressions : null,
+      position: row.impressions > 0 ? row.position : null,
+    });
+  }
+  points.sort((left, right) => left.key.localeCompare(right.key));
+
+  return {
+    evidence: partial ? "partial" : "observed",
+    points,
+    firstIncompleteDate: read.firstIncompleteDate,
+    firstIncompleteHour: read.firstIncompleteHour,
+  };
 }
 
 function normalizedDateRows(
@@ -2263,6 +2339,10 @@ export function buildDailyBriefing(
   );
   const day = compareKpis(latest, previousDay);
   const weekly = compareKpis(currentWeek, previousWeek);
+  const trend = {
+    daily: trendSeriesFor(input.trend?.daily, "daily"),
+    hourly: trendSeriesFor(input.trend?.hourly, "hourly"),
+  };
   const currentEvidence = input.currentQueryEvidence ?? null;
   const previousEvidence = input.previousQueryEvidence ?? null;
   const currentRowsState = queryRowsState(currentEvidence);
@@ -2549,6 +2629,7 @@ export function buildDailyBriefing(
       windows,
       day,
       weekly,
+      trend,
       mode,
       // A daily cadence is a claim that each morning brings something new to
       // detect, and only the click-driven lanes move on that timescale: an

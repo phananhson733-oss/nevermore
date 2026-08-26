@@ -105,7 +105,7 @@ function responseFor(
 }
 
 describe("runDailyBriefing read plan", () => {
-  it("uses one required 14-day read and eight one-page optional attachments", async () => {
+  it("keeps the final 14-day read strict and adds daily and hourly trend reads", async () => {
     const calls: GscQueryRequest[] = [];
     const client: GscQueryClient = async (request) => {
       calls.push(request);
@@ -119,7 +119,10 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    expect(calls).toHaveLength(9);
+    // One finalised 14-day report read still drives the action logic. The two
+    // trend reads are additive UI evidence: fresh daily data for 7/28/90 days
+    // and a separate provisional hour series for the default 24h chart.
+    expect(calls).toHaveLength(11);
     expect(calls.filter((call) => call.dimensions[0] === "date")).toEqual([
       {
         dimensions: ["date"],
@@ -128,7 +131,29 @@ describe("runDailyBriefing read plan", () => {
         rowLimit: GSC_ROW_LIMIT,
         startRow: 0,
       },
+      {
+        dimensions: ["date"],
+        startDate: "2026-05-27",
+        endDate: "2026-08-24",
+        rowLimit: GSC_ROW_LIMIT,
+        startRow: 0,
+        dataState: "all",
+      },
     ]);
+    expect(
+      calls.find((call) => String(call.dimensions[0]) === "hour"),
+    ).toEqual({
+      dimensions: ["hour"],
+      startDate: "2026-08-23",
+      endDate: "2026-08-24",
+      rowLimit: GSC_ROW_LIMIT,
+      startRow: 0,
+      dataState: "hourly_all",
+    });
+    expect(envelope.result.trend).toMatchObject({
+      daily: { evidence: "observed" },
+      hourly: { evidence: "partial" },
+    });
     expect(calls.filter((call) => call.dimensions.length === 1 && call.dimensions[0] === "query")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -205,7 +230,12 @@ describe("runDailyBriefing read plan", () => {
       release = resolve;
     });
     const client: GscQueryClient = async (request) => {
-      if (request.dimensions[0] === "date") return responseFor(request);
+      if (
+        request.dimensions[0] === "date" &&
+        request.dataState === undefined
+      ) {
+        return responseFor(request);
+      }
       optionalStarted.push(request);
       await blocked;
       return responseFor(request);
@@ -218,7 +248,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(optionalStarted).toHaveLength(8));
+    await vi.waitFor(() => expect(optionalStarted).toHaveLength(10));
     release();
     await expect(pending).resolves.toBeDefined();
   });
@@ -269,6 +299,38 @@ describe("runDailyBriefing read plan", () => {
     expect(envelope.result.limitations).toContain(
       "query_page_coverage_below_floor",
     );
+  });
+
+  it("keeps final action evidence when both fresh trend reads are unavailable", async () => {
+    const client: GscQueryClient = async (request) => {
+      if (request.dataState !== undefined) {
+        throw new Error("fresh trend unavailable");
+      }
+      return responseFor(request);
+    };
+
+    const envelope = await runDailyBriefing({
+      client,
+      now: NOW,
+      brandTerms: [],
+      brandTermsConfirmed: true,
+    });
+
+    expect(envelope.result.weekly.evidence).toBe("observed");
+    expect(envelope.result.trend).toEqual({
+      daily: {
+        evidence: "unavailable",
+        points: [],
+        firstIncompleteDate: null,
+        firstIncompleteHour: null,
+      },
+      hourly: {
+        evidence: "unavailable",
+        points: [],
+        firstIncompleteDate: null,
+        firstIncompleteHour: null,
+      },
+    });
   });
 
   it("keeps query evidence when only the query-page reads fail", async () => {
@@ -349,7 +411,7 @@ describe("runDailyBriefing read plan", () => {
       brandTermsConfirmed: true,
     });
 
-    await vi.waitFor(() => expect(calls).toHaveLength(9));
+    await vi.waitFor(() => expect(calls).toHaveLength(11));
     releaseQueryReads();
     const envelope = await pending;
 
