@@ -860,20 +860,21 @@
         "run": "开始差距分析",
         "running": "正在分析…",
         "runWithoutGsc": "不叠加 GSC 证据层，重新运行",
-        "copyKeyword": "复制关键词",
-        "focusProperty": "定位 GSC 资源",
-        "copyFailed": "浏览器里无法复制这个关键词。",
-        "handoffFailed": "当前标签页里无法写入私有 On-Page 跳转信息。",
+        "focusProperty": "定位 GSC 资源 →",
+        "handoffFailedOnPage": "当前标签页里无法写入私有 On-Page 跳转信息。",
+        "handoffFailedOpportunityFinder": "当前标签页里无法写入私有 Opportunity Finder 跳转信息。",
         "remaining": "当前筛选下还有 {count} 行未展开。",
         "showingAll": "当前筛选下已展开全部 {count} 行。",
         "showAll": "展开全部",
         "showLess": "收起",
-        "openCompetitorPageNamed": "看 {domain} 的页面",
-        "optimizeObservedPage": "优化 {page}",
-        "reviewObservedPage": "核对 {page}",
+        "openCompetitorPageNamed": "看 {domain} 的页面 →",
+        "openOpportunityFinder": "打开 Opportunity Finder →",
+        "optimizeObservedPage": "优化现有页 {page} →",
+        "reviewObservedPage": "核对 {page} →",
         "copyPlan": "{count, plural, other {将 # 行复制为计划}}",
         "copyPlanDone": "{count, plural, other {已复制 # 行。}}",
-        "copyPlanFailed": "浏览器里无法复制这份计划。"
+        "copyPlanFailed": "浏览器里无法复制这份计划。",
+        "exportCsv": "{count, plural, other {导出全部 # 行 CSV}}"
       },
       "status": {
         "complete": "分析完成",
@@ -893,7 +894,6 @@
         "eyebrow": "竞品关键词差距报告",
         "title": "本次运行摘要",
         "versus": "对比",
-        "scope": "{site} · {market} · {language}",
         "competitors": "{requested} 个竞品中有 {completed} 个完成",
         "unavailable": "{count, plural, other {# 个竞品不可用}}",
         "capturedAt": "采集时间"
@@ -956,15 +956,13 @@
         "dfsSnapshot": "AI Overview 与 SERP 特性标记来自 DataForSEO 存储的 SERP 快照并带其日期，不是本次运行的实时观测。",
         "preScreen": "DFS 预筛带只按数据源估算排序；它不改变由 GSC 决定的下一步，也不是可赢性结论。"
       },
-      "metrics": {
-        "cpc": "CPC",
-        "difficulty": "难度"
-      },
       "gsc": {
-        "observed_strong": "已观测 · 表现较强",
-        "observed_weak": "有曝光 · 待提升",
-        "not_observed_in_gsc_query_sample": "本次样本未观测",
-        "gsc_query_sample_not_read": "GSC 样本未读取",
+        "observed_strong": "已在排",
+        "observed_weak": "有曝光",
+        "not_observed_in_gsc_query_sample": "样本未观测",
+        "gsc_query_sample_not_read": "GSC 未读取",
+        "statusWithPosition": "{status} · 均位 {position}",
+        "positionTitle": "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
         "evidenceBasis": {
           "query": "精确 query 证据",
           "query_page": "query-page 证据"
@@ -975,11 +973,8 @@
           "not_observed_in_gsc_query_page_sample": "本次样本未定位页面",
           "gsc_query_page_sample_not_read": "页面样本未完整读取"
         },
-        "impressions": "曝光",
-        "position": "平均排名",
-        "metricLine": "曝光 {impressions} · 均位 {position}",
-        "pageMetricLine": "页面证据：曝光 {impressions} · 均位 {position}",
-        "page": "打开已观测页面"
+        "impressionsLine": "曝光 {impressions}",
+        "pageMetricLine": "页面证据：曝光 {impressions} · 均位 {position}"
       },
       "filters": {
         "all": "全部",
@@ -990,12 +985,11 @@
       },
       "nextSteps": {
         "optimize_existing": "已有可信落地页，先检查并优化现有页。",
-        "review_existing_query": "GSC 已有覆盖；先核对关键词与落地页关系。",
+        "review_existing_query": "GSC 已有覆盖；先核对关键词与页面的对应关系。",
         "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
         "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
       },
       "preScreen": {
-        "title": "DFS 预筛",
         "basis": {
           "dfs_estimate": "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
           "tool_heuristic": "本工具的文本/URL 启发式；只是预筛，不是 SERP 可赢性。"
@@ -2722,7 +2716,7 @@
       "inviteOnlyCta": "申请使用",
       "signedInNoGrant": "你已登录，但还没有授权任何 Search Console 站点。",
       "propertyLabel": "Search Console 站点",
-      "handoffNotice": "已从每日搜索简报带入；尚未在本工具重新运行。",
+      "handoffNotice": "已从其他工具带入；尚未在本工具重新运行。",
       "propertiesTruncated": "你的授权覆盖 {total} 个站点，列表因长度被截断。重新连接可以选到没列出的站点。",
       "noPropertyTitle": "此次授权不含任何站点",
       "noPropertyBody": "连接成功了，但没有覆盖任何 Search Console 站点。请确认你使用的 Google 账号拥有已验证的站点。",

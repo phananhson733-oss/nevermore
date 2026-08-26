@@ -213,7 +213,7 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(unreadableChip?.textContent).not.toContain("not-a-date");
   });
 
-  it("offers the competitor page next to copy-keyword in the content-gap lane", async () => {
+  it("offers the competitor page it will open, and no control at all when there is none", async () => {
     const known = row(0, {
       keyword: "known competitor page",
       competitorRanks: { "alpha.example": 9, "beta.example": 2 },
@@ -257,10 +257,15 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
       '[data-row-action="open-competitor-page"]',
     ) as HTMLAnchorElement;
 
-    expect(
-      knownRow.querySelector('[data-row-action="copy-keyword"]'),
-    ).toBeInstanceOf(HTMLButtonElement);
     expect(open).toBeInstanceOf(HTMLAnchorElement);
+    // One control per row, asserted as a COUNT. `querySelector` plus `toBe`
+    // only proved which control came first, so a second one added after it
+    // left this green.
+    const controls = knownRow.querySelectorAll(
+      "td:last-child a, td:last-child button",
+    );
+    expect(controls).toHaveLength(1);
+    expect(controls[0]).toBe(open);
     expect(open.getAttribute("href")).toBe("https://beta.example/best");
     expect(open.getAttribute("target")).toBe("_blank");
     expect(open.getAttribute("rel")).toBe("noopener noreferrer");
@@ -280,12 +285,15 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(fallbackOpen?.textContent?.trim()).toBe(
       "actions.openCompetitorPageNamed:domain=alpha.example",
     );
-    expect(
-      unknownRow.querySelector('[data-row-action="copy-keyword"]'),
-    ).toBeInstanceOf(HTMLButtonElement);
+    // No competitor page means nothing to open. The row stays on screen and in
+    // the CSV export; what it does not get is a button that goes nowhere.
     expect(
       unknownRow.querySelector('[data-row-action="open-competitor-page"]'),
     ).toBeNull();
+    expect(
+      unknownRow.querySelectorAll("td:last-child a, td:last-child button"),
+    ).toHaveLength(0);
+    expect(host.querySelector('[data-row-action="copy-keyword"]')).toBeNull();
   });
 
   it("filters by pre-screen band and by lane together", async () => {

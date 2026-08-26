@@ -860,20 +860,21 @@
         "run": "Run gap analysis",
         "running": "Analyzing…",
         "runWithoutGsc": "Run without the GSC evidence layer",
-        "copyKeyword": "Copy keyword",
-        "focusProperty": "Focus GSC property",
-        "copyFailed": "Could not copy this keyword in the browser.",
-        "handoffFailed": "Could not prepare the private On-Page handoff in this tab.",
+        "focusProperty": "Locate GSC property →",
+        "handoffFailedOnPage": "Could not prepare the private On-Page handoff in this tab.",
+        "handoffFailedOpportunityFinder": "Could not prepare the private Opportunity Finder handoff in this tab.",
         "remaining": "{count} more rows hidden in this filter.",
         "showingAll": "Showing all {count} rows in this filter.",
         "showAll": "Show all",
         "showLess": "Show less",
-        "openCompetitorPageNamed": "Open {domain}'s page",
-        "optimizeObservedPage": "Optimize {page}",
-        "reviewObservedPage": "Review {page}",
+        "openCompetitorPageNamed": "Open {domain}'s page →",
+        "openOpportunityFinder": "Open Opportunity Finder →",
+        "optimizeObservedPage": "Optimize existing page {page} →",
+        "reviewObservedPage": "Review {page} →",
         "copyPlan": "{count, plural, one {Copy # row as plan} other {Copy # rows as plan}}",
         "copyPlanDone": "{count, plural, one {Copied # row.} other {Copied # rows.}}",
-        "copyPlanFailed": "Could not copy the plan in this browser."
+        "copyPlanFailed": "Could not copy the plan in this browser.",
+        "exportCsv": "{count, plural, one {Export all # row as CSV} other {Export all # rows as CSV}}"
       },
       "status": {
         "complete": "Analysis complete",
@@ -893,7 +894,6 @@
         "eyebrow": "Competitor keyword gap report",
         "title": "Run summary",
         "versus": "vs",
-        "scope": "{site} · {market} · {language}",
         "competitors": "{completed} of {requested} competitors completed",
         "unavailable": "{count, plural, one {# competitor unavailable} other {# competitors unavailable}}",
         "capturedAt": "Captured"
@@ -956,15 +956,13 @@
         "dfsSnapshot": "AI Overview and SERP feature marks come from DataForSEO's stored SERP snapshot and carry its date; they are not a live observation from this run.",
         "preScreen": "The DFS pre-screen band orders rows by provider estimates only. It never changes the GSC-derived next step and is not a winnability claim."
       },
-      "metrics": {
-        "cpc": "CPC",
-        "difficulty": "Difficulty"
-      },
       "gsc": {
-        "observed_strong": "Observed · performing well",
-        "observed_weak": "Impressions · needs improvement",
-        "not_observed_in_gsc_query_sample": "Not observed in this sample",
-        "gsc_query_sample_not_read": "GSC sample not read",
+        "observed_strong": "Already ranking",
+        "observed_weak": "Has impressions",
+        "not_observed_in_gsc_query_sample": "Not in sample",
+        "gsc_query_sample_not_read": "GSC not read",
+        "statusWithPosition": "{status} · avg position {position}",
+        "positionTitle": "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
         "evidenceBasis": {
           "query": "Exact-query evidence",
           "query_page": "Query-page evidence"
@@ -975,11 +973,8 @@
           "not_observed_in_gsc_query_page_sample": "No page identified in this sample",
           "gsc_query_page_sample_not_read": "Page sample not fully read"
         },
-        "impressions": "Impressions",
-        "position": "Average position",
-        "metricLine": "{impressions} impressions · avg position {position}",
-        "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}",
-        "page": "Open observed page"
+        "impressionsLine": "{impressions} impressions",
+        "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}"
       },
       "filters": {
         "all": "All rows",
@@ -995,7 +990,6 @@
         "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
       },
       "preScreen": {
-        "title": "DFS pre-screen",
         "basis": {
           "dfs_estimate": "DataForSEO estimate; a pre-screen, not SERP winnability.",
           "tool_heuristic": "This tool's text/URL heuristic; a pre-screen, not SERP winnability."
@@ -2722,7 +2716,7 @@
       "inviteOnlyCta": "Ask for access",
       "signedInNoGrant": "You are signed in, but no Search Console property has been granted yet.",
       "propertyLabel": "Search Console property",
-      "handoffNotice": "Brought in from Daily Search Briefing. This tool has not been run again yet.",
+      "handoffNotice": "Imported from another tool. This tool has not been run again yet.",
       "propertiesTruncated": "Your grant covers {total} properties; the list was trimmed to fit. Reconnect to pick one that is missing.",
       "noPropertyTitle": "No properties in this grant",
       "noPropertyBody": "The connection succeeded but it covers no Search Console properties. Check that the Google account you used owns a verified property.",

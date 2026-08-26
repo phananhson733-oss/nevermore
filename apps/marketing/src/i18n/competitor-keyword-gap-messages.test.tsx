@@ -139,6 +139,40 @@ const ENVELOPE: CompetitorKeywordGapEnvelope = {
           nextStep: "review_existing_query",
         },
       },
+      {
+        keyword: "already ranking evidence",
+        competitorRanks: { "alpha.example": 3 },
+        competitorPages: {
+          "alpha.example": { url: null, title: null, etv: null },
+        },
+        competitorCount: 1,
+        bestCompetitorRank: 3,
+        ownState: "not_observed_in_provider_rankings",
+        searchVolume: { availability: "available", value: 640 },
+        cpc: { availability: "provider_no_data", value: null },
+        keywordDifficulty: { availability: "available", value: 22 },
+        providerIntent: "informational",
+        coreKeyword: null,
+        searchVolumeTrend: null,
+        serpSnapshot: null,
+        preScreen: {
+          band: "stretch",
+          basis: "dfs_estimate",
+          reason: "kd_mid_rank_top20",
+        },
+        gsc: {
+          queryStatus: "observed_strong",
+          evidenceBasis: "query",
+          queryImpressions: 900,
+          queryPosition: 4.1,
+          pageStatus: "observed_sufficient",
+          pageUrl: "https://example.com/ranking",
+          pageImpressions: 880,
+          pagePosition: 4.2,
+          queryPageCoverage: 0.95,
+          nextStep: "review_existing_query",
+        },
+      },
     ],
     resultTruncated: false,
     overlayStatus: "available",
@@ -210,10 +244,17 @@ describe.each([
     boundaries: "Evidence boundaries",
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
-    preScreen: "DFS pre-screen",
+    band: "Higher KD or page two",
     preScreenBasis:
       "DataForSEO estimate; a pre-screen, not SERP winnability.",
     sampleRule: "Sample rule:",
+    rankingStatus: "Already ranking · avg position 4.1",
+    positionTitle:
+      "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
+    impressionsLine: "900 impressions",
+    notInSample: "Not in sample",
+    opportunityFinder: "Open Opportunity Finder →",
+    exportCsv: "Export all 3 rows as CSV",
   },
   {
     locale: "zh" as const,
@@ -229,9 +270,16 @@ describe.each([
     recommendation: "本次样本未观测本站；先复核差距，再决定是否新建。",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
-    preScreen: "DFS 预筛",
+    band: "难度较高或第二页",
     preScreenBasis: "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
     sampleRule: "采样规则",
+    rankingStatus: "已在排 · 均位 4.1",
+    positionTitle:
+      "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
+    impressionsLine: "曝光 900",
+    notInSample: "样本未观测",
+    opportunityFinder: "打开 Opportunity Finder →",
+    exportCsv: "导出全部 3 行 CSV",
   },
 ])("competitor keyword gap $locale messages", (expected) => {
   it("renders real localized scope, overview, recommendation, and boundary copy", async () => {
@@ -253,7 +301,37 @@ describe.each([
     expect(host.textContent).toContain(expected.recommendation);
     expect(host.textContent).toContain(expected.boundaries);
     expect(host.textContent).toContain(expected.manualSnapshot);
-    expect(host.textContent).toContain(expected.preScreen);
+    expect(host.textContent).toContain(expected.band);
+    expect(host.textContent).toContain(expected.rankingStatus);
+    // The pill states the position and the line under it does not repeat the
+    // number. Only the already-ranking row carries query impressions, so this
+    // is the one such line in the render.
+    const impressions = host.querySelectorAll('[data-gsc-metrics="query"]');
+    expect(impressions).toHaveLength(1);
+    expect(impressions[0]?.textContent).toBe(expected.impressionsLine);
+    expect(impressions[0]?.textContent).not.toContain("4.1");
+    // "Already ranking · avg position 4.1" is present tense about Search from a
+    // lagged, averaged sample. Exactly one row in this envelope carries a
+    // position, so exactly one pill may carry the qualification.
+    const qualified = [...host.querySelectorAll("[data-gsc-status]")].filter(
+      (pill) => pill.hasAttribute("title"),
+    );
+    expect(qualified).toHaveLength(1);
+    expect(qualified[0]?.textContent).toBe(expected.rankingStatus);
+    expect(qualified[0]?.getAttribute("title")).toBe(expected.positionTitle);
+    expect(host.textContent).toContain(expected.notInSample);
+    // A row Search Console did not return is absent from a bounded sample, not
+    // absent from Search. The reference report says "not covered"; this must
+    // not, in either language.
+    expect(host.textContent).not.toMatch(/not covered/i);
+    expect(host.textContent).not.toContain("未覆盖");
+    expect(
+      host.querySelector('[data-row-action="open-opportunity-finder"]')
+        ?.textContent,
+    ).toBe(expected.opportunityFinder);
+    expect(
+      host.querySelector('[data-export-csv]')?.textContent,
+    ).toBe(expected.exportCsv);
     expect(
       host.querySelector("[data-pre-screen]")?.getAttribute("title"),
     ).toContain(expected.preScreenBasis);
@@ -271,6 +349,10 @@ describe.each([
     expect(host.textContent).not.toContain("table.nextAction");
     expect(host.textContent).not.toContain("actions.optimizeObservedPage");
     expect(host.textContent).not.toContain("actions.openCompetitorPageNamed");
+    expect(host.textContent).not.toContain("actions.openOpportunityFinder");
+    expect(host.textContent).not.toContain("actions.exportCsv");
+    expect(host.textContent).not.toContain("gsc.statusWithPosition");
+    expect(host.textContent).not.toContain("gsc.impressionsLine");
     expect(host.textContent).not.toContain("sources.short");
     expect(host.textContent).not.toContain("legend.dfsMeans");
     expect(host.textContent).not.toContain("status.partialBody");

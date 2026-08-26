@@ -73,6 +73,26 @@ function competitorGapPayload() {
   };
 }
 
+/**
+ * The Opportunity Finder reads only the property off a handoff, so the gap tool
+ * hands it a property-scoped payload. Kept as its own fixture rather than a
+ * spread of the On-Page one, so a change to that shape cannot silently redefine
+ * what this destination is asserted to receive.
+ */
+function competitorGapQuickWinsPayload() {
+  return {
+    source: "competitor-keyword-gap" as const,
+    destination: "seo-quick-wins" as const,
+    scope: "property" as const,
+    property: "sc-domain:example.com",
+    query: null,
+    page: null,
+    evidenceId: "gap:property:observed-sufficient",
+    marketCode: "GB",
+    languageCode: "en",
+  };
+}
+
 describe("tool handoff storage", () => {
   it("uses one fixed tab-scoped key and a ten-minute lifetime", () => {
     expect(TOOL_HANDOFF_KEY).toBe("gengrowth.tool-handoff.v1");
@@ -135,6 +155,63 @@ describe("tool handoff storage", () => {
       marketCode: "ZZ",
       languageCode: "zz",
     });
+  });
+
+  it("writes and consumes one gap Opportunity Finder handoff with no invented query or page", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(
+      writeToolHandoff(session, now, competitorGapQuickWinsPayload()),
+    ).toBe(true);
+
+    expect(consumeToolHandoff(session, now + 1, "seo-quick-wins")).toEqual({
+      source: "competitor-keyword-gap",
+      destination: "seo-quick-wins",
+      scope: "property",
+      property: "sc-domain:example.com",
+      query: null,
+      page: null,
+      evidenceId: "gap:property:observed-sufficient",
+      marketCode: "GB",
+      languageCode: "en",
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+    expect(consumeToolHandoff(session, now + 2, "seo-quick-wins")).toBeNull();
+  });
+
+  it("expires and removes a gap Opportunity Finder handoff at the shared TTL", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(
+      writeToolHandoff(session, now, competitorGapQuickWinsPayload()),
+    ).toBe(true);
+    expect(
+      consumeToolHandoff(session, now + TOOL_HANDOFF_TTL_MS, "seo-quick-wins"),
+    ).toBeNull();
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("does not let a gap handoff satisfy a read for the other gap destination", () => {
+    const toQuickWins = storage();
+    const toOnPage = storage();
+
+    writeToolHandoff(toQuickWins, 1_000, competitorGapQuickWinsPayload());
+    writeToolHandoff(toOnPage, 1_000, competitorGapPayload());
+
+    expect(consumeToolHandoff(toQuickWins, 1_001, "on-page-seo-check")).toBeNull();
+    expect(consumeToolHandoff(toOnPage, 1_001, "seo-quick-wins")).toBeNull();
+
+    // A read by the wrong tool must not consume the handoff: the tab the gap
+    // tool actually opened is still entitled to the context written for it.
+    expect(
+      consumeToolHandoff(toQuickWins, 1_002, "seo-quick-wins"),
+    ).not.toBeNull();
+    expect(
+      consumeToolHandoff(toOnPage, 1_002, "on-page-seo-check"),
+    ).not.toBeNull();
   });
 
   it("writes one property-scoped handoff with no invented query or page", () => {
@@ -201,7 +278,7 @@ describe("tool handoff storage", () => {
 
   it.each([
     [
-      "a non-On-Page destination",
+      "a query-page shape addressed to the Opportunity Finder",
       { ...competitorGapPayload(), destination: "seo-quick-wins" },
     ],
     ["a non-query-page scope", { ...competitorGapPayload(), scope: "property" }],
@@ -265,6 +342,110 @@ describe("tool handoff storage", () => {
       );
 
       expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
+      expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    },
+  );
+
+  // Swept from the fixture rather than listed, so a field added to this variant
+  // later is required by this test the day it appears.
+  it.each(Object.keys(competitorGapQuickWinsPayload()))(
+    "rejects a gap Opportunity Finder payload missing %s on write and removes it on consume",
+    (field) => {
+      const written = storage();
+      const stored = storage();
+      const candidate = Object.fromEntries(
+        Object.entries(competitorGapQuickWinsPayload()).filter(
+          ([key]) => key !== field,
+        ),
+      );
+
+      expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+      stored.setItem(
+        TOOL_HANDOFF_KEY,
+        JSON.stringify({
+          ...candidate,
+          createdAt: 1_000,
+          expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+        }),
+      );
+
+      expect(consumeToolHandoff(stored, 1_001, "seo-quick-wins")).toBeNull();
+      expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    },
+  );
+
+  it.each([
+    [
+      "a carried query",
+      { ...competitorGapQuickWinsPayload(), query: "pricing automation" },
+    ],
+    [
+      "a carried page",
+      {
+        ...competitorGapQuickWinsPayload(),
+        page: "https://example.com/pricing",
+      },
+    ],
+    [
+      "a query-page scope",
+      { ...competitorGapQuickWinsPayload(), scope: "query_page" },
+    ],
+    [
+      "an unknown scope",
+      { ...competitorGapQuickWinsPayload(), scope: "site" },
+    ],
+    [
+      "a third destination the gap tool never hands off to",
+      {
+        ...competitorGapQuickWinsPayload(),
+        destination: "traffic-drop-diagnosis",
+      },
+    ],
+    [
+      "a blank property",
+      { ...competitorGapQuickWinsPayload(), property: "   " },
+    ],
+    [
+      "an oversized property",
+      { ...competitorGapQuickWinsPayload(), property: "x".repeat(513) },
+    ],
+    [
+      "a blank evidence id",
+      { ...competitorGapQuickWinsPayload(), evidenceId: "   " },
+    ],
+    [
+      "an oversized evidence id",
+      { ...competitorGapQuickWinsPayload(), evidenceId: "x".repeat(257) },
+    ],
+    [
+      "a lowercase market",
+      { ...competitorGapQuickWinsPayload(), marketCode: "gb" },
+    ],
+    [
+      "an uppercase language",
+      { ...competitorGapQuickWinsPayload(), languageCode: "EN" },
+    ],
+    [
+      "an extra field",
+      { ...competitorGapQuickWinsPayload(), privateExtra: "no" },
+    ],
+  ] as const)(
+    "rejects a gap Opportunity Finder payload with %s on write and removes it on consume",
+    (_label, candidate) => {
+      const written = storage();
+      const stored = storage();
+
+      expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+      stored.setItem(
+        TOOL_HANDOFF_KEY,
+        JSON.stringify({
+          ...candidate,
+          createdAt: 1_000,
+          expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+        }),
+      );
+
+      expect(consumeToolHandoff(stored, 1_001, "seo-quick-wins")).toBeNull();
       expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
     },
   );
