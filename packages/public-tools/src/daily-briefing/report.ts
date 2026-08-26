@@ -3221,9 +3221,14 @@ export function buildDailyBriefing(
   // What the query and page changes left. A provisional move names a movement,
   // so it outranks a row that only names a position, and the watchlist takes
   // whatever survives both.
+  // The leading appearance is excluded, because it did not come out of this
+  // budget. Subtracting it here let the one lane with a slot of its own spend
+  // a second one belonging to the rows below it.
   const provisionalBudget = Math.max(
     0,
-    DAILY_BRIEFING_ACTION_LIMIT - changes.length,
+    DAILY_BRIEFING_ACTION_LIMIT -
+      changes.filter((change) => change.kind !== "first_observed_leading")
+        .length,
   );
   // A query the page is about to report as a change is not also provisional:
   // the same query would hold an action while the provisional note under it

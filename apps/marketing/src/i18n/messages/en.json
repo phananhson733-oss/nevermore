@@ -2006,8 +2006,8 @@
               "finding": "the query and page pair is absent from the prior window’s list"
             },
             "firstObservedLeading": {
-              "name": "Pairs first seen in the leading positions (counted below by query)",
-              "requirement": "exactly the conditions of the path above, and deliberately not restated here: a shorter restatement beside the fuller one reads as a different set of conditions",
+              "name": "Pairs first seen at an average position of six or better (counted below by query)",
+              "requirement": "the same conditions as the path above, listed there — the two differ only in which position band the pair landed in",
               "finding": "the prior window's pair list does not contain this pair, and its current average presented position is six or better"
             }
           },
@@ -2101,8 +2101,8 @@
           "body": "This pair appears in the current visible rows and not in the prior visible rows. Search Console anonymization means this is not proof of new indexing."
         },
         "first_observed_leading": {
-          "title": "First seen in the leading positions in this comparison",
-          "body": "This query-and-page pair appears in the current window's visible records and not in the prior window's, at an average presented position of six or better. It is the one path in this briefing that reports something going right. Two things to be clear about: Search Console anonymizes low-volume queries, so “not seen in the prior window” is not evidence the pair did not exist then — only that this comparison saw it first; and average presented position is an impression-weighted blend, not a rank. Since it is already there, the work worth doing is making it stay: internal links into it, more depth, and the relevant tool pages wired up."
+          "title": "First seen in this comparison, at an average position of six or better",
+          "body": "This query-and-page pair appears in the current window's visible records and not in the prior window's, with a current average presented position of six or better. Two things have to be clear. Search Console anonymizes low-volume queries, so “not seen in the prior window” is not evidence the pair did not exist then — only that this comparison saw it first. And average presented position is weighted across every impression, not a rank: half the impressions at position one and half at position eleven average to exactly six, which is not “ranked sixth”. This is one of the few paths here that does not report bad news — the other is a move into the top band. Since the pair is being shown well up the page, the work worth doing is making it stay: internal links into it, more depth, and the relevant tool pages wired up."
         },
         "average_position_crossed_page_one_band": {
           "title": "Average position moved into the 1-10 band",
@@ -2137,7 +2137,7 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Two kinds. Triggered: strict evidence that something changed — if there is none, none is offered and nothing is padded. Routine: no change evidence at all, and worth doing about this property as it stands. Both are grouped by query, page and property, ordered inside each group by a fixed path priority; the groups are not ordered against each other, because they do not measure the same population.",
+        "intro": "Two kinds. Triggered: offered only where there is strict evidence, and never padded when there is none — though what the evidence is differs by path, some comparing two windows, some measuring the current window against this property's own baseline, and some resting only on the prior window's visible records not containing the row. Each action card states its own. Routine: no change evidence at all, and worth doing about this property as it stands. Both are grouped by query, page and property; the groups are not ordered against each other, because they do not measure the same population, and their counts are never added.",
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
@@ -2150,7 +2150,7 @@
         "groupQuery": "Query evidence",
         "groupPage": "Page evidence",
         "groupProperty": "Property evidence",
-        "groupRoutine": "Routine · {count} items (no change evidence; standing work)"
+        "groupRoutine": "Routine · {queries} queries · {pages} pages (no change evidence; standing work)"
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
@@ -2170,7 +2170,7 @@
           "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
         },
         "first_observed_leading": {
-          "title": "Shore up the page while it is in the leading positions",
+          "title": "Shore up the page while its average position holds at six or better",
           "body": "Opens On-Page SEO Checker with the page and query prefilled, so you can see what the public HTML actually supports. This briefing has not judged why the pair reached this position, and promises nothing about it staying."
         },
         "average_position_crossed_page_one_band": {

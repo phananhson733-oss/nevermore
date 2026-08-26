@@ -2368,6 +2368,33 @@ describe("DailyBriefingResults folded explanation", () => {
     ).toContain("4 page records");
   });
 
+  it("renders a fourth change when it is the leading appearance", async () => {
+    // The engine gives that lane a slot of its own. A page that reapplies the
+    // three-row cap to the whole list removes exactly that row — it always
+    // sorts last — and then reports that every candidate is in the table.
+    const crossings = [1, 2, 3].map((index) =>
+      change("average_position_crossed_page_one_band", index),
+    );
+    const leading = change("first_observed_leading", 4);
+    const host = await renderResults(
+      envelope({
+        changes: [...crossings, leading],
+        actions: [
+          ...crossings.map((source) => action(source, "on-page-seo-check")),
+          action(leading, "on-page-seo-check"),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const rows = [...host.querySelectorAll("[data-review-row]")];
+    const actionRows = [...host.querySelectorAll("[data-action-row]")];
+
+    expect(host.textContent).toContain(leading.query);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    // And its action is on the page, not cut with the row.
+    expect(actionRows).toHaveLength(4);
+  });
+
   it("labels the routine items as routine and counts them", async () => {
     const host = await renderResults(
       envelope({
@@ -2403,10 +2430,12 @@ describe("DailyBriefingResults folded explanation", () => {
     );
     const label = host.querySelector('[data-action-group="routine"]');
 
-    // The count spans both routine populations and is deliberately not added
-    // to any action count: a standing item is not a change.
+    // Two counts, one per population, never a sum: queries and pages measure
+    // different things here as everywhere else on this page.
     expect(label?.textContent).toContain("Routine");
-    expect(label?.textContent).toMatch(/\b2 items\b/);
+    expect(label?.textContent).toMatch(/1 queries/);
+    expect(label?.textContent).toMatch(/1 pages/);
+    expect(label?.textContent).not.toMatch(/\b2\b/);
     // And it is a separate group from the triggered ones, not a fourth one
     // in the same list.
     expect(
@@ -2414,6 +2443,34 @@ describe("DailyBriefingResults folded explanation", () => {
         node.getAttribute("data-action-group"),
       ),
     ).toContain("routine");
+  });
+
+  it("never reads an unavailable routine population as a count of zero", async () => {
+    const host = await renderResults(
+      envelope({
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 0,
+        },
+        // Unavailable, and by contract it carries an empty item list. Reading
+        // that list's length is how "we could not look" became "we looked and
+        // there were none".
+        pageChecks: {
+          evidence: "unavailable",
+          baseline: null,
+          blockers: ["brand_terms_not_confirmed"],
+          items: [],
+          examinedRows: null,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const label = host.querySelector('[data-action-group="routine"]');
+
+    expect(label?.textContent).toMatch(/1 queries/);
+    expect(label?.textContent).not.toMatch(/0 pages/);
+    expect(label?.textContent).toContain(en.tools.dailyBriefing.kpis.unavailable);
   });
 
   it("keeps the routine heading over an explanation with no items under it", async () => {
@@ -2432,7 +2489,7 @@ describe("DailyBriefingResults folded explanation", () => {
     const label = host.querySelector('[data-action-group="routine"]');
 
     expect(label).not.toBeNull();
-    expect(label?.textContent).toMatch(/\b0 items\b/);
+    expect(label?.textContent).toMatch(/0 queries/);
     expect(
       host.querySelector("[data-checks-not-checkable]")?.textContent,
     ).toContain("3");

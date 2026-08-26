@@ -49,6 +49,16 @@ const EYEBROW =
 /** Query rows this page will show, changes and observations together. */
 const DISPLAY_ROW_LIMIT = 3;
 /**
+ * The leading appearance, counted apart from the three above.
+ *
+ * The engine gives that lane a budget of its own so a property's three changes
+ * cannot crowd out the one signal that reports something going right. Applying
+ * the shared limit here put it back: it always sorts last, so it was always
+ * the row the slice removed, and the page then reported "every candidate is in
+ * the table above" over a table missing it.
+ */
+const DISPLAY_LEADING_ROW_LIMIT = 1;
+/**
  * Page rows this page will show, counted apart from the query ones.
  *
  * A shared budget spent query-first let three query candidates hide every page
@@ -353,6 +363,33 @@ function matchingActions(
       return change ? [{ action, change }] : [];
     })
     .slice(0, 3);
+}
+
+/**
+ * The leading appearance's action, kept out of the three above.
+ *
+ * `matchingActions` caps at the engine's action limit, and the leading action
+ * always sorts last, so the cap removed exactly the action whose lane has a
+ * budget of its own.
+ */
+function leadingAction(
+  envelope: DailyBriefingEnvelope,
+): readonly {
+  readonly action: DailyBriefingAction;
+  readonly change: DailyBriefingChange;
+}[] {
+  return envelope.result.actions
+    .flatMap((action) => {
+      if (action.kind !== "first_observed_leading") return [];
+      const change = envelope.result.changes.find(
+        (candidate) =>
+          candidate.kind === action.kind &&
+          candidate.query === action.query &&
+          candidate.page === action.page,
+      );
+      return change ? [{ action, change }] : [];
+    })
+    .slice(0, DISPLAY_LEADING_ROW_LIMIT);
 }
 
 function ResultPreviewSection({
@@ -834,7 +871,12 @@ export function DailyBriefingResults({
   const [securityChecked, setSecurityChecked] = useState(false);
   const [handoffFailed, setHandoffFailed] = useState(false);
   const { result } = envelope;
-  const queryActions = matchingActions(envelope);
+  const queryActions = [
+    ...matchingActions(envelope).filter(
+      ({ action }) => action.kind !== "first_observed_leading",
+    ),
+    ...leadingAction(envelope),
+  ];
   // The site-wide trend is the property's own fact. It used to be dropped the
   // moment any query signal was selected, which deleted the only whole-site
   // statement in the briefing exactly when the briefing had the most to say.
@@ -849,7 +891,16 @@ export function DailyBriefingResults({
     propertyAction === null ? null : destination(propertyAction.destination);
   const currentCoverage = result.coverage.current;
   const currentAnonymization = result.anonymization.current;
-  const shownChanges = result.changes.slice(0, DISPLAY_ROW_LIMIT);
+  const changeRows = result.changes.filter(
+    (change) => change.kind !== "first_observed_leading",
+  );
+  const shownChanges = changeRows.slice(0, DISPLAY_ROW_LIMIT);
+  const shownLeading = result.changes
+    .filter((change) => change.kind === "first_observed_leading")
+    .slice(0, DISPLAY_LEADING_ROW_LIMIT);
+  // What the table actually renders. The two budgets stay separate above; the
+  // rows themselves are one list, in the order the engine ranked them.
+  const shownQueryRows = [...shownChanges, ...shownLeading];
   // Its own budget, not what the query rows left over. Allocating page
   // evidence from query leftovers made the number of query candidates decide
   // whether a page measurement was visible at all, which is one population
@@ -906,16 +957,24 @@ export function DailyBriefingResults({
   const pageChecks = result.pageChecks.items;
   // Two populations, so this is a count of routine items and not of anything
   // that could be added to the action counts above.
-  const routineCount = suggestedChecks.length + pageChecks.length;
   const pageCheckBaseline = result.pageChecks.baseline;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
-  // Shown whenever either routine block renders, not only when the count is
-  // positive. The query block also renders to explain rows it could not turn
-  // into checks, and gating the label on the count left that explanation
-  // sitting under no heading at all — a sentence about routine work that did
-  // not look like it belonged to anything.
+  // Two counts, never their sum. Queries and pages are different populations
+  // here as everywhere else on this page, and one total measures neither. The
+  // sum also read an unavailable page check — which carries an empty item list
+  // by contract — as a page count of zero.
+  const routineQueryCount =
+    result.suggestedChecks.evidence === "observed"
+      ? suggestedChecks.length
+      : null;
+  const routinePageCount =
+    result.pageChecks.evidence === "unavailable" ? null : pageChecks.length;
+  // Shown whenever either routine block renders, not only when something was
+  // counted. The query block also renders to explain rows it could not turn
+  // into checks, and gating the label on a count left that explanation sitting
+  // under no heading at all.
   const routineShown =
-    routineCount > 0 || uncheckableShown || pageChecks.length > 0;
+    suggestedChecks.length > 0 || uncheckableShown || pageChecks.length > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -940,7 +999,7 @@ export function DailyBriefingResults({
   const foldSummary = (
     queryEvidenceRead
       ? [
-          t("evidence.foldChanges", { count: shownChanges.length }),
+          t("evidence.foldChanges", { count: shownQueryRows.length }),
           foldPageChanges,
           provisionalCandidates > 0
             ? t("evidence.foldProvisional", {
@@ -1177,7 +1236,7 @@ export function DailyBriefingResults({
             ) : null}
           </div>
         ) : null}
-        {shownChanges.length === 0 &&
+        {shownQueryRows.length === 0 &&
         shownPageChanges.length === 0 &&
         shownProvisional.length === 0 &&
         shownObservations.length === 0 ? (
@@ -1225,7 +1284,7 @@ export function DailyBriefingResults({
                 the middle left the query observations rendering below it, so
                 they read as part of the page population. */}
             {shownPageChanges.length > 0 &&
-            shownChanges.length +
+            shownQueryRows.length +
               shownProvisional.length +
               shownObservations.length >
               0 ? (
@@ -1239,7 +1298,7 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ) : null}
-            {shownChanges.map((change, index) => (
+            {shownQueryRows.map((change, index) => (
               <div
                 key={`change:${index}:${change.kind}`}
                 role="row"
@@ -1945,7 +2004,16 @@ export function DailyBriefingResults({
             data-action-group="routine"
             className={`${EYEBROW} mt-6 border-t border-brand-border pt-5`}
           >
-            {t("actions.groupRoutine", { count: routineCount })}
+            {t("actions.groupRoutine", {
+              queries:
+                routineQueryCount === null
+                  ? t("kpis.unavailable")
+                  : number(locale, routineQueryCount),
+              pages:
+                routinePageCount === null
+                  ? t("kpis.unavailable")
+                  : number(locale, routinePageCount),
+            })}
           </p>
         ) : null}
         {suggestedChecks.length > 0 || uncheckableShown ? (
