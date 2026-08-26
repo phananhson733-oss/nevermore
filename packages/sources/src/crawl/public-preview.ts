@@ -4,7 +4,10 @@
  * These are transport safety boundaries, not account, pricing, or usage
  * quotas. The HTTP caller cannot change them. A later asynchronous crawler can
  * use a different execution profile without changing the public audit facts.
+ * A caller that needs evidence for the submitted page can opt into rejecting
+ * an entry redirect that replaces that page before the crawl transport exists.
  */
+import { canonicalizeUrl } from "../canonical-url.ts";
 import { normalizeSiteOrigin } from "../origin.ts";
 import {
   fetchPublicResource,
@@ -87,6 +90,17 @@ export type PublicSiteEntryResolver = (
   options: PublicResourceFetchOptions,
 ) => Promise<PublicResourceResult>;
 
+/** A canonical entry redirect replaced the page the caller asked to inspect. */
+export class PublicPreviewTargetRedirectError extends Error {
+  readonly targetUrl: string;
+
+  constructor(targetUrl: string) {
+    super("public_preview_target_redirected");
+    this.name = "PublicPreviewTargetRedirectError";
+    this.targetUrl = targetUrl;
+  }
+}
+
 export interface PublicPreviewCrawlOptions {
   /** Offline test seam. Production must use the guarded default transport. */
   readonly fetcher?: CrawlFetcher;
@@ -94,6 +108,8 @@ export interface PublicPreviewCrawlOptions {
   readonly engineOptions?: Omit<CrawlEngineOptions, "budget">;
   /** Offline test seam for canonical entry resolution. */
   readonly entryResolver?: PublicSiteEntryResolver;
+  /** Opt in to rejecting an entry redirect to a different canonical page. */
+  readonly requireSameEntrySubject?: boolean;
   /**
    * Production door for the engine's collected-page count, separate from
    * `engineOptions` because that seam is offline-only. Observation cannot
@@ -213,7 +229,26 @@ export async function crawlPublicSitePreview(
   if (!isAllowedPublicToolEntryRedirect(submitted.toString(), seedUrl)) {
     throw new Error("public_preview_entry_blocked");
   }
-  const resolvedSeed = new URL(seedUrl);
+  const rawResolvedSeed = new URL(seedUrl);
+  if (rawResolvedSeed.username || rawResolvedSeed.password) {
+    throw new Error("public_preview_requires_normalized_origin");
+  }
+  const canonicalEntry = canonicalizeUrl(rawResolvedSeed.toString());
+  if (!canonicalEntry) {
+    throw new Error("public_preview_requires_normalized_origin");
+  }
+  const resolvedSeed = new URL(canonicalEntry.fetchUrl);
+  if (options.requireSameEntrySubject) {
+    const rebasedSubmitted = canonicalizeUrl(
+      `${resolvedSeed.origin}${submitted.pathname}${submitted.search}`,
+    );
+    if (!rebasedSubmitted) {
+      throw new Error("public_preview_requires_normalized_origin");
+    }
+    if (rebasedSubmitted.subjectUrl !== canonicalEntry.subjectUrl) {
+      throw new PublicPreviewTargetRedirectError(canonicalEntry.fetchUrl);
+    }
+  }
   const normalized = normalizeSiteOrigin(`${resolvedSeed.origin}/`);
   if (!normalized) {
     throw new Error("public_preview_requires_normalized_origin");

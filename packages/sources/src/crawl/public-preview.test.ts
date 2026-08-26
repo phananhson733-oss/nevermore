@@ -4,6 +4,7 @@ import {
   crawlPublicSitePreview,
   isAllowedPublicToolEntryRedirect,
   PUBLIC_PREVIEW_CRAWL_USER_AGENT,
+  PublicPreviewTargetRedirectError,
   PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   PUBLIC_TOOL_SYNC_MAX_REQUESTS,
 } from "./public-preview.ts";
@@ -81,6 +82,111 @@ describe("public preview crawl profile", () => {
     expect(
       requested.some((url) => url === "https://acme.test/docs?section=seo"),
     ).toBe(true);
+  });
+
+  it("rejects a replaced entry page before the crawl transport runs", async () => {
+    const fetch = vi.fn(async (url: string) => previewFixtureResponse(url));
+    const fetcher: CrawlFetcher = { fetch };
+    const submittedUrl = "https://acme.test/old";
+
+    const redirectError = await crawlPublicSitePreview(
+      submittedUrl,
+      undefined,
+      {
+        fetcher,
+        entryResolver: async () =>
+          entryResult(
+            submittedUrl,
+            "https://acme.test/?utm_source=test",
+          ),
+        requireSameEntrySubject: true,
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      },
+    ).catch((error: unknown) => error);
+
+    expect(redirectError).toBeInstanceOf(PublicPreviewTargetRedirectError);
+    expect(redirectError).toMatchObject({
+      name: "PublicPreviewTargetRedirectError",
+      targetUrl: "https://acme.test/",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["HTTP upgrade", "http://acme.test/docs", "https://acme.test/docs"],
+    [
+      "apex to www",
+      "https://acme.test/docs",
+      "https://www.acme.test/docs",
+    ],
+    [
+      "www to apex",
+      "https://www.acme.test/docs",
+      "https://acme.test/docs",
+    ],
+    [
+      "trailing slash normalization",
+      "https://acme.test/docs",
+      "https://acme.test/docs/",
+    ],
+    [
+      "tracking-only query removal",
+      "https://acme.test/docs?utm_source=test",
+      "https://acme.test/docs",
+    ],
+  ])(
+    "keeps crawling after a strict %s entry redirect",
+    async (_label, submittedUrl, finalUrl) => {
+      const fetch = vi.fn(async (url: string) => previewFixtureResponse(url));
+      const fetcher: CrawlFetcher = { fetch };
+
+      await expect(
+        crawlPublicSitePreview(submittedUrl, undefined, {
+          fetcher,
+          entryResolver: async () => entryResult(submittedUrl, finalUrl),
+          requireSameEntrySubject: true,
+          engineOptions: {
+            guard: async (url) => ({
+              safe: true,
+              normalizedUrl: url,
+              pinnedIp: "93.184.216.34",
+              reason: null,
+            }),
+          },
+        }),
+      ).resolves.toMatchObject({ origin: new URL(finalUrl).origin });
+      expect(fetch).toHaveBeenCalled();
+    },
+  );
+
+  it("keeps path-changing redirects crawlable unless strict entry matching is requested", async () => {
+    const fetch = vi.fn(async (url: string) => previewFixtureResponse(url));
+    const fetcher: CrawlFetcher = { fetch };
+    const submittedUrl = "https://acme.test/old";
+
+    await expect(
+      crawlPublicSitePreview(submittedUrl, undefined, {
+        fetcher,
+        entryResolver: async () =>
+          entryResult(submittedUrl, "https://acme.test/"),
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      }),
+    ).resolves.toMatchObject({ origin: "https://acme.test" });
+    expect(fetch).toHaveBeenCalled();
   });
 
   it.each([
@@ -398,4 +504,24 @@ function entryResult(
     bytes: 1,
     bodyComplete: false,
   };
+}
+
+function previewFixtureResponse(url: string): Response {
+  const path = new URL(url).pathname;
+  if (path === "/robots.txt") {
+    return new Response("User-agent: *\n", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
+  }
+  if (path === "/sitemap.xml") {
+    return new Response("", {
+      status: 404,
+      headers: { "content-type": "application/xml" },
+    });
+  }
+  return new Response("<html><title>Fixture page</title></html>", {
+    status: 200,
+    headers: { "content-type": "text/html" },
+  });
 }
