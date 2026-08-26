@@ -367,10 +367,13 @@ describe("runDailyBriefing read plan", () => {
     });
     const opportunityRows: readonly GscRawRow[] = [
       { keys: ["pricing automation"], clicks: 0, impressions: 1_000, position: 9 },
+      // Four hundred each, so the position band holds the two thousand
+      // impressions the CTR anomaly lane requires once the measured row is
+      // taken out. The 10% rate is unchanged.
       ...Array.from({ length: 5 }, (_, index) => ({
         keys: [`baseline ${index}`],
-        clicks: 10,
-        impressions: 100,
+        clicks: 40,
+        impressions: 400,
         position: 9,
       })),
     ];

@@ -126,6 +126,36 @@ export const BRIEFING_PAGE_COLLAPSE_RATIO = 0.8;
  */
 export const BRIEFING_ZERO_CLICK_MIN_EXPECTED_CLICKS = 3;
 
+/**
+ * Impressions a query needs this window before its rate is called anomalous.
+ *
+ * Three hundred, above the hundred the shared evidence table already applies.
+ * That floor is shared with the quick-wins tool and is not this briefing's to
+ * move; this one sits on top of it and applies here only.
+ */
+export const BRIEFING_CTR_ANOMALY_MIN_IMPRESSIONS = 300;
+
+/**
+ * Impressions the query's own position band must hold, with the query removed.
+ *
+ * Two thousand, well above the five hundred the shared curve treats as a
+ * usable band. The baseline is a leave-one-out rate, so the sample that
+ * matters is the band's impressions minus the row being measured — the number
+ * the comparison actually rests on rather than the number it sits beside.
+ *
+ * The window is this briefing's seven days. The spec calls this "historical",
+ * but no read in this tool covers more than the current window, and restating
+ * a seven-day count as a historical one would describe a measurement nobody
+ * took.
+ */
+export const BRIEFING_CTR_ANOMALY_MIN_BAND_IMPRESSIONS = 2_000;
+
+/** Clicks the site's own curve must predict before a shortfall is material. */
+export const BRIEFING_CTR_ANOMALY_MIN_EXPECTED_CLICKS = 5;
+
+/** Share of the predicted clicks that must be missing. */
+export const BRIEFING_CTR_ANOMALY_MAX_OBSERVED_SHARE = 0.5;
+
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
@@ -890,12 +920,35 @@ function candidatesFor(
   const table = buildEvidenceTable(opportunitySplit.nonBrand, curve);
 
   const opportunities: ChangeCandidate[] = [];
+  const bucketsById = new Map(
+    curve.buckets.map((bucket) => [bucket.bucketId, bucket]),
+  );
+  // Rows this lane could ask its question of, which is not every row the
+  // shared table produced: the three sample conditions below decide whether a
+  // shortfall here could mean anything, and a row failing them was never
+  // evaluated rather than evaluated and found clean.
+  let ctrAnomalyCapableRows = 0;
   for (const row of table.rows) {
     if (row.observedCtr === null || !(row.baselineCtr > 0)) continue;
-    const shortfallRatio = (row.baselineCtr - row.observedCtr) / row.baselineCtr;
+    // Leave-one-out, matching the baseline: the band's impressions with this
+    // row's own removed are the sample the comparison actually stands on.
+    const bucket = bucketsById.get(row.bucketId);
+    const bandImpressions =
+      bucket === undefined ? 0 : bucket.impressions - row.impressions;
+    // Positive assertions, so a NaN fails them rather than passing.
     if (
-      row.clickGap < BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE ||
-      shortfallRatio < BRIEFING_MATERIAL_CHANGE_RATIO
+      !(row.impressions >= BRIEFING_CTR_ANOMALY_MIN_IMPRESSIONS) ||
+      !(bandImpressions >= BRIEFING_CTR_ANOMALY_MIN_BAND_IMPRESSIONS) ||
+      !(row.expectedClicks >= BRIEFING_CTR_ANOMALY_MIN_EXPECTED_CLICKS)
+    ) {
+      continue;
+    }
+    ctrAnomalyCapableRows += 1;
+    if (
+      !(
+        row.clicks <=
+        BRIEFING_CTR_ANOMALY_MAX_OBSERVED_SHARE * row.expectedClicks
+      )
     ) {
       continue;
     }
@@ -1229,7 +1282,11 @@ function candidatesFor(
 
   const observedQueryRows = currentRows.length;
   const ctrLane = ctrLaneFor(input.brandTermsConfirmed, curve, table.rows.length);
-  const ctrOpportunityCapableQueries = table.rows.length;
+  // The rows this lane could ask about, not the rows the shared table built.
+  // Reading it off `table.rows.length` counted every query with a usable
+  // leave-one-out baseline as evaluated, including the ones this briefing's
+  // own sample conditions never let it look at.
+  const ctrOpportunityCapableQueries = ctrAnomalyCapableRows;
   const lanes: Record<DailyBriefingChangeKind, DailyBriefingLaneState> = {
     // A usable position band is not a usable per-query baseline. The curve
     // needs the band; the lane needs a leave-one-out baseline for the query

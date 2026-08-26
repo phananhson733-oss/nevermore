@@ -180,9 +180,17 @@ function evidence(
   };
 }
 
+/**
+ * Five peer rows at a 10% rate, sized to satisfy the band sample condition.
+ *
+ * Four hundred impressions each rather than a hundred: the CTR anomaly lane
+ * requires two thousand impressions in the band with the measured row removed,
+ * and five hundred peers could not carry that. The rate is unchanged, so every
+ * baseline and gap these fixtures assert is the same number it was.
+ */
 function baselineRows(prefix: string, position = 9) {
   return Array.from({ length: 5 }, (_, index) =>
-    queryRow(`${prefix} baseline ${index}`, 100, 10, position),
+    queryRow(`${prefix} baseline ${index}`, 400, 40, position),
   );
 }
 
@@ -358,6 +366,103 @@ describe("daily and weekly KPI comparisons", () => {
 });
 
 describe("query changes and actions", () => {
+  // The band this fixture builds holds 2,900 impressions at a 10% rate. With
+  // the measured row removed it still holds 2,500, which is what the band
+  // sample condition asks for.
+  function anomalyReport(
+    targetImpressions: number,
+    targetClicks: number,
+    peerImpressions = 500,
+  ) {
+    const rows = [
+      queryRow("ctr target", targetImpressions, targetClicks, 9),
+      ...Array.from({ length: 5 }, (_, index) =>
+        queryRow(`anomaly peer ${index}`, peerImpressions, peerImpressions / 10, 9),
+      ),
+    ];
+    return report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+  }
+
+  it("names a query converting at half the rate its own band manages", () => {
+    // 400 impressions in a band running at 10% expects 40 clicks. Eight is a
+    // fifth of that.
+    const result = anomalyReport(400, 8);
+
+    expect(
+      result.changes.filter((change) => change.kind === "click_opportunity"),
+    ).toMatchObject([{ kind: "click_opportunity", query: "ctr target" }]);
+  });
+
+  it("says nothing when the shortfall is real but under half", () => {
+    // 24 clicks against 40 expected is a 40% shortfall: below this briefing's
+    // own threshold, though it would have cleared the 15% one this lane used
+    // before the spec re-specified it.
+    const result = anomalyReport(400, 24);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 6,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous on too few impressions", () => {
+    // Zero clicks on 250 impressions is a 100% shortfall and still not asked:
+    // the row itself is below the impression condition.
+    const result = anomalyReport(250, 0);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      // Read, and never evaluated — a different fact from evaluated and clean.
+      notEvaluated: 1,
+      evaluatedNoSignal: 5,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous against a thin band", () => {
+    // Sized so the two readings of "the band" disagree: it holds 2,100
+    // impressions in total and 1,700 once the measured row is taken out. The
+    // baseline is a leave-one-out rate, so the second is the sample the
+    // comparison rests on, and 1,700 is short of the two thousand required.
+    const result = anomalyReport(400, 0, 340);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous when a click was never expected", () => {
+    // A band running at 1% expects four clicks from 400 impressions. Below
+    // five, "none arrived" is not yet a quantity worth acting on.
+    const rows = [
+      queryRow("ctr target", 400, 0, 9),
+      ...Array.from({ length: 5 }, (_, index) =>
+        queryRow(`anomaly peer ${index}`, 500, 5, 9),
+      ),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+  });
+
   it("uses a leave-one-out site CTR curve for a click opportunity", () => {
     const candidate = queryRow("pricing automation", 1_000, 0, 9);
     const currentRows = [candidate, ...baselineRows("base")];
@@ -1112,21 +1217,26 @@ describe("property trend", () => {
 });
 
 describe("signal funnel", () => {
+  // The four floor rows are the point of this fixture and keep their exact
+  // impression counts. The target and its two peers are scaled so the CTR
+  // anomaly lane's own conditions are met — three hundred on the row, two
+  // thousand in the band once the row is removed — at the same 10% rate, so
+  // every baseline and gap these tests assert is unchanged.
   function ctrFunnelRows() {
     return [
-      queryRow("ctr target", 100, 0, 9),
+      queryRow("ctr target", 400, 0, 9),
       queryRow("below observation floor", 49, 4, 9),
       queryRow("observation boundary", 50, 5, 9),
       queryRow("observation ceiling", 99, 10, 9),
-      queryRow("eligible peer a", 190, 19, 9),
-      queryRow("eligible peer b", 190, 19, 9),
+      queryRow("eligible peer a", 1_300, 130, 9),
+      queryRow("eligible peer b", 1_300, 130, 9),
     ];
   }
 
   it("reports complete mixed row floors and independent candidate lanes", () => {
     const rows = ctrFunnelRows();
     const page = "https://example.com/ctr-target";
-    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const pages = [queryPageRow("ctr target", page, 400, 0, 9)];
     const result = report({
       currentQueryEvidence: evidence(rows, pages),
       previousQueryEvidence: evidence(rows, pages),
@@ -1138,7 +1248,10 @@ describe("signal funnel", () => {
       observedQueryRows: 6,
       observationCandidates: 2,
       actionEligibleQueries: 3,
-      ctrBaselineRows: 1,
+      // Three, not one: with the band scaled up, removing any single row
+      // still leaves enough of it to anchor a leave-one-out baseline. At the
+      // old size only the smallest row's removal did.
+      ctrBaselineRows: 3,
       clickOpportunityCandidates: 1,
       stableDeclineCandidates: 0,
       pageOneBandCandidates: 0,
@@ -1175,7 +1288,7 @@ describe("signal funnel", () => {
   it("leaves CTR lanes unevaluated until brand terms are confirmed", () => {
     const rows = ctrFunnelRows();
     const page = "https://example.com/ctr-target";
-    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const pages = [queryPageRow("ctr target", page, 400, 0, 9)];
     const result = report({
       currentQueryEvidence: evidence(rows, pages),
       previousQueryEvidence: evidence(rows, pages),

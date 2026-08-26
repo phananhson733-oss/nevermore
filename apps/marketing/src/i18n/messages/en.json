@@ -2016,8 +2016,8 @@
           "lanes": {
             "clickOpportunity": {
               "name": "Click opportunity",
-              "requirement": "confirmed brand terms, and the query being non-brand, reaching 100 impressions in the current window, sitting inside a usable CTR baseline band, and leaving that band still able to produce a baseline once the query itself is removed from it",
-              "finding": "observed clicks fall at least 3 short of what the band baseline predicts, and the shortfall reaches 15 percent of that prediction"
+              "requirement": "confirmed brand terms, and the query being non-brand, reaching 300 impressions in the current window, sitting inside a usable CTR baseline band that still holds 2,000 impressions and can still produce a baseline once the query itself is removed from it, and being predicted at least 5 clicks by that baseline",
+              "finding": "observed clicks come in at half or less of what the band baseline predicts"
             },
             "stableDecline": {
               "name": "Stable-position click decline",
