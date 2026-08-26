@@ -54,7 +54,7 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "gsc.observed_weak",
   "gsc.not_observed_in_gsc_query_sample",
   "gsc.gsc_query_sample_not_read",
-  "gsc.statusWithPosition",
+  "gsc.positionChip",
   "gsc.positionTitle",
   "gsc.evidenceBasis.query",
   "gsc.evidenceBasis.query_page",
@@ -185,9 +185,14 @@ const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
   // unreviewable sentence back in the catalog.
   "actions.exportCsvBasisCapped",
   "actions.exportCsvBasisComplete",
-  // The "add domain" button, removed with it: the field takes a comma-separated
-  // list now, so there is no second control to label.
+  // The "add domain" button, and then the chips it used to make. The field is
+  // the list now -- one box, commas, run -- so there is nothing to label and
+  // nothing to remove one of.
   "competitors.add",
+  "competitors.remove",
+  // The state and the average position used to share one string. They are two
+  // chips now -- a state and a measurement -- so nothing renders the merge.
+  "gsc.statusWithPosition",
 ] as const;
 
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
