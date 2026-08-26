@@ -200,7 +200,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v6");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v7");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -213,7 +213,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v6",
+      schemaVersion: "daily_search_briefing.v7",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -238,6 +238,32 @@ describe("daily briefing contract and windows", () => {
       current7Days: { startDate: "2026-03-03", endDate: "2026-03-09" },
       previous7Days: { startDate: "2026-02-24", endDate: "2026-03-02" },
       readRange: { startDate: "2026-02-24", endDate: "2026-03-09" },
+    });
+  });
+
+  it("keeps a successful empty trend read distinct from observed zero traffic", () => {
+    const result = report({
+      trend: {
+        daily: {
+          rows: [],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+        hourly: {
+          rows: [],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+      },
+    }).result;
+
+    expect(result.trend.daily).toMatchObject({
+      evidence: "not_observed",
+      points: [],
+    });
+    expect(result.trend.hourly).toMatchObject({
+      evidence: "not_observed",
+      points: [],
     });
   });
 });
