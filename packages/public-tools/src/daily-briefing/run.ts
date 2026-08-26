@@ -1,5 +1,5 @@
 // @input  -- an injected Search Analytics client, clock and confirmed brand input
-// @output -- a daily briefing whose KPI read is required and query attachments soft-fail
+// @output -- a daily briefing with required final action evidence and optional trend reads
 // @pos    -- bounded I/O orchestration; transport remains injected by apps/*
 
 import {
@@ -16,11 +16,13 @@ import type { GscQueryClient } from "../gsc-analytics/types.ts";
 import {
   buildDailyBriefing,
   dailyBriefingWindowsFor,
+  dailyBriefingTrendWindowsFor,
 } from "./report.ts";
 import type {
   DailyBriefingDateRow,
   DailyBriefingEnvelope,
   DailyBriefingQueryEvidence,
+  DailyBriefingTrendRead,
 } from "./types.ts";
 
 export interface RunDailyBriefingInput {
@@ -35,22 +37,45 @@ function fulfilledOrNull<T>(result: PromiseSettledResult<T>): T | null {
   return result.status === "fulfilled" ? result.value : null;
 }
 
+function trendReadFrom(
+  response: Awaited<ReturnType<GscQueryClient>>,
+): DailyBriefingTrendRead {
+  return {
+    rows: response.rows.flatMap((row) => {
+      const key = row.keys[0];
+      return typeof key === "string"
+        ? [
+            {
+              key,
+              clicks: row.clicks,
+              impressions: row.impressions,
+              position: row.position,
+            },
+          ]
+        : [];
+    }),
+    firstIncompleteDate: response.metadata?.firstIncompleteDate ?? null,
+    firstIncompleteHour: response.metadata?.firstIncompleteHour ?? null,
+  };
+}
+
 /**
- * Execute the fixed nine-call plan.
+ * Execute the fixed eleven-call plan.
  *
  * The date-dimension read is the report: if it fails, there is no honest KPI
- * result and the rejection propagates. The eight attachments only explain
- * which rows deserve attention, so each one degrades independently to null.
+ * result and the rejection propagates. The ten attachments either explain
+ * rows or visualise fresh traffic, so each one degrades independently to null.
  *
- * Two of the eight read the page dimension on its own. Search Console
- * anonymizes low-volume queries but not pages, so these carry click evidence
- * the query reads structurally cannot: one measured property showed 9 of 37
- * weekly clicks at query level and all 37 at page level.
+ * Two query-explanation attachments read the page dimension on its own.
+ * Search Console anonymizes low-volume queries but not pages, so these carry
+ * click evidence the query reads structurally cannot: one measured property
+ * showed 9 of 37 weekly clicks at query level and all 37 at page level.
  */
 export async function runDailyBriefing(
   input: RunDailyBriefingInput,
 ): Promise<DailyBriefingEnvelope> {
   const windows = dailyBriefingWindowsFor(input.now);
+  const trendWindows = dailyBriefingTrendWindowsFor(input.now);
   const dateResponse = await input.client({
     dimensions: ["date"],
     startDate: windows.readRange.startDate,
@@ -89,6 +114,8 @@ export async function runDailyBriefing(
     previousPage,
     currentTotals,
     previousTotals,
+    trendDaily,
+    trendHourly,
   ] = await Promise.allSettled([
     readQueryRows(
       input.client,
@@ -122,6 +149,22 @@ export async function runDailyBriefing(
     readPageRows(input.client, windows.previous7Days, optionalBudget, "byPage"),
     readPropertyTotals(input.client, windows.current7Days, "byPage"),
     readPropertyTotals(input.client, windows.previous7Days, "byPage"),
+    input.client({
+      dimensions: ["date"],
+      startDate: trendWindows.daily.startDate,
+      endDate: trendWindows.daily.endDate,
+      rowLimit: GSC_ROW_LIMIT,
+      startRow: 0,
+      dataState: "all",
+    }),
+    input.client({
+      dimensions: ["hour"],
+      startDate: trendWindows.hourly.startDate,
+      endDate: trendWindows.hourly.endDate,
+      rowLimit: GSC_ROW_LIMIT,
+      startRow: 0,
+      dataState: "hourly_all",
+    }),
   ]);
 
   const currentQueryEvidence: DailyBriefingQueryEvidence = {
@@ -140,6 +183,16 @@ export async function runDailyBriefing(
   return buildDailyBriefing({
     now: input.now,
     dateRows,
+    trend: {
+      daily:
+        trendDaily.status === "fulfilled"
+          ? trendReadFrom(trendDaily.value)
+          : null,
+      hourly:
+        trendHourly.status === "fulfilled"
+          ? trendReadFrom(trendHourly.value)
+          : null,
+    },
     currentQueryEvidence,
     previousQueryEvidence,
     brandTerms: input.brandTerms,

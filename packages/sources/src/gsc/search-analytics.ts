@@ -39,11 +39,12 @@ export const RETRYABLE_BACKOFF_BASE_MS = 400;
 /** Jitter added on top, scaled by the injected random source. */
 export const RETRYABLE_BACKOFF_JITTER_MS = 600;
 
-export type SearchAnalyticsDimension = "query" | "page" | "date";
+export type SearchAnalyticsDimension = "query" | "page" | "date" | "hour";
 export type SearchAnalyticsAggregationType =
   | "auto"
   | "byPage"
   | "byProperty";
+export type SearchAnalyticsDataState = "final" | "all" | "hourly_all";
 
 /**
  * One equality filter, which is all the callers here need.
@@ -65,6 +66,8 @@ export interface SearchAnalyticsRequest {
   readonly rowLimit: number;
   readonly startRow: number;
   readonly aggregationType?: SearchAnalyticsAggregationType;
+  /** Omitted uses the public tool's final-data default. */
+  readonly dataState?: SearchAnalyticsDataState;
   /**
    * Narrows the rows to those matching every entry, or omitted for all rows.
    *
@@ -86,6 +89,10 @@ export interface SearchAnalyticsResponse {
   readonly rows: readonly SearchAnalyticsRow[];
   /** Echoed from the service; null when the response omitted it. */
   readonly responseAggregationType: string | null;
+  readonly metadata?: {
+    readonly firstIncompleteDate: string | null;
+    readonly firstIncompleteHour: string | null;
+  };
 }
 
 export type SearchAnalyticsFetch = (
@@ -164,6 +171,29 @@ function parseRows(payload: Record<string, unknown>): SearchAnalyticsRow[] {
   });
 }
 
+function parseMetadata(payload: Record<string, unknown>):
+  | {
+      readonly firstIncompleteDate: string | null;
+      readonly firstIncompleteHour: string | null;
+    }
+  | undefined {
+  const metadata = payload["metadata"];
+  if (metadata === undefined || typeof metadata !== "object" || metadata === null) {
+    return undefined;
+  }
+  const value = metadata as Record<string, unknown>;
+  return {
+    firstIncompleteDate:
+      typeof value["first_incomplete_date"] === "string"
+        ? value["first_incomplete_date"]
+        : null,
+    firstIncompleteHour:
+      typeof value["first_incomplete_hour"] === "string"
+        ? value["first_incomplete_hour"]
+        : null,
+  };
+}
+
 /**
  * Build a client bound to one property and one visitor's access token.
  *
@@ -215,7 +245,7 @@ export function createSearchAnalyticsClient(
           endDate: request.endDate,
           rowLimit: request.rowLimit,
           startRow: request.startRow,
-          dataState: GSC_DATA_STATE,
+          dataState: request.dataState ?? GSC_DATA_STATE,
           ...(request.aggregationType === undefined
             ? {}
             : { aggregationType: request.aggregationType }),
@@ -261,6 +291,7 @@ export function createSearchAnalyticsClient(
 
       const body = payload as Record<string, unknown>;
       const aggregation = body["responseAggregationType"];
+      const metadata = parseMetadata(body);
       return {
         ok: true,
         value: {
@@ -269,6 +300,7 @@ export function createSearchAnalyticsClient(
           // exactly how two incompatible measurements get divided.
           responseAggregationType:
             typeof aggregation === "string" ? aggregation : null,
+          ...(metadata === undefined ? {} : { metadata }),
         },
       };
     } finally {

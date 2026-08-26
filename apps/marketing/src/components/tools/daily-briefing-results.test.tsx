@@ -80,6 +80,27 @@ function completeDateRows() {
 const BASE_ENVELOPE: DailyBriefingEnvelope = buildDailyBriefing({
   now: new Date("2026-08-24T20:00:00.000Z"),
   dateRows: completeDateRows(),
+  trend: {
+    daily: {
+      rows: completeDateRows().map((row) => ({
+        key: row.date,
+        clicks: row.clicks,
+        impressions: row.impressions,
+        position: row.position,
+      })),
+      firstIncompleteDate: null,
+      firstIncompleteHour: null,
+    },
+    hourly: {
+      rows: [
+        { key: "2026-08-24T17:00:00", clicks: 2, impressions: 40, position: 8.5 },
+        { key: "2026-08-24T18:00:00", clicks: 3, impressions: 70, position: 8.1 },
+        { key: "2026-08-24T19:00:00", clicks: 4, impressions: 90, position: 7.8 },
+      ],
+      firstIncompleteDate: null,
+      firstIncompleteHour: null,
+    },
+  },
   currentQueryEvidence: null,
   previousQueryEvidence: null,
   brandTerms: [],
@@ -428,10 +449,6 @@ afterEach(async () => {
 
 async function renderResults(
   report: DailyBriefingEnvelope = envelope(),
-  rateLimit: { readonly remaining: number | null; readonly limit: number } | null = {
-    remaining: 7,
-    limit: 10,
-  },
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -447,7 +464,6 @@ async function renderResults(
           locale="en"
           property={PROPERTY}
           envelope={report}
-          rateLimit={rateLimit}
         />
       </NextIntlClientProvider>,
     );
@@ -472,8 +488,8 @@ async function click(element: HTMLElement) {
   });
 }
 
-describe("DailyBriefingResults KPI and evidence facts", () => {
-  it("leads with what to look at and folds the method statement to the end", async () => {
+describe("DailyBriefingResults trend and evidence facts", () => {
+  it("leads with the default 24h trend and removes the run-status facts and old KPI block", async () => {
     const host = await renderResults(
       envelope({
         signalFunnel: signalFunnel({
@@ -489,12 +505,10 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     );
     const noise = host.querySelector('[data-result-section="noise"]');
 
-    // No site-wide trend cleared its gates in this fixture, so the reading
-    // path runs KPIs -> what to look at -> actions, and the noise strip is
-    // nested inside the collapsed explanation near the end.
+    // The chart owns the four KPI values now. The old run-complete message and
+    // facts/KPI panels were status noise ahead of the actual briefing.
     expect(order).toEqual([
-      "facts",
-      "kpis",
+      "trend",
       "changes",
       "actions",
       "manual",
@@ -503,6 +517,11 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
       "limitations",
       "methodology",
     ]);
+    expect(host.textContent).not.toContain("Daily briefing complete");
+    expect(host.querySelector('[data-result-section="facts"]')).toBeNull();
+    expect(host.querySelector('[data-result-section="kpis"]')).toBeNull();
+    expect(host.querySelector('[data-trend-period="24h"]')).not.toBeNull();
+    expect(host.querySelector('[data-trend-period="24h"]')?.getAttribute("aria-pressed")).toBe("true");
     // The strip that used to open the results now lives inside the collapsed
     // explanation, so the page no longer answers for itself before it reports.
     expect(
@@ -561,43 +580,49 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
     expect(summary?.textContent).not.toContain("below the threshold");
   });
 
-  it("renders four metric cards with latest-day and seven-day values", async () => {
-    // Day-level values are shown only on a daily briefing, which requires a
-    // click lane that could actually be evaluated.
+  it("renders the four colour-linked chart metric cards instead of comparison KPI cards", async () => {
     const host = await renderResults(
       envelope({ mode: "change_detection", cadence: "daily" }),
     );
-    const cards = [...host.querySelectorAll("[data-kpi]")];
+    const cards = [...host.querySelectorAll("[data-trend-metric]")];
 
     expect(cards).toHaveLength(4);
     for (const card of cards) {
-      expect(card.textContent).toContain("Latest complete day");
-      expect(card.textContent).toContain("Current complete 7 days");
-      expect(card.textContent).toContain("Change");
+      expect(card.getAttribute("aria-pressed")).toBe("true");
     }
-    expect(cards[0]?.textContent).toContain("20");
-    expect(cards[0]?.textContent).toContain("80");
-    expect(host.textContent).toContain("exposure-weighted");
+    expect(host.querySelector('[data-trend-chart]')).not.toBeNull();
+    expect(host.textContent).not.toContain("Latest complete day");
+    expect(host.textContent).not.toContain("Current complete 7 days");
   });
 
-  it("suppresses day-level interpretation for weekly cadence", async () => {
+  it("keeps the 24h chart available regardless of briefing action cadence", async () => {
     const host = await renderResults(
       envelope({ cadence: "weekly" }),
     );
-    const cards = [...host.querySelectorAll("[data-kpi]")];
 
-    expect(host.textContent).toContain(
-      "Day-level interpretation is unavailable for this cadence.",
-    );
-    expect(host.querySelectorAll('[data-kpi-period="day"]')).toHaveLength(0);
-    expect(host.querySelectorAll('[data-kpi-period="week"]')).toHaveLength(4);
-    for (const card of cards) {
-      expect(card.textContent).not.toContain("Latest complete day");
-      expect(card.textContent).toContain("Current complete 7 days");
-    }
+    expect(host.querySelector('[data-trend-period="24h"]')).not.toBeNull();
+    expect(host.querySelector('[data-trend-period="24h"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll('[data-trend-metric]')).toHaveLength(4);
   });
 
-  it("renders null KPI and quota facts as unavailable rather than zero", async () => {
+  it("switches trend windows and lets a metric card hide only its matching line", async () => {
+    const host = await renderResults();
+    const sevenDays = buttonWith(host, "7 days");
+    const clicks = host.querySelector<HTMLButtonElement>(
+      '[data-trend-metric="clicks"]',
+    );
+
+    await click(sevenDays);
+    expect(sevenDays.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[data-trend-period="24h"]')?.getAttribute("aria-pressed")).toBe("false");
+
+    await click(clicks!);
+    expect(clicks?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector('[data-trend-chart] path[stroke="var(--chart-4)"]')).toBeNull();
+    expect(host.querySelector('[data-trend-chart] path[stroke="var(--chart-1)"]')).not.toBeNull();
+  });
+
+  it("renders an unavailable trend as unavailable rather than substituting zero", async () => {
     const unavailable = {
       evidence: "unavailable" as const,
       current: null,
@@ -612,15 +637,20 @@ describe("DailyBriefingResults KPI and evidence facts", () => {
       },
     };
     const host = await renderResults(
-      envelope({ day: unavailable, weekly: unavailable, cadence: "weekly" }),
-      { remaining: null, limit: 10 },
+      envelope({
+        day: unavailable,
+        weekly: unavailable,
+        cadence: "weekly",
+        trend: {
+          daily: { evidence: "unavailable", points: [], firstIncompleteDate: null, firstIncompleteHour: null },
+          hourly: { evidence: "unavailable", points: [], firstIncompleteDate: null, firstIncompleteHour: null },
+        },
+      }),
     );
 
     expect(host.textContent).toContain("Unavailable");
-    expect(host.textContent).toContain(
-      "Remaining shared runs are unavailable; this is not zero.",
-    );
-    expect(host.textContent).not.toContain("0/10");
+    expect(host.textContent).toContain("Hourly trend is temporarily unavailable");
+    expect(host.textContent).not.toContain("0 clicks");
   });
 
   it("labels a filtered count as prefix-only and keeps missing coverage honest", async () => {
@@ -1011,7 +1041,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(withheld?.textContent).not.toContain("not below a threshold");
   });
 
-  it("names the lane, not the sample, when only position paths ran", async () => {
+  it("does not render cadence rationale after the status cards were removed", async () => {
     const host = await renderResults(
       envelope({
         mode: "change_detection",
@@ -1029,11 +1059,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       }),
     );
 
-    // The weekly-because-small-sample sentence names a gate this run never
-    // hit: the property can have plenty of impressions and still have no
-    // click lane to evaluate.
-    expect(host.textContent).toContain("Only position paths could be evaluated");
-    expect(host.textContent).not.toContain("the sample or complete-day comparison");
+    expect(host.querySelector('[data-result-section="facts"]')).toBeNull();
+    expect(host.querySelector('[data-result-section="trend"]')).not.toBeNull();
   });
 
   it("does not claim there is nothing to hand off while offering a page check", async () => {
@@ -1147,11 +1174,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const host = await renderResults(
       envelope({ mode: "current_position_watchlist" }),
     );
-    // Both the cadence explanation and the review intro must name the real
-    // reason: not "no click signal", which was the only reason v2 could give.
-    expect(host.textContent).toContain(
-      "No query on this property has a comparable prior window",
-    );
+    // The remaining review guidance still names the real reason, without a
+    // redundant cadence card ahead of the chart.
     expect(host.textContent).toContain(
       "There is no comparable prior window this run",
     );
@@ -1802,13 +1826,9 @@ describe("DailyBriefingResults unread query evidence", () => {
     const host = await renderResults(
       envelope({ mode: "unavailable", cadence: "weekly" }),
     );
-    const facts = host.querySelector('[data-result-section="facts"]');
     const changes = host.querySelector('[data-result-section="changes"]');
 
-    expect(facts?.textContent).toContain("query evidence could not be read");
-    expect(facts?.textContent).not.toContain(
-      "Daily interpretation is suppressed because the sample",
-    );
+    expect(host.querySelector('[data-result-section="facts"]')).toBeNull();
     expect(changes?.textContent).toContain("none of the lanes below were run");
     expect(changes?.textContent).not.toContain("Strict changes appear first");
   });
@@ -2105,7 +2125,7 @@ describe("DailyBriefingResults folded explanation", () => {
     );
   });
 
-  it("does not call the cadence daily off a page lane that settled nothing", async () => {
+  it("keeps the chart when a page lane settled nothing", async () => {
     const host = await renderResults(
       envelope({
         changes: [],
@@ -2131,13 +2151,8 @@ describe("DailyBriefingResults folded explanation", () => {
         queryWatchlist: watchlist("observed"),
       }),
     );
-    const facts = host.querySelector('[data-result-section="facts"]');
-
-    // No click lane settled anything, so the weekly reading really is about
-    // the lanes rather than the impression floor.
-    expect(facts?.textContent).toContain(
-      en.tools.dailyBriefing.facts.noClickLaneReason,
-    );
+    expect(host.querySelector('[data-result-section="facts"]')).toBeNull();
+    expect(host.querySelector('[data-result-section="trend"]')).not.toBeNull();
   });
 
   it("does not say the page paths settled anything when they settled nothing", async () => {
@@ -2336,7 +2351,7 @@ describe("DailyBriefingResults folded explanation", () => {
     });
   });
 
-  it("blames the impression floor, not the lanes, when a page click lane ran", async () => {
+  it("keeps the chart when a page click lane ran", async () => {
     const host = await renderResults(
       envelope({
         mode: "change_detection",
@@ -2364,19 +2379,8 @@ describe("DailyBriefingResults folded explanation", () => {
         queryWatchlist: watchlist("observed"),
       }),
     );
-    const facts = host.querySelector('[data-result-section="facts"]');
-
-    // A click lane WAS evaluated — the page one. The weekly cadence here comes
-    // from the impression floor, and naming the lanes instead would describe a
-    // gate this run never hit.
-    expect(facts?.textContent).not.toContain(
-      en.tools.dailyBriefing.facts.noClickLaneReason,
-    );
-    // The literal sentence, not the substring "sample" that half the catalog
-    // contains: the run must attribute its weekly cadence to the floor.
-    expect(facts?.textContent).toContain(
-      en.tools.dailyBriefing.facts.weeklyReason,
-    );
+    expect(host.querySelector('[data-result-section="facts"]')).toBeNull();
+    expect(host.querySelector('[data-result-section="trend"]')).not.toBeNull();
   });
 
   it("still explains the gap when every shown row failed to become a check", async () => {

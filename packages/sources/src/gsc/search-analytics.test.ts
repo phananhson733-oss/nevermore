@@ -76,6 +76,29 @@ describe("createSearchAnalyticsClient", () => {
     expect(seenBody["aggregationType"]).toBe("byPage");
   });
 
+  it("forwards hourly freshness and preserves its incompleteness boundary", async () => {
+    let seenBody: Record<string, unknown> = {};
+    const call = client(async (_url, init) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({
+        rows: [],
+        metadata: { first_incomplete_hour: "2026-08-24T17:00:00" },
+      });
+    });
+
+    const response = await call({
+      ...REQUEST,
+      dimensions: ["hour"],
+      dataState: "hourly_all",
+    });
+
+    expect(seenBody["dataState"]).toBe("hourly_all");
+    expect(response.metadata).toEqual({
+      firstIncompleteDate: null,
+      firstIncompleteHour: "2026-08-24T17:00:00",
+    });
+  });
+
   it("sends the bearer token and never puts it in the URL", async () => {
     let seenUrl = "";
     let auth: string | null = null;

@@ -4,8 +4,10 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 /** Dimensions this reader knows how to ask for. */
-export type GscDimension = "query" | "page" | "date";
+export type GscDimension = "query" | "page" | "date" | "hour";
 export type GscAggregationType = "auto" | "byPage" | "byProperty";
+/** Search Console freshness requested for one bounded read. */
+export type GscDataState = "final" | "all" | "hourly_all";
 
 export interface GscQueryRequest {
   readonly dimensions: readonly GscDimension[];
@@ -14,6 +16,8 @@ export interface GscQueryRequest {
   readonly rowLimit: number;
   readonly startRow: number;
   readonly aggregationType?: GscAggregationType;
+  /** Omitted means the transport's safe `final` default. */
+  readonly dataState?: GscDataState;
 }
 
 export interface GscRawRow {
@@ -36,6 +40,14 @@ export interface GscQueryResponse {
    * response omitted the field.
    */
   readonly responseAggregationType: string | null;
+  /**
+   * Boundaries Search Console reports for fresh data. They are absent for a
+   * finalised read and must never be invented by a caller.
+   */
+  readonly metadata?: {
+    readonly firstIncompleteDate: string | null;
+    readonly firstIncompleteHour: string | null;
+  };
 }
 
 /** The transport seam. Implemented in apps/*, faked in tests. */

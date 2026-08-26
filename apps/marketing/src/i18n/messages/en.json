@@ -1885,6 +1885,31 @@
         "dailySuppressed": "Day-level interpretation is unavailable for this cadence.",
         "positionNote": "Average position is exposure-weighted; a negative change means a numerically better position."
       },
+      "trend": {
+        "eyebrow": "Search Console data",
+        "title": "Search performance trend",
+        "periodLabel": "Trend window",
+        "metricsLabel": "Visible chart metrics",
+        "periods": {
+          "24h": "24h",
+          "7d": "7 days",
+          "28d": "28 days",
+          "3m": "3 months"
+        },
+        "metrics": {
+          "clicks": "Clicks",
+          "impressions": "Impressions",
+          "ctr": "Avg CTR",
+          "position": "Avg position"
+        },
+        "unavailable": "Unavailable",
+        "hourlyUnavailable": "Hourly trend is temporarily unavailable. No daily values have been substituted for the selected 24-hour view.",
+        "dailyUnavailable": "Daily trend is temporarily unavailable. No missing values have been substituted with zero.",
+        "hourlyPartial": "Hourly Search Console data is still updating. Treat the newest points as provisional.",
+        "dailyPartial": "The newest daily Search Console data is still updating. Treat the newest points as provisional.",
+        "scaleNote": "Each visible metric uses its own scale so clicks, impressions, CTR, and average position stay readable. Average-position improvement is drawn upward; hover for the real values.",
+        "chartLabel": "{period} Search Console trend with {points} observed points"
+      },
       "noise": {
         "label": "Noise filter on",
         "observed": "{observed} query rows in the current window, {eligible} of them at 100 impressions. {strictPaired} support a strict two-window position comparison; {clickDecline} carry the prior clicks a decline could be measured against; {provisional} have a prior window of only 50-99 impressions and can be observed only; {currentOnly} have no comparable prior window at all.",

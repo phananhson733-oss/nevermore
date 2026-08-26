@@ -42,11 +42,6 @@ type DailyBriefingResponse = {
   readonly error?: { readonly code?: string };
 };
 
-type RateLimitFacts = {
-  readonly remaining: number | null;
-  readonly limit: number;
-};
-
 type KnownErrorCode =
   | "gsc_unavailable"
   | "scan_in_progress"
@@ -99,7 +94,7 @@ function parseBrandTerms(input: string): readonly string[] {
  * pulls server-only code into this client bundle. A contract test keeps it
  * equal to the package's own constant.
  */
-export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v5";
+export const CLIENT_DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v6";
 
 export function DailyBriefingTool({
   locale,
@@ -120,7 +115,6 @@ export function DailyBriefingTool({
   const [errorCode, setErrorCode] = useState<KnownErrorCode | null>(null);
   const [payload, setPayload] = useState<{
     readonly envelope: DailyBriefingEnvelope;
-    readonly rateLimit: RateLimitFacts | null;
   } | null>(null);
   const brandTerms = parseBrandTerms(brandInput);
 
@@ -160,12 +154,6 @@ export function DailyBriefingTool({
       }
       setPayload({
         envelope: body.data,
-        rateLimit: body.meta?.rateLimit
-          ? {
-              remaining: body.meta.rateLimit.remaining,
-              limit: body.meta.rateLimit.limit,
-            }
-          : null,
       });
       trackMarketingEvent("tool_complete", {
         tool_name: "daily_search_briefing",
@@ -352,7 +340,6 @@ export function DailyBriefingTool({
           locale={locale}
           property={property}
           envelope={payload.envelope}
-          rateLimit={payload.rateLimit}
         />
       ) : (
         <DailyBriefingResultPreview />
