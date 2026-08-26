@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 // @input  -- production-shaped competitor-gap envelopes, with and without a selected GSC property
-// @output -- the one recommended action each lane offers, the private handoff it writes, and the two exports
+// @output -- the one recommended action each lane offers, the private handoff it writes, and the capped CSV export
 // @pos    -- action-and-export verification for the Marketing competitor keyword gap results surface
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { useTranslations } from "next-intl";
+import { COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS } from "@sf/public-tools/competitor-keyword-gap/csv";
 import { TOOL_HANDOFF_KEY } from "../../lib/tools/tool-handoff";
 import { CsvExportButton } from "./competitor-keyword-gap-csv-button";
 import type { Translate } from "./competitor-keyword-gap-results-shared";
@@ -327,99 +328,6 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     expect(writeTextMock).not.toHaveBeenCalled();
   });
 
-  it("copies the current filter as one fenced plan and reports the copied count", async () => {
-    const host = await renderResults(withResult({ rows: productionRows() }));
-    const copyPlan = (): Element | null =>
-      host.querySelector('[data-row-action="copy-plan"]');
-
-    // Collapsed: only the ten rows on screen are copied; the other ninety in
-    // the filter are counted as omitted, never carried into the plan.
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=10");
-    expect(host.querySelector('[role="status"]')).toBeNull();
-
-    await click(copyPlan());
-    expect(writeTextMock).toHaveBeenCalledOnce();
-    const collapsed = String(writeTextMock.mock.calls[0]?.[0]);
-    expect(collapsed.startsWith("# Competitor keyword gap plan")).toBe(true);
-    expect(collapsed.match(/```json/g)).toHaveLength(1);
-    expect(collapsed).toContain('"laneFilter": "all"');
-    expect(collapsed).toContain('"bandFilter": "all"');
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
-    expect(collapsed).not.toContain('"keyword": "content-gap-00"');
-    expect(collapsed).toContain('"omittedRows": 90');
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=10",
-    );
-
-    // Expanded: the plan follows the filter's full order up to the cap.
-    const showAll = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("actions.showAll"),
-    );
-    await click(showAll ?? null);
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
-    await click(copyPlan());
-    const markdown = String(writeTextMock.mock.calls[1]?.[0]);
-    expect(markdown).toContain('"keyword": "content-gap-09"');
-    expect(markdown).not.toContain('"keyword": "content-gap-10"');
-    expect(markdown).toContain('"omittedRows": 80');
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=20",
-    );
-
-    await click(
-      host.querySelector('[data-next-step-filter="verify_own_coverage"]'),
-    );
-    expect(host.querySelector('[role="status"]')).toBeNull();
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=2");
-
-    await click(copyPlan());
-    const filtered = String(writeTextMock.mock.calls[2]?.[0]);
-    expect(filtered).toContain('"laneFilter": "verify_own_coverage"');
-    expect(filtered).toContain('"keyword": "verify-01"');
-    expect(filtered).not.toContain("optimize-00");
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=2",
-    );
-  });
-
-  it("disables the plan button when the lane and band filter match nothing", async () => {
-    const host = await renderResults();
-    const copyPlan = (): HTMLButtonElement | null =>
-      host.querySelector<HTMLButtonElement>('[data-row-action="copy-plan"]');
-
-    expect(copyPlan()?.disabled).toBe(false);
-
-    await click(
-      host.querySelector('[data-next-step-filter="optimize_existing"]'),
-    );
-    await click(host.querySelector('[data-pre-screen-filter="stretch"]'));
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=0");
-    expect(copyPlan()?.disabled).toBe(true);
-
-    await click(copyPlan());
-    expect(writeTextMock).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="status"]')).toBeNull();
-  });
-
-  it("writes the Chinese plan for zh locales and reports a clipboard failure inline", async () => {
-    const host = await renderResults(BASE, { locale: "zh" });
-    const copyPlan = host.querySelector('[data-row-action="copy-plan"]');
-
-    await click(copyPlan);
-    expect(
-      String(writeTextMock.mock.calls[0]?.[0]).startsWith("# 竞品词差距计划"),
-    ).toBe(true);
-    expect(host.querySelector('[role="status"]')).not.toBeNull();
-
-    writeTextMock.mockRejectedValueOnce(new Error("denied"));
-    await click(copyPlan);
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      "actions.copyPlanFailed",
-    );
-    expect(host.querySelector('[role="status"]')).toBeNull();
-  });
-
   it("offers the Opportunity Finder for an observed-strong row with a property and hands it the property only", async () => {
     const strongReview = rowWithGsc(
       0,
@@ -590,41 +498,56 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
   });
 
-  it("exports every returned row and says so in the label while the table shows ten", async () => {
+  it("names the row count the file will hold, and states the basis of the cut", async () => {
     const captured = stubDownloads();
     const host = await renderResults(withResult({ rows: productionRows() }));
     const exportButton = (): HTMLButtonElement | null =>
-      host.querySelector<HTMLButtonElement>('[data-export-csv]');
+      host.querySelector<HTMLButtonElement>("[data-export-csv]");
 
-    // Two exports sit side by side and do different things, so each names its
-    // own number: the plan copies the ten rows on screen, this carries all 100.
+    // 100 rows, under the cap, so nothing was cut -- and the line below the
+    // button must therefore claim the ORDER and not a selection. Saying "the
+    // highest-volume keywords" about a file holding every one of them
+    // understates it, which is why there are two sentences and not one.
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
     expect(exportButton()?.textContent).toBe("actions.exportCsv:count=100");
     expect(
-      host.querySelector('[data-row-action="copy-plan"]')?.textContent,
-    ).toContain("actions.copyPlan:count=10");
-
-    // A lane filter narrows the table and the plan; it never narrows the file.
-    await click(
-      host.querySelector('[data-next-step-filter="verify_own_coverage"]'),
-    );
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
-    expect(exportButton()?.textContent).toBe("actions.exportCsv:count=100");
-    expect(
-      host.querySelector('[data-row-action="copy-plan"]')?.textContent,
-    ).toContain("actions.copyPlan:count=2");
+      host.querySelector("[data-export-csv-basis]")?.textContent,
+    ).toBe("actions.exportCsvBasisComplete");
+    // Complete run, so no missing-competitor warning.
+    expect(host.querySelector("[data-export-csv-partial]")).toBeNull();
 
     await click(exportButton());
     expect(captured.blobs).toHaveLength(1);
     expect(captured.blobs[0]?.type).toBe("text/csv;charset=utf-8");
     const text = await (captured.blobs[0] as Blob).text();
+
+    // Reading order is a display choice; the file has its own rule, and this
+    // proves it with the BYTES rather than the button text. Asserting the
+    // label was unchanged would pass just as happily if the export silently
+    // followed the toggle, which is the thing being ruled out.
+    await click(host.querySelector('[data-sort-toggle="position"]'));
+    expect(exportButton()?.textContent).toBe("actions.exportCsv:count=100");
+    await click(exportButton());
+    expect(captured.blobs).toHaveLength(2);
+    expect(await (captured.blobs[1] as Blob).text()).toBe(text);
+
     const lines = text.split("\r\n");
     expect(lines).toHaveLength(101);
-    expect(lines[0]).toContain("capturedAt,siteDomain,marketCode");
-    // A row the table never showed, in a lane the filter excluded.
+    // The two fields this surface's claims rest on: the keyword the file is a
+    // list of, and the estimate the cut is made on. The column SET and its
+    // order belong to the export module's own suite, so pinning them here
+    // would only break this test when that one changes on purpose.
+    expect(lines[0]?.split(",")).toEqual(
+      expect.arrayContaining(["keyword", "dfsSearchVolume"]),
+    );
+    // A row the collapsed table never showed.
     expect(text).toContain("content-gap-87");
     expect(text).toContain("optimize-00");
     expect(captured.downloads).toEqual([
+      {
+        href: "blob:competitor-keyword-gap",
+        name: "competitor-keyword-gap-example.com-2026-08-24.csv",
+      },
       {
         href: "blob:competitor-keyword-gap",
         name: "competitor-keyword-gap-example.com-2026-08-24.csv",
@@ -633,9 +556,43 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
 
     // Released on the next tick, not in the same task: Safari has revoked the
     // blob out from under its own download when the two happen together.
-    expect(captured.revoked).toEqual([]);
+    // Counted rather than compared: two exports were taken above and the first
+    // one's tick has already run, so the property under test is that the
+    // SECOND is still un-revoked at this point, not that none of them are.
+    expect(captured.revoked).toHaveLength(1);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(captured.revoked).toEqual(["blob:competitor-keyword-gap"]);
+    expect(captured.revoked).toEqual([
+      "blob:competitor-keyword-gap",
+      "blob:competitor-keyword-gap",
+    ]);
+  });
+
+  it("counts the cap, not the run, once a run returns more rows than the file holds", async () => {
+    const captured = stubDownloads();
+    const overCap = Array.from(
+      { length: COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS + 53 },
+      (_, index) => row(index),
+    );
+    const host = await renderResults(withResult({ rows: overCap }));
+    const exportButton = host.querySelector<HTMLButtonElement>(
+      "[data-export-csv]",
+    );
+
+    // The run returned 203 rows and the file will carry 150 of them. The old
+    // label said "export all 203 rows as CSV", which the file simply was not.
+    expect(
+      host.querySelector('[data-summary-metric="returned-gap-rows"]')
+        ?.textContent,
+    ).toContain("203");
+    expect(exportButton?.textContent).toBe(
+      `actions.exportCsv:count=${String(COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS)}`,
+    );
+
+    await click(exportButton);
+    const text = await (captured.blobs[0] as Blob).text();
+    expect(text.split("\r\n")).toHaveLength(
+      COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS + 1,
+    );
   });
 
   it("disables the export when the run returned no rows", async () => {

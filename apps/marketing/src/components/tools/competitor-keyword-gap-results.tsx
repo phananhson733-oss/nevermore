@@ -1,23 +1,17 @@
 // @input  -- one v3 competitor gap envelope, selected GSC property, and focus callback
-// @output -- compact DFS/GSC evidence table with competitor pages, pre-screen bands, one qualified next action per row, and the copy-plan and full-CSV exports
+// @output -- compact DFS/GSC evidence table with competitor pages, one qualified next action per row, a reading-order toggle, and the capped CSV export
 // @pos    -- non-persistent result surface for the Marketing competitor gap tool
 
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type {
   CompetitorKeywordGapEnvelope,
   CompetitorKeywordGapMetric,
   CompetitorKeywordGapResultV3,
-  CompetitorKeywordGapRow,
 } from "@sf/public-tools/competitor-keyword-gap";
 
-import {
-  BandFilters,
-  type BandFilter,
-} from "./competitor-keyword-gap-band-filters";
-import { CopyPlanButton } from "./competitor-keyword-gap-copy-plan-button";
 import {
   CoverageDetails,
   EvidenceBoundaries,
@@ -43,8 +37,11 @@ import {
   SignalChips,
   StatusCell,
 } from "./competitor-keyword-gap-row-chips";
-
-type Filter = "all" | CompetitorKeywordGapRow["gsc"]["nextStep"];
+import {
+  competitorKeywordGapSortsWithEvidence,
+  sortCompetitorKeywordGapRows,
+  type CompetitorKeywordGapSort,
+} from "./competitor-keyword-gap-sort";
 
 function capturedTime(value: string, locale: string): string {
   const date = new Date(value);
@@ -53,33 +50,6 @@ function capturedTime(value: string, locale: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-}
-
-/**
- * Display order for the lanes, matching the filter row above the table so the
- * two never disagree about which lane comes first.
- */
-const LANE_ORDER = [
-  "optimize_existing",
-  "review_existing_query",
-  "review_content_gap",
-  "verify_own_coverage",
-] as const satisfies readonly CompetitorKeywordGapRow["gsc"]["nextStep"][];
-
-/**
- * The lanes actually on screen, so each lane's sentence is stated ONCE.
- *
- * It used to sit in every row. A site with no Search Console hits puts every
- * row in one lane, so the column was the same sentence 553 times -- noise that
- * crowded out the one thing that did vary, which is the row's own next action.
- * Stating it per lane keeps the reasoning and drops the repetition: at most
- * four lines here, never one per row.
- */
-function lanesPresent(
-  rows: readonly CompetitorKeywordGapRow[],
-): readonly CompetitorKeywordGapRow["gsc"]["nextStep"][] {
-  const present = new Set(rows.map((row) => row.gsc.nextStep));
-  return LANE_ORDER.filter((lane) => present.has(lane));
 }
 
 function providerIntent(value: string | null, t: Translate): string {
@@ -108,67 +78,6 @@ function metric(
   return number(value.value, locale, maximumFractionDigits);
 }
 
-function dfsStatus(result: CompetitorKeywordGapResultV3) {
-  if (result.completedCompetitors === 0) return "unavailable";
-  return result.completedCompetitors < result.requestedCompetitors
-    ? "partial"
-    : "available";
-}
-
-function SourceBadge({
-  source,
-  status,
-  t,
-}: {
-  readonly source: "dfs" | "gsc";
-  readonly status: string;
-  readonly t: Translate;
-}) {
-  return (
-    <span data-source={source} data-source-status={status} className={BADGE}>
-      {translated(t, `sources.${source}`)} ·{" "}
-      {translated(t, `sources.status.${status}`)}
-    </span>
-  );
-}
-
-/**
- * Why this run is `partial`, derived rather than asserted.
- *
- * The single stock sentence used to say "at least one competitor is
- * unavailable" for every partial run, including the common one where all
- * competitors completed and only the optional GSC overlay was missing -- the
- * surface stated a competitor failure that the same card's own counters
- * disproved two lines below. Nothing here is new contract data: the three
- * causes are already distinguishable from the counters and the overlay status.
- *
- * `unspecified` is not reachable from today's report builder, which only marks
- * a run partial when one of the three holds. It exists so that a future status
- * rule cannot make this function assert a cause it has not established.
- */
-function partialCause(
-  result: CompetitorKeywordGapResultV3,
-): "competitors" | "gscUnavailable" | "gscPartial" | "both" | "unspecified" {
-  const competitorsIncomplete =
-    result.completedCompetitors < result.requestedCompetitors;
-  const overlayDegraded =
-    result.overlayStatus === "unavailable" || result.overlayStatus === "partial";
-  if (competitorsIncomplete && overlayDegraded) return "both";
-  if (competitorsIncomplete) return "competitors";
-  if (!overlayDegraded) return "unspecified";
-  return result.overlayStatus === "partial" ? "gscPartial" : "gscUnavailable";
-}
-
-function statusBody(
-  status: CompetitorKeywordGapEnvelope["run"]["status"],
-  result: CompetitorKeywordGapResultV3,
-  t: Translate,
-): string {
-  return status === "partial"
-    ? translated(t, `status.partialBody.${partialCause(result)}`)
-    : translated(t, `status.${status}Body`);
-}
-
 function ReportContext({
   envelope,
   locale,
@@ -190,28 +99,25 @@ function ReportContext({
           : CARD
       }
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
-            {t("summary.eyebrow")}
-          </div>
-          <h3 className="mt-3 text-[20px] font-semibold tracking-[-0.03em] text-text-dark-primary">
-            {t("summary.title")}
-          </h3>
-          <div className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-            {translated(t, `status.${status}`)} ·{" "}
-            {statusBody(status, result, t)}
-          </div>
-          <div className="mt-1 text-[12px] text-text-dark-secondary">
-            {t("summary.competitors", {
-              completed: result.completedCompetitors,
-              requested: result.requestedCompetitors,
-            })}{" "}
-            ·{" "}
-            {t("summary.unavailable", { count: result.unavailableCompetitors })}
-          </div>
-        </div>
+      <div className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+        {t("summary.eyebrow")}
       </div>
+      <h3 className="mt-3 text-[20px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+        {t("summary.title")}
+      </h3>
+      {status === "unavailable" ? (
+        // The per-run status sentences were removed on purpose, but this case
+        // cannot go with them: when no competitor returned, the card is an
+        // orange frame with no text and the count below it reads 0, which a
+        // reader takes as "these competitors rank for nothing". It says the
+        // opposite -- nothing was read, so nothing was ruled out.
+        <p
+          data-run-unavailable
+          className="mt-3 text-[12.5px] leading-[1.6] text-text-dark-secondary"
+        >
+          {t("status.unavailableBody")}
+        </p>
+      ) : null}
       <div
         data-scope-strip
         className="mt-5 flex flex-wrap items-center gap-2 border-t border-brand-border-card pt-4"
@@ -242,6 +148,18 @@ function ReportContext({
   );
 }
 
+/**
+ * Two cards, and the second is not filler.
+ *
+ * The run summary above states no counters at all any more, so this is the only
+ * place the surface says how much of the run came back. Without the completed
+ * count, a run where three of four competitors failed reads exactly like a
+ * complete one -- same table, same gap total, no sign anything is missing.
+ *
+ * There is no "new this period" card and there cannot be one: this tool keeps
+ * no history and never refreshes on its own, as its own evidence boundary says,
+ * so there is no earlier run to compare this one against.
+ */
 function OverviewCards({
   result,
   locale,
@@ -251,22 +169,17 @@ function OverviewCards({
   readonly locale: string;
   readonly t: Translate;
 }) {
-  const observedRows =
-    result.overlayStatus === "available" || result.overlayStatus === "partial"
-      ? result.rows.filter(
-          (row) =>
-            row.gsc.queryStatus === "observed_strong" ||
-            row.gsc.queryStatus === "observed_weak",
-        ).length
-      : null;
-  const gscQueryRows = observedRows === null ? null : result.gscQueryRowCount;
   const cards = [
     {
       metric: "returned-gap-rows",
       label: t("overview.returnedGapRows"),
       value: number(result.rows.length, locale),
-      body: t("overview.returnedGapRowsBody"),
-      gscQueryRows: null,
+      // The rank bound comes from the run's own sample rule rather than a
+      // number typed into the sentence: a rule change would otherwise leave
+      // this card describing a cut the run did not make.
+      body: t("overview.returnedGapRowsBody", {
+        maxRank: result.sampleRule.maxCompetitorRank,
+      }),
     },
     {
       metric: "completed-competitors",
@@ -276,25 +189,11 @@ function OverviewCards({
         locale,
       )}`,
       body: t("overview.completedCompetitorsBody"),
-      gscQueryRows: null,
-    },
-    {
-      metric: "gsc-observed-rows",
-      label: t("overview.gscObservedRows"),
-      value: observedRows === null ? "—" : number(observedRows, locale),
-      body:
-        observedRows === null
-          ? t(`sources.status.${result.overlayStatus}`)
-          : t("overview.gscObservedRowsBody"),
-      gscQueryRows:
-        gscQueryRows === null
-          ? null
-          : t("overview.gscQueryRows", { count: gscQueryRows }),
     },
   ] as const;
 
   return (
-    <section data-overview-metrics className="grid gap-4 md:grid-cols-3">
+    <section data-overview-metrics className="grid gap-4 md:grid-cols-2">
       {cards.map((card) => (
         <article
           key={card.metric}
@@ -310,14 +209,6 @@ function OverviewCards({
           <div className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {card.body}
           </div>
-          {card.gscQueryRows !== null ? (
-            <div
-              data-gsc-query-rows
-              className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-secondary"
-            >
-              {card.gscQueryRows}
-            </div>
-          ) : null}
         </article>
       ))}
     </section>
@@ -337,47 +228,47 @@ function ResultsTable({
   readonly onFocusProperty: () => void;
   readonly t: Translate;
 }) {
-  const counts = {
-    all: result.rows.length,
-    optimize_existing: result.rows.filter(
-      (row) => row.gsc.nextStep === "optimize_existing",
-    ).length,
-    review_existing_query: result.rows.filter(
-      (row) => row.gsc.nextStep === "review_existing_query",
-    ).length,
-    review_content_gap: result.rows.filter(
-      (row) => row.gsc.nextStep === "review_content_gap",
-    ).length,
-    verify_own_coverage: result.rows.filter(
-      (row) => row.gsc.nextStep === "verify_own_coverage",
-    ).length,
-  } as const;
-  const [filter, setFilter] = useState<Filter>("all");
-  const [band, setBand] = useState<BandFilter>("all");
+  const [sort, setSort] = useState<CompetitorKeywordGapSort>("impressions");
   const [expanded, setExpanded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const laneRows =
-    filter === "all"
-      ? result.rows
-      : result.rows.filter((row) => row.gsc.nextStep === filter);
-  const filteredRows =
-    band === "all"
-      ? laneRows
-      : laneRows.filter((row) => row.preScreen.band === band);
-  const visibleRows = expanded ? filteredRows : filteredRows.slice(0, 10);
-  const remaining = Math.max(0, filteredRows.length - visibleRows.length);
-  // visibleRows, not filteredRows: a collapsed row is not on screen, and a
-  // lane note above an empty lane describes something the reader cannot see.
-  const noticeLanes = lanesPresent(visibleRows);
+  const availableSorts = useMemo(
+    () => competitorKeywordGapSortsWithEvidence(result.rows),
+    [result.rows],
+  );
+  /**
+   * What is pressed, which is not always what was pressed.
+   *
+   * Derived rather than reset into state: this component is reused when a new
+   * run replaces the old one, so a preference for an order the NEW run cannot
+   * produce would otherwise sit in state driving a toggle that is no longer on
+   * screen. Falling back leaves the preference intact for the next run that
+   * can honour it.
+   */
+  const activeSort =
+    availableSorts.includes(sort) ? sort : (availableSorts[0] ?? "impressions");
+  const sortedRows = useMemo(
+    () => sortCompetitorKeywordGapRows(result.rows, activeSort),
+    [result.rows, activeSort],
+  );
+  const visibleRows = expanded ? sortedRows : sortedRows.slice(0, 10);
+  const remaining = Math.max(0, sortedRows.length - visibleRows.length);
 
-  function changeFilter(next: Filter): void {
-    setFilter(next);
-    setExpanded(false);
-    setActionError(null);
-  }
-
-  function changeBandFilter(next: BandFilter): void {
-    setBand(next);
+  /**
+   * The collapse resets with the order.
+   *
+   * "The first ten" means something different in each order, and leaving a
+   * hundred rows expanded across the change hands the reader a screen where the
+   * order they pressed is no longer the reason for what they are looking at.
+   */
+  function changeSort(next: CompetitorKeywordGapSort): void {
+    // Pressing the toggle that is already pressed changes no order, so it must
+    // not throw away an expanded table and send the reader back to the top.
+    // Compared against what is PRESSED, not against the stored preference: the
+    // two differ exactly when the preference names an order this run cannot
+    // produce, and a click on the pressed button would otherwise collapse the
+    // table for nothing.
+    if (next === activeSort) return;
+    setSort(next);
     setExpanded(false);
     setActionError(null);
   }
@@ -399,14 +290,12 @@ function ResultsTable({
             {t("table.subtitle")}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div
             data-table-legend
             className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] leading-[1.6] text-text-dark-secondary"
           >
-            <span
-              className={`${COLUMN_BADGE} !ml-0 ${COLUMN_BADGE_TONE.dfs}`}
-            >
+            <span className={`${COLUMN_BADGE} !ml-0 ${COLUMN_BADGE_TONE.dfs}`}>
               {t("sources.short.dfs")}
             </span>
             <span>{t("legend.dfsMeans")}</span>
@@ -416,74 +305,41 @@ function ResultsTable({
             </span>
             <span>{t("legend.gscMeans")}</span>
           </div>
-          {/* Keyed on the filter so a copied-count status never outlives the rows it counted. */}
-          <CopyPlanButton
-            key={`${filter}|${band}`}
-            result={result}
-            rows={visibleRows}
-            rowsNotShown={remaining}
-            laneFilter={filter}
-            bandFilter={band}
-            locale={locale}
-            onActionError={setActionError}
-            t={t}
-          />
           <CsvExportButton result={result} t={t} />
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2" data-next-step-filters>
-        {(
-          [
-            ["all", counts.all],
-            ["optimize_existing", counts.optimize_existing],
-            ["review_existing_query", counts.review_existing_query],
-            ["review_content_gap", counts.review_content_gap],
-            ["verify_own_coverage", counts.verify_own_coverage],
-          ] as const
-        ).map(([value, count]) => (
-          <button
-            key={value}
-            type="button"
-            data-next-step-filter={value}
-            aria-pressed={value === filter}
-            onClick={() => changeFilter(value)}
-            className={
-              value === filter
-                ? `${PRIMARY_ACTION_BUTTON} !py-1.5`
-                : `${ACTION_BUTTON} !py-1.5`
-            }
-          >
-            {translated(t, `filters.${value}`)} · {number(count, locale)}
-          </button>
-        ))}
-      </div>
-
-      <BandFilters
-        rows={laneRows}
-        band={band}
-        locale={locale}
-        onChange={changeBandFilter}
-        t={t}
-      />
-
-      {noticeLanes.length === 0 ? null : (
+      {/*
+        Only the orders this run can produce. A toggle whose metric is null on
+        every row cannot order anything: it would sit there labelled "by
+        impressions", highlighted, while the table is really in search-volume
+        order -- and its sibling would change nothing when pressed. Nothing is
+        rendered in its place, because the table's order is then not a choice
+        anyone made and there is nothing to say about it.
+      */}
+      {availableSorts.length > 0 ? (
         <div
-          data-lane-notes
-          className="mb-4 flex flex-col gap-2 rounded-[10px] border border-brand-border bg-brand-panel-sunken px-4 py-3"
+          className="mb-4 flex flex-wrap items-center justify-end gap-2"
+          data-sort-toggles
         >
-          {noticeLanes.map((lane) => (
-            <div
-              key={lane}
-              data-lane-note={lane}
-              className={`flex flex-wrap items-baseline gap-2 ${TABLE_TEXT} text-text-dark-strong`}
+          {availableSorts.map((value) => (
+            <button
+              key={value}
+              type="button"
+              data-sort-toggle={value}
+              aria-pressed={value === activeSort}
+              onClick={() => changeSort(value)}
+              className={
+                value === activeSort
+                  ? `${PRIMARY_ACTION_BUTTON} !py-1.5`
+                  : `${ACTION_BUTTON} !py-1.5`
+              }
             >
-              <span className={BADGE}>{translated(t, `filters.${lane}`)}</span>
-              <span>{translated(t, `nextSteps.${lane}`)}</span>
-            </div>
+              {translated(t, `sort.${value}`)}
+            </button>
           ))}
         </div>
-      )}
+      ) : null}
 
       <div
         tabIndex={0}
@@ -592,11 +448,11 @@ function ResultsTable({
         </div>
       ) : null}
 
-      {filteredRows.length > 10 ? (
+      {sortedRows.length > 10 ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-[12.5px] text-text-dark-secondary">
             {expanded
-              ? t("actions.showingAll", { count: filteredRows.length })
+              ? t("actions.showingAll", { count: sortedRows.length })
               : t("actions.remaining", { count: remaining })}
           </div>
           <button
@@ -632,16 +488,6 @@ export function CompetitorKeywordGapResults({
     <div className="mt-8 space-y-4">
       <ReportContext envelope={envelope} locale={locale} t={t} />
       <OverviewCards result={result} locale={locale} t={t} />
-      <section
-        data-source-legend
-        className={`${CARD} flex flex-wrap items-center gap-2`}
-      >
-        <SourceBadge source="dfs" status={dfsStatus(result)} t={t} />
-        <SourceBadge source="gsc" status={result.overlayStatus} t={t} />
-        <div className="text-[12px] leading-[1.6] text-text-dark-secondary">
-          {t("legend.ownState")}
-        </div>
-      </section>
 
       {result.rows.length > 0 ? (
         <ResultsTable
