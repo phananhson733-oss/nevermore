@@ -158,17 +158,11 @@ const REQUIRED_LEAF_PATHS = [
   "noise.partial",
   "noise.unavailable",
   "noise.observationOnly",
-  "siteTrend.title",
-  "siteTrend.intro",
-  "siteTrend.evidence",
-  "siteTrend.actionListed",
-  "siteTrend.insideNoiseFloor",
   "ctrLane.notEvaluated",
   "ctrLane.blockers.unknown",
   "ctrLane.confirmAndRerun",
   "evidence.foldChanges",
   "evidence.foldProvisional",
-  "evidence.foldTrend",
   "evidence.foldObservationsShown",
   "evidence.foldObservationsUnavailable",
   "evidence.foldQueryEvidenceUnavailable",
@@ -181,6 +175,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.pageScope",
   "review.pageGroup",
   "review.queryGroup",
+  "review.groupCount",
   "review.partialQueryRead",
   "review.unavailableQueryRead",
   "review.pageNotObserved",
@@ -189,7 +184,6 @@ const REQUIRED_LEAF_PATHS = [
   "checks.evidence",
   "checks.notCheckable",
   "evidence.foldPageChanges",
-  "evidence.foldTrendUnavailable",
   "evidence.paths.pageUnavailable",
   "evidence.paths.pageUnreadableRows",
   "evidence.paths.lanePartiallyReadable",
@@ -264,12 +258,6 @@ const REQUIRED_LEAF_PATHS = [
   "changes.columns.position",
   "changes.columns.interpretation",
   "changes.notObserved",
-  "propertyChangeKinds.sitewide_click_decline.title",
-  "propertyChangeKinds.sitewide_click_decline.body",
-  "propertyChangeKinds.sitewide_visibility_decline.title",
-  "propertyChangeKinds.sitewide_visibility_decline.body",
-  "propertyChangeKinds.sitewide_visibility_gain.title",
-  "propertyChangeKinds.sitewide_visibility_gain.body",
   "actions.title",
   "actions.empty",
   "actions.emptyWithProvisional",
@@ -368,7 +356,6 @@ describe("Daily Briefing message catalogs", () => {
     const errors = recordAt(namespace, "errors");
     const changeKinds = recordAt(namespace, "changeKinds");
     const actionKinds = recordAt(namespace, "actionKinds");
-    const propertyChangeKinds = recordAt(namespace, "propertyChangeKinds");
     const propertyActionKinds = recordAt(namespace, "propertyActionKinds");
     const evidenceStates = recordAt(namespace, "evidenceStates");
     const observationBands = recordAt(namespace, "review.observationBands");
@@ -397,12 +384,6 @@ describe("Daily Briefing message catalogs", () => {
       expect(actionKinds[kind], `missing action kind ${kind}`).toEqual(
         expect.any(Object),
       );
-    }
-    for (const kind of PROPERTY_CHANGE_KINDS) {
-      expect(
-        propertyChangeKinds[kind],
-        `missing property change kind ${kind}`,
-      ).toEqual(expect.any(Object));
     }
     for (const kind of PROPERTY_ACTION_KINDS) {
       expect(
@@ -632,20 +613,16 @@ describe("Daily Briefing message catalogs", () => {
     expect(String(zhNoise.observed)).not.toContain("回退");
   });
 
-  it("keeps material wording off the site-trend observation kinds", () => {
+  it("does not keep orphaned copy for the hidden site-trend presentation", () => {
     for (const catalog of [daily(en), daily(zh)]) {
-      const kinds = recordAt(catalog, "propertyChangeKinds");
-      for (const kind of [
-        "sitewide_click_observation",
-        "sitewide_visibility_observation",
-      ] as const) {
-        const entry = kinds[kind] as Readonly<Record<string, string>>;
-        // A heading that asserts a material decline over a sentence that
-        // withdraws the claim is the defect these kinds exist to remove.
-        for (const banned of ["实质", "material", "Material"]) {
-          expect(entry.title, `${kind}.title`).not.toContain(banned);
-        }
-      }
+      const paths = new Set(leafPaths(catalog));
+
+      expect([...paths].some((path) => path.startsWith("siteTrend."))).toBe(false);
+      expect(
+        [...paths].some((path) => path.startsWith("propertyChangeKinds.")),
+      ).toBe(false);
+      expect(paths.has("evidence.foldTrend")).toBe(false);
+      expect(paths.has("evidence.foldTrendUnavailable")).toBe(false);
     }
   });
 

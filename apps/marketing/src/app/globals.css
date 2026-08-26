@@ -249,6 +249,14 @@
   --chart-3: var(--sc-warning);
   --chart-4: var(--sc-info);
   --chart-5: var(--sc-error);
+  /*
+   * GSC visualization tokens are a third-party data-series family. They are
+   * intentionally not remapped through the GenGrowth brand/status roles.
+   */
+  --gsc-clicks: #4285f4;
+  --gsc-impressions: #5e35b1;
+  --gsc-ctr: #00897b;
+  --gsc-position: #ef6c00;
   --sidebar: var(--sc-panel);
   --sidebar-foreground: var(--sc-text-primary);
   --sidebar-primary: var(--sc-accent);
