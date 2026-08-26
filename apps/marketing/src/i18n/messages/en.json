@@ -1934,8 +1934,8 @@
         "pageNotObserved": "No comparable page record in the prior window",
         "pageGroup": "Page-dimension records",
         "queryGroup": "Query records",
-        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and its two paths settled the records in it without producing a result.",
-        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and its two paths settled the records in it without producing a result."
+        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and at least one page path settled records in it without producing a result.",
+        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and at least one page path settled records in it without producing a result."
       },
       "evidence": {
         "title": "Why there were not more signals",

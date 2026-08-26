@@ -522,6 +522,30 @@ describe("Daily Briefing message catalogs", () => {
     }
   });
 
+  it("keeps the page-path claim existential, matching the predicate", () => {
+    // The card is selected when AT LEAST ONE page lane settled a row. Copy
+    // saying "its two paths settled the records" describes a run where both
+    // did, which is not the condition that selected it.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const review = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "review",
+      );
+      for (const key of ["unavailableQueryRead", "partialQueryRead"] as const) {
+        expect(review[key], `${locale} ${key}`).toContain(
+          locale === "en" ? "at least one page path" : "至少有一条页面级路径",
+        );
+        expect(review[key], `${locale} ${key}`).not.toContain(
+          locale === "en" ? "its two paths" : "两条页面级路径",
+        );
+      }
+    }
+  });
+
   it("calls the action order what it is rather than a measurement", () => {
     // KIND_RANK is a fixed product priority, not a confidence anyone computed.
     for (const [locale, catalog] of [

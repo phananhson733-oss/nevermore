@@ -252,7 +252,14 @@ function signedMetric(
  * "comparable query/page evidence is unavailable" — one population's failure
  * printed over the other's measured result.
  */
-/** Whether either page lane settled a row, as opposed to merely being read. */
+/**
+ * Whether at least one page lane settled a row, as opposed to merely being read.
+ *
+ * Existential on purpose, and the copy it selects is worded to match: one lane
+ * can settle a row while the other has nothing it can ask, and a message
+ * saying "its two paths settled the records" would then describe a run where
+ * only one of them did.
+ */
 function pageLanesSettledRows(
   byLane: DailyBriefingPageAccounting["byLane"],
 ): boolean {

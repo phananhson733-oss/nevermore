@@ -2041,6 +2041,10 @@ describe("DailyBriefingResults folded explanation", () => {
         pageChanges: [],
         pageActions: [],
         queryWatchlist: watchlist("unavailable"),
+        // The reachable asymmetric case: a page whose prior window holds 50
+        // impressions is settled as not-new by the first-observed lane, while
+        // the decline lane cannot ask against a window that small. Only one
+        // path settled the row, so the message may only claim "at least one".
         pageAccounting: {
           evidence: "observed",
           observedRows: 1,
