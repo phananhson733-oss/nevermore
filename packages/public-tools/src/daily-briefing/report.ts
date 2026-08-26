@@ -43,6 +43,10 @@ import type {
   DailyBriefingMode,
   DailyBriefingNoiseFloor,
   DailyBriefingObservationBand,
+  DailyBriefingPageChecks,
+  DailyBriefingPageCheck,
+  DailyBriefingPageCheckBaseline,
+  DailyBriefingPageCheckBlocker,
   DailyBriefingPageAccounting,
   DailyBriefingPageAction,
   DailyBriefingPageChange,
@@ -108,6 +112,20 @@ export const BRIEFING_PAGE_COLLAPSE_MIN_PREVIOUS_IMPRESSIONS = 30;
  * the action worth doing at all.
  */
 export const BRIEFING_PAGE_COLLAPSE_RATIO = 0.8;
+
+/**
+ * Clicks a page must have been expected before drawing none of them is a fact.
+ *
+ * Three, because a count whose mean is three comes back empty about five
+ * per cent of the time: `e^-3 = 0.0498`. Below it "no clicks" is the ordinary
+ * outcome and naming it would send the reader to look at pages that are
+ * behaving exactly as their volume predicts. The spec this implements asks for
+ * a fixed two hundred monthly impressions instead, which on a property
+ * converting at the measured 0.87% expects 1.7 clicks — a level where seeing
+ * none happens two runs in three.
+ */
+export const BRIEFING_ZERO_CLICK_MIN_EXPECTED_CLICKS = 3;
+
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
@@ -2369,6 +2387,143 @@ const CHECKABLE_BANDS: readonly DailyBriefingObservationBand[] = [
  * A query that already carries an action cannot appear here at all: the
  * watchlist this reads is built with those queries already excluded.
  */
+/**
+ * Pages shown often enough that drawing no clicks is worth looking at.
+ *
+ * Measured against the property's own rate, never an industry curve. The
+ * threshold cannot be a fixed impression count because what makes zero clicks
+ * surprising is how many clicks the property itself would have produced from
+ * that many impressions, and that varies by more than an order of magnitude
+ * between properties.
+ *
+ * Restricted to the top position band. A page averaging position forty draws
+ * no clicks because almost nobody sees it, and "go and look at how this result
+ * appears" is not a thing anyone can act on for a result that is not on the
+ * page being looked at.
+ *
+ * Pages already carrying a page action are left out. That is the same rule
+ * `selectPageChanges` applies inside itself — one page, one row — and not the
+ * cross-population substitution this tool refuses: both statements here are
+ * about the same pages in the same window, so the second would restate the
+ * first about the same rows.
+ */
+function pageChecksFor({
+  brandTermsConfirmed,
+  brandTerms,
+  currentEvidence,
+  actionedPages,
+}: {
+  readonly brandTermsConfirmed: boolean;
+  readonly brandTerms: readonly string[];
+  readonly currentEvidence: DailyBriefingQueryEvidence | null;
+  readonly actionedPages: ReadonlySet<string>;
+}): DailyBriefingPageChecks {
+  const empty = (
+    evidence: DailyBriefingPageChecks["evidence"],
+    blockers: readonly DailyBriefingPageCheckBlocker[],
+  ): DailyBriefingPageChecks => ({
+    evidence,
+    baseline: null,
+    blockers,
+    items: [],
+    examinedRows: null,
+  });
+
+  if (pageRowsState(currentEvidence) !== "observed") {
+    // Only the current window is needed — this is a statement about now — so
+    // an unread prior window does not reach here.
+    return empty("unavailable", []);
+  }
+
+  const blockers: DailyBriefingPageCheckBlocker[] = [];
+  if (!brandTermsConfirmed) blockers.push("brand_terms_not_confirmed");
+  const totals = currentEvidence?.propertyTotals ?? null;
+  if (totals === null) blockers.push("property_totals_unavailable");
+  else if (totals.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
+    // A quotient of two differently aggregated measurements is a defect, not
+    // an approximation. Search Console reports the basis it actually used,
+    // which is not always the one that was asked for.
+    blockers.push("aggregation_basis_mismatch");
+  }
+  if (blockers.length > 0 || totals === null) {
+    return empty("unavailable", blockers);
+  }
+
+  // Brand rows are subtracted from the property totals rather than summed on
+  // their own, so the anonymized long tail stays in the denominator where it
+  // belongs. Only the brand rows Search Console returned can be removed; any
+  // that were anonymized stay in, along with their clicks. Brand queries are a
+  // property's highest-volume queries and are the last to be withheld, so what
+  // survives here is small — and it moves the rate up, which makes this gate
+  // harder to pass rather than easier.
+  const brandRows = splitBrandQueries(
+    validQueryRows(currentEvidence?.queryRead?.rows ?? []),
+    brandTerms,
+  ).brand;
+  let brandImpressions = 0;
+  let brandClicks = 0;
+  for (const row of brandRows) {
+    brandImpressions += row.impressions;
+    brandClicks += row.clicks;
+  }
+  const impressions = totals.impressions - brandImpressions;
+  const clicks = totals.clicks - brandClicks;
+  // Positive assertions, so a NaN fails them. A negative remainder means the
+  // two reads disagree about the same window, which is not a rate.
+  if (
+    !(Number.isFinite(impressions) && impressions > 0) ||
+    !(Number.isFinite(clicks) && clicks >= 0)
+  ) {
+    return empty("unavailable", ["no_property_impressions"]);
+  }
+
+  const baseline: DailyBriefingPageCheckBaseline = {
+    ctr: clicks / impressions,
+    impressions,
+    clicks,
+    brandQueriesExcluded: brandRows.length,
+  };
+
+  const rows = validPageRows(currentEvidence?.pageRead?.rows ?? []).rows;
+  const items: DailyBriefingPageCheck[] = [];
+  for (const row of rows) {
+    if (actionedPages.has(row.page)) continue;
+    if (row.clicks !== 0) continue;
+    if (
+      !Number.isFinite(row.position) ||
+      row.position <= 0 ||
+      row.position > BRIEFING_TOP_BAND_MAX_POSITION
+    ) {
+      continue;
+    }
+    const expectedClicks = row.impressions * baseline.ctr;
+    if (
+      !Number.isFinite(expectedClicks) ||
+      expectedClicks < BRIEFING_ZERO_CLICK_MIN_EXPECTED_CLICKS
+    ) {
+      continue;
+    }
+    items.push({
+      page: row.page,
+      impressions: row.impressions,
+      position: row.position,
+      expectedClicks,
+      destination: "on-page-seo-check",
+    });
+  }
+  items.sort(
+    (a, b) => b.expectedClicks - a.expectedClicks || a.page.localeCompare(b.page),
+  );
+
+  return {
+    evidence: "observed",
+    baseline,
+    blockers: [],
+    items,
+    examinedRows: rows.length,
+  };
+}
+
 function suggestedChecksFor(
   watchlist: DailyBriefingQueryWatchlist,
 ): DailyBriefingSuggestedChecks {
@@ -2780,6 +2935,12 @@ export function buildDailyBriefing(
   // Built from the watchlist that was just displayed, so every check points at
   // a row the reader can see.
   const suggestedChecks = suggestedChecksFor(queryWatchlist);
+  const pageChecks = pageChecksFor({
+    brandTermsConfirmed: input.brandTermsConfirmed,
+    brandTerms: input.brandTerms,
+    currentEvidence,
+    actionedPages: new Set(pageActions.map((action) => action.page)),
+  });
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {
@@ -2846,6 +3007,7 @@ export function buildDailyBriefing(
       provisionalMoves,
       rowAccounting,
       pageAccounting,
+      pageChecks,
       suggestedChecks,
       coverage,
       anonymization: {

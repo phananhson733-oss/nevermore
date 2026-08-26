@@ -3134,14 +3134,28 @@ function pageReport(
     readonly previousPageAggregation?: string | null;
     readonly pageUnreadable?: number;
     readonly previousPageUnreadable?: number;
+    readonly totals?: {
+      readonly impressions: number;
+      readonly clicks: number;
+    } | null;
+    readonly totalAggregation?: string | null;
+    readonly brandTerms?: readonly string[];
+    readonly brandTermsConfirmed?: boolean;
   } = {},
 ) {
   return report({
+    ...(overrides.brandTerms === undefined
+      ? {}
+      : { brandTerms: overrides.brandTerms }),
     currentQueryEvidence: evidence(
       overrides.currentQueries ?? inertQueryRows(),
       overrides.currentQueryPages ?? [],
       {
         pages: currentPages,
+        ...(overrides.totals === undefined ? {} : { totals: overrides.totals }),
+        ...(overrides.totalAggregation === undefined
+          ? {}
+          : { totalAggregation: overrides.totalAggregation }),
         ...(overrides.pageTruncated === undefined
           ? {}
           : { pageTruncated: overrides.pageTruncated }),
@@ -3169,7 +3183,7 @@ function pageReport(
           : { pageUnreadable: overrides.previousPageUnreadable }),
       },
     ),
-    brandTermsConfirmed: true,
+    brandTermsConfirmed: overrides.brandTermsConfirmed ?? true,
   }).result;
 }
 
@@ -3834,6 +3848,144 @@ const GONE = "https://example.com/gone";
       evaluatedNoSignal: 1,
       candidates: 2,
     });
+  });
+
+  it("names a page shown often enough that no clicks is a fact", () => {
+    const result = pageReport(
+      // 1% is this property's own rate, so five hundred impressions expect
+      // five clicks and none arrived.
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.evidence).toBe("observed");
+    expect(result.pageChecks.baseline).toEqual({
+      ctr: 0.01,
+      impressions: 10_000,
+      clicks: 100,
+      brandQueriesExcluded: 0,
+    });
+    expect(result.pageChecks.items).toEqual([
+      {
+        page: PAGE,
+        impressions: 500,
+        position: 5,
+        expectedClicks: 5,
+        destination: "on-page-seo-check",
+      },
+    ]);
+  });
+
+  it("says nothing about a page whose own volume predicts no clicks", () => {
+    const result = pageReport(
+      // Two hundred impressions at the same 1% expects two clicks. Seeing
+      // none of two happens on one run in seven; it is not a finding.
+      [pageRow(PAGE, 200, 0, 5)],
+      [pageRow(PAGE, 200, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+    // Read and rejected, which is a different fact from never looked at.
+    expect(result.pageChecks.examinedRows).toBe(1);
+  });
+
+  it("says nothing about a page almost nobody is shown", () => {
+    const result = pageReport(
+      // Volume enough to expect five clicks, at an average position where
+      // "go and look at how this result appears" is not an available action.
+      [pageRow(PAGE, 500, 0, 35)],
+      [pageRow(PAGE, 500, 0, 35)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("says nothing about a page that did draw a click", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 1, 5)],
+      [pageRow(PAGE, 500, 1, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("takes brand rows out of the rate it measures pages against", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        // Brand traffic converts an order of magnitude better than the rest.
+        // Left in, the property looks like a 3% site and this page's five
+        // hundred impressions would expect fifteen clicks; taken out, the
+        // real rate is 0.5% and the same page expects 2.5.
+        currentQueries: [queryRow("acme", 1_000, 250, 1)],
+        brandTerms: ["acme"],
+        totals: { impressions: 11_000, clicks: 300 },
+      },
+    );
+
+    expect(result.pageChecks.baseline).toEqual({
+      ctr: 50 / 10_000,
+      impressions: 10_000,
+      clicks: 50,
+      brandQueriesExcluded: 1,
+    });
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("refuses the check rather than guess when brand terms are unconfirmed", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        brandTermsConfirmed: false,
+      },
+    );
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["brand_terms_not_confirmed"]);
+    expect(result.pageChecks.baseline).toBeNull();
+    expect(result.pageChecks.examinedRows).toBeNull();
+  });
+
+  it("refuses to divide two differently aggregated measurements", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        // The page rows are aggregated by page; this total is not.
+        totalAggregation: "byProperty",
+      },
+    );
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["aggregation_basis_mismatch"]);
+  });
+
+  it("leaves out a page the briefing already handed the reader an action for", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 300, 2, 11)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+    const gone = pageReport(
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 3_000, 20, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    // The collapsed page is a different page, so this one is unaffected.
+    expect(result.pageChecks.items.map((item) => item.page)).toEqual([PAGE]);
+    // But when the collapse is about a page that would also qualify here, it
+    // is not listed twice: one page, one row.
+    expect(gone.pageChanges.map((change) => change.page)).toEqual([GONE]);
+    expect(gone.pageChecks.items.map((item) => item.page)).toEqual([PAGE]);
   });
 
   it("reports page lanes as unavailable when the page dimension was not read", () => {

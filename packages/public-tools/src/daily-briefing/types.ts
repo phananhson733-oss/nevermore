@@ -514,6 +514,62 @@ export interface DailyBriefingRowAccounting {
  * present two populations as one. The two `observedRows` are both correct and
  * are not addends.
  */
+/** Why the page-level zero-click check could not run, in operator terms. */
+export type DailyBriefingPageCheckBlocker =
+  | "brand_terms_not_confirmed"
+  | "property_totals_unavailable"
+  | "aggregation_basis_mismatch"
+  | "no_property_impressions";
+
+/**
+ * The property's own click-through rate, and what it was computed from.
+ *
+ * Deliberately one number for the whole property rather than the banded curve
+ * the CTR opportunity lane uses. That curve needs five hundred impressions and
+ * five queries inside a single position band before it will speak, which the
+ * properties this tool serves rarely reach; a property-wide rate needs only
+ * the property totals, which are read on every run. It is the coarser
+ * instrument and it is stated as such: it answers "would this many impressions
+ * normally have produced a click here", not "what should this query earn".
+ */
+export interface DailyBriefingPageCheckBaseline {
+  readonly ctr: number;
+  /** Non-brand impressions the rate was divided from. */
+  readonly impressions: number;
+  readonly clicks: number;
+  /** Brand rows subtracted from the property totals before dividing. */
+  readonly brandQueriesExcluded: number;
+}
+
+export interface DailyBriefingPageCheck {
+  readonly page: string;
+  readonly impressions: number;
+  readonly position: number;
+  /** Clicks the property's own rate expects from this many impressions. */
+  readonly expectedClicks: number;
+  readonly destination: Extract<
+    DailyBriefingActionDestination,
+    "on-page-seo-check"
+  >;
+}
+
+/**
+ * Pages shown often enough that drawing no clicks is worth a look.
+ *
+ * A state, not a change: nothing here is claimed to have moved between the two
+ * windows, which is why these are checks and sit apart from `pageChanges`. It
+ * is the page-scoped counterpart of `DailyBriefingSuggestedChecks`, kept as its
+ * own population for the same reason page rows are kept apart from query rows.
+ */
+export interface DailyBriefingPageChecks {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly baseline: DailyBriefingPageCheckBaseline | null;
+  readonly blockers: readonly DailyBriefingPageCheckBlocker[];
+  readonly items: readonly DailyBriefingPageCheck[];
+  /** Current page rows this check read and rejected. Null when it never ran. */
+  readonly examinedRows: number | null;
+}
+
 export interface DailyBriefingPageAccounting {
   readonly evidence: "observed" | "partial" | "unavailable";
   readonly observedRows: number | null;
@@ -704,6 +760,7 @@ export interface DailyBriefingResult {
   readonly provisionalMoves: DailyBriefingProvisionalMoves;
   readonly rowAccounting: DailyBriefingRowAccounting;
   readonly pageAccounting: DailyBriefingPageAccounting;
+  readonly pageChecks: DailyBriefingPageChecks;
   /** Offered on current standing; never claims anything changed. */
   readonly suggestedChecks: DailyBriefingSuggestedChecks;
   readonly coverage: DailyBriefingCoverage;

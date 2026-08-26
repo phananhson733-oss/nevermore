@@ -27,6 +27,7 @@ import type {
   DailyBriefingMode,
   DailyBriefingObservationBand,
   DailyBriefingPageAccounting,
+  DailyBriefingPageCheck,
   DailyBriefingPageAction,
   DailyBriefingPageChangeKind,
   DailyBriefingPropertyChange,
@@ -897,6 +898,8 @@ export function DailyBriefingResults({
   // checks panel say "no shown row failed to become a check" about a run that
   // showed none.
   const notCheckable = result.suggestedChecks.notCheckable;
+  const pageChecks = result.pageChecks.items;
+  const pageCheckBaseline = result.pageChecks.baseline;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Every count in the summary is query-derived, so when the query rows were
@@ -1013,6 +1016,34 @@ export function DailyBriefingResults({
         // Deliberately not an action index. A check never entered the action
         // list and must not be counted as one downstream.
         evidenceId: `daily:check:${check.sampleKind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function pageCheckHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    check: DailyBriefingPageCheck,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: check.destination,
+        // Page scope, and no query: this check is a statement about a page's
+        // whole impression base, not about any one term that produced it.
+        scope: "page",
+        property,
+        query: null,
+        page: check.page,
+        // Not an action index. A check never entered the action list and must
+        // not be counted as one downstream.
+        evidenceId: "daily:page-check:zero_clicks",
       });
     } catch {
       written = false;
@@ -1953,6 +1984,61 @@ export function DailyBriefingResults({
                 {t("checks.notCheckable", { count: notCheckable ?? 0 })}
               </p>
             ) : null}
+          </div>
+        ) : null}
+        {pageChecks.length > 0 ? (
+          <div
+            data-page-checks
+            className="mt-6 border-t border-brand-border pt-5"
+          >
+            <h4 className="text-[15px] font-semibold text-text-dark-primary">
+              {t("pageChecks.title")}
+            </h4>
+            {/* The rate is named, because the whole claim rests on it and it
+                is this property's own, not an industry figure. */}
+            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("pageChecks.intro", {
+                ctr:
+                  pageCheckBaseline === null
+                    ? t("kpis.unavailable")
+                    : percent(pageCheckBaseline.ctr),
+              })}
+            </p>
+            <div className="mt-3 grid gap-3">
+              {pageChecks.map((check) => (
+                <article
+                  key={`page-check:${check.page}`}
+                  data-page-check-row
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className={EYEBROW}>{t("pageChecks.evidence")}</p>
+                    <p className="mt-1.5 break-all text-[12.5px] font-medium text-text-dark-primary">
+                      {check.page}
+                    </p>
+                    <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                      {t("pageChecks.body", {
+                        impressions: number(locale, check.impressions),
+                        position: check.position.toFixed(1),
+                        expected: check.expectedClicks.toFixed(1),
+                      })}
+                    </p>
+                  </div>
+                  <Link
+                    data-page-check-link
+                    href={localePath(locale, destination(check.destination).path)}
+                    onClick={(event) => pageCheckHandoff(event, check)}
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                  >
+                    {t(destination(check.destination).labelKey)}
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="size-4 shrink-0"
+                    />
+                  </Link>
+                </article>
+              ))}
+            </div>
           </div>
         ) : null}
         {handoffFailed ? (

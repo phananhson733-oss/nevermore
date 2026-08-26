@@ -2313,6 +2313,60 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(intro?.textContent).toContain("4 page records");
   });
 
+  it("names this property's own rate on the zero-click checks", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "observed",
+          baseline: {
+            ctr: 0.01,
+            impressions: 10_000,
+            clicks: 100,
+            brandQueriesExcluded: 0,
+          },
+          blockers: [],
+          items: [
+            {
+              page: PAGE_CHANGE_URL,
+              impressions: 500,
+              position: 5,
+              expectedClicks: 5,
+              destination: "on-page-seo-check",
+            },
+          ],
+          examinedRows: 4,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const block = host.querySelector("[data-page-checks]");
+
+    expect(block?.querySelectorAll("[data-page-check-row]")).toHaveLength(1);
+    // The rate is the whole claim, so it is on screen rather than implied.
+    expect(block?.textContent).toContain("1.0%");
+    expect(block?.textContent).toContain("500");
+    expect(block?.textContent).toContain("5.0");
+    // And it is named as this property's own, not as a benchmark.
+    expect(block?.textContent).toContain("this property's own");
+  });
+
+  it("shows no zero-click block when the check could not run", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "unavailable",
+          baseline: null,
+          blockers: ["brand_terms_not_confirmed"],
+          items: [],
+          examinedRows: null,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    expect(host.querySelector("[data-page-checks]")).toBeNull();
+  });
+
   it("keeps the chart when a page lane settled nothing", async () => {
     const host = await renderResults(
       envelope({

@@ -2313,6 +2313,12 @@
         "intro": "These entries come from the query records already shown above. They say where those **queries** currently sit and nothing more: no change is claimed for them, and none is an evidence-backed action. What the page dimension found is a separate question and does not contradict this.",
         "evidence": "Where this query currently sits, not evidence of change",
         "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, or the current position falls outside the band this check covers."
+      },
+      "pageChecks": {
+        "title": "These pages draw impressions and no clicks at all",
+        "evidence": "Page · where it stands this window",
+        "intro": "At this property's own click-through rate of {ctr}, each page below was shown often enough to expect more than three clicks and drew none. That rate comes from this property's own non-brand data for this window, not from an industry average. Nothing here is claimed to have changed — only that at the rate this property actually converts, zero clicks on these pages does not look like chance.",
+        "body": "{impressions} impressions this window at average position {position}. This property's own rate expects {expected} clicks; none arrived."
       }
     },
     "trafficDrop": {
