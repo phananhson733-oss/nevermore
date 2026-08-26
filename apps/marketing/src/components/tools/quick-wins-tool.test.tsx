@@ -53,8 +53,12 @@ const { QuickWinsTool } = await import("./quick-wins-tool.tsx");
 const PROPERTY_A = "sc-domain:a.example";
 const PROPERTY_B = "sc-domain:b.example";
 const PROPERTIES = [PROPERTY_A, PROPERTY_B] as const;
+// Source-neutral on purpose: the competitor keyword gap tool writes this
+// handoff too, so a notice naming the Daily Search Briefing would name a tool
+// the visitor did not come from. The banner states that a property arrived and
+// that nothing has been run yet, which is true of every source.
 const NOTICE =
-  "Brought in from Daily Search Briefing. This tool has not been run again yet.";
+  "Imported from another tool. This tool has not been run again yet.";
 const originalFetch = globalThis.fetch;
 let root: Root | null = null;
 

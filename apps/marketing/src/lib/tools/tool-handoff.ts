@@ -48,6 +48,21 @@ export type ToolHandoffPayload =
       readonly evidenceId: string;
       readonly marketCode: string;
       readonly languageCode: string;
+    }
+  // The Opportunity Finder consumer selects a granted property and reads
+  // nothing else off the handoff, so this variant carries no query and no page.
+  // Sending one anyway would put a keyword on the wire that no surface reads,
+  // and would let a reader believe the destination had been narrowed to it.
+  | {
+      readonly source: "competitor-keyword-gap";
+      readonly destination: "seo-quick-wins";
+      readonly scope: "property";
+      readonly property: string;
+      readonly query: null;
+      readonly page: null;
+      readonly evidenceId: string;
+      readonly marketCode: string;
+      readonly languageCode: string;
     };
 
 export type ToolHandoff = ToolHandoffPayload & {
@@ -163,6 +178,44 @@ function isSafeHttpPage(value: unknown): value is string {
   }
 }
 
+/**
+ * A gap keyword's numbers only mean anything inside the market they were read
+ * in, so every destination carries it. Checked apart from the target below so
+ * that adding a destination cannot quietly ship a handoff without a market.
+ */
+function hasValidGapMarket(value: Readonly<Record<string, unknown>>): boolean {
+  return (
+    typeof value.marketCode === "string" &&
+    MARKET_CODE.test(value.marketCode) &&
+    typeof value.languageCode === "string" &&
+    LANGUAGE_CODE.test(value.languageCode)
+  );
+}
+
+/**
+ * The destination decides the scope rather than the two being free to disagree.
+ * On-Page audits one URL and needs both a query and a real page; the
+ * Opportunity Finder only ever picks a property, and a query or page carried
+ * there would be a value nothing reads. Any other destination is rejected: the
+ * gap tool has no third handoff, and defaulting one open would let a forged
+ * payload reach a tool that was never designed to receive gap context.
+ */
+function hasValidGapTarget(value: Readonly<Record<string, unknown>>): boolean {
+  if (value.destination === "on-page-seo-check") {
+    return (
+      value.scope === "query_page" &&
+      nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
+      isSafeHttpPage(value.page)
+    );
+  }
+  if (value.destination === "seo-quick-wins") {
+    return (
+      value.scope === "property" && value.query === null && value.page === null
+    );
+  }
+  return false;
+}
+
 function hasValidPayloadFields(
   value: Readonly<Record<string, unknown>>,
 ): boolean {
@@ -174,16 +227,7 @@ function hasValidPayloadFields(
   }
 
   if (value.source === "competitor-keyword-gap") {
-    return (
-      value.destination === "on-page-seo-check" &&
-      value.scope === "query_page" &&
-      nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
-      isSafeHttpPage(value.page) &&
-      typeof value.marketCode === "string" &&
-      MARKET_CODE.test(value.marketCode) &&
-      typeof value.languageCode === "string" &&
-      LANGUAGE_CODE.test(value.languageCode)
-    );
+    return hasValidGapMarket(value) && hasValidGapTarget(value);
   }
 
   if (value.source === "daily-search-briefing") {
@@ -220,6 +264,73 @@ function isToolHandoff(value: unknown): value is ToolHandoff {
   );
 }
 
+/**
+ * A property-scoped handoff stores explicit nulls rather than trimmed empty
+ * strings, so a consumer can tell "no query was carried" from "a query was
+ * carried and it was blank". Split from the briefing builder because the two
+ * sources carry different fields, and one builder for both would have to widen
+ * the stored shape past what either source actually sends.
+ */
+function toGapHandoff(
+  payload: Extract<ToolHandoffPayload, { source: "competitor-keyword-gap" }>,
+  now: number,
+): ToolHandoff {
+  const shared = {
+    source: payload.source,
+    property: payload.property.trim(),
+    evidenceId: payload.evidenceId.trim(),
+    marketCode: payload.marketCode,
+    languageCode: payload.languageCode,
+    createdAt: now,
+    expiresAt: now + TOOL_HANDOFF_TTL_MS,
+  } as const;
+
+  return payload.destination === "on-page-seo-check"
+    ? {
+        ...shared,
+        destination: payload.destination,
+        scope: payload.scope,
+        query: payload.query.trim(),
+        page: payload.page.trim(),
+      }
+    : {
+        ...shared,
+        destination: payload.destination,
+        scope: payload.scope,
+        query: null,
+        page: null,
+      };
+}
+
+function toBriefingHandoff(
+  payload: Extract<ToolHandoffPayload, { source: "daily-search-briefing" }>,
+  now: number,
+): ToolHandoff {
+  const shared = {
+    source: payload.source,
+    property: payload.property.trim(),
+    evidenceId: payload.evidenceId.trim(),
+    createdAt: now,
+    expiresAt: now + TOOL_HANDOFF_TTL_MS,
+  } as const;
+
+  return payload.scope === "query_page"
+    ? {
+        ...shared,
+        destination: payload.destination,
+        scope: payload.scope,
+        query: payload.query.trim(),
+        page: payload.page.trim(),
+      }
+    : {
+        ...shared,
+        destination: payload.destination,
+        scope: payload.scope,
+        query: null,
+        page: null,
+      };
+}
+
 export function writeToolHandoff(
   storage: ToolHandoffStorage,
   now: number,
@@ -238,42 +349,8 @@ export function writeToolHandoff(
 
   const handoff: ToolHandoff =
     payload.source === "competitor-keyword-gap"
-      ? {
-          source: payload.source,
-          destination: payload.destination,
-          scope: payload.scope,
-          property: payload.property.trim(),
-          query: payload.query.trim(),
-          page: payload.page.trim(),
-          evidenceId: payload.evidenceId.trim(),
-          marketCode: payload.marketCode,
-          languageCode: payload.languageCode,
-          createdAt: now,
-          expiresAt: now + TOOL_HANDOFF_TTL_MS,
-        }
-      : payload.scope === "query_page"
-        ? {
-            source: payload.source,
-            destination: payload.destination,
-            scope: payload.scope,
-            property: payload.property.trim(),
-            query: payload.query.trim(),
-            page: payload.page.trim(),
-            evidenceId: payload.evidenceId.trim(),
-            createdAt: now,
-            expiresAt: now + TOOL_HANDOFF_TTL_MS,
-          }
-        : {
-            source: payload.source,
-            destination: payload.destination,
-            scope: payload.scope,
-            property: payload.property.trim(),
-            query: null,
-            page: null,
-            evidenceId: payload.evidenceId.trim(),
-            createdAt: now,
-            expiresAt: now + TOOL_HANDOFF_TTL_MS,
-          };
+      ? toGapHandoff(payload, now)
+      : toBriefingHandoff(payload, now);
 
   try {
     storage.setItem(TOOL_HANDOFF_KEY, JSON.stringify(handoff));

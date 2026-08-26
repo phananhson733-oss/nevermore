@@ -8,6 +8,7 @@ import type { CompetitorKeywordGapRow } from "@sf/public-tools/competitor-keywor
 import {
   bestCompetitorPageHost,
   bestCompetitorPageUrl,
+  rankedCompetitorPages,
 } from "./competitor-keyword-gap-competitor-pages";
 
 function rowWithPage(domain: string, url: string | null): CompetitorKeywordGapRow {
@@ -44,6 +45,22 @@ function rowWithPage(domain: string, url: string | null): CompetitorKeywordGapRo
     },
   };
 }
+
+describe("rankedCompetitorPages", () => {
+  it("orders by provider rank before the domain ever matters", () => {
+    const row = {
+      ...rowWithPage("a-b.example", null),
+      competitorRanks: { "zeta.example": 2, "alpha.example": 9 },
+      competitorPages: {},
+      competitorCount: 2,
+    };
+
+    expect(rankedCompetitorPages(row).map((entry) => entry.rank)).toEqual([
+      2, 9,
+    ]);
+    expect(rankedCompetitorPages(row)[0]?.domain).toBe("zeta.example");
+  });
+});
 
 describe("bestCompetitorPageHost", () => {
   it("names the host the link opens, not the competitor it is filed under", () => {

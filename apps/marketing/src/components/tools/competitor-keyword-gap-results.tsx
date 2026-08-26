@@ -1,10 +1,10 @@
 // @input  -- one v3 competitor gap envelope, selected GSC property, and focus callback
-// @output -- compact DFS/GSC evidence table with competitor pages, pre-screen bands, qualified next actions, and a copy-rows-as-plan export
+// @output -- compact DFS/GSC evidence table with competitor pages, pre-screen bands, one qualified next action per row, and the copy-plan and full-CSV exports
 // @pos    -- non-persistent result surface for the Marketing competitor gap tool
 
 "use client";
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import type {
   CompetitorKeywordGapEnvelope,
@@ -13,21 +13,16 @@ import type {
   CompetitorKeywordGapRow,
 } from "@sf/public-tools/competitor-keyword-gap";
 
-import { localePath } from "../../lib/locale-path";
-import { writeToolHandoff } from "../../lib/tools/tool-handoff";
 import {
   BandFilters,
   type BandFilter,
 } from "./competitor-keyword-gap-band-filters";
-import {
-  bestCompetitorPageHost,
-  bestCompetitorPageUrl,
-} from "./competitor-keyword-gap-competitor-pages";
 import { CopyPlanButton } from "./competitor-keyword-gap-copy-plan-button";
 import {
   CoverageDetails,
   EvidenceBoundaries,
 } from "./competitor-keyword-gap-coverage";
+import { CsvExportButton } from "./competitor-keyword-gap-csv-button";
 import {
   ACTION_BUTTON,
   BADGE,
@@ -36,17 +31,17 @@ import {
   COLUMN_BADGE,
   COLUMN_BADGE_TONE,
   KEYWORD_TEXT,
-  META_TEXT,
   PRIMARY_ACTION_BUTTON,
   TABLE_TEXT,
   number,
-  safePageUrl,
   translated,
   type Translate,
 } from "./competitor-keyword-gap-results-shared";
+import { RowActionCell } from "./competitor-keyword-gap-row-actions";
 import {
   CompetitorChips,
   SignalChips,
+  StatusCell,
 } from "./competitor-keyword-gap-row-chips";
 
 type Filter = "all" | CompetitorKeywordGapRow["gsc"]["nextStep"];
@@ -58,31 +53,6 @@ function capturedTime(value: string, locale: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-}
-
-function pagePath(value: string | null): string | null {
-  const page = safePageUrl(value);
-  if (page === null) return null;
-  const url = new URL(page);
-  return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
-}
-
-/**
- * The path alone, for a button that has to name the page it opens without
- * pushing every other column off the screen. The host is this visitor's own
- * site in every case, so repeating it buys nothing; the full `hostname + path`
- * still goes in the link title.
- */
-const ACTION_PATH_MAX = 28;
-
-function ownPagePath(value: string | null): string | null {
-  const page = safePageUrl(value);
-  if (page === null) return null;
-  const { pathname } = new URL(page);
-  const path = pathname === "" ? "/" : pathname;
-  return path.length <= ACTION_PATH_MAX
-    ? path
-    : `${path.slice(0, ACTION_PATH_MAX - 1)}\u2026`;
 }
 
 /**
@@ -110,16 +80,6 @@ function lanesPresent(
 ): readonly CompetitorKeywordGapRow["gsc"]["nextStep"][] {
   const present = new Set(rows.map((row) => row.gsc.nextStep));
   return LANE_ORDER.filter((lane) => present.has(lane));
-}
-
-/** Stable and bounded; the full keyword remains only in the validated payload. */
-function evidenceIdFor(row: CompetitorKeywordGapRow): string {
-  let fingerprint = 0x811c9dc5;
-  for (let index = 0; index < row.keyword.length; index += 1) {
-    fingerprint ^= row.keyword.charCodeAt(index);
-    fingerprint = Math.imul(fingerprint, 0x01000193);
-  }
-  return `competitor-gap:${(fingerprint >>> 0).toString(16).padStart(8, "0")}:${row.gsc.pageStatus}`;
 }
 
 function providerIntent(value: string | null, t: Translate): string {
@@ -364,100 +324,6 @@ function OverviewCards({
   );
 }
 
-function statusTone(
-  status: CompetitorKeywordGapRow["gsc"]["queryStatus"],
-): string {
-  switch (status) {
-    case "observed_strong":
-      return "border-brand-success/35 bg-brand-success/10 text-brand-success";
-    case "observed_weak":
-      return "border-brand-warning/35 bg-brand-warning/10 text-brand-warning";
-    case "not_observed_in_gsc_query_sample":
-      return "border-brand-error/25 bg-brand-error/[0.06] text-brand-error";
-    case "gsc_query_sample_not_read":
-      return "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary";
-  }
-}
-
-/**
- * What this row's cell offers, and what it is about to open.
- *
- * The lane still decides the verb -- that has not changed and is still GSC's
- * call alone. What changed is that the label now names the OBJECT: the page
- * Search Console attributed to this query, or the competitor whose page the
- * link opens. "Check the existing page" repeated down a column tells a reader
- * nothing they cannot already see in the status chip; "/pricing" tells them
- * where to go.
- */
-type RowAction =
-  | { readonly kind: "checker"; readonly label: string; readonly page: string }
-  | { readonly kind: "page"; readonly label: string; readonly page: string }
-  | {
-      readonly kind: "competitor";
-      readonly label: string;
-      readonly href: string;
-    }
-  | { readonly kind: "copy"; readonly label: string }
-  | { readonly kind: "focus"; readonly label: string };
-
-interface RowActions {
-  readonly primary: RowAction;
-  readonly secondary: RowAction | null;
-}
-
-function rowActions(
-  row: CompetitorKeywordGapRow,
-  selectedProperty: string,
-  t: Translate,
-): RowActions {
-  const copy: RowAction = { kind: "copy", label: t("actions.copyKeyword") };
-  if (row.gsc.nextStep === "verify_own_coverage") {
-    return {
-      primary: { kind: "focus", label: t("actions.focusProperty") },
-      secondary: null,
-    };
-  }
-  if (row.gsc.nextStep === "review_content_gap") {
-    const href = bestCompetitorPageUrl(row);
-    const host = bestCompetitorPageHost(row);
-    return href === null || host === null
-      ? { primary: copy, secondary: null }
-      : {
-          primary: {
-            kind: "competitor",
-            href,
-            label: t("actions.openCompetitorPageNamed", { domain: host }),
-          },
-          secondary: copy,
-        };
-  }
-
-  // Both remaining lanes have query-level GSC evidence. The only thing that
-  // separates them here is whether the page attribution is complete enough to
-  // hand the On-Page Checker a page to audit.
-  const page = safePageUrl(row.gsc.pageUrl);
-  const path = ownPagePath(row.gsc.pageUrl);
-  if (page === null || path === null) return { primary: copy, secondary: null };
-  return selectedProperty !== "" &&
-    row.gsc.pageStatus === "observed_sufficient"
-    ? {
-        primary: {
-          kind: "checker",
-          page,
-          label: t("actions.optimizeObservedPage", { page: path }),
-        },
-        secondary: null,
-      }
-    : {
-        primary: {
-          kind: "page",
-          page,
-          label: t("actions.reviewObservedPage", { page: path }),
-        },
-        secondary: null,
-      };
-}
-
 function ResultsTable({
   result,
   locale,
@@ -516,50 +382,6 @@ function ResultsTable({
     setActionError(null);
   }
 
-  async function copyKeyword(keyword: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(keyword);
-      setActionError(null);
-    } catch {
-      setActionError(t("actions.copyFailed"));
-    }
-  }
-
-  function focusProperty(): void {
-    onFocusProperty();
-    setActionError(null);
-  }
-
-  function prepareCheckerHandoff(
-    event: ReactMouseEvent<HTMLAnchorElement>,
-    row: CompetitorKeywordGapRow,
-    pageUrl: string,
-  ): void {
-    try {
-      if (
-        !writeToolHandoff(window.sessionStorage, Date.now(), {
-          source: "competitor-keyword-gap",
-          destination: "on-page-seo-check",
-          scope: "query_page",
-          property: selectedProperty,
-          query: row.keyword,
-          page: pageUrl,
-          evidenceId: evidenceIdFor(row),
-          marketCode: result.marketCode,
-          languageCode: result.languageCode,
-        })
-      ) {
-        event.preventDefault();
-        setActionError(t("actions.handoffFailed"));
-        return;
-      }
-      setActionError(null);
-    } catch {
-      event.preventDefault();
-      setActionError(t("actions.handoffFailed"));
-    }
-  }
-
   return (
     <section
       data-results-table
@@ -606,6 +428,7 @@ function ResultsTable({
             onActionError={setActionError}
             t={t}
           />
+          <CsvExportButton result={result} t={t} />
         </div>
       </div>
 
@@ -707,177 +530,54 @@ function ResultsTable({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => {
-              const queryObserved =
-                row.gsc.queryStatus === "observed_strong" ||
-                row.gsc.queryStatus === "observed_weak";
-              const pageObserved =
-                row.gsc.pageStatus === "observed_sufficient" ||
-                row.gsc.pageStatus === "observed_partial";
-              const queryStatusLabel = translated(
-                t,
-                `gsc.${row.gsc.queryStatus}`,
-              );
-              const evidenceBasisLabel =
-                row.gsc.evidenceBasis === null
-                  ? null
-                  : translated(t, `gsc.evidenceBasis.${row.gsc.evidenceBasis}`);
-              const actions = rowActions(row, selectedProperty, t);
-              return (
-                <tr
-                  key={row.keyword}
-                  className="border-b border-brand-border-card align-top last:border-0"
-                >
-                  <td className="px-3 py-4">
-                    <div
-                      data-keyword
-                      className={`${KEYWORD_TEXT} break-words [overflow-wrap:anywhere]`}
-                    >
-                      {row.keyword}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <span className={CHIP_TEXT}>
-                        {providerIntent(row.providerIntent, t)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-4">
-                    <div
-                      data-monthly-volume
-                      className={`${TABLE_TEXT} font-mono font-semibold tabular-nums whitespace-nowrap text-text-dark-primary`}
-                    >
-                      {metric(row.searchVolume, locale)}
-                    </div>
-                  </td>
-                  <td className="px-3 py-4">
-                    <CompetitorChips row={row} />
-                  </td>
-                  <td className="px-3 py-4">
-                    <div
-                      data-gsc-status
-                      aria-label={
-                        evidenceBasisLabel === null
-                          ? queryStatusLabel
-                          : `${queryStatusLabel} · ${evidenceBasisLabel}`
-                      }
-                      className={`inline-flex rounded-full border px-2.5 py-1 ${META_TEXT} ${statusTone(row.gsc.queryStatus)}`}
-                    >
-                      {queryStatusLabel}
-                    </div>
-                    {row.gsc.evidenceBasis === "query_page" ? (
-                      <div
-                        className={`mt-2 ${META_TEXT} text-text-dark-secondary`}
-                      >
-                        {evidenceBasisLabel}
-                      </div>
-                    ) : null}
-                    {row.gsc.queryImpressions !== null &&
-                    row.gsc.queryPosition !== null ? (
-                      <div
-                        data-gsc-metrics="query"
-                        className={`mt-2 ${TABLE_TEXT} text-text-dark-primary`}
-                      >
-                        {t("gsc.metricLine", {
-                          impressions: number(row.gsc.queryImpressions, locale),
-                          position: number(row.gsc.queryPosition, locale, 1),
-                        })}
-                      </div>
-                    ) : null}
-                    {pageObserved || queryObserved ? (
-                      <div
-                        className={`mt-2 ${META_TEXT} text-text-dark-secondary`}
-                      >
-                        {translated(t, `gsc.pageStatus.${row.gsc.pageStatus}`)}
-                        {pageObserved && pagePath(row.gsc.pageUrl)
-                          ? ` · ${pagePath(row.gsc.pageUrl)}`
-                          : ""}
-                      </div>
-                    ) : null}
-                    {row.gsc.evidenceBasis === "query_page" &&
-                    row.gsc.pageImpressions !== null &&
-                    row.gsc.pagePosition !== null ? (
-                      <div
-                        data-gsc-metrics="query-page"
-                        className={`mt-1 ${META_TEXT} text-text-dark-secondary`}
-                      >
-                        {t("gsc.pageMetricLine", {
-                          impressions: number(row.gsc.pageImpressions, locale),
-                          position: number(row.gsc.pagePosition, locale, 1),
-                        })}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-4">
-                    <SignalChips row={row} locale={locale} t={t} />
-                  </td>
-                  <td className="px-3 py-4">
-                    <div className="flex flex-col items-start gap-2">
-                      {[actions.primary, actions.secondary].map((action) =>
-                        action === null ? null : action.kind === "checker" ? (
-                          <a
-                            key={action.kind}
-                            data-row-action="open-checker"
-                            href={localePath(locale, "/tools/on-page-seo-check")}
-                            title={pagePath(row.gsc.pageUrl) ?? undefined}
-                            className={PRIMARY_ACTION_BUTTON}
-                            onClick={(event) =>
-                              prepareCheckerHandoff(event, row, action.page)
-                            }
-                          >
-                            {action.label}
-                          </a>
-                        ) : action.kind === "page" ? (
-                          <a
-                            key={action.kind}
-                            data-row-action="open-observed-page"
-                            href={action.page}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={pagePath(row.gsc.pageUrl) ?? undefined}
-                            className={ACTION_BUTTON}
-                            onClick={() => setActionError(null)}
-                          >
-                            {action.label}
-                          </a>
-                        ) : action.kind === "competitor" ? (
-                          <a
-                            key={action.kind}
-                            data-row-action="open-competitor-page"
-                            href={action.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={ACTION_BUTTON}
-                            onClick={() => setActionError(null)}
-                          >
-                            {action.label}
-                          </a>
-                        ) : action.kind === "copy" ? (
-                          <button
-                            key={action.kind}
-                            type="button"
-                            data-row-action="copy-keyword"
-                            className={ACTION_BUTTON}
-                            onClick={() => void copyKeyword(row.keyword)}
-                          >
-                            {action.label}
-                          </button>
-                        ) : (
-                          <button
-                            key={action.kind}
-                            type="button"
-                            data-row-action="focus-property"
-                            className={ACTION_BUTTON}
-                            onClick={focusProperty}
-                          >
-                            {action.label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {visibleRows.map((row) => (
+              <tr
+                key={row.keyword}
+                className="border-b border-brand-border-card align-top last:border-0"
+              >
+                <td className="px-3 py-4">
+                  <div
+                    data-keyword
+                    className={`${KEYWORD_TEXT} break-words [overflow-wrap:anywhere]`}
+                  >
+                    {row.keyword}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={CHIP_TEXT}>
+                      {providerIntent(row.providerIntent, t)}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-3 py-4">
+                  <div
+                    data-monthly-volume
+                    className={`${TABLE_TEXT} font-mono font-semibold tabular-nums whitespace-nowrap text-text-dark-primary`}
+                  >
+                    {metric(row.searchVolume, locale)}
+                  </div>
+                </td>
+                <td className="px-3 py-4">
+                  <CompetitorChips row={row} />
+                </td>
+                <td className="px-3 py-4">
+                  <StatusCell row={row} locale={locale} t={t} />
+                </td>
+                <td className="px-3 py-4">
+                  <SignalChips row={row} locale={locale} t={t} />
+                </td>
+                <td className="px-3 py-4">
+                  <RowActionCell
+                    row={row}
+                    result={result}
+                    locale={locale}
+                    selectedProperty={selectedProperty}
+                    onFocusProperty={onFocusProperty}
+                    onActionError={setActionError}
+                    t={t}
+                  />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

@@ -1,5 +1,5 @@
 // @input  -- nothing at runtime; the tool's next-intl translator type, locale strings, and provider URLs
-// @output -- shared Tailwind class tokens (cards, chips by shape and tone, column provenance badges), the narrowed translator type, and number/translate/URL-safety helpers
+// @output -- shared Tailwind class tokens (cards, chips by shape and tone, column provenance badges), the narrowed translator type, and number/translate/URL-safety-and-shape helpers
 // @pos    -- styling and formatting shared by every Marketing competitor gap results module
 
 import type { useTranslations } from "next-intl";
@@ -102,4 +102,51 @@ export function safePageUrl(value: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The path alone, for a control that has to name the page it opens without
+ * pushing every other column off the screen. The host is this visitor's own
+ * site in every case, so repeating it buys nothing; the control's title still
+ * carries the entire URL it acts on.
+ */
+const ACTION_PATH_MAX = 28;
+
+/**
+ * Everything after the scheme, query string included.
+ *
+ * Search Console attributes query-string URLs routinely. Dropping the search
+ * rendered `/products?category=shoes` and `/products?category=hats` as the
+ * identical line while the two rows named different pages -- a label that
+ * cannot be told apart from its neighbour is not naming anything.
+ */
+export function pagePath(value: string | null): string | null {
+  const page = safePageUrl(value);
+  if (page === null) return null;
+  const url = new URL(page);
+  // The bare root path is dropped, but only when there is no search after it:
+  // `example.com?a=1` is not an address anyone can read back.
+  const path = url.pathname === "/" && url.search === "" ? "" : url.pathname;
+  return `${url.hostname}${path}${url.search}`;
+}
+
+/**
+ * The same value without the host, shortened from the MIDDLE to fit a column.
+ *
+ * Trimming the tail defeated the reason the search string was added at all.
+ * The URLs that need telling apart are exactly the ones that share a long
+ * prefix -- `/collections/all?filter=color-red` and `...color-blue` both cut
+ * to the same 28 characters, so two rows named different pages with the same
+ * label again. Keeping both ends preserves whatever actually differs; the full
+ * URL is on the control's title either way.
+ */
+export function ownPagePath(value: string | null): string | null {
+  const page = safePageUrl(value);
+  if (page === null) return null;
+  const url = new URL(page);
+  const path = `${url.pathname === "" ? "/" : url.pathname}${url.search}`;
+  if (path.length <= ACTION_PATH_MAX) return path;
+  const head = Math.ceil((ACTION_PATH_MAX - 1) / 2);
+  const tail = ACTION_PATH_MAX - 1 - head;
+  return `${path.slice(0, head)}\u2026${path.slice(path.length - tail)}`;
 }

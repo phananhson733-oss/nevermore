@@ -15,7 +15,17 @@ export interface RankedCompetitorPage {
   readonly page: CompetitorKeywordGapCompetitorPage | null;
 }
 
-/** Competitors by provider rank, best first; ties break on domain so the order is stable. */
+/**
+ * Competitors by provider rank, best first; ties break on domain so the order
+ * is stable.
+ *
+ * `localeCompare`, which is the order the report builds `competitorRanks` in
+ * and therefore the insertion order the chips column relies on for ties. A
+ * codepoint tie-break was tried here and reverted: competitor keys are
+ * validated down to [a-z0-9-.], and over that alphabet the two orders agree on
+ * every pair, so it changed nothing for real data while splitting this helper
+ * away from the three other places that read the same ranks.
+ */
 export function rankedCompetitorPages(
   row: CompetitorKeywordGapRow,
 ): readonly RankedCompetitorPage[] {
