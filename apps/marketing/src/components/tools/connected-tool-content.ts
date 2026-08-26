@@ -485,10 +485,10 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Competitive search planning",
     title: "Find keyword gaps across up to five competitors",
     description:
-      "Sign in, enter one to five competitor domains, and run an on-demand DataForSEO comparison. Competitor rankings stay separate from the optional Search Console evidence for your own site.",
+      "Sign in, enter one to five competitor domains, and run an on-demand competitor comparison. Competitor rankings stay separate from the optional Search Console evidence for your own site.",
     sourceLabel: "A GenGrowth sign-in is required",
     sourceDetail:
-      "Competitor facts come from DataForSEO. If you already connected Search Console, you can optionally add your own observed query and page evidence; competitor data never comes from GSC.",
+      "Competitor facts come from a third-party keyword source. If you already connected Search Console, you can optionally add your own observed query and page evidence; competitor data never comes from GSC.",
     cta: "Sign in to analyze competitors",
     trust:
       "No scheduled refresh, no saved report history, and no fixed credit claim. Each run states which competitor reads completed, which were unavailable, and where either provider sample was truncated.",
@@ -500,7 +500,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Choose one market and language",
-        text: "DataForSEO reads each competitor against your site in the same organic-ranking scope. The tool combines repeated keywords into one row while preserving every observed competitor rank.",
+        text: "The tool reads each competitor against your site in the same organic-ranking scope, and combines repeated keywords into one row while preserving every observed competitor rank.",
       },
       {
         name: "Add your own Search Console evidence when available",
@@ -515,11 +515,11 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "A multi-competitor gap table",
-        body: "One row per normalized keyword, with every observed competitor domain and rank plus DataForSEO search volume, CPC, difficulty, and intent when those fields are available.",
+        body: "One row per normalized keyword, with every observed competitor domain and rank plus estimated search volume, CPC, difficulty, and intent when those fields are available.",
       },
       {
         label: "An optional own-site overlay",
-        body: "Search Console observations for your site appear in their own column and keep their own source label. They do not replace or rewrite the DataForSEO competitor facts.",
+        body: "Search Console observations for your site appear in their own column and keep their own source label. They do not replace or rewrite the third-party competitor facts.",
       },
       {
         label: "Honest coverage",
@@ -534,12 +534,12 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Where does competitor data come from?",
         answer:
-          "From DataForSEO organic-ranking datasets for the market and language you select. Search Console is used only for optional first-party evidence about your own verified property; it cannot provide a competitor’s private query data.",
+          "From third-party organic-ranking datasets for the market and language you select. Search Console is used only for optional first-party evidence about your own verified property; it cannot provide a competitor’s private query data.",
       },
       {
         question: "Do I have to connect Search Console?",
         answer:
-          "No. A GenGrowth sign-in is required, but the DataForSEO competitor comparison can run without a GSC property. Connecting one adds an optional own-site overlay rather than changing the competitor result.",
+          "No. A GenGrowth sign-in is required, but the competitor comparison can run without a GSC property. Connecting one adds an optional own-site overlay rather than changing the competitor result.",
       },
       {
         question: "Why can I enter only five competitors?",
@@ -974,10 +974,10 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "竞品搜索规划",
     title: "比较最多五个竞品的关键词差距",
     description:
-      "登录后手动输入 1–5 个竞品域名，按需运行一次 DataForSEO 对比。竞品排名与本站可选的 Search Console 证据会分开呈现。",
+      "登录后手动输入 1–5 个竞品域名，按需运行一次竞品对比。竞品排名与本站可选的 Search Console 证据会分开呈现。",
     sourceLabel: "需要登录 GenGrowth",
     sourceDetail:
-      "竞品事实来自 DataForSEO。如果你已经连接 Search Console，可以为本站补充查询与页面观测；竞品数据不会来自 GSC。",
+      "竞品事实来自第三方关键词数据源。如果你已经连接 Search Console，可以为本站补充查询与页面观测；竞品数据不会来自 GSC。",
     cta: "登录并分析竞品",
     trust:
       "没有定时刷新、没有服务端报告历史，也不声称固定扣除多少积分。每次运行都会说明哪些竞品读取完成、哪些不可用，以及任一数据样本是否被截断。",
@@ -989,7 +989,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "选择一个市场和语言",
-        text: "DataForSEO 会在同一自然排名范围内逐个比较竞品与本站。重复关键词会合并为一行，同时保留每个被观测到的竞品排名。",
+        text: "本工具会在同一自然排名范围内逐个比较竞品与本站。重复关键词会合并为一行，同时保留每个被观测到的竞品排名。",
       },
       {
         name: "可选叠加本站 Search Console 证据",
@@ -1004,11 +1004,11 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "多竞品差距表",
-        body: "每个标准化关键词一行，列出所有被观测到的竞品域名与排名，并在 DataForSEO 有返回时展示搜索量、CPC、难度与意图。",
+        body: "每个标准化关键词一行，列出所有被观测到的竞品域名与排名，并在数据源有返回时展示搜索量、CPC、难度与意图。",
       },
       {
         label: "可选的本站证据层",
-        body: "本站 Search Console 观测会在独立列中显示，并保留独立来源标签；它不会替代或改写 DataForSEO 的竞品事实。",
+        body: "本站 Search Console 观测会在独立列中显示，并保留独立来源标签；它不会替代或改写第三方的竞品事实。",
       },
       {
         label: "如实呈现覆盖范围",
@@ -1023,12 +1023,12 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "竞品数据来自哪里？",
         answer:
-          "来自你所选市场与语言下的 DataForSEO 自然排名数据。Search Console 只用于本站已验证资源的可选第一方证据，无法提供竞品的私有查询数据。",
+          "来自你所选市场与语言下的第三方自然排名数据。Search Console 只用于本站已验证资源的可选第一方证据，无法提供竞品的私有查询数据。",
       },
       {
         question: "一定要连接 Search Console 吗？",
         answer:
-          "不需要。运行工具必须登录 GenGrowth，但即使没有 GSC 资源，也能运行 DataForSEO 竞品对比。连接资源只是增加可选的本站证据层，不会改变竞品结果。",
+          "不需要。运行工具必须登录 GenGrowth，但即使没有 GSC 资源，也能运行竞品对比。连接资源只是增加可选的本站证据层，不会改变竞品结果。",
       },
       {
         question: "为什么最多只能填五个竞品？",
