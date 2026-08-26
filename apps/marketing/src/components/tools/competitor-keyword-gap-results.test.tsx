@@ -409,6 +409,93 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.textContent).toContain("actions.remaining:count=90");
   });
 
+  it("offers no order at all when the run measured neither key", async () => {
+    // A run with no Search Console property -- which this tool offers its own
+    // button for -- has null impressions and null position on every row. Both
+    // toggles would then fall through to the same tie-break and produce the
+    // same table, one of them highlighted under the words "by impressions"
+    // while the order is really search volume, and the other doing nothing at
+    // all when pressed.
+    const rows = Array.from({ length: 3 }, (_, index) =>
+      rowWithGsc(
+        index,
+        {
+          queryStatus: "gsc_query_sample_not_read",
+          evidenceBasis: null,
+          queryImpressions: null,
+          queryPosition: null,
+          pageImpressions: null,
+          pagePosition: null,
+          nextStep: "verify_own_coverage",
+        },
+        { keyword: `no-gsc-${index}` },
+      ),
+    );
+    const host = await renderResults(withResult({ rows }));
+
+    expect(host.querySelector("[data-sort-toggles]")).toBeNull();
+    // The table is still there, still ordered -- by search volume, which is
+    // what the tie-break falls to. It just does not claim to be anything else.
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+
+  it("offers only the key the run measured, and presses the one it kept", async () => {
+    // Position without impressions: a reading can arrive on one key and not the
+    // other, so the choice is made per key rather than on the run's overlay
+    // status as a whole. This shape also pins the fallback -- the default
+    // preference is "impressions", which this run cannot produce, so the one
+    // remaining toggle has to read as pressed rather than leaving the reader a
+    // lone unpressed button above a table that is already in its order.
+    const rows = [
+      rowWithGsc(
+        0,
+        {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query",
+          queryImpressions: null,
+          queryPosition: 8,
+          nextStep: "optimize_existing",
+        },
+        { keyword: "position only" },
+      ),
+      rowWithGsc(
+        1,
+        {
+          queryStatus: "not_observed_in_gsc_query_sample",
+          evidenceBasis: null,
+          queryImpressions: null,
+          queryPosition: null,
+          nextStep: "review_content_gap",
+        },
+        { keyword: "nothing" },
+      ),
+    ];
+    const host = await renderResults(withResult({ rows }));
+
+    expect(host.querySelector('[data-sort-toggle="impressions"]')).toBeNull();
+    expect(
+      host
+        .querySelector('[data-sort-toggle="position"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    // Pressed means it is really the order: the measured row leads, the
+    // unmeasured one is last.
+    expect(visibleKeywords(host)).toEqual(["position only", "nothing"]);
+  });
+
+  it("keeps the table open when the pressed order is pressed again", async () => {
+    // Pressing the toggle that is already pressed changes nothing about the
+    // order, so throwing away an expanded hundred rows and sending the reader
+    // back to the top is a reset with no reason behind it.
+    const host = await renderResults(withResult({ rows: productionRows() }));
+
+    await click(buttonFor(host, "actions.showAll"));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
+
+    await click(host.querySelector('[data-sort-toggle="impressions"]'));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
+  });
+
   it("renders all four GSC states, labels evidence basis, and never promotes query-page totals", async () => {
     const rows = [
       BASE.result.rows[0]!,
@@ -603,7 +690,12 @@ describe("CompetitorKeywordGapResults", () => {
     // The summary card states no status sentence any more, so a partial run
     // announces itself through the warning frame, the completed-competitor
     // card, and this section -- which opens itself for exactly that reason.
-    expect(host.querySelector('[data-run-status="partial"]')).not.toBeNull();
+    const summary = host.querySelector('[data-run-status="partial"]');
+    expect(summary).not.toBeNull();
+    // The attribute alone proves nothing: it is assigned straight from the
+    // status the test supplied, so it stays true with every visible sign of a
+    // partial run deleted. The frame is what the reader actually sees.
+    expect(summary?.className).toContain("brand-warning");
     expect(
       host.querySelector('[data-summary-metric="completed-competitors"]')
         ?.textContent,

@@ -275,6 +275,29 @@ describe("competitorKeywordGapCsv", () => {
     expect(lines(csv)[1]).toContain("'=cmd|'/c calc'!A0");
   });
 
+  // Every lead the guard claims to cover, not just `=`. With one case the
+  // guard could be narrowed to `/^[=]/` and the suite would stay green, which
+  // is the whole set of leads Excel acts on minus the one we happened to pick.
+  it.each([["=SUM(A1)"], ["+1+1"], ["-1+1"], ["@SUM(A1)"], ["\tlead"], ["\rlead"]])(
+    "neutralises a keyword starting %j",
+    (keyword) => {
+      const csv = competitorKeywordGapCsv(result([row({ keyword })]));
+
+      expect(cell(csv, "keyword")).toContain(`'${keyword}`);
+    },
+  );
+
+  it("neutralises a provider intent a spreadsheet would run as a formula", () => {
+    // `providerIntent` is provider text too, and it reaches the sheet through
+    // `optionalText`. Testing the guard only through `keyword` would let the
+    // guard be dropped from the optional path without a test noticing.
+    const csv = competitorKeywordGapCsv(
+      result([row({ providerIntent: "=cmd|'/c calc'!A0" })]),
+    );
+
+    expect(cell(csv, "dfsIntent")).toContain("'=cmd");
+  });
+
   it("does not neutralise a number we generated ourselves", () => {
     // A leading `-` on a text cell is a formula lead; on a number it is the
     // sign, and quoting it would make the column unsortable.
@@ -291,6 +314,16 @@ describe("competitorKeywordGapCsv", () => {
     );
 
     expect(lines(csv).join("\r\n")).toContain('"a, ""b""\nc"');
+  });
+
+  it("quotes a value carrying a bare carriage return", () => {
+    // A lone CR inside a cell splits the record for any reader that treats CR
+    // as a terminator. The comma/quote/newline fixture above carries LF only,
+    // so without this one the `\r` could be dropped from the quoting trigger
+    // and every test would stay green.
+    const csv = competitorKeywordGapCsv(result([row({ keyword: "a\rb" })]));
+
+    expect(csv).toContain('"a\rb"');
   });
 
   it("takes the highest search volumes across the merged row set", () => {
@@ -345,6 +378,28 @@ describe("competitorKeywordGapCsv", () => {
     expect(cell(csv, "keyword", 3)).toBe("unknown");
   });
 
+  it("breaks a volume tie on code units, not on the reader's collation", () => {
+    // `localeCompare` reads the runtime locale, so the same run downloaded in a
+    // zh browser and an en browser orders CJK against Latin differently -- and
+    // when the cut falls inside a tie group, that decides which rows are IN the
+    // file. The pair below is the discriminator: every Latin-script collation
+    // this product runs under puts "Ärger" before "zebra", code units put it
+    // after, so a revert to `localeCompare` fails here.
+    const rows = ["zebra", "Ärger"].map((keyword) =>
+      row({
+        keyword,
+        searchVolume: { availability: "available", value: 400 },
+      }),
+    );
+
+    const csv = competitorKeywordGapCsv(result(rows));
+
+    expect([1, 2].map((line) => cell(csv, "keyword", line))).toEqual([
+      "zebra",
+      "Ärger",
+    ]);
+  });
+
   it("breaks a volume tie on the keyword, so one run exports identically twice", () => {
     const rows = ["delta", "alpha", "charlie"].map((keyword) =>
       row({
@@ -382,6 +437,70 @@ describe("competitorKeywordGapCsv", () => {
     expect(
       cell(csv, "dfsSearchVolume", COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS),
     ).toBe("41");
+  });
+
+  it("caps at one hundred and fifty rows", () => {
+    // The literal, written down once. Every other cap test builds its fixture
+    // FROM the constant, so all of them would follow a change from 150 to 200
+    // and stay green -- proving only that the module agrees with itself. The
+    // agreed number is a product decision, so changing it has to fail here.
+    expect(COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS).toBe(150);
+  });
+
+  it("writes exactly the cap at the cap, and the cap again one row past it", () => {
+    // The boundary itself. The over-cap fixture is forty rows past the edge, so
+    // a bug that only fires at exactly 150 -- or an off-by-one that only shows
+    // at 151 -- lives entirely between the existing cases.
+    const at = Array.from({ length: 150 }, (_, index) =>
+      row({ keyword: `k${String(index).padStart(4, "0")}` }),
+    );
+
+    expect(lines(competitorKeywordGapCsv(result(at))).slice(1)).toHaveLength(
+      150,
+    );
+    expect(competitorKeywordGapCsvRowCount({ rows: at })).toBe(150);
+    expect(
+      lines(
+        competitorKeywordGapCsv(
+          result([...at, row({ keyword: "k9999" })]),
+        ),
+      ).slice(1),
+    ).toHaveLength(150);
+  });
+
+  it("fills the cap with unmeasured rows when too few have a volume", () => {
+    // The two existing cap tests never meet: one has three rows and a missing
+    // volume, the other has 190 rows that all have one. Between them sits the
+    // case the sentence under the button describes -- an over-cap run where
+    // most rows have no estimate at all. The file still holds 150 rows, and
+    // most of them carry an empty volume cell, which is why that sentence says
+    // "highest first, then the ones with no estimate" rather than claiming all
+    // 150 are the highest.
+    const measured = Array.from({ length: 20 }, (_, index) =>
+      row({
+        keyword: `m${String(index).padStart(3, "0")}`,
+        searchVolume: { availability: "available", value: 1000 - index },
+      }),
+    );
+    const unmeasured = Array.from({ length: 180 }, (_, index) =>
+      row({
+        keyword: `u${String(index).padStart(3, "0")}`,
+        searchVolume: { availability: "provider_no_data", value: null },
+      }),
+    );
+
+    const csv = competitorKeywordGapCsv(result([...measured, ...unmeasured]));
+    const body = lines(csv).slice(1);
+    const empties = body.filter(
+      (_, index) => cell(csv, "dfsSearchVolume", index + 1) === "",
+    );
+
+    expect(body).toHaveLength(150);
+    // Every measured row survived, in order, and the rest is filler.
+    expect(cell(csv, "keyword", 1)).toBe("m000");
+    expect(cell(csv, "keyword", 20)).toBe("m019");
+    expect(cell(csv, "keyword", 21)).toBe("u000");
+    expect(empties).toHaveLength(130);
   });
 
   it("exports every row when the run returned fewer than the cap", () => {

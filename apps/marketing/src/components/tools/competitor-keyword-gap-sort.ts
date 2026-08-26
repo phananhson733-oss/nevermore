@@ -62,6 +62,20 @@ function compare(
   return better(left, right);
 }
 
+/**
+ * Keyword order that does not depend on the reader's browser.
+ *
+ * NOT `localeCompare`: it reads the runtime's locale, so one run rendered in a
+ * zh browser and an en browser puts CJK against Latin in opposite orders. This
+ * key exists to make two renders of one run agree, and a key that changes with
+ * the reader cannot do that. UTF-16 code units are specified, so every engine
+ * agrees. The same rule holds the export's cut steady, for a sharper reason:
+ * there, collation decides which rows are in the file at all.
+ */
+function byCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 const ORDER: Readonly<
   Record<
     CompetitorKeywordGapSort,
@@ -77,6 +91,28 @@ const ORDER: Readonly<
   // worth acting on next, so a #4 must never sort below a #58.
   position: { value: position, better: (left, right) => left - right },
 };
+
+/**
+ * The orders this run can actually produce.
+ *
+ * A control has to be able to do what its label says. Both keys here are
+ * first-party Search Console readings, and most runs of this tool have none:
+ * a run with no property selected carries null impressions AND null position
+ * on every row, so both toggles fall straight through to the same tie-break
+ * and order the table identically -- by provider search volume, under a button
+ * that says "by impressions" and a second one that changes nothing when
+ * pressed. Judged per key off the rows themselves rather than off
+ * `overlayStatus`, because a PARTIAL overlay can measure one key and not the
+ * other, and the question a toggle answers is only ever "is there anything
+ * here to order by".
+ */
+export function competitorKeywordGapSortsWithEvidence(
+  rows: readonly CompetitorKeywordGapRow[],
+): readonly CompetitorKeywordGapSort[] {
+  return COMPETITOR_KEYWORD_GAP_SORTS.filter((sort) =>
+    rows.some((row) => ORDER[sort].value(row) !== null),
+  );
+}
 
 export function sortCompetitorKeywordGapRows(
   rows: readonly CompetitorKeywordGapRow[],
@@ -96,6 +132,6 @@ export function sortCompetitorKeywordGapRows(
       // Last, and only to make the order deterministic: without a final key two
       // renders of one run could disagree about which of two identical rows
       // comes first.
-      left.keyword.localeCompare(right.keyword),
+      byCodeUnits(left.keyword, right.keyword),
   );
 }

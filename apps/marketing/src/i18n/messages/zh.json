@@ -872,7 +872,7 @@
         "optimizeObservedPage": "优化现有页 {page} →",
         "reviewObservedPage": "核对 {page} →",
         "exportCsv": "{count, plural, other {导出 # 个关键词 CSV}}",
-        "exportCsvBasisCapped": "{count, plural, other {文件收录本次运行中 DataForSEO 搜索量估算最高的 # 个关键词。}}",
+        "exportCsvBasisCapped": "{count, plural, other {文件收录本次运行的 # 个关键词：DataForSEO 搜索量估算最高的排在前面，数据源没有给出估算的关键词排在后面补足行数。}}",
         "exportCsvBasisComplete": "文件收录本次运行返回的全部关键词，按 DataForSEO 搜索量估算降序排列。",
         "exportCsvPartial": "{count, plural, other {本次有 # 个竞品没有返回结果。文件里没有这个信息，所以某个竞品不在某一行里，只说明未知，不说明它没有排名。}}"
       },

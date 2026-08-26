@@ -872,9 +872,9 @@
         "optimizeObservedPage": "Optimize existing page {page} →",
         "reviewObservedPage": "Review {page} →",
         "exportCsv": "{count, plural, one {Export # keyword as CSV} other {Export # keywords as CSV}}",
-        "exportCsvBasisCapped": "{count, plural, other {The file holds the # keywords with the highest DataForSEO search volume estimate in this run.}}",
+        "exportCsvBasisCapped": "{count, plural, other {The file holds # keywords from this run: the highest DataForSEO search volume estimates first, then keywords the provider gave no estimate for.}}",
         "exportCsvBasisComplete": "The file holds every keyword this run returned, ordered by DataForSEO's search volume estimate.",
-        "exportCsvPartial": "{count, plural, other {# competitor returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.}}"
+        "exportCsvPartial": "{count, plural, one {# competitor returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.} other {# competitors returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.}}"
       },
       "summary": {
         "eyebrow": "Competitor keyword gap report",

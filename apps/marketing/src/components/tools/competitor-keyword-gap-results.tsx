@@ -38,7 +38,7 @@ import {
   StatusCell,
 } from "./competitor-keyword-gap-row-chips";
 import {
-  COMPETITOR_KEYWORD_GAP_SORTS,
+  competitorKeywordGapSortsWithEvidence,
   sortCompetitorKeywordGapRows,
   type CompetitorKeywordGapSort,
 } from "./competitor-keyword-gap-sort";
@@ -231,9 +231,24 @@ function ResultsTable({
   const [sort, setSort] = useState<CompetitorKeywordGapSort>("impressions");
   const [expanded, setExpanded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const availableSorts = useMemo(
+    () => competitorKeywordGapSortsWithEvidence(result.rows),
+    [result.rows],
+  );
+  /**
+   * What is pressed, which is not always what was pressed.
+   *
+   * Derived rather than reset into state: this component is reused when a new
+   * run replaces the old one, so a preference for an order the NEW run cannot
+   * produce would otherwise sit in state driving a toggle that is no longer on
+   * screen. Falling back leaves the preference intact for the next run that
+   * can honour it.
+   */
+  const activeSort =
+    availableSorts.includes(sort) ? sort : (availableSorts[0] ?? "impressions");
   const sortedRows = useMemo(
-    () => sortCompetitorKeywordGapRows(result.rows, sort),
-    [result.rows, sort],
+    () => sortCompetitorKeywordGapRows(result.rows, activeSort),
+    [result.rows, activeSort],
   );
   const visibleRows = expanded ? sortedRows : sortedRows.slice(0, 10);
   const remaining = Math.max(0, sortedRows.length - visibleRows.length);
@@ -248,7 +263,11 @@ function ResultsTable({
   function changeSort(next: CompetitorKeywordGapSort): void {
     // Pressing the toggle that is already pressed changes no order, so it must
     // not throw away an expanded table and send the reader back to the top.
-    if (next === sort) return;
+    // Compared against what is PRESSED, not against the stored preference: the
+    // two differ exactly when the preference names an order this run cannot
+    // produce, and a click on the pressed button would otherwise collapse the
+    // table for nothing.
+    if (next === activeSort) return;
     setSort(next);
     setExpanded(false);
     setActionError(null);
@@ -290,27 +309,37 @@ function ResultsTable({
         </div>
       </div>
 
-      <div
-        className="mb-4 flex flex-wrap items-center justify-end gap-2"
-        data-sort-toggles
-      >
-        {COMPETITOR_KEYWORD_GAP_SORTS.map((value) => (
-          <button
-            key={value}
-            type="button"
-            data-sort-toggle={value}
-            aria-pressed={value === sort}
-            onClick={() => changeSort(value)}
-            className={
-              value === sort
-                ? `${PRIMARY_ACTION_BUTTON} !py-1.5`
-                : `${ACTION_BUTTON} !py-1.5`
-            }
-          >
-            {translated(t, `sort.${value}`)}
-          </button>
-        ))}
-      </div>
+      {/*
+        Only the orders this run can produce. A toggle whose metric is null on
+        every row cannot order anything: it would sit there labelled "by
+        impressions", highlighted, while the table is really in search-volume
+        order -- and its sibling would change nothing when pressed. Nothing is
+        rendered in its place, because the table's order is then not a choice
+        anyone made and there is nothing to say about it.
+      */}
+      {availableSorts.length > 0 ? (
+        <div
+          className="mb-4 flex flex-wrap items-center justify-end gap-2"
+          data-sort-toggles
+        >
+          {availableSorts.map((value) => (
+            <button
+              key={value}
+              type="button"
+              data-sort-toggle={value}
+              aria-pressed={value === activeSort}
+              onClick={() => changeSort(value)}
+              className={
+                value === activeSort
+                  ? `${PRIMARY_ACTION_BUTTON} !py-1.5`
+                  : `${ACTION_BUTTON} !py-1.5`
+              }
+            >
+              {translated(t, `sort.${value}`)}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div
         tabIndex={0}

@@ -159,6 +159,21 @@ function linkedCompetitorPageUrl(row: CompetitorKeywordGapRow): string | null {
 }
 
 /**
+ * Keyword order that does not depend on where the file was downloaded.
+ *
+ * NOT `localeCompare`, which reads the runtime's locale -- and this file is
+ * built in the visitor's browser. The same run exported from a zh browser and
+ * an en browser collates CJK against Latin in opposite orders, and that is not
+ * cosmetic here: when the cut falls inside a group of equal volumes, the
+ * collation decides WHICH rows are in the file. Two people exporting one run
+ * then hold files with rows the other does not have. UTF-16 code units are
+ * specified, so every engine agrees.
+ */
+function byCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
  * Search volume for ordering, and `null` for a row that has none.
  *
  * A row the provider reported no volume for is not a row with zero volume, and
@@ -188,7 +203,7 @@ function selectedRows(
       // A deterministic second key. Volumes tie constantly down the long tail,
       // and without one, two exports of the SAME run could differ, which is the
       // one thing a file meant to be diffed must not do.
-      return left.keyword.localeCompare(right.keyword);
+      return byCodeUnits(left.keyword, right.keyword);
     })
     .slice(0, COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS);
 }
