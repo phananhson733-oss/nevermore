@@ -43,11 +43,14 @@ function downloadCsv(result: CompetitorKeywordGapResultV3): void {
 /**
  * The label counts what the FILE will hold, never what the run returned.
  *
- * The export is capped and ordered by the provider's search volume estimate, so
- * a 653-row run produces a 150-row file. The old label said "export all 653
- * rows" and was false past the cap. The count alone still leaves "which 150?"
- * unanswered, so the line under the button names the rule the cut was made on;
- * neither half is enough by itself.
+ * The export is capped and ordered by search volume estimate, so a 653-row run
+ * produces a 150-row file. The old label said "export all 653 rows" and was
+ * false past the cap.
+ *
+ * The sentence naming the cut rule was removed by decision: the count on the
+ * button is what stays. Worth knowing what went with it -- "which 150?" is no
+ * longer answered anywhere on the surface, so a reader who expects their whole
+ * run has only the number to tell them otherwise.
  *
  * The count comes from the export module rather than being recomputed here: a
  * label that derives the cap a second way is a label that can drift from the
@@ -61,14 +64,6 @@ export function CsvExportButton({
   readonly t: Translate;
 }) {
   const rowCount = competitorKeywordGapCsvRowCount(result);
-  // Two different sentences, because below the cap nothing was left out. Saying
-  // the file "holds the highest-volume keywords" when it holds every one of
-  // them understates it, and the zh wording was outright exclusive ("only
-  // includes"). Below the cap the line can only claim the ORDER, which is true.
-  const basis =
-    rowCount < result.rows.length
-      ? t("actions.exportCsvBasisCapped", { count: rowCount })
-      : t("actions.exportCsvBasisComplete");
   return (
     <div className="flex flex-col items-start gap-1">
       <button
@@ -80,12 +75,6 @@ export function CsvExportButton({
       >
         {t("actions.exportCsv", { count: rowCount })}
       </button>
-      <div
-        data-export-csv-basis
-        className="max-w-[280px] text-[11.5px] leading-[1.5] text-text-dark-secondary"
-      >
-        {basis}
-      </div>
       {result.unavailableCompetitors > 0 ? (
         // The nine columns carry no run coverage, so a partial run's file is
         // shaped exactly like a complete one and its competitor-rank cells read

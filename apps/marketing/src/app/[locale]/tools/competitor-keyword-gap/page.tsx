@@ -14,7 +14,10 @@ import {
 } from "@/components/seo/json-ld";
 import { localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
-import { KEYWORD_MARKET_LOCATIONS } from "@/lib/tools/keyword-providers";
+import {
+  KEYWORD_MARKET_LANGUAGES,
+  KEYWORD_MARKET_LOCATIONS,
+} from "@/lib/tools/keyword-providers";
 import { readTrafficDropSession } from "@/lib/tools/traffic-drop-session";
 import { getServerAuthenticationStatus } from "@/lib/auth/server-auth-status";
 
@@ -98,6 +101,7 @@ export default async function CompetitorKeywordGapPage({
             locale={locale}
             properties={session.properties}
             markets={Object.keys(KEYWORD_MARKET_LOCATIONS)}
+            marketLanguages={KEYWORD_MARKET_LANGUAGES}
           />
         </NextIntlClientProvider>
       </ConnectedToolPage>

@@ -212,6 +212,7 @@ async function renderLocale(locale: "en" | "zh"): Promise<HTMLElement> {
           locale={locale}
           properties={["sc-domain:example.com"]}
           markets={["US"]}
+          marketLanguages={{ US: ["en", "es"] }}
         />
         <CompetitorKeywordGapResults
           envelope={ENVELOPE}
@@ -235,24 +236,24 @@ describe.each([
     versus: "vs",
     returnedRows: "Gap keywords",
     gapBody:
-      "At least one competitor ranked #20 or better in this run's DataForSEO sample, and this site was not observed in that sample.",
+      "At least one competitor ranked #20 or better in this run's keyword-source sample, and this site was not observed in that sample.",
     recommendationHeader: "Recommended action",
     boundaries: "Evidence boundaries",
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
     band: "Higher KD or page two",
     preScreenBasis:
-      "DataForSEO estimate; a pre-screen, not SERP winnability.",
+      "Third-party estimate; a pre-screen, not SERP winnability.",
     sampleRule: "Sample rule:",
     rankingStatus: "Already ranking · avg position 4.1",
     positionTitle:
       "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
     impressionsLine: "900 impressions",
     notInSample: "Not in sample",
+    notObservedTitle:
+      "Not in this run's 28-day Search Console sample. Anonymized queries never enter that sample, so this is not evidence the keyword has no impressions.",
     opportunityFinder: "Open Opportunity Finder →",
     exportCsv: "Export 3 keywords as CSV",
-    exportCsvBasis:
-      "The file holds every keyword this run returned, ordered by DataForSEO's search volume estimate.",
     sortImpressions: "Sort by impressions",
     sortPosition: "Sort by average position",
   },
@@ -264,22 +265,22 @@ describe.each([
     versus: "对比",
     returnedRows: "差距词",
     gapBody:
-      "本次 DataForSEO 样本中至少有一个竞品排到 #20 或更靠前，而本站没有在该样本里被观测到。",
+      "本次数据源样本中至少有一个竞品排到 #20 或更靠前，而本站没有在该样本里被观测到。",
     recommendationHeader: "建议",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
     band: "难度较高或第二页",
-    preScreenBasis: "DataForSEO 估算；只是预筛，不是 SERP 可赢性。",
+    preScreenBasis: "第三方估算；只是预筛，不是 SERP 可赢性。",
     sampleRule: "采样规则",
     rankingStatus: "已在排 · 均位 4.1",
     positionTitle:
       "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
     impressionsLine: "曝光 900",
     notInSample: "样本未观测",
+    notObservedTitle:
+      "本次 28 天 Search Console 样本里没有这个词。被匿名化的查询根本不进这个样本，所以这不能当作该词没有曝光的证据。",
     opportunityFinder: "打开 Opportunity Finder →",
     exportCsv: "导出 3 个关键词 CSV",
-    exportCsvBasis:
-      "文件收录本次运行返回的全部关键词，按 DataForSEO 搜索量估算降序排列。",
     sortImpressions: "按曝光排序",
     sortPosition: "按均位排序",
   },
@@ -318,19 +319,36 @@ describe.each([
     expect(impressions[0]?.textContent).not.toContain("4.1");
     // "Already ranking · avg position 4.1" is present tense about Search from a
     // lagged, averaged sample. Exactly one row in this envelope carries a
-    // position, so exactly one pill may carry the qualification.
-    const qualified = [...host.querySelectorAll("[data-gsc-status]")].filter(
-      (pill) => pill.hasAttribute("title"),
+    // position, so exactly one pill may carry THAT qualification -- asserted by
+    // its own title rather than by "has any title", which stopped separating
+    // the two once not-in-sample rows got a qualification of their own.
+    const pills = [...host.querySelectorAll("[data-gsc-status]")];
+    const positionQualified = pills.filter(
+      (pill) => pill.getAttribute("title") === expected.positionTitle,
     );
-    expect(qualified).toHaveLength(1);
-    expect(qualified[0]?.textContent).toBe(expected.rankingStatus);
-    expect(qualified[0]?.getAttribute("title")).toBe(expected.positionTitle);
+    expect(positionQualified).toHaveLength(1);
+    expect(positionQualified[0]?.textContent).toBe(expected.rankingStatus);
+
+    // The label stays "not in sample". It is the localized sentence behind it
+    // that says what the absence does not mean, so the two are checked
+    // together: a label with nothing behind it is what people read as "not
+    // covered", which is the claim this tool cannot make.
     expect(host.textContent).toContain(expected.notInSample);
+    const sampleQualified = pills.filter(
+      (pill) => pill.textContent === expected.notInSample,
+    );
+    expect(sampleQualified.length).toBeGreaterThan(0);
+    for (const pill of sampleQualified) {
+      expect(pill.getAttribute("title")).toBe(expected.notObservedTitle);
+    }
     // A row Search Console did not return is absent from a bounded sample, not
     // absent from Search. The reference report says "not covered"; this must
-    // not, in either language.
+    // not, in either language -- in the visible text OR in the sentence that
+    // explains it.
     expect(host.textContent).not.toMatch(/not covered/i);
     expect(host.textContent).not.toContain("未覆盖");
+    expect(expected.notObservedTitle).not.toMatch(/not covered/i);
+    expect(expected.notObservedTitle).not.toContain("未覆盖");
     expect(
       host.querySelector('[data-row-action="open-opportunity-finder"]')
         ?.textContent,
@@ -338,13 +356,10 @@ describe.each([
     expect(host.querySelector("[data-export-csv]")?.textContent).toBe(
       expected.exportCsv,
     );
-    // The count says how many keywords; this says which ones. This fixture is
-    // three rows -- far under the cap -- so the sentence that must render is
-    // the one claiming the ORDER. The restrictive wording would be false here:
-    // nothing was left out.
-    expect(host.querySelector("[data-export-csv-basis]")?.textContent).toBe(
-      expected.exportCsvBasis,
-    );
+    // The sentence that used to sit under this button was removed by decision.
+    // Asserted as an absence so the removal is a fact this suite holds, rather
+    // than something that quietly comes back.
+    expect(host.querySelector("[data-export-csv-basis]")).toBeNull();
     expect(
       host.querySelector('[data-sort-toggle="impressions"]')?.textContent,
     ).toBe(expected.sortImpressions);

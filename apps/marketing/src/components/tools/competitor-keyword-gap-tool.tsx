@@ -19,6 +19,7 @@ import {
 } from "@sf/public-tools/competitor-keyword-gap";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
+import { parseCompetitorInput } from "./competitor-keyword-gap-competitor-input";
 import { keywordMapSiteUrl } from "./keyword-map-property";
 import { CompetitorKeywordGapResults } from "./competitor-keyword-gap-results";
 
@@ -30,20 +31,32 @@ const FIELD =
   "mt-2 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
 const BUTTON =
   "inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
-const SECONDARY_BUTTON =
-  "inline-flex h-12.5 items-center justify-center rounded-[10px] border border-brand-border-strong px-5 text-[13px] font-medium text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60";
 
-const LANGUAGES = ["en", "de", "fr", "nl", "sv"] as const;
-const MARKET_LANGUAGE: Readonly<Record<string, string>> = {
-  US: "en",
-  GB: "en",
-  CA: "en",
-  AU: "en",
-  DE: "de",
-  FR: "fr",
-  NL: "nl",
-  SE: "sv",
-};
+/**
+ * Languages the provider actually serves, per market, from the server.
+ *
+ * There used to be one flat list of five here, offered whatever the market was.
+ * It was wrong in both directions: picking `sv` for the United States was
+ * silently resolved back to `en` server-side, because the provider has no
+ * Swedish database there -- and `es`, which it DOES serve for the United
+ * States, was not on the list at all. A control whose options do not survive
+ * being chosen is worse than a control with one option.
+ *
+ * The map is built on the server from the same catalogue the request resolver
+ * reads, so the two cannot drift.
+ */
+const FALLBACK_LANGUAGE = "en";
+
+/**
+ * Has the visitor typed something that ends a domain?
+ *
+ * Kept in step with the parser's own separator class -- deliberately its own
+ * constant rather than an import, because this one asks "is there a separator
+ * anywhere in the field" while the parser asks "where do I split", and a shared
+ * regex with the `u` flag and a global lastIndex is a bug waiting for whichever
+ * of the two is called second.
+ */
+const COMPETITOR_SEPARATOR_TYPED = /[,，、;；\s]/u;
 
 type Phase = "idle" | "running" | "done";
 
@@ -316,21 +329,51 @@ export interface CompetitorKeywordGapToolProps {
   readonly locale: string;
   readonly properties: readonly string[] | null;
   readonly markets: readonly string[];
+  /**
+   * Market code to the languages the provider serves for it, in the provider's
+   * own order (index 0 is its largest database, which is what the server falls
+   * back to). Built on the server so it cannot drift from the resolver.
+   */
+  readonly marketLanguages: Readonly<Record<string, readonly string[]>>;
 }
 
 export function CompetitorKeywordGapTool({
   locale,
   properties,
   markets,
+  marketLanguages,
 }: CompetitorKeywordGapToolProps) {
   const t = useTranslations("tools.competitorKeywordGap");
   const firstMarket = markets[0] ?? "US";
+  const languagesFor = (market: string): readonly string[] => {
+    const served = marketLanguages[market];
+    return served !== undefined && served.length > 0
+      ? served
+      : [FALLBACK_LANGUAGE];
+  };
   const [signInOpen, setSignInOpen] = useState(false);
-  const [siteDomain, setSiteDomain] = useState("");
-  const [property, setProperty] = useState("");
+  /**
+   * The overlay is on by default, and so is the site it implies.
+   *
+   * Selecting a property is what turns the visitor's own Search Console
+   * evidence on, and a run without it answers a strictly smaller question: the
+   * "your status" column is empty on every row and both reading orders have
+   * nothing to order by. Defaulting to none made the fuller run the one you had
+   * to know to ask for.
+   *
+   * Two things it costs, stated rather than discovered: every run now spends a
+   * unit of the shared Search Console gate (ten per IP per hour across five
+   * tools), and a visitor who wants the third-party half alone has to choose
+   * "none" -- which the field still offers.
+   */
+  const firstProperty = properties?.[0] ?? "";
+  const [siteDomain, setSiteDomain] = useState(
+    () => propertySiteDomain(firstProperty) ?? "",
+  );
+  const [property, setProperty] = useState(firstProperty);
   const [marketCode, setMarketCode] = useState(firstMarket);
   const [languageCode, setLanguageCode] = useState(
-    MARKET_LANGUAGE[firstMarket] ?? "en",
+    () => languagesFor(firstMarket)[0] ?? FALLBACK_LANGUAGE,
   );
   const [competitorInput, setCompetitorInput] = useState("");
   const [competitorDomains, setCompetitorDomains] = useState<readonly string[]>(
@@ -386,28 +429,28 @@ export function CompetitorKeywordGapTool({
     validationKey === "validation.competitorDuplicate" ||
     validationKey === "validation.competitorLimit";
 
-  function addCompetitor(): void {
+  /**
+   * Fold what is pending in the field into the chip list.
+   *
+   * Called wherever the visitor signals they are done with a piece: a separator
+   * typed, a blur, an enter. It is also called on submit, because the field
+   * having pending text when someone presses "run" is the ordinary case, not a
+   * mistake -- see `run`.
+   */
+  function commitCompetitors(): boolean {
+    const parsed = parseCompetitorInput(
+      competitorInput,
+      competitorDomains,
+      siteDomain,
+    );
+    if (!parsed.ok) {
+      setValidationKey(parsed.validationKey);
+      return false;
+    }
     setValidationKey(null);
-    const normalized = normalizeCompetitorKeywordGapDomain(competitorInput);
-    if (normalized === null) {
-      setValidationKey("validation.competitorInvalid");
-      return;
-    }
-    const normalizedSite = normalizeCompetitorKeywordGapDomain(siteDomain);
-    if (normalizedSite !== null && normalized === normalizedSite) {
-      setValidationKey("validation.competitorSelf");
-      return;
-    }
-    if (competitorDomains.includes(normalized)) {
-      setValidationKey("validation.competitorDuplicate");
-      return;
-    }
-    if (competitorDomains.length >= COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS) {
-      setValidationKey("validation.competitorLimit");
-      return;
-    }
-    setCompetitorDomains([...competitorDomains, normalized]);
+    setCompetitorDomains(parsed.domains);
     setCompetitorInput("");
+    return true;
   }
 
   function removeCompetitor(domain: string): void {
@@ -418,8 +461,18 @@ export function CompetitorKeywordGapTool({
   }
 
   function selectMarket(next: string): void {
+    // The language has to move with the market, because it is a property OF the
+    // market: the provider serves a closed set per country, and a language left
+    // over from the previous choice is one the new market may not have. Keeping
+    // it when it survives means switching US -> CA does not silently drop a
+    // deliberate `en`.
+    const served = languagesFor(next);
     setMarketCode(next);
-    setLanguageCode(MARKET_LANGUAGE[next] ?? "en");
+    setLanguageCode(
+      served.includes(languageCode)
+        ? languageCode
+        : (served[0] ?? FALLBACK_LANGUAGE),
+    );
   }
 
   function selectProperty(next: string): void {
@@ -453,14 +506,30 @@ export function CompetitorKeywordGapTool({
       setValidationKey("validation.siteInvalid");
       return;
     }
-    if (competitorDomains.length === 0) {
+    // Parse whatever is still in the field FIRST. Chips are made on separator,
+    // blur and enter, none of which has happened when someone types three
+    // domains and presses run: reading state alone refused that submission with
+    // "add at least one competitor" while three of them sat on screen.
+    const parsed = parseCompetitorInput(
+      competitorInput,
+      competitorDomains,
+      siteDomain,
+    );
+    if (!parsed.ok) {
+      setValidationKey(parsed.validationKey);
+      return;
+    }
+    const competitors = parsed.domains;
+    if (competitors.length === 0) {
       setValidationKey("validation.competitorsRequired");
       return;
     }
-    if (competitorDomains.includes(normalizedSite)) {
+    if (competitors.includes(normalizedSite)) {
       setValidationKey("validation.competitorSelf");
       return;
     }
+    setCompetitorDomains(competitors);
+    setCompetitorInput("");
 
     setValidationKey(null);
     setErrorCode(null);
@@ -499,7 +568,7 @@ export function CompetitorKeywordGapTool({
       const requestBody = {
         ...(requestedProperty === "" ? {} : { property: requestedProperty }),
         siteDomain: normalizedSite,
-        competitorDomains,
+        competitorDomains: competitors,
         marketCode,
         languageCode,
         // The contract version this bundle was built against; the server
@@ -634,7 +703,7 @@ export function CompetitorKeywordGapTool({
               disabled={phase === "running"}
               className={FIELD}
             >
-              {LANGUAGES.map((language) => (
+              {languagesFor(marketCode).map((language) => (
                 <option key={language} value={language}>
                   {language}
                 </option>
@@ -644,50 +713,72 @@ export function CompetitorKeywordGapTool({
         </div>
 
         <div className="mt-5">
-          <div className="flex items-end justify-between gap-4">
-            <label
-              htmlFor="competitor-gap-competitor"
-              className="min-w-0 flex-1"
-            >
-              <span className={FIELD_LABEL}>{t("competitors.label")}</span>
-              <input
-                id="competitor-gap-competitor"
-                name="competitorDomain"
-                type="text"
-                autoComplete="off"
-                value={competitorInput}
-                onChange={(event) => {
-                  setCompetitorInput(event.target.value);
-                  setValidationKey(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter") return;
-                  event.preventDefault();
-                  addCompetitor();
-                }}
-                placeholder={t("competitors.placeholder")}
-                aria-describedby={
-                  competitorInputInvalid
-                    ? "competitor-gap-validation"
-                    : undefined
+          <label htmlFor="competitor-gap-competitor" className="block">
+            <span className={FIELD_LABEL}>{t("competitors.label")}</span>
+            <input
+              id="competitor-gap-competitor"
+              name="competitorDomain"
+              type="text"
+              autoComplete="off"
+              value={competitorInput}
+              onChange={(event) => {
+                const next = event.target.value;
+                setValidationKey(null);
+                // A separator means that piece is finished, so turn what is
+                // before it into a chip as it is typed or pasted. Without this
+                // the field holds a raw list that only becomes chips on blur,
+                // and a pasted line of five reads as one long invalid domain
+                // until the visitor clicks somewhere else.
+                if (!COMPETITOR_SEPARATOR_TYPED.test(next)) {
+                  setCompetitorInput(next);
+                  return;
                 }
-                aria-invalid={competitorInputInvalid || undefined}
-                disabled={phase === "running"}
-                className={FIELD}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addCompetitor}
+                const parsed = parseCompetitorInput(
+                  next,
+                  competitorDomains,
+                  siteDomain,
+                );
+                if (!parsed.ok) {
+                  setCompetitorInput(next);
+                  setValidationKey(parsed.validationKey);
+                  return;
+                }
+                setCompetitorDomains(parsed.domains);
+                setCompetitorInput("");
+              }}
+              onBlur={() => {
+                commitCompetitors();
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                commitCompetitors();
+              }}
+              placeholder={t("competitors.placeholder")}
+              aria-describedby={
+                competitorInputInvalid
+                  ? "competitor-gap-validation"
+                  : "competitor-gap-competitor-hint"
+              }
+              aria-invalid={competitorInputInvalid || undefined}
               disabled={phase === "running"}
-              className={SECONDARY_BUTTON}
+              className={FIELD}
+            />
+          </label>
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+            <p
+              id="competitor-gap-competitor-hint"
+              data-competitor-hint
+              className="text-[11.5px] leading-[1.5] text-text-dark-secondary"
             >
-              {t("competitors.add")}
-            </button>
+              {t("competitors.hint", {
+                max: COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS,
+              })}
+            </p>
+            <p className="font-mono text-[11px] text-text-dark-secondary">
+              {t("competitors.count", { count: competitorDomains.length })}
+            </p>
           </div>
-          <p className="mt-2 text-right font-mono text-[11px] text-text-dark-secondary">
-            {t("competitors.count", { count: competitorDomains.length })}
-          </p>
           {competitorDomains.length > 0 ? (
             <ul className="mt-3 flex flex-wrap gap-2">
               {competitorDomains.map((domain) => (

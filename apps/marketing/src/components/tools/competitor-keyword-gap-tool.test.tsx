@@ -15,6 +15,7 @@ type ToolProps = {
   readonly locale: string;
   readonly properties: readonly string[] | null;
   readonly markets: readonly string[];
+  readonly marketLanguages: Readonly<Record<string, readonly string[]>>;
 };
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
@@ -213,7 +214,14 @@ async function renderTool(
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
-    root?.render(<Tool locale="en" properties={properties} markets={["US"]} />);
+    root?.render(
+      <Tool
+        locale="en"
+        properties={properties}
+        markets={["US"]}
+        marketLanguages={{ US: ["en", "es"] }}
+      />,
+    );
   });
   return host;
 }
@@ -291,17 +299,57 @@ function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+/**
+ * Every way the field turns typed text into a chip.
+ *
+ * There is no add button any more: a chip is made when a separator arrives in
+ * the value, when the field loses focus, or on enter. All three go through the
+ * same parse, and the suite exercises each rather than picking a favourite --
+ * the "comma" path is the one people use and the one that did not exist before.
+ */
 async function addCompetitor(
   host: HTMLElement,
   value: string,
-  method: "button" | "enter" = "button",
+  method: "comma" | "enter" | "blur" = "comma",
 ): Promise<void> {
   const input = host.querySelector(
     'input[name="competitorDomain"]',
   ) as HTMLInputElement;
+  if (method === "comma") {
+    await change(input, `${value},`);
+    return;
+  }
   await change(input, value);
   if (method === "enter") await pressEnter(input);
-  else await click(buttonWith(host, "competitors.add"));
+  else await blur(input);
+}
+
+async function renderToolWithMarkets(
+  markets: readonly string[],
+  marketLanguages: Readonly<Record<string, readonly string[]>>,
+): Promise<HTMLElement> {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(
+      <Tool
+        locale="en"
+        properties={["sc-domain:example.com"]}
+        markets={markets}
+        marketLanguages={marketLanguages}
+      />,
+    );
+  });
+  return host;
+}
+
+async function blur(input: HTMLInputElement): Promise<void> {
+  // `focusout`, not `blur`: React's onBlur is delegated off the bubbling event,
+  // and a non-bubbling `blur` never reaches the handler under test.
+  await act(async () => {
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
 }
 
 describe("CompetitorKeywordGapTool", () => {
@@ -346,6 +394,106 @@ describe("CompetitorKeywordGapTool", () => {
     expect(host.textContent).toContain("1/5");
   });
 
+  it("turns one pasted comma-separated line into every chip", async () => {
+    // The whole point of the change: five competitors used to be nine
+    // interactions. This is one.
+    const host = await renderTool();
+    const input = host.querySelector(
+      'input[name="competitorDomain"]',
+    ) as HTMLInputElement;
+
+    await change(input, "one.example, two.example，three.example,");
+
+    expect(
+      [...host.querySelectorAll("[data-competitor-chip]")].map(
+        (chip) => chip.textContent,
+      ),
+    ).toEqual(["one.example×", "two.example×", "three.example×"]);
+    expect(input.value).toBe("");
+    expect(host.textContent).toContain("3/5");
+  });
+
+  it("runs with a domain still sitting unconfirmed in the field", async () => {
+    // No separator typed, no blur, no enter -- someone types one domain and
+    // presses run. Reading the chip list alone refused that submission with
+    // "add at least one competitor" while the domain sat on screen.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ signedIn: true }))
+      .mockResolvedValueOnce(Response.json({ data: ENVELOPE }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await change(
+      host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+      "example.com",
+    );
+    await change(
+      host.querySelector(
+        'input[name="competitorDomain"]',
+      ) as HTMLInputElement,
+      "rival.example",
+    );
+    expect(host.querySelectorAll("[data-competitor-chip]")).toHaveLength(0);
+
+    await click(buttonWith(host, "actions.run"));
+
+    const posted = fetchMock.mock.calls[1]?.[1] as { readonly body: string };
+    expect(JSON.parse(posted.body)).toMatchObject({
+      competitorDomains: ["rival.example"],
+    });
+  });
+
+  it("refuses to run on a bad piece rather than dropping it silently", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await change(
+      host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+      "example.com",
+    );
+    await change(
+      host.querySelector(
+        'input[name="competitorDomain"]',
+      ) as HTMLInputElement,
+      "rival.example, not a domain",
+    );
+    await click(buttonWith(host, "actions.run"));
+
+    expect(host.textContent).toContain("validation.competitorInvalid");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("offers the languages the market is served in, and moves with the market", async () => {
+    // The list used to be five, flat, whatever the market was: `sv` for the
+    // United States was resolved back to `en` server-side without a word, and
+    // `es`, which it does serve, was not offered at all.
+    const host = await renderToolWithMarkets(["US", "DE"], {
+      US: ["en", "es"],
+      DE: ["de"],
+    });
+    const market = host.querySelector(
+      'select[name="marketCode"]',
+    ) as HTMLSelectElement;
+    const language = host.querySelector(
+      'select[name="languageCode"]',
+    ) as HTMLSelectElement;
+    const options = (): readonly string[] =>
+      [...language.querySelectorAll("option")].map((option) => option.value);
+
+    expect(options()).toEqual(["en", "es"]);
+    expect(language.value).toBe("en");
+
+    await change(language, "es");
+    expect(language.value).toBe("es");
+
+    await change(market, "DE");
+    // `es` is not served there, so it cannot stay selected.
+    expect(options()).toEqual(["de"]);
+    expect(language.value).toBe("de");
+  });
+
   it("seeds the editable site domain from domain and URL-prefix properties without clearing it on deselect", async () => {
     const host = await renderTool([
       "sc-domain:acme.com",
@@ -358,7 +506,12 @@ describe("CompetitorKeywordGapTool", () => {
       'input[name="siteDomain"]',
     ) as HTMLInputElement;
 
-    expect(site.value).toBe("");
+    // Seeded on arrival, because the first property is now the one selected:
+    // the overlay is on by default, and the site it implies has to be there
+    // with it or the form opens asking for something it already knows.
+    expect(property.value).toBe("sc-domain:acme.com");
+    expect(site.value).toBe("acme.com");
+
     await change(property, "sc-domain:acme.com");
     expect(site.value).toBe("acme.com");
 
@@ -396,7 +549,11 @@ describe("CompetitorKeywordGapTool", () => {
 
     expect(site.getAttribute("aria-describedby")).toBeNull();
     expect(site.getAttribute("aria-invalid")).toBeNull();
-    expect(competitor.getAttribute("aria-describedby")).toBeNull();
+    // The hint is a permanent description of this field, so "not invalid" is
+    // the hint id rather than nothing.
+    expect(competitor.getAttribute("aria-describedby")).toBe(
+      "competitor-gap-competitor-hint",
+    );
     expect(competitor.getAttribute("aria-invalid")).toBeNull();
 
     await change(site, "not a domain");
@@ -405,7 +562,11 @@ describe("CompetitorKeywordGapTool", () => {
       "competitor-gap-validation",
     );
     expect(site.getAttribute("aria-invalid")).toBe("true");
-    expect(competitor.getAttribute("aria-describedby")).toBeNull();
+    // The hint is a permanent description of this field, so "not invalid" is
+    // the hint id rather than nothing.
+    expect(competitor.getAttribute("aria-describedby")).toBe(
+      "competitor-gap-competitor-hint",
+    );
     expect(competitor.getAttribute("aria-invalid")).toBeNull();
 
     await change(site, "https://www.example.com/");
@@ -547,6 +708,7 @@ describe("CompetitorKeywordGapTool", () => {
           locale="en"
           properties={["sc-domain:example.com"]}
           markets={["US"]}
+          marketLanguages={{ US: ["en", "es"] }}
         />,
       );
     });

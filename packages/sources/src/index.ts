@@ -12,6 +12,7 @@ export type {
 } from "./site-origin-probe.ts";
 export * from "./adapter.ts";
 export {
+  dataForSeoMarketLanguages,
   dataForSeoMarketLimitation,
   isDataForSeoServedMarket,
   resolveDataForSeoMarket,

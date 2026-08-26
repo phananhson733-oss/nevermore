@@ -167,9 +167,25 @@ export function CoverageDetails({
     );
 
   return (
-    <details data-coverage-details open={hasWarning} className={CARD}>
-      <summary className="cursor-pointer text-[15px] font-semibold text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
-        {t("coverage.detailsSummary")}
+    // Closed on arrival, in every run. This section is reference material for a
+    // reader who has a question about the sample; opening it by default put the
+    // longest block on the page between the reader and the table they came for.
+    //
+    // What opening it used to do was announce that something was qualified, and
+    // that had to survive the change or a partial run would look complete: the
+    // summary carries the mark instead, on the line the reader is already
+    // looking at, whether or not they open anything.
+    <details data-coverage-details className={CARD}>
+      <summary className="flex cursor-pointer items-center gap-2 text-[15px] font-semibold text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+        <span>{t("coverage.detailsSummary")}</span>
+        {hasWarning ? (
+          <span
+            data-coverage-warning
+            className="rounded-full border border-brand-warning/40 bg-brand-warning/[0.12] px-2 py-0.5 text-[11px] font-medium text-brand-warning"
+          >
+            {t("coverage.detailsWarning")}
+          </span>
+        ) : null}
       </summary>
       <div className="mt-4 space-y-4">
         <CoverageCards result={result} locale={locale} t={t} />
