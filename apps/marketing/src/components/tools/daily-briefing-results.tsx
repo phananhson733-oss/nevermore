@@ -493,6 +493,11 @@ const SIGNAL_PATHS: readonly {
     copyKey: "firstObserved",
     kind: "first_observed",
   },
+  {
+    key: "first-observed-leading",
+    copyKey: "firstObservedLeading",
+    kind: "first_observed_leading",
+  },
 ];
 
 function PathTier({
@@ -899,6 +904,9 @@ export function DailyBriefingResults({
   // showed none.
   const notCheckable = result.suggestedChecks.notCheckable;
   const pageChecks = result.pageChecks.items;
+  // Two populations, so this is a count of routine items and not of anything
+  // that could be added to the action counts above.
+  const routineCount = suggestedChecks.length + pageChecks.length;
   const pageCheckBaseline = result.pageChecks.baseline;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
@@ -1919,10 +1927,24 @@ export function DailyBriefingResults({
             ) : null}
           </div>
         )}
+        {/* The second of the two kinds of work this section carries. The
+            first is triggered: something changed and here is the evidence.
+            This one is standing: nothing here is claimed to have changed, and
+            it is what the property is worth doing about anyway. Labelled
+            rather than merely placed below, because a reader who cannot tell
+            the two apart will read a standing item as a change. */}
+        {routineCount > 0 ? (
+          <p
+            data-action-group="routine"
+            className={`${EYEBROW} mt-6 border-t border-brand-border pt-5`}
+          >
+            {t("actions.groupRoutine", { count: routineCount })}
+          </p>
+        ) : null}
         {suggestedChecks.length > 0 || uncheckableShown ? (
           <div
             data-suggested-checks
-            className="mt-6 border-t border-brand-border pt-5"
+            className="mt-3"
           >
             {/* The heading belongs to the checks. When every shown row failed
                 to become one there is nothing to introduce, only a gap to
@@ -1989,7 +2011,7 @@ export function DailyBriefingResults({
         {pageChecks.length > 0 ? (
           <div
             data-page-checks
-            className="mt-6 border-t border-brand-border pt-5"
+            className="mt-5"
           >
             <h4 className="text-[15px] font-semibold text-text-dark-primary">
               {t("pageChecks.title")}

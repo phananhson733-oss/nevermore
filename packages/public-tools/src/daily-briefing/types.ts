@@ -49,7 +49,8 @@ export type DailyBriefingChangeKind =
   | "stable_position_click_decline"
   | "average_position_crossed_page_one_band"
   | "actionable_position_decline"
-  | "first_observed";
+  | "first_observed"
+  | "first_observed_leading";
 
 /**
  * Signals read from the page dimension rather than the query dimension.
@@ -479,6 +480,8 @@ export interface DailyBriefingSignalFunnel {
   readonly pageOneBandCandidates: number | null;
   readonly positionDeclineCandidates: number | null;
   readonly firstObservedCandidates: number | null;
+  /** Counted apart: it is selected against its own budget, not the action one. */
+  readonly firstObservedLeadingCandidates: number | null;
   /** Position moves seen only against a 50-99 impression prior window. */
   readonly provisionalMoveCandidates: number | null;
   readonly pageAttributionWithheld: number | null;

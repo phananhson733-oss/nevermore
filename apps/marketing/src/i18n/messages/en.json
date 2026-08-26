@@ -2004,6 +2004,11 @@
               "name": "First-observed query and page pair (counted below by query)",
               "requirement": "page attribution readable and usable in both windows; the pair reaching 100 impressions in the current window at an average position from 8 up to but not including 21, with current query-to-page coverage of at least 80 percent; and, if the query has a prior row, that row itself reaching 100 impressions with at least 80 percent coverage, or the pair counts as not evaluable",
               "finding": "the query and page pair is absent from the prior window’s list"
+            },
+            "firstObservedLeading": {
+              "name": "Pairs first seen in the leading positions (counted below by query)",
+              "requirement": "exactly the conditions of the path above: page attribution readable and usable in both windows, the pair reaching 100 impressions this window, and coverage at or above 80%",
+              "finding": "the prior window's pair list does not contain this pair, and its current average presented position is six or better"
             }
           },
           "pageAttribution": {
@@ -2095,6 +2100,10 @@
           "title": "Query-page pair first observed in this comparison",
           "body": "This pair appears in the current visible rows and not in the prior visible rows. Search Console anonymization means this is not proof of new indexing."
         },
+        "first_observed_leading": {
+          "title": "First seen in the leading positions in this comparison",
+          "body": "This query-and-page pair appears in the current window's visible records and not in the prior window's, at an average presented position of six or better. It is the one path in this briefing that reports something going right. Two things to be clear about: Search Console anonymizes low-volume queries, so “not seen in the prior window” is not evidence the pair did not exist then — only that this comparison saw it first; and average presented position is an impression-weighted blend, not a rank. Since it is already there, the work worth doing is making it stay: internal links into it, more depth, and the relevant tool pages wired up."
+        },
         "average_position_crossed_page_one_band": {
           "title": "Average position moved into the 1-10 band",
           "body": "This query's impression-weighted average position moved from outside 10 into the 1-10 band. It is a position observation, not a fixed rank."
@@ -2128,7 +2137,7 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Only strict evidence-backed actions are listed. Query, page and property actions form their own groups, each in a fixed path order within itself; the groups are not ordered against each other, because they do not measure the same population. Nothing is added to fill a quota.",
+        "intro": "Two kinds. Triggered: strict evidence that something changed — if there is none, none is offered and nothing is padded. Routine: no change evidence at all, and worth doing about this property as it stands. Both are grouped by query, page and property, ordered inside each group by a fixed path priority; the groups are not ordered against each other, because they do not measure the same population.",
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
@@ -2140,7 +2149,8 @@
         "emptyWithWithheldProvisional": "No action carries strict evidence this run. {count, plural, one {# provisional position move was} other {# provisional position moves were}} left out by the row budget; they are observations and are not counted as actions.",
         "groupQuery": "Query evidence",
         "groupPage": "Page evidence",
-        "groupProperty": "Property evidence"
+        "groupProperty": "Property evidence",
+        "groupRoutine": "Routine · {count} items (no change evidence; standing work)"
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
@@ -2158,6 +2168,10 @@
         "first_observed": {
           "title": "Inspect the page against the target query",
           "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
+        },
+        "first_observed_leading": {
+          "title": "Shore up the page while it is in the leading positions",
+          "body": "Opens On-Page SEO Checker with the page and query prefilled, so you can see what the public HTML actually supports. This briefing has not judged why the pair reached this position, and promises nothing about it staying."
         },
         "average_position_crossed_page_one_band": {
           "title": "Review the query that moved into the 1-10 band",
