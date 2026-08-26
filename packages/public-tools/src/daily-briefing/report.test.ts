@@ -3390,10 +3390,17 @@ describe("page dimension lanes", () => {
     );
 
     // Passing the whole prior drop into the lane state said the path could
-    // not speak for rows it had in fact resolved.
+    // not speak for rows it had in fact resolved. It resolved this one: the
+    // page has a prior row that was shown, so it is not new, and that is the
+    // lane asking its question and getting an answer.
     expect(result.laneCapability.pageLanes.page_first_observed).toBe(
-      "not_applicable",
+      "evaluated",
     );
+    expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
   });
 
   it("counts a record the reader could not map at all", () => {
@@ -3534,9 +3541,9 @@ describe("page dimension lanes", () => {
       [pageRow(PAGE, 60, 0, 14)],
     );
 
-    // 60 impressions can neither anchor a comparison nor support "first
-    // observed". Both lanes must record it as unasked rather than one of them
-    // claiming the page is new.
+    // Two different questions with two different answers. "Is it new?" is
+    // settled — it was shown 60 times, so no — while "did its clicks fall?"
+    // cannot be asked against a window that small.
     expect(result.pageChanges).toEqual([]);
     expect(result.pageAccounting.byLane).toEqual({
       page_click_decline: {
@@ -3545,8 +3552,8 @@ describe("page dimension lanes", () => {
         candidates: 0,
       },
       page_first_observed: {
-        notEvaluated: 1,
-        evaluatedNoSignal: 0,
+        notEvaluated: 0,
+        evaluatedNoSignal: 1,
         candidates: 0,
       },
     });

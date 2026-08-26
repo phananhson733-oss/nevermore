@@ -174,6 +174,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.unavailable",
   "review.pageUnavailable",
   "review.pageScope",
+  "review.pageGroup",
   "review.pageNotObserved",
   "checks.title",
   "checks.intro",
@@ -480,6 +481,49 @@ describe("Daily Briefing message catalogs", () => {
         expect(text, `${locale} still ranks one population above the other`)
           .not.toContain(banned);
       }
+    }
+  });
+
+  it("does not promise the next tool anything the handoff does not carry", () => {
+    // The handoff carries the property, and where applicable a query and page.
+    // It carries no metrics, no deltas and no baseline, and Traffic Drop reads
+    // only the property from it — so no copy may say a comparison travels.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const namespace = (
+        catalog as unknown as Record<string, Record<string, unknown>>
+      ).tools.dailyBriefing;
+      const text = JSON.stringify(namespace);
+      for (const banned of [
+        "carrying the page and the weekly comparison",
+        "with the property and weekly comparison",
+        "carries its evidence straight into",
+        "携带页面与周度对比",
+        "携带站点和周度对比",
+        "都带着证据直接跳到",
+      ]) {
+        expect(text, `${locale} promises a transfer that does not happen`)
+          .not.toContain(banned);
+      }
+    }
+  });
+
+  it("calls the action order what it is rather than a measurement", () => {
+    // KIND_RANK is a fixed product priority, not a confidence anyone computed.
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      const actions = recordAt(
+        (catalog as unknown as Record<string, Record<string, unknown>>).tools
+          .dailyBriefing as Readonly<Record<string, unknown>>,
+        "actions",
+      );
+      expect(actions.intro, `${locale} action intro`).not.toContain(
+        locale === "en" ? "ordered by certainty" : "按确定性顺序",
+      );
     }
   });
 

@@ -1930,8 +1930,13 @@ describe("DailyBriefingResults folded explanation", () => {
     const paths = host.querySelector("[data-signal-paths]");
 
     expect(intro?.textContent).toContain("5 page records returned");
-    expect(intro?.textContent).toContain("2 of them carried no usable value");
-    expect(intro?.textContent).toContain("neither path evaluated them");
+    expect(intro?.textContent).toContain(
+      "2 of them did not become a usable page record",
+    );
+    // Named accurately: a duplicated URL is rejected for being duplicated, not
+    // for figures that contradict each other.
+    expect(intro?.textContent).toContain("returned more than once");
+    expect(intro?.textContent).toContain("Neither path evaluated them");
     // And the lanes must carry them, not just the sentence above: an
     // unreadable row is a row neither lane could ask about.
     for (const id of ["page-click-decline", "page-first-observed"]) {
@@ -2020,6 +2025,15 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
     expect(host.querySelectorAll("[data-page-change]")).toHaveLength(2);
     expect(host.querySelectorAll("[data-action-row]")).toHaveLength(5);
+    // The table numbers each population from one, behind a visible boundary.
+    // Continuing the query sequence into 04 and 05 would make the first page
+    // row's ordinal move with the number of query rows.
+    expect(host.querySelector('[data-review-group="page"]')).not.toBeNull();
+    expect(
+      [...host.querySelectorAll("[data-page-row-rank]")].map(
+        (badge) => badge.textContent,
+      ),
+    ).toEqual(["01", "02"]);
   });
 
   it("names a page change as a whole page instead of inventing a query", async () => {

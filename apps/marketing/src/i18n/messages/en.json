@@ -1931,7 +1931,8 @@
         },
         "priorBelowFloor": "prior window too small",
         "pageScope": "Whole page, across every query",
-        "pageNotObserved": "No comparable page record in the prior window"
+        "pageNotObserved": "No comparable page record in the prior window",
+        "pageGroup": "Page-dimension records"
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -1997,7 +1998,7 @@
           "laneFinding": "Hits when: {finding}",
           "selectionTitle": "What happens after a candidate forms",
           "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows; page rows have their own budget of at most two and do not compete for those slots. If all three selected query rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
-          "pageUnavailable": "The page dimension returned nothing usable this run, so the two paths below did not run.",
+          "pageUnavailable": "No comparable pair of page windows this run, so the two paths below did not run. That is not the same as the page dimension returning nothing.",
           "pageLanes": {
             "pageClickDecline": {
               "name": "Page click decline",
@@ -2011,7 +2012,7 @@
             }
           },
           "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
-          "pageUnreadableRows": "{count} of them carried no usable value — no page identifier, or figures that contradict each other — so neither path evaluated them. That is not the same as their not being there.",
+          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. Neither path evaluated them, which is not the same as their not being there.",
           "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
           "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
           "selectionAllShownPage": "Every page record that formed a candidate this run appears in the table above.",
@@ -2103,12 +2104,12 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Only strict evidence-backed actions are listed. Query, page and property actions form their own groups, each ordered by certainty within itself; the groups are not ordered against each other, because they do not measure the same population. Nothing is added to fill a quota.",
+        "intro": "Only strict evidence-backed actions are listed. Query, page and property actions form their own groups, each in a fixed path order within itself; the groups are not ordered against each other, because they do not measure the same population. Nothing is added to fill a quota.",
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
-        "evidence": "Evidence carried privately to the next tool",
-        "propertyEvidence": "Property-level evidence carried privately to the next tool",
+        "evidence": "Query and page carried privately into this handoff",
+        "propertyEvidence": "Property carried privately into this handoff",
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
         "emptyWithProvisionalCheck": "No action carries strict evidence this run. The page check offered under provisional position movement is observational and is not counted as an action.",
@@ -2119,7 +2120,7 @@
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
-        "actions": "Every action carries its evidence straight into the matching tool, with no URL to move by hand."
+        "actions": "Every action opens the matching tool and carries the property, query and page privately, with no URL to move by hand."
       },
       "actionKinds": {
         "click_opportunity": {
@@ -2146,15 +2147,15 @@
       "propertyActionKinds": {
         "sitewide_click_decline": {
           "title": "Diagnose the property-wide click decline",
-          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_decline": {
           "title": "Diagnose the property-wide visibility decline",
-          "body": "Open Traffic Drop Diagnosis with the property and weekly comparison. It must establish causes independently; this briefing did not attribute the decline to a query or page."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_gain": {
           "title": "Inspect the property-wide visibility gain",
-          "body": "Open GSC Opportunity Finder with the property and weekly comparison. It must rank query opportunities independently; this briefing did not invent a query or page."
+          "body": "Opens GSC Opportunity Finder carrying the property privately. The next tool ranks query opportunities independently; this briefing invented no query or page."
         }
       },
       "actionDestinations": {
@@ -2188,7 +2189,7 @@
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
         "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
-        "page_evidence_unavailable": "No usable page-dimension evidence this run: not read, only a partial prefix, or returned on an aggregation other than by page. The two page-level paths did not run, which is not the same as no change on any page."
+        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or returned on an aggregation other than by page. The two page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2238,11 +2239,11 @@
       "pageActionKinds": {
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
-          "body": "Opens Traffic Drop Diagnosis carrying the page and the weekly comparison. The next tool has to confirm the cause independently; this briefing has not attributed the decline to any query."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no page. The weekly figures below have to be read again there; this briefing has not attributed the decline to any query."
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
-          "body": "Opens On-Page Checker carrying the page. It checks the page itself and makes no claim about where any single query ranks."
+          "body": "Opens On-Page Checker carrying the page URL privately. It checks the page itself and makes no claim about where any single query ranks."
         }
       },
       "checks": {

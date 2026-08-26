@@ -1878,10 +1878,15 @@ function pageCandidatesFor(
       continue;
     }
 
-    // A prior window between one impression and the sample floor can neither
-    // anchor a comparison nor support "first observed". Neither lane may ask,
-    // and the row is counted as un-evaluated by both rather than rejected by
-    // either.
+    // A prior row exists and was shown, so whether this page is new is
+    // settled: it is not. That is the first-observed lane asking its question
+    // and getting an answer, so the row is evaluated with no signal rather
+    // than filed as one the lane never asked about.
+    firstObservedCapableRows += 1;
+
+    // The comparison lane is a different question. A prior window between one
+    // impression and the sample floor cannot anchor one, so that row is
+    // un-evaluated *there* while remaining answered above.
     if (previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
     pairedPageRows += 1;
 

@@ -1348,6 +1348,21 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
+            {/* A boundary, and its own numbering. Continuing the query
+                sequence made the first page row's ordinal move with the query
+                row count, which is one population's size deciding another
+                population's rank. */}
+            {shownPageChanges.length > 0 ? (
+              <div
+                role="row"
+                data-review-group="page"
+                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+              >
+                <div role="cell" className={EYEBROW}>
+                  {t("review.pageGroup")}
+                </div>
+              </div>
+            ) : null}
             {shownPageChanges.map((change, index) => (
               <div
                 key={`page-change:${change.kind}:${change.page}`}
@@ -1361,8 +1376,11 @@ export function DailyBriefingResults({
                     {t("review.columns.status")}
                   </span>
                   <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
-                    <span className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text">
-                      {String(shownChanges.length + index + 1).padStart(2, "0")}
+                    <span
+                      data-page-row-rank
+                      className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text"
+                    >
+                      {String(index + 1).padStart(2, "0")}
                     </span>
                     <div className="min-w-0">
                       <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
