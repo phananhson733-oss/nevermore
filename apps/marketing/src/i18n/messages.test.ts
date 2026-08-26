@@ -347,11 +347,14 @@ describe("competitor keyword gap message catalogs", () => {
   });
 
   /**
-   * The export is capped at the top rows by provider search volume, so the
-   * button's own label must not claim the file carries the run. "All" is the
-   * word that made the old label false the moment a run returned more rows
-   * than the cap, and the sentence beside it has to name the basis of the cut
-   * rather than leave the reader to guess which rows they got.
+   * The export is capped at the top rows by search volume, so the button's own
+   * label must not claim the file carries the run. "All" is the word that made
+   * the old label false the moment a run returned more rows than the cap.
+   *
+   * The sentence that used to sit beside it and name the basis of the cut was
+   * removed by decision, which leaves this label as the only thing on the
+   * surface describing the file -- so the word matters more than it did, not
+   * less.
    */
   it("never claims the CSV holds every row", () => {
     // The sentence naming the basis of the cut was removed by decision, so the
