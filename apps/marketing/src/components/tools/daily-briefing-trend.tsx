@@ -1,4 +1,4 @@
-// @input  -- fresh Daily Briefing daily/hourly metric points and locale
+// @input  -- fresh Daily Briefing points, run completion time, and locale
 // @output -- the default-24h Search Console-style trend chart and metric toggles
 // @pos    -- visual-only evidence; it never changes Daily Briefing actions
 
@@ -14,6 +14,11 @@ import type {
 
 type MetricKey = "clicks" | "impressions" | "ctr" | "position";
 type TrendPeriod = "24h" | "7d" | "28d" | "3m";
+
+interface TrendBucket {
+  readonly key: string;
+  readonly point: DailyBriefingTrendPoint | null;
+}
 
 const METRICS: readonly MetricKey[] = [
   "clicks",
@@ -48,6 +53,22 @@ const PAD_TOP = 18;
 const PAD_BOTTOM = 38;
 const PLOT_WIDTH = VIEW_WIDTH - PAD_LEFT - PAD_RIGHT;
 const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
+const HOUR_MS = 60 * 60 * 1_000;
+const PACIFIC_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Los_Angeles",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const PACIFIC_HOUR = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Los_Angeles",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+  timeZoneName: "longOffset",
+});
 
 function number(locale: string, value: number): string {
   return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
@@ -98,51 +119,109 @@ function aggregate(points: readonly DailyBriefingTrendPoint[]) {
   } as const;
 }
 
-function isAdjacent(left: string, right: string, period: TrendPeriod): boolean {
-  const leftTime = Date.parse(`${left}${left.includes("T") ? "Z" : "T00:00:00Z"}`);
-  const rightTime = Date.parse(`${right}${right.includes("T") ? "Z" : "T00:00:00Z"}`);
-  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return true;
-  const expected = period === "24h" ? 60 * 60 * 1_000 : 24 * 60 * 60 * 1_000;
-  return rightTime - leftTime === expected;
+function parseHourKey(key: string): number | null {
+  const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(key);
+  const parsed = Date.parse(hasZone ? key : `${key}Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function shiftDate(date: string, days: number): string {
+  const instant = new Date(`${date}T00:00:00Z`);
+  instant.setUTCDate(instant.getUTCDate() + days);
+  return instant.toISOString().slice(0, 10);
+}
+
+function pacificHourKey(timestamp: number): string {
+  const parts = Object.fromEntries(
+    PACIFIC_HOUR.formatToParts(new Date(timestamp)).map((part) => [
+      part.type,
+      part.value,
+    ]),
+  );
+  const offset = (parts["timeZoneName"] ?? "GMT").replace(/^GMT/, "") || "Z";
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:00:00${offset}`;
+}
+
+function bucketsForPeriod(
+  period: TrendPeriod,
+  points: readonly DailyBriefingTrendPoint[],
+  completedAt: string,
+): readonly TrendBucket[] {
+  const count = PERIODS.find((candidate) => candidate.id === period)?.points ?? 24;
+  const pointByKey = new Map(points.map((point) => [point.key, point]));
+
+  if (period !== "24h") {
+    const completed = new Date(completedAt);
+    const endDate = Number.isFinite(completed.getTime())
+      ? PACIFIC_DATE.format(completed)
+      : points.at(-1)?.key ?? "";
+    return Array.from({ length: count }, (_, index) => {
+      const key = shiftDate(endDate, index - (count - 1));
+      return { key, point: pointByKey.get(key) ?? null };
+    });
+  }
+
+  const completed = Date.parse(completedAt);
+  const latestPoint = points
+    .map((point) => parseHourKey(point.key))
+    .filter((value): value is number => value !== null)
+    .at(-1);
+  const endHour = Math.floor(
+    (Number.isFinite(completed) ? completed : latestPoint ?? 0) / HOUR_MS,
+  ) * HOUR_MS;
+  const pointByHour = new Map<number, DailyBriefingTrendPoint>();
+  for (const point of points) {
+    const timestamp = parseHourKey(point.key);
+    if (timestamp !== null) pointByHour.set(timestamp, point);
+  }
+  return Array.from({ length: count }, (_, index) => {
+    const timestamp = endHour + (index - (count - 1)) * HOUR_MS;
+    const point = pointByHour.get(timestamp) ?? null;
+    return {
+      key: point?.key ?? pacificHourKey(timestamp),
+      point,
+    };
+  });
 }
 
 function chartPath(
-  points: readonly DailyBriefingTrendPoint[],
+  buckets: readonly TrendBucket[],
   metric: MetricKey,
-  period: TrendPeriod,
 ): string {
-  const values = points
-    .map((point) => metricValue(point, metric))
+  const values = buckets
+    .map((bucket) =>
+      bucket.point === null ? null : metricValue(bucket.point, metric),
+    )
     .filter((value): value is number => value !== null);
   if (values.length === 0) return "";
 
   const minimum = Math.min(...values);
   const maximum = Math.max(...values);
-  const range = Math.max(1, maximum - minimum);
+  const range = maximum - minimum;
   let continuous = false;
   let path = "";
 
-  for (let index = 0; index < points.length; index += 1) {
-    const point = points[index];
-    const value = point ? metricValue(point, metric) : null;
-    if (point === undefined || value === null) {
+  for (let index = 0; index < buckets.length; index += 1) {
+    const bucket = buckets[index];
+    const value =
+      bucket?.point === null || bucket?.point === undefined
+        ? null
+        : metricValue(bucket.point, metric);
+    if (bucket === undefined || value === null) {
       continuous = false;
       continue;
     }
-    if (
-      index > 0 &&
-      !isAdjacent(points[index - 1]?.key ?? "", point.key, period)
-    ) {
-      continuous = false;
-    }
     const x =
-      points.length <= 1
+      buckets.length <= 1
         ? PAD_LEFT + PLOT_WIDTH / 2
-        : PAD_LEFT + (index / (points.length - 1)) * PLOT_WIDTH;
+        : PAD_LEFT + (index / (buckets.length - 1)) * PLOT_WIDTH;
     // Lower numeric average position is better, so it intentionally rises.
-    const normalized = metric === "position"
-      ? (maximum - value) / range
-      : (value - minimum) / range;
+    const normalized =
+      range === 0
+        ? 0.5
+        : metric === "position"
+          ? (maximum - value) / range
+          : (value - minimum) / range;
     const y = PAD_TOP + PLOT_HEIGHT - normalized * PLOT_HEIGHT;
     path += `${continuous ? " L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
     continuous = true;
@@ -161,9 +240,11 @@ function tickIndexes(length: number): readonly number[] {
 export function DailyBriefingTrendChart({
   locale,
   trend,
+  completedAt,
 }: {
   readonly locale: string;
   readonly trend: DailyBriefingTrend;
+  readonly completedAt: string;
 }) {
   const t = useTranslations("tools.dailyBriefing");
   const [period, setPeriod] = useState<TrendPeriod>("24h");
@@ -171,12 +252,16 @@ export function DailyBriefingTrendChart({
     () => new Set(METRICS),
   );
   const [hovered, setHovered] = useState<number | null>(null);
-  const config = PERIODS.find((candidate) => candidate.id === period) ?? PERIODS[0]!;
   const series = period === "24h" ? trend.hourly : trend.daily;
-  const points = series.points.slice(-config.points);
+  const buckets = bucketsForPeriod(period, series.points, completedAt);
+  const points = buckets.flatMap((bucket) =>
+    bucket.point === null ? [] : [bucket.point],
+  );
+  const hasPoints = points.length > 0;
+  const hasGaps = buckets.some((bucket) => bucket.point === null);
   const totals = aggregate(points);
-  const ticks = tickIndexes(points.length);
-  const activePoints = points[hovered ?? -1] ?? null;
+  const ticks = tickIndexes(buckets.length);
+  const activeBucket = buckets[hovered ?? -1] ?? null;
 
   function toggleMetric(metric: MetricKey) {
     setVisible((current) => {
@@ -189,10 +274,10 @@ export function DailyBriefingTrendChart({
   }
 
   function handlePointerMove(event: React.MouseEvent<SVGSVGElement>) {
-    if (points.length === 0) return;
+    if (buckets.length === 0) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
-    setHovered(Math.round(ratio * Math.max(0, points.length - 1)));
+    setHovered(Math.round(ratio * Math.max(0, buckets.length - 1)));
   }
 
   return (
@@ -260,7 +345,7 @@ export function DailyBriefingTrendChart({
                 {t(`trend.metrics.${metric}`)}
               </span>
               <strong className="mt-4 block text-[29px] leading-none font-semibold tracking-[-0.04em] text-text-dark-primary tabular-nums">
-                {series.evidence === "unavailable"
+                {!hasPoints || series.evidence === "unavailable"
                   ? t("trend.unavailable")
                   : formatMetric(locale, metric, totals[metric])}
               </strong>
@@ -270,11 +355,15 @@ export function DailyBriefingTrendChart({
       </div>
 
       <div className="mt-3 rounded-[12px] border border-brand-border-card bg-brand-panel p-3 md:p-4">
-        {series.evidence === "unavailable" ? (
+        {series.evidence === "unavailable" || !hasPoints ? (
           <p className="flex min-h-56 items-center justify-center text-center text-[13px] leading-[1.6] text-text-dark-secondary">
-            {period === "24h"
-              ? t("trend.hourlyUnavailable")
-              : t("trend.dailyUnavailable")}
+            {series.evidence === "unavailable"
+              ? period === "24h"
+                ? t("trend.hourlyUnavailable")
+                : t("trend.dailyUnavailable")
+              : period === "24h"
+                ? t("trend.hourlyNoData")
+                : t("trend.dailyNoData")}
           </p>
         ) : (
           <div className="relative">
@@ -304,7 +393,7 @@ export function DailyBriefingTrendChart({
               {METRICS.filter((metric) => visible.has(metric)).map((metric) => (
                 <path
                   key={metric}
-                  d={chartPath(points, metric, period)}
+                  d={chartPath(buckets, metric)}
                   fill="none"
                   stroke={METRIC_STYLE[metric].color}
                   strokeWidth={metric === "clicks" ? 2.5 : 2}
@@ -313,17 +402,17 @@ export function DailyBriefingTrendChart({
                   strokeLinejoin="round"
                 />
               ))}
-              {hovered !== null && points.length > 0 ? (
+              {hovered !== null && buckets.length > 0 ? (
                 <line
                   x1={
-                    points.length <= 1
+                    buckets.length <= 1
                       ? PAD_LEFT + PLOT_WIDTH / 2
-                      : PAD_LEFT + (hovered / (points.length - 1)) * PLOT_WIDTH
+                      : PAD_LEFT + (hovered / (buckets.length - 1)) * PLOT_WIDTH
                   }
                   x2={
-                    points.length <= 1
+                    buckets.length <= 1
                       ? PAD_LEFT + PLOT_WIDTH / 2
-                      : PAD_LEFT + (hovered / (points.length - 1)) * PLOT_WIDTH
+                      : PAD_LEFT + (hovered / (buckets.length - 1)) * PLOT_WIDTH
                   }
                   y1={PAD_TOP}
                   y2={PAD_TOP + PLOT_HEIGHT}
@@ -333,33 +422,39 @@ export function DailyBriefingTrendChart({
                 />
               ) : null}
               {ticks.map((index) => {
-                const point = points[index];
-                if (point === undefined) return null;
+                const bucket = buckets[index];
+                if (bucket === undefined) return null;
                 const x =
-                  points.length <= 1
+                  buckets.length <= 1
                     ? PAD_LEFT + PLOT_WIDTH / 2
-                    : PAD_LEFT + (index / (points.length - 1)) * PLOT_WIDTH;
+                    : PAD_LEFT + (index / (buckets.length - 1)) * PLOT_WIDTH;
                 return (
                   <text
-                    key={`${point.key}-${index}`}
+                    key={`${bucket.key}-${index}`}
                     x={x}
                     y={VIEW_HEIGHT - 14}
-                    textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
+                    textAnchor={index === 0 ? "start" : index === buckets.length - 1 ? "end" : "middle"}
                     fill="var(--sc-text-secondary)"
                     fontFamily="var(--font-mono)"
                     fontSize="10"
                   >
-                    {point.key.slice(period === "24h" ? 11 : 5)}
+                    {bucket.key.slice(period === "24h" ? 11 : 5)}
                   </text>
                 );
               })}
             </svg>
-            {activePoints !== null ? (
+            {activeBucket !== null ? (
               <div data-trend-tooltip className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-brand-border-strong bg-brand-panel-raised px-3 py-2 font-mono text-[11px] text-text-dark-primary shadow-panel">
-                <p className="mb-1 text-text-dark-secondary">{activePoints.key}</p>
+                <p className="mb-1 text-text-dark-secondary">{activeBucket.key}</p>
                 {METRICS.filter((metric) => visible.has(metric)).map((metric) => (
                   <p key={metric} className="tabular-nums">
-                    {t(`trend.metrics.${metric}`)} · {formatMetric(locale, metric, metricValue(activePoints, metric))}
+                    {t(`trend.metrics.${metric}`)} · {formatMetric(
+                      locale,
+                      metric,
+                      activeBucket.point === null
+                        ? null
+                        : metricValue(activeBucket.point, metric),
+                    )}
                   </p>
                 ))}
               </div>
@@ -373,6 +468,72 @@ export function DailyBriefingTrendChart({
           <p className="mt-2 text-[11px] leading-[1.55] text-brand-warning">
             {period === "24h" ? t("trend.hourlyPartial") : t("trend.dailyPartial")}
           </p>
+        ) : null}
+        {hasPoints && hasGaps ? (
+          <p className="mt-2 text-[11px] leading-[1.55] text-text-dark-secondary">
+            {t("trend.windowIncomplete")}
+          </p>
+        ) : null}
+        {hasPoints ? (
+          <details
+            data-trend-table
+            className="mt-3 rounded-[10px] border border-brand-border-card bg-brand-bg px-4"
+          >
+            <summary className="cursor-pointer py-3 text-[12px] font-medium text-text-dark-secondary transition-colors hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+              {t("trend.viewAsTable")}
+            </summary>
+            <div className="max-h-80 overflow-auto pb-3">
+              <table className="w-full min-w-[620px] font-mono text-[11px] tabular-nums">
+                <caption className="sr-only">
+                  {t("trend.chartLabel", {
+                    period: t(`trend.periods.${period}`),
+                    points: points.length,
+                  })}
+                </caption>
+                <thead>
+                  <tr className="text-left text-text-dark-secondary">
+                    <th className="py-1.5 pr-4 text-[10px] tracking-[0.1em] uppercase">
+                      {t("trend.bucket")}
+                    </th>
+                    {METRICS.map((metric) => (
+                      <th
+                        key={metric}
+                        className="py-1.5 pr-4 text-right text-[10px] tracking-[0.1em] uppercase last:pr-0"
+                      >
+                        {t(`trend.metrics.${metric}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {buckets.map((bucket) => (
+                    <tr
+                      key={bucket.key}
+                      className="border-t border-brand-border-faint text-text-dark-secondary"
+                    >
+                      <td className="py-1.5 pr-4 whitespace-nowrap">
+                        {bucket.point?.key ?? bucket.key}
+                      </td>
+                      {METRICS.map((metric) => (
+                        <td
+                          key={metric}
+                          className="py-1.5 pr-4 text-right text-text-dark-primary last:pr-0"
+                        >
+                          {bucket.point === null
+                            ? t("trend.unavailable")
+                            : formatMetric(
+                                locale,
+                                metric,
+                                metricValue(bucket.point, metric),
+                              )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         ) : null}
       </div>
     </section>

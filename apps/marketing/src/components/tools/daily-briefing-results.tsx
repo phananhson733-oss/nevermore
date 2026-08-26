@@ -1031,7 +1031,11 @@ export function DailyBriefingResults({
 
   return (
     <div className="mt-8 space-y-8">
-      <DailyBriefingTrendChart locale={locale} trend={result.trend} />
+      <DailyBriefingTrendChart
+        locale={locale}
+        trend={result.trend}
+        completedAt={envelope.run.completedAt}
+      />
 
 
       <section

@@ -653,6 +653,110 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(host.textContent).not.toContain("0 clicks");
   });
 
+  it("does not turn a successful empty trend response into zero traffic", async () => {
+    const host = await renderResults(
+      envelope({
+        trend: {
+          daily: {
+            evidence: "observed",
+            points: [],
+            firstIncompleteDate: null,
+            firstIncompleteHour: null,
+          },
+          hourly: {
+            evidence: "partial",
+            points: [],
+            firstIncompleteDate: null,
+            firstIncompleteHour: null,
+          },
+        },
+      }),
+    );
+    const cards = [...host.querySelectorAll("[data-trend-metric] strong")];
+
+    expect(cards.map((card) => card.textContent)).toEqual([
+      "Unavailable",
+      "Unavailable",
+      "Unavailable",
+      "Unavailable",
+    ]);
+    expect(host.textContent).toContain("No hourly data points were returned");
+  });
+
+  it("uses exact clock and calendar windows instead of the last N returned rows", async () => {
+    const host = await renderResults(
+      envelope({
+        trend: {
+          daily: {
+            evidence: "observed",
+            points: [
+              { key: "2026-08-17", clicks: 100, impressions: 1_000, ctr: 0.1, position: 8 },
+              { key: "2026-08-18", clicks: 3, impressions: 100, ctr: 0.03, position: 7 },
+            ],
+            firstIncompleteDate: null,
+            firstIncompleteHour: null,
+          },
+          hourly: {
+            evidence: "partial",
+            points: [
+              { key: "2026-08-23T13:00:00-07:00", clicks: 100, impressions: 1_000, ctr: 0.1, position: 8 },
+              { key: "2026-08-24T12:00:00-07:00", clicks: 3, impressions: 100, ctr: 0.03, position: 7 },
+            ],
+            firstIncompleteDate: null,
+            firstIncompleteHour: "2026-08-24T12:00:00-07:00",
+          },
+        },
+      }),
+    );
+    const clicks = host.querySelector('[data-trend-metric="clicks"] strong');
+
+    expect(clicks?.textContent).toBe("3");
+
+    await click(buttonWith(host, "7 days"));
+    expect(clicks?.textContent).toBe("3");
+  });
+
+  it("uses real fractional ranges and breaks offset-hour lines across missing buckets", async () => {
+    const host = await renderResults(
+      envelope({
+        trend: {
+          ...BASE_ENVELOPE.result.trend,
+          hourly: {
+            evidence: "partial",
+            points: [
+              { key: "2026-08-24T10:00:00-07:00", clicks: 1, impressions: 200, ctr: 0.005, position: 8.5 },
+              { key: "2026-08-24T12:00:00-07:00", clicks: 3, impressions: 200, ctr: 0.015, position: 8.1 },
+            ],
+            firstIncompleteDate: null,
+            firstIncompleteHour: "2026-08-24T10:00:00-07:00",
+          },
+        },
+      }),
+    );
+    const ctrPath = host.querySelector(
+      '[data-trend-chart] path[stroke="var(--chart-1)"]',
+    );
+    const path = ctrPath?.getAttribute("d") ?? "";
+
+    expect(path.match(/M/g)).toHaveLength(2);
+    expect(path).not.toContain(" L");
+    expect(path).toContain(",18.0");
+    expect(path).toContain(",292.0");
+  });
+
+  it("offers every selected point as a keyboard-accessible data table", async () => {
+    const host = await renderResults();
+    const table = host.querySelector("[data-trend-table] table");
+
+    expect(table).not.toBeNull();
+    expect(table?.textContent).toContain("Clicks");
+    expect(table?.textContent).toContain("Impressions");
+    expect(table?.textContent).toContain("Avg CTR");
+    expect(table?.textContent).toContain("Avg position");
+    expect(table?.textContent).toContain("2026-08-23T14:00:00-07:00");
+    expect(table?.textContent).toContain("2026-08-24T17:00:00");
+  });
+
   it("labels a filtered count as prefix-only and keeps missing coverage honest", async () => {
     const currentCoverage = {
       ...BASE_ENVELOPE.result.coverage.current,

@@ -1890,6 +1890,8 @@
         "title": "搜索表现趋势",
         "periodLabel": "趋势时间范围",
         "metricsLabel": "图表显示指标",
+        "viewAsTable": "用数据表查看趋势",
+        "bucket": "日期 / 小时",
         "periods": {
           "24h": "24 小时",
           "7d": "7 天",
@@ -1905,8 +1907,11 @@
         "unavailable": "不可得",
         "hourlyUnavailable": "小时趋势暂不可用；当前选中的 24 小时视图没有拿日级数据冒充或补成 0。",
         "dailyUnavailable": "日趋势暂不可用；缺失数据没有被补成 0。",
+        "hourlyNoData": "这个 24 小时窗口没有返回小时数据点；没有用 0 替代缺失数据。",
+        "dailyNoData": "这个时间窗口没有返回日数据点；没有用 0 替代缺失数据。",
         "hourlyPartial": "Search Console 的小时数据仍在更新，最新数据点仅作暂定参考。",
         "dailyPartial": "Search Console 的最新日数据仍在更新，最新数据点仅作暂定参考。",
+        "windowIncomplete": "这个精确时间窗口中有部分时间桶没有返回数据；它们保留为空缺，没有补成 0。",
         "scaleNote": "各指标使用独立刻度，确保点击、展示、CTR 与平均排名都可读；平均排名改善时曲线向上，悬停可查看真实数值。",
         "chartLabel": "{period} Search Console 趋势，共 {points} 个已观察数据点"
       },

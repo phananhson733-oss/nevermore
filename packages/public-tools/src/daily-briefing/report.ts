@@ -65,7 +65,7 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v6";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v7";
 export const BRIEFING_WINDOW_DAYS = 7;
 /** Daily points held once so the UI can switch 7/28/90-day views locally. */
 export const DAILY_BRIEFING_TREND_DAYS = 90;
@@ -251,7 +251,8 @@ function trendSeriesFor(
   points.sort((left, right) => left.key.localeCompare(right.key));
 
   return {
-    evidence: partial ? "partial" : "observed",
+    evidence:
+      points.length === 0 ? "not_observed" : partial ? "partial" : "observed",
     points,
     firstIncompleteDate: read.firstIncompleteDate,
     firstIncompleteHour: read.firstIncompleteHour,

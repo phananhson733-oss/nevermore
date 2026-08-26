@@ -151,7 +151,8 @@ export interface DailyBriefingTrendPoint {
 }
 
 export interface DailyBriefingTrendSeries {
-  readonly evidence: "observed" | "partial" | "unavailable";
+  /** `not_observed` means the read succeeded but returned no usable points. */
+  readonly evidence: "observed" | "not_observed" | "partial" | "unavailable";
   readonly points: readonly DailyBriefingTrendPoint[];
   /** The first incomplete PT day, reported by Search Console when available. */
   readonly firstIncompleteDate: string | null;

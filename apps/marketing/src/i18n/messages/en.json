@@ -1890,6 +1890,8 @@
         "title": "Search performance trend",
         "periodLabel": "Trend window",
         "metricsLabel": "Visible chart metrics",
+        "viewAsTable": "View trend as a data table",
+        "bucket": "Date / hour",
         "periods": {
           "24h": "24h",
           "7d": "7 days",
@@ -1905,8 +1907,11 @@
         "unavailable": "Unavailable",
         "hourlyUnavailable": "Hourly trend is temporarily unavailable. No daily values have been substituted for the selected 24-hour view.",
         "dailyUnavailable": "Daily trend is temporarily unavailable. No missing values have been substituted with zero.",
+        "hourlyNoData": "No hourly data points were returned for this 24-hour window. Nothing was substituted with zero.",
+        "dailyNoData": "No daily data points were returned for this window. Nothing was substituted with zero.",
         "hourlyPartial": "Hourly Search Console data is still updating. Treat the newest points as provisional.",
         "dailyPartial": "The newest daily Search Console data is still updating. Treat the newest points as provisional.",
+        "windowIncomplete": "Some buckets in this exact window have no returned data. They remain gaps and are not substituted with zero.",
         "scaleNote": "Each visible metric uses its own scale so clicks, impressions, CTR, and average position stay readable. Average-position improvement is drawn upward; hover for the real values.",
         "chartLabel": "{period} Search Console trend with {points} observed points"
       },
