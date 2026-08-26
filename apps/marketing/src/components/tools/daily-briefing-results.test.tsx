@@ -27,6 +27,7 @@ import {
   type DailyBriefingSignalFunnel,
 } from "@sf/public-tools";
 import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
 
 const { writeToolHandoffMock } = vi.hoisted(() => ({
   writeToolHandoffMock: vi.fn(),
@@ -450,19 +451,21 @@ afterEach(async () => {
 
 async function renderResults(
   report: DailyBriefingEnvelope = envelope(),
+  renderLocale: "en" | "zh" = "en",
 ) {
+  const messages = renderLocale === "zh" ? zh : en;
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
     root?.render(
       <NextIntlClientProvider
-        locale="en"
+        locale={renderLocale}
         timeZone="UTC"
-        messages={{ tools: { dailyBriefing: en.tools.dailyBriefing } }}
+        messages={{ tools: { dailyBriefing: messages.tools.dailyBriefing } }}
       >
         <DailyBriefingResults
-          locale="en"
+          locale={renderLocale}
           property={PROPERTY}
           envelope={report}
         />
@@ -470,6 +473,12 @@ async function renderResults(
     );
   });
   return host;
+}
+
+async function renderZhResults(
+  report: DailyBriefingEnvelope = envelope(),
+) {
+  return renderResults(report, "zh");
 }
 
 function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
@@ -563,7 +572,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(summary?.textContent).not.toContain("4 query changes");
   });
 
-  it("counts the site trend in the fold summary instead of calling it nothing", async () => {
+  it("does not count the hidden site trend in the evidence-fold summary", async () => {
     const host = await renderResults(
       envelope({
         propertyTrend: propertyTrend(),
@@ -573,11 +582,10 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     );
     const summary = host.querySelector("[data-evidence-fold-summary]");
 
-    // "0 changes" over a page that also says the site declined was the copy
-    // this line replaces.
     expect(summary?.textContent).toContain("0 query changes");
-    expect(summary?.textContent).toContain("1 site trend observation");
     expect(summary?.textContent).toContain("0/8 observation candidates shown");
+    expect(summary?.textContent).not.toContain("site trend observation");
+    expect(summary?.textContent).not.toContain("site trend not readable");
     expect(summary?.textContent).not.toContain("below the threshold");
   });
 
@@ -586,10 +594,25 @@ describe("DailyBriefingResults trend and evidence facts", () => {
       envelope({ mode: "change_detection", cadence: "daily" }),
     );
     const cards = [...host.querySelectorAll("[data-trend-metric]")];
+    const expectedTokens = {
+      clicks: "var(--gsc-clicks)",
+      impressions: "var(--gsc-impressions)",
+      ctr: "var(--gsc-ctr)",
+      position: "var(--gsc-position)",
+    } as const;
 
     expect(cards).toHaveLength(4);
     for (const card of cards) {
       expect(card.getAttribute("aria-pressed")).toBe("true");
+    }
+    for (const [metric, token] of Object.entries(expectedTokens)) {
+      const card = host.querySelector<HTMLElement>(`[data-trend-metric="${metric}"]`);
+      const line = host.querySelector<SVGPathElement>(
+        `[data-trend-chart] path[stroke="${token}"]`,
+      );
+
+      expect(card?.getAttribute("style")).toContain(token);
+      expect(line?.getAttribute("stroke")).toBe(token);
     }
     expect(host.querySelector('[data-trend-chart]')).not.toBeNull();
     expect(host.textContent).not.toContain("Latest complete day");
@@ -619,8 +642,8 @@ describe("DailyBriefingResults trend and evidence facts", () => {
 
     await click(clicks!);
     expect(clicks?.getAttribute("aria-pressed")).toBe("false");
-    expect(host.querySelector('[data-trend-chart] path[stroke="var(--chart-4)"]')).toBeNull();
-    expect(host.querySelector('[data-trend-chart] path[stroke="var(--chart-1)"]')).not.toBeNull();
+    expect(host.querySelector('[data-trend-chart] path[stroke="var(--gsc-clicks)"]')).toBeNull();
+    expect(host.querySelector('[data-trend-chart] path[stroke="var(--gsc-ctr)"]')).not.toBeNull();
   });
 
   it("renders an unavailable trend as unavailable rather than substituting zero", async () => {
@@ -735,7 +758,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
       }),
     );
     const ctrPath = host.querySelector(
-      '[data-trend-chart] path[stroke="var(--chart-1)"]',
+      '[data-trend-chart] path[stroke="var(--gsc-ctr)"]',
     );
     const path = ctrPath?.getAttribute("d") ?? "";
 
@@ -1300,7 +1323,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     }
   });
 
-  it("renders the site-wide trend outside the query-page review table", async () => {
+  it("hides the duplicate site-wide trend while preserving its exact property action", async () => {
     const fallback = propertyTrend();
     const watch = observation("sample_floor_reached", 1);
     const host = await renderResults(
@@ -1313,32 +1336,47 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       }),
     );
     const table = host.querySelector('[role="table"]');
-    const row = host.querySelector<HTMLElement>("[data-site-trend]");
-    const cells = [
-      ...(row?.querySelectorAll<HTMLElement>('[role="cell"]') ?? []),
-    ];
+    const propertyAction = host.querySelector<HTMLElement>(
+      '[data-result-section="actions"] [data-property-action]',
+    );
 
     expect(table).not.toBeNull();
-    expect(row).not.toBeNull();
-    expect(table?.contains(row)).toBe(false);
+    expect(host.querySelector("[data-site-trend]")).toBeNull();
+    expect(host.querySelector('[data-result-section="site-trend"]')).toBeNull();
     expect(host.querySelector("[data-property-change]")).toBeNull();
     expect(table?.textContent).toContain(watch.query);
-    expect(row?.textContent).toContain("Site-wide trend");
-    expect(row?.textContent).toContain("Property clicks declined materially");
-    expect(row?.textContent).toContain("49 → 35");
-    expect(row?.textContent).toContain("5,285 → 4,109");
-    expect(row?.textContent).toContain("13.2 → 15.1");
-    expect(row?.textContent).toContain(
-      "Observed weekly deltas: clicks -14, impressions -1,176, average position +1.9",
+    expect(propertyAction).not.toBeNull();
+    expect(propertyAction?.textContent).toContain(
+      "Diagnose the property-wide click decline",
     );
-    expect(row?.textContent).toContain(
-      "Query/page evidence did not support a specific attribution",
-    );
+    expect(propertyAction?.textContent).toContain("49 → 35");
+    expect(propertyAction?.textContent).toContain("5,285 → 4,109");
+    expect(propertyAction?.textContent).toContain("13.2 → 15.1");
     expect(
-      row?.querySelector("[data-site-trend-action-link]")?.getAttribute("href"),
-    ).toBe("#daily-briefing-actions");
-    expect(row?.querySelector("[data-action-link]")).toBeNull();
-    expect(cells).toHaveLength(0);
+      propertyAction?.querySelector("[data-action-link]")?.getAttribute("href"),
+    ).toBe("/tools/traffic-drop-diagnosis");
+  });
+
+  it("does not repeat a non-actionable property movement below the action floor", async () => {
+    const host = await renderResults(
+      envelope({
+        propertyTrend: propertyTrend({
+          action: null,
+          noiseFloor: {
+            basis: "clicks",
+            observedChange: -3,
+            minimumForAction: 2 * Math.sqrt(49),
+            cleared: false,
+          },
+        }),
+        signalFunnel: signalFunnel({ propertyTrendShown: true }),
+      }),
+    );
+
+    expect(host.querySelector('[data-result-section="trend"]')).not.toBeNull();
+    expect(host.querySelector("[data-site-trend]")).toBeNull();
+    expect(host.querySelector('[data-result-section="site-trend"]')).toBeNull();
+    expect(host.querySelector("[data-property-action]")).toBeNull();
   });
 
   it("renders strict changes first and fills only the remaining review rows with observations", async () => {
@@ -1397,7 +1435,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(writeToolHandoffMock).not.toHaveBeenCalled();
   });
 
-  it("renders unavailable property positions without inventing a rank", async () => {
+  it("keeps unavailable property positions honest in the property action", async () => {
     const fallback = propertyTrend();
     const baseChange = fallback.change;
     if (baseChange === null) throw new Error("fixture must carry a change");
@@ -1415,10 +1453,9 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
         signalFunnel: signalFunnel({ propertyTrendShown: true }),
       }),
     );
-    const row = host.querySelector<HTMLElement>("[data-site-trend]");
+    const row = host.querySelector<HTMLElement>("[data-property-action]");
 
     expect(row?.textContent).toContain("Unavailable → Unavailable");
-    expect(row?.textContent).toContain("average position Unavailable");
     expect(row?.textContent).not.toContain("null");
     expect(row?.textContent).not.toContain("NaN");
   });
@@ -1521,13 +1558,13 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "[data-property-action] [data-action-link]",
     );
 
-    expect(host.textContent).toContain("Property visibility improved materially");
     expect(host.textContent).toContain("Inspect the property-wide visibility gain");
+    expect(host.querySelector("[data-site-trend]")).toBeNull();
     expect(link?.getAttribute("href")).toBe("/tools/seo-quick-wins");
     expect(link?.getAttribute("href")).not.toContain(PROPERTY);
   });
 
-  it("shows the property trend alongside an exact query action", async () => {
+  it("keeps the property action alongside an exact query action without a duplicate trend card", async () => {
     const source = change("click_opportunity", 1);
     const host = await renderResults(
       envelope({
@@ -1544,8 +1581,6 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     expect(host.querySelectorAll("[data-change]")).toHaveLength(1);
     expect(host.textContent).toContain(source.query);
-    // The query signal keeps the first action slot; the site-wide fact keeps
-    // its own place instead of being deleted by it.
     expect(host.querySelectorAll("[data-action-row]")).toHaveLength(2);
     const propertyAction = host.querySelector("[data-property-action]");
 
@@ -1554,10 +1589,11 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     // page and property actions would read as one priority order over three
     // different populations, and nothing measured supports that ordering.
     expect(propertyAction?.getAttribute("data-action-rank")).toBe("1");
-    expect(host.querySelector("[data-site-trend]")).not.toBeNull();
+    expect(host.querySelector("[data-site-trend]")).toBeNull();
+    expect(host.querySelector('[data-result-section="site-trend"]')).toBeNull();
     expect(
       host.querySelector("[data-evidence-fold-summary]")?.textContent,
-    ).toContain("1 site trend observation");
+    ).not.toContain("site trend observation");
   });
 
   it("blocks property-action navigation when the private handoff cannot be stored", async () => {
@@ -1598,17 +1634,36 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     const table = host.querySelector('[role="table"]');
     const rows = [...host.querySelectorAll<HTMLElement>("[data-change]")];
-    const header = table?.querySelector<HTMLElement>('[role="row"]');
+    const header = table?.querySelector<HTMLElement>(
+      "[data-review-table-header]",
+    );
     const columnHeaders = [
       ...(table?.querySelectorAll<HTMLElement>('[role="columnheader"]') ?? []),
     ];
 
     expect(table).not.toBeNull();
-    expect(header?.className).toContain("py-4");
-    expect(columnHeaders.every((cell) => cell.className.includes("text-[11px]"))).toBe(
+    expect(header?.className).toContain("min-h-[50px]");
+    expect(header?.className).toContain("md:px-[14px]");
+    expect(header?.className).toContain("md:py-[13px]");
+    expect(columnHeaders.every((cell) => cell.className.includes("text-[12px]"))).toBe(
       true,
     );
     expect(columnHeaders.every((cell) => cell.className.includes("font-semibold"))).toBe(
+      true,
+    );
+    expect(columnHeaders.every((cell) => cell.className.includes("font-sans"))).toBe(
+      true,
+    );
+    expect(columnHeaders.every((cell) => cell.className.includes("tracking-[0.02em]"))).toBe(
+      true,
+    );
+    expect(columnHeaders.every((cell) => cell.className.includes("normal-case"))).toBe(
+      true,
+    );
+    expect(columnHeaders.every((cell) => !cell.className.includes("font-mono"))).toBe(
+      true,
+    );
+    expect(columnHeaders.every((cell) => !cell.className.includes("uppercase"))).toBe(
       true,
     );
     expect(
@@ -1623,7 +1678,16 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "Interpretation",
     ]);
     expect(rows).toHaveLength(3);
-    expect(table?.querySelectorAll('[role="row"]')).toHaveLength(4);
+    expect(table?.querySelectorAll('[role="row"]')).toHaveLength(5);
+    const queryGroup = table?.querySelector<HTMLElement>(
+      '[data-review-group="query"]',
+    );
+    expect(queryGroup?.querySelector("h4")?.textContent).toBe("Query records");
+    expect(queryGroup?.textContent).toContain("3 records");
+    expect(
+      queryGroup?.querySelector('[role="cell"]')?.getAttribute("aria-colspan"),
+    ).toBe("5");
+    expect(table?.querySelector('[data-review-group="page"]')).toBeNull();
     for (const row of rows) {
       expect(row.tagName).toBe("DIV");
       expect(row.getAttribute("role")).toBe("row");
@@ -1641,6 +1705,165 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(host.textContent).not.toContain("click_opportunity");
     expect(host.textContent).not.toContain("first_observed");
     expect(host.textContent).not.toContain("evidence query 4");
+  });
+
+  it("renders the page population heading independently of query records", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        pageChanges: [pageChange()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const table = host.querySelector('[role="table"]');
+    const pageGroup = table?.querySelector<HTMLElement>(
+      '[data-review-group="page"]',
+    );
+
+    expect(table?.querySelector('[data-review-group="query"]')).toBeNull();
+    expect(pageGroup?.querySelector("h4")?.textContent).toBe(
+      "Page-dimension records",
+    );
+    expect(pageGroup?.textContent).toContain("1 record");
+    expect(pageGroup?.textContent).not.toContain("1 records");
+    expect(
+      pageGroup?.querySelector('[role="cell"]')?.getAttribute("aria-colspan"),
+    ).toBe("5");
+    expect(pageGroup?.querySelector("h4")?.className).toContain("text-[15px]");
+    expect(pageGroup?.querySelector("h4")?.className).toContain("font-semibold");
+    expect(pageGroup?.querySelector("span")?.className).toContain("text-[13px]");
+    expect(pageGroup?.className).toContain("bg-brand-panel-raised");
+    expect(pageGroup?.className).not.toContain("shadow");
+    expect(pageGroup?.className).not.toContain("gradient");
+  });
+
+  it("keeps both population headings ordered and every desktop row aligned to one template", async () => {
+    const strict = change("stable_position_click_decline", 1);
+    const move = provisionalMove("provisional_page_one_band_entry", 2);
+    const watch = observation("sample_floor_reached", 3);
+    const host = await renderResults(
+      envelope({
+        changes: [strict],
+        provisionalMoves: provisionalMoves([move]),
+        queryWatchlist: watchlist("observed", [watch]),
+        pageChanges: [pageChange()],
+      }),
+    );
+    const table = host.querySelector<HTMLElement>('[role="table"]');
+    const header = table?.querySelector<HTMLElement>(
+      "[data-review-table-header]",
+    );
+    const gridTemplate = header?.className
+      .split(" ")
+      .find((className) => className.startsWith("md:grid-cols-"));
+    const groups = [
+      ...(table?.querySelectorAll<HTMLElement>("[data-review-group]") ?? []),
+    ];
+    const rows = [
+      ...(table?.querySelectorAll<HTMLElement>("[data-review-row]") ?? []),
+    ];
+
+    expect(table?.querySelector("[data-review-table-scroll]")?.className).toContain(
+      "overflow-x-auto",
+    );
+    expect(table?.querySelector("[data-review-table-content]")?.className).toContain(
+      "md:min-w-[860px]",
+    );
+    expect(table?.className).not.toContain("min-w-[860px]");
+    expect(gridTemplate).toBe(
+      "md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.9fr)_minmax(0,0.68fr)_minmax(0,0.72fr)_minmax(0,1.55fr)]",
+    );
+    expect(rows).toHaveLength(4);
+    expect(rows.every((row) => row.className.includes(gridTemplate ?? "missing"))).toBe(
+      true,
+    );
+    expect(groups.map((group) => group.getAttribute("data-review-group"))).toEqual([
+      "query",
+      "page",
+    ]);
+    expect(groups[0]?.textContent).toContain("3 records");
+    expect(groups[1]?.textContent).toContain("1 record");
+    expect(groups[1]?.textContent).not.toContain("1 records");
+    expect(
+      groups.map((group) =>
+        group.querySelector('[role="cell"]')?.getAttribute("aria-colspan"),
+      ),
+    ).toEqual(["5", "5"]);
+    expect(
+      [...table!.querySelectorAll("[data-review-row], [data-review-group]")].map(
+        (node) =>
+          node.getAttribute("data-review-group") ??
+          (node.hasAttribute("data-page-change") ? "page-row" : "query-row"),
+      ),
+    ).toEqual([
+      "query",
+      "query-row",
+      "query-row",
+      "query-row",
+      "page",
+      "page-row",
+    ]);
+  });
+
+  it("renders the query-only population heading and plural count in Chinese", async () => {
+    const host = await renderZhResults(
+      envelope({
+        changes: [1, 2, 3].map((index) =>
+          change("stable_position_click_decline", index),
+        ),
+        pageChanges: [],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const queryGroup = host.querySelector<HTMLElement>(
+      '[data-review-group="query"]',
+    );
+
+    expect(queryGroup?.querySelector("h4")?.textContent).toBe("查询词记录");
+    expect(queryGroup?.textContent).toContain("3 条记录");
+    expect(host.querySelector('[data-review-group="page"]')).toBeNull();
+  });
+
+  it("renders the page-only population heading and singular count in Chinese", async () => {
+    const host = await renderZhResults(
+      envelope({
+        changes: [],
+        pageChanges: [pageChange()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const pageGroup = host.querySelector<HTMLElement>(
+      '[data-review-group="page"]',
+    );
+
+    expect(host.querySelector('[data-review-group="query"]')).toBeNull();
+    expect(pageGroup?.querySelector("h4")?.textContent).toBe("页面维度记录");
+    expect(pageGroup?.textContent).toContain("1 条记录");
+  });
+
+  it("orders both Chinese population headings with their displayed counts", async () => {
+    const strict = change("stable_position_click_decline", 1);
+    const host = await renderZhResults(
+      envelope({
+        changes: [strict],
+        queryWatchlist: watchlist("observed", [
+          observation("sample_floor_reached", 2),
+        ]),
+        pageChanges: [pageChange()],
+      }),
+    );
+    const groups = [
+      ...host.querySelectorAll<HTMLElement>("[data-review-group]"),
+    ];
+
+    expect(groups.map((group) => group.getAttribute("data-review-group"))).toEqual([
+      "query",
+      "page",
+    ]);
+    expect(groups[0]?.querySelector("h4")?.textContent).toBe("查询词记录");
+    expect(groups[0]?.textContent).toContain("2 条记录");
+    expect(groups[1]?.querySelector("h4")?.textContent).toBe("页面维度记录");
+    expect(groups[1]?.textContent).toContain("1 条记录");
   });
 
   it("renders a first-observed baseline as not observed rather than zero", async () => {
@@ -2081,7 +2304,7 @@ describe("DailyBriefingResults folded explanation", () => {
     }
   });
 
-  it("withholds the site-trend count when the weekly comparison was unread", async () => {
+  it("does not mention the hidden site trend when the weekly comparison was unread", async () => {
     const base = envelope();
     const host = await renderResults({
       ...base,
@@ -2094,13 +2317,8 @@ describe("DailyBriefingResults folded explanation", () => {
     });
     const summary = host.querySelector("[data-evidence-fold-summary]");
 
-    // "0 site trend observations" is a measurement. A weekly comparison that
-    // could not be read did not measure zero of them, and the trend is null in
-    // both cases.
-    expect(summary?.textContent).toContain(
-      en.tools.dailyBriefing.evidence.foldTrendUnavailable,
-    );
-    expect(summary?.textContent).not.toContain("0 site trend observation");
+    expect(summary?.textContent).not.toContain("site trend not readable");
+    expect(summary?.textContent).not.toContain("site trend observation");
   });
 
   it("orders each action group from one instead of ranking across them", async () => {
