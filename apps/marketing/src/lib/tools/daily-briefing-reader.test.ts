@@ -86,7 +86,7 @@ describe("createDailyBriefingReader", () => {
       fetchImpl,
       signal: expect.any(AbortSignal),
     });
-    expect(requests).toHaveLength(9);
+    expect(requests).toHaveLength(11);
     expect(requests[0]?.body).toEqual({
       dimensions: ["date"],
       startDate: "2026-08-08",
@@ -95,8 +95,16 @@ describe("createDailyBriefingReader", () => {
       startRow: 0,
       dataState: "final",
     });
-    expect(requests.every(({ body }) => body["dataState"] === "final")).toBe(
-      true,
+    // Nine of the eleven carry the report and must be final. The two trend
+    // reads deliberately do not: a chart of recent traffic that stops three
+    // days short of today is not the chart it was added to draw. Asserting
+    // "every read is final" was true of the nine-call plan and quietly became
+    // false when those two arrived.
+    const dataStates = requests.map(({ body }) => body["dataState"]);
+    expect(dataStates.filter((state) => state === "final")).toHaveLength(9);
+    expect(dataStates.filter((state) => state === "all")).toHaveLength(1);
+    expect(dataStates.filter((state) => state === "hourly_all")).toHaveLength(
+      1,
     );
     expect(
       requests.every(({ authorization }) => authorization === `Bearer ${TOKEN}`),
@@ -163,10 +171,13 @@ describe("createDailyBriefingReader", () => {
 
     await reader(input(() => REQUEST_BUDGET_MS));
 
-    // The six attachments share one request scope but not one fate.
-    // Aborting the siblings of a failed page read deletes the query rows
-    // that would have carried this run's only signals.
-    expect(optionalCalls).toBe(8);
+    // The attachments share one request scope but not one fate. Aborting the
+    // siblings of a failed page read deletes the query rows that would have
+    // carried this run's only signals.
+    //
+    // Nine, not ten: the daily trend read also asks for the date dimension and
+    // is answered by the branch above before this counter is reached.
+    expect(optionalCalls).toBe(9);
     expect(siblingAborts).toBe(0);
     // The scope is still closed once the report has finished.
     expect(captures.clientOptions[0]?.signal?.aborted).toBe(true);
