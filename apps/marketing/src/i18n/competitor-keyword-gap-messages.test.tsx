@@ -245,7 +245,8 @@ describe.each([
     preScreenBasis:
       "Third-party estimate; a pre-screen, not SERP winnability.",
     sampleRule: "Sample rule:",
-    rankingStatus: "Already ranking · avg position 4.1",
+    rankingStatus: "Already ranking",
+    positionChip: "avg position 4.1",
     positionTitle:
       "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
     impressionsLine: "900 impressions",
@@ -272,7 +273,8 @@ describe.each([
     band: "难度较高或第二页",
     preScreenBasis: "第三方估算；只是预筛，不是 SERP 可赢性。",
     sampleRule: "采样规则",
-    rankingStatus: "已在排 · 均位 4.1",
+    rankingStatus: "已在排",
+    positionChip: "均位 4.1",
     positionTitle:
       "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
     impressionsLine: "曝光 900",
@@ -310,24 +312,34 @@ describe.each([
     expect(host.textContent).toContain(expected.manualSnapshot);
     expect(host.textContent).toContain(expected.band);
     expect(host.textContent).toContain(expected.rankingStatus);
-    // The pill states the position and the line under it does not repeat the
-    // number. Only the already-ranking row carries query impressions, so this
-    // is the one such line in the render.
+    // Three separate things now, not a merged pill and a loose line: the state,
+    // the impressions, the average position. The state pill carries the state
+    // ALONE, which is what stops "already ranking" from arriving welded to a
+    // number that qualifies differently.
+    const pills = [...host.querySelectorAll("[data-gsc-status]")];
+    const ranking = pills.filter(
+      (pill) => pill.textContent === expected.rankingStatus,
+    );
+    expect(ranking).toHaveLength(1);
+    expect(ranking[0]?.textContent).not.toContain("4.1");
+
+    // Only the already-ranking row carries query impressions, so this is the
+    // one such chip in the render.
     const impressions = host.querySelectorAll('[data-gsc-metrics="query"]');
     expect(impressions).toHaveLength(1);
     expect(impressions[0]?.textContent).toBe(expected.impressionsLine);
     expect(impressions[0]?.textContent).not.toContain("4.1");
-    // "Already ranking · avg position 4.1" is present tense about Search from a
-    // lagged, averaged sample. Exactly one row in this envelope carries a
-    // position, so exactly one pill may carry THAT qualification -- asserted by
-    // its own title rather than by "has any title", which stopped separating
-    // the two once not-in-sample rows got a qualification of their own.
-    const pills = [...host.querySelectorAll("[data-gsc-status]")];
-    const positionQualified = pills.filter(
-      (pill) => pill.getAttribute("title") === expected.positionTitle,
+
+    // "avg position 4.1" is present tense about Search from a lagged, averaged
+    // sample. The qualification followed the number out of the pill, so it is
+    // the position CHIP that has to carry it now.
+    const positions = [...host.querySelectorAll('[data-gsc-metrics="position"]')];
+    expect(positions).toHaveLength(1);
+    expect(positions[0]?.textContent).toBe(expected.positionChip);
+    expect(positions[0]?.getAttribute("title")).toBe(expected.positionTitle);
+    expect(positions[0]?.getAttribute("aria-label")).toContain(
+      expected.positionTitle,
     );
-    expect(positionQualified).toHaveLength(1);
-    expect(positionQualified[0]?.textContent).toBe(expected.rankingStatus);
 
     // The label stays "not in sample". It is the localized sentence behind it
     // that says what the absence does not mean, so the two are checked

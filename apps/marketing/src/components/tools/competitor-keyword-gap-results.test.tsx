@@ -838,13 +838,20 @@ describe("CompetitorKeywordGapResults", () => {
       "[data-gsc-status]",
     );
 
-    expect(pill?.getAttribute("title")).toBe("gsc.positionTitle");
+    // The state pill carries no title at all now: the position qualification
+    // moved to the chip that shows the position.
+    expect(pill?.hasAttribute("title")).toBe(false);
     expect(pill?.getAttribute("aria-label")).not.toContain(
       "gsc.notObservedTitle",
     );
+    expect(
+      tableRow(host, "present word")
+        .querySelector('[data-gsc-metrics="position"]')
+        ?.getAttribute("title"),
+    ).toBe("gsc.positionTitle");
   });
 
-  it("puts the average position inside the status pill and never leaves a dangling separator", async () => {
+  it("gives the state, the impressions and the position a chip each", async () => {
     const strong = rowWithGsc(
       0,
       {
@@ -908,15 +915,14 @@ describe("CompetitorKeywordGapResults", () => {
     );
     const pill = (keyword: string): Element | null =>
       tableRow(host, keyword).querySelector("[data-gsc-status]");
+    const positionChip = (keyword: string): Element | null =>
+      tableRow(host, keyword).querySelector('[data-gsc-metrics="position"]');
 
-    expect(pill("strong pill")?.textContent).toBe(
-      "gsc.statusWithPosition:status=gsc.observed_strong,position=3.4",
-    );
-    expect(pill("weak pill")?.textContent).toBe(
-      "gsc.statusWithPosition:status=gsc.observed_weak,position=22.5",
-    );
-    // No position in the contract, so the state stands alone: a separator with
-    // nothing after it reads as a number that failed to render.
+    // The pill carries the STATE and nothing else. It used to carry the
+    // average position welded on with a separator, which put a measurement
+    // inside a state and left a dangling "·" whenever the number was absent.
+    expect(pill("strong pill")?.textContent).toBe("gsc.observed_strong");
+    expect(pill("weak pill")?.textContent).toBe("gsc.observed_weak");
     expect(pill("pill without position")?.textContent).toBe(
       "gsc.observed_weak",
     );
@@ -926,20 +932,35 @@ describe("CompetitorKeywordGapResults", () => {
     expect(pill("pill unread")?.textContent).toBe(
       "gsc.gsc_query_sample_not_read",
     );
+    for (const keyword of ["strong pill", "weak pill"]) {
+      expect(pill(keyword)?.textContent).not.toContain("position");
+    }
+
+    // The position is its own chip, and only where there is one to show.
+    expect(positionChip("strong pill")?.textContent).toBe(
+      "gsc.positionChip:position=3.4",
+    );
+    expect(positionChip("weak pill")?.textContent).toBe(
+      "gsc.positionChip:position=22.5",
+    );
+    expect(positionChip("pill without position")).toBeNull();
+    expect(positionChip("keyword 04")).toBeNull();
+    expect(positionChip("pill unread")).toBeNull();
 
     // The number is an impression-weighted average over a 28-day window that
-    // itself ends two to three days back, and the short label cannot say so.
-    // The title carries the qualification, and only on the pills that actually
-    // show a number: qualifying a window on a pill with no position would
-    // explain an average that is not there.
-    expect(pill("strong pill")?.getAttribute("title")).toBe(
+    // itself ends two to three days back, and the short chip cannot say so.
+    // The qualification followed the number out of the pill and onto the chip
+    // that shows it.
+    expect(positionChip("strong pill")?.getAttribute("title")).toBe(
       "gsc.positionTitle",
     );
-    expect(pill("weak pill")?.getAttribute("title")).toBe("gsc.positionTitle");
+    expect(positionChip("weak pill")?.getAttribute("title")).toBe(
+      "gsc.positionTitle",
+    );
+    expect(pill("strong pill")?.hasAttribute("title")).toBe(false);
+    expect(pill("weak pill")?.hasAttribute("title")).toBe(false);
     expect(pill("pill without position")?.hasAttribute("title")).toBe(false);
-    // A not-in-sample pill carries a DIFFERENT qualification -- what the
-    // absence does not mean -- and never the position one, because there is no
-    // average on it to explain.
+    // The state pill keeps the qualification that is about the STATE.
     expect(pill("keyword 04")?.getAttribute("title")).toBe(
       "gsc.notObservedTitle",
     );
@@ -955,8 +976,7 @@ describe("CompetitorKeywordGapResults", () => {
       "text-text-dark-secondary",
     );
 
-    // The line below the pill keeps the impressions and stops repeating the
-    // position the pill now carries.
+    // Impressions are a chip of their own too, and carry only impressions.
     const impressions = tableRow(host, "weak pill").querySelector(
       '[data-gsc-metrics="query"]',
     );

@@ -299,31 +299,6 @@ function buttonWith(host: HTMLElement, text: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
-/**
- * Every way the field turns typed text into a chip.
- *
- * There is no add button any more: a chip is made when a separator arrives in
- * the value, when the field loses focus, or on enter. All three go through the
- * same parse, and the suite exercises each rather than picking a favourite --
- * the "comma" path is the one people use and the one that did not exist before.
- */
-async function addCompetitor(
-  host: HTMLElement,
-  value: string,
-  method: "comma" | "enter" | "blur" = "comma",
-): Promise<void> {
-  const input = host.querySelector(
-    'input[name="competitorDomain"]',
-  ) as HTMLInputElement;
-  if (method === "comma") {
-    await change(input, `${value},`);
-    return;
-  }
-  await change(input, value);
-  if (method === "enter") await pressEnter(input);
-  else await blur(input);
-}
-
 async function renderToolWithMarkets(
   markets: readonly string[],
   marketLanguages: Readonly<Record<string, readonly string[]>>,
@@ -344,13 +319,24 @@ async function renderToolWithMarkets(
   return host;
 }
 
-async function blur(input: HTMLInputElement): Promise<void> {
-  // `focusout`, not `blur`: React's onBlur is delegated off the bubbling event,
-  // and a non-bubbling `blur` never reaches the handler under test.
-  await act(async () => {
-    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-  });
+/**
+ * Put competitors in the field. That is the whole interaction.
+ *
+ * There is no chip, no add button and no commit: the field holds what was
+ * typed until the visitor runs. Appending rather than replacing so a test can
+ * build a list the way a person does, one piece at a time into one box.
+ */
+async function addCompetitor(
+  host: HTMLElement,
+  value: string,
+): Promise<void> {
+  const input = host.querySelector(
+    'input[name="competitorDomain"]',
+  ) as HTMLInputElement;
+  const next = input.value === "" ? value : `${input.value}, ${value}`;
+  await change(input, next);
 }
+
 
 describe("CompetitorKeywordGapTool", () => {
   it("opens sign-in for a signed-out visitor without posting the tool request", async () => {
@@ -375,28 +361,10 @@ describe("CompetitorKeywordGapTool", () => {
     );
   });
 
-  it("normalizes chips added by button or Enter, removes them, and shows the bounded count", async () => {
-    const host = await renderTool();
-
-    await addCompetitor(host, " https://WWW.Rival.Example/ ");
-    await addCompetitor(host, "second.example", "enter");
-
-    expect(host.textContent).toContain("rival.example");
-    expect(host.textContent).toContain("second.example");
-    expect(host.textContent).toContain("2/5");
-
-    await click(
-      host.querySelector(
-        'button[data-remove-competitor="rival.example"]',
-      ) as HTMLButtonElement,
-    );
-    expect(host.textContent).not.toContain("rival.example");
-    expect(host.textContent).toContain("1/5");
-  });
-
-  it("turns one pasted comma-separated line into every chip", async () => {
-    // The whole point of the change: five competitors used to be nine
-    // interactions. This is one.
+  it("leaves the whole list in the field, exactly as it was typed", async () => {
+    // The field IS the list. Every earlier shape moved text out of it -- a
+    // separator, a blur or an enter emptied the box under the cursor and put
+    // the pieces somewhere the visitor then had to read separately.
     const host = await renderTool();
     const input = host.querySelector(
       'input[name="competitorDomain"]',
@@ -404,19 +372,14 @@ describe("CompetitorKeywordGapTool", () => {
 
     await change(input, "one.example, two.example，three.example,");
 
-    expect(
-      [...host.querySelectorAll("[data-competitor-chip]")].map(
-        (chip) => chip.textContent,
-      ),
-    ).toEqual(["one.example×", "two.example×", "three.example×"]);
-    expect(input.value).toBe("");
+    expect(input.value).toBe("one.example, two.example，three.example,");
+    expect(host.querySelector("[data-competitor-chip]")).toBeNull();
+    // The trailing separator is someone about to type a fourth, not a fourth.
     expect(host.textContent).toContain("3/5");
   });
 
-  it("runs with a domain still sitting unconfirmed in the field", async () => {
-    // No separator typed, no blur, no enter -- someone types one domain and
-    // presses run. Reading the chip list alone refused that submission with
-    // "add at least one competitor" while the domain sat on screen.
+  it("normalizes every piece of one comma-separated line into the request", async () => {
+    // Five competitors, one interaction, no commit step anywhere in it.
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(Response.json({ signedIn: true }))
@@ -432,16 +395,40 @@ describe("CompetitorKeywordGapTool", () => {
       host.querySelector(
         'input[name="competitorDomain"]',
       ) as HTMLInputElement,
-      "rival.example",
+      " https://WWW.Rival.Example/ ，second.example, http://Third.Example ",
     );
-    expect(host.querySelectorAll("[data-competitor-chip]")).toHaveLength(0);
-
     await click(buttonWith(host, "actions.run"));
 
     const posted = fetchMock.mock.calls[1]?.[1] as { readonly body: string };
     expect(JSON.parse(posted.body)).toMatchObject({
-      competitorDomains: ["rival.example"],
+      competitorDomains: ["rival.example", "second.example", "third.example"],
     });
+  });
+
+  it("keeps the field intact when the run is refused", async () => {
+    // A refusal names one piece; all five have to still be on screen for that
+    // to be actionable. Clearing or rewriting the box here would hand back a
+    // reason with nothing to apply it to.
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+    const input = host.querySelector(
+      'input[name="competitorDomain"]',
+    ) as HTMLInputElement;
+    const typed = "one.example, not a domain, three.example";
+
+    await change(
+      host.querySelector('input[name="siteDomain"]') as HTMLInputElement,
+      "example.com",
+    );
+    await change(input, typed);
+    await click(buttonWith(host, "actions.run"));
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "validation.competitorInvalid",
+    );
+    expect(input.value).toBe(typed);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("refuses to run on a bad piece rather than dropping it silently", async () => {
@@ -581,7 +568,11 @@ describe("CompetitorKeywordGapTool", () => {
       "validation.competitorsRequired",
     );
 
-    await addCompetitor(host, "not a domain");
+    // Each of these is judged when the run is asked for, not as it is typed:
+    // a field being filled is half-written most of the time, and flagging it
+    // mid-word is noise rather than help.
+    await change(competitor, "not a domain");
+    await click(buttonWith(host, "actions.run"));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "validation.competitorInvalid",
     );
@@ -592,35 +583,38 @@ describe("CompetitorKeywordGapTool", () => {
     );
     expect(competitor.getAttribute("aria-invalid")).toBe("true");
 
-    await addCompetitor(host, "example.com");
+    await change(competitor, "example.com");
+    await click(buttonWith(host, "actions.run"));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "validation.competitorSelf",
     );
     expect(competitor.getAttribute("aria-invalid")).toBe("true");
 
-    await addCompetitor(host, "one.example");
-    await addCompetitor(host, "www.ONE.example");
+    await change(competitor, "one.example, www.ONE.example");
+    await click(buttonWith(host, "actions.run"));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "validation.competitorDuplicate",
     );
     expect(competitor.getAttribute("aria-invalid")).toBe("true");
 
-    for (const domain of [
-      "two.example",
-      "three.example",
-      "four.example",
-      "five.example",
-    ]) {
-      await addCompetitor(host, domain);
-    }
+    await change(
+      competitor,
+      "one.example, two.example, three.example, four.example, five.example",
+    );
     expect(host.textContent).toContain("5/5");
 
-    await addCompetitor(host, "six.example");
+    await change(
+      competitor,
+      "one.example, two.example, three.example, four.example, five.example, six.example",
+    );
+    // The counter counts what was typed; the limit is a refusal, not a silent
+    // truncation, so it says six and then declines to run.
+    expect(host.textContent).toContain("6/5");
+    await click(buttonWith(host, "actions.run"));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "validation.competitorLimit",
     );
     expect(competitor.getAttribute("aria-invalid")).toBe("true");
-    expect(host.querySelectorAll("[data-competitor-chip]")).toHaveLength(5);
   });
 
   it("sends the exact normalized signed-in request, including an optional property, then renders done", async () => {

@@ -123,19 +123,20 @@ function pillPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
  * absence from it is not absence from Search -- which is exactly what this
  * report's own evidence boundaries say two cards further down.
  */
+/**
+ * The state, and nothing else.
+ *
+ * The average position used to be folded in here -- "has impressions - avg
+ * position 83.1" -- with the impressions on a bare line underneath, so one
+ * reading arrived attached to a state, the other loose, and neither looked
+ * like the other. Both numbers are Search Console measurements of the same
+ * kind; they belong in the same shape, beside the state rather than inside it.
+ */
 function statusLabel(
   gsc: CompetitorKeywordGapRow["gsc"],
-  locale: string,
   t: Translate,
 ): string {
-  const state = translated(t, `gsc.${gsc.queryStatus}`);
-  const position = pillPosition(gsc);
-  return position === null
-    ? state
-    : t("gsc.statusWithPosition", {
-        status: state,
-        position: number(position, locale, 1),
-      });
+  return translated(t, `gsc.${gsc.queryStatus}`);
 }
 
 /**
@@ -205,20 +206,25 @@ export function StatusCell({
   readonly t: Translate;
 }) {
   const { gsc } = row;
-  const label = statusLabel(gsc, locale, t);
+  const label = statusLabel(gsc, t);
   const basis =
     gsc.evidenceBasis === null
       ? null
       : translated(t, `gsc.evidenceBasis.${gsc.evidenceBasis}`);
-  // "Already ranking · avg position 4.0" reads as a fact about Search right
-  // now. It is one number averaged over a 28-day window that ends three days
-  // before today, weighted by impressions. The qualification goes in the
-  // accessible name as well as the hover: the pill is a plain div with no
-  // tabIndex, so a keyboard user can never surface a title, and an explicit
-  // aria-label suppresses the title as a description -- leaving exactly the
-  // unqualified present-tense claim for the readers least able to check it.
+  const position = pillPosition(gsc);
+  /**
+   * "avg position 4.0" reads as a fact about Search right now.
+   *
+   * It is one number averaged over a 28-day window that ends three days before
+   * today, weighted by impressions. The qualification rides the chip that shows
+   * the number -- it followed the number here out of the state pill -- and goes
+   * in the accessible name as well as the hover: these are plain divs with no
+   * tabIndex, so a keyboard user can never surface a title, and an explicit
+   * aria-label suppresses the title as a description, leaving exactly the
+   * unqualified present-tense claim for the readers least able to check it.
+   */
   const positionTitle =
-    pillPosition(gsc) === null ? null : translated(t, "gsc.positionTitle");
+    position === null ? null : translated(t, "gsc.positionTitle");
   /**
    * "Not in sample" says where we looked, and readers hear "not covered".
    *
@@ -226,37 +232,63 @@ export function StatusCell({
    * Search Console sample, and anonymized queries never enter that sample at
    * all, so "not covered" would state a fact this tool cannot have. What the
    * label could not carry on its own is what the absence DOES mean, which is
-   * the sentence below.
+   * the sentence below. It qualifies the STATE, so it stays on the pill.
    */
   const sampleTitle =
     gsc.queryStatus === "not_observed_in_gsc_query_sample"
       ? translated(t, "gsc.notObservedTitle")
       : null;
-  const qualifications = [positionTitle, sampleTitle].filter(
-    (part) => part !== null,
-  );
-  const title = qualifications.length === 0 ? null : qualifications.join(" · ");
 
   return (
     <>
       <div
         data-gsc-status
-        aria-label={[label, basis, ...qualifications]
+        aria-label={[label, basis, sampleTitle]
           .filter((part) => part !== null)
           .join(" · ")}
-        {...(title === null ? {} : { title })}
+        {...(sampleTitle === null ? {} : { title: sampleTitle })}
         className={`inline-flex rounded-full border px-2.5 py-1 ${META_TEXT} ${statusTone(gsc.queryStatus)}`}
       >
         {label}
       </div>
-      {gsc.queryImpressions === null ? null : (
-        <div
-          data-gsc-metrics="query"
-          className={`mt-2 ${TABLE_TEXT} text-text-dark-primary`}
-        >
-          {t("gsc.impressionsLine", {
-            impressions: number(gsc.queryImpressions, locale),
-          })}
+      {/*
+        One chip per reading, in the DATUM shape rather than the pill shape.
+        The rule this table is built on is that a pill is a STATE and a
+        rectangle is a number somebody measured or estimated; impressions and
+        average position are both the latter, and giving them the pill would
+        make two Search Console readings look like two more states.
+      */}
+      {gsc.queryImpressions === null && position === null ? null : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {gsc.queryImpressions === null ? null : (
+            <span
+              data-gsc-metrics="query"
+              className={`${DATA_CHIP} ${chipTone("neutral")}`}
+            >
+              {t("gsc.impressionsLine", {
+                impressions: number(gsc.queryImpressions, locale),
+              })}
+            </span>
+          )}
+          {position === null ? null : (
+            <span
+              data-gsc-metrics="position"
+              aria-label={[
+                t("gsc.positionChip", {
+                  position: number(position, locale, 1),
+                }),
+                positionTitle,
+              ]
+                .filter((part) => part !== null)
+                .join(" · ")}
+              {...(positionTitle === null ? {} : { title: positionTitle })}
+              className={`${DATA_CHIP} ${chipTone("neutral")}`}
+            >
+              {t("gsc.positionChip", {
+                position: number(position, locale, 1),
+              })}
+            </span>
+          )}
         </div>
       )}
       <PageEvidence gsc={gsc} locale={locale} t={t} />

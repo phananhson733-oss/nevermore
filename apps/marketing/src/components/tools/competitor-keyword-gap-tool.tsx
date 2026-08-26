@@ -19,7 +19,10 @@ import {
 } from "@sf/public-tools/competitor-keyword-gap";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
-import { parseCompetitorInput } from "./competitor-keyword-gap-competitor-input";
+import {
+  countCompetitorInput,
+  parseCompetitorInput,
+} from "./competitor-keyword-gap-competitor-input";
 import { keywordMapSiteUrl } from "./keyword-map-property";
 import { CompetitorKeywordGapResults } from "./competitor-keyword-gap-results";
 
@@ -47,16 +50,6 @@ const BUTTON =
  */
 const FALLBACK_LANGUAGE = "en";
 
-/**
- * Has the visitor typed something that ends a domain?
- *
- * Kept in step with the parser's own separator class -- deliberately its own
- * constant rather than an import, because this one asks "is there a separator
- * anywhere in the field" while the parser asks "where do I split", and a shared
- * regex with the `u` flag and a global lastIndex is a bug waiting for whichever
- * of the two is called second.
- */
-const COMPETITOR_SEPARATOR_TYPED = /[,，、;；\s]/u;
 
 type Phase = "idle" | "running" | "done";
 
@@ -375,10 +368,16 @@ export function CompetitorKeywordGapTool({
   const [languageCode, setLanguageCode] = useState(
     () => languagesFor(firstMarket)[0] ?? FALLBACK_LANGUAGE,
   );
+  /**
+   * The field is the list.
+   *
+   * There is no second copy of it in state and no commit step: the visitor
+   * types or pastes every competitor separated by commas, and it stays exactly
+   * as they left it until they run. The version before this one turned each
+   * piece into a chip as soon as a separator arrived, which emptied the box
+   * under the cursor while they were still writing the next one.
+   */
   const [competitorInput, setCompetitorInput] = useState("");
-  const [competitorDomains, setCompetitorDomains] = useState<readonly string[]>(
-    [],
-  );
   const [validationKey, setValidationKey] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -429,37 +428,6 @@ export function CompetitorKeywordGapTool({
     validationKey === "validation.competitorDuplicate" ||
     validationKey === "validation.competitorLimit";
 
-  /**
-   * Fold what is pending in the field into the chip list.
-   *
-   * Called wherever the visitor signals they are done with a piece: a separator
-   * typed, a blur, an enter. It is also called on submit, because the field
-   * having pending text when someone presses "run" is the ordinary case, not a
-   * mistake -- see `run`.
-   */
-  function commitCompetitors(): boolean {
-    const parsed = parseCompetitorInput(
-      competitorInput,
-      competitorDomains,
-      siteDomain,
-    );
-    if (!parsed.ok) {
-      setValidationKey(parsed.validationKey);
-      return false;
-    }
-    setValidationKey(null);
-    setCompetitorDomains(parsed.domains);
-    setCompetitorInput("");
-    return true;
-  }
-
-  function removeCompetitor(domain: string): void {
-    setCompetitorDomains(
-      competitorDomains.filter((candidate) => candidate !== domain),
-    );
-    setValidationKey(null);
-  }
-
   function selectMarket(next: string): void {
     // The language has to move with the market, because it is a property OF the
     // market: the provider serves a closed set per country, and a language left
@@ -506,15 +474,11 @@ export function CompetitorKeywordGapTool({
       setValidationKey("validation.siteInvalid");
       return;
     }
-    // Parse whatever is still in the field FIRST. Chips are made on separator,
-    // blur and enter, none of which has happened when someone types three
-    // domains and presses run: reading state alone refused that submission with
-    // "add at least one competitor" while three of them sat on screen.
-    const parsed = parseCompetitorInput(
-      competitorInput,
-      competitorDomains,
-      siteDomain,
-    );
+    // The field is read here and nowhere else. Everything the visitor typed is
+    // still in it, which is the whole point of the shape: they fill it once and
+    // run, and a refusal names the piece they have to go fix while all of them
+    // are still on screen.
+    const parsed = parseCompetitorInput(competitorInput, siteDomain);
     if (!parsed.ok) {
       setValidationKey(parsed.validationKey);
       return;
@@ -528,8 +492,6 @@ export function CompetitorKeywordGapTool({
       setValidationKey("validation.competitorSelf");
       return;
     }
-    setCompetitorDomains(competitors);
-    setCompetitorInput("");
 
     setValidationKey(null);
     setErrorCode(null);
@@ -721,38 +683,14 @@ export function CompetitorKeywordGapTool({
               type="text"
               autoComplete="off"
               value={competitorInput}
+              // Nothing but the visitor writes into this field. No commit on a
+              // separator, on blur or on enter: every one of those emptied the
+              // box mid-sentence or moved text the visitor could still see into
+              // a list they then had to read separately. What they typed is
+              // what runs.
               onChange={(event) => {
-                const next = event.target.value;
+                setCompetitorInput(event.target.value);
                 setValidationKey(null);
-                // A separator means that piece is finished, so turn what is
-                // before it into a chip as it is typed or pasted. Without this
-                // the field holds a raw list that only becomes chips on blur,
-                // and a pasted line of five reads as one long invalid domain
-                // until the visitor clicks somewhere else.
-                if (!COMPETITOR_SEPARATOR_TYPED.test(next)) {
-                  setCompetitorInput(next);
-                  return;
-                }
-                const parsed = parseCompetitorInput(
-                  next,
-                  competitorDomains,
-                  siteDomain,
-                );
-                if (!parsed.ok) {
-                  setCompetitorInput(next);
-                  setValidationKey(parsed.validationKey);
-                  return;
-                }
-                setCompetitorDomains(parsed.domains);
-                setCompetitorInput("");
-              }}
-              onBlur={() => {
-                commitCompetitors();
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                commitCompetitors();
               }}
               placeholder={t("competitors.placeholder")}
               aria-describedby={
@@ -775,33 +713,15 @@ export function CompetitorKeywordGapTool({
                 max: COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS,
               })}
             </p>
-            <p className="font-mono text-[11px] text-text-dark-secondary">
-              {t("competitors.count", { count: competitorDomains.length })}
+            <p
+              data-competitor-count
+              className="font-mono text-[11px] text-text-dark-secondary"
+            >
+              {t("competitors.count", {
+                count: countCompetitorInput(competitorInput),
+              })}
             </p>
           </div>
-          {competitorDomains.length > 0 ? (
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {competitorDomains.map((domain) => (
-                <li
-                  key={domain}
-                  data-competitor-chip
-                  className="inline-flex items-center gap-2 rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1.5 font-mono text-[11px] text-text-dark-primary"
-                >
-                  <span>{domain}</span>
-                  <button
-                    type="button"
-                    data-remove-competitor={domain}
-                    onClick={() => removeCompetitor(domain)}
-                    disabled={phase === "running"}
-                    aria-label={t("competitors.remove", { domain })}
-                    className="rounded-full px-1 text-text-dark-secondary focus-visible:outline-2 focus-visible:outline-brand-accent"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </div>
 
         {validationKey !== null ? (

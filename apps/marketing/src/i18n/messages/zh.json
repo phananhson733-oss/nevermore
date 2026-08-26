@@ -820,10 +820,9 @@
       },
       "competitors": {
         "label": "竞品域名",
-        "placeholder": "competitor.com，rival.com",
-        "hint": "多个竞品用逗号隔开，最多 {max} 个；整行粘贴会自动拆分。",
-        "count": "已添加 {count} / 5 个竞品",
-        "remove": "移除 {domain}"
+        "placeholder": "competitor.com，rival.com，third.example",
+        "hint": "所有竞品都填在这一个框里，用逗号隔开，最多 {max} 个。不需要逐个添加，填完直接运行。",
+        "count": "已填 {count} / 5 个竞品"
       },
       "validation": {
         "siteInvalid": "请输入有效的公开网站域名。",
@@ -932,7 +931,6 @@
         "observed_weak": "有曝光",
         "not_observed_in_gsc_query_sample": "样本未观测",
         "gsc_query_sample_not_read": "GSC 未读取",
-        "statusWithPosition": "{status} · 均位 {position}",
         "positionTitle": "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
         "notObservedTitle": "本次 28 天 Search Console 样本里没有这个词。被匿名化的查询根本不进这个样本，所以这不能当作该词没有曝光的证据。",
         "evidenceBasis": {
@@ -946,6 +944,7 @@
           "gsc_query_page_sample_not_read": "页面样本未完整读取"
         },
         "impressionsLine": "曝光 {impressions}",
+        "positionChip": "均位 {position}",
         "pageMetricLine": "页面证据：曝光 {impressions} · 均位 {position}"
       },
       "sort": {

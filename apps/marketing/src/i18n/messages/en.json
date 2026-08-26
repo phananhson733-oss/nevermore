@@ -820,10 +820,9 @@
       },
       "competitors": {
         "label": "Competitor domains",
-        "placeholder": "competitor.com, rival.com",
-        "hint": "Separate competitors with commas. Up to {max}; paste a list and it splits itself.",
-        "count": "{count} / 5 competitors",
-        "remove": "Remove {domain}"
+        "placeholder": "competitor.com, rival.com, third.example",
+        "hint": "Type or paste all of them here, separated by commas — up to {max}. Nothing to add one at a time; fill the box and run.",
+        "count": "{count} / 5 competitors"
       },
       "validation": {
         "siteInvalid": "Enter a valid public site domain.",
@@ -932,7 +931,6 @@
         "observed_weak": "Has impressions",
         "not_observed_in_gsc_query_sample": "Not in sample",
         "gsc_query_sample_not_read": "GSC not read",
-        "statusWithPosition": "{status} · avg position {position}",
         "positionTitle": "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
         "notObservedTitle": "Not in this run's 28-day Search Console sample. Anonymized queries never enter that sample, so this is not evidence the keyword has no impressions.",
         "evidenceBasis": {
@@ -946,6 +944,7 @@
           "gsc_query_page_sample_not_read": "Page sample not fully read"
         },
         "impressionsLine": "{impressions} impressions",
+        "positionChip": "avg position {position}",
         "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}"
       },
       "sort": {
