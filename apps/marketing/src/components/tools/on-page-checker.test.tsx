@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// @input  -- a visitor filling in one page and its target queries
-// @output -- proof the request carries them and the answer is rendered as measured
+// @input  -- a visitor filling one page, its queries, and audit responses
+// @output -- proof requests, redirect recovery, and measured answers stay truthful
 // @pos    -- the seam between the frozen keyword contract and what a person sees
 
 import { act } from "react";
@@ -376,6 +376,108 @@ describe("On-Page checker request", () => {
     for (const option of language.options) {
       expect(SERP_LANGUAGES.has(option.value), option.value).toBe(true);
     }
+  });
+});
+
+describe("On-Page checker redirected targets", () => {
+  it("explains the redirect and offers the validated destination without following it", async () => {
+    const target = "https://www.acme.test/home";
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: { code: "target_redirected" } },
+        { status: 422, headers: { Location: target } },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "https://acme.test/old");
+    await type(field(host, "onpage-query"), "pricing, plans");
+    await select(host, "onpage-country", "GB");
+    await select(host, "onpage-language", "en");
+    await select(host, "onpage-role", "guide");
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+
+    expect(host.textContent).toContain(
+      "This URL resolves to a different page. The submitted page was not scored.",
+    );
+    expect(host.textContent).not.toContain("The audit could not be completed.");
+    expect(host.textContent).toContain("Resolved destination");
+    const link = host.querySelector<HTMLAnchorElement>(`a[href="${target}"]`);
+    expect(link?.textContent).toBe(target);
+    expect(link?.target).toBe("_blank");
+    expect(link?.rel.split(/\s+/).sort()).toEqual(["noopener", "noreferrer"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      buttonWith(host, "Use destination URL").click();
+    });
+
+    expect(field(host, "onpage-url").value).toBe(target);
+    expect(field(host, "onpage-query").value).toBe("pricing, plans");
+    expect(field(host, "onpage-country").value).toBe("GB");
+    expect(field(host, "onpage-language").value).toBe("en");
+    expect(field(host, "onpage-role").value).toBe("guide");
+    expect(host.textContent).toContain(
+      "Nothing yet. Add a page and at least one query.",
+    );
+    expect(host.textContent).not.toContain(
+      "This URL resolves to a different page.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the specific redirect error but hides an unsafe Location", async () => {
+    const unsafe = "https://evil.test/steal";
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: { code: "target_redirected" } },
+        { status: 422, headers: { Location: unsafe } },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host);
+
+    expect(host.textContent).toContain(
+      "This URL resolves to a different page. The submitted page was not scored.",
+    );
+    expect(host.textContent).not.toContain("The audit could not be completed.");
+    expect(host.textContent).not.toContain(unsafe);
+    expect(host.querySelector(`a[href="${unsafe}"]`)).toBeNull();
+    expect([...host.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Use destination URL"),
+    )).toBe(false);
+    expect(field(host, "onpage-url").value).toBe("acme.test/pricing");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reads Location as a redirect target for an ordinary failure", async () => {
+    const target = "https://www.acme.test/home";
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: { code: "scan_failed" } },
+        { status: 502, headers: { Location: target } },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host);
+
+    expect(host.textContent).toContain(
+      "The public site could not be audited from this environment.",
+    );
+    expect(host.textContent).not.toContain(target);
+    expect(host.querySelector(`a[href="${target}"]`)).toBeNull();
+    expect([...host.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Use destination URL"),
+    )).toBe(false);
+    expect(field(host, "onpage-url").value).toBe("acme.test/pricing");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
