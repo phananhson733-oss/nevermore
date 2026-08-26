@@ -2416,6 +2416,28 @@ describe("DailyBriefingResults folded explanation", () => {
     ).toContain("routine");
   });
 
+  it("keeps the routine heading over an explanation with no items under it", async () => {
+    const host = await renderResults(
+      envelope({
+        // No checks, only the sentence explaining rows that could not become
+        // one. It is still routine work, and it still needs a heading.
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 3,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const label = host.querySelector('[data-action-group="routine"]');
+
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toMatch(/\b0 items\b/);
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("3");
+  });
+
   it("shows no routine label when nothing routine is offered", async () => {
     const host = await renderResults(
       envelope({

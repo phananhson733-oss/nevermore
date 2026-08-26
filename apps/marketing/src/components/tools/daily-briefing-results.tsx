@@ -909,6 +909,13 @@ export function DailyBriefingResults({
   const routineCount = suggestedChecks.length + pageChecks.length;
   const pageCheckBaseline = result.pageChecks.baseline;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
+  // Shown whenever either routine block renders, not only when the count is
+  // positive. The query block also renders to explain rows it could not turn
+  // into checks, and gating the label on the count left that explanation
+  // sitting under no heading at all — a sentence about routine work that did
+  // not look like it belonged to anything.
+  const routineShown =
+    routineCount > 0 || uncheckableShown || pageChecks.length > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -1933,7 +1940,7 @@ export function DailyBriefingResults({
             it is what the property is worth doing about anyway. Labelled
             rather than merely placed below, because a reader who cannot tell
             the two apart will read a standing item as a change. */}
-        {routineCount > 0 ? (
+        {routineShown ? (
           <p
             data-action-group="routine"
             className={`${EYEBROW} mt-6 border-t border-brand-border pt-5`}

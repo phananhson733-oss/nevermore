@@ -667,6 +667,64 @@ describe("query changes and actions", () => {
     expect(result.actions.at(-1)).toMatchObject({ query: "arrived" });
   });
 
+  it("does not let a change candidate that lost the budget suppress a leading one", () => {
+    // The shared query carries a position decline on one page and a leading
+    // appearance on another. Three click opportunities outrank the decline and
+    // take the whole change budget, so the decline is resolved and never
+    // reported. Carrying merely-resolved queries into the second pass would
+    // delete the leading appearance with it — the crowding its own budget
+    // exists to prevent.
+    const shared = "shared query";
+    const opps = ["opp a", "opp b", "opp c"];
+    const peers = baselineRows("base");
+    const oldPage = "https://example.com/shared-old";
+    const newPage = "https://example.com/shared-new";
+    const currentRows = [
+      ...opps.map((q) => queryRow(q, 400, 0, 9)),
+      queryRow(shared, 400, 100, 10),
+      ...peers,
+    ];
+    const previousRows = [
+      ...opps.map((q) => queryRow(q, 400, 0, 9)),
+      queryRow(shared, 200, 50, 10),
+      ...peers,
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, [
+        ...opps.map((q) =>
+          queryPageRow(q, `https://example.com/${q}`, 400, 0, 9),
+        ),
+        queryPageRow(shared, oldPage, 200, 20, 15),
+        queryPageRow(shared, newPage, 200, 80, 5),
+      ]),
+      previousQueryEvidence: evidence(previousRows, [
+        ...opps.map((q) =>
+          queryPageRow(q, `https://example.com/${q}`, 400, 0, 9),
+        ),
+        queryPageRow(shared, oldPage, 200, 50, 10),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // The premise: the decline really was a candidate and really did lose.
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "actionable_position_decline",
+      ),
+    ).toEqual([]);
+    // And the leading appearance survived it.
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "first_observed_leading",
+      ),
+    ).toMatchObject([{ query: shared, page: newPage }]);
+    // Still one row per query overall.
+    expect(
+      result.changes.filter((change) => change.query === shared),
+    ).toHaveLength(1);
+  });
+
   it("carries at most one leading appearance", () => {
     const previousRows = baselineRows("base");
     const arrivals = ["arrived a", "arrived b"];

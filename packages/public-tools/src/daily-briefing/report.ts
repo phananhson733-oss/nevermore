@@ -1580,24 +1580,32 @@ function withheldKey(candidate: ChangeCandidate): string {
 
 /**
  * @param budget how many changes this pass may carry.
- * @param usedQueries queries an earlier pass already spent; never re-reported.
+ * @param alreadyReported queries an earlier pass put on the page.
+ * @returns `reportedQueries` — what this pass put on the page, for the next.
  *
  * Called twice, because the leading-band lane has a budget of its own. Every
  * other lane reports something that went wrong or is being left on the table,
  * and letting those crowd out the one lane that reports something going right
- * would mean the briefing never once says so. The two passes still share
- * `usedQueries`, so one query cannot be reported twice under two headings.
+ * would mean the briefing never once says so.
+ *
+ * Only the queries a pass actually REPORTED carry over. Passing the ones it
+ * merely resolved would let a change candidate that lost the budget suppress a
+ * leading appearance for the same query — the exact crowding the second budget
+ * exists to prevent. Within a pass the dedup stays at resolve time, so one
+ * query still cannot occupy two of that pass's slots.
  */
 function selectChanges(
   candidates: readonly ChangeCandidate[],
   currentEvidence: DailyBriefingQueryEvidence,
   budget: number,
-  usedQueries: Set<string>,
+  alreadyReported: ReadonlySet<string>,
 ): {
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
   readonly pageAttributionWithheld: number;
+  readonly reportedQueries: ReadonlySet<string>;
 } {
+  const usedQueries = new Set<string>(alreadyReported);
   const pageAttributionWithheld = new Set<string>();
 
   // Candidates arrive already sorted within their lane, so a stable sort by
@@ -1682,6 +1690,7 @@ function selectChanges(
     changes,
     actions,
     pageAttributionWithheld: pageAttributionWithheld.size,
+    reportedQueries: new Set(changes.map((change) => change.query)),
   };
 }
 
@@ -3080,7 +3089,6 @@ export function buildDailyBriefing(
     // Two passes with two budgets, sharing one set of spent queries. The
     // change lanes take their three slots first; the leading-band lane then
     // takes its own, which those three cannot consume.
-    const usedQueries = new Set<string>();
     const leadingCandidates = candidateSet.candidates.filter(
       (candidate) => candidate.kind === "first_observed_leading",
     );
@@ -3091,13 +3099,13 @@ export function buildDailyBriefing(
       changeCandidates,
       currentEvidence,
       DAILY_BRIEFING_ACTION_LIMIT,
-      usedQueries,
+      new Set<string>(),
     );
     const leadingSelected = selectChanges(
       leadingCandidates,
       currentEvidence,
       DAILY_BRIEFING_LEADING_LIMIT,
-      usedQueries,
+      selected.reportedQueries,
     );
     changes = [...selected.changes, ...leadingSelected.changes];
     actions = [...selected.actions, ...leadingSelected.actions];

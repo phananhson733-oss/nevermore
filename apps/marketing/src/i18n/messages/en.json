@@ -2007,7 +2007,7 @@
             },
             "firstObservedLeading": {
               "name": "Pairs first seen in the leading positions (counted below by query)",
-              "requirement": "exactly the conditions of the path above: page attribution readable and usable in both windows, the pair reaching 100 impressions this window, and coverage at or above 80%",
+              "requirement": "exactly the conditions of the path above, and deliberately not restated here: a shorter restatement beside the fuller one reads as a different set of conditions",
               "finding": "the prior window's pair list does not contain this pair, and its current average presented position is six or better"
             }
           },
