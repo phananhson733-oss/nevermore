@@ -57,6 +57,42 @@ describe("redirectTargetOf", () => {
   });
 
   it.each([
+    ["single-label host", "https://intranet/new"],
+    ["localhost", "https://localhost/new"],
+    ["localhost subdomain", "https://app.localhost/new"],
+    ["mDNS local domain", "https://printer.local/new"],
+    ["metadata hostname", "https://metadata.google.internal/new"],
+    ["RFC1918 10/8 literal", "https://10.0.0.1/new"],
+    ["RFC1918 172.16/12 literal", "https://172.16.0.1/new"],
+    ["RFC1918 192.168/16 literal", "https://192.168.0.1/new"],
+    ["loopback IPv4 literal", "https://127.0.0.1/new"],
+    ["link-local IPv4 literal", "https://169.254.169.254/new"],
+    ["public IPv4 literal", "https://93.184.216.34/new"],
+    ["integer IPv4 spelling", "https://2130706433/new"],
+    ["hex IPv4 spelling", "https://0x7f000001/new"],
+    ["octal IPv4 spelling", "https://0177.0.0.1/new"],
+    ["short IPv4 spelling", "https://127.1/new"],
+    ["loopback IPv6 literal", "https://[::1]/new"],
+    ["global IPv6 literal", "https://[2606:4700:4700::1111]/new"],
+    ["IPv4-mapped IPv6 literal", "https://[::ffff:127.0.0.1]/new"],
+    ["reserved example.com", "https://example.com/new"],
+    ["reserved example.net", "https://example.net/new"],
+    ["reserved example.org", "https://example.org/new"],
+    ["reserved test.com", "https://test.com/new"],
+    ["reserved test.org", "https://test.org/new"],
+  ])("rejects a server-reserved %s redirect target", (_label, target) => {
+    const submitted = new URL(target);
+    submitted.pathname = "/old";
+
+    expect(
+      redirectTargetOf(
+        new Headers({ Location: target }),
+        submitted.toString(),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
     ["missing", null],
     ["empty", ""],
     ["relative", "/new"],
