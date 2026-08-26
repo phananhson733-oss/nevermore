@@ -172,6 +172,16 @@ export const BRIEFING_TOP_BAND_MAX_POSITION = 10;
 export const BRIEFING_TOP_BAND_MIN_IMPROVEMENT = 1.5;
 /** Worsening a position decline must carry inside the actionable band. */
 export const BRIEFING_POSITION_DECLINE_MIN_DELTA = 3;
+/**
+ * Share of its clicks a declining pair must also have lost.
+ *
+ * A position that moved without the clicks moving is usually the mix of pages
+ * behind the query changing, not the query losing ground: send more of a
+ * query's impressions to a page that ranks worse and its average position
+ * falls while nothing about any single result did. Requiring the clicks to
+ * fall with it is what separates the two.
+ */
+export const BRIEFING_POSITION_DECLINE_MIN_CLICK_DROP = 0.3;
 /** Prior-window clicks a query needs before a click decline could be seen. */
 export const BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS =
   BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE;
@@ -1072,12 +1082,6 @@ function candidatesFor(
       if (previous.position > BRIEFING_TOP_BAND_MAX_POSITION) {
         crossingCapableQueries += 1;
       }
-      if (
-        withinActionableBand(current.position) ||
-        withinActionableBand(previous.position)
-      ) {
-        positionDeclineCapableQueries += 1;
-      }
     }
 
     const clickChange = current.clicks - previous.clicks;
@@ -1125,30 +1129,11 @@ function candidatesFor(
 
     // A decline outside the actionable band is real and useless: nothing done
     // to the page this week decides whether position eighty-six earns a click.
-    if (declinedInsideBand) {
-      positionDeclines.push({
-        kind: "actionable_position_decline",
-        query: current.query,
-        page: null,
-        current,
-        previous,
-        baselineCtr: null,
-        clickGap: null,
-        clickChange,
-        clickChangeRatio,
-        positionDelta,
-        order: positionDelta,
-      });
-    }
   }
   declines.sort((a, b) => b.order - a.order || a.query.localeCompare(b.query));
   pageOneCrossings.sort(
     (a, b) => b.order - a.order || a.query.localeCompare(b.query),
   );
-  positionDeclines.sort(
-    (a, b) => b.order - a.order || a.query.localeCompare(b.query),
-  );
-
   const pairAttributionUsable =
     pageAttributionUsable(currentEvidence) &&
     pageAttributionUsable(previousEvidence);
@@ -1163,6 +1148,94 @@ function candidatesFor(
   const previousPairs = new Set(
     previousQueryPages.map((row) => `${row.query}\u0000${row.page}`),
   );
+  const previousPairRows = new Map(
+    previousQueryPages.map((row) => [`${row.query}\u0000${row.page}`, row]),
+  );
+
+  // The position decline lane, measured on the pair rather than the query.
+  //
+  // A query's average position is blended across every page that served it, so
+  // sending more of its impressions to a page that ranks worse moves that
+  // average while nothing about any single result changed. Comparing the same
+  // query on the same page removes that: whatever moved here, moved.
+  //
+  // The cost is reach. The pair floor is the row floor, and splitting a query
+  // across pages can leave every part below a floor the whole cleared, so this
+  // lane sees strictly fewer rows than a query-level one would. It also needs
+  // the query-page attachment, and reports `unavailable` rather than
+  // "nothing found" when that attachment is missing or too thin to trust.
+  const declinePairQueries = new Set<string>();
+  for (const current of currentQueryPages) {
+    if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
+    const previous = previousPairRows.get(
+      `${current.query}\u0000${current.page}`,
+    );
+    if (
+      previous === undefined ||
+      previous.impressions < BRIEFING_MIN_ROW_IMPRESSIONS
+    ) {
+      continue;
+    }
+    const comparable =
+      Number.isFinite(current.position) &&
+      Number.isFinite(previous.position) &&
+      current.position > 0 &&
+      previous.position > 0;
+    if (!comparable) continue;
+    if (
+      !withinActionableBand(current.position) &&
+      !withinActionableBand(previous.position)
+    ) {
+      // Real and useless: nothing done to the page this week decides whether
+      // position eighty-six earns a click. Not counted as evaluable either —
+      // this lane was never in a position to answer for it.
+      continue;
+    }
+    declinePairQueries.add(current.query);
+
+    const positionDelta = current.position - previous.position;
+    if (positionDelta < BRIEFING_POSITION_DECLINE_MIN_DELTA) continue;
+    const clickChangeRatio = ratio(previous.clicks, current.clicks);
+    if (
+      clickChangeRatio === null ||
+      clickChangeRatio > -BRIEFING_POSITION_DECLINE_MIN_CLICK_DROP
+    ) {
+      continue;
+    }
+    positionDeclines.push({
+      kind: "actionable_position_decline",
+      query: current.query,
+      // Carried from the pair, so selection never has to guess which page a
+      // query-level decline belonged to.
+      page: current.page,
+      current,
+      previous,
+      baselineCtr: null,
+      clickGap: null,
+      clickChange: current.clicks - previous.clicks,
+      clickChangeRatio,
+      positionDelta,
+      order: positionDelta,
+    });
+  }
+  positionDeclineCapableQueries = declinePairQueries.size;
+  // Worst first, then one row per query.
+  //
+  // Selection already keeps one change per query, so a second pair of the same
+  // query could never be shown; leaving them in only made the lane's candidate
+  // count larger than the number of queries it could ever report, beside a
+  // split counted against query rows.
+  positionDeclines.sort(
+    (a, b) => b.order - a.order || a.query.localeCompare(b.query),
+  );
+  const worstPairPerQuery = new Set<string>();
+  const keptDeclines = positionDeclines.filter((candidate) => {
+    if (worstPairPerQuery.has(candidate.query)) return false;
+    worstPairPerQuery.add(candidate.query);
+    return true;
+  });
+  positionDeclines.length = 0;
+  positionDeclines.push(...keptDeclines);
   const firstObserved: ChangeCandidate[] = [];
   const pageAttributionWithheld = new Set<string>();
   // Queries whose pairs this lane actually got to compare against the prior
@@ -1304,7 +1377,16 @@ function candidatesFor(
     average_position_crossed_page_one_band:
       crossingCapableQueries > 0 ? "evaluated" : "not_applicable",
     actionable_position_decline:
-      positionDeclineCapableQueries > 0 ? "evaluated" : "not_applicable",
+      // This lane stands on the query-page attachment now, so a run without
+      // one could not look rather than found nothing. Page coverage is
+      // deliberately not required: a pair Search Console dropped does not make
+      // the pairs it returned wrong, and this lane compares one pair against
+      // itself rather than reasoning from a pair's absence.
+      !pairAttributionUsable
+        ? "unavailable"
+        : positionDeclineCapableQueries > 0
+          ? "evaluated"
+          : "not_applicable",
     // This lane stands on the page attachment, not on the query rows. Marking
     // it evaluated whenever the funnel could be computed claimed a comparison
     // that never happened when the attachment was missing or truncated.

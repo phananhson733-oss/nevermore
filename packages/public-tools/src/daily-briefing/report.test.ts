@@ -2020,27 +2020,54 @@ describe("query evidence boundaries", () => {
 });
 
 describe("average position lanes", () => {
+  // Every query gets a query-page row, including the peers. The position
+  // decline lane measures pairs, so a fixture that pairs only the query under
+  // test leaves it with no population at all and reports "nothing to measure"
+  // where a real read would have had five comparable pairs.
   function positionCase(
     query: string,
     previousPosition: number,
     currentPosition: number,
     impressions = 200,
+    clicks: { readonly previous: number; readonly current: number } = {
+      previous: 0,
+      current: 0,
+    },
   ) {
+    const peers = baselineRows("base");
     const current = [
-      queryRow(query, impressions, 0, currentPosition),
-      ...baselineRows("base"),
+      queryRow(query, impressions, clicks.current, currentPosition),
+      ...peers,
     ];
     const previous = [
-      queryRow(query, impressions, 0, previousPosition),
-      ...baselineRows("base"),
+      queryRow(query, impressions, clicks.previous, previousPosition),
+      ...peers,
     ];
     const page = `https://example.com/${query.replaceAll(" ", "-")}`;
+    const peerPages = () =>
+      peers.map((row) =>
+        queryPageRow(
+          row.query,
+          `https://example.com/${row.query.replaceAll(" ", "-")}`,
+          row.impressions,
+          row.clicks,
+          9,
+        ),
+      );
     return report({
       currentQueryEvidence: evidence(current, [
-        queryPageRow(query, page, impressions, 0, currentPosition),
+        queryPageRow(query, page, impressions, clicks.current, currentPosition),
+        ...peerPages(),
       ]),
       previousQueryEvidence: evidence(previous, [
-        queryPageRow(query, page, impressions, 0, previousPosition),
+        queryPageRow(
+          query,
+          page,
+          impressions,
+          clicks.previous,
+          previousPosition,
+        ),
+        ...peerPages(),
       ]),
     }).result;
   }
@@ -2076,8 +2103,142 @@ describe("average position lanes", () => {
     expect(positionCase("still outside", 13, 10.1).changes).toEqual([]);
   });
 
+  it("will not call a position decline without the clicks moving with it", () => {
+    // The same three-place slide, with clicks flat. At query level this was a
+    // decline; on the pair it is a move nobody paid for, which is what a shift
+    // in the mix of pages behind a query looks like.
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 10,
+    });
+
+    expect(result.changes).toEqual([]);
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "evaluated",
+    );
+  });
+
+  it("will not call a position decline on a click drop under thirty per cent", () => {
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 8,
+    });
+
+    expect(result.changes).toEqual([]);
+  });
+
+  it("measures the decline on the pair, not on the query", () => {
+    // One query, two pages. Neither page moved at all; the query's average
+    // position fell three places purely because its impressions moved from
+    // the page ranking 5 to the page ranking 25, and its clicks halved with
+    // them. Read at query level this is a decline. It is not one.
+    const query = "mix shift";
+    const strong = "https://example.com/strong";
+    const weak = "https://example.com/weak";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 5, 20)],
+        [
+          queryPageRow(query, strong, 100, 2, 5),
+          queryPageRow(query, weak, 300, 3, 25),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 10, 10)],
+        [
+          queryPageRow(query, strong, 300, 8, 5),
+          queryPageRow(query, weak, 100, 2, 25),
+        ],
+      ),
+    }).result;
+
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "actionable_position_decline",
+      ),
+    ).toEqual([]);
+    // Both pairs were comparable, so the lane looked and found nothing.
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "evaluated",
+    );
+  });
+
+  it("carries the page the decline was measured on into the action", () => {
+    const query = "one of two";
+    const falling = "https://example.com/falling";
+    const steady = "https://example.com/steady";
+    // The steady page is deliberately the larger one. With both at the same
+    // size the query-level fallback picked the same URL by alphabetical
+    // tiebreak, and the assertion below passed whether or not the pair
+    // carried its own page.
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 6, 12)],
+        [
+          queryPageRow(query, falling, 150, 2, 18),
+          queryPageRow(query, steady, 250, 4, 6),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 10, 10)],
+        [
+          queryPageRow(query, falling, 150, 6, 11),
+          queryPageRow(query, steady, 250, 4, 6),
+        ],
+      ),
+    }).result;
+
+    // The page is the one that moved, not the query's largest.
+    expect(result.changes).toMatchObject([
+      {
+        kind: "actionable_position_decline",
+        query,
+        page: falling,
+        positionDelta: 7,
+      },
+    ]);
+    expect(result.actions).toMatchObject([
+      { destination: "traffic-drop-diagnosis", page: falling },
+    ]);
+  });
+
+  it("reports one row per query even when two of its pages both slid", () => {
+    const query = "both slid";
+    const first = "https://example.com/first";
+    const second = "https://example.com/second";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 4, 16)],
+        [
+          queryPageRow(query, first, 200, 2, 14),
+          queryPageRow(query, second, 200, 2, 18),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 12, 10)],
+        [
+          queryPageRow(query, first, 200, 6, 10),
+          queryPageRow(query, second, 200, 6, 6),
+        ],
+      ),
+    }).result;
+
+    // Selection keeps one change per query, so a second pair could never be
+    // shown. Emitting it only made the candidate count larger than the number
+    // of rows the lane could ever report.
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(result.changes).toMatchObject([
+      { kind: "actionable_position_decline", page: second, positionDelta: 12 },
+    ]);
+  });
+
   it("reports an actionable position decline at the exact band edge", () => {
-    const result = positionCase("slipping", 28, 31);
+    // Clicks fall with the position: without that the move is as likely to be
+    // the mix of pages behind the query changing as the query losing ground.
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 5,
+    });
 
     expect(result.changes).toMatchObject([
       {
@@ -2094,7 +2255,10 @@ describe("average position lanes", () => {
   it("keeps a far-position slide out of the action list", () => {
     // A four-and-a-half point slide from eighty-six is real and useless: no
     // edit made this week decides whether that query earns a click.
-    const result = positionCase("backlinks monitor", 86.5, 91.3);
+    const result = positionCase("backlinks monitor", 86.5, 91.3, 200, {
+      previous: 10,
+      current: 5,
+    });
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
@@ -2860,8 +3024,10 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
     expect(result.laneCapability.strictPairedPositionQueries).toBe(2);
     expect(result.laneCapability.lanes).toMatchObject({
       average_position_crossed_page_one_band: "evaluated",
-      // Neither window is inside the top thirty, so this lane has no row.
-      actionable_position_decline: "not_applicable",
+      // This fixture has no query-page attachment, and the decline lane is
+      // measured on pairs. It could not look, which is a different statement
+      // from having nothing to look at.
+      actionable_position_decline: "unavailable",
     });
     expect(result.changes).toEqual([]);
     expect(result.rowAccounting.byLane?.average_position_crossed_page_one_band)
@@ -2937,19 +3103,19 @@ describe("action budget", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const currentPages = [
       ...crossings.flatMap(splitPages),
-      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 26),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 5, 26),
     ];
     const previousPages = [
       ...crossings.flatMap(splitPages),
-      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 22),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 10, 22),
     ];
     const result = report({
       currentQueryEvidence: evidence(currentRows, currentPages),
@@ -3050,11 +3216,11 @@ describe("page attribution refuses a partial page prefix", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
       rows.map((row) =>
@@ -3087,11 +3253,11 @@ describe("action budget boundaries", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const splitPages = (query: string) =>
       Array.from({ length: 13 }, (_, index) =>
@@ -3120,11 +3286,14 @@ describe("action budget boundaries", () => {
             ]
           : splitPages(query),
       ),
+      // The pair carries the clicks too: the decline lane reads them off the
+      // pair, so leaving them at zero here made a query row that fell by half
+      // arrive at the lane as a pair that never had a click to lose.
       queryPageRow(
         "decliner",
         "https://example.com/decliner",
         300,
-        0,
+        rows === currentRows ? 5 : 10,
         rows === currentRows ? 26 : 22,
       ),
     ];
