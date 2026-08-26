@@ -5,18 +5,25 @@ import {
   parseCompetitorKeywordGapInput,
 } from "./validation.ts";
 
+/**
+ * The contract version is required, so every negative fixture that is not
+ * ABOUT the version has to carry it. Without this the version check short-
+ * circuits first and the test passes while never reaching the rule it names --
+ * a regression that started accepting duplicate competitors or malformed
+ * hosts would stay green.
+ */
+const VERSION = { acceptSchemaVersion: "competitor_keyword_gap.v3" } as const;
+
 describe("parseCompetitorKeywordGapInput", () => {
   it("normalizes the site and competitor domains onto one canonical provider shape", () => {
     expect(
       parseCompetitorKeywordGapInput({
         property: "  sc-domain:acme.com  ",
         siteDomain: " https://WWW.Acme.com./ ",
-        competitorDomains: [
-          "one.example",
-          "https://www.two.example./",
-        ],
+        competitorDomains: ["one.example", "https://www.two.example./"],
         marketCode: "us",
         languageCode: "EN",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -26,6 +33,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example", "two.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
     });
   });
@@ -40,6 +48,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         ),
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -54,6 +63,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         ],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
     });
   });
@@ -66,6 +76,7 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       }),
     ).toEqual({
       ok: true,
@@ -75,7 +86,67 @@ describe("parseCompetitorKeywordGapInput", () => {
         competitorDomains: ["one.example"],
         marketCode: "US",
         languageCode: "en",
+        acceptSchemaVersion: "competitor_keyword_gap.v3",
       },
+    });
+  });
+
+  it("rejects a request that declares no contract version at all", () => {
+    // The field is required precisely because the bundles that omit it are
+    // the ones too old to read the answer they would have paid for.
+    expect(
+      parseCompetitorKeywordGapInput({
+        siteDomain: "acme.com",
+        competitorDomains: ["one.example"],
+        marketCode: "US",
+        languageCode: "en",
+      }).ok,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["the current contract version", "competitor_keyword_gap.v3"],
+    ["a 64-character version", "v".repeat(64)],
+  ])(
+    "carries %s through as the declared acceptSchemaVersion",
+    (_label, acceptSchemaVersion) => {
+      expect(
+        parseCompetitorKeywordGapInput({
+          siteDomain: "acme.com",
+          competitorDomains: ["one.example"],
+          marketCode: "US",
+          languageCode: "en",
+          acceptSchemaVersion,
+        }),
+      ).toEqual({
+        ok: true,
+        value: {
+          siteDomain: "acme.com",
+          competitorDomains: ["one.example"],
+          marketCode: "US",
+          languageCode: "en",
+          acceptSchemaVersion,
+        },
+      });
+    },
+  );
+
+  it.each([
+    ["an empty acceptSchemaVersion", ""],
+    ["a non-string acceptSchemaVersion", 123],
+    ["a 65-character acceptSchemaVersion", "v".repeat(65)],
+  ])("rejects %s", (_label, acceptSchemaVersion) => {
+    expect(
+      parseCompetitorKeywordGapInput({
+        siteDomain: "acme.com",
+        competitorDomains: ["one.example"],
+        marketCode: "US",
+        languageCode: "en",
+        acceptSchemaVersion,
+      }),
+    ).toEqual({
+      ok: false,
+      code: "invalid_input",
     });
   });
 
@@ -105,6 +176,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   it("rejects duplicate and self competitors after normalization", () => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["www.acme.com", "https://www.acme.com"],
         marketCode: "US",
@@ -117,6 +189,7 @@ describe("parseCompetitorKeywordGapInput", () => {
 
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["One.Example", "https://www.one.example/"],
         marketCode: "US",
@@ -149,6 +222,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects invalid public competitor host %s", (competitorDomain) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: [competitorDomain],
         marketCode: "US",
@@ -166,30 +240,35 @@ describe("parseCompetitorKeywordGapInput", () => {
     "acme.com",
     {},
     {
+      ...VERSION,
       siteDomain: 123,
       competitorDomains: ["one.example"],
       marketCode: "US",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: "one.example",
       marketCode: "US",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
       marketCode: "",
       languageCode: "en",
     },
     {
+      ...VERSION,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
       marketCode: "US",
       languageCode: "",
     },
     {
+      ...VERSION,
       property: 123,
       siteDomain: "acme.com",
       competitorDomains: ["one.example"],
@@ -215,6 +294,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects %s", (_label, overrides) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         siteDomain: "acme.com",
         competitorDomains: ["one.example"],
         marketCode: "US",
@@ -241,6 +321,7 @@ describe("parseCompetitorKeywordGapInput", () => {
   ])("rejects invalid Search Console property %s", (property) => {
     expect(
       parseCompetitorKeywordGapInput({
+        ...VERSION,
         property,
         siteDomain: "acme.com",
         competitorDomains: ["one.example"],

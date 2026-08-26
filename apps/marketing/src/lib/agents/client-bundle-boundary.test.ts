@@ -215,6 +215,89 @@ function clientClosure(): ReadonlyMap<string, readonly Reference[]> {
   return seen;
 }
 
+describe("the reference scanner reads code, not prose", () => {
+  it("ignores a barrel named inside a comment", () => {
+    const source = [
+      "/**",
+      " * This module must not import `@sf/sources`, so the shape is restated.",
+      " */",
+      "// import \"@sf/engine\";",
+      "export const shape = 1;",
+    ].join("\n");
+
+    expect(referencesIn(source)).toEqual([]);
+  });
+
+  it("does not let a preceding type declaration swallow the import below it", () => {
+    // The failure this exists to prevent is a false NEGATIVE: the old pattern
+    // matched from `export type`, ran across the line break to the next
+    // statement's `from`, and reported a real VALUE import as type-only --
+    // which the offender check then skips, shipping the forbidden barrel.
+    for (const preceding of [
+      "export type Local = { id: string };",
+      "export type Local = { id: string }",
+      "export interface Local { id: string }",
+      "export function noop() {}",
+      "export const ready = { id: 1 };",
+    ]) {
+      expect(
+        referencesIn(`${preceding}\nimport { runtime } from "@sf/engine";`),
+      ).toContainEqual({ specifier: "@sf/engine", typeOnly: false });
+    }
+  });
+
+  it("does not report a type-only import as a value one after any of those", () => {
+    expect(
+      referencesIn(
+        'export function noop() {}\nimport type { Shape } from "@sf/engine";',
+      ),
+    ).toEqual([{ specifier: "@sf/engine", typeOnly: true }]);
+  });
+
+  it("sees the compact forms that omit whitespace after the keyword", () => {
+    // All legal: JavaScript does not require a space before punctuation.
+    expect(referencesIn('import{runtime}from"@sf/engine";')).toEqual([
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
+    expect(referencesIn('import"@sf/sources";')).toEqual([
+      { specifier: "@sf/sources", typeOnly: false },
+    ]);
+    expect(referencesIn('export{runtime}from"@sf/engine";')).toEqual([
+      { specifier: "@sf/engine", typeOnly: false },
+    ]);
+    expect(referencesIn('export*from"@sf/public-tools";')).toEqual([
+      { specifier: "@sf/public-tools", typeOnly: false },
+    ]);
+  });
+
+  it("reads a multi-line import clause as one reference", () => {
+    expect(
+      referencesIn('import {\n  a,\n  b,\n} from "@sf/public-tools";'),
+    ).toEqual([{ specifier: "@sf/public-tools", typeOnly: false }]);
+  });
+
+  it("still reports the real thing on the line below one", () => {
+    const source = [
+      "// we deliberately do not import \"@sf/engine\" here",
+      'import "@sf/sources";',
+      'import { thing } from "@sf/public-tools";',
+      'import type { Shape } from "@sf/engine";',
+      'const late = await import("@sf/sources");',
+    ].join("\n");
+
+    expect(referencesIn(source)).toEqual(
+      expect.arrayContaining([
+        { specifier: "@sf/sources", typeOnly: false },
+        { specifier: "@sf/public-tools", typeOnly: false },
+        { specifier: "@sf/engine", typeOnly: true },
+      ]),
+    );
+    expect(
+      referencesIn(source).filter((reference) => !reference.typeOnly).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe("modules the browser bundle reaches stay off the package barrels", () => {
   const closure = clientClosure();
 

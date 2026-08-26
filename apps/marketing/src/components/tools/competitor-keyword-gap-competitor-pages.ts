@@ -1,5 +1,5 @@
 // @input  -- one v3 competitor gap row and the viewer locale
-// @output -- rank-ordered competitor pages, the best safe page URL, the best-rank traffic estimate, and the snapshot date label
+// @output -- rank-ordered competitor pages, the best safe page URL and the host it opens, the best-rank traffic estimate, and the snapshot date label
 // @pos    -- pure row derivations shared by the competitor gap chips and results table
 
 import type {
@@ -47,6 +47,37 @@ export function bestCompetitorPageUrl(
     if (url !== null) return url;
   }
   return null;
+}
+
+/**
+ * The host `bestCompetitorPageUrl` will actually open, so a button can name
+ * where it is about to send the reader.
+ *
+ * Derived from the URL, NOT from the map key it is filed under. The provider
+ * reports whatever URL ranked for the competitor it was asked about, and that
+ * URL is not bound to the competitor's own hostname -- a redirector or a
+ * third-party landing page arrives filed under `beta.example` all the same.
+ * Reading the key would let the button say "open beta.example's page" and
+ * then open somewhere else, which is exactly the quiet mismatch a link label
+ * is trusted not to have.
+ */
+export function bestCompetitorPageHost(
+  row: CompetitorKeywordGapRow,
+): string | null {
+  const url = bestCompetitorPageUrl(row);
+  if (url === null) return null;
+  try {
+    const { hostname } = new URL(url);
+    // Strip `www.` only when something is left. `https://www./path` parses,
+    // passes the safety checks, and used to yield an empty string -- rendering
+    // a live link whose label named nowhere at all.
+    const label = hostname.startsWith("www.")
+      ? hostname.slice(4)
+      : hostname;
+    return label === "" ? null : label;
+  } catch {
+    return null;
+  }
 }
 
 /** Provider traffic estimate for the best-rank competitor's page only; never a fallback to another page. */

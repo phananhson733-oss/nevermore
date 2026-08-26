@@ -5,6 +5,8 @@
 import type { CompetitorKeywordGapRequestV1 } from "./types.ts";
 
 export const COMPETITOR_KEYWORD_GAP_MAX_COMPETITORS = 5;
+/** Bounds the client-declared contract version, not a format check. */
+const ACCEPT_SCHEMA_VERSION_MAX_LENGTH = 64;
 
 export type ParsedCompetitorKeywordGapInput = CompetitorKeywordGapRequestV1;
 
@@ -39,20 +41,14 @@ function isIpv4(hostname: string): boolean {
 }
 
 function isPublicHostname(hostname: string): boolean {
-  if (
-    hostname.length > 253 ||
-    hostname.includes(":") ||
-    isIpv4(hostname)
-  ) {
+  if (hostname.length > 253 || hostname.includes(":") || isIpv4(hostname)) {
     return false;
   }
 
   const labels = hostname.split(".");
   return (
     labels.length >= 2 &&
-    labels.every(
-      (label) => label.length <= 63 && DOMAIN_LABEL.test(label),
-    )
+    labels.every((label) => label.length <= 63 && DOMAIN_LABEL.test(label))
   );
 }
 
@@ -158,6 +154,11 @@ export function parseCompetitorKeywordGapInput(
   const competitorDomains = input["competitorDomains"];
   const marketCode = input["marketCode"];
   const languageCode = input["languageCode"];
+  // Own property only: a plain read walks the prototype, and a required field
+  // must not be satisfiable by something the request never sent.
+  const acceptSchemaVersion = Object.hasOwn(input, "acceptSchemaVersion")
+    ? input["acceptSchemaVersion"]
+    : undefined;
 
   if (
     typeof siteDomain !== "string" ||
@@ -167,7 +168,10 @@ export function parseCompetitorKeywordGapInput(
     typeof marketCode !== "string" ||
     typeof languageCode !== "string" ||
     (property !== undefined &&
-      (typeof property !== "string" || property.trim() === ""))
+      (typeof property !== "string" || property.trim() === "")) ||
+    typeof acceptSchemaVersion !== "string" ||
+    acceptSchemaVersion === "" ||
+    acceptSchemaVersion.length > ACCEPT_SCHEMA_VERSION_MAX_LENGTH
   ) {
     return INVALID_INPUT;
   }
@@ -178,8 +182,7 @@ export function parseCompetitorKeywordGapInput(
   if (
     !TWO_LETTER_CODE.test(trimmedMarketCode) ||
     !TWO_LETTER_CODE.test(trimmedLanguageCode) ||
-    (trimmedProperty !== undefined &&
-      !isSearchConsoleProperty(trimmedProperty))
+    (trimmedProperty !== undefined && !isSearchConsoleProperty(trimmedProperty))
   ) {
     return INVALID_INPUT;
   }
@@ -208,6 +211,7 @@ export function parseCompetitorKeywordGapInput(
     competitorDomains: normalizedCompetitors,
     marketCode: trimmedMarketCode.toUpperCase(),
     languageCode: trimmedLanguageCode.toLowerCase(),
+    acceptSchemaVersion,
   };
 
   return {

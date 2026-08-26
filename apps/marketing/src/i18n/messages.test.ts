@@ -68,9 +68,11 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "filters.verify_own_coverage",
   "signals.bestRank",
   "signals.difficulty",
-  "actions.openChecker",
-  "actions.openObservedPage",
   "actions.copyKeyword",
+  "actions.optimizeObservedPage",
+  "actions.reviewObservedPage",
+  "actions.openCompetitorPageNamed",
+  "actions.runWithoutGsc",
   "actions.focusProperty",
   "actions.copyFailed",
   "actions.handoffFailed",
@@ -80,13 +82,12 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "actions.showLess",
   "table.title",
   "table.subtitle",
-  "table.legend",
   "table.keyword",
   "table.monthlySearchVolume",
   "table.competitorCoverage",
   "table.yourStatus",
   "table.opportunitySignals",
-  "table.nextCheck",
+  "table.nextAction",
   "nextSteps.review_existing_query",
   "nextSteps.review_content_gap",
   "nextSteps.verify_own_coverage",
@@ -97,10 +98,18 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "signals.aiOverviewSnapshot",
   "signals.aiOverviewSnapshotUndated",
   "signals.competitorTraffic",
-  "actions.openCompetitorPage",
   "actions.copyPlan",
   "actions.copyPlanDone",
   "actions.copyPlanFailed",
+  "sources.short.dfs",
+  "sources.short.gsc",
+  "legend.dfsMeans",
+  "legend.gscMeans",
+  "status.partialBody.competitors",
+  "status.partialBody.gscUnavailable",
+  "status.partialBody.gscPartial",
+  "status.partialBody.both",
+  "status.partialBody.unspecified",
   "coverage.sampleRule",
   "coverage.rowsInRule",
   "overview.gscQueryRows",
@@ -123,6 +132,9 @@ const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
   "table.dfsEstimates",
   "table.competitorRanks",
   "table.ownSiteGsc",
+  // Banned because it named a DIFFERENT column in a discarded shape. The live
+  // key for today's action column is `table.nextAction`, listed as required
+  // above; the two must not be collapsed just because the words are close.
   "table.recommendation",
 ] as const;
 
@@ -240,6 +252,17 @@ describe("competitor keyword gap message catalogs", () => {
     }
   });
 
+  // The only recovery from a stale bundle is a page reload; both catalogs
+  // must actually say so, not merely have some string under the key.
+  it("tells a stale client to refresh the page in both catalogs", () => {
+    expect(
+      enMessages.tools.competitorKeywordGap.errors.client_out_of_date,
+    ).toMatch(/Refresh the page/);
+    expect(
+      zhMessages.tools.competitorKeywordGap.errors.client_out_of_date,
+    ).toMatch(/刷新页面/);
+  });
+
   /**
    * The engine exports the band, basis and reason arrays so a value cannot be
    * added or renamed without a place in the surface. Keyed against those
@@ -253,6 +276,11 @@ describe("competitor keyword gap message catalogs", () => {
         [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS].sort(),
       );
       expect(Object.keys(copy.basis).sort()).toEqual(
+        [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES].sort(),
+      );
+      // The short form is rendered on every band chip, so a basis without one
+      // would show the reader a raw key.
+      expect(Object.keys(copy.basisShort).sort()).toEqual(
         [...COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES].sort(),
       );
       expect(Object.keys(copy.reason).sort()).toEqual(
