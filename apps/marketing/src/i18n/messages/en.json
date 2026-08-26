@@ -1932,7 +1932,10 @@
         "priorBelowFloor": "prior window too small",
         "pageScope": "Whole page, across every query",
         "pageNotObserved": "No comparable page record in the prior window",
-        "pageGroup": "Page-dimension records"
+        "pageGroup": "Page-dimension records",
+        "queryGroup": "Query records",
+        "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and its two paths ran without producing a record.",
+        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and its two paths ran without producing a record."
       },
       "evidence": {
         "title": "Why there were not more signals",
@@ -2007,8 +2010,8 @@
             },
             "pageFirstObserved": {
               "name": "Page first appears in this comparison",
-              "requirement": "No row for the page in the prior window, or a row shown zero times, plus at least 100 impressions now",
-              "finding": "Current average position sits inside the actionable band of 30 or better"
+              "requirement": "At least 100 impressions now, and whether the page appeared in the prior window is decidable",
+              "finding": "No row for the page in the prior window, or a row shown zero times, and a current average position inside the actionable band of 30 or better"
             }
           },
           "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
@@ -2108,7 +2111,7 @@
         "empty": "No action carries strict evidence this run.",
         "rank": "Rank {rank}",
         "why": "Why this action appears",
-        "evidence": "Query and page carried privately into this handoff",
+        "evidence": "Carried privately into this handoff",
         "propertyEvidence": "Property carried privately into this handoff",
         "propertyWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}.",
         "emptyWithProvisional": "No action carries strict evidence this run. The provisional position movement above is an observation and is not counted as an action.",
@@ -2120,7 +2123,7 @@
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
-        "actions": "Every action opens the matching tool and carries the property, query and page privately, with no URL to move by hand."
+        "actions": "Every action opens the matching tool and privately carries whatever the signal names — the property, and a query or page where it has them — with no URL to move by hand."
       },
       "actionKinds": {
         "click_opportunity": {
@@ -2129,7 +2132,7 @@
         },
         "stable_position_click_decline": {
           "title": "Check whether the click loss is sustained",
-          "body": "Open Traffic Drop Diagnosis to place this evidence inside a longer history and separate observed patterns from unavailable causes."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no query or page. The figures below have to be read again there."
         },
         "first_observed": {
           "title": "Inspect the page against the target query",
@@ -2141,7 +2144,7 @@
         },
         "actionable_position_decline": {
           "title": "Diagnose the in-band position decline",
-          "body": "Take this query and page into the traffic drop diagnosis and work through the possible causes."
+          "body": "Opens Traffic Drop Diagnosis carrying the property privately — that tool diagnoses a property and takes no query or page. The figures below have to be read again there."
         }
       },
       "propertyActionKinds": {
@@ -2189,7 +2192,7 @@
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
         "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
-        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or returned on an aggregation other than by page. The two page-level paths did not run, which is not the same as no change on any page."
+        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The two page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2247,10 +2250,10 @@
         }
       },
       "checks": {
-        "title": "No evidence of change, still worth a look",
-        "intro": "These entries come from the rows already shown above. They say where these queries currently sit and nothing more: no change is claimed, and none of them is an evidence-backed action.",
-        "evidence": "Current standing, not evidence of change",
-        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, the current position falls outside the band this check covers, or the page already appears in an action above."
+        "title": "No query-level change known, still worth a look",
+        "intro": "These entries come from the query records already shown above. They say where those **queries** currently sit and nothing more: no change is claimed for them, and none is an evidence-backed action. What the page dimension found is a separate question and does not contradict this.",
+        "evidence": "Where this query currently sits, not evidence of change",
+        "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, or the current position falls outside the band this check covers."
       }
     },
     "trafficDrop": {

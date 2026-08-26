@@ -3282,6 +3282,13 @@ describe("page dimension lanes", () => {
     // sanitized map is indistinguishable from a page that was never there.
     // Reading that as absence turned unusable evidence into proof of it.
     expect(result.pageChanges).toEqual([]);
+    // And the state says why. "Not applicable" asserts the property has
+    // nothing either lane could ever measure; the actual reason is prior
+    // evidence neither of them could read.
+    expect(result.laneCapability.pageLanes).toEqual({
+      page_click_decline: "partially_readable",
+      page_first_observed: "partially_readable",
+    });
     // Both lanes, not just the one that would have fired. A decline lane that
     // recorded "evaluated, no signal" would be claiming it looked.
     expect(result.pageAccounting.byLane).toEqual({
@@ -3412,6 +3419,30 @@ describe("page dimension lanes", () => {
 
     expect(result.pageAccounting.observedRows).toBe(3);
     expect(result.pageAccounting.unreadableRows).toBe(2);
+  });
+
+  it("keeps the caveat when it resolved one row and could not decide another", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow("https://example.com/b", 300, 2, 12)],
+      [pageRow(PAGE, 60, 0, 14)],
+      // `/a` is settled: it was shown before, so it is not new. `/b` has no
+      // prior row and one unattributable prior record leaves it undecided.
+      { previousPageUnreadable: 1 },
+    );
+
+    // Answering `capable > 0` first returned "evaluated" on the strength of
+    // the row it resolved and dropped the caveat for the one it could not.
+    expect(result.laneCapability.pageLanes.page_first_observed).toBe(
+      "partially_readable",
+    );
+    expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
+      notEvaluated: 1,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+    // A lane that asked and answered for part of its rows still ran, so the
+    // briefing is change detection rather than a position watchlist.
+    expect(result.mode).toBe("change_detection");
   });
 
   it("says it partly could not look when only some rows were unreadable", () => {
@@ -3897,7 +3928,7 @@ describe("suggested checks", () => {
     });
   });
 
-  it("never calls a page unchanged while the same run hands off a change on it", () => {
+  it("keeps a query-scoped check beside a page-scoped change on one URL", () => {
     const shared = "https://example.com/guide";
     const query = "watched term";
     const rows = [queryRow(query, 185, 0, 8.2)];
@@ -3922,16 +3953,20 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    // The page carries a measured decline. Offering a check for it under copy
-    // that says "no evidence of change" would put both sentences on one page.
+    // Both statements are true and neither may delete the other: the page's
+    // clicks fell across every query on it, and nothing is known to have
+    // changed for this one query. Letting the page finding suppress the query
+    // row would be one population deciding the other's output.
     expect(result.pageActions).toMatchObject([
       { kind: "page_click_decline", page: shared },
     ]);
-    expect(result.suggestedChecks.items).toEqual([]);
-    expect(result.suggestedChecks.notCheckable).toBe(1);
+    expect(result.suggestedChecks.items).toMatchObject([
+      { query, page: shared },
+    ]);
+    expect(result.suggestedChecks.notCheckable).toBe(0);
   });
 
-  it("withholds a check for a page a QUERY action already hands off", () => {
+  it("keeps a check for a second query on a page another query already actioned", () => {
     const page = "https://example.com/templates";
     const actioned = "workflow templates";
     const watched = "watched term";
@@ -3955,15 +3990,21 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
-    // The query half of the exclusion set. Dropping it left this case green.
+    // The action belongs to one query on that page; the check belongs to a
+    // different query on it. A query that carries an action never reaches the
+    // watchlist at all, so no check can ever restate one.
     expect(result.actions).toMatchObject([
-      { kind: "stable_position_click_decline", page },
+      { kind: "stable_position_click_decline", query: actioned, page },
     ]);
-    expect(result.suggestedChecks.items).toEqual([]);
-    expect(result.suggestedChecks.notCheckable).toBe(1);
+    expect(result.suggestedChecks.items).toMatchObject([
+      { query: watched, page },
+    ]);
+    expect(
+      result.suggestedChecks.items.some((check) => check.query === actioned),
+    ).toBe(false);
   });
 
-  it("matches an actioned page across dimensions that spell the URL differently", () => {
+  it("names one URL the same way across both dimensions", () => {
     const shared = "https://example.com/guide";
     const query = "watched term";
     const rows = [queryRow(query, 185, 0, 8.2)];
@@ -3988,11 +4029,12 @@ describe("suggested checks", () => {
       brandTermsConfirmed: true,
     }).result;
 
+    // One URL, spelled two ways by the two reads. Every surface that names it
+    // must name the same canonical string, or a reader comparing the page row
+    // against the watchlist row sees two different pages.
     expect(result.pageActions).toMatchObject([{ page: shared }]);
-    // The watchlist row names the same page, so it may not also be offered as
-    // a page with no known change.
     expect(result.queryWatchlist.items).toMatchObject([{ page: shared }]);
-    expect(result.suggestedChecks.items).toEqual([]);
+    expect(result.suggestedChecks.items).toMatchObject([{ page: shared }]);
   });
 
   it("reports checks as unavailable rather than empty when nothing was read", () => {

@@ -1742,6 +1742,17 @@ const PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
   "page_first_observed",
 ];
 
+/**
+ * Whether a page lane actually asked its question of anything.
+ *
+ * `partially_readable` means it asked and answered for the rows it could read.
+ * Treating only `evaluated` as "ran" would downgrade a run to
+ * `current_position_watchlist` because one record in the window was unreadable.
+ */
+function pageLaneRan(state: DailyBriefingPageLaneState): boolean {
+  return state === "evaluated" || state === "partially_readable";
+}
+
 /** A measured decline outranks a page that has only just appeared. */
 const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
   page_click_decline: 0,
@@ -1775,14 +1786,15 @@ function pageLaneState(
   readableRows: number,
   unreadableRows: number,
 ): DailyBriefingPageLaneState {
+  // Asked before capability, because a lane that resolved nine rows and could
+  // not read the tenth has not established anything about the tenth. Returning
+  // "evaluated" on the strength of the nine dropped the caveat entirely.
+  if (unreadableRows > 0) {
+    return readableRows === 0 && capable === 0
+      ? "unavailable"
+      : "partially_readable";
+  }
   if (capable > 0) return "evaluated";
-  // Nothing readable at all: we could not look.
-  if (readableRows === 0 && unreadableRows > 0) return "unavailable";
-  // Some readable, some not: the lane judged what it could read and cannot
-  // speak for the rest. Calling that "not applicable" would assert the
-  // property has nothing this lane could ever measure, which these rows did
-  // not establish.
-  if (unreadableRows > 0) return "partially_readable";
   return "not_applicable";
 }
 
@@ -1828,6 +1840,7 @@ function pageCandidatesFor(
   let declineCapableRows = 0;
   let firstObservedCapableRows = 0;
   let absenceBlockedRows = 0;
+  let priorUnusableRows = 0;
 
   for (const current of currentRows) {
     if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
@@ -1836,7 +1849,12 @@ function pageCandidatesFor(
     // Neither lane may ask about this page: the decline lane has nothing to
     // subtract from, and the first-observed lane would be reading a discarded
     // row as absence.
-    if (priorSet.unusable.has(current.page)) continue;
+    if (priorSet.unusable.has(current.page)) {
+      // Neither lane may ask, and the reason is unreadable prior evidence —
+      // not that the property has nothing either lane could measure.
+      priorUnusableRows += 1;
+      continue;
+    }
     const previous = previousByPage.get(current.page);
 
     // Absent, not merely small. Search Console does return zero-impression
@@ -1972,12 +1990,12 @@ function pageCandidatesFor(
       page_click_decline: pageLaneState(
         declineCapableRows,
         currentRows.length,
-        unreadableCurrentRows,
+        unreadableCurrentRows + priorUnusableRows,
       ),
       page_first_observed: pageLaneState(
         firstObservedCapableRows,
         currentRows.length,
-        unreadableCurrentRows + absenceBlockedRows,
+        unreadableCurrentRows + priorUnusableRows + absenceBlockedRows,
       ),
     },
     // Both lanes carry the unreadable rows in `notEvaluated`, which is what
@@ -2068,14 +2086,21 @@ const CHECKABLE_BANDS: readonly DailyBriefingObservationBand[] = [
  * purpose: a check pointing at a row the reader cannot see is one they cannot
  * evaluate.
  */
+/**
+ * Why no page-dimension result is consulted here.
+ *
+ * A check is a statement about one query: nothing is known to have changed for
+ * it, and this is where it currently sits. A page-level decline on the same
+ * URL is a statement about every query on that page. Both can be true at once,
+ * and letting the second delete the first is one population deciding the
+ * other's output — the substitution this tool exists to refuse. The copy names
+ * the query scope so the two cannot be read as contradicting.
+ *
+ * A query that already carries an action cannot appear here at all: the
+ * watchlist this reads is built with those queries already excluded.
+ */
 function suggestedChecksFor(
   watchlist: DailyBriefingQueryWatchlist,
-  /**
-   * Pages this run already hands off. A check says "nothing here is known to
-   * have changed"; on a page the same run reports a measured decline for, that
-   * sentence contradicts the finding printed above it.
-   */
-  actionedPages: ReadonlySet<string>,
 ): DailyBriefingSuggestedChecks {
   // Partial is not observed. The watchlist itself withholds its counts when
   // the rows were only a prefix, and a zero here would claim we examined every
@@ -2088,11 +2113,7 @@ function suggestedChecksFor(
   let notCheckable = 0;
   for (const item of watchlist.items) {
     const page = item.page;
-    if (
-      page === null ||
-      !CHECKABLE_BANDS.includes(item.band) ||
-      actionedPages.has(page)
-    ) {
+    if (page === null || !CHECKABLE_BANDS.includes(item.band)) {
       notCheckable += 1;
       continue;
     }
@@ -2203,7 +2224,7 @@ function modeFor(
   // run as `unavailable` would deny a detection the tool just performed.
   if (
     pages !== null &&
-    PAGE_CHANGE_LANES.some((lane) => pages.lanes[lane] === "evaluated")
+    PAGE_CHANGE_LANES.some((lane) => pageLaneRan(pages.lanes[lane]))
   ) {
     return "change_detection";
   }
@@ -2480,13 +2501,7 @@ export function buildDailyBriefing(
   });
   // Built from the watchlist that was just displayed, so every check points at
   // a row the reader can see.
-  const suggestedChecks = suggestedChecksFor(
-    queryWatchlist,
-    new Set([
-      ...actions.map((entry) => entry.page),
-      ...pageActions.map((entry) => entry.page),
-    ]),
-  );
+  const suggestedChecks = suggestedChecksFor(queryWatchlist);
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null
       ? {
@@ -2535,7 +2550,7 @@ export function buildDailyBriefing(
       cadence:
         (laneCapability.lanes.click_opportunity !== "evaluated" &&
           laneCapability.lanes.stable_position_click_decline !== "evaluated" &&
-          laneCapability.pageLanes.page_click_decline !== "evaluated") ||
+          !pageLaneRan(laneCapability.pageLanes.page_click_decline)) ||
         day.evidence === "unavailable" ||
         currentWeek === null ||
         currentWeek.impressions < DAILY_CADENCE_MIN_IMPRESSIONS

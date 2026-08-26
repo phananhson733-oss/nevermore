@@ -175,6 +175,9 @@ const REQUIRED_LEAF_PATHS = [
   "review.pageUnavailable",
   "review.pageScope",
   "review.pageGroup",
+  "review.queryGroup",
+  "review.partialQueryRead",
+  "review.unavailableQueryRead",
   "review.pageNotObserved",
   "checks.title",
   "checks.intro",
@@ -497,12 +500,20 @@ describe("Daily Briefing message catalogs", () => {
       ).tools.dailyBriefing;
       const text = JSON.stringify(namespace);
       for (const banned of [
+        // Nothing but the property, and where the signal has them a query and
+        // a page, ever travels. Traffic Drop reads only the property.
         "carrying the page and the weekly comparison",
         "with the property and weekly comparison",
         "carries its evidence straight into",
+        "Take the query and page into",
+        "carries the query and page",
+        "weekly comparison into",
+        "Query and page carried",
         "携带页面与周度对比",
         "携带站点和周度对比",
         "都带着证据直接跳到",
+        "把查询词和页面带进",
+        "随本次跳转私密传递的查询词与页面",
       ]) {
         expect(text, `${locale} promises a transfer that does not happen`)
           .not.toContain(banned);
@@ -522,7 +533,7 @@ describe("Daily Briefing message catalogs", () => {
         "actions",
       );
       expect(actions.intro, `${locale} action intro`).not.toContain(
-        locale === "en" ? "ordered by certainty" : "按确定性顺序",
+        locale === "en" ? "certainty" : "确定性",
       );
     }
   });

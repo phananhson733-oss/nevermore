@@ -244,16 +244,30 @@ function signedMetric(
   return digits === 0 ? "0" : (0).toFixed(digits);
 }
 
+/**
+ * Why the page state is asked about at all.
+ *
+ * The two dimensions fail separately. Keying this card on the query state
+ * alone let a run whose page paths ran, and found nothing, announce that
+ * "comparable query/page evidence is unavailable" — one population's failure
+ * printed over the other's measured result.
+ */
 function reviewEmptyMessageKey(
   evidence: DailyBriefingQueryWatchlist["evidence"],
-): "review.empty" | "review.partial" | "review.unavailable" {
+  pageRead: boolean,
+):
+  | "review.empty"
+  | "review.partial"
+  | "review.unavailable"
+  | "review.partialQueryRead"
+  | "review.unavailableQueryRead" {
   switch (evidence) {
     case "observed":
       return "review.empty";
     case "partial":
-      return "review.partial";
+      return pageRead ? "review.partialQueryRead" : "review.partial";
     case "unavailable":
-      return "review.unavailable";
+      return pageRead ? "review.unavailableQueryRead" : "review.unavailable";
   }
 }
 
@@ -916,7 +930,8 @@ export function DailyBriefingResults({
   const clickLaneEvaluated =
     result.laneCapability.lanes.click_opportunity === "evaluated" ||
     result.laneCapability.lanes.stable_position_click_decline === "evaluated" ||
-    result.laneCapability.pageLanes.page_click_decline === "evaluated";
+    result.laneCapability.pageLanes.page_click_decline === "evaluated" ||
+    result.laneCapability.pageLanes.page_click_decline === "partially_readable";
 
   // Every count in the summary is query-derived, so when the query rows were
   // never read none of them may be printed: a run that could not look is not
@@ -1241,7 +1256,12 @@ export function DailyBriefingResults({
         shownObservations.length === 0 ? (
           <div data-change-empty className={`${CARD} mt-4`}>
             <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
-              {t(reviewEmptyMessageKey(result.queryWatchlist.evidence))}
+              {t(
+                reviewEmptyMessageKey(
+                  result.queryWatchlist.evidence,
+                  result.pageAccounting.evidence === "observed",
+                ),
+              )}
             </p>
           </div>
         ) : (
@@ -1270,6 +1290,25 @@ export function DailyBriefingResults({
                 </div>
               ))}
             </div>
+            {/* Both populations get a boundary, and the page rows come after
+                every query row rather than between them. A single heading in
+                the middle left the query observations rendering below it, so
+                they read as part of the page population. */}
+            {shownPageChanges.length > 0 &&
+            shownChanges.length +
+              shownProvisional.length +
+              shownObservations.length >
+              0 ? (
+              <div
+                role="row"
+                data-review-group="query"
+                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+              >
+                <div role="cell" className={EYEBROW}>
+                  {t("review.queryGroup")}
+                </div>
+              </div>
+            ) : null}
             {shownChanges.map((change, index) => (
               <div
                 key={`change:${index}:${change.kind}`}
@@ -1344,103 +1383,6 @@ export function DailyBriefingResults({
                   </span>
                   <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
                     {t(`changeKinds.${change.kind}.body`)}
-                  </p>
-                </div>
-              </div>
-            ))}
-            {/* A boundary, and its own numbering. Continuing the query
-                sequence made the first page row's ordinal move with the query
-                row count, which is one population's size deciding another
-                population's rank. */}
-            {shownPageChanges.length > 0 ? (
-              <div
-                role="row"
-                data-review-group="page"
-                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
-              >
-                <div role="cell" className={EYEBROW}>
-                  {t("review.pageGroup")}
-                </div>
-              </div>
-            ) : null}
-            {shownPageChanges.map((change, index) => (
-              <div
-                key={`page-change:${change.kind}:${change.page}`}
-                role="row"
-                data-review-row
-                data-page-change
-                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
-              >
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("review.columns.status")}
-                  </span>
-                  <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
-                    <span
-                      data-page-row-rank
-                      className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text"
-                    >
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <div className="min-w-0">
-                      <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
-                        {t(`pageChangeKinds.${change.kind}.title`)}
-                      </h4>
-                      <p className="mt-1.5 font-mono text-[9.5px] leading-[1.4] tracking-[0.04em] text-brand-accent-text uppercase">
-                        {t(`evidenceStates.${change.evidence}`)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("review.columns.queryPage")}
-                  </span>
-                  {/* Named as a whole page on purpose. This row has no query
-                      behind it, and leaving the cell to imply one would be the
-                      substitution the rest of the page refuses. */}
-                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
-                    {t("review.pageScope")}
-                  </p>
-                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
-                    {change.page}
-                  </p>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("review.columns.clicks")}
-                  </span>
-                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {comparison(
-                      change.previous?.clicks ?? null,
-                      change.current.clicks,
-                      (value) => number(locale, value),
-                      t("review.pageNotObserved"),
-                    )}
-                  </p>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("review.columns.position")}
-                  </span>
-                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {comparison(
-                      change.previous?.position ?? null,
-                      change.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
-                      t("review.pageNotObserved"),
-                    )}
-                  </p>
-                </div>
-                <div role="cell" className="min-w-0">
-                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
-                    {t("review.columns.interpretation")}
-                  </span>
-                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
-                    {t(`pageChangeKinds.${change.kind}.body`)}
                   </p>
                 </div>
               </div>
@@ -1608,6 +1550,99 @@ export function DailyBriefingResults({
               </div>
               );
             })}
+            {shownPageChanges.length > 0 ? (
+              <div
+                role="row"
+                data-review-group="page"
+                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+              >
+                <div role="cell" className={EYEBROW}>
+                  {t("review.pageGroup")}
+                </div>
+              </div>
+            ) : null}
+            {shownPageChanges.map((change, index) => (
+              <div
+                key={`page-change:${change.kind}:${change.page}`}
+                role="row"
+                data-review-row
+                data-page-change
+                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+              >
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.status")}
+                  </span>
+                  <div className="mt-2 flex min-w-0 items-start gap-2.5 md:mt-0">
+                    <span
+                      data-page-row-rank
+                      className="mt-0.5 shrink-0 rounded-full border border-brand-accent/25 bg-brand-accent-soft px-2 py-0.5 font-mono text-[9.5px] text-brand-accent-text"
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-[13px] leading-[1.45] font-semibold text-text-dark-primary">
+                        {t(`pageChangeKinds.${change.kind}.title`)}
+                      </h4>
+                      <p className="mt-1.5 font-mono text-[9.5px] leading-[1.4] tracking-[0.04em] text-brand-accent-text uppercase">
+                        {t(`evidenceStates.${change.evidence}`)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.queryPage")}
+                  </span>
+                  {/* Named as a whole page on purpose. This row has no query
+                      behind it, and leaving the cell to imply one would be the
+                      substitution the rest of the page refuses. */}
+                  <p className="mt-2 break-words text-[12.5px] leading-[1.5] font-medium text-text-dark-primary md:mt-0">
+                    {t("review.pageScope")}
+                  </p>
+                  <p className="mt-1 break-all text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {change.page}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.clicks")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.clicks ?? null,
+                      change.current.clicks,
+                      (value) => number(locale, value),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.position")}
+                  </span>
+                  <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
+                    {comparison(
+                      change.previous?.position ?? null,
+                      change.current.position,
+                      (value) =>
+                        Number.isFinite(value)
+                          ? value.toFixed(1)
+                          : t("kpis.unavailable"),
+                      t("review.pageNotObserved"),
+                    )}
+                  </p>
+                </div>
+                <div role="cell" className="min-w-0">
+                  <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
+                    {t("review.columns.interpretation")}
+                  </span>
+                  <p className="mt-2 break-words text-[12px] leading-[1.6] text-text-dark-secondary md:mt-0">
+                    {t(`pageChangeKinds.${change.kind}.body`)}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {shownProvisional.length > 0 ? (

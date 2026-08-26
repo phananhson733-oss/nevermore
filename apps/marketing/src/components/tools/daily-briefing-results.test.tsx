@@ -2025,15 +2025,74 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(host.querySelectorAll("[data-change]")).toHaveLength(3);
     expect(host.querySelectorAll("[data-page-change]")).toHaveLength(2);
     expect(host.querySelectorAll("[data-action-row]")).toHaveLength(5);
-    // The table numbers each population from one, behind a visible boundary.
-    // Continuing the query sequence into 04 and 05 would make the first page
-    // row's ordinal move with the number of query rows.
     expect(host.querySelector('[data-review-group="page"]')).not.toBeNull();
     expect(
       [...host.querySelectorAll("[data-page-row-rank]")].map(
         (badge) => badge.textContent,
       ),
     ).toEqual(["01", "02"]);
+  });
+
+  it("does not print the query read's failure over a measured page result", async () => {
+    const host = await renderResults(
+      envelope({
+        changes: [],
+        actions: [],
+        pageChanges: [],
+        pageActions: [],
+        queryWatchlist: watchlist("unavailable"),
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_click_decline: laneRows(1, 0, 0),
+            page_first_observed: laneRows(0, 1, 0),
+          },
+        },
+      }),
+    );
+    const card = host.querySelector("[data-change-empty]");
+
+    // The page paths ran and found nothing. Saying comparable query/page
+    // evidence is unavailable prints one dimension's failure over the other's
+    // measured result.
+    expect(card?.textContent).toContain("The page dimension was read this run");
+    expect(card?.textContent).not.toBe(en.tools.dailyBriefing.review.unavailable);
+  });
+
+  it("keeps every query row inside the query boundary, page rows after it", async () => {
+    const source = change("stable_position_click_decline", 1);
+    const host = await renderResults(
+      envelope({
+        changes: [source],
+        actions: [],
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        // A row on the query side that renders AFTER the page rows would have
+        // under the old single mid-table heading.
+        queryWatchlist: watchlist("observed", [checkableObservation()]),
+      }),
+    );
+    const groups = [
+      ...host.querySelectorAll("[data-review-row], [data-review-group]"),
+    ].map(
+      (row) =>
+        row.getAttribute("data-review-group") ??
+        (row.hasAttribute("data-page-change") ? "page-row" : "query-row"),
+    );
+
+    // A single heading in the middle left the query observation rendering
+    // below it, where it reads as part of the page population.
+    expect(groups[0]).toBe("query");
+    expect(groups).toEqual([
+      "query",
+      "query-row",
+      "query-row",
+      "page",
+      "page-row",
+    ]);
   });
 
   it("names a page change as a whole page instead of inventing a query", async () => {
@@ -2128,8 +2187,10 @@ describe("DailyBriefingResults folded explanation", () => {
     // that just listed a row worth opening.
     expect(empty).not.toBeNull();
     expect(checks).not.toBeNull();
-    expect(checks?.textContent).toContain("No evidence of change");
-    expect(checks?.textContent).toContain("no change is claimed");
+    // Scoped to the query, so a page-level finding on the same URL does not
+    // read as contradicted by it.
+    expect(checks?.textContent).toContain("No query-level change known");
+    expect(checks?.textContent).toContain("no change is claimed for them");
     expect(checks?.textContent).toContain(CHECK_QUERY);
     expect(checks?.textContent).toContain(CHECK_PAGE);
     expect(
