@@ -2348,6 +2348,14 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(block?.textContent).toContain("5.0");
     // And it is named as this property's own, not as a benchmark.
     expect(block?.textContent).toContain("this property's own");
+    // The gate the list applies is disclosed, so a page with volume and no
+    // clicks that is missing from the list has a stated reason to be.
+    expect(block?.textContent).toContain("top ten");
+    // And the population it read, so the list is not mistaken for the whole
+    // page dimension.
+    expect(
+      block?.querySelector("[data-page-checks-examined]")?.textContent,
+    ).toContain("4 page records");
   });
 
   it("shows no zero-click block when the check could not run", async () => {

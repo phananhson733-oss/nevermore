@@ -2039,6 +2039,18 @@ export function DailyBriefingResults({
                 </article>
               ))}
             </div>
+            {/* The population this check read, so the list above is not
+                mistaken for everything the page dimension returned. */}
+            {result.pageChecks.examinedRows !== null ? (
+              <p
+                data-page-checks-examined
+                className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("pageChecks.examined", {
+                  rows: result.pageChecks.examinedRows,
+                })}
+              </p>
+            ) : null}
           </div>
         ) : null}
         {handoffFailed ? (

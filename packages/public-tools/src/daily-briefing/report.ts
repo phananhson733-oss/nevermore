@@ -1191,6 +1191,11 @@ function candidatesFor(
       // this lane was never in a position to answer for it.
       continue;
     }
+    // Only pairs whose query is itself a readable query row. This lane's
+    // split is counted against the query rows, and a pair whose query-level
+    // row was discarded would push the capable count above that denominator —
+    // three numbers that cannot add up to the total printed beside them.
+    if (!currentByQuery.has(current.query)) continue;
     declinePairQueries.add(current.query);
 
     const positionDelta = current.position - previous.position;

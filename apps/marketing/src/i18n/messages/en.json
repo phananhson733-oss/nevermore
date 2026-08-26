@@ -2317,8 +2317,9 @@
       "pageChecks": {
         "title": "These pages draw impressions and no clicks at all",
         "evidence": "Page · where it stands this window",
-        "intro": "At this property's own click-through rate of {ctr}, each page below was shown often enough to expect more than three clicks and drew none. That rate comes from this property's own non-brand data for this window, not from an industry average. Nothing here is claimed to have changed — only that at the rate this property actually converts, zero clicks on these pages does not look like chance.",
-        "body": "{impressions} impressions this window at average position {position}. This property's own rate expects {expected} clicks; none arrived."
+        "intro": "At this property's own click-through rate of {ctr}, each page below was shown often enough to expect at least three clicks and drew none. That rate comes from this property's own non-brand data for this window, not from an industry average. Only pages averaging inside the top ten are listed: a page further down draws no clicks because almost nobody is shown it, and looking at how its result appears will not change that. Nothing here is claimed to have changed — only that at the rate this property actually converts, zero clicks on these pages does not look like chance.",
+        "body": "{impressions} impressions this window at average position {position}. This property's own rate expects {expected} clicks; none arrived.",
+        "examined": "{rows} page records were read this run. The rest either drew clicks or were not shown often enough for zero to mean anything."
       }
     },
     "trafficDrop": {
