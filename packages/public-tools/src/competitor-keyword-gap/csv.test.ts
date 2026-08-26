@@ -23,12 +23,12 @@ const HEADER = [
   "keyword",
   "marketCode",
   "languageCode",
-  "dfsSearchVolume",
-  "dfsKeywordDifficulty",
-  "dfsCpc",
-  "dfsIntent",
-  "dfsCompetitorRanks",
-  "dfsLinkedCompetitorPageUrl",
+  "searchVolume",
+  "keywordDifficulty",
+  "cpc",
+  "intent",
+  "competitorRanks",
+  "linkedCompetitorPageUrl",
 ].join(",");
 
 function row(
@@ -174,10 +174,10 @@ describe("competitorKeywordGapCsv", () => {
       ]),
     );
 
-    expect(cell(csv, "dfsSearchVolume")).toBe("2900");
-    expect(cell(csv, "dfsKeywordDifficulty")).toBe("18");
-    expect(cell(csv, "dfsCpc")).toBe("1.257");
-    expect(cell(csv, "dfsIntent")).toBe("commercial");
+    expect(cell(csv, "searchVolume")).toBe("2900");
+    expect(cell(csv, "keywordDifficulty")).toBe("18");
+    expect(cell(csv, "cpc")).toBe("1.257");
+    expect(cell(csv, "intent")).toBe("commercial");
   });
 
   it("empties a metric the provider had no data for, and keeps a reported zero", () => {
@@ -196,10 +196,10 @@ describe("competitorKeywordGapCsv", () => {
       ]),
     );
 
-    expect(cell(csv, "dfsSearchVolume")).toBe("");
-    expect(cell(csv, "dfsKeywordDifficulty")).toBe("");
-    expect(cell(csv, "dfsCpc")).toBe("0");
-    expect(cell(csv, "dfsIntent")).toBe("");
+    expect(cell(csv, "searchVolume")).toBe("");
+    expect(cell(csv, "keywordDifficulty")).toBe("");
+    expect(cell(csv, "cpc")).toBe("0");
+    expect(cell(csv, "intent")).toBe("");
   });
 
   it("lists every competitor with its rank, best first", () => {
@@ -213,7 +213,7 @@ describe("competitorKeywordGapCsv", () => {
     );
 
     // Rank first, then the domain, so two exports of one run cannot disagree.
-    expect(cell(csv, "dfsCompetitorRanks")).toBe(
+    expect(cell(csv, "competitorRanks")).toBe(
       "b.example#3|c.example#3|a.example#11",
     );
   });
@@ -239,10 +239,10 @@ describe("competitorKeywordGapCsv", () => {
       ]),
     );
 
-    expect(cell(csv, "dfsCompetitorRanks")).toBe(
+    expect(cell(csv, "competitorRanks")).toBe(
       "one.example#1|two.example#9",
     );
-    expect(cell(csv, "dfsLinkedCompetitorPageUrl")).toBe(
+    expect(cell(csv, "linkedCompetitorPageUrl")).toBe(
       "https://two.example/guide",
     );
   });
@@ -261,7 +261,7 @@ describe("competitorKeywordGapCsv", () => {
         ]),
       );
 
-      expect(cell(csv, "dfsLinkedCompetitorPageUrl")).toBe("");
+      expect(cell(csv, "linkedCompetitorPageUrl")).toBe("");
     }
   });
 
@@ -295,7 +295,7 @@ describe("competitorKeywordGapCsv", () => {
       result([row({ providerIntent: "=cmd|'/c calc'!A0" })]),
     );
 
-    expect(cell(csv, "dfsIntent")).toContain("'=cmd");
+    expect(cell(csv, "intent")).toContain("'=cmd");
   });
 
   it("does not neutralise a number we generated ourselves", () => {
@@ -305,7 +305,57 @@ describe("competitorKeywordGapCsv", () => {
       result([row({ cpc: { availability: "available", value: -1.5 } })]),
     );
 
-    expect(cell(csv, "dfsCpc")).toBe("-1.5");
+    expect(cell(csv, "cpc")).toBe("-1.5");
+  });
+
+  it("trims the float noise off cost per click, at four decimals", () => {
+    // The provider's CPC arrives as a binary float. 1.23 reaches this file as
+    // 1.2300000000000002 and lands in a sheet as a value nobody can filter on.
+    const csv = competitorKeywordGapCsv(
+      result([
+        row({ cpc: { availability: "available", value: 1.2300000000000002 } }),
+      ]),
+    );
+
+    expect(cell(csv, "cpc")).toBe("1.23");
+  });
+
+  it("keeps a positive cost per click that four decimals would erase", () => {
+    // Rounding a real number to "0" is the same lie as printing 0 for a value
+    // the provider never gave, which every other cell in this file refuses.
+    const csv = competitorKeywordGapCsv(
+      result([row({ cpc: { availability: "available", value: 0.00001 } })]),
+    );
+
+    expect(cell(csv, "cpc")).toBe("0.00001");
+  });
+
+  it("still empties a cost per click the provider had no data for", () => {
+    const csv = competitorKeywordGapCsv(
+      result([
+        row({ cpc: { availability: "provider_no_data", value: null } }),
+      ]),
+    );
+
+    expect(cell(csv, "cpc")).toBe("");
+  });
+
+  it("does not round the columns that are not cost per click", () => {
+    // Only CPC is rounded, and this fixture carries MORE than four decimals on
+    // purpose: a value that already fits in four survives four-decimal rounding
+    // unchanged, so it cannot tell "not rounded" from "rounded to four" and the
+    // test would pass with the rule spread across every numeric cell.
+    const csv = competitorKeywordGapCsv(
+      result([
+        row({
+          searchVolume: { availability: "available", value: 1234.567891 },
+          keywordDifficulty: { availability: "available", value: 18.250006 },
+        }),
+      ]),
+    );
+
+    expect(cell(csv, "searchVolume")).toBe("1234.567891");
+    expect(cell(csv, "keywordDifficulty")).toBe("18.250006");
   });
 
   it("quotes a value carrying a comma, a quote or a newline", () => {
@@ -433,9 +483,9 @@ describe("competitorKeywordGapCsv", () => {
 
     expect(body).toHaveLength(COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS);
     expect(cell(csv, "keyword", 1)).toBe("k0189");
-    expect(cell(csv, "dfsSearchVolume", 1)).toBe("190");
+    expect(cell(csv, "searchVolume", 1)).toBe("190");
     expect(
-      cell(csv, "dfsSearchVolume", COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS),
+      cell(csv, "searchVolume", COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS),
     ).toBe("41");
   });
 
@@ -492,7 +542,7 @@ describe("competitorKeywordGapCsv", () => {
     const csv = competitorKeywordGapCsv(result([...measured, ...unmeasured]));
     const body = lines(csv).slice(1);
     const empties = body.filter(
-      (_, index) => cell(csv, "dfsSearchVolume", index + 1) === "",
+      (_, index) => cell(csv, "searchVolume", index + 1) === "",
     );
 
     expect(body).toHaveLength(150);

@@ -219,15 +219,32 @@ export function StatusCell({
   // unqualified present-tense claim for the readers least able to check it.
   const positionTitle =
     pillPosition(gsc) === null ? null : translated(t, "gsc.positionTitle");
+  /**
+   * "Not in sample" says where we looked, and readers hear "not covered".
+   *
+   * The label stays as it is -- this column can only see a bounded 28-day
+   * Search Console sample, and anonymized queries never enter that sample at
+   * all, so "not covered" would state a fact this tool cannot have. What the
+   * label could not carry on its own is what the absence DOES mean, which is
+   * the sentence below.
+   */
+  const sampleTitle =
+    gsc.queryStatus === "not_observed_in_gsc_query_sample"
+      ? translated(t, "gsc.notObservedTitle")
+      : null;
+  const qualifications = [positionTitle, sampleTitle].filter(
+    (part) => part !== null,
+  );
+  const title = qualifications.length === 0 ? null : qualifications.join(" · ");
 
   return (
     <>
       <div
         data-gsc-status
-        aria-label={[label, basis, positionTitle]
+        aria-label={[label, basis, ...qualifications]
           .filter((part) => part !== null)
           .join(" · ")}
-        {...(positionTitle === null ? {} : { title: positionTitle })}
+        {...(title === null ? {} : { title })}
         className={`inline-flex rounded-full border px-2.5 py-1 ${META_TEXT} ${statusTone(gsc.queryStatus)}`}
       >
         {label}

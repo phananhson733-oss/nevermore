@@ -80,6 +80,27 @@ function preferredLanguageCode(
   return entry.languageCodes[0];
 }
 
+/**
+ * Every search language Labs serves for one market, richest database first.
+ *
+ * Exported so a form can offer exactly what a request can be made in. The list
+ * a picker shows and the list `resolveDataForSeoMarket` will honour have to be
+ * the same list: an option outside it is resolved back to index 0 without a
+ * word to the person who chose it, and an option missing from it is a market
+ * capability nobody can reach.
+ *
+ * Empty for a market Labs does not serve, which is the same answer
+ * `resolveDataForSeoMarket` gives it.
+ */
+export function dataForSeoMarketLanguages(
+  marketCode: unknown,
+): readonly string[] {
+  if (typeof marketCode !== "string") return [];
+  const trimmed = marketCode.trim();
+  if (!MARKET_CODE_RE.test(trimmed)) return [];
+  return DATAFORSEO_LABS_LOCATIONS[trimmed.toUpperCase()]?.languageCodes ?? [];
+}
+
 /** True when DataForSEO Labs serves the market at all. */
 export function isDataForSeoServedMarket(marketCode: unknown): boolean {
   return resolveDataForSeoMarket(marketCode) !== null;

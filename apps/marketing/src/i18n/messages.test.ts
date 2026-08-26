@@ -39,6 +39,7 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "overview.returnedGapRowsBody",
   "overview.completedCompetitors",
   "overview.completedCompetitorsBody",
+  "competitors.hint",
   "coverage.scope",
   "coverage.requested",
   "coverage.failure",
@@ -60,6 +61,7 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "gsc.pageStatus.observed_partial",
   "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
   "gsc.pageStatus.gsc_query_page_sample_not_read",
+  "gsc.notObservedTitle",
   "gsc.impressionsLine",
   "gsc.pageMetricLine",
   "sort.impressions",
@@ -92,8 +94,6 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "signals.aiOverviewSnapshotUndated",
   "signals.competitorTraffic",
   "actions.exportCsv",
-  "actions.exportCsvBasisCapped",
-  "actions.exportCsvBasisComplete",
   "actions.exportCsvPartial",
   "status.unavailableBody",
   // The count on the button says HOW MANY keywords the file holds; this says
@@ -179,6 +179,14 @@ const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
   "nextSteps.review_content_gap",
   "nextSteps.verify_own_coverage",
   "preScreen.filterAll",
+  // The export basis sentence, removed by decision along with the line that
+  // rendered it. Listed here so re-adding the copy without the line puts an
+  // unreviewable sentence back in the catalog.
+  "actions.exportCsvBasisCapped",
+  "actions.exportCsvBasisComplete",
+  // The "add domain" button, removed with it: the field takes a comma-separated
+  // list now, so there is no second control to label.
+  "competitors.add",
 ] as const;
 
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
@@ -345,7 +353,10 @@ describe("competitor keyword gap message catalogs", () => {
    * than the cap, and the sentence beside it has to name the basis of the cut
    * rather than leave the reader to guess which rows they got.
    */
-  it("never claims the CSV holds every row, and names the basis of the cut", () => {
+  it("never claims the CSV holds every row", () => {
+    // The sentence naming the basis of the cut was removed by decision, so the
+    // count on the button is the only thing left saying what the file holds.
+    // It must therefore never say "all".
     expect(enMessages.tools.competitorKeywordGap.actions.exportCsv).not.toMatch(
       /\ball\b/i,
     );
@@ -354,37 +365,46 @@ describe("competitor keyword gap message catalogs", () => {
     );
     const en = enMessages.tools.competitorKeywordGap.actions;
     const zh = zhMessages.tools.competitorKeywordGap.actions;
-    for (const sentence of [
-      en.exportCsvBasisCapped,
-      en.exportCsvBasisComplete,
-      zh.exportCsvBasisCapped,
-      zh.exportCsvBasisComplete,
-    ]) {
-      expect(sentence).toMatch(/DataForSEO/);
-    }
-    // Two sentences, because below the cap nothing was left out: only the
-    // capped one may narrow what the file holds, and only the complete one may
-    // say it holds everything. One string doing both was wrong in one case or
-    // the other whichever way it was worded.
-    expect(en.exportCsvBasisCapped).toMatch(/highest/i);
-    expect(en.exportCsvBasisComplete).toMatch(/every/i);
-    expect(zh.exportCsvBasisCapped).toMatch(/最高/);
-    expect(zh.exportCsvBasisComplete).toMatch(/全部/);
     // The partial-run line has to say what a missing competitor does NOT mean,
     // since the nine columns cannot carry that themselves.
     expect(en.exportCsvPartial).toMatch(/unknown/i);
     expect(zh.exportCsvPartial).toMatch(/未知/);
   });
 
-  // signals.competitorTraffic renders a DataForSEO traffic estimate in the
-  // same report; the outcomes boundary must name that estimate, or the two
-  // contradict on screen.
-  it("names the DataForSEO estimate in the outcomes boundary", () => {
+  // signals.competitorTraffic renders a third-party traffic estimate in the
+  // same report; the outcomes boundary must call it an estimate, or the two
+  // contradict on screen. It names the KIND of number, not the vendor -- see
+  // the vendor test below.
+  it("calls the competitor traffic an estimate in the outcomes boundary", () => {
     for (const messages of [enMessages, zhMessages]) {
       const copy = messages.tools.competitorKeywordGap.boundaries;
-      expect(copy.competitorOutcomesUnavailable).toMatch(
-        /DataForSEO (?:estimate|估算)/,
-      );
+      expect(copy.competitorOutcomesUnavailable).toMatch(/estimate|估算/);
+    }
+  });
+
+  /**
+   * The keyword vendor is not named on this surface, in either language.
+   *
+   * A decision, not an accident: the visitor is buying this tool's reading of
+   * the data, and a vendor name in fifteen places invites them to go read it
+   * somewhere else. What the copy must keep saying is the part that protects
+   * them -- that these numbers are third-party ESTIMATES and not measurements
+   * of their site -- which the boundary and legend tests above check.
+   *
+   * Written as a sweep over the whole catalog rather than a list of the fifteen
+   * strings that said it, because the next one will be written by someone who
+   * never read this comment.
+   */
+  it("never names the keyword vendor in either language", () => {
+    for (const [label, messages] of [
+      ["en", enMessages],
+      ["zh", zhMessages],
+    ] as const) {
+      const named = Object.entries(
+        leafMessages(messages.tools.competitorKeywordGap),
+      ).filter(([, message]) => /dataforseo|\bDFS\b/i.test(message));
+
+      expect({ [label]: named }).toEqual({ [label]: [] });
     }
   });
 

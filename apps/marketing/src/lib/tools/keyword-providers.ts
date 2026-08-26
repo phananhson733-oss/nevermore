@@ -7,6 +7,7 @@ import {
   bulkTrafficEstimation,
   createDomainRegistrationResolver,
   createDataForSeoKeywordMetricsClient,
+  dataForSeoMarketLanguages,
   labsLanguageForMarket,
   normalizeRdapDomain,
   normalizeTrafficDomain,
@@ -42,6 +43,26 @@ export const KEYWORD_MARKET_LOCATIONS: Readonly<Record<string, number>> = {
   NL: 2528,
   SE: 2752,
 };
+
+/**
+ * The search languages each offered market can actually be queried in.
+ *
+ * Derived from the provider catalogue rather than typed here, so the options a
+ * picker shows are the options the request resolver will honour. Typed by hand
+ * once, they were both too many (four languages the United States has no
+ * database for) and too few (`es`, which it does).
+ */
+export const KEYWORD_MARKET_LANGUAGES: Readonly<
+  Record<string, readonly string[]>
+> = Object.freeze(
+  Object.fromEntries(
+    Object.keys(KEYWORD_MARKET_LOCATIONS).map((market) => [
+      market,
+      dataForSeoMarketLanguages(market),
+    ]),
+  ),
+);
+
 
 export class KeywordMarketError extends Error {
   readonly code = "invalid_input" as const;

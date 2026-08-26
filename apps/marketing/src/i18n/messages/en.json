@@ -800,7 +800,7 @@
     "competitorKeywordGap": {
       "form": {
         "title": "Set up your competitor keyword gap",
-        "intro": "Enter your site and one to five competitor domains. This runs only when you ask; competitor facts come from DataForSEO, while a selected Search Console property adds an optional own-site overlay."
+        "intro": "Enter your site and one to five competitor domains. This runs only when you ask; competitor facts come from a third-party keyword source, while a selected Search Console property adds an optional own-site overlay."
       },
       "fields": {
         "siteDomain": {
@@ -819,9 +819,9 @@
         }
       },
       "competitors": {
-        "label": "Competitor domain",
-        "placeholder": "competitor.com",
-        "add": "Add competitor",
+        "label": "Competitor domains",
+        "placeholder": "competitor.com, rival.com",
+        "hint": "Separate competitors with commas. Up to {max}; paste a list and it splits itself.",
         "count": "{count} / 5 competitors",
         "remove": "Remove {domain}"
       },
@@ -841,7 +841,7 @@
         "auth_required": "Sign in to run the competitor analysis.",
         "auth_unavailable": "Sign-in status is temporarily unavailable. Try again shortly.",
         "search_in_progress": "Another competitor analysis is already running for this account. Wait for it to finish, then try again.",
-        "keyword_source_unavailable": "DataForSEO could not provide a usable competitor ranking sample for this run.",
+        "keyword_source_unavailable": "The keyword source could not provide a usable competitor ranking sample for this run.",
         "client_out_of_date": "This tool was updated while your page was open. Refresh the page, then run the analysis again.",
         "gsc_property_not_granted": "This tool is not currently authorized to read the selected Search Console property, so the analysis did not start. Reconnect Search Console and grant that property, or run again without the GSC evidence layer.",
         "gsc_property_site_mismatch": "The selected Search Console property does not cover the site domain you entered, so the analysis did not start. Choose a property that covers that domain, or run again without the GSC evidence layer.",
@@ -872,8 +872,6 @@
         "optimizeObservedPage": "Optimize existing page {page} →",
         "reviewObservedPage": "Review {page} →",
         "exportCsv": "{count, plural, one {Export # keyword as CSV} other {Export # keywords as CSV}}",
-        "exportCsvBasisCapped": "{count, plural, other {The file holds # keywords from this run: the highest DataForSEO search volume estimates first, then keywords the provider gave no estimate for.}}",
-        "exportCsvBasisComplete": "The file holds every keyword this run returned, ordered by DataForSEO's search volume estimate.",
         "exportCsvPartial": "{count, plural, one {# competitor returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.} other {# competitors returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.}}"
       },
       "summary": {
@@ -891,6 +889,7 @@
       "coverage": {
         "title": "Competitor coverage",
         "detailsSummary": "Technical coverage and limits",
+        "detailsWarning": "This run has limits",
         "scope": "{completed} of {requested} competitors returned usable provider rows.",
         "requested": "{count} competitors requested",
         "complete": "complete",
@@ -906,27 +905,27 @@
         "resultTruncated": "The combined result hit its output boundary, so additional keyword rows may exist.",
         "gscQueryTruncated": "The GSC query sample hit its row boundary; a missing query is not proof of zero exposure.",
         "gscQueryPageTruncated": "The GSC query-page sample hit its row boundary; a matching page may be missing.",
-        "gscUnavailable": "The optional GSC overlay was unavailable. DataForSEO competitor rows remain separate provider evidence.",
+        "gscUnavailable": "The optional GSC overlay was unavailable. The third-party competitor rows remain separate provider evidence.",
         "gscNoRows": "GSC returned no query rows for the selected property in this window. Check that the property covers this site before reading any row as a content gap."
       },
       "overview": {
         "returnedGapRows": "Gap keywords",
-        "returnedGapRowsBody": "At least one competitor ranked #{maxRank} or better in this run's DataForSEO sample, and this site was not observed in that sample.",
+        "returnedGapRowsBody": "At least one competitor ranked #{maxRank} or better in this run's keyword-source sample, and this site was not observed in that sample.",
         "completedCompetitors": "Completed competitors",
-        "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors."
+        "completedCompetitorsBody": "Usable keyword-source reads out of all requested competitors."
       },
       "legend": {
-        "dfsMeans": "= DataForSEO third-party data, sampled by this run",
+        "dfsMeans": "= third-party keyword data, sampled by this run",
         "gscMeans": "= your own Search Console, 28-day window"
       },
       "boundaries": {
         "title": "Evidence boundaries",
-        "dfsEstimates": "Search volume, CPC, difficulty, intent, and competitor ranks are DataForSEO estimates from this bounded run.",
+        "dfsEstimates": "Search volume, CPC, difficulty, intent, and competitor ranks are third-party keyword-source estimates from this bounded run.",
         "gscOwnSample": "GSC covers only the selected own-site bounded sample; a missing query row is not zero impressions.",
-        "competitorOutcomesUnavailable": "Actual competitor traffic and conversion outcomes are unavailable; the page traffic shown is a DataForSEO estimate, and rankings and estimates do not prove either.",
+        "competitorOutcomesUnavailable": "Actual competitor traffic and conversion outcomes are unavailable; the page traffic shown is a third-party estimate, and rankings and estimates do not prove either.",
         "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh.",
-        "dfsSnapshot": "AI Overview and SERP feature marks come from DataForSEO's stored SERP snapshot and carry its date; they are not a live observation from this run.",
-        "preScreen": "The DFS pre-screen band is a provider estimate shown per row. It does not order the table, it never changes the GSC-derived next step, and it is not a winnability claim."
+        "dfsSnapshot": "AI Overview and SERP feature marks come from the keyword source's stored SERP snapshot and carry its date; they are not a live observation from this run.",
+        "preScreen": "The pre-screen band is a third-party estimate shown per row. It does not order the table, it never changes the GSC-derived next step, and it is not a winnability claim."
       },
       "gsc": {
         "observed_strong": "Already ranking",
@@ -935,6 +934,7 @@
         "gsc_query_sample_not_read": "GSC not read",
         "statusWithPosition": "{status} · avg position {position}",
         "positionTitle": "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
+        "notObservedTitle": "Not in this run's 28-day Search Console sample. Anonymized queries never enter that sample, so this is not evidence the keyword has no impressions.",
         "evidenceBasis": {
           "query": "Exact-query evidence",
           "query_page": "Query-page evidence"
@@ -954,7 +954,7 @@
       },
       "preScreen": {
         "basis": {
-          "dfs_estimate": "DataForSEO estimate; a pre-screen, not SERP winnability.",
+          "dfs_estimate": "Third-party estimate; a pre-screen, not SERP winnability.",
           "tool_heuristic": "This tool's text/URL heuristic; a pre-screen, not SERP winnability."
         },
         "basisShort": {
@@ -982,14 +982,14 @@
       "signals": {
         "bestRank": "Best competitor #{rank}",
         "difficulty": "KD {value}",
-        "aiOverviewSnapshot": "AI Overview · DFS snapshot {date}",
-        "aiOverviewSnapshotUndated": "AI Overview · DFS snapshot, undated",
-        "competitorTraffic": "Competitor page DFS est. {value}/mo"
+        "aiOverviewSnapshot": "AI Overview · source snapshot {date}",
+        "aiOverviewSnapshotUndated": "AI Overview · source snapshot, undated",
+        "competitorTraffic": "Competitor page est. {value}/mo"
       },
       "table": {
         "title": "Gap list",
         "subtitle": "Grouped by keyword so you can compare competitor reach, your own bounded GSC evidence, and the immediate next step in one scan.",
-        "caption": "Competitor keyword gaps with DataForSEO metrics and optional GSC evidence",
+        "caption": "Competitor keyword gaps with third-party estimates and optional GSC evidence",
         "keyword": "Keyword",
         "monthlySearchVolume": "Monthly search volume",
         "competitorCoverage": "Competitor coverage",

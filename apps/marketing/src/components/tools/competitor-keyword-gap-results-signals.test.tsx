@@ -335,7 +335,12 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     );
     const zeroDetails = zero.querySelector("details[data-coverage-details]");
 
-    expect(zeroDetails?.hasAttribute("open")).toBe(true);
+    // Closed on arrival now, in every run. The limitation announces itself on
+    // the summary line instead, which the reader sees without opening anything.
+    expect(zeroDetails?.hasAttribute("open")).toBe(false);
+    expect(
+      zeroDetails?.querySelector("[data-coverage-warning]"),
+    ).not.toBeNull();
     expect(zeroDetails?.textContent).toContain("limitations.gscNoRows");
 
     await unmountResults();

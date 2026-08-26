@@ -34,8 +34,11 @@ export const COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS = 150;
  * sheet, and a header row that changes with the reader's language makes both
  * impossible.
  *
- * Every value here is a DataForSEO ESTIMATE, which is what the `dfs` prefix
- * says. Nothing in this file is a measurement of this site.
+ * The names carry no source prefix. Every metric here is a third-party
+ * ESTIMATE and none of it is a measurement of this site, but the header row is
+ * what a keyword importer maps its own fields against, and a vendor prefix on
+ * each one only makes that mapping manual. Where the numbers come from is the
+ * page's job to say, next to the qualifications that go with them.
  */
 const COLUMNS = [
   // First, because it is the row's subject: everything after it is a property
@@ -43,20 +46,21 @@ const COLUMNS = [
   "keyword",
   "marketCode",
   "languageCode",
-  "dfsSearchVolume",
-  "dfsKeywordDifficulty",
-  "dfsCpc",
-  // Not `cpcUsd`. The value is DataForSEO's `keyword_info.cpc` carried through
-  // untouched; nothing in this pipeline converts, tags or checks a currency, so
-  // a name asserting one would be the file inventing a fact about the number.
-  "dfsIntent",
-  "dfsCompetitorRanks",
+  "searchVolume",
+  "keywordDifficulty",
+  // Not `cpcUsd`. The value is the provider's cost-per-click carried through
+  // with only the float noise trimmed; nothing in this pipeline converts, tags
+  // or checks a currency, so a name asserting one would be the file inventing a
+  // fact about the number.
+  "cpc",
+  "intent",
+  "competitorRanks",
   // The best-ranked competitor whose URL survived the safety check, which is
   // not always the best-ranked competitor. No separate domain column is needed
-  // to see that: the URL carries its own host, and `dfsCompetitorRanks` beside
-  // it lists every competitor with its rank, so a reader can tell which one
-  // this page belongs to by looking at it.
-  "dfsLinkedCompetitorPageUrl",
+  // to see that: the URL carries its own host, and `competitorRanks` beside it
+  // lists every competitor with its rank, so a reader can tell which one this
+  // page belongs to by looking at it.
+  "linkedCompetitorPageUrl",
 ] as const;
 
 /**
@@ -104,6 +108,28 @@ function optionalText(value: string | null): string {
 function num(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "";
   return String(value);
+}
+
+/**
+ * Cost per click, at four decimals.
+ *
+ * The only rounded column, and it is rounding OFF float noise rather than
+ * rounding a number down: the provider's CPC arrives as a binary float, so a
+ * reported 1.23 reaches this file as 1.2300000000000002 and lands in a
+ * spreadsheet as a value nobody can filter on. Four decimals keeps every
+ * fraction of a cent a currency can express.
+ *
+ * A positive value that would round to zero keeps its full precision instead:
+ * this file's whole rule about unavailable values is that nothing may be shown
+ * as a plausible 0 unless it IS 0, and a rounded-away number breaks that in the
+ * same way an empty one would.
+ */
+function cpc(value: CompetitorKeywordGapMetric): string {
+  if (value.availability === "provider_no_data") return "";
+  const { value: raw } = value;
+  if (raw === null || !Number.isFinite(raw)) return "";
+  const rounded = Number(raw.toFixed(4));
+  return String(rounded === 0 && raw !== 0 ? raw : rounded);
 }
 
 /**
@@ -227,7 +253,7 @@ export function competitorKeywordGapCsv(
       text(result.languageCode),
       metric(row.searchVolume),
       metric(row.keywordDifficulty),
-      metric(row.cpc),
+      cpc(row.cpc),
       optionalText(row.providerIntent),
       text(competitorRanks(row)),
       optionalText(linkedCompetitorPageUrl(row)),

@@ -686,10 +686,15 @@ describe("CompetitorKeywordGapResults", () => {
     const details = host.querySelector("details[data-coverage-details]");
     const boundaries = host.querySelector("[data-evidence-boundaries]");
 
-    expect(details?.hasAttribute("open")).toBe(true);
+    // Closed on arrival, in every run: this is reference material, and opening
+    // it put the longest block on the page between the reader and the table.
+    // The mark on its summary is what carries the announcement now, so the
+    // partial run is still visible without the reader opening anything.
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(details?.querySelector("[data-coverage-warning]")).not.toBeNull();
     // The summary card states no status sentence any more, so a partial run
     // announces itself through the warning frame, the completed-competitor
-    // card, and this section -- which opens itself for exactly that reason.
+    // card, and this section's summary mark.
     const summary = host.querySelector('[data-run-status="partial"]');
     expect(summary).not.toBeNull();
     // The attribute alone proves nothing: it is assigned straight from the
@@ -778,6 +783,65 @@ describe("CompetitorKeywordGapResults", () => {
       unavailable.querySelector('[data-summary-metric="completed-competitors"]')
         ?.textContent,
     ).toContain("0 / 2");
+  });
+
+  it("says what a not-in-sample row does NOT mean, on the pill itself", async () => {
+    // The label stays "not in sample" -- calling it "not covered" would state
+    // something this tool cannot know, which a catalog-wide guard forbids. What
+    // it could not say on its own goes in the title AND the accessible name:
+    // the pill is a plain div with no tabIndex, so a keyboard user can never
+    // surface a title on it.
+    const host = await renderResults(
+      withResult({
+        rows: [
+          rowWithGsc(
+            0,
+            {
+              queryStatus: "not_observed_in_gsc_query_sample",
+              evidenceBasis: null,
+              queryImpressions: null,
+              queryPosition: null,
+              nextStep: "review_content_gap",
+            },
+            { keyword: "absent word" },
+          ),
+        ],
+      }),
+    );
+    const pill = tableRow(host, "absent word").querySelector(
+      "[data-gsc-status]",
+    );
+
+    expect(pill?.getAttribute("title")).toBe("gsc.notObservedTitle");
+    expect(pill?.getAttribute("aria-label")).toContain("gsc.notObservedTitle");
+  });
+
+  it("does not qualify a row that WAS observed with the not-in-sample note", async () => {
+    const host = await renderResults(
+      withResult({
+        rows: [
+          rowWithGsc(
+            0,
+            {
+              queryStatus: "observed_strong",
+              evidenceBasis: "query",
+              queryImpressions: 900,
+              queryPosition: 4.1,
+              nextStep: "review_existing_query",
+            },
+            { keyword: "present word" },
+          ),
+        ],
+      }),
+    );
+    const pill = tableRow(host, "present word").querySelector(
+      "[data-gsc-status]",
+    );
+
+    expect(pill?.getAttribute("title")).toBe("gsc.positionTitle");
+    expect(pill?.getAttribute("aria-label")).not.toContain(
+      "gsc.notObservedTitle",
+    );
   });
 
   it("puts the average position inside the status pill and never leaves a dangling separator", async () => {
@@ -873,7 +937,14 @@ describe("CompetitorKeywordGapResults", () => {
     );
     expect(pill("weak pill")?.getAttribute("title")).toBe("gsc.positionTitle");
     expect(pill("pill without position")?.hasAttribute("title")).toBe(false);
-    expect(pill("keyword 04")?.hasAttribute("title")).toBe(false);
+    // A not-in-sample pill carries a DIFFERENT qualification -- what the
+    // absence does not mean -- and never the position one, because there is no
+    // average on it to explain.
+    expect(pill("keyword 04")?.getAttribute("title")).toBe(
+      "gsc.notObservedTitle",
+    );
+    // "GSC not read" is not "looked and did not find", so the sample sentence
+    // would be answering a question this row never asked.
     expect(pill("pill unread")?.hasAttribute("title")).toBe(false);
 
     // Tone still comes from the state alone; the position never changes it.

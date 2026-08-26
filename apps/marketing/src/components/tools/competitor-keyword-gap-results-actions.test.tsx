@@ -498,21 +498,18 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
   });
 
-  it("names the row count the file will hold, and states the basis of the cut", async () => {
+  it("names the row count the file will hold, and nothing about the cut", async () => {
     const captured = stubDownloads();
     const host = await renderResults(withResult({ rows: productionRows() }));
     const exportButton = (): HTMLButtonElement | null =>
       host.querySelector<HTMLButtonElement>("[data-export-csv]");
 
-    // 100 rows, under the cap, so nothing was cut -- and the line below the
-    // button must therefore claim the ORDER and not a selection. Saying "the
-    // highest-volume keywords" about a file holding every one of them
-    // understates it, which is why there are two sentences and not one.
+    // 100 rows, under the cap. The count is now the only thing the surface
+    // says about the file: the sentence naming the basis of the cut was removed
+    // by decision, and this asserts the absence so it does not drift back.
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
     expect(exportButton()?.textContent).toBe("actions.exportCsv:count=100");
-    expect(
-      host.querySelector("[data-export-csv-basis]")?.textContent,
-    ).toBe("actions.exportCsvBasisComplete");
+    expect(host.querySelector("[data-export-csv-basis]")).toBeNull();
     // Complete run, so no missing-competitor warning.
     expect(host.querySelector("[data-export-csv-partial]")).toBeNull();
 
@@ -538,7 +535,7 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     // order belong to the export module's own suite, so pinning them here
     // would only break this test when that one changes on purpose.
     expect(lines[0]?.split(",")).toEqual(
-      expect.arrayContaining(["keyword", "dfsSearchVolume"]),
+      expect.arrayContaining(["keyword", "searchVolume"]),
     );
     // A row the collapsed table never showed.
     expect(text).toContain("content-gap-87");
@@ -554,17 +551,41 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
       },
     ]);
 
-    // Released on the next tick, not in the same task: Safari has revoked the
-    // blob out from under its own download when the two happen together.
-    // Counted rather than compared: two exports were taken above and the first
-    // one's tick has already run, so the property under test is that the
-    // SECOND is still un-revoked at this point, not that none of them are.
-    expect(captured.revoked).toHaveLength(1);
+    // Both object URLs are released once their ticks have run. WHEN each one
+    // runs relative to the other is not asserted here: an earlier version
+    // counted one revoke at this point, which held only while the first
+    // download's timer had fired and the second's had not -- a race between two
+    // zero-delay timers and the awaits above, and it failed about one run in
+    // ten. The same-task property it was reaching for is pinned deterministically
+    // in the test below.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(captured.revoked).toEqual([
       "blob:competitor-keyword-gap",
       "blob:competitor-keyword-gap",
     ]);
+  });
+
+  it("releases the object URL on a later task, never the one that clicked", async () => {
+    // Safari has revoked the blob out from under its own download when the
+    // create, the click and the revoke happen in one task. Fake timers are what
+    // make this an assertion rather than a bet: a real zero-delay timer may or
+    // may not have run by the time the next line executes, while a fake one
+    // provably has not until it is advanced.
+    vi.useFakeTimers();
+    try {
+      const captured = stubDownloads();
+      const host = await renderResults(withResult({ rows: productionRows() }));
+
+      await click(host.querySelector("[data-export-csv]"));
+
+      expect(captured.downloads).toHaveLength(1);
+      expect(captured.revoked).toEqual([]);
+
+      vi.runAllTimers();
+      expect(captured.revoked).toEqual(["blob:competitor-keyword-gap"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("counts the cap, not the run, once a run returns more rows than the file holds", async () => {
