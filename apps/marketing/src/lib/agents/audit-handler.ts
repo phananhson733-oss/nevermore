@@ -197,12 +197,20 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
 /**
  * The same handler, reached from the On-Page Checker's own route.
  *
- * Only the ledger label differs. Sharing the engine is what makes a second
- * check on an already-crawled host fast, and sharing the in-flight gate is what
- * keeps a checker run and an Agent run on one host from crawling it twice.
+ * The checker also requires evidence for the submitted page itself, so its
+ * delegate rejects an entry redirect that replaces that page before the full
+ * crawl starts. Sharing the engine still makes a second check on an
+ * already-crawled host fast, and sharing the in-flight gate keeps a checker run
+ * and an Agent run on one host from crawling it twice.
  */
 export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   ...DEFAULT_DEPENDENCIES,
+  delegate: (request, input) =>
+    handleSeoAuditRequest(request, undefined, {
+      forceBufferedJson: true,
+      input,
+      requireSameEntrySubject: true,
+    }),
   reportAs: "on-page-seo-check",
   readSerpLandscape: (input) => readSerpLandscape(input),
 };

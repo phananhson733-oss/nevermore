@@ -66,6 +66,7 @@ export interface SeoAuditHandlerDependencies {
     url: string,
     signal?: AbortSignal,
     onProgress?: (progress: SeoAuditProgress) => void,
+    options?: { readonly requireSameEntrySubject?: boolean },
   ) => Promise<SeoAuditRaw>;
   readonly buildPayload: (raw: SeoAuditRaw) => SeoAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
@@ -78,6 +79,7 @@ export interface SeoAuditHandlerDependencies {
   readonly openGate: (
     clientIp: string,
     normalizedUrl: string,
+    options?: { readonly requireSameEntrySubject?: boolean },
   ) => Promise<CrawlGateResult>;
   /**
    * Store a fresh result so the next caller asking about this same site does
@@ -94,6 +96,8 @@ export interface SeoAuditHandlerDependencies {
 export interface SeoAuditHandlerOptions {
   /** Keeps internal callers on the buffered JSON contract regardless of Accept. */
   readonly forceBufferedJson?: boolean;
+  /** Reject when the crawler's canonical entry replaces the submitted page. */
+  readonly requireSameEntrySubject?: boolean;
   /**
    * An already-read, already-validated body.
    *
@@ -112,18 +116,28 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
   // The key is present only when there is a listener. `{ onProgress }` with an
   // undefined value is a different type under exactOptionalPropertyTypes,
   // which the packages build enforces.
-  scan: (url, signal, onProgress) =>
-    scanSeoAuditSite(url, signal, { ...(onProgress ? { onProgress } : {}) }),
+  scan: (url, signal, onProgress, options) =>
+    scanSeoAuditSite(url, signal, {
+      ...(onProgress ? { onProgress } : {}),
+      ...(options?.requireSameEntrySubject === true
+        ? { requireSameEntrySubject: true }
+        : {}),
+    }),
   buildPayload: buildSeoAuditPayload,
   extractClientIp,
-  openGate: (clientIp, normalizedUrl) =>
+  openGate: (clientIp, normalizedUrl, options) =>
     openCrawlGate(
       clientIp,
       normalizedUrl,
       DEFAULT_CRAWL_GATE_DEPENDENCIES,
       async (host) => {
         const cached = await readCrawlCache(TOOL_NAME, host);
-        return cached && cachedSeoAuditMatches(cached, normalizedUrl)
+        return cached &&
+          cachedSeoAuditMatches(
+            cached,
+            normalizedUrl,
+            options?.requireSameEntrySubject === true,
+          )
           ? cached
           : null;
       },
@@ -156,6 +170,7 @@ export function seoAuditErrorCode(error: unknown): string {
   if (error instanceof SeoAuditScanError) {
     if (error.code === "timeout") return "scan_timeout";
     if (error.code === "blocked") return "invalid_url";
+    if (error.code === "target_redirected") return "target_redirected";
     // The site made a decision, or we could not read its rules. Neither is
     // "the audit failed", and the reader deserves to know which it was.
     if (
@@ -173,6 +188,7 @@ const SCAN_ERROR_STATUS: Readonly<Record<string, number>> = {
   invalid_url: 400,
   robots_disallowed: 422,
   robots_unreachable: 422,
+  target_redirected: 422,
   scan_failed: 502,
 };
 
@@ -180,11 +196,13 @@ const SCAN_ERROR_STATUS: Readonly<Record<string, number>> = {
 function cachedSeoAuditMatches(
   cached: { readonly payload: unknown; readonly capturedAt: string },
   normalizedUrl: string,
+  requireSameEntrySubject = false,
 ): boolean {
   return (
     isCanonicalIsoTimestamp(cached.capturedAt) &&
     isSeoAuditPayload(cached.payload) &&
-    cached.payload.result.targetUrl === normalizedUrl
+    cached.payload.result.targetUrl === normalizedUrl &&
+    (!requireSameEntrySubject || cached.payload.result.targetInspected)
   );
 }
 
@@ -220,10 +238,18 @@ export async function handleSeoAuditRequest(
     return json(createPublicToolError(normalized.code), 400);
   }
 
+  const requireSameEntrySubject = options.requireSameEntrySubject === true;
   const ip = dependencies.extractClientIp(request.headers);
-  const gate = await dependencies.openGate(ip, normalized.url);
+  const gate = requireSameEntrySubject
+    ? await dependencies.openGate(ip, normalized.url, {
+        requireSameEntrySubject: true,
+      })
+    : await dependencies.openGate(ip, normalized.url);
   if (!gate.ok) return gate.response;
-  if (gate.kind === "cached" && cachedSeoAuditMatches(gate, normalized.url)) {
+  if (
+    gate.kind === "cached" &&
+    cachedSeoAuditMatches(gate, normalized.url, requireSameEntrySubject)
+  ) {
     gate.release();
     // The payload carries the timestamp of the crawl that produced it, which
     // both tools render, so a cached answer never reads as a fresh one.
@@ -238,7 +264,12 @@ export async function handleSeoAuditRequest(
   }
 
   try {
-    const raw = await dependencies.scan(normalized.url, request.signal);
+    const raw =
+      requireSameEntrySubject
+        ? await dependencies.scan(normalized.url, request.signal, undefined, {
+            requireSameEntrySubject: true,
+          })
+        : await dependencies.scan(normalized.url, request.signal);
     const payload = dependencies.buildPayload(raw);
     await cacheCompletedCrawl({
       raw,
@@ -249,7 +280,17 @@ export async function handleSeoAuditRequest(
     return json({ data: payload }, 200);
   } catch (error) {
     const code = seoAuditErrorCode(error);
-    return json(createPublicToolError(code), SCAN_ERROR_STATUS[code] ?? 502);
+    const headers: Readonly<Record<string, string>> =
+      error instanceof SeoAuditScanError &&
+      error.code === "target_redirected" &&
+      error.redirectTarget !== null
+        ? { Location: error.redirectTarget }
+        : {};
+    return json(
+      createPublicToolError(code),
+      SCAN_ERROR_STATUS[code] ?? 502,
+      headers,
+    );
   } finally {
     gate.release();
   }

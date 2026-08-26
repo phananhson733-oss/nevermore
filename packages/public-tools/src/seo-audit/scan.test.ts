@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CrawlRaw } from "@sf/sources";
+import { PublicPreviewTargetRedirectError } from "@sf/sources/crawl-public-preview";
 import {
   crawlProgressReporter,
   scanSeoAuditSite,
+  SeoAuditScanError,
   type SeoAuditCrawler,
   type SeoAuditProgress,
 } from "./scan.ts";
@@ -98,6 +100,30 @@ describe("scanSeoAuditSite", () => {
     ).rejects.toMatchObject({ code: "timeout" });
   });
 
+  it("preserves a replaced entry target as a typed scan outcome", async () => {
+    const redirectTarget = "https://www.acme.test/";
+    const crawl = vi.fn(async () => {
+      throw new PublicPreviewTargetRedirectError(redirectTarget);
+    }) satisfies SeoAuditCrawler;
+
+    const failure: unknown = await scanSeoAuditSite(
+      "https://acme.test/replaced",
+      undefined,
+      { crawl, requireSameEntrySubject: true },
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(SeoAuditScanError);
+    expect(failure).toMatchObject({
+      code: "target_redirected",
+      redirectTarget,
+    });
+    expect(crawl).toHaveBeenCalledWith(
+      "https://acme.test/replaced",
+      undefined,
+      undefined,
+    );
+  });
+
   it("forwards a progress listener to the crawler unchanged", async () => {
     const seen: SeoAuditProgress[] = [];
     const crawl: SeoAuditCrawler = async (_url, _signal, onProgress) => {
@@ -115,6 +141,40 @@ describe("scanSeoAuditSite", () => {
       { pagesCrawled: 0, requestsSent: 1 },
       { pagesCrawled: 2, requestsSent: 7 },
     ]);
+  });
+
+  it("passes the strict entry option only through the production crawler", async () => {
+    const crawlPublicSitePreview = vi.fn(async () => fixture);
+    vi.resetModules();
+    vi.doMock(
+      "@sf/sources/crawl-public-preview",
+      async (importOriginal) => ({
+        ...(await importOriginal<
+          typeof import("@sf/sources/crawl-public-preview")
+        >()),
+        crawlPublicSitePreview,
+      }),
+    );
+
+    try {
+      const { scanSeoAuditSite: scanWithMockedProductionCrawler } = await import(
+        "./scan.ts"
+      );
+      await scanWithMockedProductionCrawler(
+        "https://acme.test/replaced",
+        undefined,
+        { requireSameEntrySubject: true },
+      );
+
+      expect(crawlPublicSitePreview).toHaveBeenCalledWith(
+        "https://acme.test/replaced",
+        undefined,
+        { requireSameEntrySubject: true },
+      );
+    } finally {
+      vi.doUnmock("@sf/sources/crawl-public-preview");
+      vi.resetModules();
+    }
   });
 });
 

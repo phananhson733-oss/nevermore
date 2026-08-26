@@ -1,12 +1,17 @@
 // @input  -- one POST at the On-Page Checker's own API boundary
-// @output -- proof it reaches the shared handler under the checker's credit identity
-// @pos    -- the wiring test for the route that separates the two ledger labels
+// @output -- proof it reaches the strict buffered handler under the checker's credit identity
+// @pos    -- wiring test for the route that separates ledger and entry-page policy
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   handleAgentAudit: vi.fn(),
+  handleSeoAudit: vi.fn(),
+}));
+
+vi.mock("../../../../lib/tools/seo-audit-handler.ts", () => ({
+  handleSeoAuditRequest: mocks.handleSeoAudit,
 }));
 
 /**
@@ -54,6 +59,31 @@ describe("POST /api/tools/on-page-seo-check", () => {
       ON_PAGE_CHECK_DEPENDENCIES,
     );
     expect(ON_PAGE_CHECK_DEPENDENCIES.reportAs).toBe("on-page-seo-check");
+  });
+
+  it("uses the buffered strict-entry delegate behind the production route", async () => {
+    const delegated = new Response("delegated", { status: 207 });
+    mocks.handleSeoAudit.mockResolvedValue(delegated);
+    const request = new Request(
+      "https://gengrowth.ai/api/tools/on-page-seo-check",
+      { method: "POST" },
+    );
+    const input = {
+      url: "example.com/replaced",
+      targetQueries: null,
+      pageRole: null,
+      market: null,
+      language: null,
+    } as const;
+
+    const response = await ON_PAGE_CHECK_DEPENDENCIES.delegate(request, input);
+
+    expect(response).toBe(delegated);
+    expect(mocks.handleSeoAudit).toHaveBeenCalledWith(request, undefined, {
+      forceBufferedJson: true,
+      input,
+      requireSameEntrySubject: true,
+    });
   });
 
   it("is the boundary that pays for a results-page lookup", async () => {

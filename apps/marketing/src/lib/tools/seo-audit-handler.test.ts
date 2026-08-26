@@ -735,6 +735,52 @@ describe("handleSeoAuditRequest", () => {
     await first;
   });
 
+  it("passes the strict entry policy to the scan without changing defaults", async () => {
+    const scan = vi.fn(async () => raw);
+    const openGate = vi.fn(async () => ({
+      ok: true as const,
+      kind: "crawl" as const,
+      release: vi.fn(),
+    }));
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      dependencies({ scan, openGate }),
+      { requireSameEntrySubject: true },
+    );
+
+    expect(response.status).toBe(200);
+    expect(openGate).toHaveBeenCalledWith(
+      "203.0.113.9",
+      "https://acme.test/",
+      { requireSameEntrySubject: true },
+    );
+    expect(scan).toHaveBeenCalledWith(
+      "https://acme.test/",
+      expect.any(AbortSignal),
+      undefined,
+      { requireSameEntrySubject: true },
+    );
+  });
+
+  it("returns a buffered 422 with the replacement target in Location", async () => {
+    const redirectTarget = "https://www.acme.test/";
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test/replaced" }),
+      dependencies({
+        scan: async () => {
+          throw new SeoAuditScanError("target_redirected", redirectTarget);
+        },
+      }),
+      { requireSameEntrySubject: true },
+    );
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("location")).toBe(redirectTarget);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "target_redirected" },
+    });
+  });
+
   it.each([
     ["timeout", 504, "scan_timeout"],
     ["blocked", 400, "invalid_url"],

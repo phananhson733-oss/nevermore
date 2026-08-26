@@ -31,16 +31,11 @@ describe("first-run reporting is wired into production", () => {
     expect(dependencies.reportFirstRun).toBe(reportFirstToolRun);
   });
 
-  /**
-   * The two audit dependency objects differ in exactly one field, and it is the
-   * one that decides which tool the ledger row names. Copying the object and
-   * forgetting to change the slug would record every checker run as an Agent
-   * audit — which is what this branch did before, silently.
-   */
-  it("labels each audit boundary with the tool the visitor actually ran", () => {
+  /** The checker owns both its ledger label and its stricter entry policy. */
+  it("keeps the checker on dedicated production wiring", () => {
     expect(DEFAULT_AUDIT_DEPENDENCIES.reportAs).toBe("agent-audit");
     expect(ON_PAGE_CHECK_DEPENDENCIES.reportAs).toBe("on-page-seo-check");
-    expect(ON_PAGE_CHECK_DEPENDENCIES.delegate).toBe(
+    expect(ON_PAGE_CHECK_DEPENDENCIES.delegate).not.toBe(
       DEFAULT_AUDIT_DEPENDENCIES.delegate,
     );
   });
