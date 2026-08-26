@@ -5,6 +5,7 @@ import {
   COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BASES,
   COMPETITOR_KEYWORD_GAP_PRE_SCREEN_REASONS,
 } from "@sf/public-tools/competitor-keyword-gap";
+import { getConnectedToolContent } from "../components/tools/connected-tool-content";
 import enMessages from "./messages/en.json";
 import zhMessages from "./messages/zh.json";
 
@@ -204,6 +205,28 @@ function placeholders(value: string): readonly string[] {
     .sort();
 }
 
+/**
+ * Every string underneath a value, arrays included.
+ *
+ * `leafMessages` below stops at an array on purpose -- the catalog has none,
+ * and treating one as a branch would invent index paths for the parity checks.
+ * The tool page's content is the opposite shape: its steps, feature cards and
+ * FAQ entries are all arrays, and a walk that stops there reads nothing at all
+ * while reporting success.
+ */
+function leafStrings(value: unknown, prefix = ""): readonly (readonly [string, string])[] {
+  if (typeof value === "string") return [[prefix, value]];
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((child, index) =>
+      leafStrings(child, `${prefix}[${index}]`),
+    );
+  }
+  return Object.entries(value).flatMap(([key, child]) =>
+    leafStrings(child, prefix ? `${prefix}.${key}` : key),
+  );
+}
+
 function leafMessages(
   value: unknown,
   prefix = "",
@@ -386,26 +409,33 @@ describe("competitor keyword gap message catalogs", () => {
   });
 
   /**
-   * The keyword vendor is not named on this surface, in either language.
+   * The keyword vendor is not named on this tool's page, in either language.
    *
    * A decision, not an accident: the visitor is buying this tool's reading of
-   * the data, and a vendor name in fifteen places invites them to go read it
-   * somewhere else. What the copy must keep saying is the part that protects
-   * them -- that these numbers are third-party ESTIMATES and not measurements
-   * of their site -- which the boundary and legend tests above check.
+   * the data, and a vendor name invites them to go read it somewhere else.
+   * What the copy must keep saying is the part that protects them -- that these
+   * numbers are third-party ESTIMATES and not measurements of their site --
+   * which the boundary and legend tests above check.
    *
-   * Written as a sweep over the whole catalog rather than a list of the fifteen
-   * strings that said it, because the next one will be written by someone who
-   * never read this comment.
+   * BOTH sources of page text, which is the whole point. A first version of
+   * this guard swept the message catalog alone, went green, and shipped a page
+   * still naming the vendor twenty-eight times: the hero, the meta description,
+   * the JSON-LD, the how-it-works steps, the feature cards and the FAQ all come
+   * from `getConnectedToolContent`, which the catalog sweep could not see. A
+   * guard is only as wide as the thing it reads.
    */
-  it("never names the keyword vendor in either language", () => {
+  it("never names the keyword vendor anywhere on the tool's page", () => {
     for (const [label, messages] of [
       ["en", enMessages],
       ["zh", zhMessages],
     ] as const) {
-      const named = Object.entries(
-        leafMessages(messages.tools.competitorKeywordGap),
-      ).filter(([, message]) => /dataforseo|\bDFS\b/i.test(message));
+      const page = [
+        ...leafStrings(messages.tools.competitorKeywordGap),
+        ...leafStrings(getConnectedToolContent(label, "competitor-keyword-gap")),
+      ];
+      const named = page.filter(([, message]) =>
+        /dataforseo|\bDFS\b/i.test(message),
+      );
 
       expect({ [label]: named }).toEqual({ [label]: [] });
     }
