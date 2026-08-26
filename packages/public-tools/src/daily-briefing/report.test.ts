@@ -131,6 +131,7 @@ function evidence(
     readonly pageAggregation?: string | null;
     readonly previousPageAggregation?: string | null;
     readonly pageUnreadable?: number;
+    readonly queryPageUnreadable?: number;
   } = {},
 ) {
   const totals = options.totals === undefined
@@ -151,6 +152,7 @@ function evidence(
     },
     queryPageRead: {
       rows: queryPages,
+      unreadableRows: options.queryPageUnreadable ?? 0,
       paging: {
         pagesFetched: 1,
         truncated: options.queryPageTruncated ?? false,
@@ -180,9 +182,17 @@ function evidence(
   };
 }
 
+/**
+ * Five peer rows at a 10% rate, sized to satisfy the band sample condition.
+ *
+ * Four hundred impressions each rather than a hundred: the CTR anomaly lane
+ * requires two thousand impressions in the band with the measured row removed,
+ * and five hundred peers could not carry that. The rate is unchanged, so every
+ * baseline and gap these fixtures assert is the same number it was.
+ */
 function baselineRows(prefix: string, position = 9) {
   return Array.from({ length: 5 }, (_, index) =>
-    queryRow(`${prefix} baseline ${index}`, 100, 10, position),
+    queryRow(`${prefix} baseline ${index}`, 400, 40, position),
   );
 }
 
@@ -200,7 +210,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v7");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v8");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -213,7 +223,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v7",
+      schemaVersion: "daily_search_briefing.v8",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -358,6 +368,113 @@ describe("daily and weekly KPI comparisons", () => {
 });
 
 describe("query changes and actions", () => {
+  // The band this fixture builds holds 2,900 impressions at a 10% rate. With
+  // the measured row removed it still holds 2,500, which is what the band
+  // sample condition asks for.
+  function anomalyReport(
+    targetImpressions: number,
+    targetClicks: number,
+    peerImpressions = 500,
+  ) {
+    const rows = [
+      queryRow("ctr target", targetImpressions, targetClicks, 9),
+      ...Array.from({ length: 5 }, (_, index) =>
+        queryRow(`anomaly peer ${index}`, peerImpressions, peerImpressions / 10, 9),
+      ),
+    ];
+    return report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+  }
+
+  it("names a query converting at half the rate its own band manages", () => {
+    // 400 impressions in a band running at 10% expects 40 clicks. Eight is a
+    // fifth of that.
+    const result = anomalyReport(400, 8);
+
+    expect(
+      result.changes.filter((change) => change.kind === "click_opportunity"),
+    ).toMatchObject([{ kind: "click_opportunity", query: "ctr target" }]);
+  });
+
+  it("fires at exactly half the predicted clicks", () => {
+    // 20 clicks against 40 expected is exactly half, and the gate includes it.
+    // The copy has to say "half or less", not "under half".
+    const result = anomalyReport(400, 20);
+
+    expect(
+      result.changes.filter((change) => change.kind === "click_opportunity"),
+    ).toHaveLength(1);
+  });
+
+  it("says nothing when the shortfall is real but under half", () => {
+    // 24 clicks against 40 expected is a 40% shortfall: below this briefing's
+    // own threshold, though it would have cleared the 15% one this lane used
+    // before the spec re-specified it.
+    const result = anomalyReport(400, 24);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 6,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous on too few impressions", () => {
+    // Zero clicks on 250 impressions is a 100% shortfall and still not asked:
+    // the row itself is below the impression condition.
+    const result = anomalyReport(250, 0);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      // Read, and never evaluated — a different fact from evaluated and clean.
+      notEvaluated: 1,
+      evaluatedNoSignal: 5,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous against a thin band", () => {
+    // Sized so the two readings of "the band" disagree: it holds 2,100
+    // impressions in total and 1,700 once the measured row is taken out. The
+    // baseline is a leave-one-out rate, so the second is the sample the
+    // comparison rests on, and 1,700 is short of the two thousand required.
+    const result = anomalyReport(400, 0, 340);
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+  });
+
+  it("will not call a rate anomalous when a click was never expected", () => {
+    // A band running at 1% expects four clicks from 400 impressions. Below
+    // five, "none arrived" is not yet a quantity worth acting on.
+    const rows = [
+      queryRow("ctr target", 400, 0, 9),
+      ...Array.from({ length: 5 }, (_, index) =>
+        queryRow(`anomaly peer ${index}`, 500, 5, 9),
+      ),
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(rows, []),
+      previousQueryEvidence: evidence(rows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.click_opportunity).toEqual({
+      notEvaluated: 6,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+  });
+
   it("uses a leave-one-out site CTR curve for a click opportunity", () => {
     const candidate = queryRow("pricing automation", 1_000, 0, 9);
     const currentRows = [candidate, ...baselineRows("base")];
@@ -1112,21 +1229,26 @@ describe("property trend", () => {
 });
 
 describe("signal funnel", () => {
+  // The four floor rows are the point of this fixture and keep their exact
+  // impression counts. The target and its two peers are scaled so the CTR
+  // anomaly lane's own conditions are met — three hundred on the row, two
+  // thousand in the band once the row is removed — at the same 10% rate, so
+  // every baseline and gap these tests assert is unchanged.
   function ctrFunnelRows() {
     return [
-      queryRow("ctr target", 100, 0, 9),
+      queryRow("ctr target", 400, 0, 9),
       queryRow("below observation floor", 49, 4, 9),
       queryRow("observation boundary", 50, 5, 9),
       queryRow("observation ceiling", 99, 10, 9),
-      queryRow("eligible peer a", 190, 19, 9),
-      queryRow("eligible peer b", 190, 19, 9),
+      queryRow("eligible peer a", 1_300, 130, 9),
+      queryRow("eligible peer b", 1_300, 130, 9),
     ];
   }
 
   it("reports complete mixed row floors and independent candidate lanes", () => {
     const rows = ctrFunnelRows();
     const page = "https://example.com/ctr-target";
-    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const pages = [queryPageRow("ctr target", page, 400, 0, 9)];
     const result = report({
       currentQueryEvidence: evidence(rows, pages),
       previousQueryEvidence: evidence(rows, pages),
@@ -1138,7 +1260,10 @@ describe("signal funnel", () => {
       observedQueryRows: 6,
       observationCandidates: 2,
       actionEligibleQueries: 3,
-      ctrBaselineRows: 1,
+      // Three, not one: with the band scaled up, removing any single row
+      // still leaves enough of it to anchor a leave-one-out baseline. At the
+      // old size only the smallest row's removal did.
+      ctrBaselineRows: 3,
       clickOpportunityCandidates: 1,
       stableDeclineCandidates: 0,
       pageOneBandCandidates: 0,
@@ -1175,7 +1300,7 @@ describe("signal funnel", () => {
   it("leaves CTR lanes unevaluated until brand terms are confirmed", () => {
     const rows = ctrFunnelRows();
     const page = "https://example.com/ctr-target";
-    const pages = [queryPageRow("ctr target", page, 100, 0, 9)];
+    const pages = [queryPageRow("ctr target", page, 400, 0, 9)];
     const result = report({
       currentQueryEvidence: evidence(rows, pages),
       previousQueryEvidence: evidence(rows, pages),
@@ -1907,27 +2032,54 @@ describe("query evidence boundaries", () => {
 });
 
 describe("average position lanes", () => {
+  // Every query gets a query-page row, including the peers. The position
+  // decline lane measures pairs, so a fixture that pairs only the query under
+  // test leaves it with no population at all and reports "nothing to measure"
+  // where a real read would have had five comparable pairs.
   function positionCase(
     query: string,
     previousPosition: number,
     currentPosition: number,
     impressions = 200,
+    clicks: { readonly previous: number; readonly current: number } = {
+      previous: 0,
+      current: 0,
+    },
   ) {
+    const peers = baselineRows("base");
     const current = [
-      queryRow(query, impressions, 0, currentPosition),
-      ...baselineRows("base"),
+      queryRow(query, impressions, clicks.current, currentPosition),
+      ...peers,
     ];
     const previous = [
-      queryRow(query, impressions, 0, previousPosition),
-      ...baselineRows("base"),
+      queryRow(query, impressions, clicks.previous, previousPosition),
+      ...peers,
     ];
     const page = `https://example.com/${query.replaceAll(" ", "-")}`;
+    const peerPages = () =>
+      peers.map((row) =>
+        queryPageRow(
+          row.query,
+          `https://example.com/${row.query.replaceAll(" ", "-")}`,
+          row.impressions,
+          row.clicks,
+          9,
+        ),
+      );
     return report({
       currentQueryEvidence: evidence(current, [
-        queryPageRow(query, page, impressions, 0, currentPosition),
+        queryPageRow(query, page, impressions, clicks.current, currentPosition),
+        ...peerPages(),
       ]),
       previousQueryEvidence: evidence(previous, [
-        queryPageRow(query, page, impressions, 0, previousPosition),
+        queryPageRow(
+          query,
+          page,
+          impressions,
+          clicks.previous,
+          previousPosition,
+        ),
+        ...peerPages(),
       ]),
     }).result;
   }
@@ -1963,8 +2115,142 @@ describe("average position lanes", () => {
     expect(positionCase("still outside", 13, 10.1).changes).toEqual([]);
   });
 
+  it("will not call a position decline without the clicks moving with it", () => {
+    // The same three-place slide, with clicks flat. At query level this was a
+    // decline; on the pair it is a move nobody paid for, which is what a shift
+    // in the mix of pages behind a query looks like.
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 10,
+    });
+
+    expect(result.changes).toEqual([]);
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "evaluated",
+    );
+  });
+
+  it("will not call a position decline on a click drop under thirty per cent", () => {
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 8,
+    });
+
+    expect(result.changes).toEqual([]);
+  });
+
+  it("measures the decline on the pair, not on the query", () => {
+    // One query, two pages. Neither page moved at all; the query's average
+    // position fell three places purely because its impressions moved from
+    // the page ranking 5 to the page ranking 25, and its clicks halved with
+    // them. Read at query level this is a decline. It is not one.
+    const query = "mix shift";
+    const strong = "https://example.com/strong";
+    const weak = "https://example.com/weak";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 5, 20)],
+        [
+          queryPageRow(query, strong, 100, 2, 5),
+          queryPageRow(query, weak, 300, 3, 25),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 10, 10)],
+        [
+          queryPageRow(query, strong, 300, 8, 5),
+          queryPageRow(query, weak, 100, 2, 25),
+        ],
+      ),
+    }).result;
+
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "actionable_position_decline",
+      ),
+    ).toEqual([]);
+    // Both pairs were comparable, so the lane looked and found nothing.
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "evaluated",
+    );
+  });
+
+  it("carries the page the decline was measured on into the action", () => {
+    const query = "one of two";
+    const falling = "https://example.com/falling";
+    const steady = "https://example.com/steady";
+    // The steady page is deliberately the larger one. With both at the same
+    // size the query-level fallback picked the same URL by alphabetical
+    // tiebreak, and the assertion below passed whether or not the pair
+    // carried its own page.
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 6, 12)],
+        [
+          queryPageRow(query, falling, 150, 2, 18),
+          queryPageRow(query, steady, 250, 4, 6),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 10, 10)],
+        [
+          queryPageRow(query, falling, 150, 6, 11),
+          queryPageRow(query, steady, 250, 4, 6),
+        ],
+      ),
+    }).result;
+
+    // The page is the one that moved, not the query's largest.
+    expect(result.changes).toMatchObject([
+      {
+        kind: "actionable_position_decline",
+        query,
+        page: falling,
+        positionDelta: 7,
+      },
+    ]);
+    expect(result.actions).toMatchObject([
+      { destination: "traffic-drop-diagnosis", page: falling },
+    ]);
+  });
+
+  it("reports one row per query even when two of its pages both slid", () => {
+    const query = "both slid";
+    const first = "https://example.com/first";
+    const second = "https://example.com/second";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 4, 16)],
+        [
+          queryPageRow(query, first, 200, 2, 14),
+          queryPageRow(query, second, 200, 2, 18),
+        ],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 12, 10)],
+        [
+          queryPageRow(query, first, 200, 6, 10),
+          queryPageRow(query, second, 200, 6, 6),
+        ],
+      ),
+    }).result;
+
+    // Selection keeps one change per query, so a second pair could never be
+    // shown. Emitting it only made the candidate count larger than the number
+    // of rows the lane could ever report.
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(result.changes).toMatchObject([
+      { kind: "actionable_position_decline", page: second, positionDelta: 12 },
+    ]);
+  });
+
   it("reports an actionable position decline at the exact band edge", () => {
-    const result = positionCase("slipping", 28, 31);
+    // Clicks fall with the position: without that the move is as likely to be
+    // the mix of pages behind the query changing as the query losing ground.
+    const result = positionCase("slipping", 28, 31, 200, {
+      previous: 10,
+      current: 5,
+    });
 
     expect(result.changes).toMatchObject([
       {
@@ -1981,7 +2267,10 @@ describe("average position lanes", () => {
   it("keeps a far-position slide out of the action list", () => {
     // A four-and-a-half point slide from eighty-six is real and useless: no
     // edit made this week decides whether that query earns a click.
-    const result = positionCase("backlinks monitor", 86.5, 91.3);
+    const result = positionCase("backlinks monitor", 86.5, 91.3, 200, {
+      previous: 10,
+      current: 5,
+    });
 
     expect(result.changes).toEqual([]);
     expect(result.actions).toEqual([]);
@@ -2747,8 +3036,10 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
     expect(result.laneCapability.strictPairedPositionQueries).toBe(2);
     expect(result.laneCapability.lanes).toMatchObject({
       average_position_crossed_page_one_band: "evaluated",
-      // Neither window is inside the top thirty, so this lane has no row.
-      actionable_position_decline: "not_applicable",
+      // This fixture has no query-page attachment, and the decline lane is
+      // measured on pairs. It could not look, which is a different statement
+      // from having nothing to look at.
+      actionable_position_decline: "unavailable",
     });
     expect(result.changes).toEqual([]);
     expect(result.rowAccounting.byLane?.average_position_crossed_page_one_band)
@@ -2824,19 +3115,19 @@ describe("action budget", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const currentPages = [
       ...crossings.flatMap(splitPages),
-      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 26),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 5, 26),
     ];
     const previousPages = [
       ...crossings.flatMap(splitPages),
-      queryPageRow("decliner", "https://example.com/decliner", 300, 0, 22),
+      queryPageRow("decliner", "https://example.com/decliner", 300, 10, 22),
     ];
     const result = report({
       currentQueryEvidence: evidence(currentRows, currentPages),
@@ -2937,11 +3228,11 @@ describe("page attribution refuses a partial page prefix", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const pages = (rows: readonly ReturnType<typeof queryRow>[]) =>
       rows.map((row) =>
@@ -2974,11 +3265,11 @@ describe("action budget boundaries", () => {
     const crossings = ["cross a", "cross b", "cross c"];
     const currentRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 9)),
-      queryRow("decliner", 300, 0, 26),
+      queryRow("decliner", 300, 5, 26),
     ];
     const previousRows = [
       ...crossings.map((query) => queryRow(query, 1_000, 0, 12)),
-      queryRow("decliner", 300, 0, 22),
+      queryRow("decliner", 300, 10, 22),
     ];
     const splitPages = (query: string) =>
       Array.from({ length: 13 }, (_, index) =>
@@ -3007,11 +3298,14 @@ describe("action budget boundaries", () => {
             ]
           : splitPages(query),
       ),
+      // The pair carries the clicks too: the decline lane reads them off the
+      // pair, so leaving them at zero here made a query row that fell by half
+      // arrive at the lane as a pair that never had a click to lose.
       queryPageRow(
         "decliner",
         "https://example.com/decliner",
         300,
-        0,
+        rows === currentRows ? 5 : 10,
         rows === currentRows ? 26 : 22,
       ),
     ];
@@ -3134,14 +3428,32 @@ function pageReport(
     readonly previousPageAggregation?: string | null;
     readonly pageUnreadable?: number;
     readonly previousPageUnreadable?: number;
+    readonly totals?: {
+      readonly impressions: number;
+      readonly clicks: number;
+    } | null;
+    readonly totalAggregation?: string | null;
+    readonly queryAggregation?: string | null;
+    readonly brandTerms?: readonly string[];
+    readonly brandTermsConfirmed?: boolean;
   } = {},
 ) {
   return report({
+    ...(overrides.brandTerms === undefined
+      ? {}
+      : { brandTerms: overrides.brandTerms }),
     currentQueryEvidence: evidence(
       overrides.currentQueries ?? inertQueryRows(),
       overrides.currentQueryPages ?? [],
       {
         pages: currentPages,
+        ...(overrides.totals === undefined ? {} : { totals: overrides.totals }),
+        ...(overrides.totalAggregation === undefined
+          ? {}
+          : { totalAggregation: overrides.totalAggregation }),
+        ...(overrides.queryAggregation === undefined
+          ? {}
+          : { queryAggregation: overrides.queryAggregation }),
         ...(overrides.pageTruncated === undefined
           ? {}
           : { pageTruncated: overrides.pageTruncated }),
@@ -3169,12 +3481,13 @@ function pageReport(
           : { pageUnreadable: overrides.previousPageUnreadable }),
       },
     ),
-    brandTermsConfirmed: true,
+    brandTermsConfirmed: overrides.brandTermsConfirmed ?? true,
   }).result;
 }
 
 describe("page dimension lanes", () => {
   const PAGE = "https://example.com/guide";
+const GONE = "https://example.com/gone";
 
   it("finds the click decline the query rows cannot see", () => {
     // The reason this dimension exists. Search Console anonymizes low-volume
@@ -3238,7 +3551,15 @@ describe("page dimension lanes", () => {
       [pageRow("https://example.com/other", 300, 2, 12)],
     );
 
+    // Two signals, because the prior row this fixture uses as scaffolding is
+    // itself a page that stopped being shown. Collapse leads: it outranks a
+    // page that has only just appeared.
     expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: "https://example.com/other",
+        current: null,
+      },
       {
         kind: "page_first_observed",
         page: PAGE,
@@ -3248,6 +3569,11 @@ describe("page dimension lanes", () => {
       },
     ]);
     expect(result.pageActions).toEqual([
+      {
+        kind: "page_impression_collapse",
+        destination: "traffic-drop-diagnosis",
+        page: "https://example.com/other",
+      },
       {
         kind: "page_first_observed",
         destination: "on-page-seo-check",
@@ -3264,7 +3590,13 @@ describe("page dimension lanes", () => {
 
     // Nothing done to this page this week decides whether position 45 earns a
     // click. Evaluated and rejected, which is a different fact from unasked.
-    expect(result.pageChanges).toEqual([]);
+    // Scoped to the lane under test: the scaffolding prior row is a collapse
+    // in its own right and reports separately.
+    expect(
+      result.pageChanges.filter(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toEqual([]);
     expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
       notEvaluated: 0,
       evaluatedNoSignal: 1,
@@ -3312,6 +3644,10 @@ describe("page dimension lanes", () => {
     // nothing either lane could ever measure; the actual reason is prior
     // evidence neither of them could read.
     expect(result.laneCapability.pageLanes).toEqual({
+      // The collapse lane reads the prior window, and every prior row here was
+      // discarded. It could not look at all, which is a stronger statement
+      // than the partial one the current-window lanes make.
+      page_impression_collapse: "unavailable",
       page_click_decline: "partially_readable",
       page_first_observed: "partially_readable",
     });
@@ -3322,6 +3658,14 @@ describe("page dimension lanes", () => {
     // Both lanes, not just the one that would have fired. A decline lane that
     // recorded "evaluated, no signal" would be claiming it looked.
     expect(result.pageAccounting.byLane).toEqual({
+      // Two prior records arrived and neither survived, counted against the
+      // prior window rather than the current one — which is why this is two
+      // where the current-window lanes report one.
+      page_impression_collapse: {
+        notEvaluated: 2,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3345,6 +3689,11 @@ describe("page dimension lanes", () => {
 
     expect(result.pageChanges).toEqual([]);
     expect(result.pageAccounting.byLane).toEqual({
+      page_impression_collapse: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3411,7 +3760,14 @@ describe("page dimension lanes", () => {
       { previousPageUnreadable: 1 },
     );
 
-    expect(result.pageChanges).toEqual([]);
+    // Scoped: the unattributable prior record blocks the absence claim about
+    // PAGE, and says nothing about the scaffolding page whose own prior row
+    // was read and whose current absence is provable.
+    expect(
+      result.pageChanges.filter(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toEqual([]);
     expect(result.laneCapability.pageLanes.page_first_observed).toBe(
       "partially_readable",
     );
@@ -3497,6 +3853,9 @@ describe("page dimension lanes", () => {
     // "Not applicable" claims the property has nothing this lane could ever
     // measure. One unreadable row does not establish that.
     expect(result.laneCapability.pageLanes).toEqual({
+      // Its one prior row was readable, but the current row it had to compare
+      // against was not, so it settled nothing either.
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     });
@@ -3607,6 +3966,13 @@ describe("page dimension lanes", () => {
     // cannot be asked against a window that small.
     expect(result.pageChanges).toEqual([]);
     expect(result.pageAccounting.byLane).toEqual({
+      // Sixty prior impressions clears this lane's floor, so it asked and
+      // answered: the page grew, it did not collapse.
+      page_impression_collapse: {
+        notEvaluated: 0,
+        evaluatedNoSignal: 1,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3620,10 +3986,460 @@ describe("page dimension lanes", () => {
     });
   });
 
+  it("reports a page whose impressions stopped entirely", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([
+      {
+        kind: "page_impression_collapse",
+        evidence: "observed",
+        page: GONE,
+        previous: { page: GONE, impressions: 300, clicks: 2, position: 11 },
+        // No current row, so no current numbers beyond the two the complete
+        // window proves are zero. The position stays unrepresented.
+        current: null,
+        clickChange: -2,
+        clickChangeRatio: -1,
+        impressionChange: -300,
+        impressionChangeRatio: -1,
+        positionDelta: null,
+        noiseFloor: {
+          basis: "impressions",
+          observedChange: -300,
+          minimumForAction: 2 * Math.sqrt(300),
+          cleared: true,
+        },
+      },
+    ]);
+    expect(result.pageActions).toEqual([
+      {
+        kind: "page_impression_collapse",
+        destination: "traffic-drop-diagnosis",
+        page: GONE,
+      },
+    ]);
+  });
+
+  it("reports a page still shown, but at a fraction of the prior window", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 40, 0, 30)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: GONE,
+        current: { impressions: 40 },
+        impressionChange: -260,
+        // Both positions were measured here, so the move is carried.
+        positionDelta: 19,
+      },
+    ]);
+  });
+
+  it("leaves a page that lost most of a tiny base alone", () => {
+    // Four impressions down to nothing is a hundred per cent of a base too
+    // small to have said anything. The ratio alone would have called it a
+    // collapse.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 4, 0, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      // Read, and rejected before the lane's own question: the row never
+      // cleared the sample floor, so it was not evaluated.
+      notEvaluated: 1,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+  });
+
+  it("leaves a page that merely lost some of its impressions alone", () => {
+    // Down 70%: real, and not the wholesale disappearance this lane names.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 90, 0, 11)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 2,
+      candidates: 0,
+    });
+  });
+
+  it("will not read absence as collapse when a current row named no page", () => {
+    const result = pageReport(
+      // One current record that named nothing. It could have been any page,
+      // this one included, so "no current row" stops meaning "no impressions".
+      [pageRow(PAGE, 300, 2, 12), pageRow("   ", 400, 5, 9)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_impression_collapse).toBe(
+      "partially_readable",
+    );
+  });
+
+  it("still reads absence for the pages an unattributable current row cannot be", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+      // A current record the reader dropped before the report saw it. Absence
+      // is no longer provable for anything.
+      { pageUnreadable: 1 },
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_impression_collapse).toBe(
+      "partially_readable",
+    );
+  });
+
+  it("collapse outranks a click decline on the same page", () => {
+    const result = pageReport(
+      // A hundred current impressions, so the decline lane clears its own
+      // floor and genuinely competes. Below it the lane never looks, and this
+      // test would have asserted an ordering that was never contested.
+      [pageRow(PAGE, 100, 0, 12)],
+      [pageRow(PAGE, 600, 9, 11)],
+    );
+
+    // Both lanes have a candidate for this page: impressions fell 83% and
+    // clicks fell nine. One page, one row — and the reader is told the thing
+    // most likely to be the page's own fault.
+    expect(result.pageAccounting.byLane?.page_click_decline.candidates).toBe(1);
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_impression_collapse", page: PAGE },
+    ]);
+  });
+
+  it("counts the collapse lane against the window it actually walks", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [
+        pageRow(PAGE, 300, 2, 12),
+        pageRow(GONE, 300, 2, 11),
+        pageRow("https://example.com/third", 300, 2, 11),
+        // Below the collapse floor, so the split carries a non-zero
+        // `notEvaluated`. Without it every count survives being divided by the
+        // current window's total instead, because `max(0, 1 - 3)` and
+        // `max(0, 4 - 3)` both round the disagreement away.
+        pageRow("https://example.com/tiny", 5, 0, 11),
+      ],
+    );
+
+    // One current record, four prior ones. The two totals are both right and
+    // are not addends; the collapse split has to add up to the prior one.
+    expect(result.pageAccounting.observedRows).toBe(1);
+    expect(result.pageAccounting.previousObservedRows).toBe(4);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      notEvaluated: 1,
+      evaluatedNoSignal: 1,
+      candidates: 2,
+    });
+  });
+
+  it("names a page shown often enough that no clicks is a fact", () => {
+    const result = pageReport(
+      // 1% is this property's own rate, so five hundred impressions expect
+      // five clicks and none arrived.
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.evidence).toBe("observed");
+    expect(result.pageChecks.baseline).toEqual({
+      ctr: 0.01,
+      impressions: 10_000,
+      clicks: 100,
+      brandQueriesExcluded: 0,
+    });
+    expect(result.pageChecks.items).toEqual([
+      {
+        page: PAGE,
+        impressions: 500,
+        position: 5,
+        expectedClicks: 5,
+        destination: "on-page-seo-check",
+      },
+    ]);
+  });
+
+  it("says nothing about a page whose own volume predicts no clicks", () => {
+    const result = pageReport(
+      // Two hundred impressions at the same 1% expects two clicks. Seeing
+      // none of two happens on one run in seven; it is not a finding.
+      [pageRow(PAGE, 200, 0, 5)],
+      [pageRow(PAGE, 200, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+    // Read and rejected, which is a different fact from never looked at.
+    expect(result.pageChecks.examinedRows).toBe(1);
+  });
+
+  it("says nothing about a page almost nobody is shown", () => {
+    const result = pageReport(
+      // Volume enough to expect five clicks, at an average position where
+      // "go and look at how this result appears" is not an available action.
+      [pageRow(PAGE, 500, 0, 35)],
+      [pageRow(PAGE, 500, 0, 35)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("says nothing about a page that did draw a click", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 1, 5)],
+      [pageRow(PAGE, 500, 1, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("takes brand rows out of the rate it measures pages against", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        // Brand traffic converts an order of magnitude better than the rest.
+        // Left in, the property looks like a 3% site and this page's five
+        // hundred impressions would expect fifteen clicks; taken out, the
+        // real rate is 0.5% and the same page expects 2.5.
+        currentQueries: [queryRow("acme", 1_000, 250, 1)],
+        brandTerms: ["acme"],
+        totals: { impressions: 11_000, clicks: 300 },
+      },
+    );
+
+    expect(result.pageChecks.baseline).toEqual({
+      ctr: 50 / 10_000,
+      impressions: 10_000,
+      clicks: 50,
+      brandQueriesExcluded: 1,
+    });
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("refuses the check rather than guess when brand terms are unconfirmed", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        brandTermsConfirmed: false,
+      },
+    );
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["brand_terms_not_confirmed"]);
+    expect(result.pageChecks.baseline).toBeNull();
+    expect(result.pageChecks.examinedRows).toBeNull();
+  });
+
+  it("refuses to divide two differently aggregated measurements", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        // The page rows are aggregated by page; this total is not.
+        totalAggregation: "byProperty",
+      },
+    );
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["aggregation_basis_mismatch"]);
+  });
+
+  it("leaves out a page the briefing already handed the reader an action for", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 300, 2, 11)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+    const gone = pageReport(
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5), pageRow(GONE, 3_000, 20, 5)],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    // The collapsed page is a different page, so this one is unaffected.
+    expect(result.pageChecks.items.map((item) => item.page)).toEqual([PAGE]);
+    // But when the collapse is about a page that would also qualify here, it
+    // is not listed twice: one page, one row.
+    expect(gone.pageChanges.map((change) => change.page)).toEqual([GONE]);
+    expect(gone.pageChecks.items.map((item) => item.page)).toEqual([PAGE]);
+  });
+
+  it("treats a zero-impression current row as absence, not as position zero", () => {
+    // Search Console does return rows shown zero times. Left as a row, its
+    // literal position of 0 reached the table beside a measured prior one.
+    const result = pageReport(
+      [pageRow(PAGE, 0, 0, 0)],
+      [pageRow(PAGE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: PAGE,
+        current: null,
+        impressionChange: -300,
+        positionDelta: null,
+      },
+    ]);
+  });
+
+  it("fires at exactly the collapse threshold", () => {
+    // Down exactly four fifths. The copy has to say "or more", not "more
+    // than", because this row is included.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 20, 0, 11)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 100, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_impression_collapse", page: GONE },
+    ]);
+  });
+
+  it("refuses the zero-click check when the query rows were not read", () => {
+    // The brand rows are subtracted from the totals, so an unread query
+    // attachment is a subtraction we cannot perform — not a property without
+    // brand queries.
+    const result = report({
+      currentQueryEvidence: {
+        ...evidence([queryRow("acme", 1_000, 250, 1)], [], {
+          pages: [pageRow(PAGE, 500, 0, 5)],
+          totals: { impressions: 11_000, clicks: 300 },
+        }),
+        queryRead: null,
+      },
+      previousQueryEvidence: evidence([], [], {
+        pages: [pageRow(PAGE, 500, 0, 5)],
+      }),
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["query_rows_unavailable"]);
+    // And emphatically not the property's whole rate published as its
+    // non-brand one: 300/11,000 would have made this page's 500 impressions
+    // expect 13.6 clicks against a true expectation of 2.5.
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("refuses the zero-click check when the query rows use another basis", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        queryAggregation: "byProperty",
+      },
+    );
+
+    expect(result.pageChecks.blockers).toEqual(["aggregation_basis_mismatch"]);
+  });
+
+  it("calls the zero-click check partial when page records were discarded", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 }, pageUnreadable: 1 },
+    );
+
+    // It ran on what it could read and cannot speak for the rest.
+    expect(result.pageChecks.evidence).toBe("partial");
+    expect(result.pageChecks.items).toHaveLength(1);
+  });
+
+  it("keeps a page change that lost the display budget out of the checks", () => {
+    const result = pageReport(
+      [
+        pageRow("https://example.com/a", 400, 0, 5),
+        pageRow("https://example.com/b", 400, 0, 5),
+        pageRow("https://example.com/c", 400, 0, 5),
+      ],
+      [
+        pageRow("https://example.com/a", 4_000, 0, 5),
+        pageRow("https://example.com/b", 3_600, 0, 5),
+        pageRow("https://example.com/c", 3_200, 0, 5),
+      ],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    // Three collapses, two display slots. The third is a page this briefing
+    // just judged to have changed; listing it under "nothing here is claimed
+    // to have changed" would contradict that judgement about the same rows.
+    expect(result.pageChanges).toHaveLength(2);
+    expect(result.pageAccounting.notSelectedVisibleRows).toBe(1);
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("says it could not look when every pair record was unattributable", () => {
+    const result = report({
+      currentQueryEvidence: evidence([queryRow("q", 200, 5, 15)], [], {
+        queryPageUnreadable: 1,
+      }),
+      previousQueryEvidence: evidence([queryRow("q", 200, 10, 10)], [], {
+        queryPageUnreadable: 1,
+      }),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // Records arrived and could not be attributed to a query and a page.
+    // "Not applicable" would claim the property has no pair to measure.
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "unavailable",
+    );
+  });
+
+  it("ignores a pair whose query is not a readable query row", () => {
+    const result = report({
+      currentQueryEvidence: evidence(
+        [],
+        [queryPageRow("orphan", "https://example.com/landing", 200, 5, 15)],
+      ),
+      previousQueryEvidence: evidence(
+        [],
+        [queryPageRow("orphan", "https://example.com/landing", 200, 10, 10)],
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // The pair clears every condition on its own. Its split is counted
+    // against the query rows, of which there are none, so counting it would
+    // report one candidate out of a population of zero.
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.actionable_position_decline).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
+  });
+
   it("reports page lanes as unavailable when the page dimension was not read", () => {
     const result = pageReport(null, null);
 
     expect(result.laneCapability.pageLanes).toEqual({
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     });
@@ -3632,6 +4448,7 @@ describe("page dimension lanes", () => {
     expect(result.pageAccounting).toEqual({
       evidence: "unavailable",
       observedRows: null,
+      previousObservedRows: null,
       notSelectedVisibleRows: null,
       unreadableRows: null,
       byLane: null,
@@ -3672,6 +4489,7 @@ describe("page dimension lanes", () => {
     expect(result.pageAccounting).toEqual({
       evidence: "unavailable",
       observedRows: null,
+      previousObservedRows: null,
       notSelectedVisibleRows: null,
       unreadableRows: null,
       byLane: null,

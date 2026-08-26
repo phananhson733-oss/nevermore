@@ -208,6 +208,7 @@ function laneCapability(
     pairedPageRows: null,
     pageFloorRows: null,
     pageLanes: {
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     },
@@ -840,7 +841,10 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     // Every path carries its own requirement, so a reader can check why it
     // did or did not run instead of reading a badge that says "observed".
     expect(paths?.textContent).toContain("Requires:");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
+    // Ten paths: the CTR baseline, five query lanes, three page lanes and the
+    // page-attribution line. Counted literally so that adding a lane without
+    // deciding what it says here fails right at this assertion.
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(10);
   });
 
   it("tells a path that could not run from a path that found nothing", async () => {
@@ -923,14 +927,14 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     ];
     // Asserted, not assumed: a loop over a selector that stopped matching
     // would otherwise pass by making no assertion at all.
-    // Seven lane outcomes plus the two per-population selection lines.
-    expect(outcomes).toHaveLength(11);
+    // The ten signal paths plus the two per-population selection lines.
+    expect(outcomes).toHaveLength(12);
     for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
     }
     expect(paths?.textContent).not.toContain("query rows, and every");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(9);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(10);
   });
 
   it("accounts for every observed row inside each evaluation path", async () => {
@@ -1960,9 +1964,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 6,
+          previousObservedRows: 6,
           notSelectedVisibleRows: 2,
           unreadableRows: 0,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(2, 0, 4),
             page_first_observed: laneRows(6, 0, 0),
           },
@@ -1999,9 +2005,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 2,
+          previousObservedRows: 2,
           notSelectedVisibleRows: pageCount,
           unreadableRows: 0,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(2, 0, 0),
             page_first_observed: laneRows(2, 0, 0),
           },
@@ -2033,6 +2041,7 @@ describe("DailyBriefingResults folded explanation", () => {
         // renders rather than the "could not look" sentence.
         laneCapability: laneCapability({
           pageLanes: {
+            page_impression_collapse: "not_applicable",
             page_click_decline: "not_applicable",
             page_first_observed: "not_applicable",
           },
@@ -2040,9 +2049,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 5,
+          previousObservedRows: 5,
           notSelectedVisibleRows: 0,
           unreadableRows: 2,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(5, 0, 0),
             page_first_observed: laneRows(5, 0, 0),
           },
@@ -2060,7 +2071,7 @@ describe("DailyBriefingResults folded explanation", () => {
     // Named accurately: a duplicated URL is rejected for being duplicated, not
     // for figures that contradict each other.
     expect(intro?.textContent).toContain("returned more than once");
-    expect(intro?.textContent).toContain("Neither path evaluated them");
+    expect(intro?.textContent).toContain("None of the three paths evaluated them");
     // And the lanes must carry them, not just the sentence above: an
     // unreadable row is a row neither lane could ask about.
     for (const id of ["page-click-decline", "page-first-observed"]) {
@@ -2172,9 +2183,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 1,
+          previousObservedRows: 1,
           notSelectedVisibleRows: 0,
           unreadableRows: 0,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(1, 0, 0),
             page_first_observed: laneRows(0, 1, 0),
           },
@@ -2198,6 +2211,7 @@ describe("DailyBriefingResults folded explanation", () => {
         actions: [],
         laneCapability: laneCapability({
           pageLanes: {
+            page_impression_collapse: "partially_readable",
             page_click_decline: "partially_readable",
             page_first_observed: "partially_readable",
           },
@@ -2205,9 +2219,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 1,
+          previousObservedRows: 1,
           notSelectedVisibleRows: 0,
           unreadableRows: 1,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(1, 0, 0),
             page_first_observed: laneRows(1, 0, 0),
           },
@@ -2229,6 +2245,136 @@ describe("DailyBriefingResults folded explanation", () => {
     );
   });
 
+  it("shows a vanished page's counts as zero and its position as unmeasured", async () => {
+    const gone = pageChange({
+      kind: "page_impression_collapse",
+      current: null,
+      clickChange: -20,
+      clickChangeRatio: -1,
+      impressionChange: -400,
+      impressionChangeRatio: -1,
+      positionDelta: null,
+      noiseFloor: {
+        basis: "impressions",
+        observedChange: -400,
+        minimumForAction: 2 * Math.sqrt(400),
+        cleared: true,
+      },
+    });
+    const host = await renderResults(
+      envelope({
+        pageChanges: [gone],
+        pageActions: [
+          {
+            kind: "page_impression_collapse",
+            destination: "traffic-drop-diagnosis",
+            page: PAGE_CHANGE_URL,
+          },
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const row = host.querySelector('[data-review-group="page"]')?.parentElement;
+    const text = host.textContent ?? "";
+
+    // Clicks are a count the complete window proves: twenty, then none.
+    expect(text).toContain("20 → 0");
+    // The position is not. Rendering the prior 9.1 against a fabricated 0.0
+    // is the one number this lane must never print.
+    expect(text).not.toContain("9.1 → 0.0");
+    expect(text).toContain(`9.1 → ${en.tools.dailyBriefing.kpis.unavailable}`);
+    expect(row).not.toBeNull();
+  });
+
+  it("states the prior-window total the collapse split is counted against", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChanges: [pageChange()],
+        pageActions: [pageAction()],
+        pageAccounting: {
+          evidence: "observed",
+          observedRows: 1,
+          previousObservedRows: 4,
+          notSelectedVisibleRows: 0,
+          unreadableRows: 0,
+          byLane: {
+            page_impression_collapse: laneRows(1, 1, 2),
+            page_click_decline: laneRows(0, 0, 1),
+            page_first_observed: laneRows(1, 0, 0),
+          },
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const intro = host.querySelector("[data-page-previous-rows-intro]");
+
+    // Without it the collapse split reads as an arithmetic error: its three
+    // numbers add to four beside a stated total of one.
+    expect(intro?.textContent).toContain("4 page records");
+  });
+
+  it("names this property's own rate on the zero-click checks", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "observed",
+          baseline: {
+            ctr: 0.01,
+            impressions: 10_000,
+            clicks: 100,
+            brandQueriesExcluded: 0,
+          },
+          blockers: [],
+          items: [
+            {
+              page: PAGE_CHANGE_URL,
+              impressions: 500,
+              position: 5,
+              expectedClicks: 5,
+              destination: "on-page-seo-check",
+            },
+          ],
+          examinedRows: 4,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const block = host.querySelector("[data-page-checks]");
+
+    expect(block?.querySelectorAll("[data-page-check-row]")).toHaveLength(1);
+    // The rate is the whole claim, so it is on screen rather than implied.
+    expect(block?.textContent).toContain("1.0%");
+    expect(block?.textContent).toContain("500");
+    expect(block?.textContent).toContain("5.0");
+    // And it is named as this property's own, not as a benchmark.
+    expect(block?.textContent).toContain("this property's own");
+    // The gate the list applies is disclosed, so a page with volume and no
+    // clicks that is missing from the list has a stated reason to be.
+    expect(block?.textContent).toContain("top ten");
+    // And the population it read, so the list is not mistaken for the whole
+    // page dimension.
+    expect(
+      block?.querySelector("[data-page-checks-examined]")?.textContent,
+    ).toContain("4 page records");
+  });
+
+  it("shows no zero-click block when the check could not run", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "unavailable",
+          baseline: null,
+          blockers: ["brand_terms_not_confirmed"],
+          items: [],
+          examinedRows: null,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    expect(host.querySelector("[data-page-checks]")).toBeNull();
+  });
+
   it("keeps the chart when a page lane settled nothing", async () => {
     const host = await renderResults(
       envelope({
@@ -2238,6 +2384,7 @@ describe("DailyBriefingResults folded explanation", () => {
         cadence: "weekly",
         laneCapability: laneCapability({
           pageLanes: {
+            page_impression_collapse: "not_applicable",
             page_click_decline: "partially_readable",
             page_first_observed: "not_applicable",
           },
@@ -2245,9 +2392,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 1,
+          previousObservedRows: 1,
           notSelectedVisibleRows: 0,
           unreadableRows: 1,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(1, 0, 0),
             page_first_observed: laneRows(1, 0, 0),
           },
@@ -2272,9 +2421,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 1,
+          previousObservedRows: 1,
           notSelectedVisibleRows: 0,
           unreadableRows: 1,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(1, 0, 0),
             page_first_observed: laneRows(1, 0, 0),
           },
@@ -2464,6 +2615,7 @@ describe("DailyBriefingResults folded explanation", () => {
         actions: [],
         laneCapability: laneCapability({
           pageLanes: {
+            page_impression_collapse: "not_applicable",
             page_click_decline: "evaluated",
             page_first_observed: "not_applicable",
           },
@@ -2473,9 +2625,11 @@ describe("DailyBriefingResults folded explanation", () => {
         pageAccounting: {
           evidence: "observed",
           observedRows: 4,
+          previousObservedRows: 4,
           notSelectedVisibleRows: 0,
           unreadableRows: 0,
           byLane: {
+            page_impression_collapse: laneRows(0, 0, 0),
             page_click_decline: laneRows(0, 4, 0),
             page_first_observed: laneRows(4, 0, 0),
           },

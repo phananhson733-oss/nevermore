@@ -1982,8 +1982,8 @@
           "lanes": {
             "clickOpportunity": {
               "name": "Click opportunity",
-              "requirement": "confirmed brand terms, and the query being non-brand, reaching 100 impressions in the current window, sitting inside a usable CTR baseline band, and leaving that band still able to produce a baseline once the query itself is removed from it",
-              "finding": "observed clicks fall at least 3 short of what the band baseline predicts, and the shortfall reaches 15 percent of that prediction"
+              "requirement": "confirmed brand terms, and the query being non-brand, reaching 300 impressions in the current window, sitting inside a usable CTR baseline band that still holds 2,000 impressions and can still produce a baseline once the query itself is removed from it, and being predicted at least 5 clicks by that baseline",
+              "finding": "observed clicks come in at half or less of what the band baseline predicts"
             },
             "stableDecline": {
               "name": "Stable-position click decline",
@@ -1997,8 +1997,8 @@
             },
             "positionDecline": {
               "name": "Slide from the actionable band",
-              "requirement": "at least 100 impressions in each window, with at least one window inside the top 30",
-              "finding": "average presented position falls by at least 3"
+              "requirement": "the same query-and-page pair reaching 100 impressions in each window, with at least one window inside the top 30",
+              "finding": "that pair's average presented position falls by at least 3 and its clicks fall by at least 30% with it"
             },
             "firstObserved": {
               "name": "First-observed query and page pair (counted below by query)",
@@ -2015,8 +2015,13 @@
           "laneFinding": "Hits when: {finding}",
           "selectionTitle": "What happens after a candidate forms",
           "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows; page rows have their own budget of at most two and do not compete for those slots. If all three selected query rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
-          "pageUnavailable": "No comparable pair of page windows this run, so the two paths below did not run. That is not the same as the page dimension returning nothing.",
+          "pageUnavailable": "No comparable pair of page windows this run, so the three paths below did not run. That is not the same as the page dimension returning nothing.",
           "pageLanes": {
+            "pageImpressionCollapse": {
+              "name": "Page impressions all but gone",
+              "requirement": "at least 30 impressions on this page in the prior window, and whether it appears in the current window is decidable",
+              "finding": "impressions fell 80% or more below the prior window, and the drop reached 2×√prior impressions"
+            },
             "pageClickDecline": {
               "name": "Page click decline",
               "requirement": "At least 100 impressions for the page in each window, and at least 3 clicks in the prior one",
@@ -2029,7 +2034,8 @@
             }
           },
           "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
-          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. Neither path evaluated them, which is not the same as their not being there.",
+          "pagePreviousRowsIntro": "The prior window returned {rows} page records. “Page impressions all but gone” is accounted against those rather than the total above — a page that stopped being shown appears in no current-window record, so its three numbers will not add up to that total, and that is correct.",
+          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. None of the three paths evaluated them, which is not the same as their not being there.",
           "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
           "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
           "selectionAllShownPage": "Every page record that formed a candidate this run appears in the table above.",
@@ -2095,7 +2101,7 @@
         },
         "actionable_position_decline": {
           "title": "Position slipped inside the actionable band",
-          "body": "This query is still in a band where work on the page can matter, and its average position moved materially the wrong way."
+          "body": "This compares one page against itself on one query, not the query's blended average — moving a query's impressions onto a worse-ranking page pulls that average down while nothing about any single result changed. Here the same pair was compared across both windows and its clicks fell with it. The pair is still in a band where work on the page can matter."
         }
       },
       "propertyChangeKinds": {
@@ -2207,7 +2213,7 @@
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
         "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
-        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The two page-level paths did not run, which is not the same as no change on any page."
+        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The three page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2241,10 +2247,14 @@
         },
         "provisional_actionable_position_decline": {
           "title": "Possible slide from the actionable band",
-          "body": "Average presented position slid relative to the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
+          "body": "This is the query's blended average position sliding relative to the actionable band — one number weighted across every page that served it, which is not the same measurement as the pair-by-pair slide reported above. The sample is not yet enough to tell a trend from noise, so it is recorded and not dispatched."
         }
       },
       "pageChangeKinds": {
+        "page_impression_collapse": {
+          "title": "Page impressions all but gone",
+          "body": "This page had a workable impression base last window and lost four fifths of it or more this window, by more than the spread a count that size produces on its own. Page data is not subject to query anonymization, so “all but gone” is a complete reading rather than a withheld one. Impressions vanishing wholesale usually points at the page itself — removed, blocked from crawling, redirected — so start by confirming the page is still there, still loads, and still points its canonical at itself. This briefing has not judged the cause."
+        },
         "page_click_decline": {
           "title": "Page clicks fell",
           "body": "This page cleared the sample floor in both windows and lost more clicks than its own week-to-week spread accounts for. Page data is not subject to query anonymization, so the clicks here are complete; this briefing has not judged why they fell."
@@ -2255,6 +2265,10 @@
         }
       },
       "pageActionKinds": {
+        "page_impression_collapse": {
+          "title": "Confirm this page is still there",
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. Impressions vanishing wholesale usually points at the page itself: check that it still loads, that crawling is not blocked, that its canonical still points at itself, and that it has not been turned into a redirect. This briefing has not judged the cause, and has attributed it to no query."
+        },
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
           "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. This briefing has not attributed the decline to any query."
@@ -2269,6 +2283,13 @@
         "intro": "These entries come from the query records already shown above. They say where those **queries** currently sit and nothing more: no change is claimed for them, and none is an evidence-backed action. What the page dimension found is a separate question and does not contradict this.",
         "evidence": "Where this query currently sits, not evidence of change",
         "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, or the current position falls outside the band this check covers."
+      },
+      "pageChecks": {
+        "title": "These pages draw impressions and no clicks at all",
+        "evidence": "Page · where it stands this window",
+        "intro": "At this property's own click-through rate of {ctr}, each page below was shown often enough to expect at least three clicks and drew none. That rate comes from this property's own non-brand data for this window, not from an industry average. Only pages averaging inside the top ten are listed: a page further down draws no clicks because almost nobody is shown it, and looking at how its result appears will not change that. Nothing here is claimed to have changed — only that at the rate this property actually converts, zero clicks on these pages does not look like chance.",
+        "body": "{impressions} impressions this window at average position {position}. This property's own rate expects {expected} clicks; none arrived.",
+        "examined": "{rows} page records were read this run. The rest either drew clicks or were not shown often enough for zero to mean anything."
       }
     },
     "trafficDrop": {

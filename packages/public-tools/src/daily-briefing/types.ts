@@ -65,6 +65,7 @@ export type DailyBriefingChangeKind =
  */
 export type DailyBriefingPageChangeKind =
   | "page_click_decline"
+  | "page_impression_collapse"
   | "page_first_observed";
 
 /**
@@ -192,6 +193,15 @@ export interface DailyBriefingWindows {
 
 export interface DailyBriefingQueryPageRead {
   readonly rows: readonly GscQueryPageRow[];
+  /**
+   * Records the response carried that could not be turned into a pair.
+   *
+   * Carried so a lane whose pairs all arrived unattributable can say it could
+   * not look, rather than that there was nothing to look at. Without it an
+   * attachment that returned only rows missing a query or page key was
+   * indistinguishable from one that returned nothing.
+   */
+  readonly unreadableRows: number;
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
 }
@@ -291,7 +301,19 @@ export interface DailyBriefingPageChange {
   readonly kind: DailyBriefingPageChangeKind;
   readonly evidence: "observed";
   readonly page: string;
-  readonly current: GscPageRow;
+  /**
+   * Null only for `page_impression_collapse`, and only when the current
+   * window returned no row for this page at all.
+   *
+   * The other two lanes are anchored on a current row and always carry one.
+   * A collapse is anchored on the prior row instead: the strongest form of
+   * the signal is a page that stopped being shown, which is precisely the
+   * case with nothing current to point at. Absence is read as zero
+   * impressions only after the window is shown to be complete; the position
+   * stays unrepresented, because Search Console cannot weight a position
+   * over impressions nobody received.
+   */
+  readonly current: GscPageRow | null;
   /** Null when the page carried no comparable prior window. */
   readonly previous: GscPageRow | null;
   readonly clickChange: number | null;
@@ -501,9 +523,77 @@ export interface DailyBriefingRowAccounting {
  * present two populations as one. The two `observedRows` are both correct and
  * are not addends.
  */
+/** Why the page-level zero-click check could not run, in operator terms. */
+export type DailyBriefingPageCheckBlocker =
+  | "brand_terms_not_confirmed"
+  | "query_rows_unavailable"
+  | "property_totals_unavailable"
+  | "aggregation_basis_mismatch"
+  | "no_property_impressions";
+
+/**
+ * The property's own click-through rate, and what it was computed from.
+ *
+ * Deliberately one number for the whole property rather than the banded curve
+ * the CTR opportunity lane uses. That curve needs five hundred impressions and
+ * five queries inside a single position band before it will speak, which the
+ * properties this tool serves rarely reach; a property-wide rate needs only
+ * the property totals, which are read on every run. It is the coarser
+ * instrument and it is stated as such: it answers "would this many impressions
+ * normally have produced a click here", not "what should this query earn".
+ */
+export interface DailyBriefingPageCheckBaseline {
+  readonly ctr: number;
+  /** Non-brand impressions the rate was divided from. */
+  readonly impressions: number;
+  readonly clicks: number;
+  /** Brand rows subtracted from the property totals before dividing. */
+  readonly brandQueriesExcluded: number;
+}
+
+export interface DailyBriefingPageCheck {
+  readonly page: string;
+  readonly impressions: number;
+  readonly position: number;
+  /** Clicks the property's own rate expects from this many impressions. */
+  readonly expectedClicks: number;
+  readonly destination: Extract<
+    DailyBriefingActionDestination,
+    "on-page-seo-check"
+  >;
+}
+
+/**
+ * Pages shown often enough that drawing no clicks is worth a look.
+ *
+ * A state, not a change: nothing here is claimed to have moved between the two
+ * windows, which is why these are checks and sit apart from `pageChanges`. It
+ * is the page-scoped counterpart of `DailyBriefingSuggestedChecks`, kept as its
+ * own population for the same reason page rows are kept apart from query rows.
+ */
+export interface DailyBriefingPageChecks {
+  readonly evidence: "observed" | "partial" | "unavailable";
+  readonly baseline: DailyBriefingPageCheckBaseline | null;
+  readonly blockers: readonly DailyBriefingPageCheckBlocker[];
+  readonly items: readonly DailyBriefingPageCheck[];
+  /** Current page rows this check read and rejected. Null when it never ran. */
+  readonly examinedRows: number | null;
+}
+
 export interface DailyBriefingPageAccounting {
   readonly evidence: "observed" | "partial" | "unavailable";
   readonly observedRows: number | null;
+  /**
+   * Records the prior window returned; the collapse lane's denominator.
+   *
+   * Beside `observedRows` rather than folded into it, for the same reason the
+   * page total sits beside the query one: they count different windows and a
+   * sum would measure neither. Only `page_impression_collapse` is counted
+   * against this one, because only it reads the prior window as its
+   * population — a page that stopped being shown appears in no current-row
+   * total, so its lane cannot be balanced against one.
+   */
+  readonly previousObservedRows: number | null;
   /** Page rows that produced a candidate but lost the display budget. */
   readonly notSelectedVisibleRows: number | null;
   readonly unreadableRows: number | null;
@@ -680,6 +770,7 @@ export interface DailyBriefingResult {
   readonly provisionalMoves: DailyBriefingProvisionalMoves;
   readonly rowAccounting: DailyBriefingRowAccounting;
   readonly pageAccounting: DailyBriefingPageAccounting;
+  readonly pageChecks: DailyBriefingPageChecks;
   /** Offered on current standing; never claims anything changed. */
   readonly suggestedChecks: DailyBriefingSuggestedChecks;
   readonly coverage: DailyBriefingCoverage;

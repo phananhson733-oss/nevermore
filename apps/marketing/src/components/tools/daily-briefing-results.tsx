@@ -27,6 +27,7 @@ import type {
   DailyBriefingMode,
   DailyBriefingObservationBand,
   DailyBriefingPageAccounting,
+  DailyBriefingPageCheck,
   DailyBriefingPageAction,
   DailyBriefingPageChangeKind,
   DailyBriefingPropertyChange,
@@ -123,19 +124,32 @@ function destination(
   }
 }
 
+/**
+ * `position` is nullable so a page with no current row can say so.
+ *
+ * Query rows always carry a number and satisfy this unchanged. The collapse
+ * lane may not: a page the current window no longer returns has zero
+ * impressions and therefore no position to weight, which reads the same here
+ * as a position that came back non-finite.
+ */
 function metricsLine(
   t: ReturnType<typeof useTranslations>,
   locale: string,
-  row: DailyBriefingChange["current"],
+  row: {
+    readonly clicks: number;
+    readonly impressions: number;
+    readonly position: number | null;
+  },
 ): string {
   const ctr = row.impressions > 0 ? row.clicks / row.impressions : null;
   return t("changes.metrics", {
     clicks: number(locale, row.clicks),
     impressions: number(locale, row.impressions),
     ctr: ctr === null ? t("kpis.unavailable") : percent(ctr),
-    position: Number.isFinite(row.position)
-      ? row.position.toFixed(1)
-      : t("kpis.unavailable"),
+    position:
+      row.position !== null && Number.isFinite(row.position)
+        ? row.position.toFixed(1)
+        : t("kpis.unavailable"),
   });
 }
 
@@ -146,6 +160,28 @@ function comparison(
   notObserved: string,
 ): string {
   return `${previous === null ? notObserved : format(previous)} → ${format(current)}`;
+}
+
+/**
+ * The same two sides, for a value the current window may not carry.
+ *
+ * Every other row has a current number. A collapse whose page left the current
+ * window does not: its counts are zero — the lane proved the window complete
+ * before reading absence, so a page it does not name received nothing — but
+ * its average position was never measured. Search Console cannot weight a
+ * position over impressions nobody received, and printing `0.0` beside a
+ * measured prior position would put an invented number inside the same arrow
+ * as a real one.
+ */
+function comparisonToPossiblyUnmeasured(
+  previous: number | null,
+  current: number | null,
+  format: (value: number) => string,
+  notObserved: string,
+  unmeasured: string,
+): string {
+  const before = previous === null ? notObserved : format(previous);
+  return `${before} → ${current === null ? unmeasured : format(current)}`;
 }
 
 function nullableComparison(
@@ -411,6 +447,11 @@ const PAGE_SIGNAL_PATHS: readonly {
   readonly kind: DailyBriefingPageChangeKind;
 }[] = [
   {
+    key: "page-impression-collapse",
+    copyKey: "pageImpressionCollapse",
+    kind: "page_impression_collapse",
+  },
+  {
     key: "page-click-decline",
     copyKey: "pageClickDecline",
     kind: "page_click_decline",
@@ -585,6 +626,20 @@ function SignalPathEvidence({
             {t("evidence.paths.pageUnavailable")}
           </p>
         )}
+        {/* The collapse lane walks the prior window, so its split is counted
+            against a different total than the one stated above. Printing that
+            total here is what keeps the three numbers beside it from reading
+            as an arithmetic error. */}
+        {pageAccounting.previousObservedRows !== null ? (
+          <p
+            data-page-previous-rows-intro
+            className="text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("evidence.paths.pagePreviousRowsIntro", {
+              rows: pageAccounting.previousObservedRows,
+            })}
+          </p>
+        ) : null}
         {PAGE_SIGNAL_PATHS.map((path) => {
           const state = laneCapability.pageLanes[path.kind];
           const counts =
@@ -843,6 +898,8 @@ export function DailyBriefingResults({
   // checks panel say "no shown row failed to become a check" about a run that
   // showed none.
   const notCheckable = result.suggestedChecks.notCheckable;
+  const pageChecks = result.pageChecks.items;
+  const pageCheckBaseline = result.pageChecks.baseline;
   const uncheckableShown = notCheckable !== null && notCheckable > 0;
   const ctrLane = result.laneCapability.ctrLane;
   // Every count in the summary is query-derived, so when the query rows were
@@ -959,6 +1016,34 @@ export function DailyBriefingResults({
         // Deliberately not an action index. A check never entered the action
         // list and must not be counted as one downstream.
         evidenceId: `daily:check:${check.sampleKind}`,
+      });
+    } catch {
+      written = false;
+    }
+    if (!written) {
+      event.preventDefault();
+      setHandoffFailed(true);
+    }
+  }
+
+  function pageCheckHandoff(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    check: DailyBriefingPageCheck,
+  ) {
+    let written = false;
+    try {
+      written = writeToolHandoff(window.sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: check.destination,
+        // Page scope, and no query: this check is a statement about a page's
+        // whole impression base, not about any one term that produced it.
+        scope: "page",
+        property,
+        query: null,
+        page: check.page,
+        // Not an action index. A check never entered the action list and must
+        // not be counted as one downstream.
+        evidenceId: "daily:page-check:zero_clicks",
       });
     } catch {
       written = false;
@@ -1441,7 +1526,7 @@ export function DailyBriefingResults({
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
                       change.previous?.clicks ?? null,
-                      change.current.clicks,
+                      change.current?.clicks ?? 0,
                       (value) => number(locale, value),
                       t("review.pageNotObserved"),
                     )}
@@ -1452,14 +1537,15 @@ export function DailyBriefingResults({
                     {t("review.columns.position")}
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {comparison(
+                    {comparisonToPossiblyUnmeasured(
                       change.previous?.position ?? null,
-                      change.current.position,
+                      change.current?.position ?? null,
                       (value) =>
                         Number.isFinite(value)
                           ? value.toFixed(1)
                           : t("kpis.unavailable"),
                       t("review.pageNotObserved"),
+                      t("kpis.unavailable"),
                     )}
                   </p>
                 </div>
@@ -1749,10 +1835,9 @@ export function DailyBriefingResults({
                         </p>
                         <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {metricsLine(t, locale, {
-                            query: "",
-                            clicks: change.current.clicks,
-                            impressions: change.current.impressions,
-                            position: change.current.position,
+                            clicks: change.current?.clicks ?? 0,
+                            impressions: change.current?.impressions ?? 0,
+                            position: change.current?.position ?? null,
                           })}
                         </p>
                       </div>
@@ -1897,6 +1982,73 @@ export function DailyBriefingResults({
                 className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
               >
                 {t("checks.notCheckable", { count: notCheckable ?? 0 })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {pageChecks.length > 0 ? (
+          <div
+            data-page-checks
+            className="mt-6 border-t border-brand-border pt-5"
+          >
+            <h4 className="text-[15px] font-semibold text-text-dark-primary">
+              {t("pageChecks.title")}
+            </h4>
+            {/* The rate is named, because the whole claim rests on it and it
+                is this property's own, not an industry figure. */}
+            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("pageChecks.intro", {
+                ctr:
+                  pageCheckBaseline === null
+                    ? t("kpis.unavailable")
+                    : percent(pageCheckBaseline.ctr),
+              })}
+            </p>
+            <div className="mt-3 grid gap-3">
+              {pageChecks.map((check) => (
+                <article
+                  key={`page-check:${check.page}`}
+                  data-page-check-row
+                  className={`${CARD} flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className={EYEBROW}>{t("pageChecks.evidence")}</p>
+                    <p className="mt-1.5 break-all text-[12.5px] font-medium text-text-dark-primary">
+                      {check.page}
+                    </p>
+                    <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                      {t("pageChecks.body", {
+                        impressions: number(locale, check.impressions),
+                        position: check.position.toFixed(1),
+                        expected: check.expectedClicks.toFixed(1),
+                      })}
+                    </p>
+                  </div>
+                  <Link
+                    data-page-check-link
+                    href={localePath(locale, destination(check.destination).path)}
+                    onClick={(event) => pageCheckHandoff(event, check)}
+                    className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
+                  >
+                    {t(destination(check.destination).labelKey)}
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="size-4 shrink-0"
+                    />
+                  </Link>
+                </article>
+              ))}
+            </div>
+            {/* The population this check read, so the list above is not
+                mistaken for everything the page dimension returned. */}
+            {result.pageChecks.examinedRows !== null ? (
+              <p
+                data-page-checks-examined
+                className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+              >
+                {t("pageChecks.examined", {
+                  rows: result.pageChecks.examinedRows,
+                })}
               </p>
             ) : null}
           </div>
