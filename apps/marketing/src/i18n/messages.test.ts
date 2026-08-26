@@ -39,9 +39,6 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "overview.returnedGapRowsBody",
   "overview.completedCompetitors",
   "overview.completedCompetitorsBody",
-  "overview.gscObservedRows",
-  "overview.gscObservedRowsBody",
-  "legend.ownState",
   "coverage.scope",
   "coverage.requested",
   "coverage.failure",
@@ -65,11 +62,8 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "gsc.pageStatus.gsc_query_page_sample_not_read",
   "gsc.impressionsLine",
   "gsc.pageMetricLine",
-  "filters.all",
-  "filters.optimize_existing",
-  "filters.review_existing_query",
-  "filters.review_content_gap",
-  "filters.verify_own_coverage",
+  "sort.impressions",
+  "sort.position",
   "signals.bestRank",
   "signals.difficulty",
   "actions.optimizeObservedPage",
@@ -92,31 +86,25 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "table.yourStatus",
   "table.opportunitySignals",
   "table.nextAction",
-  "nextSteps.review_existing_query",
-  "nextSteps.review_content_gap",
-  "nextSteps.verify_own_coverage",
   // preScreen.band.*, preScreen.basis.* and preScreen.reason.* are derived
   // from the contract arrays below, not hand-listed here.
-  "preScreen.filterAll",
   "signals.aiOverviewSnapshot",
   "signals.aiOverviewSnapshotUndated",
   "signals.competitorTraffic",
-  "actions.copyPlan",
-  "actions.copyPlanDone",
-  "actions.copyPlanFailed",
   "actions.exportCsv",
+  "actions.exportCsvBasisCapped",
+  "actions.exportCsvBasisComplete",
+  "actions.exportCsvPartial",
+  "status.unavailableBody",
+  // The count on the button says HOW MANY keywords the file holds; this says
+  // WHICH ones and on what basis. A capped export that carries only the first
+  // half is a lie without the second sentence.
   "sources.short.dfs",
   "sources.short.gsc",
   "legend.dfsMeans",
   "legend.gscMeans",
-  "status.partialBody.competitors",
-  "status.partialBody.gscUnavailable",
-  "status.partialBody.gscPartial",
-  "status.partialBody.both",
-  "status.partialBody.unspecified",
   "coverage.sampleRule",
   "coverage.rowsInRule",
-  "overview.gscQueryRows",
   "limitations.gscNoRows",
   "boundaries.dfsSnapshot",
   "boundaries.preScreen",
@@ -147,6 +135,50 @@ const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
   // surface already says back on the page.
   "actions.copyKeyword",
   "gsc.metricLine",
+  // Stripped from the results surface by decision. The source legend card, the
+  // lane and band filter rows, the lane-note sentences, the two run-status
+  // lines and the GSC observed-rows card were all removed together; every key
+  // below was rendered by exactly one of them and by nothing else. Copy that
+  // nothing renders cannot be reviewed, so it drifts into stating things the
+  // surface no longer does -- restoring a key here without restoring the
+  // surface that reads it puts an unreviewable sentence back in the catalog.
+  "legend.ownState",
+  "sources.dfs",
+  "sources.gsc",
+  "sources.status.available",
+  "sources.status.partial",
+  "sources.status.unavailable",
+  "sources.status.not_requested",
+  "status.complete",
+  "status.completeBody",
+  "status.partial",
+  "status.partialBody.competitors",
+  "status.partialBody.gscUnavailable",
+  "status.partialBody.gscPartial",
+  "status.partialBody.both",
+  "status.partialBody.unspecified",
+  "status.unavailable",
+  "summary.competitors",
+  "summary.unavailable",
+  "overview.gscObservedRows",
+  "overview.gscObservedRowsBody",
+  "overview.gscQueryRows",
+  "actions.copyPlan",
+  "actions.copyPlanDone",
+  "actions.copyPlanFailed",
+  "filters.all",
+  "filters.optimize_existing",
+  "filters.review_existing_query",
+  "filters.review_content_gap",
+  "filters.verify_own_coverage",
+  // The lane SENTENCES only. `gsc.nextStep` still decides each row's action
+  // verb, which is rendered from `actions.*`; what went is the paragraph that
+  // restated the lane above the table.
+  "nextSteps.optimize_existing",
+  "nextSteps.review_existing_query",
+  "nextSteps.review_content_gap",
+  "nextSteps.verify_own_coverage",
+  "preScreen.filterAll",
 ] as const;
 
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
@@ -259,7 +291,6 @@ describe("competitor keyword gap message catalogs", () => {
         "transactional",
         "unknown",
       ]);
-      expect(copy.summary.unavailable).toMatch(/\{count(?:,|\})/);
     }
   });
 
@@ -303,10 +334,46 @@ describe("competitor keyword gap message catalogs", () => {
   it("pluralizes the row-count messages", () => {
     for (const messages of [enMessages, zhMessages]) {
       const copy = messages.tools.competitorKeywordGap;
-      expect(copy.actions.copyPlan).toMatch(/\{count, plural,/);
-      expect(copy.actions.copyPlanDone).toMatch(/\{count, plural,/);
-      expect(copy.overview.gscQueryRows).toMatch(/\{count, plural,/);
+      expect(copy.actions.exportCsv).toMatch(/\{count, plural,/);
     }
+  });
+
+  /**
+   * The export is capped at the top rows by provider search volume, so the
+   * button's own label must not claim the file carries the run. "All" is the
+   * word that made the old label false the moment a run returned more rows
+   * than the cap, and the sentence beside it has to name the basis of the cut
+   * rather than leave the reader to guess which rows they got.
+   */
+  it("never claims the CSV holds every row, and names the basis of the cut", () => {
+    expect(enMessages.tools.competitorKeywordGap.actions.exportCsv).not.toMatch(
+      /\ball\b/i,
+    );
+    expect(zhMessages.tools.competitorKeywordGap.actions.exportCsv).not.toMatch(
+      /全部/,
+    );
+    const en = enMessages.tools.competitorKeywordGap.actions;
+    const zh = zhMessages.tools.competitorKeywordGap.actions;
+    for (const sentence of [
+      en.exportCsvBasisCapped,
+      en.exportCsvBasisComplete,
+      zh.exportCsvBasisCapped,
+      zh.exportCsvBasisComplete,
+    ]) {
+      expect(sentence).toMatch(/DataForSEO/);
+    }
+    // Two sentences, because below the cap nothing was left out: only the
+    // capped one may narrow what the file holds, and only the complete one may
+    // say it holds everything. One string doing both was wrong in one case or
+    // the other whichever way it was worded.
+    expect(en.exportCsvBasisCapped).toMatch(/highest/i);
+    expect(en.exportCsvBasisComplete).toMatch(/every/i);
+    expect(zh.exportCsvBasisCapped).toMatch(/最高/);
+    expect(zh.exportCsvBasisComplete).toMatch(/全部/);
+    // The partial-run line has to say what a missing competitor does NOT mean,
+    // since the nine columns cannot carry that themselves.
+    expect(en.exportCsvPartial).toMatch(/unknown/i);
+    expect(zh.exportCsvPartial).toMatch(/未知/);
   });
 
   // signals.competitorTraffic renders a DataForSEO traffic estimate in the

@@ -1,134 +1,63 @@
 // @input  -- one CompetitorKeywordGapResultV3
-// @output -- every gap row as RFC 4180 CSV, and the filename for it
-// @pos    -- the export half of the v3 contract; every row, with each value's source in its own column name
+// @output -- the top gap keywords by provider search volume, as RFC 4180 CSV, and the filename for it
+// @pos    -- the export half of the v3 contract, shaped as a keyword feed rather than an evidence report
 //
-// Deliberately not "the same numbers, in a file". The competitor page columns
-// describe the best-ranked competitor whose URL survived the safety check,
-// while the traffic chip on screen reads the best-ranked competitor whether or
-// not its URL is usable, so the two traffic figures can legitimately differ.
-// The file therefore names the competitor those page columns belong to, and its
-// rank, in their own cells: a reader holding the export next to the screen can
-// see WHICH competitor each figure describes rather than finding two numbers
-// that disagree with nothing to explain it.
+// This file is NOT the report. It carries nine columns for a keyword sheet
+// someone imports elsewhere; the run's coverage, the Search Console evidence,
+// the SERP snapshot and the pre-screen bands stay on the page, where their
+// qualifications are next to them. Two consequences worth stating rather than
+// discovering: the capture date lives only in the FILENAME, and the file says
+// nothing about which competitors failed to return, so a partial run's export
+// looks exactly like a complete one.
 
 import {
-  COMPETITOR_KEYWORD_GAP_TOOL,
   type CompetitorKeywordGapMetric,
   type CompetitorKeywordGapResultV3,
   type CompetitorKeywordGapRow,
 } from "./types.ts";
 
 /**
+ * How many rows the file carries.
+ *
+ * The export feeds a keyword sheet, not an audit: someone opens it to pick what
+ * to write next, and a six-hundred-row file is not a shortlist. The cut is by
+ * DataForSEO's monthly search volume estimate over the MERGED row set -- every
+ * competitor's keywords together, not a slice per competitor.
+ */
+export const COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS = 150;
+
+/**
  * Columns, in order.
  *
- * Stable English field ids rather than the localized labels on screen. These
- * files get opened months later, diffed against an older export, and pasted
- * into someone else's sheet; a header row that follows the reader's language
- * makes all three impossible. Renaming an id breaks every sheet keyed on the
- * old one, so the list is frozen from the first build that ships it. The ids
- * below were renamed once, while no export of this file existed anywhere, which
- * is the only moment at which renaming is free.
+ * Stable English field ids rather than the localized labels on screen: this
+ * file gets diffed against an older export and pasted into someone else's
+ * sheet, and a header row that changes with the reader's language makes both
+ * impossible.
  *
- * A `dfs` prefix means the value is DataForSEO's -- a third party's estimate or
- * its record of a crawl, never something this tool measured. A `gsc` prefix
- * means it is the site's own Search Console. The unprefixed columns are the
- * run's context and coverage, the row's subject, or this tool's own
- * classification, whose `preScreenBasis` says which of the two IT read. In a
- * spreadsheet the header is the only thing a value keeps, so provenance has to
- * live in each name rather than in a legend that does not get exported.
- *
- * The run context and the run coverage columns repeat on every row on purpose.
- * A gap row means nothing without the market, the language and the site it was
- * measured for, and it means something quite different when a competitor was
- * never fetched at all. Carrying either only in the filename, or only in a
- * summary card on screen, means it stops being true the first time someone
- * renames the file or sorts the sheet.
+ * Every value here is a DataForSEO ESTIMATE, which is what the `dfs` prefix
+ * says. Nothing in this file is a measurement of this site.
  */
 const COLUMNS = [
-  "capturedAt",
-  "siteDomain",
+  // First, because it is the row's subject: everything after it is a property
+  // OF this keyword, and a sheet is read left to right.
+  "keyword",
   "marketCode",
   "languageCode",
-  // Run coverage. Without it a run where one of two competitors failed exports
-  // as a file of `dfsCompetitorCount=1` rows with nothing anywhere saying the
-  // second was never fetched, and every absence in it reads as evidence that a
-  // competitor does not rank.
-  "requestedCompetitors",
-  "completedCompetitors",
-  "unavailableCompetitors",
-  "resultTruncated",
-  "gscOverlayStatus",
-  "gscQueryRowCount",
-  "gscQueryPageRowCount",
-  "keyword",
-  // The tool that wrote the line, and nothing finer. It was called `source`
-  // while holding this same constant, which reads as a claim about where the
-  // row's numbers came from; that is what the column prefixes answer.
-  "tool",
-  "dfsCoreKeyword",
   "dfsSearchVolume",
-  // Beside the number, never instead of it: without this an empty
-  // `dfsSearchVolume` cell cannot be told apart from a provider-reported zero.
-  "dfsSearchVolumeAvailability",
   "dfsKeywordDifficulty",
+  "dfsCpc",
   // Not `cpcUsd`. The value is DataForSEO's `keyword_info.cpc` carried through
   // untouched; nothing in this pipeline converts, tags or checks a currency, so
   // a name asserting one would be the file inventing a fact about the number.
-  "dfsCpc",
   "dfsIntent",
-  "dfsSearchVolumeTrendMonthly",
-  "dfsSearchVolumeTrendQuarterly",
-  "dfsSearchVolumeTrendYearly",
-  "dfsCompetitorCount",
-  "dfsBestCompetitorRank",
   "dfsCompetitorRanks",
-  // The competitor the page columns below describe: the best-ranked one whose
-  // URL could be linked, which is not always the best-ranked one. Its domain
-  // and its rank are exported so the distance between this rank and
-  // `dfsBestCompetitorRank` is readable in the line itself.
-  "dfsLinkedCompetitorDomain",
-  "dfsLinkedCompetitorRank",
+  // The best-ranked competitor whose URL survived the safety check, which is
+  // not always the best-ranked competitor. No separate domain column is needed
+  // to see that: the URL carries its own host, and `dfsCompetitorRanks` beside
+  // it lists every competitor with its rank, so a reader can tell which one
+  // this page belongs to by looking at it.
   "dfsLinkedCompetitorPageUrl",
-  "dfsLinkedCompetitorPageTitle",
-  "dfsLinkedCompetitorPageEtv",
-  // Ahead of the two cells it governs. An empty `dfsSerpSnapshotUpdatedAt`
-  // alone cannot say whether there was no snapshot or a snapshot the provider
-  // never dated, and the second case is a third party's undated record sitting
-  // in the file looking like something this run observed today.
-  "dfsSerpSnapshotState",
-  "dfsSerpItemTypes",
-  // The provider's snapshot date. It travels with the item types because the
-  // snapshot is something a third party stored on a day, not something this
-  // run looked at.
-  "dfsSerpSnapshotUpdatedAt",
-  "preScreenBand",
-  "preScreenBasis",
-  "preScreenReason",
-  "ownState",
-  "gscQueryStatus",
-  "gscEvidenceBasis",
-  "gscQueryImpressions",
-  "gscQueryPosition",
-  "gscPageStatus",
-  "gscPageUrl",
-  "gscPageImpressions",
-  "gscPagePosition",
-  "gscQueryPageCoverage",
-  "nextStep",
 ] as const;
-
-/**
- * `dfsSerpSnapshotState` values.
- *
- * Three states because the two empty-date cases are different claims. A
- * snapshot the provider dated can be judged stale; a snapshot it never dated
- * cannot be judged at all, and must not be read as having been taken on the
- * day of the run. On screen the second case renders as "DFS snapshot, undated"
- * for the same reason.
- */
-const SNAPSHOT_ABSENT = "no_snapshot";
-const SNAPSHOT_DATED = "dfs_snapshot_dated";
-const SNAPSHOT_UNDATED = "dfs_snapshot_undated";
 
 /**
  * Leading characters Excel and Google Sheets treat as the start of a formula.
@@ -137,7 +66,7 @@ const SNAPSHOT_UNDATED = "dfs_snapshot_undated";
  * `=cmd|'/c calc'!A0` in a cell is a known execution path, and these files are
  * opened by the person who downloaded them without a second thought. The guard
  * applies to text cells only -- a negative number we generated ourselves must
- * stay a number, or every declining trend becomes unsortable in the sheet.
+ * stay a number, or every declining value becomes unsortable in the sheet.
  */
 const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
@@ -168,7 +97,7 @@ function optionalText(value: string | null): string {
  * A number, or an empty cell when there is no number.
  *
  * Never rounded. The page rounds for reading; the file is what someone runs
- * their own arithmetic against, and a rounded figure is a different number from
+ * their own arithmetic against, and a rounded value is a different number from
  * the one the provider reported. Rounding is also how an unavailable value
  * becomes a plausible-looking 0.
  */
@@ -178,34 +107,16 @@ function num(value: number | null): string {
 }
 
 /**
- * A boundary flag as a word.
+ * The provider's number, or an empty cell when the provider had none.
  *
- * Not 1/0: this sits in a row of counts, and a `1` under `resultTruncated`
- * reads as one of something rather than as yes.
- */
-function bool(value: boolean): string {
-  return value ? "true" : "false";
-}
-
-/**
- * A provider metric's number, or an empty cell.
- *
- * `provider_no_data` empties the cell whatever value rides along with it. The
- * difference between "the provider reported zero" and "the provider had no
- * figure" is the entire reason `availability` is exported next to the number,
- * and writing the second case as a digit erases it.
+ * `provider_no_data` is not zero, and writing a 0 for it would turn "we were
+ * not told" into "we were told it is nothing" -- in a column someone sorts by.
  */
 function metric(value: CompetitorKeywordGapMetric): string {
   return value.availability === "provider_no_data" ? "" : num(value.value);
 }
 
-/**
- * http(s) with no credentials, or nothing.
- *
- * The provider decides these URLs and the cell lands in a spreadsheet one click
- * from being opened. The server bounds them already; re-checking costs nothing
- * and keeps a `javascript:` URL out of the file if that ever loosens.
- */
+/** http(s) only and never credentialed, so a provider URL can go in a cell. */
 function safeUrl(value: string | null): string | null {
   if (value === null) return null;
   try {
@@ -220,221 +131,91 @@ function safeUrl(value: string | null): string | null {
   }
 }
 
-/**
- * The row's competitors, best rank first, ties broken on the domain.
- *
- * Codepoint order rather than `localeCompare`. ICU weighs punctuation and case
- * differently from letters and ships its collation data with the runtime, so
- * for two domains that differ only in those, the answer belongs to whichever
- * Node built the file rather than to the file. Codepoint order is a property of
- * the strings alone: two runs over the same ranks produce the same bytes on any
- * runtime, which is the only thing that makes an export diffable against one
- * taken months earlier.
- */
 function rankedDomains(
   row: CompetitorKeywordGapRow,
 ): readonly (readonly [string, number])[] {
-  // `localeCompare`, matching the order the report itself builds the object in
-  // and the order every surface reads it back in. A codepoint tie-break was
-  // tried here for cross-runtime stability and bought nothing: competitor keys
-  // are validated down to [a-z0-9-.], and over that alphabet the two orders
-  // agree on every pair. What it did buy was four call sites -- the chips
-  // column, the traffic estimate, the linked page, and this cell -- no longer
-  // sharing one order.
+  // `localeCompare`, matching the order the report builds the object in and the
+  // order every surface reads it back in, so the chips column, the linked page
+  // and this cell never disagree about which competitor comes first.
   return Object.entries(row.competitorRanks).toSorted(
     ([leftDomain, leftRank], [rightDomain, rightRank]) =>
       leftRank - rightRank || leftDomain.localeCompare(rightDomain),
   );
 }
 
-/** `domain#rank` pairs in that order, in a single cell. */
+/** `domain#rank` pairs, best rank first, in a single cell. */
 function competitorRanks(row: CompetitorKeywordGapRow): string {
   return rankedDomains(row)
     .map(([domain, rank]) => `${domain}#${rank}`)
     .join("|");
 }
 
-interface LinkedCompetitorPage {
-  readonly domain: string;
-  readonly rank: number;
-  readonly url: string;
-  readonly title: string | null;
-  readonly etv: number | null;
-}
-
-/**
- * The best-ranked competitor whose page URL survives the safety check, as one
- * entry: the competitor whose page this file can actually point at.
- *
- * Its rank is not necessarily `bestCompetitorRank`. A competitor can rank first
- * and carry no usable URL, in which case these columns describe someone further
- * down -- which is why the domain and the rank travel with the page rather than
- * being left for the reader to assume. All five values read from this single
- * entry so they describe the same page: taking the URL from one competitor and
- * the title or the traffic estimate from whichever competitor happened to have
- * one would put a line in the file about a page that does not exist.
- *
- * When no competitor has a usable URL all five columns are empty. There is no
- * page to name, so there is no competitor, title or traffic estimate to attach
- * to one either.
- */
-function linkedCompetitorPage(
-  row: CompetitorKeywordGapRow,
-): LinkedCompetitorPage | null {
-  for (const [domain, rank] of rankedDomains(row)) {
-    const page = row.competitorPages[domain];
-    const url = safeUrl(page?.url ?? null);
-    if (url !== null) {
-      return {
-        domain,
-        rank,
-        url,
-        title: page?.title ?? null,
-        etv: page?.etv ?? null,
-      };
-    }
+function linkedCompetitorPageUrl(row: CompetitorKeywordGapRow): string | null {
+  for (const [domain] of rankedDomains(row)) {
+    const url = safeUrl(row.competitorPages[domain]?.url ?? null);
+    if (url !== null) return url;
   }
   return null;
 }
 
-function runContextCells(
-  result: CompetitorKeywordGapResultV3,
-): readonly string[] {
-  return [
-    text(result.capturedAt),
-    text(result.siteDomain),
-    text(result.marketCode),
-    text(result.languageCode),
-  ];
-}
-
 /**
- * What the run actually managed to look at.
+ * Search volume for ordering, and `null` for a row that has none.
  *
- * Every fact in a row is bounded by these five cells. `completedCompetitors`
- * below `requestedCompetitors` means a competitor was never fetched, so its
- * absence from a row says nothing about whether it ranks; `resultTruncated`
- * means the merged result hit its output boundary, so the rows present are not
- * all the rows there were; `gscOverlayStatus` says whether the Search Console
- * half happened at all. On screen these live in a coverage card the export
- * cannot carry, which is exactly how a bounded file comes to read as complete.
+ * A row the provider reported no volume for is not a row with zero volume, and
+ * it must not sort among the small numbers as if it were. It sorts last, which
+ * is where "not known" belongs in a list ordered by size -- and with a cut at
+ * the top, that keeps unknowns out of a file whose whole premise is "the
+ * biggest ones".
  */
-function runCoverageCells(
+function sortableVolume(row: CompetitorKeywordGapRow): number | null {
+  const { availability, value } = row.searchVolume;
+  if (availability === "provider_no_data" || value === null) return null;
+  return Number.isFinite(value) ? value : null;
+}
+
+function selectedRows(
   result: CompetitorKeywordGapResultV3,
-): readonly string[] {
-  return [
-    num(result.requestedCompetitors),
-    num(result.completedCompetitors),
-    num(result.unavailableCompetitors),
-    bool(result.resultTruncated),
-    text(result.overlayStatus),
-    // The overlay status alone cannot express the wrong-property case. A read
-    // that succeeds and returns nothing stays "available", so without the raw
-    // counts every row's empty GSC evidence reads as "Search Console was read
-    // and this site genuinely has no coverage" -- which is the one inference
-    // the boundaries forbid. On screen this case gets its own escalation; a
-    // zero here is what carries it into the file.
-    num(result.gscQueryRowCount),
-    num(result.gscQueryPageRowCount),
-  ];
+): readonly CompetitorKeywordGapRow[] {
+  return result.rows
+    .toSorted((left, right) => {
+      const leftVolume = sortableVolume(left);
+      const rightVolume = sortableVolume(right);
+      if (leftVolume !== rightVolume) {
+        if (leftVolume === null) return 1;
+        if (rightVolume === null) return -1;
+        return rightVolume - leftVolume;
+      }
+      // A deterministic second key. Volumes tie constantly down the long tail,
+      // and without one, two exports of the SAME run could differ, which is the
+      // one thing a file meant to be diffed must not do.
+      return left.keyword.localeCompare(right.keyword);
+    })
+    .slice(0, COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS);
 }
 
-function dfsKeywordCells(row: CompetitorKeywordGapRow): readonly string[] {
-  const trend = row.searchVolumeTrend;
-  return [
-    optionalText(row.coreKeyword),
-    metric(row.searchVolume),
-    text(row.searchVolume.availability),
-    metric(row.keywordDifficulty),
-    metric(row.cpc),
-    optionalText(row.providerIntent),
-    num(trend?.monthly ?? null),
-    num(trend?.quarterly ?? null),
-    num(trend?.yearly ?? null),
-  ];
+/** How many rows an export of this result will contain. */
+export function competitorKeywordGapCsvRowCount(
+  result: Pick<CompetitorKeywordGapResultV3, "rows">,
+): number {
+  return Math.min(result.rows.length, COMPETITOR_KEYWORD_GAP_CSV_MAX_ROWS);
 }
 
-function dfsCompetitorCells(row: CompetitorKeywordGapRow): readonly string[] {
-  const linked = linkedCompetitorPage(row);
-  return [
-    num(row.competitorCount),
-    num(row.bestCompetitorRank),
-    text(competitorRanks(row)),
-    optionalText(linked?.domain ?? null),
-    num(linked?.rank ?? null),
-    optionalText(linked?.url ?? null),
-    optionalText(linked?.title ?? null),
-    num(linked?.etv ?? null),
-  ];
-}
-
-/**
- * Whether the stored snapshot carries a date a reader can actually resolve.
- *
- * Not `updatedAt !== null`: the provider's timestamp is copied through
- * unvalidated, and the surface calls an unparseable one UNDATED. Deciding on
- * null alone made the file say `dated` for the same snapshot the screen
- * labelled undated -- the two disagreeing about precisely the distinction this
- * column exists to draw.
- */
-function snapshotIsDated(updatedAt: string | null): boolean {
-  if (updatedAt === null) return false;
-  return Number.isFinite(new Date(updatedAt).getTime());
-}
-
-function dfsSerpCells(row: CompetitorKeywordGapRow): readonly string[] {
-  const snapshot = row.serpSnapshot;
-  if (snapshot === null) return [SNAPSHOT_ABSENT, "", ""];
-  return [
-    snapshotIsDated(snapshot.updatedAt) ? SNAPSHOT_DATED : SNAPSHOT_UNDATED,
-    text(snapshot.itemTypes.join("|")),
-    optionalText(snapshot.updatedAt),
-  ];
-}
-
-function preScreenCells(row: CompetitorKeywordGapRow): readonly string[] {
-  return [
-    text(row.preScreen.band),
-    text(row.preScreen.basis),
-    text(row.preScreen.reason),
-  ];
-}
-
-function gscCells(row: CompetitorKeywordGapRow): readonly string[] {
-  const gsc = row.gsc;
-  return [
-    text(gsc.queryStatus),
-    optionalText(gsc.evidenceBasis),
-    num(gsc.queryImpressions),
-    num(gsc.queryPosition),
-    text(gsc.pageStatus),
-    optionalText(safeUrl(gsc.pageUrl)),
-    num(gsc.pageImpressions),
-    num(gsc.pagePosition),
-    num(gsc.queryPageCoverage),
-    text(gsc.nextStep),
-  ];
-}
-
-/** Every gap row as CSV, in the order the engine sorted them. */
+/** The top gap keywords by provider search volume estimate, as CSV. */
 export function competitorKeywordGapCsv(
   result: CompetitorKeywordGapResultV3,
 ): string {
   const header = COLUMNS.join(",");
-  const run = [...runContextCells(result), ...runCoverageCells(result)];
-  const rows = result.rows.map((row) =>
+  const rows = selectedRows(result).map((row) =>
     [
-      ...run,
       text(row.keyword),
-      COMPETITOR_KEYWORD_GAP_TOOL,
-      ...dfsKeywordCells(row),
-      ...dfsCompetitorCells(row),
-      ...dfsSerpCells(row),
-      ...preScreenCells(row),
-      // On every row rather than in a footnote: it is the fact that makes the
-      // line a gap at all, and a filtered sheet keeps no footnotes.
-      text(row.ownState),
-      ...gscCells(row),
+      text(result.marketCode),
+      text(result.languageCode),
+      metric(row.searchVolume),
+      metric(row.keywordDifficulty),
+      metric(row.cpc),
+      optionalText(row.providerIntent),
+      text(competitorRanks(row)),
+      optionalText(linkedCompetitorPageUrl(row)),
     ].join(","),
   );
 
@@ -443,12 +224,7 @@ export function competitorKeywordGapCsv(
   return `${BOM}${[header, ...rows].join("\r\n")}`;
 }
 
-const CAPTURED_DATE = /^(\d{4}-\d{2}-\d{2})(?:[T ]|$)/;
-
-/**
- * Hostname labels only, so nothing in the name can steer where a browser puts
- * the file.
- */
+const CAPTURED_DATE = /^(\d{4}-\d{2}-\d{2})T/;
 const FILENAME_DOMAIN =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$/;
 const MAX_DOMAIN_LENGTH = 253;
@@ -470,13 +246,13 @@ function capturedDate(capturedAt: string): string | null {
 }
 
 /**
- * The download filename, carrying the site and the day it was captured.
+ * The download filename, carrying the day the run captured its evidence.
  *
- * Both halves are validated rather than interpolated: `capturedAt` arrives in
- * an API response and `siteDomain` started life as something a person typed, so
- * a path separator or a quote could otherwise reach a `download` attribute. A
- * value that fails loses the detail rather than the file, since the site, the
- * date and the scope are all inside the file itself.
+ * Validated rather than interpolated: the date arrives from an API response and
+ * the domain from what the visitor typed, and neither has any business putting
+ * a path separator or a quote into a `download` attribute. It matters more than
+ * usual here, because the columns no longer carry the date -- an unrecognized
+ * one loses it from the file entirely rather than writing something false.
  */
 export function competitorKeywordGapCsvFilename(
   result: Pick<CompetitorKeywordGapResultV3, "capturedAt" | "siteDomain">,

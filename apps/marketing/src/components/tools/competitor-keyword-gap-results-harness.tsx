@@ -339,15 +339,39 @@ export async function click(element: Element | null): Promise<boolean> {
   return allowed;
 }
 
+/**
+ * The row for one keyword, matched on the keyword cell and matched EXACTLY.
+ *
+ * A substring match over the whole row picked the wrong row as soon as the
+ * surface stopped rendering in contract order: "page sample unread" sorted
+ * above "sample unread" and swallowed the lookup, and the test failed talking
+ * about the wrong row's evidence.
+ */
 export function tableRow(
   host: HTMLElement,
   keyword: string,
 ): HTMLTableRowElement {
   const result = [
     ...host.querySelectorAll<HTMLTableRowElement>("tbody tr"),
-  ].find((candidate) => candidate.textContent?.includes(keyword));
+  ].find(
+    (candidate) =>
+      candidate.querySelector("[data-keyword]")?.textContent === keyword,
+  );
   if (result === undefined) throw new Error(`No row for ${keyword}`);
   return result;
+}
+
+/**
+ * The keywords on screen, in the order the surface put them.
+ *
+ * Read from `[data-keyword]` rather than the row's whole text: a row carries
+ * its competitor domains and page paths too, and matching an order against
+ * those would pass on a substring of the wrong cell.
+ */
+export function visibleKeywords(host: HTMLElement): readonly string[] {
+  return [...host.querySelectorAll("tbody tr [data-keyword]")].map(
+    (cell) => cell.textContent ?? "",
+  );
 }
 
 export function buttonFor(host: HTMLElement, label: string): HTMLButtonElement {

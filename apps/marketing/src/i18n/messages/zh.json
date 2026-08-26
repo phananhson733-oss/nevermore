@@ -863,50 +863,26 @@
         "focusProperty": "定位 GSC 资源 →",
         "handoffFailedOnPage": "当前标签页里无法写入私有 On-Page 跳转信息。",
         "handoffFailedOpportunityFinder": "当前标签页里无法写入私有 Opportunity Finder 跳转信息。",
-        "remaining": "当前筛选下还有 {count} 行未展开。",
-        "showingAll": "当前筛选下已展开全部 {count} 行。",
+        "remaining": "还有 {count} 行未展开。",
+        "showingAll": "已展开全部 {count} 行。",
         "showAll": "展开全部",
         "showLess": "收起",
         "openCompetitorPageNamed": "看 {domain} 的页面 →",
         "openOpportunityFinder": "打开 Opportunity Finder →",
         "optimizeObservedPage": "优化现有页 {page} →",
         "reviewObservedPage": "核对 {page} →",
-        "copyPlan": "{count, plural, other {将 # 行复制为计划}}",
-        "copyPlanDone": "{count, plural, other {已复制 # 行。}}",
-        "copyPlanFailed": "浏览器里无法复制这份计划。",
-        "exportCsv": "{count, plural, other {导出全部 # 行 CSV}}"
-      },
-      "status": {
-        "complete": "分析完成",
-        "completeBody": "所有请求的竞品都返回了可用的 DataForSEO 结果。",
-        "partial": "部分结果",
-        "partialBody": {
-          "competitors": "至少一个竞品没有返回可用的排名样本。使用结果行前请先查看覆盖范围。",
-          "gscUnavailable": "所有竞品都已完成。可选的 Search Console 证据层本次没有读到，「你的状态」列不可用。",
-          "gscPartial": "所有竞品都已完成。Search Console 样本触及行数边界，「你的状态」列可能不完整。",
-          "both": "至少一个竞品没有返回可用的排名样本，同时 Search Console 证据层不完整。使用结果行前请先查看覆盖范围。",
-          "unspecified": "本次运行没有完整完成。使用结果行前请先查看覆盖范围。"
-        },
-        "unavailable": "分析不可用",
-        "unavailableBody": "所有竞品都没有返回可用排名样本；这不代表这些竞品没有关键词。"
+        "exportCsv": "{count, plural, other {导出 # 个关键词 CSV}}",
+        "exportCsvBasisCapped": "{count, plural, other {文件收录本次运行中 DataForSEO 搜索量估算最高的 # 个关键词。}}",
+        "exportCsvBasisComplete": "文件收录本次运行返回的全部关键词，按 DataForSEO 搜索量估算降序排列。",
+        "exportCsvPartial": "{count, plural, other {本次有 # 个竞品没有返回结果。文件里没有这个信息，所以某个竞品不在某一行里，只说明未知，不说明它没有排名。}}"
       },
       "summary": {
         "eyebrow": "竞品关键词差距报告",
         "title": "本次运行摘要",
         "versus": "对比",
-        "competitors": "{requested} 个竞品中有 {completed} 个完成",
-        "unavailable": "{count, plural, other {# 个竞品不可用}}",
         "capturedAt": "采集时间"
       },
       "sources": {
-        "dfs": "DataForSEO 估算",
-        "gsc": "GSC 实测",
-        "status": {
-          "available": "可用",
-          "partial": "部分可用",
-          "unavailable": "不可用",
-          "not_requested": "未请求"
-        },
         "short": {
           "dfs": "估算",
           "gsc": "GSC 实测"
@@ -934,16 +910,12 @@
         "gscNoRows": "所选资源在本窗口内 GSC 一条查询都没有返回。把任何行读作内容差距之前，先确认资源覆盖的是这个站点。"
       },
       "overview": {
-        "returnedGapRows": "本次返回的差距行",
-        "returnedGapRowsBody": "本次运行合并所有成功竞品样本后实际返回的关键词行数，不代表数据源中的关键词总量。",
+        "returnedGapRows": "差距词",
+        "returnedGapRowsBody": "本次 DataForSEO 样本中至少有一个竞品排到 #{maxRank} 或更靠前，而本站没有在该样本里被观测到。",
         "completedCompetitors": "完成竞品",
-        "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。",
-        "gscObservedRows": "GSC 已观测行",
-        "gscObservedRowsBody": "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
-        "gscQueryRows": "{count, plural, other {该资源在本窗口的有限样本内，GSC 返回了 # 条查询。}}"
+        "completedCompetitorsBody": "所有请求竞品中，返回可用 DataForSEO 结果的数量。"
       },
       "legend": {
-        "ownState": "这些差距行来自 DataForSEO：竞品有排名、本站未在该数据源排名样本中观测到；GSC 是独立的本站一手证据。",
         "dfsMeans": "= DataForSEO 第三方数据，本次运行采样",
         "gscMeans": "= 你自己的 Search Console，28 天窗口"
       },
@@ -954,7 +926,7 @@
         "competitorOutcomesUnavailable": "竞品的真实流量与转化结果不可用；表中的页面流量是 DataForSEO 估算，排名和估算都不能证明这些结果。",
         "manualSnapshot": "这是一次手动快照，不保存历史，也不会自动刷新。",
         "dfsSnapshot": "AI Overview 与 SERP 特性标记来自 DataForSEO 存储的 SERP 快照并带其日期，不是本次运行的实时观测。",
-        "preScreen": "DFS 预筛带只按数据源估算排序；它不改变由 GSC 决定的下一步，也不是可赢性结论。"
+        "preScreen": "DFS 预筛带是逐行显示的数据源估算。它不决定表格顺序，不改变由 GSC 决定的下一步，也不是可赢性结论。"
       },
       "gsc": {
         "observed_strong": "已在排",
@@ -976,18 +948,9 @@
         "impressionsLine": "曝光 {impressions}",
         "pageMetricLine": "页面证据：曝光 {impressions} · 均位 {position}"
       },
-      "filters": {
-        "all": "全部",
-        "optimize_existing": "优化现有页",
-        "review_existing_query": "复核现有覆盖",
-        "review_content_gap": "复核内容差距",
-        "verify_own_coverage": "补证据"
-      },
-      "nextSteps": {
-        "optimize_existing": "已有可信落地页，先检查并优化现有页。",
-        "review_existing_query": "GSC 已有覆盖；先核对关键词与页面的对应关系。",
-        "review_content_gap": "本次样本未观测本站；先复核差距，再决定是否新建。",
-        "verify_own_coverage": "GSC 证据不完整；先确认资源与覆盖再判断。"
+      "sort": {
+        "impressions": "按曝光排序",
+        "position": "按均位排序"
       },
       "preScreen": {
         "basis": {
@@ -998,7 +961,6 @@
           "dfs_estimate": "估算",
           "tool_heuristic": "本工具判定"
         },
-        "filterAll": "全部预筛带",
         "band": {
           "prioritize_serp_check": "优先核 SERP",
           "stretch": "难度较高或第二页",
@@ -1048,6 +1010,9 @@
       "empty": {
         "title": "没有返回差距行",
         "body": "已完成的竞品读取在本次排名与行数边界内没有返回关键词。"
+      },
+      "status": {
+        "unavailableBody": "本次没有任何竞品返回可用的排名样本，也就是说什么都没读到，什么也没有被排除。这里为空不能当成这些竞品没有排名的证据。"
       }
     },
     "abTest": {

@@ -863,50 +863,26 @@
         "focusProperty": "Locate GSC property →",
         "handoffFailedOnPage": "Could not prepare the private On-Page handoff in this tab.",
         "handoffFailedOpportunityFinder": "Could not prepare the private Opportunity Finder handoff in this tab.",
-        "remaining": "{count} more rows hidden in this filter.",
-        "showingAll": "Showing all {count} rows in this filter.",
+        "remaining": "{count} more rows not shown.",
+        "showingAll": "Showing all {count} rows.",
         "showAll": "Show all",
         "showLess": "Show less",
         "openCompetitorPageNamed": "Open {domain}'s page →",
         "openOpportunityFinder": "Open Opportunity Finder →",
         "optimizeObservedPage": "Optimize existing page {page} →",
         "reviewObservedPage": "Review {page} →",
-        "copyPlan": "{count, plural, one {Copy # row as plan} other {Copy # rows as plan}}",
-        "copyPlanDone": "{count, plural, one {Copied # row.} other {Copied # rows.}}",
-        "copyPlanFailed": "Could not copy the plan in this browser.",
-        "exportCsv": "{count, plural, one {Export all # row as CSV} other {Export all # rows as CSV}}"
-      },
-      "status": {
-        "complete": "Analysis complete",
-        "completeBody": "Every requested competitor returned a usable DataForSEO result.",
-        "partial": "Partial result",
-        "partialBody": {
-          "competitors": "At least one competitor returned no usable ranking sample. Read the coverage section before using these rows.",
-          "gscUnavailable": "Every competitor completed. The optional Search Console layer could not be read this run, so the \"your status\" column is unavailable.",
-          "gscPartial": "Every competitor completed. The Search Console sample hit its row bound, so the \"your status\" column may be incomplete.",
-          "both": "At least one competitor returned no usable ranking sample, and the Search Console layer is incomplete. Read the coverage section before using these rows.",
-          "unspecified": "This run did not complete in full. Read the coverage section before using these rows."
-        },
-        "unavailable": "Analysis unavailable",
-        "unavailableBody": "No requested competitor returned a usable ranking sample. This is not evidence that the competitors have no keywords."
+        "exportCsv": "{count, plural, one {Export # keyword as CSV} other {Export # keywords as CSV}}",
+        "exportCsvBasisCapped": "{count, plural, other {The file holds the # keywords with the highest DataForSEO search volume estimate in this run.}}",
+        "exportCsvBasisComplete": "The file holds every keyword this run returned, ordered by DataForSEO's search volume estimate.",
+        "exportCsvPartial": "{count, plural, other {# competitor returned nothing this run. The file does not record that, so read a competitor's absence from a row as unknown rather than as not ranking.}}"
       },
       "summary": {
         "eyebrow": "Competitor keyword gap report",
         "title": "Run summary",
         "versus": "vs",
-        "competitors": "{completed} of {requested} competitors completed",
-        "unavailable": "{count, plural, one {# competitor unavailable} other {# competitors unavailable}}",
         "capturedAt": "Captured"
       },
       "sources": {
-        "dfs": "DataForSEO estimate",
-        "gsc": "GSC observation",
-        "status": {
-          "available": "available",
-          "partial": "partial",
-          "unavailable": "unavailable",
-          "not_requested": "not requested"
-        },
         "short": {
           "dfs": "estimate",
           "gsc": "GSC measured"
@@ -934,16 +910,12 @@
         "gscNoRows": "GSC returned no query rows for the selected property in this window. Check that the property covers this site before reading any row as a content gap."
       },
       "overview": {
-        "returnedGapRows": "Returned gap rows",
-        "returnedGapRowsBody": "Keyword rows returned by this run after merging completed competitor samples; this is not the provider's total keyword universe.",
+        "returnedGapRows": "Gap keywords",
+        "returnedGapRowsBody": "At least one competitor ranked #{maxRank} or better in this run's DataForSEO sample, and this site was not observed in that sample.",
         "completedCompetitors": "Completed competitors",
-        "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors.",
-        "gscObservedRows": "Own-site GSC observed rows",
-        "gscObservedRowsBody": "Returned rows observed in the bounded own-site GSC query or query-page sample.",
-        "gscQueryRows": "{count, plural, one {GSC returned # query row in this window's bounded sample for this property.} other {GSC returned # query rows in this window's bounded sample for this property.}}"
+        "completedCompetitorsBody": "Usable DataForSEO reads out of all requested competitors."
       },
       "legend": {
-        "ownState": "These gap rows come from DataForSEO: competitors ranked while your site was not observed in that provider sample. GSC is separate first-party evidence.",
         "dfsMeans": "= DataForSEO third-party data, sampled by this run",
         "gscMeans": "= your own Search Console, 28-day window"
       },
@@ -954,7 +926,7 @@
         "competitorOutcomesUnavailable": "Actual competitor traffic and conversion outcomes are unavailable; the page traffic shown is a DataForSEO estimate, and rankings and estimates do not prove either.",
         "manualSnapshot": "This is a manual snapshot with no saved history or automatic refresh.",
         "dfsSnapshot": "AI Overview and SERP feature marks come from DataForSEO's stored SERP snapshot and carry its date; they are not a live observation from this run.",
-        "preScreen": "The DFS pre-screen band orders rows by provider estimates only. It never changes the GSC-derived next step and is not a winnability claim."
+        "preScreen": "The DFS pre-screen band is a provider estimate shown per row. It does not order the table, it never changes the GSC-derived next step, and it is not a winnability claim."
       },
       "gsc": {
         "observed_strong": "Already ranking",
@@ -976,18 +948,9 @@
         "impressionsLine": "{impressions} impressions",
         "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}"
       },
-      "filters": {
-        "all": "All rows",
-        "optimize_existing": "Optimize now",
-        "review_existing_query": "Review existing",
-        "review_content_gap": "Review content gap",
-        "verify_own_coverage": "Need evidence"
-      },
-      "nextSteps": {
-        "optimize_existing": "Trusted existing page; check and optimize it first.",
-        "review_existing_query": "GSC shows existing coverage; verify the query-to-page match first.",
-        "review_content_gap": "Not observed in this sample; review the gap before creating a page.",
-        "verify_own_coverage": "GSC evidence is incomplete; verify the property before deciding."
+      "sort": {
+        "impressions": "Sort by impressions",
+        "position": "Sort by average position"
       },
       "preScreen": {
         "basis": {
@@ -998,7 +961,6 @@
           "dfs_estimate": "estimate",
           "tool_heuristic": "tool rule"
         },
-        "filterAll": "All bands",
         "band": {
           "prioritize_serp_check": "Check SERP first",
           "stretch": "Higher KD or page two",
@@ -1048,6 +1010,9 @@
       "empty": {
         "title": "No gap rows returned",
         "body": "The completed competitor reads returned no keywords inside this run’s ranking and row boundaries."
+      },
+      "status": {
+        "unavailableBody": "No competitor returned a usable ranking sample this run, so nothing was read and nothing was ruled out. An empty result here is not evidence that these competitors rank for nothing."
       }
     },
     "abTest": {

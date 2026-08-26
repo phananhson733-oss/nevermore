@@ -1,5 +1,5 @@
 // @input  -- the whole v3 result and the tool translator
-// @output -- one button that hands the visitor every returned gap row as a CSV file
+// @output -- one button that hands the visitor the capped keyword CSV, and the line naming which keywords are in it
 // @pos    -- the file export control in the Marketing competitor gap results table header
 
 "use client";
@@ -13,6 +13,7 @@ import type { CompetitorKeywordGapResultV3 } from "@sf/public-tools/competitor-k
 import {
   competitorKeywordGapCsv,
   competitorKeywordGapCsvFilename,
+  competitorKeywordGapCsvRowCount,
 } from "@sf/public-tools/competitor-keyword-gap/csv";
 
 import {
@@ -40,14 +41,17 @@ function downloadCsv(result: CompetitorKeywordGapResultV3): void {
 }
 
 /**
- * The label states the count because the file ignores every filter.
+ * The label counts what the FILE will hold, never what the run returned.
  *
- * The table shows ten rows of whatever lane and band are selected; this export
- * carries `result.rows` entire, which is the only version of the file that can
- * be diffed against another run. Two controls sit side by side here and they do
- * different things, so each one names its own number: the plan copies what is
- * on screen, this exports all of it, and a reader can tell which is which
- * without clicking either.
+ * The export is capped and ordered by the provider's search volume estimate, so
+ * a 653-row run produces a 150-row file. The old label said "export all 653
+ * rows" and was false past the cap. The count alone still leaves "which 150?"
+ * unanswered, so the line under the button names the rule the cut was made on;
+ * neither half is enough by itself.
+ *
+ * The count comes from the export module rather than being recomputed here: a
+ * label that derives the cap a second way is a label that can drift from the
+ * file it describes.
  */
 export function CsvExportButton({
   result,
@@ -56,15 +60,46 @@ export function CsvExportButton({
   readonly result: CompetitorKeywordGapResultV3;
   readonly t: Translate;
 }) {
+  const rowCount = competitorKeywordGapCsvRowCount(result);
+  // Two different sentences, because below the cap nothing was left out. Saying
+  // the file "holds the highest-volume keywords" when it holds every one of
+  // them understates it, and the zh wording was outright exclusive ("only
+  // includes"). Below the cap the line can only claim the ORDER, which is true.
+  const basis =
+    rowCount < result.rows.length
+      ? t("actions.exportCsvBasisCapped", { count: rowCount })
+      : t("actions.exportCsvBasisComplete");
   return (
-    <button
-      type="button"
-      data-export-csv
-      className={`${ACTION_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}
-      disabled={result.rows.length === 0}
-      onClick={() => downloadCsv(result)}
-    >
-      {t("actions.exportCsv", { count: result.rows.length })}
-    </button>
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        data-export-csv
+        className={`${ACTION_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}
+        disabled={rowCount === 0}
+        onClick={() => downloadCsv(result)}
+      >
+        {t("actions.exportCsv", { count: rowCount })}
+      </button>
+      <div
+        data-export-csv-basis
+        className="max-w-[280px] text-[11.5px] leading-[1.5] text-text-dark-secondary"
+      >
+        {basis}
+      </div>
+      {result.unavailableCompetitors > 0 ? (
+        // The nine columns carry no run coverage, so a partial run's file is
+        // shaped exactly like a complete one and its competitor-rank cells read
+        // as evidence the missing competitors do not rank. The file cannot say
+        // so; this line, next to the control that produces it, can.
+        <div
+          data-export-csv-partial
+          className="max-w-[280px] text-[11.5px] leading-[1.5] text-brand-warning"
+        >
+          {t("actions.exportCsvPartial", {
+            count: result.unavailableCompetitors,
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

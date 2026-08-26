@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // @input  -- real EN/ZH catalogs and the competitor-gap form/results components
-// @output -- proof representative form, status, intent, and coverage copy localizes
+// @output -- proof representative form, overview, export, sort, and coverage copy localizes
 // @pos    -- integration guard against shipping literal next-intl key paths
 
 import { act } from "react";
@@ -230,17 +230,13 @@ describe.each([
   {
     locale: "en" as const,
     form: "Set up your competitor keyword gap",
-    status: "Partial result",
     intent: "Commercial",
-    unavailable: "1 competitor unavailable",
     eyebrow: "Competitor keyword gap report",
     versus: "vs",
-    returnedRows: "Returned gap rows",
-    observedBody:
-      "Returned rows observed in the bounded own-site GSC query or query-page sample.",
+    returnedRows: "Gap keywords",
+    gapBody:
+      "At least one competitor ranked #20 or better in this run's DataForSEO sample, and this site was not observed in that sample.",
     recommendationHeader: "Recommended action",
-    recommendation:
-      "Not observed in this sample; review the gap before creating a page.",
     boundaries: "Evidence boundaries",
     manualSnapshot:
       "This is a manual snapshot with no saved history or automatic refresh.",
@@ -254,20 +250,22 @@ describe.each([
     impressionsLine: "900 impressions",
     notInSample: "Not in sample",
     opportunityFinder: "Open Opportunity Finder →",
-    exportCsv: "Export all 3 rows as CSV",
+    exportCsv: "Export 3 keywords as CSV",
+    exportCsvBasis:
+      "The file holds every keyword this run returned, ordered by DataForSEO's search volume estimate.",
+    sortImpressions: "Sort by impressions",
+    sortPosition: "Sort by average position",
   },
   {
     locale: "zh" as const,
     form: "设置竞品关键词差距分析",
-    status: "部分结果",
     intent: "商业调研",
-    unavailable: "1 个竞品不可用",
     eyebrow: "竞品关键词差距报告",
     versus: "对比",
-    returnedRows: "本次返回的差距行",
-    observedBody: "在有限本站 GSC query 或 query-page 样本中观测到的返回行。",
+    returnedRows: "差距词",
+    gapBody:
+      "本次 DataForSEO 样本中至少有一个竞品排到 #20 或更靠前，而本站没有在该样本里被观测到。",
     recommendationHeader: "建议",
-    recommendation: "本次样本未观测本站；先复核差距，再决定是否新建。",
     boundaries: "数据与证据边界",
     manualSnapshot: "这是一次手动快照，不保存历史，也不会自动刷新。",
     band: "难度较高或第二页",
@@ -279,16 +277,18 @@ describe.each([
     impressionsLine: "曝光 900",
     notInSample: "样本未观测",
     opportunityFinder: "打开 Opportunity Finder →",
-    exportCsv: "导出全部 3 行 CSV",
+    exportCsv: "导出 3 个关键词 CSV",
+    exportCsvBasis:
+      "文件收录本次运行返回的全部关键词，按 DataForSEO 搜索量估算降序排列。",
+    sortImpressions: "按曝光排序",
+    sortPosition: "按均位排序",
   },
 ])("competitor keyword gap $locale messages", (expected) => {
   it("renders real localized scope, overview, recommendation, and boundary copy", async () => {
     const host = await renderLocale(expected.locale);
 
     expect(host.textContent).toContain(expected.form);
-    expect(host.textContent).toContain(expected.status);
     expect(host.textContent).toContain(expected.intent);
-    expect(host.textContent).toContain(expected.unavailable);
     expect(host.textContent).toContain(expected.eyebrow);
     const scope = host.querySelector("[data-scope-strip]");
     expect(scope?.textContent).toContain("example.com");
@@ -296,9 +296,15 @@ describe.each([
     expect(scope?.textContent).toContain("beta.example");
     expect(scope?.textContent).toContain(expected.versus);
     expect(host.textContent).toContain(expected.returnedRows);
-    expect(host.textContent).toContain(expected.observedBody);
+    // The run's own rank bound reaches the sentence: a literal "{maxRank}" on
+    // screen is what a missing value looks like here, and the plain key path
+    // guard below cannot see it.
+    expect(
+      host.querySelector('[data-summary-metric="returned-gap-rows"]')
+        ?.textContent,
+    ).toContain(expected.gapBody);
+    expect(host.textContent).not.toContain("{maxRank}");
     expect(host.textContent).toContain(expected.recommendationHeader);
-    expect(host.textContent).toContain(expected.recommendation);
     expect(host.textContent).toContain(expected.boundaries);
     expect(host.textContent).toContain(expected.manualSnapshot);
     expect(host.textContent).toContain(expected.band);
@@ -329,9 +335,22 @@ describe.each([
       host.querySelector('[data-row-action="open-opportunity-finder"]')
         ?.textContent,
     ).toBe(expected.opportunityFinder);
+    expect(host.querySelector("[data-export-csv]")?.textContent).toBe(
+      expected.exportCsv,
+    );
+    // The count says how many keywords; this says which ones. This fixture is
+    // three rows -- far under the cap -- so the sentence that must render is
+    // the one claiming the ORDER. The restrictive wording would be false here:
+    // nothing was left out.
+    expect(host.querySelector("[data-export-csv-basis]")?.textContent).toBe(
+      expected.exportCsvBasis,
+    );
     expect(
-      host.querySelector('[data-export-csv]')?.textContent,
-    ).toBe(expected.exportCsv);
+      host.querySelector('[data-sort-toggle="impressions"]')?.textContent,
+    ).toBe(expected.sortImpressions);
+    expect(
+      host.querySelector('[data-sort-toggle="position"]')?.textContent,
+    ).toBe(expected.sortPosition);
     expect(
       host.querySelector("[data-pre-screen]")?.getAttribute("title"),
     ).toContain(expected.preScreenBasis);
@@ -342,9 +361,9 @@ describe.each([
     expect(host.textContent).not.toContain("preScreen.basis");
     expect(host.textContent).not.toContain("preScreen.reason");
     expect(host.textContent).not.toContain("coverage.sampleRule");
-    expect(host.textContent).not.toContain("overview.gscQueryRows");
-    expect(host.textContent).not.toContain("summary.unavailable");
     expect(host.textContent).not.toContain("intent.commercial");
+    expect(host.textContent).not.toContain("sort.impressions");
+    expect(host.textContent).not.toContain("sort.position");
     expect(host.textContent).not.toContain("overview.returnedGapRows");
     expect(host.textContent).not.toContain("table.nextAction");
     expect(host.textContent).not.toContain("actions.optimizeObservedPage");
@@ -355,7 +374,6 @@ describe.each([
     expect(host.textContent).not.toContain("gsc.impressionsLine");
     expect(host.textContent).not.toContain("sources.short");
     expect(host.textContent).not.toContain("legend.dfsMeans");
-    expect(host.textContent).not.toContain("status.partialBody");
     expect(host.textContent).not.toContain("boundaries.manualSnapshot");
   });
 });

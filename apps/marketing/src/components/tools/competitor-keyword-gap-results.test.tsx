@@ -15,6 +15,7 @@ import {
   rowWithGsc,
   tableRow,
   unmountResults,
+  visibleKeywords,
   withResult,
 } from "./competitor-keyword-gap-results-harness";
 
@@ -33,10 +34,9 @@ vi.mock("next-intl", () => ({
 installResultsHarness();
 
 describe("CompetitorKeywordGapResults", () => {
-  it("renders the compact six-column table, stable overview metrics, and one legend for provider own-state", async () => {
+  it("renders the compact six-column table and the two overview cards", async () => {
     const host = await renderResults();
     const scope = host.querySelector("[data-scope-strip]");
-    const legend = host.querySelector("[data-source-legend]");
     const table = host.querySelector("table") as HTMLTableElement;
     const wrapper = table.parentElement as HTMLElement;
     const tableSurface = host.querySelector("[data-results-table]");
@@ -50,7 +50,14 @@ describe("CompetitorKeywordGapResults", () => {
     expect(scope?.querySelector("time")?.getAttribute("datetime")).toBe(
       BASE.result.capturedAt,
     );
-    expect(host.querySelectorAll("[data-summary-metric]")).toHaveLength(3);
+    // Two cards, and the second is load-bearing: it is now the only place the
+    // surface says how much of the run came back, so a run with three failed
+    // competitors cannot look like a complete one.
+    expect(
+      [...host.querySelectorAll("[data-summary-metric]")].map((card) =>
+        card.getAttribute("data-summary-metric"),
+      ),
+    ).toEqual(["returned-gap-rows", "completed-competitors"]);
     expect(
       host.querySelector('[data-summary-metric="returned-gap-rows"]')
         ?.textContent,
@@ -59,17 +66,12 @@ describe("CompetitorKeywordGapResults", () => {
       host.querySelector('[data-summary-metric="completed-competitors"]')
         ?.textContent,
     ).toContain("2 / 2");
+    // The gap card states what the rows ARE, keyed to the run's own rank bound
+    // rather than a number typed into the sentence.
     expect(
-      host.querySelector('[data-summary-metric="gsc-observed-rows"]')
+      host.querySelector('[data-summary-metric="returned-gap-rows"]')
         ?.textContent,
-    ).toContain("1");
-    expect(legend?.querySelector('[data-source="dfs"]')?.textContent).toContain(
-      "sources.dfs",
-    );
-    expect(legend?.querySelector('[data-source="gsc"]')?.textContent).toContain(
-      "sources.gsc",
-    );
-    expect(host.textContent?.match(/legend\.ownState/g)).toHaveLength(1);
+    ).toContain("overview.returnedGapRowsBody:maxRank=20");
     expect(host.textContent).not.toContain(
       "ownState.not_observed_in_provider_rankings",
     );
@@ -116,7 +118,8 @@ describe("CompetitorKeywordGapResults", () => {
     expect(table.querySelector("[data-monthly-volume]")?.className).toContain(
       "tabular-nums",
     );
-    // The lane sentence is stated once above the table, not once per row.
+    // No lane sentence anywhere any more: `gsc.nextStep` still picks the row's
+    // action verb, but it no longer gets a paragraph of its own.
     expect(table.querySelector("[data-next-step-copy]")).toBeNull();
     expect(
       table.querySelector('[data-row-action="open-checker"]')?.className,
@@ -124,6 +127,49 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.firstElementChild?.className).not.toMatch(
       /(?:min-w-screen|w-screen|overflow-x-(?:auto|scroll))/,
     );
+  });
+
+  /**
+   * Asserted by DOM hook AND by key path, because the two fail differently.
+   * A hook that survives says the component is still mounted; a key path that
+   * survives says the catalog string is still being rendered from somewhere
+   * else, which is how a "removed" sentence comes back on a different surface.
+   */
+  it("renders none of the stripped surfaces and none of their copy", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+
+    for (const selector of [
+      "[data-source-legend]",
+      "[data-next-step-filters]",
+      "[data-next-step-filter]",
+      "[data-pre-screen-filters]",
+      "[data-pre-screen-filter]",
+      "[data-lane-notes]",
+      "[data-lane-note]",
+      '[data-row-action="copy-plan"]',
+      "[data-gsc-query-rows]",
+      '[data-summary-metric="gsc-observed-rows"]',
+    ]) {
+      expect(host.querySelector(selector), selector).toBeNull();
+    }
+    for (const key of [
+      "legend.ownState",
+      "sources.dfs",
+      "sources.gsc",
+      "sources.status.",
+      "status.complete",
+      "status.partial",
+      "summary.competitors",
+      "summary.unavailable",
+      "filters.",
+      "nextSteps.",
+      "preScreen.filterAll",
+      "actions.copyPlan",
+      "overview.gscObservedRows",
+      "overview.gscQueryRows",
+    ]) {
+      expect(host.textContent, key).not.toContain(key);
+    }
   });
 
   it("keeps monthly volume to one DFS number and moves KD into opportunity signals", async () => {
@@ -179,73 +225,186 @@ describe("CompetitorKeywordGapResults", () => {
     );
   });
 
-  it.each(["not_requested", "unavailable"] as const)(
-    "shows GSC overview as unavailable when overlay status is %s",
-    async (overlayStatus) => {
-      const host = await renderResults(withResult({ overlayStatus }));
-      expect(
-        host.querySelector('[data-summary-metric="gsc-observed-rows"]')
-          ?.textContent,
-      ).toContain("—");
-      expect(
-        host.querySelector('[data-summary-metric="gsc-observed-rows"]')
-          ?.textContent,
-      ).toContain(`sources.status.${overlayStatus}`);
-    },
-  );
-
-  it("keeps contract order, shows ten of 100 rows, and reports exact four-lane counts", async () => {
+  it("shows ten of 100 rows, expands to all of them, and never narrows the set", async () => {
     const host = await renderResults(withResult({ rows: productionRows() }));
-    const filters = host.querySelector("[data-next-step-filters]");
-    const allFilter = host.querySelector('[data-next-step-filter="all"]');
-    const contentFilter = host.querySelector(
-      '[data-next-step-filter="review_content_gap"]',
-    );
 
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
-    expect(allFilter?.getAttribute("aria-pressed")).toBe("true");
-    expect(contentFilter?.getAttribute("aria-pressed")).toBe("false");
-
-    // Each lane's sentence is stated ONCE above the table. Five optimize rows
-    // are on screen and the sentence appears once, which is the whole point of
-    // moving it out of the rows; and only the lanes actually visible get one,
-    // so a note never describes rows the reader cannot see.
-    expect(
-      [...host.querySelectorAll("[data-lane-note]")].map((note) =>
-        note.getAttribute("data-lane-note"),
-      ),
-    ).toEqual(["optimize_existing", "review_existing_query"]);
-    expect(
-      host.textContent?.match(/nextSteps\.optimize_existing/g),
-    ).toHaveLength(1);
-    expect(host.querySelector("tbody tr:first-child")?.textContent).toContain(
-      "optimize-00",
-    );
-    expect(filters?.textContent).toContain("filters.all · 100");
-    expect(filters?.textContent).toContain("filters.optimize_existing · 5");
-    expect(filters?.textContent).toContain("filters.review_existing_query · 5");
-    expect(filters?.textContent).toContain("filters.review_content_gap · 88");
-    expect(filters?.textContent).toContain("filters.verify_own_coverage · 2");
     expect(host.textContent).toContain("actions.remaining:count=90");
 
     await click(buttonFor(host, "actions.showAll"));
+    // Every row of the run, because nothing filters this table any more.
     expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
     expect(host.textContent).toContain("actions.showingAll:count=100");
-    expect(host.querySelectorAll("[data-lane-note]")).toHaveLength(4);
-    expect(
-      host.textContent?.match(/nextSteps\.optimize_existing/g),
-    ).toHaveLength(1);
     await click(buttonFor(host, "actions.showLess"));
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
+  });
 
-    await click(contentFilter);
-    expect(allFilter?.getAttribute("aria-pressed")).toBe("false");
-    expect(contentFilter?.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
-    expect(host.textContent).toContain("actions.remaining:count=78");
+  it("sorts by impressions descending on first render and keeps unmeasured rows last", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const impressionsToggle = host.querySelector(
+      '[data-sort-toggle="impressions"]',
+    );
+    const positionToggle = host.querySelector('[data-sort-toggle="position"]');
+
+    expect(impressionsToggle?.getAttribute("aria-pressed")).toBe("true");
+    expect(positionToggle?.getAttribute("aria-pressed")).toBe("false");
+
+    // Impressions THIS KEYWORD was measured with -- never the attributed
+    // page's total across every query it ranks for. `review-existing-04` has
+    // only the page numbers, so it counts as unmeasured here and falls to the
+    // tail; ranking it by its page's 160 would have put a keyword with no
+    // measured impressions above `optimize-00`, which has 100 of its own.
+    //
+    // `review-existing-00` and `optimize-04` both have 500. The tie goes to
+    // provider search volume, not the alphabet: with no second quantity a run
+    // carrying no Search Console evidence at all -- which this tool offers its
+    // own button for -- degenerated into an A-Z list under a toggle that said
+    // "by impressions".
+    expect(visibleKeywords(host)).toEqual([
+      "review-existing-00",
+      "optimize-04",
+      "review-existing-01",
+      "review-existing-02",
+      "review-existing-03",
+      "optimize-03",
+      "optimize-02",
+      "optimize-01",
+      "optimize-00",
+      // Nothing measured left: the tail orders on search volume, and this row
+      // carries the highest of the ninety-one.
+      "verify-01",
+    ]);
+  });
+
+  it("sorts by average position ascending, best first, when that toggle is pressed", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const impressionsToggle = host.querySelector(
+      '[data-sort-toggle="impressions"]',
+    );
+    const positionToggle = host.querySelector('[data-sort-toggle="position"]');
+
+    await click(positionToggle);
+    expect(positionToggle?.getAttribute("aria-pressed")).toBe("true");
+    expect(impressionsToggle?.getAttribute("aria-pressed")).toBe("false");
+
+    // Best position FIRST: the row nearest page one is the one worth acting on
+    // Ascending, best first, and again the keyword's own position rather than
+    // its page's. `review-existing-04` has neither, so it is not among these.
+    expect(visibleKeywords(host)).toEqual([
+      "review-existing-00",
+      "review-existing-01",
+      "review-existing-02",
+      "review-existing-03",
+      "optimize-00",
+      "optimize-01",
+      "optimize-02",
+      "optimize-03",
+      "optimize-04",
+      "verify-01",
+    ]);
+  });
+
+  it("treats a row whose only numbers belong to its page as unmeasured", async () => {
+    // `review-existing-04` carries pageImpressions 160 and pagePosition 10 and
+    // nothing of its own. Those describe the page across every query it ranks
+    // for, so using them here would rank this keyword by a number that is not
+    // about this keyword. It sorts into the unmeasured tail in BOTH modes --
+    // and last of all, because its search volume is the lowest there.
+    const host = await renderResults(withResult({ rows: productionRows() }));
+
     await click(buttonFor(host, "actions.showAll"));
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(88);
-    await click(host.querySelector('[data-next-step-filter="all"]'));
+    expect(visibleKeywords(host).at(-1)).toBe("review-existing-04");
+
+    await click(
+      host.querySelector('[data-sort-toggle="position"]') as HTMLButtonElement,
+    );
+    await click(buttonFor(host, "actions.showAll"));
+    expect(visibleKeywords(host).at(-1)).toBe("review-existing-04");
+  });
+
+  it("puts a null impressions row and a null position row last in their own mode", async () => {
+    const measured = rowWithGsc(
+      0,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query",
+        queryImpressions: 4,
+        queryPosition: 40,
+        nextStep: "optimize_existing",
+      },
+      { keyword: "aaa measured small" },
+    );
+    // Nulls on BOTH halves of each fallback, so neither mode can find a number
+    // for it. The keyword sorts first alphabetically, so a tie-break alone
+    // would put it on top -- only the missing-last rule keeps it at the bottom.
+    const unmeasured = rowWithGsc(
+      1,
+      {
+        queryStatus: "not_observed_in_gsc_query_sample",
+        queryImpressions: null,
+        queryPosition: null,
+        pageImpressions: null,
+        pagePosition: null,
+        nextStep: "review_content_gap",
+      },
+      { keyword: "aaa unmeasured" },
+    );
+    const host = await renderResults(
+      withResult({ rows: [unmeasured, measured] }),
+    );
+
+    expect(visibleKeywords(host)).toEqual([
+      "aaa measured small",
+      "aaa unmeasured",
+    ]);
+    await click(host.querySelector('[data-sort-toggle="position"]'));
+    expect(visibleKeywords(host)).toEqual([
+      "aaa measured small",
+      "aaa unmeasured",
+    ]);
+  });
+
+  it("breaks ties on the keyword, so two renders of one run agree", async () => {
+    const tied = (index: number, keyword: string) =>
+      rowWithGsc(
+        index,
+        {
+          queryStatus: "observed_weak",
+          evidenceBasis: "query",
+          queryImpressions: 300,
+          queryPosition: 12,
+          nextStep: "optimize_existing",
+        },
+        { keyword },
+      );
+    // Supplied in reverse keyword order on purpose: a stable sort alone would
+    // hand back the input order, so this fails unless the second key is real.
+    const envelope = withResult({
+      rows: [tied(0, "zeta tie"), tied(1, "alpha tie")],
+    });
+    const first = await renderResults(envelope);
+    const firstOrder = visibleKeywords(first);
+
+    expect(firstOrder).toEqual(["alpha tie", "zeta tie"]);
+    await click(first.querySelector('[data-sort-toggle="position"]'));
+    expect(visibleKeywords(first)).toEqual(["alpha tie", "zeta tie"]);
+
+    await unmountResults();
+
+    const second = await renderResults(envelope);
+    expect(visibleKeywords(second)).toEqual(firstOrder);
+  });
+
+  it("resets the ten-row collapse when the order changes", async () => {
+    const host = await renderResults(withResult({ rows: productionRows() }));
+
+    await click(buttonFor(host, "actions.showAll"));
+    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
+
+    await click(host.querySelector('[data-sort-toggle="position"]'));
+    // "The first ten" means something different in each order, so a hundred
+    // rows left expanded across the change is not the screen the reader asked
+    // for.
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
     expect(host.textContent).toContain("actions.remaining:count=90");
   });
@@ -441,7 +600,14 @@ describe("CompetitorKeywordGapResults", () => {
     const boundaries = host.querySelector("[data-evidence-boundaries]");
 
     expect(details?.hasAttribute("open")).toBe(true);
-    expect(host.textContent).toContain("status.partial");
+    // The summary card states no status sentence any more, so a partial run
+    // announces itself through the warning frame, the completed-competitor
+    // card, and this section -- which opens itself for exactly that reason.
+    expect(host.querySelector('[data-run-status="partial"]')).not.toBeNull();
+    expect(
+      host.querySelector('[data-summary-metric="completed-competitors"]')
+        ?.textContent,
+    ).toContain("1 / 2");
     expect(details?.textContent).toContain(
       "coverage.failure:code=keyword_source_unavailable",
     );
@@ -508,9 +674,18 @@ describe("CompetitorKeywordGapResults", () => {
         "unavailable",
       ),
     );
-    expect(unavailable.textContent).toContain("status.unavailable");
-    expect(unavailable.textContent).toContain("status.unavailableBody");
+    // No empty-state card, no table, and no status sentence: what tells the
+    // reader nothing came back is the run-status frame plus a completed count
+    // of zero, which is why that card cannot be dropped as a filler.
+    expect(unavailable.textContent).not.toContain("empty.title");
     expect(unavailable.querySelector("table")).toBeNull();
+    expect(
+      unavailable.querySelector('[data-run-status="unavailable"]'),
+    ).not.toBeNull();
+    expect(
+      unavailable.querySelector('[data-summary-metric="completed-competitors"]')
+        ?.textContent,
+    ).toContain("0 / 2");
   });
 
   it("puts the average position inside the status pill and never leaves a dangling separator", async () => {
