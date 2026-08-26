@@ -1,11 +1,13 @@
 import {
   crawlPublicSitePreview,
+  PublicPreviewTargetRedirectError,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 
 export type SeoAuditScanErrorCode =
   | "blocked"
   | "scan_failed"
+  | "target_redirected"
   | "timeout"
   /** The site's robots.txt forbids this crawler. Not a failure, and not a finding. */
   | "robots_disallowed"
@@ -14,11 +16,16 @@ export type SeoAuditScanErrorCode =
 
 export class SeoAuditScanError extends Error {
   readonly code: SeoAuditScanErrorCode;
+  readonly redirectTarget: string | null;
 
-  constructor(code: SeoAuditScanErrorCode) {
+  constructor(
+    code: SeoAuditScanErrorCode,
+    redirectTarget: string | null = null,
+  ) {
     super(code);
     this.name = "SeoAuditScanError";
     this.code = code;
+    this.redirectTarget = redirectTarget;
   }
 }
 
@@ -57,6 +64,8 @@ export interface SeoAuditScanOptions {
    * behaviour, and a listener that throws cannot end the crawl.
    */
   readonly onProgress?: SeoAuditProgressListener;
+  /** Reject when the canonical entry replaces the submitted page. */
+  readonly requireSameEntrySubject?: boolean;
   /** Offline test seam. */
   readonly crawl?: SeoAuditCrawler;
 }
@@ -94,10 +103,24 @@ export function crawlProgressReporter(onProgress: SeoAuditProgressListener): {
  * no fetcher, and `PublicPreviewCrawlOptions.fetcher` stays what its comment
  * says it is — an offline test seam.
  */
-const instrumentedCrawler: SeoAuditCrawler = (url, signal, onProgress) => {
-  if (!onProgress) return crawlPublicSitePreview(url, signal);
+const instrumentedCrawler = (
+  url: string,
+  signal?: AbortSignal,
+  onProgress?: SeoAuditProgressListener,
+  requireSameEntrySubject?: boolean,
+): Promise<CrawlRaw> => {
+  const strictOptions =
+    requireSameEntrySubject === true
+      ? ({ requireSameEntrySubject: true } as const)
+      : {};
+  if (!onProgress) {
+    return requireSameEntrySubject === true
+      ? crawlPublicSitePreview(url, signal, strictOptions)
+      : crawlPublicSitePreview(url, signal);
+  }
   const reporter = crawlProgressReporter(onProgress);
   return crawlPublicSitePreview(url, signal, {
+    ...strictOptions,
     onRequestSent: reporter.onRequest,
     onPageProgress: reporter.onPageProgress,
   });
@@ -120,9 +143,15 @@ export async function scanSeoAuditSite(
   signal?: AbortSignal,
   options: SeoAuditScanOptions = {},
 ): Promise<SeoAuditRaw> {
-  const crawl = options.crawl ?? instrumentedCrawler;
   try {
-    const raw = await crawl(url, signal, options.onProgress);
+    const raw = options.crawl
+      ? await options.crawl(url, signal, options.onProgress)
+      : await instrumentedCrawler(
+          url,
+          signal,
+          options.onProgress,
+          options.requireSameEntrySubject,
+        );
     if (raw.availability === "unavailable") {
       // Say which of the three it was. "The site told us not to crawl it" and
       // "we could not reach the site" are different answers, and neither is
@@ -138,6 +167,9 @@ export async function scanSeoAuditSite(
     return { ...raw, requestedUrl: url };
   } catch (error) {
     if (error instanceof SeoAuditScanError) throw error;
+    if (error instanceof PublicPreviewTargetRedirectError) {
+      throw new SeoAuditScanError("target_redirected", error.targetUrl);
+    }
     if (
       error instanceof Error &&
       /max_duration|aborted|timeout/i.test(error.message)

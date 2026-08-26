@@ -1,17 +1,52 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type CachedCrawl = {
+  readonly payload: unknown;
+  readonly capturedAt: string;
+};
+
+type CacheProbe = (targetHost: string) => Promise<CachedCrawl | null>;
+
+type OpenCrawlGateMock = (
+  clientIp: string,
+  normalizedUrl: string,
+  dependencies: unknown,
+  cacheProbe?: CacheProbe,
+) => Promise<
+  | { readonly ok: true; readonly kind: "crawl"; readonly release: () => void }
+  | {
+      readonly ok: true;
+      readonly kind: "cached";
+      readonly payload: unknown;
+      readonly capturedAt: string;
+      readonly release: () => void;
+    }
+>;
+
 const mocks = vi.hoisted(() => ({
   internalPayload: { tool: "internal-link-fixture" },
   seoPayload: { tool: "seo-fixture" },
-  openCrawlGate: vi.fn(async () => ({
-    ok: true as const,
-    kind: "crawl" as const,
+  isSeoAuditPayload: vi.fn<(value: unknown) => boolean>(() => true),
+  openCrawlGate: vi.fn<OpenCrawlGateMock>(async () => ({
+    ok: true,
+    kind: "crawl",
     release: vi.fn(),
   })),
+  readCrawlCache: vi.fn<
+    (tool: string, targetHost: string) => Promise<CachedCrawl | null>
+  >(async () => null),
   writeCrawlCache: vi.fn(async () => undefined),
   scanInternalLinkAuditSite: vi.fn(async () => ({ stopReason: null })),
   scanSeoAuditSite: vi.fn(async () => ({ stopReason: null })),
 }));
+
+vi.mock("@sf/public-tools/seo-audit/contract", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@sf/public-tools/seo-audit/contract")
+    >();
+  return { ...actual, isSeoAuditPayload: mocks.isSeoAuditPayload };
+});
 
 vi.mock("@sf/public-tools", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@sf/public-tools")>();
@@ -31,7 +66,11 @@ vi.mock("./crawl-gate.ts", () => ({
 
 vi.mock("./crawl-cache.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./crawl-cache.ts")>();
-  return { ...actual, writeCrawlCache: mocks.writeCrawlCache };
+  return {
+    ...actual,
+    readCrawlCache: mocks.readCrawlCache,
+    writeCrawlCache: mocks.writeCrawlCache,
+  };
 });
 
 import { handleInternalLinkAuditRequest } from "./internal-link-audit-handler.ts";
@@ -48,8 +87,40 @@ function request(path: string): Request {
   });
 }
 
+function cachedSeoPayload(targetInspected: boolean): unknown {
+  return {
+    result: {
+      targetUrl: "https://www.acme.com/",
+      targetInspected,
+    },
+  };
+}
+
+function useCacheProbeGate(): void {
+  mocks.openCrawlGate.mockImplementation(
+    async (_clientIp, _normalizedUrl, _dependencies, cacheProbe) => {
+      const cached = (await cacheProbe?.("www.acme.com")) ?? null;
+      return cached === null
+        ? { ok: true, kind: "crawl", release: vi.fn() }
+        : {
+            ok: true,
+            kind: "cached",
+            payload: cached.payload,
+            capturedAt: cached.capturedAt,
+            release: vi.fn(),
+          };
+    },
+  );
+}
+
 beforeEach(() => {
-  mocks.openCrawlGate.mockClear();
+  mocks.isSeoAuditPayload.mockReset().mockReturnValue(true);
+  mocks.openCrawlGate.mockReset().mockResolvedValue({
+    ok: true,
+    kind: "crawl",
+    release: vi.fn(),
+  });
+  mocks.readCrawlCache.mockReset().mockResolvedValue(null);
   mocks.writeCrawlCache.mockClear();
   mocks.scanInternalLinkAuditSite.mockClear();
   mocks.scanSeoAuditSite.mockClear();
@@ -78,5 +149,61 @@ describe("default public crawl cache wiring", () => {
       "www.acme.com",
       mocks.seoPayload,
     );
+  });
+
+  it("treats a non-inspected strict target cache as a miss and scans", async () => {
+    useCacheProbeGate();
+    mocks.readCrawlCache.mockResolvedValue({
+      payload: cachedSeoPayload(false),
+      capturedAt: "2026-08-26T10:00:00.000Z",
+    });
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/on-page-seo-check"),
+      undefined,
+      { requireSameEntrySubject: true },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(mocks.scanSeoAuditSite).toHaveBeenCalledOnce();
+  });
+
+  it("reuses an inspected strict target cache", async () => {
+    useCacheProbeGate();
+    const cached = cachedSeoPayload(true);
+    mocks.readCrawlCache.mockResolvedValue({
+      payload: cached,
+      capturedAt: "2026-08-26T10:00:00.000Z",
+    });
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/on-page-seo-check"),
+      undefined,
+      { requireSameEntrySubject: true },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBe("hit");
+    await expect(response.json()).resolves.toEqual({ data: cached });
+    expect(mocks.scanSeoAuditSite).not.toHaveBeenCalled();
+  });
+
+  it("preserves non-strict reuse of a non-inspected cache", async () => {
+    useCacheProbeGate();
+    const cached = cachedSeoPayload(false);
+    mocks.readCrawlCache.mockResolvedValue({
+      payload: cached,
+      capturedAt: "2026-08-26T10:00:00.000Z",
+    });
+
+    const response = await handleSeoAuditRequest(
+      request("/api/tools/seo-audit"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBe("hit");
+    await expect(response.json()).resolves.toEqual({ data: cached });
+    expect(mocks.scanSeoAuditSite).not.toHaveBeenCalled();
   });
 });

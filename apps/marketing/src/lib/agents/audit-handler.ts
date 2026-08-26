@@ -27,6 +27,8 @@ import {
   buildKeywordEvidenceRecords,
   type HeadingShapeInput,
 } from "@sf/public-tools/seo-audit/keyword-evidence/records";
+import { canonicalizeUrl } from "@sf/sources/canonical-url";
+import { isAllowedPublicToolEntryRedirect } from "@sf/sources/crawl-public-preview";
 import { AGENT_AUDIT_HEADING_PRESETS } from "@sf/public-tools/agent-audit";
 import {
   buildPagePerformanceRecords,
@@ -44,11 +46,9 @@ import {
 } from "./page-performance-reader.ts";
 import {
   buildSerpShapeRecords,
-  type SerpShapeGap,
-  type SerpShapeRaw,
 } from "@sf/public-tools/seo-audit/serp-shape";
 
-import { buildKeywordEvidence } from "@sf/public-tools";
+import { buildKeywordEvidence, normalizeSeoAuditUrl } from "@sf/public-tools";
 import { readSerpLandscape } from "../tools/serp-landscape.ts";
 import {
   AGENT_SERP_SHAPE_VERSION,
@@ -197,12 +197,20 @@ export const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
 /**
  * The same handler, reached from the On-Page Checker's own route.
  *
- * Only the ledger label differs. Sharing the engine is what makes a second
- * check on an already-crawled host fast, and sharing the in-flight gate is what
- * keeps a checker run and an Agent run on one host from crawling it twice.
+ * The checker also requires evidence for the submitted page itself, so its
+ * delegate rejects an entry redirect that replaces that page before the full
+ * crawl starts. Sharing the engine still makes a second check on an
+ * already-crawled host fast, and sharing the in-flight gate keeps a checker run
+ * and an Agent run on one host from crawling it twice.
  */
 export const ON_PAGE_CHECK_DEPENDENCIES: AgentAuditHandlerDependencies = {
   ...DEFAULT_DEPENDENCIES,
+  delegate: (request, input) =>
+    handleSeoAuditRequest(request, undefined, {
+      forceBufferedJson: true,
+      input,
+      requireSameEntrySubject: true,
+    }),
   reportAs: "on-page-seo-check",
   readSerpLandscape: (input) => readSerpLandscape(input),
 };
@@ -266,6 +274,7 @@ const UPSTREAM_ERROR_STATUS = {
   quota_unavailable: 503,
   robots_disallowed: 422,
   robots_unreachable: 422,
+  target_redirected: 422,
   scan_timeout: 504,
   scan_failed: 502,
 } as const satisfies Readonly<Record<string, number>>;
@@ -379,6 +388,66 @@ function safeErrorHeaders(upstream: Headers): Headers {
   return headers;
 }
 
+function hasUnsafeLocationCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x20 || codePoint === 0x7f || character === "\\") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Revalidate the upstream pointer instead of trusting the sibling handler.
+ * Rebasing the submitted path and effective query onto the destination origin
+ * permits scheme/apex-www normalization without calling it a replacement page.
+ */
+function safeRedirectTarget(
+  submittedInput: unknown,
+  rawLocation: string | null,
+): string | null {
+  if (
+    rawLocation === null ||
+    rawLocation.length === 0 ||
+    rawLocation.length > 2_048 ||
+    !/^https?:\/\//i.test(rawLocation) ||
+    hasUnsafeLocationCharacter(rawLocation) ||
+    rawLocation.includes("#")
+  ) {
+    return null;
+  }
+
+  const submitted = normalizeSeoAuditUrl(submittedInput);
+  const candidate = normalizeSeoAuditUrl(rawLocation);
+  if (!submitted.ok || !candidate.ok) return null;
+  if (!isAllowedPublicToolEntryRedirect(submitted.url, candidate.url)) {
+    return null;
+  }
+
+  let submittedUrl: URL;
+  let candidateUrl: URL;
+  try {
+    submittedUrl = new URL(submitted.url);
+    candidateUrl = new URL(candidate.url);
+  } catch {
+    return null;
+  }
+
+  const canonicalCandidate = canonicalizeUrl(candidate.url);
+  const rebasedSubmitted = canonicalizeUrl(
+    `${candidateUrl.origin}${submittedUrl.pathname}${submittedUrl.search}`,
+  );
+  if (
+    canonicalCandidate === null ||
+    rebasedSubmitted === null ||
+    canonicalCandidate.subjectUrl === rebasedSubmitted.subjectUrl
+  ) {
+    return null;
+  }
+  return canonicalCandidate.fetchUrl;
+}
+
 function cacheProvenanceOf(headers: Headers): CacheProvenance | null {
   const cacheStatus = headers.get("X-Crawl-Cache");
   const capturedAt = headers.get("X-Crawl-Captured-At");
@@ -478,16 +547,30 @@ function errorResponse(
   );
 }
 
-async function projectUpstreamError(upstream: Response): Promise<Response> {
+async function projectUpstreamError(
+  upstream: Response,
+  submittedUrl: unknown,
+): Promise<Response> {
   const envelope = await readBoundedJson(upstream);
   const code = upstreamErrorCodeOf(envelope);
   if (code === null || upstream.status !== UPSTREAM_ERROR_STATUS[code]) {
     return errorResponse("audit_response_invalid", 502);
   }
+  const headers = safeErrorHeaders(upstream.headers);
+  if (code === "target_redirected") {
+    const redirectTarget = safeRedirectTarget(
+      submittedUrl,
+      upstream.headers.get("Location"),
+    );
+    if (redirectTarget === null) {
+      return errorResponse("audit_response_invalid", 502);
+    }
+    headers.set("Location", redirectTarget);
+  }
   return errorResponse(
     code,
     upstream.status,
-    safeErrorHeaders(upstream.headers),
+    headers,
   );
 }
 
@@ -593,7 +676,7 @@ export async function handleAgentAuditRequest(
   if (!input.ok) return errorResponse("invalid_request", 400);
 
   const upstream = await dependencies.delegate(request, input.value);
-  if (!upstream.ok) return projectUpstreamError(upstream);
+  if (!upstream.ok) return projectUpstreamError(upstream, input.value.url);
 
   if (
     !(upstream.headers.get("content-type") ?? "")

@@ -1,7 +1,7 @@
 "use client";
 
 // @input  -- page/query fields, optional private query/page handoff, market and role
-// @output -- handoff prefill, page keyword coverage, fixes, local recent checks
+// @output -- handoff prefill, safe redirect recovery, page evidence, and local history
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -32,6 +32,7 @@ import {
   formatCollectedAt,
   hostOf,
   monotonicNow,
+  redirectTargetOf,
   retryAfterSeconds,
   type AuditResponse,
 } from "../../lib/on-page-checker/response-reading.ts";
@@ -110,6 +111,7 @@ const CRAWL_ERROR_CODES = new Set([
   "scan_failed",
   "robots_disallowed",
   "robots_unreachable",
+  "target_redirected",
   "unknown",
 ]);
 
@@ -139,6 +141,7 @@ type RunState =
       readonly kind: "failed";
       readonly code: string;
       readonly retryAfter: number | null;
+      readonly redirectTarget: string | null;
     };
 
 export function OnPageChecker({ locale }: { readonly locale: string }) {
@@ -340,7 +343,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     } catch {
       inFlight.current = null;
       if (mounted.current && !controller.signal.aborted) {
-        setRun({ kind: "failed", code: "scan_failed", retryAfter: null });
+        setRun({
+          kind: "failed",
+          code: "scan_failed",
+          retryAfter: null,
+          redirectTarget: null,
+        });
       }
       return;
     }
@@ -370,6 +378,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         kind: "failed",
         code,
         retryAfter: retryAfterSeconds(response.headers),
+        redirectTarget:
+          code === "target_redirected"
+            ? redirectTargetOf(response.headers, url.trim())
+            : null,
       });
       return;
     }
@@ -377,7 +389,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     const result = (body as AuditResponse).data?.result;
     const evidence = result?.keywordEvidence;
     if (!evidence) {
-      setRun({ kind: "failed", code: "scan_failed", retryAfter: null });
+      setRun({
+        kind: "failed",
+        code: "scan_failed",
+        retryAfter: null,
+        redirectTarget: null,
+      });
       return;
     }
 
@@ -927,6 +944,37 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               <p className="text-[13px] text-text-dark-secondary">
                 {t("errors.retryAfter", { seconds: run.retryAfter })}
               </p>
+            )}
+            {run.redirectTarget !== null && (
+              <div className="grid gap-2">
+                <p className="text-[13px] text-text-dark-secondary">
+                  {t("redirect.destination")}:{" "}
+                  <a
+                    className="break-all text-brand-accent-text underline underline-offset-2"
+                    href={run.redirectTarget}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {run.redirectTarget}
+                  </a>
+                </p>
+                <div>
+                  <button
+                    className="rounded-lg border border-brand-border-card px-3 py-2 text-[13px] font-medium text-text-dark-primary"
+                    onClick={() => {
+                      const target = run.redirectTarget;
+                      if (target === null) return;
+                      setUrl(target);
+                      setUrlNotice(null);
+                      setHandoffImported(false);
+                      setRun({ kind: "idle" });
+                    }}
+                    type="button"
+                  >
+                    {t("actions.useDestinationUrl")}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}

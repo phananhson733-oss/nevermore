@@ -1,17 +1,14 @@
 // @vitest-environment jsdom
 // @input  -- production-shaped v3 competitor-gap envelopes with competitor pages, pre-screen bands, and SERP snapshots
-// @output -- linked competitor chips, band and lane filters, snapshot and traffic chips, sample rule, and GSC row-count rendering
+// @output -- linked competitor chips, pre-screen band chips, snapshot and traffic chips, the sample rule, and the GSC zero-row limitation
 // @pos    -- v3 signal-surface verification for the Marketing competitor keyword gap tool
 
 import { describe, expect, it, vi } from "vitest";
-import { COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS } from "@sf/public-tools/competitor-keyword-gap";
 import {
   BASE,
-  click,
   installResultsHarness,
   renderResults,
   row,
-  rowWithGsc,
   tableRow,
   unmountResults,
   withResult,
@@ -296,166 +293,6 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     expect(host.querySelector('[data-row-action="copy-keyword"]')).toBeNull();
   });
 
-  it("filters by pre-screen band and by lane together", async () => {
-    const brandGap = row(0, {
-      keyword: "brand gap",
-      preScreen: {
-        band: "defer_brand_navigational",
-        basis: "tool_heuristic",
-        reason: "competitor_brand_token",
-      },
-    });
-    const prioritizedGap = row(1, {
-      keyword: "prioritized gap",
-      preScreen: {
-        band: "prioritize_serp_check",
-        basis: "dfs_estimate",
-        reason: "kd_low_rank_top10",
-      },
-    });
-    const prioritizedOptimize = rowWithGsc(
-      2,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query",
-        queryImpressions: 100,
-        queryPosition: 20,
-        pageStatus: "observed_sufficient",
-        pageUrl: "https://example.com/optimize",
-        pageImpressions: 90,
-        pagePosition: 19,
-        queryPageCoverage: 0.9,
-        nextStep: "optimize_existing",
-      },
-      {
-        keyword: "prioritized optimize",
-        preScreen: {
-          band: "prioritize_serp_check",
-          basis: "dfs_estimate",
-          reason: "kd_low_rank_top10",
-        },
-      },
-    );
-    const host = await renderResults(
-      withResult({ rows: [brandGap, prioritizedGap, prioritizedOptimize] }),
-    );
-    const bandFilters = host.querySelector("[data-pre-screen-filters]");
-    const laneFilters = host.querySelector("[data-next-step-filters]");
-    const allBands = host.querySelector('[data-pre-screen-filter="all"]');
-    const brandBand = host.querySelector(
-      '[data-pre-screen-filter="defer_brand_navigational"]',
-    );
-    const prioritizedBand = host.querySelector(
-      '[data-pre-screen-filter="prioritize_serp_check"]',
-    );
-
-    expect(bandFilters?.textContent).toContain("preScreen.filterAll · 3");
-    expect(bandFilters?.textContent).toContain(
-      "preScreen.band.prioritize_serp_check · 2",
-    );
-    expect(bandFilters?.textContent).toContain(
-      "preScreen.band.defer_brand_navigational · 1",
-    );
-    expect(allBands?.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelectorAll("[data-pre-screen-filter]")).toHaveLength(
-      COMPETITOR_KEYWORD_GAP_PRE_SCREEN_BANDS.length + 1,
-    );
-
-    await click(brandBand);
-    expect(brandBand?.getAttribute("aria-pressed")).toBe("true");
-    expect(allBands?.getAttribute("aria-pressed")).toBe("false");
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
-    expect(host.querySelector("tbody tr")?.textContent).toContain("brand gap");
-    expect(laneFilters?.textContent).toContain("filters.all · 3");
-    expect(laneFilters?.textContent).toContain(
-      "filters.review_content_gap · 2",
-    );
-    expect(laneFilters?.textContent).toContain("filters.optimize_existing · 1");
-
-    await click(
-      host.querySelector('[data-next-step-filter="review_content_gap"]'),
-    );
-    await click(prioritizedBand);
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
-    expect(host.querySelector("tbody tr")?.textContent).toContain(
-      "prioritized gap",
-    );
-    expect(bandFilters?.textContent).toContain("preScreen.filterAll · 2");
-    expect(bandFilters?.textContent).toContain(
-      "preScreen.band.prioritize_serp_check · 1",
-    );
-
-    await click(allBands);
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
-  });
-
-  it("keeps the pressed band when the lane changes and recounts bands within the lane", async () => {
-    const brandGap = row(0, {
-      keyword: "brand gap",
-      preScreen: {
-        band: "defer_brand_navigational",
-        basis: "tool_heuristic",
-        reason: "competitor_brand_token",
-      },
-    });
-    const prioritizedGap = row(1, {
-      keyword: "prioritized gap",
-      preScreen: {
-        band: "prioritize_serp_check",
-        basis: "dfs_estimate",
-        reason: "kd_low_rank_top10",
-      },
-    });
-    const prioritizedOptimize = rowWithGsc(
-      2,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query",
-        queryImpressions: 100,
-        queryPosition: 20,
-        pageStatus: "observed_sufficient",
-        pageUrl: "https://example.com/optimize",
-        pageImpressions: 90,
-        pagePosition: 19,
-        queryPageCoverage: 0.9,
-        nextStep: "optimize_existing",
-      },
-      {
-        keyword: "prioritized optimize",
-        preScreen: {
-          band: "prioritize_serp_check",
-          basis: "dfs_estimate",
-          reason: "kd_low_rank_top10",
-        },
-      },
-    );
-    const host = await renderResults(
-      withResult({ rows: [brandGap, prioritizedGap, prioritizedOptimize] }),
-    );
-    const prioritizedBand = host.querySelector(
-      '[data-pre-screen-filter="prioritize_serp_check"]',
-    );
-    const contentGapLane = host.querySelector(
-      '[data-next-step-filter="review_content_gap"]',
-    );
-
-    // Band first, then lane: the intersection holds in either click order.
-    await click(prioritizedBand);
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
-    await click(contentGapLane);
-    expect(prioritizedBand?.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
-    expect(host.querySelector("tbody tr")?.textContent).toContain(
-      "prioritized gap",
-    );
-    expect(prioritizedBand?.textContent).toContain(
-      "preScreen.band.prioritize_serp_check · 1",
-    );
-    expect(contentGapLane?.textContent).toContain(
-      "filters.review_content_gap · 2",
-    );
-  });
-
   it("states the sample rule and in-rule counts in coverage", async () => {
     const host = await renderResults(
       withResult({
@@ -500,21 +337,12 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
 
     expect(zeroDetails?.hasAttribute("open")).toBe(true);
     expect(zeroDetails?.textContent).toContain("limitations.gscNoRows");
-    expect(zero.querySelector("[data-gsc-query-rows]")?.textContent).toContain(
-      "overview.gscQueryRows:count=0",
-    );
 
     await unmountResults();
 
     const forty = await renderResults(
       withResult({ overlayStatus: "available", gscQueryRowCount: 40 }),
     );
-    const gscCard = forty.querySelector(
-      '[data-summary-metric="gsc-observed-rows"]',
-    );
-    expect(
-      gscCard?.querySelector("[data-gsc-query-rows]")?.textContent,
-    ).toContain("overview.gscQueryRows:count=40");
     expect(forty.textContent).not.toContain("limitations.gscNoRows");
     expect(
       forty
@@ -527,7 +355,6 @@ describe("CompetitorKeywordGapResults v3 signals", () => {
     const notRequested = await renderResults(
       withResult({ overlayStatus: "not_requested", gscQueryRowCount: null }),
     );
-    expect(notRequested.querySelector("[data-gsc-query-rows]")).toBeNull();
     expect(notRequested.textContent).not.toContain("limitations.gscNoRows");
   });
 });
