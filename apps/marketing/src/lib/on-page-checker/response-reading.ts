@@ -1,5 +1,5 @@
 // @input  -- one raw Agent audit response, response headers, and report label values
-// @output -- bounded crawl, redirect, count, timing, and display readings
+// @output -- bounded crawl, public-host redirect, count, timing, and display readings
 // @pos    -- the pure half of the checker, extracted so it can be read and tested alone
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -42,6 +42,14 @@ export function errorCodeOf(body: unknown): string | null {
 
 const MAX_REDIRECT_TARGET_CHARS = 2_048;
 const TRACKING_QUERY_KEYS = new Set(["gclid", "fbclid", "msclkid"]);
+const RESERVED_REDIRECT_HOSTS = new Set([
+  "metadata.google.internal",
+  "example.com",
+  "example.net",
+  "example.org",
+  "test.com",
+  "test.org",
+]);
 
 function hasUnsafeUrlCharacter(value: string): boolean {
   for (const character of value) {
@@ -70,6 +78,19 @@ function hasExplicitPort(authority: string): boolean {
   if (!host.startsWith("[")) return host.includes(":");
   const close = host.indexOf("]");
   return close === -1 || host.slice(close + 1).startsWith(":");
+}
+
+function isPublicRedirectHost(rawHostname: string): boolean {
+  const hostname = rawHostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  return (
+    hostname.includes(".") &&
+    hostname !== "localhost" &&
+    !hostname.endsWith(".localhost") &&
+    !hostname.endsWith(".local") &&
+    !RESERVED_REDIRECT_HOSTS.has(hostname) &&
+    !/^[\d.]+$/u.test(hostname) &&
+    !hostname.includes(":")
+  );
 }
 
 function canonicalPageKey(url: URL): string {
@@ -143,6 +164,7 @@ export function redirectTargetOf(
     target.hash !== "" ||
     target.port !== "" ||
     target.href.length > MAX_REDIRECT_TARGET_CHARS ||
+    !isPublicRedirectHost(target.hostname) ||
     (submitted.protocol === "https:" && target.protocol !== "https:")
   ) {
     return null;
