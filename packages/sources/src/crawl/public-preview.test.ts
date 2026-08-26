@@ -119,6 +119,38 @@ describe("public preview crawl profile", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("rejects a strict entry whose non-tracking query changes", async () => {
+    const fetch = vi.fn(async (url: string) => previewFixtureResponse(url));
+    const fetcher: CrawlFetcher = { fetch };
+    const submittedUrl = "https://acme.test/docs?a=1";
+
+    const redirectError = await crawlPublicSitePreview(
+      submittedUrl,
+      undefined,
+      {
+        fetcher,
+        entryResolver: async () =>
+          entryResult(submittedUrl, "https://acme.test/docs?a=2"),
+        requireSameEntrySubject: true,
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      },
+    ).catch((error: unknown) => error);
+
+    expect(redirectError).toBeInstanceOf(PublicPreviewTargetRedirectError);
+    expect(redirectError).toMatchObject({
+      name: "PublicPreviewTargetRedirectError",
+      targetUrl: "https://acme.test/docs?a=2",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["HTTP upgrade", "http://acme.test/docs", "https://acme.test/docs"],
     [
