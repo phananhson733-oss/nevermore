@@ -174,6 +174,7 @@ function signalFunnel(
     pageOneBandCandidates: 0,
     positionDeclineCandidates: 0,
     firstObservedCandidates: 0,
+    firstObservedLeadingCandidates: 0,
     provisionalMoveCandidates: 0,
     pageAttributionWithheld: 0,
     selectedQueryChanges: 0,
@@ -203,6 +204,7 @@ function laneCapability(
       average_position_crossed_page_one_band: "not_applicable",
       actionable_position_decline: "not_applicable",
       first_observed: "not_applicable",
+      first_observed_leading: "not_applicable",
     },
     // Page evidence defaults to unread, so a fixture that says nothing about
     // pages does not assert the property has none.
@@ -238,6 +240,7 @@ function rowAccounting(
       average_position_crossed_page_one_band: laneRows(540),
       actionable_position_decline: laneRows(540),
       first_observed: laneRows(540),
+      first_observed_leading: laneRows(540),
     },
     ...overrides,
   };
@@ -807,6 +810,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
           pageOneBandCandidates: null,
           positionDeclineCandidates: null,
           firstObservedCandidates: null,
+          firstObservedLeadingCandidates: null,
           pageAttributionWithheld: null,
         }),
         coverage: {
@@ -864,10 +868,10 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     // Every path carries its own requirement, so a reader can check why it
     // did or did not run instead of reading a badge that says "observed".
     expect(paths?.textContent).toContain("Requires:");
-    // Ten paths: the CTR baseline, five query lanes, three page lanes and the
-    // page-attribution line. Counted literally so that adding a lane without
-    // deciding what it says here fails right at this assertion.
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(10);
+    // Eleven paths: the CTR baseline, six query lanes, three page lanes and
+    // the page-attribution line. Counted literally so that adding a lane
+    // without deciding what it says here fails right at this assertion.
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(11);
   });
 
   it("tells a path that could not run from a path that found nothing", async () => {
@@ -885,6 +889,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
             average_position_crossed_page_one_band: "evaluated",
             actionable_position_decline: "not_applicable",
             first_observed: "unavailable",
+            first_observed_leading: "unavailable",
           },
         }),
         rowAccounting: rowAccounting({
@@ -894,6 +899,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
             average_position_crossed_page_one_band: laneRows(538, 2, 0),
             actionable_position_decline: laneRows(540),
             first_observed: laneRows(540),
+            first_observed_leading: laneRows(540),
           },
         }),
       }),
@@ -929,6 +935,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
           pageOneBandCandidates: null,
           positionDeclineCandidates: null,
           firstObservedCandidates: null,
+          firstObservedLeadingCandidates: null,
           pageAttributionWithheld: null,
         }),
       }),
@@ -950,14 +957,14 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     ];
     // Asserted, not assumed: a loop over a selector that stopped matching
     // would otherwise pass by making no assertion at all.
-    // The ten signal paths plus the two per-population selection lines.
-    expect(outcomes).toHaveLength(12);
+    // The eleven signal paths plus the two per-population selection lines.
+    expect(outcomes).toHaveLength(13);
     for (const outcome of outcomes) {
       expect(outcome.textContent).not.toContain("null");
       expect(outcome.textContent).not.toMatch(/\b0\b/);
     }
     expect(paths?.textContent).not.toContain("query rows, and every");
-    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(10);
+    expect(paths?.querySelectorAll("[data-signal-path]")).toHaveLength(11);
   });
 
   it("accounts for every observed row inside each evaluation path", async () => {
@@ -979,6 +986,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
             average_position_crossed_page_one_band: "not_applicable",
             actionable_position_decline: "not_applicable",
             first_observed: "evaluated",
+            first_observed_leading: "evaluated",
           },
         }),
         rowAccounting: rowAccounting({
@@ -989,6 +997,7 @@ describe("DailyBriefingResults trend and evidence facts", () => {
             average_position_crossed_page_one_band: laneRows(12),
             actionable_position_decline: laneRows(12),
             first_observed: laneRows(8, 0, 4),
+            first_observed_leading: laneRows(8, 0, 4),
           },
         }),
       }),
@@ -1185,6 +1194,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
             average_position_crossed_page_one_band: "evaluated",
             actionable_position_decline: "not_applicable",
             first_observed: "not_applicable",
+            first_observed_leading: "not_applicable",
           },
         }),
       }),
@@ -2574,6 +2584,150 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(
       block?.querySelector("[data-page-checks-examined]")?.textContent,
     ).toContain("4 page records");
+  });
+
+  it("renders a fourth change when it is the leading appearance", async () => {
+    // The engine gives that lane a slot of its own. A page that reapplies the
+    // three-row cap to the whole list removes exactly that row — it always
+    // sorts last — and then reports that every candidate is in the table.
+    const crossings = [1, 2, 3].map((index) =>
+      change("average_position_crossed_page_one_band", index),
+    );
+    const leading = change("first_observed_leading", 4);
+    const host = await renderResults(
+      envelope({
+        changes: [...crossings, leading],
+        actions: [
+          ...crossings.map((source) => action(source, "on-page-seo-check")),
+          action(leading, "on-page-seo-check"),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const rows = [...host.querySelectorAll("[data-review-row]")];
+    const actionRows = [...host.querySelectorAll("[data-action-row]")];
+
+    expect(host.textContent).toContain(leading.query);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    // And its action is on the page, not cut with the row.
+    expect(actionRows).toHaveLength(4);
+  });
+
+  it("labels the routine items as routine and counts them", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "observed",
+          baseline: {
+            ctr: 0.01,
+            impressions: 10_000,
+            clicks: 100,
+            brandQueriesExcluded: 0,
+          },
+          blockers: [],
+          items: [
+            {
+              page: PAGE_CHANGE_URL,
+              impressions: 500,
+              position: 5,
+              expectedClicks: 5,
+              destination: "on-page-seo-check",
+            },
+          ],
+          examinedRows: 4,
+        },
+        // One from each routine population, so the count is a real sum rather
+        // than one list's length wearing a total's name.
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 0,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const label = host.querySelector('[data-action-group="routine"]');
+
+    // Two counts, one per population, never a sum: queries and pages measure
+    // different things here as everywhere else on this page.
+    expect(label?.textContent).toContain("Routine");
+    expect(label?.textContent).toMatch(/1 queries/);
+    expect(label?.textContent).toMatch(/1 pages/);
+    expect(label?.textContent).not.toMatch(/\b2\b/);
+    // And it is a separate group from the triggered ones, not a fourth one
+    // in the same list.
+    expect(
+      [...host.querySelectorAll("[data-action-group]")].map((node) =>
+        node.getAttribute("data-action-group"),
+      ),
+    ).toContain("routine");
+  });
+
+  it("never reads an unavailable routine population as a count of zero", async () => {
+    const host = await renderResults(
+      envelope({
+        suggestedChecks: {
+          evidence: "observed",
+          items: [suggestedCheck()],
+          notCheckable: 0,
+        },
+        // Unavailable, and by contract it carries an empty item list. Reading
+        // that list's length is how "we could not look" became "we looked and
+        // there were none".
+        pageChecks: {
+          evidence: "unavailable",
+          baseline: null,
+          blockers: ["brand_terms_not_confirmed"],
+          items: [],
+          examinedRows: null,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const label = host.querySelector('[data-action-group="routine"]');
+
+    expect(label?.textContent).toMatch(/1 queries/);
+    expect(label?.textContent).not.toMatch(/0 pages/);
+    expect(label?.textContent).toContain(en.tools.dailyBriefing.kpis.unavailable);
+  });
+
+  it("keeps the routine heading over an explanation with no items under it", async () => {
+    const host = await renderResults(
+      envelope({
+        // No checks, only the sentence explaining rows that could not become
+        // one. It is still routine work, and it still needs a heading.
+        suggestedChecks: {
+          evidence: "observed",
+          items: [],
+          notCheckable: 3,
+        },
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const label = host.querySelector('[data-action-group="routine"]');
+
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toMatch(/0 queries/);
+    expect(
+      host.querySelector("[data-checks-not-checkable]")?.textContent,
+    ).toContain("3");
+  });
+
+  it("shows no routine label when nothing routine is offered", async () => {
+    const host = await renderResults(
+      envelope({
+        pageChecks: {
+          evidence: "unavailable",
+          baseline: null,
+          blockers: ["brand_terms_not_confirmed"],
+          items: [],
+          examinedRows: null,
+        },
+        queryWatchlist: watchlist("unavailable"),
+      }),
+    );
+
+    expect(host.querySelector('[data-action-group="routine"]')).toBeNull();
   });
 
   it("shows no zero-click block when the check could not run", async () => {

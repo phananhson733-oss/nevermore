@@ -210,7 +210,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v8");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v9");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -223,7 +223,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v8",
+      schemaVersion: "daily_search_briefing.v9",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -569,6 +569,193 @@ describe("query changes and actions", () => {
       previous: null,
     });
     expect(result.actions[0]?.destination).toBe("on-page-seo-check");
+  });
+
+  it("names a pair first seen inside the leading band", () => {
+    const query = "content workflow guide";
+    const page = "https://example.com/guide";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 200, 20, 4), ...baselineRows("base")],
+        [queryPageRow(query, page, 200, 20, 4)],
+      ),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toMatchObject([
+      {
+        kind: "first_observed_leading",
+        evidence: "not_observed",
+        query,
+        page,
+        previous: null,
+      },
+    ]);
+    expect(result.actions).toMatchObject([
+      { kind: "first_observed_leading", destination: "on-page-seo-check" },
+    ]);
+    expect(result.signalFunnel.firstObservedLeadingCandidates).toBe(1);
+    // And it did not take the older lane's row with it.
+    expect(result.signalFunnel.firstObservedCandidates).toBe(0);
+  });
+
+  it("fires at exactly the leading band edge", () => {
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow("edge", 200, 20, 6), ...baselineRows("base")],
+        [queryPageRow("edge", "https://example.com/edge", 200, 20, 6)],
+      ),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toMatchObject([{ kind: "first_observed_leading" }]);
+  });
+
+  it("reports neither appearance lane between the two bands", () => {
+    // Position seven is under the older lane's floor of eight and over the
+    // leading band's ceiling of six. The spec names six while the existing
+    // lane starts at eight, so this gap is in the thresholds themselves.
+    // Recorded here rather than left to be discovered: the pair is evaluated
+    // and reported as no signal, not silently dropped.
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow("between", 200, 20, 7), ...baselineRows("base")],
+        [queryPageRow("between", "https://example.com/between", 200, 20, 7)],
+      ),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.first_observed_leading).toMatchObject({
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+  });
+
+  it("gives the leading band a slot the three change actions cannot take", () => {
+    // Three crossings fill the action budget. Without its own budget the
+    // leading appearance would be cut every time a property has three
+    // changes, which for an active property is every day.
+    const crossings = ["cross a", "cross b", "cross c"];
+    const currentRows = [
+      ...crossings.map((q) => queryRow(q, 1_000, 0, 9)),
+      queryRow("arrived", 200, 20, 4),
+    ];
+    const previousRows = crossings.map((q) => queryRow(q, 1_000, 0, 12));
+    const pageFor = (q: string) => `https://example.com/${q}`;
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, [
+        ...crossings.map((q) => queryPageRow(q, pageFor(q), 1_000, 0, 9)),
+        queryPageRow("arrived", pageFor("arrived"), 200, 20, 4),
+      ]),
+      previousQueryEvidence: evidence(previousRows, [
+        ...crossings.map((q) => queryPageRow(q, pageFor(q), 1_000, 0, 12)),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.changes).toHaveLength(4);
+    expect(result.changes.map((change) => change.kind)).toEqual([
+      "average_position_crossed_page_one_band",
+      "average_position_crossed_page_one_band",
+      "average_position_crossed_page_one_band",
+      "first_observed_leading",
+    ]);
+    expect(result.actions.at(-1)).toMatchObject({ query: "arrived" });
+  });
+
+  it("does not let a change candidate that lost the budget suppress a leading one", () => {
+    // The shared query carries a position decline on one page and a leading
+    // appearance on another. Three click opportunities outrank the decline and
+    // take the whole change budget, so the decline is resolved and never
+    // reported. Carrying merely-resolved queries into the second pass would
+    // delete the leading appearance with it — the crowding its own budget
+    // exists to prevent.
+    const shared = "shared query";
+    const opps = ["opp a", "opp b", "opp c"];
+    const peers = baselineRows("base");
+    const oldPage = "https://example.com/shared-old";
+    const newPage = "https://example.com/shared-new";
+    const currentRows = [
+      ...opps.map((q) => queryRow(q, 400, 0, 9)),
+      queryRow(shared, 400, 100, 10),
+      ...peers,
+    ];
+    const previousRows = [
+      ...opps.map((q) => queryRow(q, 400, 0, 9)),
+      queryRow(shared, 200, 50, 10),
+      ...peers,
+    ];
+    const result = report({
+      currentQueryEvidence: evidence(currentRows, [
+        ...opps.map((q) =>
+          queryPageRow(q, `https://example.com/${q}`, 400, 0, 9),
+        ),
+        queryPageRow(shared, oldPage, 200, 20, 15),
+        queryPageRow(shared, newPage, 200, 80, 5),
+      ]),
+      previousQueryEvidence: evidence(previousRows, [
+        ...opps.map((q) =>
+          queryPageRow(q, `https://example.com/${q}`, 400, 0, 9),
+        ),
+        queryPageRow(shared, oldPage, 200, 50, 10),
+      ]),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // The premise: the decline really was a candidate and really did lose.
+    expect(result.signalFunnel.positionDeclineCandidates).toBe(1);
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "actionable_position_decline",
+      ),
+    ).toEqual([]);
+    // And the leading appearance survived it.
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "first_observed_leading",
+      ),
+    ).toMatchObject([{ query: shared, page: newPage }]);
+    // Still one row per query overall.
+    expect(
+      result.changes.filter((change) => change.query === shared),
+    ).toHaveLength(1);
+  });
+
+  it("carries at most one leading appearance", () => {
+    const previousRows = baselineRows("base");
+    const arrivals = ["arrived a", "arrived b"];
+    const result = report({
+      currentQueryEvidence: evidence(
+        [
+          queryRow("arrived a", 200, 20, 4),
+          queryRow("arrived b", 400, 40, 3),
+          ...previousRows,
+        ],
+        arrivals.map((q) =>
+          queryPageRow(
+            q,
+            `https://example.com/${q}`,
+            q === "arrived b" ? 400 : 200,
+            q === "arrived b" ? 40 : 20,
+            q === "arrived b" ? 3 : 4,
+          ),
+        ),
+      ),
+      previousQueryEvidence: evidence(previousRows, []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // Both qualify; the larger sample is the one carried.
+    expect(result.signalFunnel.firstObservedLeadingCandidates).toBe(2);
+    expect(
+      result.changes.filter(
+        (change) => change.kind === "first_observed_leading",
+      ),
+    ).toMatchObject([{ query: "arrived b" }]);
   });
 
   it("treats a newly observed query-page pair as first observed", () => {
@@ -1269,6 +1456,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: 0,
       positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
+      firstObservedLeadingCandidates: 0,
       provisionalMoveCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 1,
@@ -1318,6 +1506,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: 0,
       positionDeclineCandidates: 0,
       firstObservedCandidates: 0,
+      firstObservedLeadingCandidates: 0,
       provisionalMoveCandidates: 0,
       pageAttributionWithheld: 0,
       selectedQueryChanges: 0,
@@ -1348,6 +1537,7 @@ describe("signal funnel", () => {
       pageOneBandCandidates: null,
       positionDeclineCandidates: null,
       firstObservedCandidates: null,
+      firstObservedLeadingCandidates: null,
       provisionalMoveCandidates: null,
       pageAttributionWithheld: null,
       selectedQueryChanges: 0,
@@ -1384,6 +1574,7 @@ describe("signal funnel", () => {
         pageOneBandCandidates: null,
         positionDeclineCandidates: null,
         firstObservedCandidates: null,
+        firstObservedLeadingCandidates: null,
         provisionalMoveCandidates: null,
         pageAttributionWithheld: null,
         selectedQueryChanges: 0,
@@ -1454,6 +1645,7 @@ describe("signal funnel", () => {
     expect(result.signalFunnel).toMatchObject({
       clickOpportunityCandidates: 1,
       firstObservedCandidates: 0,
+      firstObservedLeadingCandidates: 0,
       provisionalMoveCandidates: 0,
       pageAttributionWithheld: 2,
       selectedQueryChanges: 1,
@@ -2899,6 +3091,7 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
       average_position_crossed_page_one_band: "not_applicable",
       actionable_position_decline: "not_applicable",
       first_observed: "not_applicable",
+      first_observed_leading: "not_applicable",
     });
   });
 
@@ -2951,6 +3144,13 @@ describe("the shape of the gengrowth.ai run of 2026-08-24", () => {
       // Every current pair at the floor has a prior window under it, so the
       // novelty question could not be asked of any of them.
       first_observed: {
+        notEvaluated: 6,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
+      // The same population, because both lanes ask the prior window the same
+      // question and differ only in which band the pair landed in.
+      first_observed_leading: {
         notEvaluated: 6,
         evaluatedNoSignal: 0,
         candidates: 0,

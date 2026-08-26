@@ -69,7 +69,7 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v8";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v9";
 export const BRIEFING_WINDOW_DAYS = 7;
 /** Daily points held once so the UI can switch 7/28/90-day views locally. */
 export const DAILY_BRIEFING_TREND_DAYS = 90;
@@ -208,6 +208,33 @@ export const BRIEFING_OBSERVATION_MID_BAND_MAX = 40;
 export const BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS = 50;
 const FIRST_OBSERVED_MIN_POSITION = 8;
 const FIRST_OBSERVED_MAX_POSITION = 21;
+
+/**
+ * Average position at or under which a first appearance is worth pressing.
+ *
+ * Six, from the handed-down spec. It sits below the band the older
+ * first-appearance lane covers rather than replacing it: that lane starts at
+ * eight and means "close, worth a push", and this one means "already there,
+ * worth pressing". Narrowing the old band to this number would have deleted a
+ * signal the property can currently produce.
+ *
+ * A consequence worth stating: positions strictly between six and eight fall
+ * in neither band, so a pair first seen at seven is evaluated and reported as
+ * no signal. That gap is in the spec, not introduced here — it names six while
+ * the existing lane starts at eight — and closing it is one constant.
+ */
+export const BRIEFING_LEADING_BAND_MAX_POSITION = 6;
+
+/**
+ * How many leading-band appearances a briefing carries.
+ *
+ * One, and outside the three-action budget: the spec asks for at most one a
+ * day and says it must not displace the change signals. Every other lane
+ * reports something that went wrong or is being left on the table; this is the
+ * only one that reports something going right, and letting a decline crowd it
+ * out every single day would mean the briefing never once says so.
+ */
+export const DAILY_BRIEFING_LEADING_LIMIT = 1;
 
 const EMPTY_DELTA: DailyBriefingKpiDelta = {
   clicks: null,
@@ -901,6 +928,7 @@ function candidatesFor(
   readonly pageOneBandCandidates: number;
   readonly positionDeclineCandidates: number;
   readonly firstObservedCandidates: number;
+  readonly firstObservedLeadingCandidates: number;
   readonly provisionalMoves: readonly DailyBriefingProvisionalMove[];
   readonly pageAttributionWithheld: number;
   readonly clickDeclineCapableQueries: number;
@@ -1248,6 +1276,8 @@ function candidatesFor(
   // carrying two new pairs cannot make the lane look busier than the property.
   const firstObservedEvaluableQueries = new Set<string>();
   const firstObservedSignalQueries = new Set<string>();
+  const firstObservedLeading: ChangeCandidate[] = [];
+  const firstObservedLeadingSignalQueries = new Set<string>();
 
   for (const pair of currentQueryPages) {
     const current = currentByQuery.get(pair.query);
@@ -1295,17 +1325,13 @@ function candidatesFor(
     // read, whether or not the comparison found anything.
     firstObservedEvaluableQueries.add(pair.query);
 
-    if (
-      pair.position < FIRST_OBSERVED_MIN_POSITION ||
-      pair.position >= FIRST_OBSERVED_MAX_POSITION ||
-      previousPairs.has(`${pair.query}\u0000${pair.page}`)
-    ) {
-      continue;
-    }
+    // Absence first, then the band. Both lanes make the same claim about the
+    // prior window and differ only in where the pair landed, so testing the
+    // band first would have decided which question was even asked.
+    if (previousPairs.has(`${pair.query}\u0000${pair.page}`)) continue;
 
-    firstObservedSignalQueries.add(pair.query);
-    firstObserved.push({
-      kind: "first_observed",
+    const appearance = (kind: DailyBriefingChangeKind): ChangeCandidate => ({
+      kind,
       query: pair.query,
       page: pair.page,
       current: {
@@ -1322,7 +1348,29 @@ function candidatesFor(
       positionDelta: null,
       order: pair.impressions,
     });
+
+    if (pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION) {
+      firstObservedLeadingSignalQueries.add(pair.query);
+      firstObservedLeading.push(appearance("first_observed_leading"));
+      continue;
+    }
+
+    if (
+      pair.position < FIRST_OBSERVED_MIN_POSITION ||
+      pair.position >= FIRST_OBSERVED_MAX_POSITION
+    ) {
+      continue;
+    }
+
+    firstObservedSignalQueries.add(pair.query);
+    firstObserved.push(appearance("first_observed"));
   }
+  firstObservedLeading.sort(
+    (a, b) =>
+      b.order - a.order ||
+      a.query.localeCompare(b.query) ||
+      (a.page ?? "").localeCompare(b.page ?? ""),
+  );
   firstObserved.sort(
     (a, b) =>
       b.order - a.order ||
@@ -1406,6 +1454,15 @@ function candidatesFor(
       : firstObservedEvaluableQueries.size > 0
         ? "evaluated"
         : "not_applicable",
+    // The same evaluable population as the lane above, because both ask the
+    // prior window the same question and differ only in where the pair landed.
+    // A pair either was or was not compared against the prior read; which band
+    // it turned out to be in cannot change whether it was looked at.
+    first_observed_leading: !pairAttributionUsable
+      ? "unavailable"
+      : firstObservedEvaluableQueries.size > 0
+        ? "evaluated"
+        : "not_applicable",
   };
 
   const laneRows = (
@@ -1425,6 +1482,7 @@ function candidatesFor(
       ...pageOneCrossings,
       ...positionDeclines,
       ...firstObserved,
+      ...firstObservedLeading,
     ],
     observedQueryRows,
     observationCandidates,
@@ -1437,6 +1495,7 @@ function candidatesFor(
     pageOneBandCandidates: pageOneCrossings.length,
     positionDeclineCandidates: positionDeclines.length,
     firstObservedCandidates: firstObserved.length,
+    firstObservedLeadingCandidates: firstObservedLeading.length,
     provisionalMoves,
     pageAttributionWithheld: pageAttributionWithheld.size,
     clickDeclineCapableQueries,
@@ -1467,6 +1526,10 @@ function candidatesFor(
         firstObservedEvaluableQueries.size,
         firstObservedSignalQueries.size,
       ),
+      first_observed_leading: laneRows(
+        firstObservedEvaluableQueries.size,
+        firstObservedLeadingSignalQueries.size,
+      ),
     },
   };
 }
@@ -1487,6 +1550,7 @@ const DESTINATIONS: Readonly<
   average_position_crossed_page_one_band: "on-page-seo-check",
   actionable_position_decline: "traffic-drop-diagnosis",
   first_observed: "on-page-seo-check",
+  first_observed_leading: "on-page-seo-check",
 };
 
 /**
@@ -1504,6 +1568,9 @@ const KIND_RANK: Readonly<Record<DailyBriefingChangeKind, number>> = {
   stable_position_click_decline: 2,
   actionable_position_decline: 3,
   first_observed: 4,
+  // Ranked last, and selected against its own budget, so the order only
+  // decides which leading appearance wins when there is more than one.
+  first_observed_leading: 5,
 };
 
 /** Collision-free identity for one withheld attribution. */
@@ -1511,14 +1578,34 @@ function withheldKey(candidate: ChangeCandidate): string {
   return JSON.stringify([candidate.kind, candidate.query, candidate.page]);
 }
 
+/**
+ * @param budget how many changes this pass may carry.
+ * @param alreadyReported queries an earlier pass put on the page.
+ * @returns `reportedQueries` — what this pass put on the page, for the next.
+ *
+ * Called twice, because the leading-band lane has a budget of its own. Every
+ * other lane reports something that went wrong or is being left on the table,
+ * and letting those crowd out the one lane that reports something going right
+ * would mean the briefing never once says so.
+ *
+ * Only the queries a pass actually REPORTED carry over. Passing the ones it
+ * merely resolved would let a change candidate that lost the budget suppress a
+ * leading appearance for the same query — the exact crowding the second budget
+ * exists to prevent. Within a pass the dedup stays at resolve time, so one
+ * query still cannot occupy two of that pass's slots.
+ */
 function selectChanges(
   candidates: readonly ChangeCandidate[],
   currentEvidence: DailyBriefingQueryEvidence,
+  budget: number,
+  alreadyReported: ReadonlySet<string>,
 ): {
   readonly changes: readonly DailyBriefingChange[];
   readonly actions: readonly DailyBriefingAction[];
   readonly pageAttributionWithheld: number;
+  readonly reportedQueries: ReadonlySet<string>;
 } {
+  const usedQueries = new Set<string>(alreadyReported);
   const pageAttributionWithheld = new Set<string>();
 
   // Candidates arrive already sorted within their lane, so a stable sort by
@@ -1531,7 +1618,6 @@ function selectChanges(
     readonly candidate: ChangeCandidate;
     readonly page: string | null;
   }[] = [];
-  const usedQueries = new Set<string>();
   for (const candidate of ranked) {
     if (usedQueries.has(candidate.query)) continue;
     const page =
@@ -1541,19 +1627,24 @@ function selectChanges(
       // first_observed is a statement about one query/page pair: without the
       // page there is no signal left to report. Every other lane is a
       // statement about the query, so a missing page withholds the handoff.
-      if (candidate.kind === "first_observed") continue;
+      if (
+        candidate.kind === "first_observed" ||
+        candidate.kind === "first_observed_leading"
+      ) {
+        continue;
+      }
     }
     usedQueries.add(candidate.query);
     resolved.push({ candidate, page });
   }
 
-  const selected = resolved.slice(0, DAILY_BRIEFING_ACTION_LIMIT);
+  const selected = resolved.slice(0, Math.max(0, budget));
   // A briefing that spends its whole budget on signals it cannot hand off,
   // while one it can hand off waits outside the cut, is the same empty page
   // this work exists to remove. Give up the weakest un-handoffable row for it.
   if (selected.length > 0 && selected.every((entry) => entry.page === null)) {
     const handoffable = resolved
-      .slice(DAILY_BRIEFING_ACTION_LIMIT)
+      .slice(Math.max(0, budget))
       .find((entry) => entry.page !== null);
     if (handoffable !== undefined) {
       selected.splice(selected.length - 1, 1, handoffable);
@@ -1565,8 +1656,15 @@ function selectChanges(
   for (const { candidate, page } of selected) {
     changes.push({
       kind: candidate.kind,
+      // Both appearance lanes reason from the prior window having no record of
+      // the pair, so both carry the label that says so. Leaving the new one on
+      // "observed" would have made an absence-derived claim look like a
+      // measured one.
       evidence:
-        candidate.kind === "first_observed" ? "not_observed" : "observed",
+        candidate.kind === "first_observed" ||
+        candidate.kind === "first_observed_leading"
+          ? "not_observed"
+          : "observed",
       query: candidate.query,
       page,
       pageEvidence: page === null ? "unavailable" : "observed",
@@ -1592,6 +1690,7 @@ function selectChanges(
     changes,
     actions,
     pageAttributionWithheld: pageAttributionWithheld.size,
+    reportedQueries: new Set(changes.map((change) => change.query)),
   };
 }
 
@@ -2784,6 +2883,7 @@ function laneCapabilityFor({
         average_position_crossed_page_one_band: unavailable,
         actionable_position_decline: unavailable,
         first_observed: unavailable,
+        first_observed_leading: unavailable,
       },
       pairedPageRows: pages?.pairedPageRows ?? null,
       pageFloorRows: pages?.pageFloorRows ?? null,
@@ -2814,12 +2914,18 @@ function laneCapabilityFor({
   };
 }
 
-const STRICT_CHANGE_LANES: readonly DailyBriefingChangeKind[] = [
+/**
+ * Exported for the same reason the page list is: so the copy completeness
+ * guard reads the real set instead of a hand-kept copy that goes stale the
+ * moment a lane is added.
+ */
+export const DAILY_BRIEFING_CHANGE_LANES: readonly DailyBriefingChangeKind[] = [
   "click_opportunity",
   "stable_position_click_decline",
   "average_position_crossed_page_one_band",
   "actionable_position_decline",
   "first_observed",
+  "first_observed_leading",
 ];
 
 /**
@@ -2846,7 +2952,7 @@ function modeFor(
     return "change_detection";
   }
   if (counts === null) return "unavailable";
-  if (STRICT_CHANGE_LANES.some((lane) => counts.lanes[lane] === "evaluated")) {
+  if (DAILY_BRIEFING_CHANGE_LANES.some((lane) => counts.lanes[lane] === "evaluated")) {
     return "change_detection";
   }
   if (counts.provisionalPairedPositionQueries > 0) return "position_observation";
@@ -2980,9 +3086,29 @@ export function buildDailyBriefing(
     comparableQueryWindows
   ) {
     const candidateSet = candidatesFor(input, currentEvidence, previousEvidence);
-    const selected = selectChanges(candidateSet.candidates, currentEvidence);
-    changes = selected.changes;
-    actions = selected.actions;
+    // Two passes with two budgets, sharing one set of spent queries. The
+    // change lanes take their three slots first; the leading-band lane then
+    // takes its own, which those three cannot consume.
+    const leadingCandidates = candidateSet.candidates.filter(
+      (candidate) => candidate.kind === "first_observed_leading",
+    );
+    const changeCandidates = candidateSet.candidates.filter(
+      (candidate) => candidate.kind !== "first_observed_leading",
+    );
+    const selected = selectChanges(
+      changeCandidates,
+      currentEvidence,
+      DAILY_BRIEFING_ACTION_LIMIT,
+      new Set<string>(),
+    );
+    const leadingSelected = selectChanges(
+      leadingCandidates,
+      currentEvidence,
+      DAILY_BRIEFING_LEADING_LIMIT,
+      selected.reportedQueries,
+    );
+    changes = [...selected.changes, ...leadingSelected.changes];
+    actions = [...selected.actions, ...leadingSelected.actions];
     allProvisionalMoves = candidateSet.provisionalMoves;
     rowAccounting = {
       evidence: "observed",
@@ -3004,9 +3130,15 @@ export function buildDailyBriefing(
       pageOneBandCandidates: candidateSet.pageOneBandCandidates,
       positionDeclineCandidates: candidateSet.positionDeclineCandidates,
       firstObservedCandidates: candidateSet.firstObservedCandidates,
+      firstObservedLeadingCandidates:
+        candidateSet.firstObservedLeadingCandidates,
       provisionalMoveCandidates: candidateSet.provisionalMoves.length,
+      // Both passes, because both can withhold. Counting only the first
+      // reported fewer suppressed attributions than actually happened.
       pageAttributionWithheld:
-        candidateSet.pageAttributionWithheld + selected.pageAttributionWithheld,
+        candidateSet.pageAttributionWithheld +
+        selected.pageAttributionWithheld +
+        leadingSelected.pageAttributionWithheld,
     };
     capabilityCounts = {
       clickDeclineCapableQueries: candidateSet.clickDeclineCapableQueries,
@@ -3089,9 +3221,14 @@ export function buildDailyBriefing(
   // What the query and page changes left. A provisional move names a movement,
   // so it outranks a row that only names a position, and the watchlist takes
   // whatever survives both.
+  // The leading appearance is excluded, because it did not come out of this
+  // budget. Subtracting it here let the one lane with a slot of its own spend
+  // a second one belonging to the rows below it.
   const provisionalBudget = Math.max(
     0,
-    DAILY_BRIEFING_ACTION_LIMIT - changes.length,
+    DAILY_BRIEFING_ACTION_LIMIT -
+      changes.filter((change) => change.kind !== "first_observed_leading")
+        .length,
   );
   // A query the page is about to report as a change is not also provisional:
   // the same query would hold an action while the provisional note under it
@@ -3155,6 +3292,7 @@ export function buildDailyBriefing(
           pageOneBandCandidates: null,
           positionDeclineCandidates: null,
           firstObservedCandidates: null,
+          firstObservedLeadingCandidates: null,
           provisionalMoveCandidates: null,
           pageAttributionWithheld: null,
           selectedQueryChanges: changes.length,

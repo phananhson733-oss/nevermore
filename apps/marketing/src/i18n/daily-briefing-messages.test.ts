@@ -5,7 +5,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { DAILY_BRIEFING_PAGE_CHANGE_LANES } from "@sf/public-tools";
+import {
+  DAILY_BRIEFING_CHANGE_LANES,
+  DAILY_BRIEFING_PAGE_CHANGE_LANES,
+} from "@sf/public-tools";
 
 import en from "./messages/en.json";
 import zh from "./messages/zh.json";
@@ -37,13 +40,8 @@ const ERROR_CODES = [
   "unknown",
 ] as const;
 
-const CHANGE_KINDS = [
-  "click_opportunity",
-  "stable_position_click_decline",
-  "average_position_crossed_page_one_band",
-  "actionable_position_decline",
-  "first_observed",
-] as const;
+/** Read from the engine, for the reason the page list is. */
+const CHANGE_KINDS = DAILY_BRIEFING_CHANGE_LANES;
 
 /**
  * Page-dimension kinds. Every one of them is dispatchable, unlike the site ones.
