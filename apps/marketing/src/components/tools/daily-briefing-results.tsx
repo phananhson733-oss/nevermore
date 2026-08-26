@@ -66,8 +66,10 @@ const DISPLAY_LEADING_ROW_LIMIT = 1;
  * the other.
  */
 const DISPLAY_PAGE_ROW_LIMIT = 2;
-const TABLE_HEADER =
-  "font-mono text-[11px] font-semibold tracking-[0.1em] text-text-dark-secondary uppercase";
+const REVIEW_TABLE_COLUMNS =
+  "md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.9fr)_minmax(0,0.68fr)_minmax(0,0.72fr)_minmax(0,1.55fr)]";
+const REVIEW_TABLE_HEADER =
+  "font-sans text-[12px] font-semibold tracking-[0.02em] text-text-dark-secondary normal-case";
 
 interface DailyBriefingResultsProps {
   readonly locale: string;
@@ -203,22 +205,6 @@ function nullableComparison(
   const formatObserved = (value: number | null) =>
     value === null || !Number.isFinite(value) ? unavailable : format(value);
   return `${formatObserved(previous)} → ${formatObserved(current)}`;
-}
-
-function signedMetric(
-  locale: string,
-  value: number | null,
-  unavailable: string,
-  digits = 1,
-): string {
-  if (value === null || !Number.isFinite(value)) return unavailable;
-  const formatted =
-    digits === 0
-      ? number(locale, Math.abs(value))
-      : Math.abs(value).toFixed(digits);
-  if (value > 0) return `+${formatted}`;
-  if (value < 0) return `-${formatted}`;
-  return digits === 0 ? "0" : (0).toFixed(digits);
 }
 
 /**
@@ -877,12 +863,8 @@ export function DailyBriefingResults({
     ),
     ...leadingAction(envelope),
   ];
-  // The site-wide trend is the property's own fact. It used to be dropped the
-  // moment any query signal was selected, which deleted the only whole-site
-  // statement in the briefing exactly when the briefing had the most to say.
   const propertyChange = result.propertyTrend.change;
   const propertyAction = result.propertyTrend.action;
-  const propertyNoiseFloor = result.propertyTrend.noiseFloor;
   const propertyComparisons =
     propertyChange === null
       ? null
@@ -924,6 +906,12 @@ export function DailyBriefingResults({
       DISPLAY_ROW_LIMIT - shownChanges.length - shownProvisional.length,
     ),
   );
+  // Counted from the rows the table actually renders. `shownChanges` excludes
+  // the leading appearance, which has a display budget of its own, so reading
+  // this off it left the group boundary out on a table that had rows under it.
+  const shownQueryRecordCount =
+    shownQueryRows.length + shownProvisional.length + shownObservations.length;
+  const shownPageRecordCount = shownPageChanges.length;
   const withheldObservations = Math.max(
     0,
     (result.queryWatchlist.candidates ?? 0) - shownObservations.length,
@@ -985,13 +973,6 @@ export function DailyBriefingResults({
   // Page changes are counted whether or not the query read succeeded: the two
   // dimensions fail separately, and a run whose queries were unreadable can
   // still put a page row in the table above this summary.
-  // "0 site trend observations" is a measurement. A weekly comparison that
-  // could not be read did not measure zero of them, and `propertyTrend.change`
-  // is null in both cases.
-  const foldTrend =
-    result.weekly.evidence === "observed"
-      ? t("evidence.foldTrend", { count: propertyChange === null ? 0 : 1 })
-      : t("evidence.foldTrendUnavailable");
   const foldPageChanges =
     shownPageChanges.length > 0
       ? t("evidence.foldPageChanges", { count: shownPageChanges.length })
@@ -1007,7 +988,6 @@ export function DailyBriefingResults({
                 candidates: provisionalCandidates,
               })
             : null,
-          foldTrend,
           t("evidence.foldObservationsShown", {
             shown: shownObservations.length,
             candidates: result.queryWatchlist.candidates ?? 0,
@@ -1016,7 +996,6 @@ export function DailyBriefingResults({
       : [
           t("evidence.foldQueryEvidenceUnavailable"),
           foldPageChanges,
-          foldTrend,
         ]
   )
     .filter((part): part is string => part !== null)
@@ -1259,9 +1238,15 @@ export function DailyBriefingResults({
             aria-label={t("review.title")}
             className="mt-4 overflow-hidden rounded-[12px] border border-brand-border-card bg-brand-bg"
           >
+            <div data-review-table-scroll className="overflow-x-auto">
+              <div
+                data-review-table-content
+                className="min-w-0 md:min-w-[860px]"
+              >
             <div
               role="row"
-              className="sr-only border-brand-border-card bg-brand-panel px-4 py-4 md:not-sr-only md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5"
+              data-review-table-header
+              className={`sr-only min-h-[50px] border-brand-border-card bg-brand-panel px-4 py-4 md:not-sr-only md:grid ${REVIEW_TABLE_COLUMNS} md:gap-5 md:px-[14px] md:py-[13px]`}
             >
               {[
                 t("review.columns.status"),
@@ -1273,7 +1258,7 @@ export function DailyBriefingResults({
                 <div
                   key={header}
                   role="columnheader"
-                  className={TABLE_HEADER}
+                  className={REVIEW_TABLE_HEADER}
                 >
                   {header}
                 </div>
@@ -1283,18 +1268,23 @@ export function DailyBriefingResults({
                 every query row rather than between them. A single heading in
                 the middle left the query observations rendering below it, so
                 they read as part of the page population. */}
-            {shownPageChanges.length > 0 &&
-            shownQueryRows.length +
-              shownProvisional.length +
-              shownObservations.length >
-              0 ? (
+            {shownQueryRecordCount > 0 ? (
               <div
                 role="row"
                 data-review-group="query"
-                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+                className="border-t border-brand-border-card bg-brand-panel-raised"
               >
-                <div role="cell" className={EYEBROW}>
-                  {t("review.queryGroup")}
+                <div
+                  role="cell"
+                  aria-colspan={5}
+                  className="flex min-h-[50px] items-center justify-between gap-4 px-4 py-3 md:px-[14px]"
+                >
+                  <h4 className="text-[15px] leading-[1.45] font-semibold text-text-dark-primary">
+                    {t("review.queryGroup")}
+                  </h4>
+                  <span className="text-[13px] leading-[1.45] text-text-dark-secondary">
+                    {t("review.groupCount", { count: shownQueryRecordCount })}
+                  </span>
                 </div>
               </div>
             ) : null}
@@ -1304,7 +1294,7 @@ export function DailyBriefingResults({
                 role="row"
                 data-review-row
                 data-change
-                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+                className={`grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 ${REVIEW_TABLE_COLUMNS} md:gap-5 md:px-4 md:py-5`}
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1382,7 +1372,7 @@ export function DailyBriefingResults({
                 role="row"
                 data-review-row
                 data-provisional-row
-                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+                className={`grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 ${REVIEW_TABLE_COLUMNS} md:gap-5 md:px-4 md:py-5`}
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1475,7 +1465,7 @@ export function DailyBriefingResults({
                 role="row"
                 data-review-row
                 data-observation-row
-                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+                className={`grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 ${REVIEW_TABLE_COLUMNS} md:gap-5 md:px-4 md:py-5`}
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1539,14 +1529,23 @@ export function DailyBriefingResults({
               </div>
               );
             })}
-            {shownPageChanges.length > 0 ? (
+            {shownPageRecordCount > 0 ? (
               <div
                 role="row"
                 data-review-group="page"
-                className="border-t border-brand-border-card bg-brand-panel px-4 py-2.5"
+                className="border-t border-brand-border-card bg-brand-panel-raised"
               >
-                <div role="cell" className={EYEBROW}>
-                  {t("review.pageGroup")}
+                <div
+                  role="cell"
+                  aria-colspan={5}
+                  className="flex min-h-[50px] items-center justify-between gap-4 px-4 py-3 md:px-[14px]"
+                >
+                  <h4 className="text-[15px] leading-[1.45] font-semibold text-text-dark-primary">
+                    {t("review.pageGroup")}
+                  </h4>
+                  <span className="text-[13px] leading-[1.45] text-text-dark-secondary">
+                    {t("review.groupCount", { count: shownPageRecordCount })}
+                  </span>
                 </div>
               </div>
             ) : null}
@@ -1556,7 +1555,7 @@ export function DailyBriefingResults({
                 role="row"
                 data-review-row
                 data-page-change
-                className="grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.45fr)_minmax(0,0.65fr)_minmax(0,0.7fr)_minmax(0,1.5fr)] md:gap-5 md:px-4 md:py-5"
+                className={`grid min-w-0 gap-3 border-t border-brand-border-card px-4 py-4 ${REVIEW_TABLE_COLUMNS} md:gap-5 md:px-4 md:py-5`}
               >
                 <div role="cell" className="min-w-0">
                   <span aria-hidden="true" className={`${EYEBROW} md:hidden`}>
@@ -1633,6 +1632,8 @@ export function DailyBriefingResults({
                 </div>
               </div>
             ))}
+              </div>
+            </div>
           </div>
         )}
         {shownProvisional.length > 0 ? (
@@ -1670,94 +1671,6 @@ export function DailyBriefingResults({
           </p>
         ) : null}
       </section>
-
-      {propertyChange !== null && propertyComparisons !== null ? (
-        <section
-          aria-labelledby="daily-briefing-site-trend"
-          data-result-section="site-trend"
-          data-site-trend
-        >
-          <h3
-            id="daily-briefing-site-trend"
-            className="text-[19px] font-semibold tracking-[-0.02em] text-text-dark-primary"
-          >
-            {t("siteTrend.title")}
-          </h3>
-          <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-            {t("siteTrend.intro")}
-          </p>
-          <div className={`${CARD} mt-4`}>
-            <p className={`${EYEBROW} text-brand-accent-text`}>
-              {t("siteTrend.evidence")}
-            </p>
-            <h4 className="mt-2 text-[17px] font-semibold text-text-dark-primary">
-              {t(
-                `propertyChangeKinds.${propertyChange.kind}.title`,
-              )}
-            </h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                [t("kpis.clicks"), propertyComparisons.clicks],
-                [t("kpis.impressions"), propertyComparisons.impressions],
-                [t("kpis.ctr"), propertyComparisons.ctr],
-                [t("kpis.averagePosition"), propertyComparisons.position],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-[9px] border border-brand-border-card bg-brand-panel px-3.5 py-3"
-                >
-                  <p className={EYEBROW}>{label}</p>
-                  <p className="mt-2 font-mono text-[12px] text-text-dark-primary">
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 max-w-4xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
-              {t(`propertyChangeKinds.${propertyChange.kind}.body`, {
-                clicks: signedMetric(
-                  locale,
-                  propertyChange.clickChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                impressions: signedMetric(
-                  locale,
-                  propertyChange.impressionChange,
-                  t("kpis.unavailable"),
-                  0,
-                ),
-                position: signedMetric(
-                  locale,
-                  propertyChange.positionDelta,
-                  t("kpis.unavailable"),
-                ),
-              })}
-            </p>
-            {propertyAction !== null ? (
-              <a
-                data-site-trend-action-link
-                href="#daily-briefing-actions"
-                className="mt-3 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-              >
-                {t("siteTrend.actionListed")}
-              </a>
-            ) : propertyNoiseFloor !== null ? (
-              <p
-                data-site-trend-noise-floor
-                className="mt-3 max-w-4xl text-[12px] leading-[1.6] text-text-dark-secondary"
-              >
-                {t("siteTrend.insideNoiseFloor", {
-                  observed: Math.abs(propertyNoiseFloor.observedChange).toFixed(
-                    0,
-                  ),
-                  minimum: propertyNoiseFloor.minimumForAction.toFixed(1),
-                })}
-              </p>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
       <section
         aria-labelledby="daily-briefing-actions"

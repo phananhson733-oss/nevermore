@@ -37,12 +37,13 @@ const PERIODS: readonly { readonly id: TrendPeriod; readonly points: number }[] 
 const METRIC_STYLE: Readonly<
   Record<MetricKey, { readonly color: string; readonly dash?: string }>
 > = {
-  // These are GenGrowth chart tokens rather than copied Google colours. The
-  // same token paints its large KPI tile and its corresponding line.
-  clicks: { color: "var(--chart-4)" },
-  impressions: { color: "var(--chart-2)", dash: "8 4" },
-  ctr: { color: "var(--chart-1)", dash: "3 4" },
-  position: { color: "var(--chart-3)", dash: "12 4" },
+  // These are dedicated GSC visualization tokens. The same token paints the
+  // large KPI tile and its corresponding line, while dash patterns remain the
+  // secondary encoding.
+  clicks: { color: "var(--gsc-clicks)" },
+  impressions: { color: "var(--gsc-impressions)", dash: "8 4" },
+  ctr: { color: "var(--gsc-ctr)", dash: "3 4" },
+  position: { color: "var(--gsc-position)", dash: "12 4" },
 };
 
 const VIEW_WIDTH = 980;

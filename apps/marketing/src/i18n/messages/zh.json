@@ -1888,13 +1888,6 @@
         "unavailable": "可见查询词的信号漏斗不可得。下游数量仍不可得，没有把缺失值当作 0。",
         "observationOnly": "有 {count} 条查询词处于 50–99 次曝光，只作为观察候选，不能触发动作。"
       },
-      "siteTrend": {
-        "title": "站点整体趋势",
-        "intro": "对比最近完整 7 天与前 7 天的已观察站点变化；它不指向某个查询词、页面或唯一原因。",
-        "evidence": "已观察的站点级证据",
-        "actionListed": "对应的证据动作列在下方「今日建议动作」中。",
-        "insideNoiseFloor": "本次变化为 {observed}，低于该样本量下的自身波动幅度 {minimum}。已作为观察记录，不据此派发全站诊断。"
-      },
       "review": {
         "title": "今天需要看的查询词与页面",
         "intro": "严格变化优先，剩余位置由仅供观察的记录补足；最多显示三条查询词记录，页面维度的记录另有最多两条。",
@@ -1948,6 +1941,7 @@
         "pageNotObserved": "上一窗口无可比的页面记录",
         "pageGroup": "页面维度记录",
         "queryGroup": "查询词记录",
+        "groupCount": "{count} 条记录",
         "unavailableQueryRead": "可比的查询词证据不可得,因此没有推断查询词观察清单,也没有把缺失数量显示成 0。页面维度本轮读到了,并且至少有一条页面级路径判断过其中的记录,没有形成结果。",
         "partialQueryRead": "查询词读取只有部分前缀,不能据此生成代表整个站点的观察清单。页面维度本轮读到了,并且至少有一条页面级路径判断过其中的记录,没有形成结果。"
       },
@@ -2054,10 +2048,8 @@
         "foldObservationsUnavailable": "观察候选数量不可得（不等于 0）",
         "foldChanges": "{count, plural, other {# 条查询词变化}}",
         "foldProvisional": "展示 {shown}/{candidates} 条待确认位置移动",
-        "foldTrend": "{count, plural, other {# 条站点趋势观察}}",
         "foldQueryEvidenceUnavailable": "查询词证据不可得，变化与观察数量都不可得（不等于 0）",
-        "foldPageChanges": "{count, plural, other {# 条页面维度变化}}",
-        "foldTrendUnavailable": "站点整体趋势本轮读不到，未报告观察数量"
+        "foldPageChanges": "{count, plural, other {# 条页面维度变化}}"
       },
       "evidenceStates": {
         "observed": "已观察",
@@ -2111,28 +2103,6 @@
         "actionable_position_decline": {
           "title": "可行动区间内的位置下滑",
           "body": "这是同一个页面在同一个查询词上的对比，不是这个词的整体均位——把一个词的曝光挪到排得更差的页面上，词的均位也会掉，但没有任何一条结果真的变差。这里两个窗口比的是同一个组合，而且点击跟着一起掉了。该组合仍处在可以着手优化的位置区间内。"
-        }
-      },
-      "propertyChangeKinds": {
-        "sitewide_click_decline": {
-          "title": "站点点击出现实质下降",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
-        },
-        "sitewide_visibility_decline": {
-          "title": "站点可见度和平均排名下降",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
-        },
-        "sitewide_visibility_gain": {
-          "title": "站点可见度出现实质增长",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
-        },
-        "sitewide_click_observation": {
-          "title": "站点点击变化仍在自身波动范围内",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
-        },
-        "sitewide_visibility_observation": {
-          "title": "站点曝光变化仍在自身波动范围内",
-          "body": "已观察到的周度变化：点击 {clicks}、曝光 {impressions}、平均排名 {position}。查询词/页面证据不足以把这次站点变化归因到具体对象。"
         }
       },
       "actions": {

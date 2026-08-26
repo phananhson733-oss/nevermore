@@ -17,8 +17,12 @@ import {
 
 const GLOBALS_CSS = fileURLToPath(new URL("./globals.css", import.meta.url));
 const SRC_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const DAILY_BRIEFING_TREND = fileURLToPath(
+  new URL("../components/tools/daily-briefing-trend.tsx", import.meta.url),
+);
 
 const css = readFileSync(GLOBALS_CSS, "utf8");
+const dailyBriefingTrend = readFileSync(DAILY_BRIEFING_TREND, "utf8");
 
 /**
  * 取出一个规则块的内容。这里刻意用最笨的括号配对而不是正则：`:root` 块里有
@@ -100,6 +104,89 @@ describe("Signal Console 主题 token", () => {
       ),
     ];
     expect(literals.map((m) => m[1])).toEqual([]);
+  });
+
+  it("GSC 可视化 token 只在默认 :root 定义一次并被浅色主题继承", () => {
+    const expected = {
+      "--gsc-clicks": "#4285f4",
+      "--gsc-impressions": "#5e35b1",
+      "--gsc-ctr": "#00897b",
+      "--gsc-position": "#ef6c00",
+    } as const;
+    const defaultBody = ruleBody(":root");
+    const lightBody = ruleBody(':root[data-theme="light"]');
+
+    for (const [token, value] of Object.entries(expected)) {
+      const definitions = [
+        ...css.matchAll(new RegExp(`^\\s{2}${token}:\\s*([^;]+);$`, "gim")),
+      ];
+
+      expect(definitions, `${token} 应只定义一次`).toHaveLength(1);
+      expect(definitions[0]?.[1]?.toLowerCase()).toBe(value);
+      expect(defaultBody).toContain(`${token}: ${value};`);
+      expect(lightBody).not.toContain(`${token}:`);
+    }
+  });
+
+  it("新的 GSC 色系不改写品牌色或通用图表映射", () => {
+    const defaultBody = ruleBody(":root");
+    const lightBody = ruleBody(':root[data-theme="light"]');
+    const unchangedDefaultAssignments = [
+      "--sc-accent: #3ddc97;",
+      "--sc-accent-2: #4cc3fa;",
+      "--sc-accent-hover: #6be7b2;",
+      "--sc-accent-soft: rgba(61, 220, 151, 0.08);",
+      "--sc-accent-text: #3ddc97;",
+      "--sc-success: #3ddc97;",
+      "--sc-warning: #e5c878;",
+      "--sc-error: #f09090;",
+      "--sc-info: #8ed6fb;",
+      "--sc-series-1: #3ddc97;",
+      "--sc-series-2: #4cc3fa;",
+      "--sc-gradient-brand: linear-gradient(90deg, #3ddc97, #4cc3fa);",
+      "--sc-gradient-brand-text: linear-gradient(90deg, #3ddc97, #4cc3fa);",
+      "--chart-1: var(--sc-series-1);",
+      "--chart-2: var(--sc-series-2);",
+      "--chart-3: var(--sc-warning);",
+      "--chart-4: var(--sc-info);",
+      "--chart-5: var(--sc-error);",
+    ];
+    const unchangedLightAssignments = [
+      "--sc-accent: #097550;",
+      "--sc-accent-2: #0369a1;",
+      "--sc-accent-hover: #065c3e;",
+      "--sc-accent-soft: rgba(9, 117, 80, 0.09);",
+      "--sc-accent-text: #097550;",
+      "--sc-success: #097550;",
+      "--sc-warning: #845800;",
+      "--sc-error: #b3261e;",
+      "--sc-info: #0e7490;",
+      "--sc-series-1: #097550;",
+      "--sc-series-2: #0369a1;",
+      "--sc-gradient-brand: linear-gradient(90deg, #3ddc97, #4cc3fa);",
+      "--sc-gradient-brand-text: linear-gradient(90deg, #097550, #0369a1);",
+    ];
+
+    for (const assignment of unchangedDefaultAssignments) {
+      expect(defaultBody).toContain(assignment);
+    }
+    for (const assignment of unchangedLightAssignments) {
+      expect(lightBody).toContain(assignment);
+    }
+  });
+
+  it("Daily Briefing 趋势组件只读取 GSC token，不回退到通用 chart token", () => {
+    for (const googleHue of ["#4285f4", "#5e35b1", "#00897b", "#ef6c00"]) {
+      expect(dailyBriefingTrend.toLowerCase()).not.toContain(googleHue);
+    }
+    expect(dailyBriefingTrend).toContain("var(--gsc-clicks)");
+    expect(dailyBriefingTrend).toContain("var(--gsc-impressions)");
+    expect(dailyBriefingTrend).toContain("var(--gsc-ctr)");
+    expect(dailyBriefingTrend).toContain("var(--gsc-position)");
+    expect(dailyBriefingTrend).not.toContain("var(--chart-1)");
+    expect(dailyBriefingTrend).not.toContain("var(--chart-2)");
+    expect(dailyBriefingTrend).not.toContain("var(--chart-3)");
+    expect(dailyBriefingTrend).not.toContain("var(--chart-4)");
   });
 });
 

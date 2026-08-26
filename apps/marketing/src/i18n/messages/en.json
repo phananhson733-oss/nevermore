@@ -1888,13 +1888,6 @@
         "unavailable": "Visible-query signal funnel unavailable. Downstream counts remain unavailable; no zeroes were inferred.",
         "observationOnly": "{count} queries had 50–99 impressions and remain observation-only; they cannot trigger an action."
       },
-      "siteTrend": {
-        "title": "Site-wide trend",
-        "intro": "Observed property movement across the latest complete seven days and the preceding seven days. It does not identify a query, page, or cause.",
-        "evidence": "Observed property evidence",
-        "actionListed": "The evidence-backed property action is listed in Today's recommended actions.",
-        "insideNoiseFloor": "The move is {observed}, below the {minimum} this sample varies by on its own. It is recorded as an observation and does not dispatch a site-wide diagnosis."
-      },
       "review": {
         "title": "Queries and pages to review today",
         "intro": "Strict changes first, with observation-only records filling what is left; at most three query records, plus up to two page-dimension records of their own.",
@@ -1948,6 +1941,7 @@
         "pageNotObserved": "No comparable page record in the prior window",
         "pageGroup": "Page-dimension records",
         "queryGroup": "Query records",
+        "groupCount": "{count, plural, one {# record} other {# records}}",
         "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and at least one page path settled records in it without producing a result.",
         "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and at least one page path settled records in it without producing a result."
       },
@@ -2054,10 +2048,8 @@
         "foldObservationsUnavailable": "observation candidate count unavailable (not zero)",
         "foldChanges": "{count, plural, one {# query change} other {# query changes}}",
         "foldProvisional": "{shown}/{candidates} provisional position moves shown",
-        "foldTrend": "{count, plural, one {# site trend observation} other {# site trend observations}}",
         "foldQueryEvidenceUnavailable": "query evidence unavailable, so change and observation counts are unavailable (not zero)",
-        "foldPageChanges": "{count, plural, one {# page-dimension change} other {# page-dimension changes}}",
-        "foldTrendUnavailable": "site trend not readable this run, no observation count reported"
+        "foldPageChanges": "{count, plural, one {# page-dimension change} other {# page-dimension changes}}"
       },
       "evidenceStates": {
         "observed": "Observed",
@@ -2111,28 +2103,6 @@
         "actionable_position_decline": {
           "title": "Position slipped inside the actionable band",
           "body": "This compares one page against itself on one query, not the query's blended average — moving a query's impressions onto a worse-ranking page pulls that average down while nothing about any single result changed. Here the same pair was compared across both windows and its clicks fell with it. The pair is still in a band where work on the page can matter."
-        }
-      },
-      "propertyChangeKinds": {
-        "sitewide_click_decline": {
-          "title": "Property clicks declined materially",
-          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
-        },
-        "sitewide_visibility_decline": {
-          "title": "Property visibility and average position declined",
-          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
-        },
-        "sitewide_visibility_gain": {
-          "title": "Property visibility improved materially",
-          "body": "Observed weekly deltas: clicks {clicks}, impressions {impressions}, average position {position}. Query/page evidence did not support a specific attribution for this property movement."
-        },
-        "sitewide_click_observation": {
-          "title": "Site-wide click move stays inside its own spread",
-          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. Query and page evidence cannot attribute this site-wide move to a specific subject."
-        },
-        "sitewide_visibility_observation": {
-          "title": "Site-wide impression move stays inside its own spread",
-          "body": "Observed weekly change: clicks {clicks}, impressions {impressions}, average position {position}. Query and page evidence cannot attribute this site-wide move to a specific subject."
         }
       },
       "actions": {
