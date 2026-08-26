@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 // @input  -- production-shaped competitor-gap envelopes
-// @output -- compact six-column results, qualified actions, and bounded evidence rendering
+// @output -- compact six-column results, evidence rendering, and bounded coverage
 // @pos    -- result-surface verification for the Marketing competitor keyword gap tool
 
 import { describe, expect, it, vi } from "vitest";
-import { TOOL_HANDOFF_KEY } from "../../lib/tools/tool-handoff";
 import {
   BASE,
   buttonFor,
@@ -17,7 +16,6 @@ import {
   tableRow,
   unmountResults,
   withResult,
-  writeTextMock,
 } from "./competitor-keyword-gap-results-harness";
 
 vi.mock("next-intl", () => ({
@@ -207,6 +205,19 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
     expect(allFilter?.getAttribute("aria-pressed")).toBe("true");
     expect(contentFilter?.getAttribute("aria-pressed")).toBe("false");
+
+    // Each lane's sentence is stated ONCE above the table. Five optimize rows
+    // are on screen and the sentence appears once, which is the whole point of
+    // moving it out of the rows; and only the lanes actually visible get one,
+    // so a note never describes rows the reader cannot see.
+    expect(
+      [...host.querySelectorAll("[data-lane-note]")].map((note) =>
+        note.getAttribute("data-lane-note"),
+      ),
+    ).toEqual(["optimize_existing", "review_existing_query"]);
+    expect(
+      host.textContent?.match(/nextSteps\.optimize_existing/g),
+    ).toHaveLength(1);
     expect(host.querySelector("tbody tr:first-child")?.textContent).toContain(
       "optimize-00",
     );
@@ -220,6 +231,10 @@ describe("CompetitorKeywordGapResults", () => {
     await click(buttonFor(host, "actions.showAll"));
     expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
     expect(host.textContent).toContain("actions.showingAll:count=100");
+    expect(host.querySelectorAll("[data-lane-note]")).toHaveLength(4);
+    expect(
+      host.textContent?.match(/nextSteps\.optimize_existing/g),
+    ).toHaveLength(1);
     await click(buttonFor(host, "actions.showLess"));
     expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
 
@@ -235,265 +250,6 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.textContent).toContain("actions.remaining:count=90");
   });
 
-  it("writes a bounded private handoff through a locale-only checker link", async () => {
-    const host = await renderResults(BASE, {
-      locale: "zh",
-      selectedProperty: "sc-domain:example.com",
-    });
-    const checker = tableRow(host, "approval workflow software").querySelector(
-      '[data-row-action="open-checker"]',
-    ) as HTMLAnchorElement;
-
-    expect(checker).toBeInstanceOf(HTMLAnchorElement);
-    expect(checker.getAttribute("href")).toBe("/zh/tools/on-page-seo-check");
-    expect(checker.getAttribute("href")).not.toContain("?");
-    checker.addEventListener("click", (event) => event.preventDefault(), {
-      once: true,
-    });
-    await click(checker);
-
-    const stored = JSON.parse(
-      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
-    ) as {
-      readonly property: string;
-      readonly query: string;
-      readonly page: string;
-      readonly evidenceId: string;
-    };
-
-    expect(stored.property).toBe("sc-domain:example.com");
-    expect(stored.query).toBe("approval workflow software");
-    expect(stored.page).toBe("https://example.com/product");
-    expect(stored.evidenceId.length).toBeLessThanOrEqual(256);
-    expect(JSON.stringify(BASE)).not.toContain("sc-domain:example.com");
-  });
-
-  it("prevents checker navigation and reports an inline error when storage fails", async () => {
-    const setItem = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(() => {
-        throw new Error("blocked");
-      });
-    const host = await renderResults(BASE, {
-      selectedProperty: "sc-domain:example.com",
-    });
-    const checker = tableRow(host, "approval workflow software").querySelector(
-      '[data-row-action="open-checker"]',
-    );
-
-    expect(await click(checker)).toBe(false);
-    expect(setItem).toHaveBeenCalled();
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      "actions.handoffFailed",
-    );
-  });
-
-  it("keeps a long keyword handoff id bounded and deterministic", async () => {
-    // Longer than the old keyword-derived 256-char evidence id, but still
-    // inside the handoff contract's 512-char query bound.
-    const longKeyword = "long handoff keyword ".repeat(14).trim();
-    const host = await renderResults(
-      withResult({
-        rows: [
-          {
-            ...BASE.result.rows[0]!,
-            keyword: longKeyword,
-          },
-        ],
-      }),
-      { selectedProperty: "sc-domain:example.com" },
-    );
-    const checker = host.querySelector('[data-row-action="open-checker"]');
-
-    checker?.addEventListener("click", (event) => event.preventDefault(), {
-      once: true,
-    });
-    await click(checker);
-    const stored = JSON.parse(
-      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
-    ) as {
-      readonly query: string;
-      readonly evidenceId: string;
-    };
-    expect(stored.query).toBe(longKeyword);
-    expect(stored.evidenceId.length).toBeLessThanOrEqual(256);
-
-    const firstEvidenceId = stored.evidenceId;
-    sessionStorage.removeItem(TOOL_HANDOFF_KEY);
-    checker?.addEventListener("click", (event) => event.preventDefault(), {
-      once: true,
-    });
-    await click(checker);
-    const repeated = JSON.parse(
-      String(sessionStorage.getItem(TOOL_HANDOFF_KEY)),
-    ) as { readonly evidenceId: string };
-    expect(repeated.evidenceId).toBe(firstEvidenceId);
-  });
-
-  it("offers checker for sufficient strong evidence and a safe new-window page for partial evidence", async () => {
-    const strong = rowWithGsc(
-      0,
-      {
-        queryStatus: "observed_strong",
-        evidenceBasis: "query",
-        queryImpressions: 1_000,
-        queryPosition: 4,
-        pageStatus: "observed_sufficient",
-        pageUrl: "https://example.com/strong",
-        pageImpressions: 900,
-        pagePosition: 4.2,
-        queryPageCoverage: 0.9,
-        nextStep: "review_existing_query",
-      },
-      { keyword: "strong sufficient" },
-    );
-    const partial = rowWithGsc(
-      1,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query_page",
-        queryImpressions: null,
-        queryPosition: null,
-        pageStatus: "observed_partial",
-        pageUrl: "https://example.com/partial",
-        pageImpressions: 12,
-        pagePosition: 9.2,
-        queryPageCoverage: null,
-        nextStep: "review_existing_query",
-      },
-      { keyword: "partial page" },
-    );
-    const unsafe = rowWithGsc(
-      2,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query_page",
-        pageStatus: "observed_partial",
-        pageUrl: "javascript:alert(1)",
-        pageImpressions: 3,
-        pagePosition: 8,
-        nextStep: "review_existing_query",
-      },
-      { keyword: "unsafe page" },
-    );
-    const host = await renderResults(
-      withResult({ rows: [strong, partial, unsafe] }),
-      {
-        selectedProperty: "sc-domain:example.com",
-      },
-    );
-
-    expect(
-      tableRow(host, "strong sufficient").querySelector(
-        '[data-row-action="open-checker"]',
-      ),
-    ).toBeInstanceOf(HTMLAnchorElement);
-    const pageLink = tableRow(host, "partial page").querySelector(
-      '[data-row-action="open-observed-page"]',
-    ) as HTMLAnchorElement;
-    expect(pageLink).toBeInstanceOf(HTMLAnchorElement);
-    expect(pageLink.getAttribute("href")).toBe("https://example.com/partial");
-    expect(pageLink.getAttribute("target")).toBe("_blank");
-    expect(pageLink.getAttribute("rel")).toContain("noopener");
-    expect(
-      tableRow(host, "unsafe page").querySelector(
-        '[data-row-action="open-observed-page"]',
-      ),
-    ).toBeNull();
-  });
-
-  it("does not let an empty property hide a safe observed page", async () => {
-    const partial = rowWithGsc(
-      0,
-      {
-        queryStatus: "observed_weak",
-        evidenceBasis: "query_page",
-        pageStatus: "observed_partial",
-        pageUrl: "https://example.com/partial",
-        pageImpressions: 12,
-        pagePosition: 9.2,
-        nextStep: "review_existing_query",
-      },
-      { keyword: "partial without property" },
-    );
-    const sufficient = {
-      ...BASE.result.rows[0]!,
-      keyword: "sufficient without property",
-    };
-    const host = await renderResults(
-      withResult({ rows: [partial, sufficient] }),
-      { selectedProperty: "" },
-    );
-
-    for (const keyword of [
-      "partial without property",
-      "sufficient without property",
-    ]) {
-      expect(
-        tableRow(host, keyword).querySelector(
-          '[data-row-action="open-observed-page"]',
-        ),
-      ).toBeInstanceOf(HTMLAnchorElement);
-    }
-    expect(host.querySelector('[data-row-action="open-checker"]')).toBeNull();
-  });
-
-  it("supports copy and focus-property actions for their evidence lanes", async () => {
-    const focusProperty = vi.fn();
-    const host = await renderResults(
-      withResult({
-        rows: [
-          row(0, {
-            keyword: "copy target",
-          }),
-          row(1, {
-            keyword: "focus target",
-            gsc: {
-              queryStatus: "gsc_query_sample_not_read",
-              evidenceBasis: null,
-              queryImpressions: null,
-              queryPosition: null,
-              pageStatus: "gsc_query_page_sample_not_read",
-              pageUrl: null,
-              pageImpressions: null,
-              pagePosition: null,
-              queryPageCoverage: null,
-              nextStep: "verify_own_coverage",
-            },
-          }),
-        ],
-      }),
-      {
-        selectedProperty: "sc-domain:example.com",
-        onFocusProperty: focusProperty,
-      },
-    );
-
-    await click(
-      [...tableRow(host, "copy target").querySelectorAll("button")].find(
-        (button) => button.textContent?.includes("actions.copyKeyword"),
-      ) ?? null,
-    );
-    expect(writeTextMock).toHaveBeenCalledWith("copy target");
-
-    await click(
-      [...tableRow(host, "focus target").querySelectorAll("button")].find(
-        (button) => button.textContent?.includes("actions.focusProperty"),
-      ) ?? null,
-    );
-    expect(focusProperty).toHaveBeenCalledOnce();
-
-    writeTextMock.mockRejectedValueOnce(new Error("denied"));
-    await click(
-      [...tableRow(host, "copy target").querySelectorAll("button")].find(
-        (button) => button.textContent?.includes("actions.copyKeyword"),
-      ) ?? null,
-    );
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      "actions.copyFailed",
-    );
-  });
-
   it("renders all four GSC states, labels evidence basis, and never promotes query-page totals", async () => {
     const rows = [
       BASE.result.rows[0]!,
@@ -505,7 +261,7 @@ describe("CompetitorKeywordGapResults", () => {
           queryImpressions: null,
           queryPosition: null,
           pageStatus: "observed_partial",
-          pageUrl: "https://example.com/page-only",
+          pageUrl: "https://example.com/page-only?variant=b",
           pageImpressions: 42,
           pagePosition: 18,
           queryPageCoverage: null,
@@ -571,9 +327,14 @@ describe("CompetitorKeywordGapResults", () => {
     expect(observed.textContent).not.toContain("gsc.pageMetricLine");
     expect(pageOnly.textContent).toContain("gsc.evidenceBasis.query_page");
     expect(pageOnly.textContent).toContain("gsc.pageStatus.observed_partial");
-    expect(pageOnly.textContent).not.toContain("gsc.metricLine");
+    expect(pageOnly.textContent).not.toContain("gsc.impressionsLine");
     expect(pageOnly.textContent).toContain("gsc.pageMetricLine");
-    expect(pageOnly.textContent).toContain("example.com/page-only");
+    // The attributed page is named with its query string. Search Console
+    // attributes query-string URLs routinely, and two rows on the same path
+    // are different pages -- a line that cannot tell them apart names neither.
+    expect(pageOnly.textContent).toContain(
+      "gsc.pageStatus.observed_partial · example.com/page-only?variant=b",
+    );
     expect(miss.textContent).toContain("gsc.not_observed_in_gsc_query_sample");
     expect(unread.textContent).toContain("gsc.gsc_query_sample_not_read");
     expect(strong.textContent).toContain("gsc.observed_strong");
@@ -590,7 +351,7 @@ describe("CompetitorKeywordGapResults", () => {
     );
   });
 
-  it("renders GSC metric lines only for complete non-null pairs and never substitutes zero", async () => {
+  it("renders each GSC number only where the contract has one, and never substitutes zero", async () => {
     const malformedQueryPair = rowWithGsc(
       0,
       {
@@ -625,16 +386,25 @@ describe("CompetitorKeywordGapResults", () => {
       withResult({ rows: [malformedQueryPair, malformedPagePair] }),
     );
 
-    expect(tableRow(host, "missing query position").textContent).not.toContain(
-      "gsc.metricLine",
+    // Impressions and the position are two separate readings now that the pill
+    // carries one of them, so a missing position withholds the position alone
+    // rather than the impressions the sample really did report.
+    const missingPosition = tableRow(host, "missing query position");
+    expect(missingPosition.textContent).toContain(
+      "gsc.impressionsLine:impressions=12",
     );
-    expect(tableRow(host, "missing query position").textContent).toContain(
+    expect(missingPosition.textContent).not.toContain("gsc.statusWithPosition");
+    expect(
+      missingPosition.querySelector("[data-gsc-status]")?.textContent,
+    ).toBe("gsc.observed_weak");
+    expect(missingPosition.textContent).toContain(
       "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
     );
     expect(tableRow(host, "missing page position").textContent).not.toContain(
       "gsc.pageMetricLine",
     );
     expect(host.textContent).not.toContain("position=0");
+    expect(host.textContent).not.toContain("impressions=0");
   });
 
   it("keeps technical coverage after the table and always states the six durable evidence boundaries", async () => {
@@ -743,96 +513,119 @@ describe("CompetitorKeywordGapResults", () => {
     expect(unavailable.querySelector("table")).toBeNull();
   });
 
-  it("copies the current filter as one fenced plan and reports the copied count", async () => {
-    const host = await renderResults(withResult({ rows: productionRows() }));
-    const copyPlan = (): Element | null =>
-      host.querySelector('[data-row-action="copy-plan"]');
+  it("puts the average position inside the status pill and never leaves a dangling separator", async () => {
+    const strong = rowWithGsc(
+      0,
+      {
+        queryStatus: "observed_strong",
+        evidenceBasis: "query",
+        queryImpressions: 1_200,
+        queryPosition: 3.4,
+        pageStatus: "observed_sufficient",
+        pageUrl: "https://example.com/strong",
+        pageImpressions: 1_100,
+        pagePosition: 3.6,
+        queryPageCoverage: 0.9,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "strong pill" },
+    );
+    const weak = rowWithGsc(
+      1,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query",
+        queryImpressions: 318,
+        queryPosition: 22.5,
+        pageStatus: "observed_sufficient",
+        pageUrl: "https://example.com/weak",
+        pageImpressions: 300,
+        pagePosition: 23,
+        queryPageCoverage: 0.9,
+        nextStep: "optimize_existing",
+      },
+      { keyword: "weak pill" },
+    );
+    const withoutPosition = rowWithGsc(
+      2,
+      {
+        queryStatus: "observed_weak",
+        evidenceBasis: "query_page",
+        queryImpressions: null,
+        queryPosition: null,
+        pageStatus: "observed_partial",
+        pageUrl: "https://example.com/page-only",
+        pageImpressions: 12,
+        pagePosition: 18,
+        nextStep: "review_existing_query",
+      },
+      { keyword: "pill without position" },
+    );
+    const unread = rowWithGsc(
+      3,
+      {
+        queryStatus: "gsc_query_sample_not_read",
+        pageStatus: "gsc_query_page_sample_not_read",
+        nextStep: "verify_own_coverage",
+      },
+      { keyword: "pill unread" },
+    );
+    const host = await renderResults(
+      withResult({
+        rows: [strong, weak, withoutPosition, row(4), unread],
+      }),
+    );
+    const pill = (keyword: string): Element | null =>
+      tableRow(host, keyword).querySelector("[data-gsc-status]");
 
-    // Collapsed: only the ten rows on screen are copied; the other ninety in
-    // the filter are counted as omitted, never carried into the plan.
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=10");
-    expect(host.querySelector('[role="status"]')).toBeNull();
-
-    await click(copyPlan());
-    expect(writeTextMock).toHaveBeenCalledOnce();
-    const collapsed = String(writeTextMock.mock.calls[0]?.[0]);
-    expect(collapsed.startsWith("# Competitor keyword gap plan")).toBe(true);
-    expect(collapsed.match(/```json/g)).toHaveLength(1);
-    expect(collapsed).toContain('"laneFilter": "all"');
-    expect(collapsed).toContain('"bandFilter": "all"');
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(10);
-    expect(collapsed).not.toContain('"keyword": "content-gap-00"');
-    expect(collapsed).toContain('"omittedRows": 90');
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=10",
+    expect(pill("strong pill")?.textContent).toBe(
+      "gsc.statusWithPosition:status=gsc.observed_strong,position=3.4",
+    );
+    expect(pill("weak pill")?.textContent).toBe(
+      "gsc.statusWithPosition:status=gsc.observed_weak,position=22.5",
+    );
+    // No position in the contract, so the state stands alone: a separator with
+    // nothing after it reads as a number that failed to render.
+    expect(pill("pill without position")?.textContent).toBe(
+      "gsc.observed_weak",
+    );
+    expect(pill("keyword 04")?.textContent).toBe(
+      "gsc.not_observed_in_gsc_query_sample",
+    );
+    expect(pill("pill unread")?.textContent).toBe(
+      "gsc.gsc_query_sample_not_read",
     );
 
-    // Expanded: the plan follows the filter's full order up to the cap.
-    const showAll = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("actions.showAll"),
+    // The number is an impression-weighted average over a 28-day window that
+    // itself ends two to three days back, and the short label cannot say so.
+    // The title carries the qualification, and only on the pills that actually
+    // show a number: qualifying a window on a pill with no position would
+    // explain an average that is not there.
+    expect(pill("strong pill")?.getAttribute("title")).toBe(
+      "gsc.positionTitle",
     );
-    await click(showAll ?? null);
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=20");
-    await click(copyPlan());
-    const markdown = String(writeTextMock.mock.calls[1]?.[0]);
-    expect(markdown).toContain('"keyword": "content-gap-09"');
-    expect(markdown).not.toContain('"keyword": "content-gap-10"');
-    expect(markdown).toContain('"omittedRows": 80');
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=20",
+    expect(pill("weak pill")?.getAttribute("title")).toBe("gsc.positionTitle");
+    expect(pill("pill without position")?.hasAttribute("title")).toBe(false);
+    expect(pill("keyword 04")?.hasAttribute("title")).toBe(false);
+    expect(pill("pill unread")?.hasAttribute("title")).toBe(false);
+
+    // Tone still comes from the state alone; the position never changes it.
+    expect(pill("strong pill")?.className).toContain("text-brand-success");
+    expect(pill("weak pill")?.className).toContain("text-brand-warning");
+    expect(pill("keyword 04")?.className).toContain("text-brand-error");
+    expect(pill("pill unread")?.className).toContain(
+      "text-text-dark-secondary",
     );
 
-    await click(
-      host.querySelector('[data-next-step-filter="verify_own_coverage"]'),
+    // The line below the pill keeps the impressions and stops repeating the
+    // position the pill now carries.
+    const impressions = tableRow(host, "weak pill").querySelector(
+      '[data-gsc-metrics="query"]',
     );
-    expect(host.querySelector('[role="status"]')).toBeNull();
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=2");
-
-    await click(copyPlan());
-    const filtered = String(writeTextMock.mock.calls[2]?.[0]);
-    expect(filtered).toContain('"laneFilter": "verify_own_coverage"');
-    expect(filtered).toContain('"keyword": "verify-01"');
-    expect(filtered).not.toContain("optimize-00");
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "actions.copyPlanDone:count=2",
+    expect(impressions?.textContent).toBe(
+      "gsc.impressionsLine:impressions=318",
     );
-  });
-
-  it("disables the plan button when the lane and band filter match nothing", async () => {
-    const host = await renderResults();
-    const copyPlan = (): HTMLButtonElement | null =>
-      host.querySelector<HTMLButtonElement>('[data-row-action="copy-plan"]');
-
-    expect(copyPlan()?.disabled).toBe(false);
-
-    await click(
-      host.querySelector('[data-next-step-filter="optimize_existing"]'),
-    );
-    await click(host.querySelector('[data-pre-screen-filter="stretch"]'));
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
-    expect(copyPlan()?.textContent).toContain("actions.copyPlan:count=0");
-    expect(copyPlan()?.disabled).toBe(true);
-
-    await click(copyPlan());
-    expect(writeTextMock).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="status"]')).toBeNull();
-  });
-
-  it("writes the Chinese plan for zh locales and reports a clipboard failure inline", async () => {
-    const host = await renderResults(BASE, { locale: "zh" });
-    const copyPlan = host.querySelector('[data-row-action="copy-plan"]');
-
-    await click(copyPlan);
-    expect(
-      String(writeTextMock.mock.calls[0]?.[0]).startsWith("# 竞品词差距计划"),
-    ).toBe(true);
-    expect(host.querySelector('[role="status"]')).not.toBeNull();
-
-    writeTextMock.mockRejectedValueOnce(new Error("denied"));
-    await click(copyPlan);
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      "actions.copyPlanFailed",
-    );
-    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(impressions?.textContent).not.toContain("position=");
+    expect(host.textContent).not.toContain("gsc.metricLine");
   });
 });

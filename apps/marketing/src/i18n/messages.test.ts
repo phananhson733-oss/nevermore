@@ -46,20 +46,24 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "coverage.requested",
   "coverage.failure",
   "coverage.detailsSummary",
-  "metrics.cpc",
-  "metrics.difficulty",
   "boundaries.title",
   "boundaries.dfsEstimates",
   "boundaries.gscOwnSample",
   "boundaries.competitorOutcomesUnavailable",
   "boundaries.manualSnapshot",
+  "gsc.observed_strong",
+  "gsc.observed_weak",
+  "gsc.not_observed_in_gsc_query_sample",
+  "gsc.gsc_query_sample_not_read",
+  "gsc.statusWithPosition",
+  "gsc.positionTitle",
   "gsc.evidenceBasis.query",
   "gsc.evidenceBasis.query_page",
   "gsc.pageStatus.observed_sufficient",
   "gsc.pageStatus.observed_partial",
   "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
   "gsc.pageStatus.gsc_query_page_sample_not_read",
-  "gsc.metricLine",
+  "gsc.impressionsLine",
   "gsc.pageMetricLine",
   "filters.all",
   "filters.optimize_existing",
@@ -68,14 +72,14 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "filters.verify_own_coverage",
   "signals.bestRank",
   "signals.difficulty",
-  "actions.copyKeyword",
   "actions.optimizeObservedPage",
   "actions.reviewObservedPage",
   "actions.openCompetitorPageNamed",
+  "actions.openOpportunityFinder",
   "actions.runWithoutGsc",
   "actions.focusProperty",
-  "actions.copyFailed",
-  "actions.handoffFailed",
+  "actions.handoffFailedOnPage",
+  "actions.handoffFailedOpportunityFinder",
   "actions.remaining",
   "actions.showingAll",
   "actions.showAll",
@@ -93,7 +97,6 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "nextSteps.verify_own_coverage",
   // preScreen.band.*, preScreen.basis.* and preScreen.reason.* are derived
   // from the contract arrays below, not hand-listed here.
-  "preScreen.title",
   "preScreen.filterAll",
   "signals.aiOverviewSnapshot",
   "signals.aiOverviewSnapshotUndated",
@@ -101,6 +104,7 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "actions.copyPlan",
   "actions.copyPlanDone",
   "actions.copyPlanFailed",
+  "actions.exportCsv",
   "sources.short.dfs",
   "sources.short.gsc",
   "legend.dfsMeans",
@@ -136,6 +140,13 @@ const COMPETITOR_GAP_UNUSED_SHAPE_PATHS = [
   // key for today's action column is `table.nextAction`, listed as required
   // above; the two must not be collapsed just because the words are close.
   "table.recommendation",
+  // Removed by decision, not by accident. The row-level "copy keyword" action
+  // was replaced by the one-click full-CSV export, and the status pill now
+  // carries the average position that `gsc.metricLine` used to repeat below it.
+  // Restoring either key would put a second, quieter copy of something the
+  // surface already says back on the page.
+  "actions.copyKeyword",
+  "gsc.metricLine",
 ] as const;
 
 function leafPaths(value: unknown, prefix = ""): readonly string[] {
@@ -308,6 +319,26 @@ describe("competitor keyword gap message catalogs", () => {
         /DataForSEO (?:estimate|估算)/,
       );
     }
+  });
+
+  /**
+   * Absence from the bounded Search Console sample is not absence from Search.
+   * Anonymized queries never enter that sample at all, so "not covered" would
+   * state a fact this tool cannot have -- and would contradict the evidence
+   * boundary two cards below it on the same page, which says exactly that. The
+   * reference report this surface follows uses the phrase; this catalog must
+   * not, in either language.
+   */
+  it("never calls a row not covered in either language", () => {
+    const en = Object.entries(
+      leafMessages(enMessages.tools.competitorKeywordGap),
+    ).filter(([, message]) => /not covered/i.test(message));
+    const zh = Object.entries(
+      leafMessages(zhMessages.tools.competitorKeywordGap),
+    ).filter(([, message]) => message.includes("未覆盖"));
+
+    expect(en).toEqual([]);
+    expect(zh).toEqual([]);
   });
 
   it.each([
