@@ -108,4 +108,3 @@ The change is test-driven at each boundary:
 6. Release: focused tests, package lint/typecheck, repository gates, Marketing
    build, secret scan, production deployment identity, live route/bundle/log
    checks, and independent Product deployment verification.
-

@@ -46,8 +46,6 @@ import {
 } from "./page-performance-reader.ts";
 import {
   buildSerpShapeRecords,
-  type SerpShapeGap,
-  type SerpShapeRaw,
 } from "@sf/public-tools/seo-audit/serp-shape";
 
 import { buildKeywordEvidence, normalizeSeoAuditUrl } from "@sf/public-tools";
