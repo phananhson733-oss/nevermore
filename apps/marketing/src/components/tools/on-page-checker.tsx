@@ -1,7 +1,7 @@
 "use client";
 
 // @input  -- page/query fields, optional private query/page handoff, market and role
-// @output -- handoff prefill, safe redirect recovery, page evidence, and local history
+// @output -- handoff prefill, focused safe redirect recovery, page evidence, local history
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -177,6 +177,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
    */
   const [fallbackReport, setFallbackReport] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const urlInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   const inFlight = useRef<AbortController | null>(null);
 
@@ -662,6 +663,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                 setHandoffImported(false);
               }}
               placeholder="example.com/pricing"
+              ref={urlInput}
               value={url}
             />
             {/* `role="alert"` is already an assertive live region; declaring a
@@ -968,6 +970,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
                       setUrlNotice(null);
                       setHandoffImported(false);
                       setRun({ kind: "idle" });
+                      urlInput.current?.focus();
                     }}
                     type="button"
                   >

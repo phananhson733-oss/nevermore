@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // @input  -- a visitor filling one page, its queries, and audit responses
-// @output -- proof requests, redirect recovery, and measured answers stay truthful
+// @output -- proof requests, focused redirect recovery, and measured answers stay truthful
 // @pos    -- the seam between the frozen keyword contract and what a person sees
 
 import { act } from "react";
@@ -416,6 +416,7 @@ describe("On-Page checker redirected targets", () => {
     });
 
     expect(field(host, "onpage-url").value).toBe(target);
+    expect(document.activeElement).toBe(field(host, "onpage-url"));
     expect(field(host, "onpage-query").value).toBe("pricing, plans");
     expect(field(host, "onpage-country").value).toBe("GB");
     expect(field(host, "onpage-language").value).toBe("en");
