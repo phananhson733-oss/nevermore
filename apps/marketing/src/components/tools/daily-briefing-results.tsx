@@ -123,19 +123,32 @@ function destination(
   }
 }
 
+/**
+ * `position` is nullable so a page with no current row can say so.
+ *
+ * Query rows always carry a number and satisfy this unchanged. The collapse
+ * lane may not: a page the current window no longer returns has zero
+ * impressions and therefore no position to weight, which reads the same here
+ * as a position that came back non-finite.
+ */
 function metricsLine(
   t: ReturnType<typeof useTranslations>,
   locale: string,
-  row: DailyBriefingChange["current"],
+  row: {
+    readonly clicks: number;
+    readonly impressions: number;
+    readonly position: number | null;
+  },
 ): string {
   const ctr = row.impressions > 0 ? row.clicks / row.impressions : null;
   return t("changes.metrics", {
     clicks: number(locale, row.clicks),
     impressions: number(locale, row.impressions),
     ctr: ctr === null ? t("kpis.unavailable") : percent(ctr),
-    position: Number.isFinite(row.position)
-      ? row.position.toFixed(1)
-      : t("kpis.unavailable"),
+    position:
+      row.position !== null && Number.isFinite(row.position)
+        ? row.position.toFixed(1)
+        : t("kpis.unavailable"),
   });
 }
 
@@ -146,6 +159,28 @@ function comparison(
   notObserved: string,
 ): string {
   return `${previous === null ? notObserved : format(previous)} → ${format(current)}`;
+}
+
+/**
+ * The same two sides, for a value the current window may not carry.
+ *
+ * Every other row has a current number. A collapse whose page left the current
+ * window does not: its counts are zero — the lane proved the window complete
+ * before reading absence, so a page it does not name received nothing — but
+ * its average position was never measured. Search Console cannot weight a
+ * position over impressions nobody received, and printing `0.0` beside a
+ * measured prior position would put an invented number inside the same arrow
+ * as a real one.
+ */
+function comparisonToPossiblyUnmeasured(
+  previous: number | null,
+  current: number | null,
+  format: (value: number) => string,
+  notObserved: string,
+  unmeasured: string,
+): string {
+  const before = previous === null ? notObserved : format(previous);
+  return `${before} → ${current === null ? unmeasured : format(current)}`;
 }
 
 function nullableComparison(
@@ -411,6 +446,11 @@ const PAGE_SIGNAL_PATHS: readonly {
   readonly kind: DailyBriefingPageChangeKind;
 }[] = [
   {
+    key: "page-impression-collapse",
+    copyKey: "pageImpressionCollapse",
+    kind: "page_impression_collapse",
+  },
+  {
     key: "page-click-decline",
     copyKey: "pageClickDecline",
     kind: "page_click_decline",
@@ -585,6 +625,20 @@ function SignalPathEvidence({
             {t("evidence.paths.pageUnavailable")}
           </p>
         )}
+        {/* The collapse lane walks the prior window, so its split is counted
+            against a different total than the one stated above. Printing that
+            total here is what keeps the three numbers beside it from reading
+            as an arithmetic error. */}
+        {pageAccounting.previousObservedRows !== null ? (
+          <p
+            data-page-previous-rows-intro
+            className="text-[12px] leading-[1.6] text-text-dark-secondary"
+          >
+            {t("evidence.paths.pagePreviousRowsIntro", {
+              rows: pageAccounting.previousObservedRows,
+            })}
+          </p>
+        ) : null}
         {PAGE_SIGNAL_PATHS.map((path) => {
           const state = laneCapability.pageLanes[path.kind];
           const counts =
@@ -1441,7 +1495,7 @@ export function DailyBriefingResults({
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
                     {comparison(
                       change.previous?.clicks ?? null,
-                      change.current.clicks,
+                      change.current?.clicks ?? 0,
                       (value) => number(locale, value),
                       t("review.pageNotObserved"),
                     )}
@@ -1452,14 +1506,15 @@ export function DailyBriefingResults({
                     {t("review.columns.position")}
                   </span>
                   <p className="mt-2 font-mono text-[12px] leading-[1.5] text-text-dark-primary md:mt-0">
-                    {comparison(
+                    {comparisonToPossiblyUnmeasured(
                       change.previous?.position ?? null,
-                      change.current.position,
+                      change.current?.position ?? null,
                       (value) =>
                         Number.isFinite(value)
                           ? value.toFixed(1)
                           : t("kpis.unavailable"),
                       t("review.pageNotObserved"),
+                      t("kpis.unavailable"),
                     )}
                   </p>
                 </div>
@@ -1749,10 +1804,9 @@ export function DailyBriefingResults({
                         </p>
                         <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {metricsLine(t, locale, {
-                            query: "",
-                            clicks: change.current.clicks,
-                            impressions: change.current.impressions,
-                            position: change.current.position,
+                            clicks: change.current?.clicks ?? 0,
+                            impressions: change.current?.impressions ?? 0,
+                            position: change.current?.position ?? null,
                           })}
                         </p>
                       </div>

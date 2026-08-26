@@ -65,6 +65,7 @@ export type DailyBriefingChangeKind =
  */
 export type DailyBriefingPageChangeKind =
   | "page_click_decline"
+  | "page_impression_collapse"
   | "page_first_observed";
 
 /**
@@ -291,7 +292,19 @@ export interface DailyBriefingPageChange {
   readonly kind: DailyBriefingPageChangeKind;
   readonly evidence: "observed";
   readonly page: string;
-  readonly current: GscPageRow;
+  /**
+   * Null only for `page_impression_collapse`, and only when the current
+   * window returned no row for this page at all.
+   *
+   * The other two lanes are anchored on a current row and always carry one.
+   * A collapse is anchored on the prior row instead: the strongest form of
+   * the signal is a page that stopped being shown, which is precisely the
+   * case with nothing current to point at. Absence is read as zero
+   * impressions only after the window is shown to be complete; the position
+   * stays unrepresented, because Search Console cannot weight a position
+   * over impressions nobody received.
+   */
+  readonly current: GscPageRow | null;
   /** Null when the page carried no comparable prior window. */
   readonly previous: GscPageRow | null;
   readonly clickChange: number | null;
@@ -504,6 +517,17 @@ export interface DailyBriefingRowAccounting {
 export interface DailyBriefingPageAccounting {
   readonly evidence: "observed" | "partial" | "unavailable";
   readonly observedRows: number | null;
+  /**
+   * Records the prior window returned; the collapse lane's denominator.
+   *
+   * Beside `observedRows` rather than folded into it, for the same reason the
+   * page total sits beside the query one: they count different windows and a
+   * sum would measure neither. Only `page_impression_collapse` is counted
+   * against this one, because only it reads the prior window as its
+   * population — a page that stopped being shown appears in no current-row
+   * total, so its lane cannot be balanced against one.
+   */
+  readonly previousObservedRows: number | null;
   /** Page rows that produced a candidate but lost the display budget. */
   readonly notSelectedVisibleRows: number | null;
   readonly unreadableRows: number | null;

@@ -2049,8 +2049,13 @@
           "laneFinding": "Hits when: {finding}",
           "selectionTitle": "What happens after a candidate forms",
           "selectionRules": "One row per query: when several paths hit the same query, the earliest path in the order above is the one shown. The page shows at most three query rows; page rows have their own budget of at most two and do not compete for those slots. If all three selected query rows lack a landing page and a handoffable candidate waits outside the cut, the weakest of the three gives up its place to it.",
-          "pageUnavailable": "No comparable pair of page windows this run, so the two paths below did not run. That is not the same as the page dimension returning nothing.",
+          "pageUnavailable": "No comparable pair of page windows this run, so the three paths below did not run. That is not the same as the page dimension returning nothing.",
           "pageLanes": {
+            "pageImpressionCollapse": {
+              "name": "Page impressions all but gone",
+              "requirement": "at least 30 impressions on this page in the prior window, and whether it appears in the current window is decidable",
+              "finding": "impressions fell more than 80% below the prior window, and the drop reached 2×√prior impressions"
+            },
             "pageClickDecline": {
               "name": "Page click decline",
               "requirement": "At least 100 impressions for the page in each window, and at least 3 clicks in the prior one",
@@ -2063,6 +2068,7 @@
             }
           },
           "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
+          "pagePreviousRowsIntro": "The prior window returned {rows} page records. “Page impressions all but gone” is accounted against those rather than the total above — a page that stopped being shown appears in no current-window record, so its three numbers will not add up to that total, and that is correct.",
           "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. Neither path evaluated them, which is not the same as their not being there.",
           "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
           "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
@@ -2279,6 +2285,10 @@
         }
       },
       "pageChangeKinds": {
+        "page_impression_collapse": {
+          "title": "Page impressions all but gone",
+          "body": "This page had a workable impression base last window and lost more than four fifths of it this window, by more than the spread a count that size produces on its own. Page data is not subject to query anonymization, so “all but gone” is a complete reading rather than a withheld one. Impressions vanishing wholesale usually points at the page itself — removed, blocked from crawling, redirected — so start by confirming the page is still there, still loads, and still points its canonical at itself. This briefing has not judged the cause."
+        },
         "page_click_decline": {
           "title": "Page clicks fell",
           "body": "This page cleared the sample floor in both windows and lost more clicks than its own week-to-week spread accounts for. Page data is not subject to query anonymization, so the clicks here are complete; this briefing has not judged why they fell."

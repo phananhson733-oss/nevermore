@@ -65,7 +65,7 @@ import type {
   DailyBriefingWindows,
 } from "./types.ts";
 
-export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v7";
+export const DAILY_BRIEFING_SCHEMA_VERSION = "daily_search_briefing.v8";
 export const BRIEFING_WINDOW_DAYS = 7;
 /** Daily points held once so the UI can switch 7/28/90-day views locally. */
 export const DAILY_BRIEFING_TREND_DAYS = 90;
@@ -84,6 +84,30 @@ export const DAILY_BRIEFING_ACTION_LIMIT = 3;
  * the other.
  */
 export const DAILY_BRIEFING_PAGE_LIMIT = 2;
+
+/**
+ * Prior-window impressions a page needs before its collapse is worth naming.
+ *
+ * The handed-down spec expresses this floor as a hundred monthly impressions.
+ * This tool compares two seven-day windows and has no monthly read, and
+ * restating a monthly figure as `weekly x 30/7` would publish an extrapolation
+ * as an observation. Thirty is that floor carried into the window actually
+ * measured, rounded up rather than down: at thirty the collapse threshold
+ * below removes twenty-four impressions, comfortably past the counting floor
+ * of `2*sqrt(30) = 10.95` that this lane must also clear.
+ */
+export const BRIEFING_PAGE_COLLAPSE_MIN_PREVIOUS_IMPRESSIONS = 30;
+
+/**
+ * Share of a page's impressions that must disappear before it is a collapse.
+ *
+ * A ratio, in a spec whose general rules ask for absolute judgements. The
+ * absolute half of the test is the floor above and the counting floor this
+ * lane also applies; the ratio is what separates "this page stopped being
+ * shown" from "this page was shown less", which is the distinction that makes
+ * the action worth doing at all.
+ */
+export const BRIEFING_PAGE_COLLAPSE_RATIO = 0.8;
 export const BRIEFING_PROPERTY_MIN_ABSOLUTE_IMPRESSION_CHANGE = 100;
 export const BRIEFING_PROPERTY_POSITION_DELTA = 1;
 
@@ -1815,6 +1839,7 @@ interface PageCandidate {
 }
 
 const PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
+  "page_impression_collapse",
   "page_click_decline",
   "page_first_observed",
 ];
@@ -1838,15 +1863,25 @@ function pageLaneSettledRows(
   );
 }
 
-/** A measured decline outranks a page that has only just appeared. */
+/**
+ * A page that stopped being shown outranks one that lost clicks, which in turn
+ * outranks one that has only just appeared.
+ *
+ * Collapse leads because it is the only page signal whose likely cause is the
+ * page itself failing — removed, blocked, redirected — rather than the market
+ * moving around it. A page that collapsed almost always lost clicks too, and
+ * this order is what decides which of the two the reader is shown.
+ */
 const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
-  page_click_decline: 0,
-  page_first_observed: 1,
+  page_impression_collapse: 0,
+  page_click_decline: 1,
+  page_first_observed: 2,
 };
 
 const PAGE_DESTINATIONS: Readonly<
   Record<DailyBriefingPageChangeKind, DailyBriefingPageAction["destination"]>
 > = {
+  page_impression_collapse: "traffic-drop-diagnosis",
   page_click_decline: "traffic-drop-diagnosis",
   page_first_observed: "on-page-seo-check",
 };
@@ -1854,6 +1889,17 @@ const PAGE_DESTINATIONS: Readonly<
 interface PageCandidateSet {
   readonly candidates: readonly PageCandidate[];
   readonly observedRows: number;
+  /**
+   * Records the prior window returned, which is the collapse lane's base.
+   *
+   * Every other page lane walks the current window and is counted against
+   * `observedRows`. The collapse lane walks the prior one, because the
+   * strongest collapse is a page the current window no longer returns at all
+   * and such a page is in no current-row denominator. Reporting its split
+   * against `observedRows` would have printed three numbers that do not add up
+   * to the total stated beside them.
+   */
+  readonly previousObservedRows: number;
   /** Current rows returned but not readable; counted, never dropped. */
   readonly unreadableCurrentRows: number;
   readonly pageFloorRows: number;
@@ -1910,6 +1956,7 @@ function pageCandidatesFor(
   const priorSet = validPageRows(previousEvidence?.pageRead?.rows ?? []);
   const currentRows = currentSet.rows;
   const previousByPage = new Map(priorSet.rows.map((row) => [row.page, row]));
+  const currentByPage = new Map(currentRows.map((row) => [row.page, row]));
 
   // Absence is the one claim an unattributable prior record can break for
   // every page at once: a row that named no page could have been any of them.
@@ -1918,7 +1965,16 @@ function pageCandidatesFor(
   const priorAbsenceProvable =
     priorSet.blank === 0 &&
     (previousEvidence?.pageRead?.unreadableRows ?? 0) === 0;
+  // The same test, pointed the other way, for the one lane that reads absence
+  // from the current window. Truncation is already excluded upstream: this
+  // function returns early unless both reads are `observed`, which is what
+  // makes "the current window returned no row for this page" mean the page
+  // received no impressions rather than "we stopped reading before it".
+  const currentAbsenceProvable =
+    currentSet.blank === 0 &&
+    (currentEvidence?.pageRead?.unreadableRows ?? 0) === 0;
   const declines: PageCandidate[] = [];
+  const collapses: PageCandidate[] = [];
   const firstObserved: PageCandidate[] = [];
   let pageFloorRows = 0;
   let pairedPageRows = 0;
@@ -1926,6 +1982,10 @@ function pageCandidatesFor(
   let firstObservedCapableRows = 0;
   let absenceBlockedRows = 0;
   let priorUnusableRows = 0;
+  let collapseCapableRows = 0;
+  let collapseReadableRows = 0;
+  let collapseBlockedRows = 0;
+  let currentUnusableRows = 0;
 
   for (const current of currentRows) {
     if (current.impressions < BRIEFING_MIN_ROW_IMPRESSIONS) continue;
@@ -2038,6 +2098,103 @@ function pageCandidatesFor(
     });
   }
 
+  // A second pass, over the prior window rather than the current one.
+  //
+  // Every lane above starts from a page the current window returned, which is
+  // exactly the set a collapsed page can be missing from. Asking the question
+  // from the other side is what lets this lane speak about a page that stopped
+  // being shown at all — the case whose likely cause is the page itself, and
+  // the one the reader most needs named.
+  for (const previous of priorSet.rows) {
+    // Readability first, and before the sample floor, so that "we could not
+    // look" is never reported as "there was nothing to look at". A row below
+    // the floor was read and rejected; one whose other side we could not read
+    // was neither.
+    //
+    // A current row we had to throw away is not a current window without one.
+    // Reading it as absence would report a page as collapsed on the strength
+    // of evidence we discarded.
+    if (currentSet.unusable.has(previous.page)) {
+      currentUnusableRows += 1;
+      continue;
+    }
+    const current = currentByPage.get(previous.page) ?? null;
+    if (current === null && !currentAbsenceProvable) {
+      // Only the rows that turn on absence are blocked. A page the current
+      // window did return is settled either way, whatever else came back
+      // unattributable beside it.
+      collapseBlockedRows += 1;
+      continue;
+    }
+    collapseReadableRows += 1;
+    if (previous.impressions < BRIEFING_PAGE_COLLAPSE_MIN_PREVIOUS_IMPRESSIONS) {
+      continue;
+    }
+    collapseCapableRows += 1;
+
+    // Zero, and honestly so: the window is known complete, so a page it does
+    // not name received no impressions. The position is a different matter and
+    // stays unrepresented below — Search Console cannot weight a position over
+    // impressions nobody received, and rendering one would be inventing the
+    // very number this lane exists to say is gone.
+    const currentImpressions = current?.impressions ?? 0;
+    const impressionChange = currentImpressions - previous.impressions;
+    const impressionChangeRatio = ratio(previous.impressions, currentImpressions);
+    if (
+      impressionChangeRatio === null ||
+      impressionChangeRatio > -BRIEFING_PAGE_COLLAPSE_RATIO
+    ) {
+      continue;
+    }
+
+    // The counting floor, carried as evidence and kept as a guard it does not
+    // currently need to be.
+    //
+    // At the sample floor above it cannot reject anything: a drop of `0.8*N`
+    // clears `2*sqrt(N)` for every `N >= 6.25`, so the ratio test already
+    // implies this one from thirty impressions upward. It is computed because
+    // the report renders the floor beside the drop, and the comparison is left
+    // in because it starts doing real work the moment that sample floor is
+    // lowered below seven. It is not a second gate today, and describing it as
+    // one would credit this lane with a check it never performs.
+    const noiseFloor = noiseFloorFor(
+      "impressions",
+      previous.impressions,
+      impressionChange,
+    );
+    if (noiseFloor === null || !noiseFloor.cleared) continue;
+
+    const currentClicks = current?.clicks ?? 0;
+    collapses.push({
+      change: {
+        kind: "page_impression_collapse",
+        evidence: "observed",
+        page: previous.page,
+        previous,
+        current,
+        clickChange: currentClicks - previous.clicks,
+        clickChangeRatio: ratio(previous.clicks, currentClicks),
+        impressionChange,
+        impressionChangeRatio,
+        // Null whenever either side lacks a measured position, which for this
+        // lane includes every page the current window no longer returns.
+        positionDelta:
+          current !== null &&
+          Number.isFinite(current.position) &&
+          Number.isFinite(previous.position) &&
+          current.position > 0 &&
+          previous.position > 0
+            ? current.position - previous.position
+            : null,
+        noiseFloor,
+      },
+      order: -impressionChange,
+    });
+  }
+
+  collapses.sort(
+    (a, b) => b.order - a.order || a.change.page.localeCompare(b.change.page),
+  );
   declines.sort(
     (a, b) => b.order - a.order || a.change.page.localeCompare(b.change.page),
   );
@@ -2058,11 +2215,25 @@ function pageCandidatesFor(
     (currentEvidence?.pageRead?.unreadableRows ?? 0);
   // Everything that arrived and did not become a usable row.
   const unreadableCurrentRows = Math.max(0, observedRows - currentRows.length);
+  // The collapse lane's own base, counted the same way on the other window.
+  const previousObservedRows =
+    (previousEvidence?.pageRead?.rows.length ?? 0) +
+    (previousEvidence?.pageRead?.unreadableRows ?? 0);
+  // And its own unreadable count. The other lanes carry the current window's
+  // discards because that is the window they walk; this one walks the prior
+  // window, and reading its state off the current window's discards let a run
+  // whose entire prior read was unusable report "nothing to measure here"
+  // instead of "we could not look".
+  const unreadablePriorRows = Math.max(
+    0,
+    previousObservedRows - priorSet.rows.length,
+  );
   return {
     // Pre-sorted within each lane; `selectPageChanges` sorts by rank alone and
     // relies on a stable sort to keep each lane's own magnitude order.
-    candidates: [...declines, ...firstObserved],
+    candidates: [...collapses, ...declines, ...firstObserved],
     observedRows,
+    previousObservedRows,
     pageFloorRows,
     pairedPageRows,
     // "Not applicable" says the property has nothing this lane could ever
@@ -2072,6 +2243,15 @@ function pageCandidatesFor(
     // them — saying "could not be read" there would be false about the rows
     // that were.
     lanes: {
+      // Counted on the prior window, like the lane itself, and its readable
+      // count is rows BOTH windows could be read for. Passing the prior row
+      // count alone said the lane had looked at a page whose current side it
+      // had just thrown away.
+      page_impression_collapse: pageLaneState(
+        collapseCapableRows,
+        collapseReadableRows,
+        unreadablePriorRows + currentUnusableRows + collapseBlockedRows,
+      ),
       page_click_decline: pageLaneState(
         declineCapableRows,
         currentRows.length,
@@ -2087,6 +2267,11 @@ function pageCandidatesFor(
     // `pageLaneRows` produces for them: they are in `observedRows` and in
     // neither capability count.
     byLane: {
+      page_impression_collapse: pageLaneRows(
+        previousObservedRows,
+        collapseCapableRows,
+        collapses.length,
+      ),
       page_click_decline: pageLaneRows(
         observedRows,
         declineCapableRows,
@@ -2260,6 +2445,7 @@ function laneCapabilityFor({
       pairedPageRows: pages?.pairedPageRows ?? null,
       pageFloorRows: pages?.pageFloorRows ?? null,
       pageLanes: pages?.lanes ?? {
+        page_impression_collapse: unavailable,
         page_click_decline: unavailable,
         page_first_observed: unavailable,
       },
@@ -2278,6 +2464,7 @@ function laneCapabilityFor({
     pairedPageRows: pages?.pairedPageRows ?? null,
     pageFloorRows: pages?.pageFloorRows ?? null,
     pageLanes: pages?.lanes ?? {
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     },
@@ -2537,6 +2724,7 @@ export function buildDailyBriefing(
               ? "unavailable"
               : "partial",
           observedRows: null,
+          previousObservedRows: null,
           notSelectedVisibleRows: null,
           unreadableRows: null,
           byLane: null,
@@ -2544,6 +2732,7 @@ export function buildDailyBriefing(
       : {
           evidence: "observed",
           observedRows: pageCandidateSet.observedRows,
+          previousObservedRows: pageCandidateSet.previousObservedRows,
           notSelectedVisibleRows: Math.max(
             0,
             pageSelection.eligible - pageChanges.length,

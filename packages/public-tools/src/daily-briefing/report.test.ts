@@ -200,7 +200,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe("daily briefing contract and windows", () => {
   it("exports the frozen v1 constants and public non-persistent envelope", () => {
-    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v7");
+    expect(DAILY_BRIEFING_SCHEMA_VERSION).toBe("daily_search_briefing.v8");
     expect(BRIEFING_WINDOW_DAYS).toBe(7);
     expect(DAILY_CADENCE_MIN_IMPRESSIONS).toBe(1_000);
     expect(BRIEFING_MIN_ROW_IMPRESSIONS).toBe(100);
@@ -213,7 +213,7 @@ describe("daily briefing contract and windows", () => {
 
     expect(report().run).toEqual({
       tool: "daily_search_briefing",
-      schemaVersion: "daily_search_briefing.v7",
+      schemaVersion: "daily_search_briefing.v8",
       mode: "public_preview",
       scope: "property",
       persistence: "none",
@@ -3175,6 +3175,7 @@ function pageReport(
 
 describe("page dimension lanes", () => {
   const PAGE = "https://example.com/guide";
+const GONE = "https://example.com/gone";
 
   it("finds the click decline the query rows cannot see", () => {
     // The reason this dimension exists. Search Console anonymizes low-volume
@@ -3238,7 +3239,15 @@ describe("page dimension lanes", () => {
       [pageRow("https://example.com/other", 300, 2, 12)],
     );
 
+    // Two signals, because the prior row this fixture uses as scaffolding is
+    // itself a page that stopped being shown. Collapse leads: it outranks a
+    // page that has only just appeared.
     expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: "https://example.com/other",
+        current: null,
+      },
       {
         kind: "page_first_observed",
         page: PAGE,
@@ -3248,6 +3257,11 @@ describe("page dimension lanes", () => {
       },
     ]);
     expect(result.pageActions).toEqual([
+      {
+        kind: "page_impression_collapse",
+        destination: "traffic-drop-diagnosis",
+        page: "https://example.com/other",
+      },
       {
         kind: "page_first_observed",
         destination: "on-page-seo-check",
@@ -3264,7 +3278,13 @@ describe("page dimension lanes", () => {
 
     // Nothing done to this page this week decides whether position 45 earns a
     // click. Evaluated and rejected, which is a different fact from unasked.
-    expect(result.pageChanges).toEqual([]);
+    // Scoped to the lane under test: the scaffolding prior row is a collapse
+    // in its own right and reports separately.
+    expect(
+      result.pageChanges.filter(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toEqual([]);
     expect(result.pageAccounting.byLane?.page_first_observed).toEqual({
       notEvaluated: 0,
       evaluatedNoSignal: 1,
@@ -3312,6 +3332,10 @@ describe("page dimension lanes", () => {
     // nothing either lane could ever measure; the actual reason is prior
     // evidence neither of them could read.
     expect(result.laneCapability.pageLanes).toEqual({
+      // The collapse lane reads the prior window, and every prior row here was
+      // discarded. It could not look at all, which is a stronger statement
+      // than the partial one the current-window lanes make.
+      page_impression_collapse: "unavailable",
       page_click_decline: "partially_readable",
       page_first_observed: "partially_readable",
     });
@@ -3322,6 +3346,14 @@ describe("page dimension lanes", () => {
     // Both lanes, not just the one that would have fired. A decline lane that
     // recorded "evaluated, no signal" would be claiming it looked.
     expect(result.pageAccounting.byLane).toEqual({
+      // Two prior records arrived and neither survived, counted against the
+      // prior window rather than the current one — which is why this is two
+      // where the current-window lanes report one.
+      page_impression_collapse: {
+        notEvaluated: 2,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3345,6 +3377,11 @@ describe("page dimension lanes", () => {
 
     expect(result.pageChanges).toEqual([]);
     expect(result.pageAccounting.byLane).toEqual({
+      page_impression_collapse: {
+        notEvaluated: 1,
+        evaluatedNoSignal: 0,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3411,7 +3448,14 @@ describe("page dimension lanes", () => {
       { previousPageUnreadable: 1 },
     );
 
-    expect(result.pageChanges).toEqual([]);
+    // Scoped: the unattributable prior record blocks the absence claim about
+    // PAGE, and says nothing about the scaffolding page whose own prior row
+    // was read and whose current absence is provable.
+    expect(
+      result.pageChanges.filter(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toEqual([]);
     expect(result.laneCapability.pageLanes.page_first_observed).toBe(
       "partially_readable",
     );
@@ -3497,6 +3541,9 @@ describe("page dimension lanes", () => {
     // "Not applicable" claims the property has nothing this lane could ever
     // measure. One unreadable row does not establish that.
     expect(result.laneCapability.pageLanes).toEqual({
+      // Its one prior row was readable, but the current row it had to compare
+      // against was not, so it settled nothing either.
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     });
@@ -3607,6 +3654,13 @@ describe("page dimension lanes", () => {
     // cannot be asked against a window that small.
     expect(result.pageChanges).toEqual([]);
     expect(result.pageAccounting.byLane).toEqual({
+      // Sixty prior impressions clears this lane's floor, so it asked and
+      // answered: the page grew, it did not collapse.
+      page_impression_collapse: {
+        notEvaluated: 0,
+        evaluatedNoSignal: 1,
+        candidates: 0,
+      },
       page_click_decline: {
         notEvaluated: 1,
         evaluatedNoSignal: 0,
@@ -3620,10 +3674,173 @@ describe("page dimension lanes", () => {
     });
   });
 
+  it("reports a page whose impressions stopped entirely", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([
+      {
+        kind: "page_impression_collapse",
+        evidence: "observed",
+        page: GONE,
+        previous: { page: GONE, impressions: 300, clicks: 2, position: 11 },
+        // No current row, so no current numbers beyond the two the complete
+        // window proves are zero. The position stays unrepresented.
+        current: null,
+        clickChange: -2,
+        clickChangeRatio: -1,
+        impressionChange: -300,
+        impressionChangeRatio: -1,
+        positionDelta: null,
+        noiseFloor: {
+          basis: "impressions",
+          observedChange: -300,
+          minimumForAction: 2 * Math.sqrt(300),
+          cleared: true,
+        },
+      },
+    ]);
+    expect(result.pageActions).toEqual([
+      {
+        kind: "page_impression_collapse",
+        destination: "traffic-drop-diagnosis",
+        page: GONE,
+      },
+    ]);
+  });
+
+  it("reports a page still shown, but at a fraction of the prior window", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 40, 0, 30)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: GONE,
+        current: { impressions: 40 },
+        impressionChange: -260,
+        // Both positions were measured here, so the move is carried.
+        positionDelta: 19,
+      },
+    ]);
+  });
+
+  it("leaves a page that lost most of a tiny base alone", () => {
+    // Four impressions down to nothing is a hundred per cent of a base too
+    // small to have said anything. The ratio alone would have called it a
+    // collapse.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 4, 0, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      // Read, and rejected before the lane's own question: the row never
+      // cleared the sample floor, so it was not evaluated.
+      notEvaluated: 1,
+      evaluatedNoSignal: 1,
+      candidates: 0,
+    });
+  });
+
+  it("leaves a page that merely lost some of its impressions alone", () => {
+    // Down 70%: real, and not the wholesale disappearance this lane names.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 90, 0, 11)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 2,
+      candidates: 0,
+    });
+  });
+
+  it("will not read absence as collapse when a current row named no page", () => {
+    const result = pageReport(
+      // One current record that named nothing. It could have been any page,
+      // this one included, so "no current row" stops meaning "no impressions".
+      [pageRow(PAGE, 300, 2, 12), pageRow("   ", 400, 5, 9)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_impression_collapse).toBe(
+      "partially_readable",
+    );
+  });
+
+  it("still reads absence for the pages an unattributable current row cannot be", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 300, 2, 11)],
+      // A current record the reader dropped before the report saw it. Absence
+      // is no longer provable for anything.
+      { pageUnreadable: 1 },
+    );
+
+    expect(result.pageChanges).toEqual([]);
+    expect(result.laneCapability.pageLanes.page_impression_collapse).toBe(
+      "partially_readable",
+    );
+  });
+
+  it("collapse outranks a click decline on the same page", () => {
+    const result = pageReport(
+      // A hundred current impressions, so the decline lane clears its own
+      // floor and genuinely competes. Below it the lane never looks, and this
+      // test would have asserted an ordering that was never contested.
+      [pageRow(PAGE, 100, 0, 12)],
+      [pageRow(PAGE, 600, 9, 11)],
+    );
+
+    // Both lanes have a candidate for this page: impressions fell 83% and
+    // clicks fell nine. One page, one row — and the reader is told the thing
+    // most likely to be the page's own fault.
+    expect(result.pageAccounting.byLane?.page_click_decline.candidates).toBe(1);
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_impression_collapse", page: PAGE },
+    ]);
+  });
+
+  it("counts the collapse lane against the window it actually walks", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12)],
+      [
+        pageRow(PAGE, 300, 2, 12),
+        pageRow(GONE, 300, 2, 11),
+        pageRow("https://example.com/third", 300, 2, 11),
+        // Below the collapse floor, so the split carries a non-zero
+        // `notEvaluated`. Without it every count survives being divided by the
+        // current window's total instead, because `max(0, 1 - 3)` and
+        // `max(0, 4 - 3)` both round the disagreement away.
+        pageRow("https://example.com/tiny", 5, 0, 11),
+      ],
+    );
+
+    // One current record, four prior ones. The two totals are both right and
+    // are not addends; the collapse split has to add up to the prior one.
+    expect(result.pageAccounting.observedRows).toBe(1);
+    expect(result.pageAccounting.previousObservedRows).toBe(4);
+    expect(result.pageAccounting.byLane?.page_impression_collapse).toEqual({
+      notEvaluated: 1,
+      evaluatedNoSignal: 1,
+      candidates: 2,
+    });
+  });
+
   it("reports page lanes as unavailable when the page dimension was not read", () => {
     const result = pageReport(null, null);
 
     expect(result.laneCapability.pageLanes).toEqual({
+      page_impression_collapse: "unavailable",
       page_click_decline: "unavailable",
       page_first_observed: "unavailable",
     });
@@ -3632,6 +3849,7 @@ describe("page dimension lanes", () => {
     expect(result.pageAccounting).toEqual({
       evidence: "unavailable",
       observedRows: null,
+      previousObservedRows: null,
       notSelectedVisibleRows: null,
       unreadableRows: null,
       byLane: null,
@@ -3672,6 +3890,7 @@ describe("page dimension lanes", () => {
     expect(result.pageAccounting).toEqual({
       evidence: "unavailable",
       observedRows: null,
+      previousObservedRows: null,
       notSelectedVisibleRows: null,
       unreadableRows: null,
       byLane: null,
