@@ -115,6 +115,18 @@ function request(accept = "application/json"): Request {
   });
 }
 
+function requestForUrl(url: string): Request {
+  return new Request("https://gengrowth.ai/api/agents/seo/audit", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-real-ip": "203.0.113.9",
+    },
+    body: JSON.stringify({ url }),
+  });
+}
+
 function keywordRequest(
   targetQueries: readonly string[],
   pageRole?: string,
@@ -926,6 +938,7 @@ describe("handleAgentAuditRequest", () => {
           "x-debug-id": "private-request-id",
           "x-upstream-marker": "private-marker",
           "content-length": "999999",
+          location: "https://acme.test/replacement",
         },
       },
     );
@@ -945,9 +958,110 @@ describe("handleAgentAuditRequest", () => {
     expect(response.headers.get("x-debug-id")).toBeNull();
     expect(response.headers.get("x-upstream-marker")).toBeNull();
     expect(response.headers.get("content-length")).toBeNull();
+    expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("cache-control")).toBe("no-store, private");
     await expect(response.json()).resolves.toEqual({
       error: { code: "robots_disallowed" },
+    });
+  });
+
+  it("forwards an allowed apex-to-www replacement page Location", async () => {
+    const redirectTarget = "https://www.acme.test/new/?a=1&b=2";
+    const upstream = Response.json(
+      { error: { code: "target_redirected" } },
+      {
+        status: 422,
+        headers: { Location: redirectTarget },
+      },
+    );
+    const response = await handleAgentAuditRequest(
+      requestForUrl("acme.test/old?a=1&b=2"),
+      "seo",
+      dependencies({ delegate: async () => upstream }),
+    );
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("location")).toBe(redirectTarget);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "target_redirected" },
+    });
+  });
+
+  it("canonicalizes the validated replacement Location before forwarding it", async () => {
+    const upstream = Response.json(
+      { error: { code: "target_redirected" } },
+      {
+        status: 422,
+        headers: {
+          Location:
+            "https://www.acme.test/new/?utm_source=test&b=2&a=1",
+        },
+      },
+    );
+    const response = await handleAgentAuditRequest(
+      requestForUrl("https://acme.test/old"),
+      "seo",
+      dependencies({ delegate: async () => upstream }),
+    );
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("location")).toBe(
+      "https://www.acme.test/new/?a=1&b=2",
+    );
+  });
+
+  it("fails closed when target_redirected has no Location", async () => {
+    const response = await handleAgentAuditRequest(
+      requestForUrl("https://acme.test/old"),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json(
+            { error: { code: "target_redirected" } },
+            { status: 422 },
+          ),
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("location")).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
+    });
+  });
+
+  it.each([
+    ["malformed", "not a URL"],
+    ["relative", "/new"],
+    ["cross-domain", "https://evil.test/new"],
+    ["credential-bearing", "https://user:secret@acme.test/new"],
+    ["HTTPS downgrade", "http://acme.test/new"],
+    ["fragment-bearing", "https://www.acme.test/new#private"],
+    ["port-bearing", "https://www.acme.test:8443/new"],
+    ["backslash-bearing", "https://www.acme.test\\new"],
+    [
+      "overlong",
+      `https://www.acme.test/${"a".repeat(2_048)}`,
+    ],
+    [
+      "same canonical subject after host, slash, tracking, and query normalization",
+      "https://www.acme.test/old/?utm_medium=test&b=2&a=1",
+    ],
+  ])("fails closed for a %s redirect Location", async (_label, location) => {
+    const upstream = Response.json(
+      { error: { code: "target_redirected" } },
+      { status: 422, headers: { Location: location } },
+    );
+    const response = await handleAgentAuditRequest(
+      requestForUrl("https://acme.test/old?a=1&b=2&utm_source=test"),
+      "seo",
+      dependencies({ delegate: async () => upstream }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("location")).toBeNull();
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
     });
   });
 
@@ -976,6 +1090,21 @@ describe("handleAgentAuditRequest", () => {
       ),
     ],
     [
+      "extra fields on target_redirected",
+      Response.json(
+        {
+          error: {
+            code: "target_redirected",
+            redirectTarget: "https://acme.test/private",
+          },
+        },
+        {
+          status: 422,
+          headers: { Location: "https://acme.test/public" },
+        },
+      ),
+    ],
+    [
       "code/status mismatch",
       Response.json({ error: { code: "robots_disallowed" } }, { status: 500 }),
     ],
@@ -998,6 +1127,7 @@ describe("handleAgentAuditRequest", () => {
 
     expect(response.status).toBe(502);
     expect(response.headers.get("retry-after")).toBeNull();
+    expect(response.headers.get("location")).toBeNull();
     await expect(response.json()).resolves.toEqual({
       error: { code: "audit_response_invalid" },
     });
