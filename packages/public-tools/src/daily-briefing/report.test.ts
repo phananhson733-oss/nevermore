@@ -131,6 +131,7 @@ function evidence(
     readonly pageAggregation?: string | null;
     readonly previousPageAggregation?: string | null;
     readonly pageUnreadable?: number;
+    readonly queryPageUnreadable?: number;
   } = {},
 ) {
   const totals = options.totals === undefined
@@ -151,6 +152,7 @@ function evidence(
     },
     queryPageRead: {
       rows: queryPages,
+      unreadableRows: options.queryPageUnreadable ?? 0,
       paging: {
         pagesFetched: 1,
         truncated: options.queryPageTruncated ?? false,
@@ -395,6 +397,16 @@ describe("query changes and actions", () => {
     expect(
       result.changes.filter((change) => change.kind === "click_opportunity"),
     ).toMatchObject([{ kind: "click_opportunity", query: "ctr target" }]);
+  });
+
+  it("fires at exactly half the predicted clicks", () => {
+    // 20 clicks against 40 expected is exactly half, and the gate includes it.
+    // The copy has to say "half or less", not "under half".
+    const result = anomalyReport(400, 20);
+
+    expect(
+      result.changes.filter((change) => change.kind === "click_opportunity"),
+    ).toHaveLength(1);
   });
 
   it("says nothing when the shortfall is real but under half", () => {
@@ -3421,6 +3433,7 @@ function pageReport(
       readonly clicks: number;
     } | null;
     readonly totalAggregation?: string | null;
+    readonly queryAggregation?: string | null;
     readonly brandTerms?: readonly string[];
     readonly brandTermsConfirmed?: boolean;
   } = {},
@@ -3438,6 +3451,9 @@ function pageReport(
         ...(overrides.totalAggregation === undefined
           ? {}
           : { totalAggregation: overrides.totalAggregation }),
+        ...(overrides.queryAggregation === undefined
+          ? {}
+          : { queryAggregation: overrides.queryAggregation }),
         ...(overrides.pageTruncated === undefined
           ? {}
           : { pageTruncated: overrides.pageTruncated }),
@@ -4268,6 +4284,155 @@ const GONE = "https://example.com/gone";
     // is not listed twice: one page, one row.
     expect(gone.pageChanges.map((change) => change.page)).toEqual([GONE]);
     expect(gone.pageChecks.items.map((item) => item.page)).toEqual([PAGE]);
+  });
+
+  it("treats a zero-impression current row as absence, not as position zero", () => {
+    // Search Console does return rows shown zero times. Left as a row, its
+    // literal position of 0 reached the table beside a measured prior one.
+    const result = pageReport(
+      [pageRow(PAGE, 0, 0, 0)],
+      [pageRow(PAGE, 300, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      {
+        kind: "page_impression_collapse",
+        page: PAGE,
+        current: null,
+        impressionChange: -300,
+        positionDelta: null,
+      },
+    ]);
+  });
+
+  it("fires at exactly the collapse threshold", () => {
+    // Down exactly four fifths. The copy has to say "or more", not "more
+    // than", because this row is included.
+    const result = pageReport(
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 20, 0, 11)],
+      [pageRow(PAGE, 300, 2, 12), pageRow(GONE, 100, 2, 11)],
+    );
+
+    expect(result.pageChanges).toMatchObject([
+      { kind: "page_impression_collapse", page: GONE },
+    ]);
+  });
+
+  it("refuses the zero-click check when the query rows were not read", () => {
+    // The brand rows are subtracted from the totals, so an unread query
+    // attachment is a subtraction we cannot perform — not a property without
+    // brand queries.
+    const result = report({
+      currentQueryEvidence: {
+        ...evidence([queryRow("acme", 1_000, 250, 1)], [], {
+          pages: [pageRow(PAGE, 500, 0, 5)],
+          totals: { impressions: 11_000, clicks: 300 },
+        }),
+        queryRead: null,
+      },
+      previousQueryEvidence: evidence([], [], {
+        pages: [pageRow(PAGE, 500, 0, 5)],
+      }),
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["query_rows_unavailable"]);
+    // And emphatically not the property's whole rate published as its
+    // non-brand one: 300/11,000 would have made this page's 500 impressions
+    // expect 13.6 clicks against a true expectation of 2.5.
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("refuses the zero-click check when the query rows use another basis", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      {
+        totals: { impressions: 10_000, clicks: 100 },
+        queryAggregation: "byProperty",
+      },
+    );
+
+    expect(result.pageChecks.blockers).toEqual(["aggregation_basis_mismatch"]);
+  });
+
+  it("calls the zero-click check partial when page records were discarded", () => {
+    const result = pageReport(
+      [pageRow(PAGE, 500, 0, 5)],
+      [pageRow(PAGE, 500, 0, 5)],
+      { totals: { impressions: 10_000, clicks: 100 }, pageUnreadable: 1 },
+    );
+
+    // It ran on what it could read and cannot speak for the rest.
+    expect(result.pageChecks.evidence).toBe("partial");
+    expect(result.pageChecks.items).toHaveLength(1);
+  });
+
+  it("keeps a page change that lost the display budget out of the checks", () => {
+    const result = pageReport(
+      [
+        pageRow("https://example.com/a", 400, 0, 5),
+        pageRow("https://example.com/b", 400, 0, 5),
+        pageRow("https://example.com/c", 400, 0, 5),
+      ],
+      [
+        pageRow("https://example.com/a", 4_000, 0, 5),
+        pageRow("https://example.com/b", 3_600, 0, 5),
+        pageRow("https://example.com/c", 3_200, 0, 5),
+      ],
+      { totals: { impressions: 10_000, clicks: 100 } },
+    );
+
+    // Three collapses, two display slots. The third is a page this briefing
+    // just judged to have changed; listing it under "nothing here is claimed
+    // to have changed" would contradict that judgement about the same rows.
+    expect(result.pageChanges).toHaveLength(2);
+    expect(result.pageAccounting.notSelectedVisibleRows).toBe(1);
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("says it could not look when every pair record was unattributable", () => {
+    const result = report({
+      currentQueryEvidence: evidence([queryRow("q", 200, 5, 15)], [], {
+        queryPageUnreadable: 1,
+      }),
+      previousQueryEvidence: evidence([queryRow("q", 200, 10, 10)], [], {
+        queryPageUnreadable: 1,
+      }),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // Records arrived and could not be attributed to a query and a page.
+    // "Not applicable" would claim the property has no pair to measure.
+    expect(result.laneCapability.lanes.actionable_position_decline).toBe(
+      "unavailable",
+    );
+  });
+
+  it("ignores a pair whose query is not a readable query row", () => {
+    const result = report({
+      currentQueryEvidence: evidence(
+        [],
+        [queryPageRow("orphan", "https://example.com/landing", 200, 5, 15)],
+      ),
+      previousQueryEvidence: evidence(
+        [],
+        [queryPageRow("orphan", "https://example.com/landing", 200, 10, 10)],
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+
+    // The pair clears every condition on its own. Its split is counted
+    // against the query rows, of which there are none, so counting it would
+    // report one candidate out of a population of zero.
+    expect(result.changes).toEqual([]);
+    expect(result.rowAccounting.byLane?.actionable_position_decline).toEqual({
+      notEvaluated: 0,
+      evaluatedNoSignal: 0,
+      candidates: 0,
+    });
   });
 
   it("reports page lanes as unavailable when the page dimension was not read", () => {

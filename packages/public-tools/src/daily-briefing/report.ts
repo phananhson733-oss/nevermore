@@ -1391,7 +1391,13 @@ function candidatesFor(
         ? "unavailable"
         : positionDeclineCapableQueries > 0
           ? "evaluated"
-          : "not_applicable",
+          : // Records arrived and could not be attributed to a query and a
+            // page. That is not the property having no pair to measure, and
+            // reporting it as such credited the lane with a look it never got.
+            (currentEvidence.queryPageRead?.unreadableRows ?? 0) > 0 ||
+              (previousEvidence.queryPageRead?.unreadableRows ?? 0) > 0
+            ? "unavailable"
+            : "not_applicable",
     // This lane stands on the page attachment, not on the query rows. Marking
     // it evaluated whenever the funnel could be computed claimed a comparison
     // that never happened when the attachment was missing or truncated.
@@ -2000,7 +2006,14 @@ interface PageCandidate {
   readonly order: number;
 }
 
-const PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
+/**
+ * Exported so the copy completeness guard reads the real list.
+ *
+ * Kept as a hand-written array in the message test, it went stale the moment a
+ * lane was added: the guard passed while the new kind had no action copy and
+ * rendered its message key on screen.
+ */
+export const DAILY_BRIEFING_PAGE_CHANGE_LANES: readonly DailyBriefingPageChangeKind[] = [
   "page_impression_collapse",
   "page_click_decline",
   "page_first_observed",
@@ -2280,8 +2293,18 @@ function pageCandidatesFor(
       currentUnusableRows += 1;
       continue;
     }
-    const current = currentByPage.get(previous.page) ?? null;
-    if (current === null && !currentAbsenceProvable) {
+    const currentRow = currentByPage.get(previous.page) ?? null;
+    // Search Console does return rows shown zero times, and such a row carries
+    // no measured position — it cannot weight one over impressions nobody
+    // received. Normalized to absence so the two cannot render differently:
+    // left as a row, its literal `position: 0` reached the table and printed
+    // "11.0 -> 0.0", a number nobody measured. The first-observed lane already
+    // applies this rule to the prior window; this is the same rule pointed the
+    // other way.
+    const current =
+      currentRow !== null && currentRow.impressions === 0 ? null : currentRow;
+    // Absence of a *record*, which a zero-impression row is not.
+    if (currentRow === null && !currentAbsenceProvable) {
       // Only the rows that turn on absence are blocked. A page the current
       // window did return is settled either way, whatever else came back
       // unattributable beside it.
@@ -2581,6 +2604,17 @@ function pageChecksFor({
 
   const blockers: DailyBriefingPageCheckBlocker[] = [];
   if (!brandTermsConfirmed) blockers.push("brand_terms_not_confirmed");
+  // The brand rows are subtracted from the totals, so an unread query
+  // attachment is not "this property has no brand queries" — it is a
+  // subtraction we cannot perform. Defaulting it to an empty list published
+  // the property's whole rate, brand traffic included, as its non-brand one.
+  const queryRead = currentEvidence?.queryRead ?? null;
+  if (queryRead === null) blockers.push("query_rows_unavailable");
+  else if (queryRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
+    // Subtracting rows aggregated one way from totals aggregated another is
+    // the same defect as dividing them.
+    blockers.push("aggregation_basis_mismatch");
+  }
   const totals = currentEvidence?.propertyTotals ?? null;
   if (totals === null) blockers.push("property_totals_unavailable");
   else if (totals.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
@@ -2589,7 +2623,7 @@ function pageChecksFor({
     // which is not always the one that was asked for.
     blockers.push("aggregation_basis_mismatch");
   }
-  if (blockers.length > 0 || totals === null) {
+  if (blockers.length > 0 || totals === null || queryRead === null) {
     return empty("unavailable", blockers);
   }
 
@@ -2601,7 +2635,7 @@ function pageChecksFor({
   // survives here is small — and it moves the rate up, which makes this gate
   // harder to pass rather than easier.
   const brandRows = splitBrandQueries(
-    validQueryRows(currentEvidence?.queryRead?.rows ?? []),
+    validQueryRows(queryRead.rows),
     brandTerms,
   ).brand;
   let brandImpressions = 0;
@@ -2628,7 +2662,17 @@ function pageChecksFor({
     brandQueriesExcluded: brandRows.length,
   };
 
-  const rows = validPageRows(currentEvidence?.pageRead?.rows ?? []).rows;
+  const pageSet = validPageRows(currentEvidence?.pageRead?.rows ?? []);
+  const rows = pageSet.rows;
+  // Records that arrived and did not become a usable row. The check ran on
+  // what it could read and cannot speak for the rest, which is a different
+  // statement from having read the window.
+  const discardedRows = Math.max(
+    0,
+    (currentEvidence?.pageRead?.rows.length ?? 0) +
+      (currentEvidence?.pageRead?.unreadableRows ?? 0) -
+      rows.length,
+  );
   const items: DailyBriefingPageCheck[] = [];
   for (const row of rows) {
     if (actionedPages.has(row.page)) continue;
@@ -2660,7 +2704,7 @@ function pageChecksFor({
   );
 
   return {
-    evidence: "observed",
+    evidence: discardedRows > 0 ? "partial" : "observed",
     baseline,
     blockers: [],
     items,
@@ -2795,7 +2839,9 @@ function modeFor(
   // run as `unavailable` would deny a detection the tool just performed.
   if (
     pages !== null &&
-    PAGE_CHANGE_LANES.some((lane) => pageLaneSettledRows(pages.byLane[lane]))
+    DAILY_BRIEFING_PAGE_CHANGE_LANES.some((lane) =>
+      pageLaneSettledRows(pages.byLane[lane]),
+    )
   ) {
     return "change_detection";
   }
@@ -3083,7 +3129,15 @@ export function buildDailyBriefing(
     brandTermsConfirmed: input.brandTermsConfirmed,
     brandTerms: input.brandTerms,
     currentEvidence,
-    actionedPages: new Set(pageActions.map((action) => action.page)),
+    // Every page that produced a page candidate, not only the two that won a
+    // display slot. A third collapse losing the budget and reappearing under
+    // "nothing here is claimed to have changed" would be this briefing
+    // contradicting a judgement it had just made about the same rows.
+    actionedPages: new Set(
+      (pageCandidateSet?.candidates ?? []).map(
+        (candidate) => candidate.change.page,
+      ),
+    ),
   });
   const signalFunnel: DailyBriefingSignalFunnel =
     observedSignalCounts === null

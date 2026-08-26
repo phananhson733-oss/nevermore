@@ -193,6 +193,15 @@ export interface DailyBriefingWindows {
 
 export interface DailyBriefingQueryPageRead {
   readonly rows: readonly GscQueryPageRow[];
+  /**
+   * Records the response carried that could not be turned into a pair.
+   *
+   * Carried so a lane whose pairs all arrived unattributable can say it could
+   * not look, rather than that there was nothing to look at. Without it an
+   * attachment that returned only rows missing a query or page key was
+   * indistinguishable from one that returned nothing.
+   */
+  readonly unreadableRows: number;
   readonly paging: GscReadPaging;
   readonly responseAggregationType: string | null;
 }
@@ -517,6 +526,7 @@ export interface DailyBriefingRowAccounting {
 /** Why the page-level zero-click check could not run, in operator terms. */
 export type DailyBriefingPageCheckBlocker =
   | "brand_terms_not_confirmed"
+  | "query_rows_unavailable"
   | "property_totals_unavailable"
   | "aggregation_basis_mismatch"
   | "no_property_impressions";

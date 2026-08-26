@@ -2071,7 +2071,7 @@ describe("DailyBriefingResults folded explanation", () => {
     // Named accurately: a duplicated URL is rejected for being duplicated, not
     // for figures that contradict each other.
     expect(intro?.textContent).toContain("returned more than once");
-    expect(intro?.textContent).toContain("Neither path evaluated them");
+    expect(intro?.textContent).toContain("None of the three paths evaluated them");
     // And the lanes must carry them, not just the sentence above: an
     // unreadable row is a row neither lane could ask about.
     for (const id of ["page-click-decline", "page-first-observed"]) {

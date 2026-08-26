@@ -2054,7 +2054,7 @@
             "pageImpressionCollapse": {
               "name": "Page impressions all but gone",
               "requirement": "at least 30 impressions on this page in the prior window, and whether it appears in the current window is decidable",
-              "finding": "impressions fell more than 80% below the prior window, and the drop reached 2×√prior impressions"
+              "finding": "impressions fell 80% or more below the prior window, and the drop reached 2×√prior impressions"
             },
             "pageClickDecline": {
               "name": "Page click decline",
@@ -2069,7 +2069,7 @@
           },
           "pageRowsIntro": "{rows} page records returned for the current window. These and the query rows above are two separate populations and do not add together.",
           "pagePreviousRowsIntro": "The prior window returned {rows} page records. “Page impressions all but gone” is accounted against those rather than the total above — a page that stopped being shown appears in no current-window record, so its three numbers will not add up to that total, and that is correct.",
-          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. Neither path evaluated them, which is not the same as their not being there.",
+          "pageUnreadableRows": "{count} of them did not become a usable page record: no page identifier, figures that could not be read, or the same URL returned more than once in the window. None of the three paths evaluated them, which is not the same as their not being there.",
           "selectionAllShownQuery": "Every query record that formed a candidate this run appears in the table above.",
           "selectionNotShownQuery": "{count} further query records formed a candidate and are not shown.",
           "selectionAllShownPage": "Every page record that formed a candidate this run appears in the table above.",
@@ -2247,7 +2247,7 @@
         "anonymization_gap_uncomputable": "Visible query totals and property totals cannot produce a trustworthy withheld share, so no share is reported.",
         "brand_terms_not_confirmed": "The brand list was not explicitly confirmed. CTR opportunities that depend on a trusted non-brand baseline were omitted.",
         "property_change_inside_noise_floor": "The property-level change cleared its thresholds but stayed inside the spread this sample carries on its own, so it is recorded as an observation and dispatches no action.",
-        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The two page-level paths did not run, which is not the same as no change on any page."
+        "page_evidence_unavailable": "No comparable pair of page windows this run: not read, only a partial prefix, or not confirmed as returned by page (including a response that named no aggregation). The three page-level paths did not run, which is not the same as no change on any page."
       },
       "methodology": {
         "title": "How to read this briefing",
@@ -2281,13 +2281,13 @@
         },
         "provisional_actionable_position_decline": {
           "title": "Possible slide from the actionable band",
-          "body": "Average presented position slid relative to the actionable band. The sample cannot yet separate a trend from noise, so this is recorded rather than dispatched."
+          "body": "This is the query's blended average position sliding relative to the actionable band — one number weighted across every page that served it, which is not the same measurement as the pair-by-pair slide reported above. The sample is not yet enough to tell a trend from noise, so it is recorded and not dispatched."
         }
       },
       "pageChangeKinds": {
         "page_impression_collapse": {
           "title": "Page impressions all but gone",
-          "body": "This page had a workable impression base last window and lost more than four fifths of it this window, by more than the spread a count that size produces on its own. Page data is not subject to query anonymization, so “all but gone” is a complete reading rather than a withheld one. Impressions vanishing wholesale usually points at the page itself — removed, blocked from crawling, redirected — so start by confirming the page is still there, still loads, and still points its canonical at itself. This briefing has not judged the cause."
+          "body": "This page had a workable impression base last window and lost four fifths of it or more this window, by more than the spread a count that size produces on its own. Page data is not subject to query anonymization, so “all but gone” is a complete reading rather than a withheld one. Impressions vanishing wholesale usually points at the page itself — removed, blocked from crawling, redirected — so start by confirming the page is still there, still loads, and still points its canonical at itself. This briefing has not judged the cause."
         },
         "page_click_decline": {
           "title": "Page clicks fell",
@@ -2299,6 +2299,10 @@
         }
       },
       "pageActionKinds": {
+        "page_impression_collapse": {
+          "title": "Confirm this page is still there",
+          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. Impressions vanishing wholesale usually points at the page itself: check that it still loads, that crawling is not blocked, that its canonical still points at itself, and that it has not been turned into a redirect. This briefing has not judged the cause, and has attributed it to no query."
+        },
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
           "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. This briefing has not attributed the decline to any query."

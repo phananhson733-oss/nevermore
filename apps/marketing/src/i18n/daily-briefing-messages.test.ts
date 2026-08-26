@@ -5,6 +5,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { DAILY_BRIEFING_PAGE_CHANGE_LANES } from "@sf/public-tools";
+
 import en from "./messages/en.json";
 import zh from "./messages/zh.json";
 
@@ -43,11 +45,14 @@ const CHANGE_KINDS = [
   "first_observed",
 ] as const;
 
-/** Page-dimension kinds. Every one of them is dispatchable, unlike the site ones. */
-const PAGE_CHANGE_KINDS = [
-  "page_click_decline",
-  "page_first_observed",
-] as const;
+/**
+ * Page-dimension kinds. Every one of them is dispatchable, unlike the site ones.
+ *
+ * Read from the engine rather than written out here. As a hand-kept list it
+ * went stale the moment a lane was added — the guard stayed green while the
+ * new kind had no action copy and rendered its message key on screen.
+ */
+const PAGE_CHANGE_KINDS = DAILY_BRIEFING_PAGE_CHANGE_LANES;
 
 const OBSERVATION_BANDS = [
   "page_one",
@@ -427,7 +432,11 @@ describe("Daily Briefing message catalogs", () => {
       );
     }
     const pageLanes = recordAt(namespace, "evidence.paths.pageLanes");
-    for (const key of ["pageClickDecline", "pageFirstObserved"] as const) {
+    for (const key of [
+      "pageImpressionCollapse",
+      "pageClickDecline",
+      "pageFirstObserved",
+    ] as const) {
       const lane = pageLanes[key] as Readonly<Record<string, string>>;
       expect(lane, `missing page path ${key}`).toEqual(expect.any(Object));
       expect(lane.requirement, `${key}.requirement`).toEqual(expect.any(String));
