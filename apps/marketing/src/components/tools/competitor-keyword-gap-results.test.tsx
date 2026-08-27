@@ -496,7 +496,7 @@ describe("CompetitorKeywordGapResults", () => {
     expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
   });
 
-  it("renders all four GSC states, labels evidence basis, and never promotes query-page totals", async () => {
+  it("names the three GSC states a number cannot state, labels evidence basis, and never promotes query-page totals", async () => {
     const rows = [
       BASE.result.rows[0]!,
       rowWithGsc(
@@ -562,15 +562,24 @@ describe("CompetitorKeywordGapResults", () => {
     const strong = tableRow(host, "strong query");
     const pageUnread = tableRow(host, "page sample unread");
 
-    expect(observed.textContent).toContain("gsc.observed_weak");
+    // Observed-weak states itself with its numbers and no pill. "Has
+    // impressions" is the vaguest possible reading of the two chips directly
+    // under it, both of which are the measurements the state was derived from.
+    // Its basis label went with it, and loses nothing: the impressions and
+    // position titles already say these are EXACT-query readings, which is
+    // what `evidenceBasis.query` named.
+    expect(observed.querySelector("[data-gsc-status]")).toBeNull();
+    expect(observed.textContent).not.toContain("gsc.observed_weak");
+    expect(observed.textContent).toContain(
+      "gsc.impressionsLine:impressions=318",
+    );
+    expect(observed.textContent).toContain("gsc.positionChip:position=34");
     expect(observed.textContent).not.toContain("gsc.evidenceBasis.query");
-    expect(
-      observed.querySelector("[data-gsc-status]")?.getAttribute("aria-label"),
-    ).toContain("gsc.evidenceBasis.query");
     expect(observed.textContent).toContain(
       "gsc.pageStatus.observed_sufficient",
     );
     expect(observed.textContent).not.toContain("gsc.pageMetricLine");
+    expect(pageOnly.querySelector("[data-gsc-status]")).toBeNull();
     expect(pageOnly.textContent).toContain("gsc.evidenceBasis.query_page");
     expect(pageOnly.textContent).toContain("gsc.pageStatus.observed_partial");
     expect(pageOnly.textContent).not.toContain("gsc.impressionsLine");
@@ -632,23 +641,28 @@ describe("CompetitorKeywordGapResults", () => {
       withResult({ rows: [malformedQueryPair, malformedPagePair] }),
     );
 
-    // Impressions and the position are two separate readings now that the pill
-    // carries one of them, so a missing position withholds the position alone
-    // rather than the impressions the sample really did report.
+    // Impressions and the position are two separate readings, so a missing
+    // position withholds the position alone rather than the impressions the
+    // sample really did report. One of the two is still a reading on screen,
+    // which is all the observed-weak state has to say, so the pill stays off.
     const missingPosition = tableRow(host, "missing query position");
     expect(missingPosition.textContent).toContain(
       "gsc.impressionsLine:impressions=12",
     );
     expect(missingPosition.textContent).not.toContain("gsc.statusWithPosition");
-    expect(
-      missingPosition.querySelector("[data-gsc-status]")?.textContent,
-    ).toBe("gsc.observed_weak");
+    expect(missingPosition.querySelector("[data-gsc-status]")).toBeNull();
     expect(missingPosition.textContent).toContain(
       "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
     );
-    expect(tableRow(host, "missing page position").textContent).not.toContain(
-      "gsc.pageMetricLine",
-    );
+    // Both halves of the page pair are needed to print it, and this row has
+    // one. With no query reading either, NOTHING was measured on screen -- so
+    // the state pill is the only thing this cell can say, and it comes back.
+    // A malformed payload gets a vague answer; an empty cell would be worse.
+    const missingPagePosition = tableRow(host, "missing page position");
+    expect(missingPagePosition.textContent).not.toContain("gsc.pageMetricLine");
+    expect(
+      missingPagePosition.querySelector("[data-gsc-status]")?.textContent,
+    ).toBe("gsc.observed_weak");
     expect(host.textContent).not.toContain("position=0");
     expect(host.textContent).not.toContain("impressions=0");
   });
@@ -943,19 +957,29 @@ describe("CompetitorKeywordGapResults", () => {
     // average position welded on with a separator, which put a measurement
     // inside a state and left a dangling "·" whenever the number was absent.
     expect(pill("strong pill")?.textContent).toBe("gsc.observed_strong");
-    expect(pill("weak pill")?.textContent).toBe("gsc.observed_weak");
-    expect(pill("pill without position")?.textContent).toBe(
-      "gsc.observed_weak",
-    );
     expect(pill("keyword 04")?.textContent).toBe(
       "gsc.not_observed_in_gsc_query_sample",
     );
     expect(pill("pill unread")?.textContent).toBe(
       "gsc.gsc_query_sample_not_read",
     );
-    for (const keyword of ["strong pill", "weak pill"]) {
-      expect(pill(keyword)?.textContent).not.toContain("position");
-    }
+    expect(pill("strong pill")?.textContent).not.toContain("position");
+    // Those three say something no chip below them can: a band drawn across
+    // two thresholds, and two states that exist because there is no reading to
+    // show. Observed-weak is the leftover, and both of these rows print the
+    // reading it was derived from -- one on its own chips, one on its page
+    // line -- so the pill is a scan line that returns nothing.
+    expect(pill("weak pill")).toBeNull();
+    expect(pill("pill without position")).toBeNull();
+    expect(tableRow(host, "weak pill").textContent).not.toContain(
+      "gsc.observed_weak",
+    );
+    expect(tableRow(host, "pill without position").textContent).not.toContain(
+      "gsc.observed_weak",
+    );
+    expect(tableRow(host, "pill without position").textContent).toContain(
+      "gsc.pageMetricLine:impressions=12,position=18",
+    );
 
     // The position is its own chip, and only where there is one to show.
     expect(positionChip("strong pill")?.textContent).toBe(
@@ -979,8 +1003,6 @@ describe("CompetitorKeywordGapResults", () => {
       "gsc.positionTitle",
     );
     expect(pill("strong pill")?.hasAttribute("title")).toBe(false);
-    expect(pill("weak pill")?.hasAttribute("title")).toBe(false);
-    expect(pill("pill without position")?.hasAttribute("title")).toBe(false);
     // The state pill keeps the qualification that is about the STATE.
     expect(pill("keyword 04")?.getAttribute("title")).toBe(
       "gsc.notObservedTitle",
@@ -991,7 +1013,6 @@ describe("CompetitorKeywordGapResults", () => {
 
     // Tone still comes from the state alone; the position never changes it.
     expect(pill("strong pill")?.className).toContain("text-brand-success");
-    expect(pill("weak pill")?.className).toContain("text-brand-warning");
     expect(pill("keyword 04")?.className).toContain("text-brand-error");
     expect(pill("pill unread")?.className).toContain(
       "text-text-dark-secondary",
