@@ -915,7 +915,7 @@
       },
       "legend": {
         "dfsMeans": "= third-party keyword data, sampled by this run",
-        "gscMeans": "= your own Search Console, 28-day window"
+        "gscMeans": "= your own Search Console, 28-day window, for this term as an exact query"
       },
       "boundaries": {
         "title": "Evidence boundaries",
@@ -931,7 +931,7 @@
         "observed_weak": "Has impressions",
         "not_observed_in_gsc_query_sample": "Not in sample",
         "gsc_query_sample_not_read": "GSC not read",
-        "positionTitle": "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
+        "positionTitle": "Average position for this keyword as an EXACT query: impression-weighted across the 28-day Search Console window, which ends three days behind today. A “contains” filter in Search Console shows a much larger number, because that sums every query containing the term.",
         "notObservedTitle": "Not in this run's 28-day Search Console sample. Anonymized queries never enter that sample, so this is not evidence the keyword has no impressions.",
         "evidenceBasis": {
           "query": "Exact-query evidence",
@@ -944,6 +944,7 @@
           "gsc_query_page_sample_not_read": "Page sample not fully read"
         },
         "impressionsLine": "{impressions} impressions",
+        "impressionsTitle": "Impressions for this keyword as an EXACT query, across the 28-day Search Console window. A “contains” filter in Search Console shows a much larger number, because that sums every query containing the term.",
         "positionChip": "avg position {position}",
         "pageMetricLine": "Page evidence: {impressions} impressions · avg position {position}"
       },

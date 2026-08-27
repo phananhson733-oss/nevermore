@@ -63,6 +63,7 @@ const COMPETITOR_GAP_RESULT_REQUIRED_PATHS = [
   "gsc.pageStatus.not_observed_in_gsc_query_page_sample",
   "gsc.pageStatus.gsc_query_page_sample_not_read",
   "gsc.notObservedTitle",
+  "gsc.impressionsTitle",
   "gsc.impressionsLine",
   "gsc.pageMetricLine",
   "sort.impressions",

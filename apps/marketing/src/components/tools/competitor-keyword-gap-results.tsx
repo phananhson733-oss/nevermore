@@ -279,7 +279,7 @@ function ResultsTable({
       className={`${CARD} relative left-1/2 w-[calc(100vw-32px)] max-w-[1440px] -translate-x-1/2`}
     >
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3
             id="competitor-keyword-gap-table-title"
             className="text-[16px] font-semibold text-text-dark-primary"
@@ -289,11 +289,16 @@ function ResultsTable({
           <div className="mt-1 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {t("table.subtitle")}
           </div>
-        </div>
-        <div className="flex flex-wrap items-start gap-3">
+          {/*
+            The legend belongs under the sentence it qualifies, not opposite it.
+            Across the header from the title it read as a second heading and sat
+            further from the badges it explains than from the export button it
+            has nothing to do with. Left-aligned under the subtitle, it is the
+            next line a reader takes in after being told what the table is.
+          */}
           <div
             data-table-legend
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] leading-[1.6] text-text-dark-secondary"
+            className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] leading-[1.6] text-text-dark-secondary"
           >
             <span className={`${COLUMN_BADGE} !ml-0 ${COLUMN_BADGE_TONE.dfs}`}>
               {t("sources.short.dfs")}
@@ -305,8 +310,8 @@ function ResultsTable({
             </span>
             <span>{t("legend.gscMeans")}</span>
           </div>
-          <CsvExportButton result={result} t={t} />
         </div>
+        <CsvExportButton result={result} t={t} />
       </div>
 
       {/*
