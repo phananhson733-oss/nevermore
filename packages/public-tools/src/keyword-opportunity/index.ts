@@ -57,5 +57,6 @@ export {
 } from "./report.ts";
 export type {
   KeywordOpportunityObservation,
+  KeywordOpportunityObservationV3,
   KeywordOpportunityReportInput,
 } from "./report.ts";

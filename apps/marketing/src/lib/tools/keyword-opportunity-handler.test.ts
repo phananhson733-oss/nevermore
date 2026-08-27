@@ -311,7 +311,12 @@ interface OpportunitiesBody {
         readonly keyword: string;
         readonly lane: string;
         readonly coverage: string;
-        readonly supportingPageUrl: string | null;
+        readonly supportingPage: {
+          readonly availability: string;
+          readonly source: string | null;
+          readonly url: string | null;
+        };
+        readonly supportingPageUrl?: string | null;
         readonly validation: {
           readonly availability: string;
           readonly providerIntent: string | null;
@@ -798,6 +803,11 @@ describe("handleKeywordContextRequest", () => {
       (candidate) => candidate.keyword === "insurance claim tracking",
     );
     expect(row?.supportingPageUrl).toBe("https://acme.example/claims");
+    expect(row?.supportingPage).toEqual({
+      availability: "available",
+      source: "lexical_page_match",
+      url: "https://acme.example/claims",
+    });
   });
 
   it("refuses rather than handing back a token it has proved stage two will reject", async () => {
@@ -1348,8 +1358,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
     expect(parsed.data.result.unavailableStages).not.toContain("gsc_coverage");
     expect(parsed.data.result.availability).toBe("partial");
-    // Coverage changes the final disposition, not the evidence plan: v2 still
-    // samples every candidate except explicit zero so the retained record is complete.
+    // Coverage changes the final disposition, not the evidence plan: the
+    // pipeline still samples every candidate except explicit zero so the
+    // retained record is complete.
     expect(sampleSerp.mock.calls[0]?.[0].keywords).toContain(
       "patient intake forms",
     );
@@ -1472,6 +1483,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const geo = parsed.data.result.rows.find((row) => row.lane === "geo");
     expect(geo?.keyword).toBe("can i submit an insurance claim the same day");
     expect(geo?.supportingPageUrl).toBe("https://acme.example/");
+    expect(geo?.supportingPage).toEqual({
+      availability: "available",
+      source: "llm_proposition_source",
+      url: "https://acme.example/",
+    });
     // Attribution says where the claim came from. It is not evidence the site
     // ranks, and this legacy token carried no inventory to check independently.
     expect(geo?.coverage).toBe("inventory_unavailable");
@@ -1503,6 +1519,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
       (candidate) => candidate.keyword === "what does the pricing page say",
     );
     expect(row?.supportingPageUrl).toBeNull();
+    expect(row?.supportingPage).toEqual({
+      availability: "unavailable",
+      source: null,
+      url: null,
+    });
     expect(row?.signals.youngDomain.state).toBe("observed");
   });
 
@@ -1667,6 +1688,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(row?.supportingPageUrl).toBe(
       "https://acme.example/insurance-claim-tracking",
     );
+    expect(row?.supportingPage).toEqual({
+      availability: "available",
+      source: "inventory_url_match",
+      url: "https://acme.example/insurance-claim-tracking",
+    });
   });
 
   it("returns a hard source failure when the SERP seam throws a stage-wide authentication error", async () => {
@@ -2048,7 +2074,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
       // able to hold the route past the platform ceiling, where the response
       // stops existing.
       expect(response.status).toBe(200);
-      expect(parsed.data.result.availability).toBe("insufficient_evidence");
+      expect(parsed.data.result.availability).toBe("available");
     } finally {
       vi.useRealTimers();
     }
@@ -2077,19 +2103,18 @@ describe("handleKeywordOpportunitiesRequest", () => {
       await vi.advanceTimersByTimeAsync(30_000);
       const response = await pending;
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
       // Traffic resolved immediately and is kept. Racing the wave as one unit
       // would have discarded it because a third resolver hung — strictly worse
       // than the per-resolver failure isolation this wave already had, where
       // one dead resolver never cost the other two their answers.
-      expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-        "observed",
-      );
+      expect(row?.signals.lowOrganicTrafficDomain.state).toBe("observed");
       // Only the resolver that ran out of budget reports unknown, and it says
-      // unknown rather than young.
-      expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+      // unknown rather than young. Because another positive signal landed, the
+      // row still reaches the reader under the monotonic decision rule.
+      expect(row?.signals.youngDomain.state).toBe("unavailable");
     } finally {
       vi.useRealTimers();
     }
@@ -2134,29 +2159,25 @@ describe("handleKeywordOpportunitiesRequest", () => {
         }),
       );
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
-      expect(incomplete?.serp.status).toBe("complete");
-      expect(incomplete?.serp.organicResults).toHaveLength(1);
+      expect(row?.serp.status).toBe("complete");
+      expect(row?.serp.organicResults).toHaveLength(1);
       expect(resolveDomainRanks).toHaveBeenCalledTimes(1);
       expect(resolveDomainTraffic).toHaveBeenCalledTimes(1);
       expect(resolveDomainRegistrations).toHaveBeenCalledTimes(1);
       if (failedStage === "registration") {
-        expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-          "observed",
-        );
+        expect(row?.signals.youngDomain.state).toBe("unavailable");
+        expect(row?.signals.lowOrganicTrafficDomain.state).toBe("observed");
       } else {
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-          "unavailable",
-        );
-        expect(incomplete?.signals.youngDomain.state).toBe("observed");
+        expect(row?.signals.lowOrganicTrafficDomain.state).toBe("unavailable");
+        expect(row?.signals.youngDomain.state).toBe("observed");
       }
     },
   );
 
-  it("does not turn provider rank zero into a v2 eligible decision", async () => {
+  it("admits provider rank zero rows when another positive signal was observed", async () => {
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
@@ -2170,17 +2191,20 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const parsed = (await response.json()) as OpportunitiesBody;
 
     expect(response.status).toBe(200);
-    expect(parsed.data.result.rows).toEqual([]);
-    expect(parsed.data.result.incomplete).toEqual([
+    expect(parsed.data.result.rows).toEqual([
       expect.objectContaining({
         keyword: "rank zero candidate",
-        reason: "low_organic_traffic_signal_unavailable",
+        decision: expect.objectContaining({
+          disposition: "eligible",
+          basis: "positive_signal_observed",
+        }),
         serp: expect.objectContaining({
           status: "complete",
           verdict: "no_serp_evidence",
         }),
       }),
     ]);
+    expect(parsed.data.result.incomplete).toEqual([]);
   });
 
   it("carries the provider intent as its own fact", async () => {
@@ -2358,7 +2382,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // shows up as an ADDED field, and a per-field assertion is blind to that.
     expect(parsed.data.run).toEqual({
       tool: "keyword_opportunity_map",
-      schemaVersion: "keyword_opportunity_map.v2",
+      schemaVersion: "keyword_opportunity_map.v3",
       mode: "public_preview",
       scope: "site",
       persistence: "none",

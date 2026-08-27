@@ -333,7 +333,7 @@ export type KeywordOpportunityWithheldReason =
   | "serp_sample_unavailable"
   /** GEO lane only: nothing on the crawled site answers the question. */
   | "no_supporting_page"
-  /** All three v2 decision signals completed and each was negative. */
+  /** All three decision signals completed and each was negative. */
   | "all_signals_not_observed";
 
 export type KeywordOpportunityAvailability =
@@ -532,7 +532,7 @@ export interface KeywordOpportunityValidation {
   readonly volume: number | null;
   readonly difficulty: number | null;
   /**
-   * Explicit v2 provider provenance. Optional only for old-bundle tolerance;
+   * Explicit provider provenance. Optional only for old-bundle tolerance;
    * new report rows carry it independently from any SERP interpretation.
    */
   readonly providerIntent?: KeywordOpportunityProviderIntent | null;
@@ -544,9 +544,9 @@ export interface KeywordOpportunityValidation {
 /** One sampled page one, reduced to the facts that decide winnability. */
 export interface KeywordOpportunitySerpEvidence {
   /**
-   * Optional only for signal-less v1 observations. When v2 signals are
-   * present, a missing status is fail-closed as incomplete, never inferred as
-   * complete.
+   * Optional only for signal-less legacy observations. When structured
+   * signals are present, a missing status is fail-closed as incomplete, never
+   * inferred as complete.
    */
   readonly status?: KeywordOpportunitySerpStatus;
   readonly failureReason?: KeywordOpportunitySerpFailureReason | null;
@@ -585,6 +585,31 @@ export interface KeywordOpportunitySerpEvidence {
   readonly isEstimate: boolean;
 }
 
+/** The evidence source that identified a page related to one candidate. */
+export type KeywordOpportunitySupportingPageSource =
+  | "gsc_observed_query_page"
+  | "lexical_page_match"
+  | "inventory_url_match"
+  | "llm_proposition_source";
+
+/**
+ * A page reference with its provenance kept explicit.
+ *
+ * `llm_proposition_source` records where the proposition came from. It is not
+ * measured coverage and must never be renamed to an observed source.
+ */
+export type KeywordOpportunitySupportingPage =
+  | {
+      readonly availability: "available";
+      readonly source: KeywordOpportunitySupportingPageSource;
+      readonly url: string;
+    }
+  | {
+      readonly availability: "unavailable";
+      readonly source: null;
+      readonly url: null;
+    };
+
 export interface KeywordOpportunityRow {
   readonly keyword: string;
   readonly lane: KeywordOpportunityLane;
@@ -599,10 +624,17 @@ export interface KeywordOpportunityRow {
   readonly aiOverview?: KeywordOpportunityAiOverviewEvidence | null;
   readonly decision?: KeywordOpportunityDecision;
   readonly coverage: KeywordOpportunityCoverage;
-  /** The crawled page that already answers this, when one does. */
+  /** Optional only while a cached v2 row is still being read. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
+  /** @deprecated Read `supportingPage`; retained for current UI compatibility. */
   readonly supportingPageUrl: string | null;
   readonly nextChecks: readonly KeywordOpportunityCheck[];
   readonly clusterId: string | null;
+}
+
+/** A row emitted by the v3 producer. */
+export interface KeywordOpportunityRowV3 extends KeywordOpportunityRow {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /** A candidate that was dropped, kept visible so the funnel stays honest. */
@@ -613,7 +645,7 @@ export interface KeywordOpportunityWithheld {
   readonly decision?: KeywordOpportunityDecision;
 }
 
-/** A v2 candidate whose required decision evidence did not complete. */
+/** A v3 candidate whose required decision evidence did not complete. */
 export interface KeywordOpportunityIncomplete {
   readonly keyword: string;
   readonly lane: KeywordOpportunityLane;
@@ -626,6 +658,16 @@ export interface KeywordOpportunityIncomplete {
   readonly aiOverview: KeywordOpportunityAiOverviewEvidence | null;
   readonly reason: KeywordOpportunityIncompleteReason;
   readonly decision: KeywordOpportunityDecision;
+  /** Optional only while a cached v2 incomplete row is still being read. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
+  /** @deprecated Read `supportingPage`; retained for v2 deployment skew. */
+  readonly supportingPageUrl?: string | null;
+}
+
+/** An incomplete row emitted by the v3 producer. */
+export interface KeywordOpportunityIncompleteV3
+  extends KeywordOpportunityIncomplete {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /**
@@ -718,7 +760,7 @@ export interface KeywordOpportunityResult {
   readonly context: KeywordOpportunityContext;
   readonly rows: readonly KeywordOpportunityRow[];
   readonly withheld: readonly KeywordOpportunityWithheld[];
-  /** Optional only so an older cached bundle can still read a v2 payload. */
+  /** Optional only so an older cached v2 bundle remains readable. */
   readonly incomplete?: readonly KeywordOpportunityIncomplete[];
   readonly clusters: readonly KeywordOpportunityCluster[];
   readonly funnel: KeywordOpportunityFunnel;
@@ -732,13 +774,22 @@ export interface KeywordOpportunityResult {
   readonly nextStepSuggestions: readonly string[];
 }
 
-/** The producer result; `incomplete` is always present, including when empty. */
-export interface KeywordOpportunityResultV2 extends KeywordOpportunityResult {
+/** The v3 producer result; structured provenance is required on every row. */
+export type KeywordOpportunityResultV3 = Omit<
+  KeywordOpportunityResult,
+  "rows" | "incomplete"
+> & {
+  readonly rows: readonly KeywordOpportunityRowV3[];
+  readonly incomplete: readonly KeywordOpportunityIncompleteV3[];
+};
+
+/** @deprecated The current producer emits `KeywordOpportunityResultV3`. */
+export type KeywordOpportunityResultV2 = KeywordOpportunityResult & {
   readonly incomplete: readonly KeywordOpportunityIncomplete[];
-}
+};
 
 export type KeywordOpportunityEnvelope = PublicToolResultEnvelope<
-  KeywordOpportunityResultV2,
+  KeywordOpportunityResultV3,
   "keyword_opportunity_map",
   "site"
 >;

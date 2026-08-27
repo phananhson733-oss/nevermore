@@ -26,7 +26,7 @@ import {
   type KeywordOpportunityBasis,
   type KeywordOpportunityContext,
   type KeywordOpportunityErrorCode,
-  type KeywordOpportunityObservation,
+  type KeywordOpportunityObservationV3,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
   type KeywordOpportunityProviderIntent,
@@ -333,7 +333,7 @@ export interface KeywordOpportunityDependencies {
     readonly marketCode: string;
     readonly languageCode: string;
   }) => Promise<readonly KeywordSerpSampleResult[]>;
-  /** Optional for injected/pre-v2 callers; production always supplies it. */
+  /** Optional for injected legacy callers; production always supplies it. */
   readonly interpretSerpEvidence?: (
     inputs: readonly KeywordSerpInterpretationInput[],
   ) => Promise<readonly KeywordSerpInterpretation[]>;
@@ -407,7 +407,7 @@ function isLegacyCoverageRead(
   return Array.isArray(read);
 }
 
-/** Preserve existing injected query-only readers while production returns v2. */
+/** Preserve injected query-only readers while production uses a structured read. */
 function normalizeCoverageRead(
   read: KeywordCoverageRead | readonly KeywordCoverageQueryRow[],
 ): KeywordCoverageRead {
@@ -949,10 +949,10 @@ export async function handleKeywordOpportunitiesRequest(
       };
     });
 
-    // v2 samples the immutable deduplicated plan in input order. The only
-    // intentional omission is a provider-priced numeric zero; provider silence
-    // and existing-page evidence still receive the same SERP facts as every
-    // other candidate.
+    // The current pipeline samples the immutable deduplicated plan in input
+    // order. The only intentional omission is a provider-priced numeric zero;
+    // provider silence and existing-page evidence still receive the same SERP
+    // facts as every other candidate.
     const sampleTargets = priced.filter(
       (row) => row.validation.availability !== "explicit_zero",
     );
@@ -989,8 +989,8 @@ export async function handleKeywordOpportunitiesRequest(
           };
         }
         // The optional branch is the ten-minute compatibility window for an
-        // injected/pre-v2 producer. Task 8A production outcomes always carry the
-        // status explicitly.
+        // injected legacy producer. Current production outcomes always carry
+        // the status explicitly.
         const status = returned.status ?? "complete";
         return status === "complete"
           ? {
@@ -1261,7 +1261,7 @@ export async function handleKeywordOpportunitiesRequest(
       ]),
     );
 
-    const observations: KeywordOpportunityObservation[] = priced.map((row) => {
+    const observations: KeywordOpportunityObservationV3[] = priced.map((row) => {
       const attempted = samplesByKeyword.get(
         keywordVolumeKey(row.candidate.keyword),
       );
@@ -1358,7 +1358,7 @@ export async function handleKeywordOpportunitiesRequest(
         signals: enriched.signals,
         aiOverview,
         coverage: row.coverage.state,
-        supportingPageUrl: row.coverage.supportingPageUrl,
+        supportingPage: row.coverage.supportingPage,
       };
     });
 

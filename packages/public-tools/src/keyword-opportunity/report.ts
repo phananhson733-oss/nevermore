@@ -1,6 +1,6 @@
 // @input  -- the site context plus every per-candidate observation the pipeline gathered
 // @output -- the finished result, its funnel, and an availability the surface must obey
-// @pos    -- projects observations through the v2 decision contract into three result lists
+// @pos    -- projects observations through the v3 decision contract into three result lists
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolResult } from "../contract.ts";
@@ -28,14 +28,15 @@ import type {
   KeywordOpportunityDecision,
   KeywordOpportunityEnvelope,
   KeywordOpportunityFunnel,
-  KeywordOpportunityIncomplete,
+  KeywordOpportunityIncompleteV3,
   KeywordOpportunityIncompleteReason,
   KeywordOpportunityLane,
-  KeywordOpportunityResultV2,
-  KeywordOpportunityRow,
+  KeywordOpportunityResultV3,
+  KeywordOpportunityRowV3,
   KeywordOpportunitySerpIntentEvidence,
   KeywordOpportunitySerpEvidence,
   KeywordOpportunitySignals,
+  KeywordOpportunitySupportingPage,
   KeywordOpportunityValidation,
   KeywordOpportunityWithheld,
   KeywordOpportunityWithheldReason,
@@ -61,12 +62,21 @@ export interface KeywordOpportunityObservation {
   readonly propositionIndex: number | null;
   readonly validation: KeywordOpportunityValidation;
   readonly serp: KeywordOpportunitySerpEvidence;
-  /** Present on v2 observations; absent only while a v1 producer migrates. */
+  /** Present on v3 observations; absent only on the legacy signal-less path. */
   readonly serpIntent?: KeywordOpportunitySerpIntentEvidence | null;
   readonly signals?: KeywordOpportunitySignals;
   readonly aiOverview?: KeywordOpportunityAiOverviewObservation | null;
   readonly coverage: KeywordOpportunityCoverage;
-  readonly supportingPageUrl: string | null;
+  /** Optional only for a legacy observation admitted during deployment skew. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
+  /** @deprecated A legacy observation may carry only this unproven URL. */
+  readonly supportingPageUrl?: string | null;
+}
+
+/** The observation shape required from the v3 handler. */
+export interface KeywordOpportunityObservationV3
+  extends KeywordOpportunityObservation {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /**
@@ -116,12 +126,43 @@ export interface KeywordOpportunityReportInput {
 function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   if (isKeywordAlreadyCovered(observation.coverage)) return false;
   if (observation.lane === "geo") {
-    return observation.supportingPageUrl !== null;
+    return observation.supportingPage?.availability === "available" ||
+      (observation.supportingPage === undefined &&
+        observation.supportingPageUrl !== null &&
+        observation.supportingPageUrl !== undefined);
   }
   return (
     observation.validation.availability === "available" &&
     isKeywordWinnable(observation.serp)
   );
+}
+
+function toSupportingPageUrl(
+  supportingPage: KeywordOpportunitySupportingPage,
+): string | null {
+  return supportingPage.availability === "available"
+    ? supportingPage.url
+    : null;
+}
+
+function observationSupportingPage(
+  observation: KeywordOpportunityObservation,
+): KeywordOpportunitySupportingPage {
+  return (
+    observation.supportingPage ?? {
+      availability: "unavailable",
+      source: null,
+      url: null,
+    }
+  );
+}
+
+function observationSupportingPageUrl(
+  observation: KeywordOpportunityObservation,
+): string | null {
+  return observation.supportingPage === undefined
+    ? (observation.supportingPageUrl ?? null)
+    : toSupportingPageUrl(observation.supportingPage);
 }
 
 function hasObservedExistingPage(
@@ -148,7 +189,7 @@ type KeywordOpportunityClassification =
     };
 
 /**
- * Classify v2 evidence while retaining a narrow legacy path for old bundles.
+ * Classify v3 evidence while retaining a narrow legacy path for old bundles.
  * New producers always supply `signals`; their unknowns therefore reach the
  * incomplete section instead of inheriting the old binary shown/withheld gate.
  */
@@ -349,13 +390,13 @@ function resolveAvailability(
 /** Assemble the finished result from observations that are already judged. */
 export function buildKeywordOpportunityResult(
   input: KeywordOpportunityReportInput,
-): KeywordOpportunityResultV2 {
+): KeywordOpportunityResultV3 {
   const eligible: Array<{
     readonly observation: KeywordOpportunityObservation;
     readonly decision: KeywordOpportunityDecision | null;
   }> = [];
   const withheld: KeywordOpportunityWithheld[] = [];
-  const incomplete: KeywordOpportunityIncomplete[] = [];
+  const incomplete: KeywordOpportunityIncompleteV3[] = [];
 
   for (const observation of input.observations) {
     const classification = classifyObservation(
@@ -386,6 +427,8 @@ export function buildKeywordOpportunityResult(
         aiOverview: publicAiOverviewEvidence(observation.aiOverview),
         reason: classification.reason,
         decision: classification.decision,
+        supportingPage: observationSupportingPage(observation),
+        supportingPageUrl: observationSupportingPageUrl(observation),
       });
     }
   }
@@ -393,7 +436,7 @@ export function buildKeywordOpportunityResult(
   const shown = eligible.map(({ observation }) => observation);
   const clusters = clusterKeywords(shown.map((row) => row.keyword));
   const clusterIds = keywordClusterIndex(clusters);
-  const rows: KeywordOpportunityRow[] = eligible.map(
+  const rows: KeywordOpportunityRowV3[] = eligible.map(
     ({ observation, decision }) => ({
       keyword: observation.keyword,
       lane: observation.lane,
@@ -411,7 +454,8 @@ export function buildKeywordOpportunityResult(
             decision,
           }),
       coverage: observation.coverage,
-      supportingPageUrl: observation.supportingPageUrl,
+      supportingPage: observationSupportingPage(observation),
+      supportingPageUrl: observationSupportingPageUrl(observation),
       nextChecks: keywordNextChecks(observation),
       clusterId: clusterIds.get(observation.keyword) ?? null,
     }),

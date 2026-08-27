@@ -4,7 +4,11 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { normalizeQuery } from "../site-baseline/normalize.ts";
-import type { KeywordOpportunityCoverage } from "./types.ts";
+import type {
+  KeywordOpportunityCoverage,
+  KeywordOpportunitySupportingPage,
+  KeywordOpportunitySupportingPageSource,
+} from "./types.ts";
 
 /**
  * Impressions a query needs before its position carries any weight.
@@ -52,7 +56,25 @@ export interface KeywordCoverageInventory {
 
 export interface KeywordCoverageObservation {
   readonly state: KeywordOpportunityCoverage;
+  readonly supportingPage: KeywordOpportunitySupportingPage;
   readonly supportingPageUrl: string | null;
+}
+
+function availableSupportingPage(
+  source: KeywordOpportunitySupportingPageSource,
+  url: string,
+): KeywordOpportunitySupportingPage {
+  return { availability: "available", source, url };
+}
+
+function unavailableSupportingPage(): KeywordOpportunitySupportingPage {
+  return { availability: "unavailable", source: null, url: null };
+}
+
+function toSupportingPageUrl(
+  supportingPage: KeywordOpportunitySupportingPage,
+): string | null {
+  return supportingPage.availability === "available" ? supportingPage.url : null;
 }
 
 const TOKEN_PATTERN = /[\p{Letter}\p{Number}]+/gu;
@@ -222,7 +244,7 @@ function relatedInventoryPage(
  *
  * `attributedPageUrl` is the page the generator said the candidate came from —
  * for a proposition-derived term, the page the proposition was read off. It
- * only ever fills in `supportingPageUrl`, and never moves the coverage state:
+ * is labelled `llm_proposition_source` and never moves the coverage state:
  * where a claim originated says nothing about whether the site ranks or has a
  * sitemap URL for it.
  * Token overlap wins when both are available, because it is computed from what
@@ -245,25 +267,60 @@ export function observeKeywordCoverage(
   inventory: KeywordCoverageInventory | null = null,
 ): KeywordCoverageObservation {
   const exact = exactIndex?.get(normalizeQuery(keyword));
+  const related = relatedPage(keyword, pages);
+  const higherPriorityPage =
+    exact?.supportingPageUrl !== null && exact?.supportingPageUrl !== undefined
+      ? availableSupportingPage(
+          "gsc_observed_query_page",
+          exact.supportingPageUrl,
+        )
+      : related !== null
+        ? availableSupportingPage("lexical_page_match", related)
+        : null;
+  const attributedOrUnavailable =
+    attributedPageUrl === null
+      ? unavailableSupportingPage()
+      : availableSupportingPage(
+          "llm_proposition_source",
+          attributedPageUrl,
+        );
+
   if (
     exact !== undefined &&
     exact.impressions >= KEYWORD_COVERAGE_MIN_IMPRESSIONS
   ) {
+    let supportingPage = higherPriorityPage ?? attributedOrUnavailable;
+    if (
+      higherPriorityPage === null &&
+      inventory !== null &&
+      inventory.fetched === true &&
+      inventory.documentsRead > 0
+    ) {
+      const inventoryMatch = relatedInventoryPage(keyword, inventory.urls);
+      if (inventoryMatch.url !== null) {
+        supportingPage = availableSupportingPage(
+          "inventory_url_match",
+          inventoryMatch.url,
+        );
+      }
+    }
     return {
       state:
         exact.weightedPosition <= KEYWORD_COVERAGE_STRONG_POSITION
           ? "observed_exact_strong"
           : "observed_exact_weak",
-      supportingPageUrl:
-        exact.supportingPageUrl ??
-        relatedPage(keyword, pages) ??
-        attributedPageUrl,
+      supportingPage,
+      supportingPageUrl: toSupportingPageUrl(supportingPage),
     };
   }
 
-  const related = relatedPage(keyword, pages);
   if (related !== null) {
-    return { state: "related_coverage_unverified", supportingPageUrl: related };
+    const supportingPage = higherPriorityPage ?? attributedOrUnavailable;
+    return {
+      state: "related_coverage_unverified",
+      supportingPage,
+      supportingPageUrl: toSupportingPageUrl(supportingPage),
+    };
   }
 
   if (
@@ -271,17 +328,25 @@ export function observeKeywordCoverage(
     inventory.fetched !== true ||
     inventory.documentsRead <= 0
   ) {
+    const supportingPage = higherPriorityPage ?? attributedOrUnavailable;
     return {
       state: "inventory_unavailable",
-      supportingPageUrl: attributedPageUrl,
+      supportingPage,
+      supportingPageUrl: toSupportingPageUrl(supportingPage),
     };
   }
 
   const inventoryMatch = relatedInventoryPage(keyword, inventory.urls);
+  const supportingPage =
+    higherPriorityPage ??
+    (inventoryMatch.url === null
+      ? attributedOrUnavailable
+      : availableSupportingPage("inventory_url_match", inventoryMatch.url));
   if (inventoryMatch.url !== null) {
     return {
       state: "possible_existing_page",
-      supportingPageUrl: inventoryMatch.url,
+      supportingPage,
+      supportingPageUrl: toSupportingPageUrl(supportingPage),
     };
   }
 
@@ -292,16 +357,15 @@ export function observeKeywordCoverage(
   ) {
     return {
       state: "inventory_truncated",
-      supportingPageUrl: attributedPageUrl,
+      supportingPage,
+      supportingPageUrl: toSupportingPageUrl(supportingPage),
     };
   }
 
   return {
     state: "not_observed_in_bounded_inventory",
-    // Attribution alone leaves the state untouched but still names the page,
-    // which is what the GEO lane is judged on: nothing here says the site
-    // ranks, only that this is where the claim behind the question came from.
-    supportingPageUrl: attributedPageUrl,
+    supportingPage,
+    supportingPageUrl: toSupportingPageUrl(supportingPage),
   };
 }
 

@@ -7,6 +7,7 @@ import {
 } from "./report.ts";
 import type {
   KeywordOpportunityObservation,
+  KeywordOpportunityObservationV3,
   KeywordOpportunityReportInput,
 } from "./report.ts";
 import {
@@ -18,6 +19,7 @@ import type {
   KeywordOpportunityContext,
   KeywordOpportunityResult,
   KeywordOpportunitySerpEvidence,
+  KeywordOpportunitySupportingPage,
   KeywordOpportunityValidation,
 } from "./types.ts";
 
@@ -80,10 +82,29 @@ const KEYWORDS = [
   "budget forecast",
 ] as const;
 
+function availableSupportingPage(
+  source: KeywordOpportunitySupportingPage["source"],
+  url: string,
+): KeywordOpportunitySupportingPage {
+  if (source === null) {
+    throw new Error(
+      "supporting page source must be non-null for an available page",
+    );
+  }
+  return { availability: "available", source, url };
+}
+
+function unavailableSupportingPage(): KeywordOpportunitySupportingPage {
+  return { availability: "unavailable", source: null, url: null };
+}
+
 function seo(
   keyword: string,
-  overrides: Partial<KeywordOpportunityObservation> = {},
-): KeywordOpportunityObservation {
+  overrides: Partial<KeywordOpportunityObservationV3> & {
+    readonly supportingPageUrl?: string | null;
+  } = {},
+): KeywordOpportunityObservationV3 {
+  const supportingPageUrl = overrides.supportingPageUrl;
   return {
     keyword,
     lane: "seo",
@@ -93,15 +114,26 @@ function seo(
     validation: MEASURED,
     serp: WINNABLE,
     coverage: "not_observed_in_gsc_query_sample",
-    supportingPageUrl: null,
+    supportingPage:
+      supportingPageUrl === undefined
+        ? unavailableSupportingPage()
+        : supportingPageUrl === null
+          ? unavailableSupportingPage()
+          : availableSupportingPage(
+              "llm_proposition_source",
+              supportingPageUrl,
+            ),
     ...overrides,
   };
 }
 
 function geo(
   keyword: string,
-  overrides: Partial<KeywordOpportunityObservation> = {},
-): KeywordOpportunityObservation {
+  overrides: Partial<KeywordOpportunityObservationV3> & {
+    readonly supportingPageUrl?: string | null;
+  } = {},
+): KeywordOpportunityObservationV3 {
+  const supportingPageUrl = overrides.supportingPageUrl;
   return {
     keyword,
     lane: "geo",
@@ -111,7 +143,18 @@ function geo(
     validation: NO_PROVIDER_DATA,
     serp: KEYWORD_OPPORTUNITY_UNSAMPLED,
     coverage: "not_observed_in_gsc_query_sample",
-    supportingPageUrl: "https://acme.test/guides/how-billing-works",
+    supportingPage:
+      supportingPageUrl === undefined
+        ? availableSupportingPage(
+            "llm_proposition_source",
+            "https://acme.test/guides/how-billing-works",
+          )
+        : supportingPageUrl === null
+          ? unavailableSupportingPage()
+          : availableSupportingPage(
+              "llm_proposition_source",
+              supportingPageUrl,
+            ),
     ...overrides,
   };
 }
@@ -391,8 +434,8 @@ describe("buildKeywordOpportunityResult funnel", () => {
     const result = buildKeywordOpportunityResult(input({ observations }));
 
     expect(result.funnel.alreadyCovered).toBe(1);
-    // Legacy rank verdicts carry no v2 attempt status and therefore do not
-    // claim that page-one sampling completed.
+    // Legacy rank verdicts carry no structured attempt status and therefore
+    // do not claim that page-one sampling completed.
     expect(result.funnel.serpSampled).toBe(0);
     expect(result.funnel.winnableEvidence).toBe(4);
   });
@@ -543,6 +586,40 @@ describe("buildKeywordOpportunityResult rows", () => {
       validation: NO_PROVIDER_DATA,
       serp: KEYWORD_OPPORTUNITY_UNSAMPLED,
       coverage: "not_observed_in_gsc_query_sample",
+      supportingPageUrl: "https://acme.test/guides/how-billing-works",
+    });
+  });
+
+  it("carries structured supporting-page provenance onto eligible rows", () => {
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [geo("how do i bill a client", { propositionIndex: 2 })],
+      }),
+    );
+
+    expect((result.rows[0] as Record<string, unknown> | undefined)?.[
+      "supportingPage"
+    ]).toEqual({
+      availability: "available",
+      source: "llm_proposition_source",
+      url: "https://acme.test/guides/how-billing-works",
+    });
+  });
+
+  it("keeps a legacy GEO URL readable without inventing structured provenance", () => {
+    const current = geo("how do i bill a client", { propositionIndex: 2 });
+    const { supportingPage: _structuredPage, ...legacyFields } = current;
+    const legacyObservation = {
+      ...legacyFields,
+      supportingPageUrl: "https://acme.test/guides/how-billing-works",
+    } as unknown as KeywordOpportunityObservation;
+
+    const result = buildKeywordOpportunityResult(
+      input({ observations: [legacyObservation] }),
+    );
+
+    expect(result.rows[0]).toMatchObject({
+      supportingPage: unavailableSupportingPage(),
       supportingPageUrl: "https://acme.test/guides/how-billing-works",
     });
   });
@@ -983,7 +1060,7 @@ describe("buildKeywordOpportunityPayload", () => {
   });
 });
 
-describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
+describe("buildKeywordOpportunityResult v3 evidence decisions", () => {
   const observedSignal = {
     state: "observed" as const,
     observation: {
@@ -1027,10 +1104,12 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
     promptVersion: "aio-answer.v1",
   };
 
-  function v2Seo(
+  function v3Seo(
     keyword: string,
-    overrides: Partial<KeywordOpportunityObservation> = {},
-  ): KeywordOpportunityObservation {
+    overrides: Partial<KeywordOpportunityObservationV3> & {
+      readonly supportingPageUrl?: string | null;
+    } = {},
+  ): KeywordOpportunityObservationV3 {
     return seo(keyword, {
       validation: {
         ...MEASURED,
@@ -1067,15 +1146,15 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
     const result = buildKeywordOpportunityResult(
       input({
         observations: [
-          v2Seo("eligible keyword"),
-          v2Seo("provider silence keyword", {
+          v3Seo("eligible keyword"),
+          v3Seo("provider silence keyword", {
             validation: { ...NO_PROVIDER_DATA, providerIntent: null },
           }),
-          v2Seo("zero keyword", { validation: EXPLICIT_ZERO }),
-          v2Seo("covered keyword", { coverage: "observed_exact_strong" }),
-          v2Seo("negative keyword", { signals: negativeSignals }),
-          v2Seo("incomplete keyword", { signals: incompleteSignals }),
-          v2Seo("serp failure keyword", {
+          v3Seo("zero keyword", { validation: EXPLICIT_ZERO }),
+          v3Seo("covered keyword", { coverage: "observed_exact_strong" }),
+          v3Seo("negative keyword", { signals: negativeSignals }),
+          v3Seo("incomplete keyword", { signals: incompleteSignals }),
+          v3Seo("serp failure keyword", {
             serp: {
               ...WINNABLE,
               status: "unavailable",
@@ -1130,7 +1209,7 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
 
   it("carries provider and separately-provenanced SERP intent, organic title and URL, signals, AI evidence, and decision basis", () => {
     const result = buildKeywordOpportunityResult(
-      input({ observations: [v2Seo("evidence keyword")] }),
+      input({ observations: [v3Seo("evidence keyword")] }),
     );
     const row = result.rows[0];
 
@@ -1169,11 +1248,11 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
     expect(result.incomplete).toEqual([]);
   });
 
-  it("lets complete positive v2 signals supersede the v1 contested and GEO supporting-page gates", () => {
+  it("lets complete positive v3 signals supersede the legacy contested and GEO supporting-page gates", () => {
     const result = buildKeywordOpportunityResult(
       input({
         observations: [
-          v2Seo("contested but positive", {
+          v3Seo("contested but positive", {
             serp: {
               ...CONTESTED,
               status: "complete",
@@ -1182,7 +1261,7 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
               organicResults: [],
             },
           }),
-          v2Seo("GEO without supporting page", {
+          v3Seo("GEO without supporting page", {
             lane: "geo",
             discoveryBasis: "site_proposition",
             questionForm: true,
@@ -1201,11 +1280,11 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
     expect(result.incomplete).toEqual([]);
   });
 
-  it("fails closed when v2 signals are present but SERP status is omitted", () => {
+  it("fails closed when v3 signals are present but SERP status is omitted", () => {
     const result = buildKeywordOpportunityResult(
       input({
         observations: [
-          v2Seo("missing status keyword", {
+          v3Seo("missing status keyword", {
             serp: {
               ...WINNABLE,
               failureReason: null,
@@ -1228,5 +1307,26 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
         }),
       }),
     ]);
+  });
+
+  it("carries structured supporting-page provenance onto incomplete v3 rows", () => {
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [
+          v3Seo("incomplete keyword", {
+            signals: incompleteSignals,
+            supportingPageUrl: "https://acme.test/pricing",
+          }),
+        ],
+      }),
+    );
+
+    expect((result.incomplete[0] as Record<string, unknown> | undefined)?.[
+      "supportingPage"
+    ]).toEqual({
+      availability: "available",
+      source: "llm_proposition_source",
+      url: "https://acme.test/pricing",
+    });
   });
 });
