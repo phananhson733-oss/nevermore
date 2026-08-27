@@ -111,6 +111,25 @@ describe("buildCopyReport", () => {
     expect(text).toContain("| `Technical` | 8/10 |");
   });
 
+  it("keeps a query-free run's reason right when the page URL alone blows the budget", () => {
+    // The three shapes are tried richest first. Before the last one was
+    // returned unconditionally, a URL this long fell through to the branch
+    // written about a query that WAS named — printing "the submitted page was
+    // collected, but its text was not carried", which is a different failure
+    // and not this run's.
+    const text = buildCopyReport({
+      targetUrl: `https://example.com/${"a".repeat(COPY_REPORT_MAX_BYTES)}`,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      limitationText,
+    });
+
+    expect(text).toContain("No target query was submitted");
+    expect(text).not.toContain("its text was not carried");
+    expect(text).not.toContain("was not collected as a readable HTML response");
+  });
+
   it("puts the sections in the order the reader needs them", () => {
     const text = report();
     const order = [

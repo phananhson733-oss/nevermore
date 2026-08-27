@@ -61,10 +61,12 @@ export function OnPageHistoryPanel({
                 {entry.targetQueries.join(", ")}
               </span>
               <span className="ml-auto font-mono tabular-nums text-text-dark-secondary">
-                {t("focus.short", {
-                  covered: entry.focus.covered,
-                  applicable: entry.focus.applicable,
-                })}
+                {entry.focus === null
+                  ? "—"
+                  : t("focus.short", {
+                      covered: entry.focus.covered,
+                      applicable: entry.focus.applicable,
+                    })}
               </span>
               {/*
                 The trend, and the arithmetic that makes it one. `previous` is

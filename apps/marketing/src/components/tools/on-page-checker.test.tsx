@@ -574,6 +574,16 @@ describe("On-Page checker result", () => {
     // And the checks it could run are on screen, which is the whole point of
     // letting the run happen at all.
     expect(text.toLowerCase()).toContain("technical");
+    // Recorded in the list too. This flow is somebody checking several pages
+    // handed over from a briefing; a history that stayed empty through all of
+    // them would read as none of them having run.
+    const stored = JSON.parse(
+      String(localStorage.getItem("gengrowth:onpage-history:v1")),
+    ) as readonly { readonly focus: unknown; readonly score: unknown }[];
+    expect(stored).toHaveLength(1);
+    // With no coverage figure and no score, rather than a zero for either.
+    expect(stored[0]?.focus).toBeNull();
+    expect(stored[0]?.score).toBeNull();
   });
 
   it("renders coverage, density and every limitation", async () => {

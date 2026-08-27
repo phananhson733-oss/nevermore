@@ -332,25 +332,31 @@ export function buildCopyReport(input: CopyReportInput): string {
       "and it is not an overall score: the keyword category was not tested.",
     ];
     // Richest that fits, same order the full report uses: supporting detail
-    // goes before the findings it supports.
-    for (const [gradedPart, supportingPart] of [
+    // goes before the findings it supports. The last shape is returned whether
+    // it fits or not — a page URL long enough to exhaust the budget on its own
+    // must not fall through to the branch below, which is written about a
+    // query that was named and would print the wrong reason for this run.
+    const shapes = [
       [graded, supporting],
       [graded, []],
       [[], []],
-    ] as const) {
-      const rendered = [...note, ...gradedPart, ...supportingPart, ""]
+    ] as const;
+    let last = "";
+    for (const [gradedPart, supportingPart] of shapes) {
+      last = [...note, ...gradedPart, ...supportingPart, ""]
         .join("\n")
         .replace(/\n{3,}/g, "\n\n");
-      if (withinBriefBudget(rendered, COPY_REPORT_MAX_BYTES)) return rendered;
+      if (withinBriefBudget(last, COPY_REPORT_MAX_BYTES)) return last;
     }
+    return last;
   }
 
-  if (input.evidence === null || input.evidence.availability === "unavailable") {
+  if (input.evidence.availability === "unavailable") {
     // The two reasons are not the same fact. One says the page never came back
     // as readable HTML; the other says it did and its text did not survive the
     // projection. Printing the first for both misreports the second.
     const why =
-      input.evidence?.reason === "target_page_not_captured"
+      input.evidence.reason === "target_page_not_captured"
         ? [
             "The submitted page was not collected as a readable HTML response,",
             "so no coverage was measured.",
@@ -365,7 +371,7 @@ export function buildCopyReport(input: CopyReportInput): string {
       "",
       "## Result",
       "",
-      `No keyword evidence: ${inlineCode(input.evidence?.reason ?? "no_target_query")}.`,
+      `No keyword evidence: ${inlineCode(input.evidence.reason)}.`,
       ...why,
       "This is not a score of zero.",
       "",

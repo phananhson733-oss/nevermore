@@ -460,9 +460,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         : null,
     });
 
-    // Only a whole success is remembered, so the list never suggests a run
-    // produced something it did not.
-    if (evidence !== null && evidence.availability === "available") {
+    // A whole success is remembered, so the list never suggests a run produced
+    // something it did not — but recorded whenever the run finished, not only
+    // when it produced coverage.
+    // The list is what the visitor checked; a URL-only run that never appeared
+    // in it left somebody able to check five pages and see an empty history.
+    if (evidence === null || evidence.availability === "available") {
       const store = webStore("local");
       if (store) {
         setHistory(
@@ -475,7 +478,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             country,
             locale: language,
             pageType: pageRole,
-            focus: evidence.focus,
+            focus: evidence === null ? null : evidence.focus,
             // Null when the run could not be scored, so the trend column reads
             // "—" rather than implying this page came back a zero.
             score:
