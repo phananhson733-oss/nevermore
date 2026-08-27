@@ -622,6 +622,52 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(host.textContent).not.toContain("Current complete 7 days");
   });
 
+  it("keeps an unmeasured position out of the trend average and its label", async () => {
+    // The GSC reader coerces a missing position to 0, and this chart draws
+    // smaller positions higher. Averaged over every impression rather than the
+    // ones carrying a position, a single such bucket dragged the KPI below
+    // every point it summarised and plotted a line above all of them.
+    const withGap: DailyBriefingEnvelope = {
+      ...BASE_ENVELOPE,
+      result: {
+        ...BASE_ENVELOPE.result,
+        propertyTrend: { change: null, action: null, noiseFloor: null },
+        trend: {
+          ...BASE_ENVELOPE.result.trend,
+          hourly: {
+            ...BASE_ENVELOPE.result.trend.hourly,
+            points: [
+              {
+                key: "2026-08-24T17:00:00",
+                clicks: 2,
+                impressions: 100,
+                ctr: 0.02,
+                position: 8,
+              },
+              {
+                key: "2026-08-24T18:00:00",
+                clicks: 3,
+                impressions: 900,
+                ctr: 0.0033,
+                position: 0,
+              },
+            ],
+          },
+        },
+      },
+    };
+    const host = await renderResults(withGap);
+    const card = host.querySelector<HTMLElement>(
+      '[data-trend-metric="position"]',
+    );
+
+    // Weighted over the 100 impressions that carry a position, so 8.0 — not
+    // 0.8, which is what dividing by all 1,000 produced.
+    expect(card?.textContent).toContain("8.0");
+    expect(card?.textContent).not.toContain("0.8");
+    expect(card?.textContent).not.toContain("0.0");
+  });
+
   it("keeps the 24h chart available regardless of briefing action cadence", async () => {
     const host = await renderResults(
       envelope({ cadence: "weekly" }),

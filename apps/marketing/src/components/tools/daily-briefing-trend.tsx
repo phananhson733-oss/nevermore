@@ -90,7 +90,13 @@ function metricValue(point: DailyBriefingTrendPoint, metric: MetricKey): number 
     case "ctr":
       return point.ctr;
     case "position":
-      return point.position;
+      // Above zero, or nothing. The GSC reader coerces a missing or
+      // non-numeric position to 0 (search-analytics.ts, `toNumber`), and this
+      // chart draws smaller positions higher — a bucket whose position was
+      // never returned would plot above every measured one and print as 0.0.
+      return point.position !== null && point.position > 0
+        ? point.position
+        : null;
   }
 }
 
@@ -107,16 +113,24 @@ function aggregate(points: readonly DailyBriefingTrendPoint[]) {
     (total, point) => total + point.impressions,
     0,
   );
-  const weightedPosition = points.reduce(
-    (total, point) =>
-      total + (point.position === null ? 0 : point.position * point.impressions),
-    0,
-  );
+  // Weighted over the impressions that carry a position, not over every
+  // impression in the window. Dividing by the full total let a bucket with
+  // traffic and no measured position contribute nothing to the numerator and
+  // its whole weight to the denominator, which pulls the average toward zero
+  // — an average better than every point it averages.
+  let weightedPosition = 0;
+  let positionImpressions = 0;
+  for (const point of points) {
+    if (point.position === null || !(point.position > 0)) continue;
+    weightedPosition += point.position * point.impressions;
+    positionImpressions += point.impressions;
+  }
   return {
     clicks,
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
-    position: impressions > 0 ? weightedPosition / impressions : null,
+    position:
+      positionImpressions > 0 ? weightedPosition / positionImpressions : null,
   } as const;
 }
 
