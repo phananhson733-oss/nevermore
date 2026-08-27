@@ -2128,7 +2128,7 @@
       "actionKinds": {
         "click_opportunity": {
           "title": "Inspect the CTR gap against your own site curve",
-          "body": "Opportunity Finder ranks opportunities across the property and will not use this query. The gap here is already the comparison against this property's own baseline."
+          "body": "Opportunity Finder ranks opportunities across the property and will not use this query or page. The gap here is already the comparison against this property's own baseline."
         },
         "stable_position_click_decline": {
           "title": "Check whether the click loss is sustained",
@@ -2250,7 +2250,7 @@
       "pageActionKinds": {
         "page_impression_collapse": {
           "title": "Confirm this page is still there",
-          "body": "Fetch the page itself: whether it still answers, whether robots blocks it, whether its canonical still points at itself, and whether it has become a redirect. When the HTML cannot be fetched the checker says so, and that is itself the answer. This briefing has not judged the cause."
+          "body": "Impressions vanishing wholesale usually points at the page itself: open the URL yourself and see whether it still answers and whether it has become a redirect. The next tool diagnoses the property and will not use this page. This briefing has not judged the cause."
         },
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
@@ -2270,7 +2270,7 @@
         "title": "These pages draw impressions and no clicks at all",
         "evidence": "Page · where it stands this window",
         "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
-        "examined": "{rows} page records were read this run. The rest already produced a page signal above, drew clicks, averaged outside the 1-10 band or carried no readable position, or were not shown often enough for zero to mean anything."
+        "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window."
       }
     },
     "trafficDrop": {

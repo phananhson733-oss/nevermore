@@ -145,6 +145,24 @@ function destination(
  * impressions and therefore no position to weight, which reads the same here
  * as a position that came back non-finite.
  */
+/**
+ * An average position is only a position when it is above zero.
+ *
+ * `isMetricRowValid` accepts `position >= 0`, and the engine's own lanes guard
+ * with `> 0` before computing a delta — so a zero reaches the client as a
+ * readable number that means "never measured". Printing it as `0.0` puts a
+ * rank better than first beside real ones. Every average position on this page
+ * goes through here.
+ */
+function positionText(
+  t: ReturnType<typeof useTranslations>,
+  value: number | null,
+): string {
+  return value !== null && Number.isFinite(value) && value > 0
+    ? value.toFixed(1)
+    : t("kpis.unavailable");
+}
+
 function metricsLine(
   t: ReturnType<typeof useTranslations>,
   locale: string,
@@ -159,10 +177,7 @@ function metricsLine(
     clicks: number(locale, row.clicks),
     impressions: number(locale, row.impressions),
     ctr: ctr === null ? t("kpis.unavailable") : percent(ctr),
-    position:
-      row.position !== null && Number.isFinite(row.position)
-        ? row.position.toFixed(1)
-        : t("kpis.unavailable"),
+    position: positionText(t, row.position),
   });
 }
 
@@ -327,7 +342,7 @@ function propertyWeeklyComparisons(
     position: nullableComparison(
       change.previous.position,
       change.current.position,
-      (value) => value.toFixed(1),
+      (value) => positionText(t, value),
       t("kpis.unavailable"),
     ),
   };
@@ -1351,10 +1366,7 @@ export function DailyBriefingResults({
                     {comparison(
                       change.previous?.position ?? null,
                       change.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("changes.notObserved"),
                     )}
                   </p>
@@ -1419,10 +1431,7 @@ export function DailyBriefingResults({
                     {comparison(
                       move.previous.position,
                       move.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("changes.notObserved"),
                     )}
                   </p>
@@ -1513,10 +1522,7 @@ export function DailyBriefingResults({
                     {comparison(
                       observation.previous?.position ?? null,
                       observation.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       priorFallback,
                     )}
                   </p>
@@ -1616,10 +1622,7 @@ export function DailyBriefingResults({
                     {comparisonToPossiblyUnmeasured(
                       change.previous?.position ?? null,
                       change.current?.position ?? null,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("review.pageNotObserved"),
                       t("kpis.unavailable"),
                     )}
@@ -1846,10 +1849,7 @@ export function DailyBriefingResults({
                             position: comparisonToPossiblyUnmeasured(
                               change.previous?.position ?? null,
                               change.current?.position ?? null,
-                              (value) =>
-                                Number.isFinite(value)
-                                  ? value.toFixed(1)
-                                  : t("kpis.unavailable"),
+                              (value) => positionText(t, value),
                               t("changes.notObserved"),
                               t("kpis.unavailable"),
                             ),
@@ -2045,7 +2045,7 @@ export function DailyBriefingResults({
                           own, not an industry figure. */}
                       {t("pageChecks.body", {
                         impressions: number(locale, check.impressions),
-                        position: check.position.toFixed(1),
+                        position: positionText(t, check.position),
                         expected: check.expectedClicks.toFixed(1),
                         ctr:
                           pageCheckBaseline === null

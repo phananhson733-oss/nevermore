@@ -224,11 +224,23 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       );
       // A page-scope handoff carries no query, so the query field is left
       // for the visitor rather than filled with an invented one.
+      //
+      // Chained against the branches below on purpose. While this was its own
+      // `if`, a page-scope handoff set the URL and then fell into the draft
+      // branch of the next statement, which overwrote it with a stale draft's
+      // URL and query while the banner still said the page had been imported —
+      // the visitor was shown a different page than the one they clicked.
       if (handoff?.scope === "page") {
         setUrl(handoff.page);
         setHandoffImported(true);
-      }
-      if (handoff?.scope === "query_page") {
+        // The handoff is the newer explicit intent, so the draft it replaces
+        // must not survive to be resurrected on the next visit.
+        const pendingIntent = readPendingAgentIntent(session, "seo");
+        if (pendingIntent?.purpose === "page_focused_launch") {
+          clearPendingAgentIntent(session, "seo");
+        }
+        clearOnPageDraft(session);
+      } else if (handoff?.scope === "query_page") {
         setUrl(handoff.page);
         setQueryText(handoff.query);
         if (handoff.source === "competitor-keyword-gap") {

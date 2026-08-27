@@ -2155,16 +2155,22 @@ const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
 export const DAILY_BRIEFING_PAGE_DESTINATIONS: Readonly<
   Record<DailyBriefingPageChangeKind, DailyBriefingPageAction["destination"]>
 > = {
-  // The one lane whose next step is about the URL itself. A collapse asks
-  // whether the page still answers, still allows crawling, still points its
-  // canonical at itself and has not become a redirect — four questions only a
-  // tool that fetches the page can put. Traffic Drop Diagnosis discards the
-  // page and diagnoses the property, so sending a collapse there offered a
-  // button that could not carry out the sentence printed above it, and two
-  // collapsed pages produced two buttons with identical downstream effect.
-  page_impression_collapse: "on-page-seo-check",
-  // Still the property: a click decline at unchanged coverage is a demand and
-  // ranking question, and fetching the HTML answers neither.
+  // Both of these stay on the property, and neither is a good fit.
+  //
+  // A collapse asks whether the URL still answers, still allows crawling,
+  // still points its canonical at itself and has not become a redirect, and
+  // Traffic Drop Diagnosis can put none of those questions — it drops the page
+  // and diagnoses the property. On-Page Checker can put all four, but its form
+  // refuses to run without at least one target query (on-page-checker.tsx,
+  // `queries.length === 0` -> queryRequired), and the queries behind a page
+  // move are anonymized, so this lane has none to hand it and must not invent
+  // one. Routing here would land the visitor on a form they cannot submit.
+  //
+  // So the copy on these two cards states what the next tool actually does and
+  // leaves the URL-level checks as something the reader does themselves. The
+  // honest fix is a URL-only mode in On-Page Checker; until that exists,
+  // pointing a page lane at it would be a button that cannot be pressed.
+  page_impression_collapse: "traffic-drop-diagnosis",
   page_click_decline: "traffic-drop-diagnosis",
   page_first_observed: "on-page-seo-check",
 };

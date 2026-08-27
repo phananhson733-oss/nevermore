@@ -2568,6 +2568,32 @@ describe("DailyBriefingResults folded explanation", () => {
     );
   });
 
+  it("refuses to print a zero average position as a rank", async () => {
+    // The page-row validator accepts position >= 0 and the engine's own lanes
+    // guard with > 0 before computing a delta, so a zero arrives here meaning
+    // "never measured". Rendered with toFixed it became 0.0 — a rank better
+    // than first, sitting in the same arrow as a measured one.
+    const unmeasured = pageChange({
+      current: {
+        page: PAGE_CHANGE_URL,
+        clicks: 8,
+        impressions: 380,
+        position: 0,
+      },
+    });
+    const host = await renderResults(
+      envelope({
+        pageChanges: [unmeasured],
+        pageActions: [pageAction()],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const text = host.textContent ?? "";
+
+    expect(text).not.toContain("9.1 → 0.0");
+    expect(text).toContain(`9.1 → ${en.tools.dailyBriefing.kpis.unavailable}`);
+  });
+
   it("names the prior window as unobserved on a page it saw for the first time", async () => {
     const first = pageChange({
       kind: "page_first_observed",
@@ -2666,11 +2692,22 @@ describe("DailyBriefingResults folded explanation", () => {
     // The gate the list applies is disclosed, so a page with volume and no
     // clicks that is missing from the list has a stated reason to be.
     expect(block?.textContent).toContain("outside the 1-10 band");
+    // Named as the gate the engine applies rather than generalised into an
+    // impressions floor: the branch compares expected clicks, and at another
+    // property's rate the same impression count lands on either side of it.
+    expect(block?.textContent).toContain("fewer than 3 clicks");
+    // A page the engine excluded because it already produced a candidate may
+    // never have reached the screen — the two-row page budget cuts the rest —
+    // so the reason may not say the reader saw it above.
+    expect(block?.textContent).toContain("the row budget never showed");
+    // And rows dropped before the four reasons ever applied are outside all of
+    // them, so the count has to name itself as the usable population.
+    expect(block?.textContent).toContain("usable page records");
     // And the population it read, so the list is not mistaken for the whole
     // page dimension.
     expect(
       block?.querySelector("[data-page-checks-examined]")?.textContent,
-    ).toContain("4 page records");
+    ).toContain("4 usable page records");
   });
 
   it("renders a fourth change when it is the leading appearance", async () => {
