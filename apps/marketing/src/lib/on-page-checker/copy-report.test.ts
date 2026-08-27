@@ -56,13 +56,9 @@ function evidenceFor(raw: readonly string[], role: "product" | null = "product")
   return buildKeywordEvidence(extract, normalized.queries, role);
 }
 
-function report(
-  raw: readonly string[] = ["pricing"],
-  landedUrl: string | null = null,
-) {
+function report(raw: readonly string[] = ["pricing"]) {
   return buildCopyReport({
     targetUrl: extract.url,
-    landedUrl,
     scannedAt: "2026-08-17T12:00:00.000Z",
     cacheStatus: "miss",
     evidence: evidenceFor(raw),
@@ -71,32 +67,6 @@ function report(
 }
 
 describe("buildCopyReport", () => {
-  it("names the page it actually read when the submitted URL redirected", () => {
-    // The assistant on the other end of this paste is asked to act on the
-    // report. Without this line it is told to fix a page the audit never read:
-    // a URL that redirects produces a report about its destination, and the
-    // header named the redirect.
-    const redirected = report(["pricing"], "https://example.com/landed");
-
-    expect(redirected).toContain(
-      "- Redirected to: `https://example.com/landed` (the page this report read)",
-    );
-    // Under the URL it qualifies, not somewhere the reader meets it first.
-    expect(redirected.indexOf("- Page:")).toBeLessThan(
-      redirected.indexOf("- Redirected to:"),
-    );
-    expect(redirected.indexOf("- Redirected to:")).toBeLessThan(
-      redirected.indexOf("- Collected at:"),
-    );
-  });
-
-  it("says nothing about redirects when nothing redirected", () => {
-    // A "redirected to" line on every clean run says nothing and trains the
-    // reader to skip it, which is how the line would be missed on the one run
-    // where it mattered.
-    expect(report()).not.toContain("Redirected to");
-  });
-
   it("puts the sections in the order the reader needs them", () => {
     const text = report();
     const order = [
@@ -133,7 +103,6 @@ describe("buildCopyReport", () => {
     // to catch.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: (() => {
@@ -194,7 +163,6 @@ describe("buildCopyReport", () => {
     if (!normalized.ok) throw new Error(normalized.reason);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "unknown",
       evidence: buildKeywordEvidence(null, normalized.queries, null),
@@ -217,7 +185,6 @@ describe("buildCopyReport", () => {
     if (!normalized.ok) throw new Error(normalized.reason);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: buildKeywordEvidence(null, normalized.queries, null, true),
@@ -268,7 +235,6 @@ describe("buildCopyReport", () => {
 
     const text = buildCopyReport({
       targetUrl,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -316,7 +282,6 @@ describe("buildCopyReport", () => {
 
     const text = buildCopyReport({
       targetUrl: "https://example.com/pricing",
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -339,7 +304,6 @@ describe("buildCopyReport", () => {
     // `plan | tier` becomes two cells and every later column shifts.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["plan | tier"]),
@@ -362,7 +326,6 @@ describe("buildCopyReport", () => {
   it("quotes page-sourced text so it cannot reformat the report", () => {
     const text = buildCopyReport({
       targetUrl: "https://example.com/a|b",
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["plan | tier"]),
@@ -377,7 +340,6 @@ describe("buildCopyReport", () => {
     const long = "x".repeat(78);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor([
@@ -401,7 +363,6 @@ describe("buildCopyReport", () => {
     // pastes this somewhere with a limit, so it holds with no table at all.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),
@@ -443,7 +404,6 @@ describe("buildCopyReport", () => {
       const long = "x".repeat(78);
       const text = buildCopyReport({
         targetUrl: extract.url,
-        landedUrl: null,
         scannedAt: "2026-08-17T12:00:00.000Z",
         cacheStatus: "miss",
         evidence: evidenceFor([`${long}a`, `${long}b`, `${long}c`]),
@@ -580,7 +540,6 @@ const RESULT = {
 function fullReport() {
   return buildCopyReport({
     targetUrl: extract.url,
-    landedUrl: null,
     scannedAt: "2026-08-17T12:00:00.000Z",
     cacheStatus: "miss",
     evidence: evidenceFor(["pricing"]),
@@ -632,7 +591,6 @@ describe("the report an assistant is handed", () => {
     };
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),
@@ -711,7 +669,6 @@ describe("the report an assistant is handed", () => {
   it("frames the paste even when the page could not be read", () => {
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -748,7 +705,6 @@ describe("the report an assistant is handed", () => {
     };
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),

@@ -99,7 +99,35 @@ const upstreamPayload = {
     records: RECORD_SPECS.map(([id, category], index) =>
       record(id, category, index),
     ),
-    pages: [],
+    // `targetInspected: true` with an empty `pages` is a shape no real run
+    // produces: the inspected URL is SELECTED from this array. The projection
+    // used to paper over that by falling back to the requested URL, which read
+    // as "it landed where it was sent" -- so the fixture is made self-consistent
+    // rather than left to exercise a lie.
+    pages: [
+      {
+        url: "https://acme.test/",
+        subjectUrl: "https://acme.test/",
+        finalUrl: "https://acme.test/",
+        depth: 0,
+        initialStatus: 200,
+        finalStatus: 200,
+        redirectHops: 0,
+        contentType: "text/html; charset=utf-8",
+        robotsDirectiveState: "noindex_not_observed",
+        canonicalTarget: "https://acme.test/",
+        title: "Acme",
+        metaDescription: "Acme home",
+        h1Count: 1,
+        headingsCount: 2,
+        wordCount: 300,
+        inboundLinks: 0,
+        outboundLinks: 1,
+        sitemapMember: true,
+        jsonLdTypes: [],
+        jsonLdErrorCount: 0,
+      },
+    ],
   },
 } satisfies SeoAuditPayload;
 

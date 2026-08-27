@@ -188,7 +188,20 @@ interface HandoffLinkProps {
  * the handoff arrives empty and the destination looks like it lost the
  * property. Only `rel="opener"` carries it. The destinations are our own
  * same-origin routes, which can already reach this page's document, so the
- * opener reference gives away nothing that same-origin did not already allow.
+ * opener reference is not free, and the earlier wording here claimed it was.
+ *
+ * What the opener costs, stated accurately. Same-origin is a permission, not
+ * a reference: without an opener, another tab of ours cannot reach this
+ * document at all, so keeping one does hand the destination a Window it would
+ * not otherwise have -- it can read and rewrite this page, navigate it, and
+ * read its storage. The bound on that is the destination set, which is fixed
+ * literals under `/tools/` on our own origin (`locale` is whitelisted against
+ * `routing.locales` in the locale layout before any of this renders, so the
+ * href cannot become protocol-relative or cross-origin). The exposure is
+ * therefore "an XSS on one of our own tool pages also reaches the tab that
+ * opened it", which is a real widening and the price of the handoff arriving
+ * at all.
+ *
  * The external links below keep `noopener noreferrer`: those ARE cross-origin,
  * and they carry no handoff.
  */

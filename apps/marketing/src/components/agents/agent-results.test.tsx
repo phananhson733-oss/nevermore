@@ -206,6 +206,60 @@ describe("AgentResults", () => {
     );
   }
 
+  it("names the landed page when the crawl was redirected across pages", () => {
+    // This route does not require the entry to keep its subject, so a URL that
+    // redirects across pages produces a report HERE -- of the destination,
+    // under a heading naming the URL that was typed. The On-Page Checker never
+    // reaches this state: `requireSameEntrySubject` refuses the run with
+    // `target_redirected` before a report exists.
+    const redirected = structuredClone(data) as unknown as {
+      result: {
+        targetUrl: string;
+        inspectedTargetUrl: string;
+        landedTargetUrl: string;
+      };
+    };
+    // The submitted URL and the requested one are the same page here, which is
+    // what a real run looks like: the canonical form of a tracking short link
+    // is still that short link. Only the LANDED URL is a different page.
+    redirected.result.targetUrl = "https://example.com/go/abc123";
+    redirected.result.inspectedTargetUrl = "https://example.com/go/abc123";
+    redirected.result.landedTargetUrl = "https://example.com/";
+
+    render("seo", { response: redirected as unknown as AgentAuditSuccessData });
+
+    const line = host.querySelector("[data-capture-landed]");
+    expect(line).not.toBeNull();
+    expect(line?.textContent).toContain("https://example.com/");
+    // Beside the submitted URL, not instead of it: the heading has to be able
+    // to say "you asked for A, this is B".
+    expect(host.textContent).toContain("https://example.com/go/abc123");
+  });
+
+  it("says nothing about a redirect when only the submitted string was normalised", () => {
+    // The trap this guard exists for. `targetUrl` is the submitted string kept
+    // verbatim; `inspectedTargetUrl` is its canonical form with `utm_*`
+    // stripped and the host lowercased. Comparing the landed URL to the
+    // SUBMITTED one prints "redirected" on an ordinary paste from an email --
+    // a normalisation, not a redirect. The comparison is against the requested
+    // URL for exactly this reason.
+    const normalised = structuredClone(data) as unknown as {
+      result: {
+        targetUrl: string;
+        inspectedTargetUrl: string;
+        landedTargetUrl: string;
+      };
+    };
+    normalised.result.targetUrl =
+      "https://Example.com/pricing?utm_source=newsletter";
+    normalised.result.inspectedTargetUrl = "https://example.com/pricing";
+    normalised.result.landedTargetUrl = "https://example.com/pricing";
+
+    render("seo", { response: normalised as unknown as AgentAuditSuccessData });
+
+    expect(host.querySelector("[data-capture-landed]")).toBeNull();
+  });
+
   it("connects captured evidence to all four review stages without inventing a score", () => {
     render("seo", { response: evidencedData });
 

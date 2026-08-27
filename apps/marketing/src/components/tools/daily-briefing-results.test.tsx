@@ -1169,8 +1169,25 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
  * the destination reads nothing.
  */
 function expectToolLinksOpenInANewTab(host: HTMLElement): void {
-  const links = [...host.querySelectorAll<HTMLAnchorElement>("a[href^='/']")]
-    .filter((link) => link.getAttribute("href")?.includes("/tools/") === true);
+  // Resolved against an origin, not matched on a leading slash. `href^='/'`
+  // was the wrong shape for what this sweep claims to check: `//evil.example/`
+  // starts with a slash and is cross-origin, so a protocol-relative href would
+  // have been swept up and asserted to carry `rel="opener"` -- the one
+  // combination this guard exists to prevent. Unreachable today (the locale
+  // layout whitelists `locale` against `routing.locales` before any of this
+  // renders) but the predicate should match the claim, not the current luck.
+  const origin = "https://gengrowth.test";
+  const links = [...host.querySelectorAll<HTMLAnchorElement>("a[href]")].filter(
+    (link) => {
+      const href = link.getAttribute("href") ?? "";
+      try {
+        const resolved = new URL(href, origin);
+        return resolved.origin === origin && resolved.pathname.includes("/tools/");
+      } catch {
+        return false;
+      }
+    },
+  );
 
   expect(links.length).toBeGreaterThan(0);
   for (const link of links) {
