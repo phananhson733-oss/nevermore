@@ -594,22 +594,30 @@ describe("query changes and actions", () => {
     expect(
       result.actions.some((action) => action.kind === "first_observed_leading"),
     ).toBe(false);
+    // And the lanes say the question could not be asked, rather than asking it
+    // and finding nothing. This count is what the briefing's mode is built
+    // from, so "evaluated, no signal" here would report change detection over
+    // a comparison that never ran.
+    expect(result.laneCapability.lanes.first_observed).not.toBe("evaluated");
+    expect(result.laneCapability.lanes.first_observed_leading).not.toBe(
+      "evaluated",
+    );
+    expect(
+      result.rowAccounting.byLane?.first_observed_leading?.evaluatedNoSignal,
+    ).toBe(0);
   });
 
   it("does not read two unmeasured positions as a position that held", () => {
     // Both sides coerced to 0 subtract to a delta of 0, which is inside the
     // stable band. The lane would then report that clicks fell while average
     // position held — its whole claim — on two numbers nobody measured.
+    // One query and no baseline rows: the lane counter is shared, and a
+    // baseline row with a real position would have marked the lane evaluated
+    // on its own account and hidden what this case is about.
     const query = "content workflow guide";
     const result = report({
-      currentQueryEvidence: evidence(
-        [queryRow(query, 400, 4, 0), ...baselineRows("base")],
-        [],
-      ),
-      previousQueryEvidence: evidence(
-        [queryRow(query, 400, 40, 0), ...baselineRows("base")],
-        [],
-      ),
+      currentQueryEvidence: evidence([queryRow(query, 400, 4, 0)], []),
+      previousQueryEvidence: evidence([queryRow(query, 400, 40, 0)], []),
       brandTermsConfirmed: true,
     }).result;
 
@@ -618,6 +626,40 @@ describe("query changes and actions", () => {
         (change) => change.kind === "stable_position_click_decline",
       ),
     ).toBe(false);
+    expect(result.laneCapability.lanes.stable_position_click_decline).not.toBe(
+      "evaluated",
+    );
+    expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
+  });
+
+  it("keeps an unmeasured day out of the week's average position", () => {
+    // Six measured days at position 10 and one day whose position was never
+    // returned. Weighted over every impression, the sentinel zero pulled the
+    // week to 8.57 against a prior week of 10 — and the property lane read
+    // that as a site-wide visibility gain and handed out an action. Guarding
+    // the aggregate afterwards cannot catch it: 8.57 is positive.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_000,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date, index) => ({
+        date,
+        clicks: 10,
+        impressions: 1_150,
+        position: index === 0 ? 0 : 10,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBe(10);
+    expect(built.result.weekly.previous?.position).toBe(10);
+    expect(built.result.propertyTrend.change?.kind).not.toBe(
+      "sitewide_visibility_gain",
+    );
+    expect(built.result.propertyTrend.action).toBeNull();
   });
 
   it("names a pair first seen inside the leading band", () => {
@@ -4592,6 +4634,26 @@ const GONE = "https://example.com/gone";
     // non-brand one: 300/11,000 would have made this page's 500 impressions
     // expect 13.6 clicks against a true expectation of 2.5.
     expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("does not call the page first-observed lane evaluated on an unmeasured position", () => {
+    // A position of 35 is an answered question: the band test ran and said no.
+    // A position of 0 is what the GSC reader leaves when the field was missing
+    // (search-analytics.ts, `toNumber`), so the band test had nothing to run
+    // on. Only the first belongs in "evaluated, no signal".
+    const result = pageReport([pageRow(PAGE, 400, 4, 0)], []);
+
+    expect(
+      result.pageChanges.some(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toBe(false);
+    expect(result.laneCapability.pageLanes.page_first_observed).not.toBe(
+      "evaluated",
+    );
+    expect(
+      result.pageAccounting.byLane?.page_first_observed?.evaluatedNoSignal,
+    ).toBe(0);
   });
 
   it("refuses the zero-click check when the query rows are a truncated prefix", () => {

@@ -413,19 +413,33 @@ function kpisForDates(
 
   let clicks = 0;
   let impressions = 0;
+  // Weighted over the impressions that carry a position, not over every
+  // impression in the window.
+  //
+  // The GSC reader coerces a missing or non-numeric position to 0
+  // (search-analytics.ts, `toNumber`). Adding that day's `0 * impressions` to
+  // the numerator while keeping its impressions in the denominator pulls the
+  // week's average below every day that was actually measured — six days at
+  // position 10 and one unmeasured day came out at 8.57, which the property
+  // lane then reported as a site-wide visibility gain. Guarding the aggregate
+  // afterwards cannot catch this: the polluted average is still positive.
   let weightedPosition = 0;
+  let positionImpressions = 0;
   for (const row of selected) {
     if (row === undefined) return null;
     clicks += row.clicks;
     impressions += row.impressions;
+    if (!(row.position > 0)) continue;
     weightedPosition += row.position * row.impressions;
+    positionImpressions += row.impressions;
   }
 
   return {
     clicks,
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
-    position: impressions > 0 ? weightedPosition / impressions : null,
+    position:
+      positionImpressions > 0 ? weightedPosition / positionImpressions : null,
   };
 }
 
@@ -1102,7 +1116,16 @@ function candidatesFor(
     // paired question below. Each lane is asked independently: short-circuiting
     // to the next query on the first hit made source order act as a priority,
     // which is the ordering bug KIND_RANK exists to prevent.
-    if (previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS) {
+    // Positions have to be comparable too. This lane's whole claim is that
+    // clicks fell while average position held, so a pair whose positions were
+    // never measured cannot be asked the question — filing it under
+    // "evaluated, no signal" says a check ran that could not run, and this
+    // count is what decides the lane's state, the row split, and through them
+    // the briefing's mode and cadence.
+    if (
+      positionsComparable &&
+      previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS
+    ) {
       clickDeclineCapableQueries += 1;
     }
     if (positionsComparable) {
@@ -1322,6 +1345,13 @@ function candidatesFor(
       continue;
     }
 
+    // Both of these lanes decide which band the pair landed in, so a position
+    // that was never measured leaves the question undecidable rather than
+    // answered in the negative. The GSC reader coerces a missing position to 0
+    // (search-analytics.ts, `toNumber`), and counting such a pair as evaluated
+    // reported "evaluated, no signal" on a comparison that never happened.
+    if (!(pair.position > 0)) continue;
+
     // Evaluable is claimed here rather than at the impression floor: an
     // attribution we could not trust was never evaluated, and filing it under
     // "evaluated, no signal" would rebuild the conflation the row split exists
@@ -1353,15 +1383,11 @@ function candidatesFor(
       order: pair.impressions,
     });
 
-    // Above zero, not merely at or below six. The GSC reader coerces a
-    // missing or non-numeric position to 0 (search-analytics.ts, `toNumber`),
-    // and 0 <= 6 is true, so a row whose position was never returned would
-    // have been reported as first seen in the leading positions — the one
+    // Zero is excluded above, where the pair is refused evaluability at all.
+    // Testing only `<= 6` here would otherwise report a pair whose position
+    // was never returned as first seen in the leading positions — the one
     // claim on this page that says something went right.
-    if (
-      pair.position > 0 &&
-      pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION
-    ) {
+    if (pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION) {
       firstObservedLeadingSignalQueries.add(pair.query);
       firstObservedLeading.push(appearance("first_observed_leading"));
       continue;
@@ -2323,6 +2349,13 @@ function pageCandidatesFor(
         absenceBlockedRows += 1;
         continue;
       }
+      // A position of 35 is an answered question: the band test ran and said
+      // no. A position of 0 is not — the GSC reader leaves that when the
+      // field was missing (search-analytics.ts, `toNumber`), so the band test
+      // had nothing to run on. Only the first belongs in "evaluated, no
+      // signal", which is the count this lane's state and row split are
+      // built from.
+      if (!(current.position > 0)) continue;
       firstObservedCapableRows += 1;
       if (withinActionableBand(current.position)) {
         firstObserved.push({
