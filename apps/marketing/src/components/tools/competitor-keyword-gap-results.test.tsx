@@ -663,6 +663,13 @@ describe("CompetitorKeywordGapResults", () => {
     expect(
       missingPagePosition.querySelector("[data-gsc-status]")?.textContent,
     ).toBe("gsc.observed_weak");
+    // The only assertion left on the weak tone. Dropping the pill from the
+    // normal weak row took the previous one with it, which left that branch of
+    // `statusTone` live but unpinned -- reachable only here, and deletable
+    // without any test noticing.
+    expect(
+      missingPagePosition.querySelector("[data-gsc-status]")?.className,
+    ).toContain("text-brand-warning");
     expect(host.textContent).not.toContain("position=0");
     expect(host.textContent).not.toContain("impressions=0");
   });
