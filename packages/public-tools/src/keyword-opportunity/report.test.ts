@@ -18,7 +18,10 @@ import { KEYWORD_OPPORTUNITY_UNSAMPLED } from "./winnability.ts";
 import type {
   KeywordOpportunityContext,
   KeywordOpportunityResult,
+  KeywordOpportunityResultV3,
   KeywordOpportunitySerpEvidence,
+  KeywordOpportunitySignals,
+  KeywordOpportunitySignalState,
   KeywordOpportunitySupportingPage,
   KeywordOpportunityValidation,
 } from "./types.ts";
@@ -1354,5 +1357,477 @@ describe("buildKeywordOpportunityResult v3 evidence decisions", () => {
       source: "llm_proposition_source",
       url: "https://acme.test/pricing",
     });
+  });
+});
+
+describe("buildKeywordOpportunityResult v3 process ledger", () => {
+  const SIGNAL_STATES = [
+    "observed",
+    "not_observed",
+    "unavailable",
+  ] as const satisfies readonly KeywordOpportunitySignalState[];
+
+  function signalEvidence(
+    signal: keyof KeywordOpportunitySignals,
+    state: KeywordOpportunitySignalState,
+  ): KeywordOpportunitySignals[typeof signal] {
+    if (state === "not_observed") {
+      return { state, observation: null };
+    }
+    if (state === "unavailable") {
+      return {
+        state,
+        observation: null,
+        reason: `${signal}_test_provider_unavailable`,
+      };
+    }
+    if (signal === "youngDomain") {
+      return {
+        state,
+        observation: {
+          domain: "young.test",
+          registrationDate: "2026-01-01T00:00:00.000Z",
+          observedAt: COMPLETED_AT,
+          ageMonths: 7,
+        },
+      };
+    }
+    if (signal === "lowOrganicTrafficDomain") {
+      return {
+        state,
+        observation: {
+          domain: "small.test",
+          organicEtv: 120,
+          threshold: 5_000,
+          marketCode: "us",
+          languageCode: "en",
+          observedAt: COMPLETED_AT,
+        },
+      };
+    }
+    return {
+      state,
+      observation: {
+        domain: "forum.test",
+        url: "https://forum.test/thread",
+        position: 4,
+        source: "provider_item_type",
+      },
+    };
+  }
+
+  function signalCombination(
+    youngDomain: KeywordOpportunitySignalState,
+    lowOrganicTrafficDomain: KeywordOpportunitySignalState,
+    communityResult: KeywordOpportunitySignalState,
+  ): KeywordOpportunitySignals {
+    return {
+      youngDomain: signalEvidence("youngDomain", youngDomain),
+      lowOrganicTrafficDomain: signalEvidence(
+        "lowOrganicTrafficDomain",
+        lowOrganicTrafficDomain,
+      ),
+      communityResult: signalEvidence("communityResult", communityResult),
+    } as KeywordOpportunitySignals;
+  }
+
+  function ledgerObservation(
+    keyword: string,
+    states: readonly [
+      KeywordOpportunitySignalState,
+      KeywordOpportunitySignalState,
+      KeywordOpportunitySignalState,
+    ],
+    overrides: Partial<KeywordOpportunityObservationV3> = {},
+  ): KeywordOpportunityObservationV3 {
+    return seo(keyword, {
+      serp: {
+        ...WINNABLE,
+        status: "complete",
+        failureReason: null,
+        observedAt: COMPLETED_AT,
+        organicResults: [],
+      },
+      signals: signalCombination(...states),
+      ...overrides,
+    });
+  }
+
+  it("reconciles validation, transport, decisions, supporting-page provenance and typed reasons without row text", () => {
+    const observations: KeywordOpportunityObservationV3[] = [
+      ledgerObservation(
+        "eligible mixed evidence",
+        ["observed", "unavailable", "not_observed"],
+        {
+          supportingPage: availableSupportingPage(
+            "gsc_observed_query_page",
+            "https://acme.test/gsc-page",
+          ),
+        },
+      ),
+      ledgerObservation(
+        "eligible provider silence",
+        ["not_observed", "observed", "not_observed"],
+        {
+          validation: NO_PROVIDER_DATA,
+          supportingPage: availableSupportingPage(
+            "lexical_page_match",
+            "https://acme.test/lexical-page",
+          ),
+        },
+      ),
+      ledgerObservation(
+        "priced zero",
+        ["observed", "not_observed", "not_observed"],
+        {
+          validation: EXPLICIT_ZERO,
+          serp: {
+            ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+            status: "unavailable",
+            failureReason: null,
+          },
+          supportingPage: availableSupportingPage(
+            "inventory_url_match",
+            "https://acme.test/inventory-page",
+          ),
+        },
+      ),
+      ledgerObservation(
+        "already covered",
+        ["not_observed", "not_observed", "observed"],
+        {
+          coverage: "observed_exact_strong",
+          supportingPage: availableSupportingPage(
+            "llm_proposition_source",
+            "https://acme.test/proposition-page",
+          ),
+        },
+      ),
+      ledgerObservation("all negative", [
+        "not_observed",
+        "not_observed",
+        "not_observed",
+      ]),
+      ledgerObservation("young unavailable", [
+        "unavailable",
+        "not_observed",
+        "not_observed",
+      ]),
+      ledgerObservation("traffic unavailable", [
+        "not_observed",
+        "unavailable",
+        "not_observed",
+      ]),
+      ledgerObservation("community unavailable", [
+        "not_observed",
+        "not_observed",
+        "unavailable",
+      ]),
+      ...(
+        [
+          "provider_unavailable",
+          "provider_no_data",
+          "transport_outcome_unknown",
+          "budget_exhausted",
+        ] as const
+      ).map((failureReason) =>
+        ledgerObservation(
+          `serp ${failureReason}`,
+          ["observed", "not_observed", "not_observed"],
+          {
+            serp: {
+              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+              status: "unavailable",
+              failureReason,
+            },
+          },
+        ),
+      ),
+    ];
+    const result = buildKeywordOpportunityResult({
+      ...input({ observations }),
+      process: {
+        validation: { requested: 12 },
+        serp: { planned: 11, dispatched: 10 },
+        thresholds: {
+          policyVersion: "keyword_opportunity_thresholds.v1",
+          youngDomainMonths: 24,
+          siteDomainRank: 200,
+          siteRankTier: "rank_1_200",
+          lowOrganicTrafficThreshold: 5_000,
+        },
+        durationsMs: {
+          total: 700,
+          validation: 100,
+          coverage: 20,
+          serpSampling: 300,
+          serpInterpretation: 90,
+          domainEnrichment: 150,
+          report: 40,
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      process: {
+        validation: {
+          requested: 12,
+          available: 10,
+          explicitZero: 1,
+          providerNoData: 1,
+          accounted: true,
+        },
+        serp: {
+          planned: 11,
+          dispatched: 10,
+          completed: 7,
+          failed: 4,
+          failureReasons: {
+            provider_unavailable: 1,
+            provider_no_data: 1,
+            transport_outcome_unknown: 1,
+            budget_exhausted: 1,
+            unreported: 0,
+          },
+          accounted: true,
+        },
+        decisions: {
+          eligible: 2,
+          withheld: 3,
+          incomplete: 7,
+          positiveWithUnavailableSignals: 1,
+          withheldReasons: {
+            volume_priced_at_zero: 1,
+            volume_not_returned: 0,
+            already_covered: 1,
+            page_one_contested: 0,
+            page_one_ranks_unresolved: 0,
+            serp_sample_budget_exhausted: 0,
+            serp_sample_unavailable: 0,
+            no_supporting_page: 0,
+            all_signals_not_observed: 1,
+          },
+          incompleteReasons: {
+            serp_evidence_unavailable: 4,
+            young_domain_signal_unavailable: 1,
+            low_organic_traffic_signal_unavailable: 1,
+            community_result_signal_unavailable: 1,
+          },
+          accounted: true,
+        },
+        supportingPages: {
+          sources: {
+            gsc_observed_query_page: 1,
+            lexical_page_match: 1,
+            inventory_url_match: 1,
+            llm_proposition_source: 1,
+          },
+          unavailable: 8,
+          sourceUnreported: 0,
+          accounted: true,
+        },
+        thresholds: {
+          policyVersion: "keyword_opportunity_thresholds.v1",
+          youngDomainMonths: 24,
+          siteDomainRank: 200,
+          siteRankTier: "rank_1_200",
+          lowOrganicTrafficThreshold: 5_000,
+        },
+        durationsMs: {
+          total: 700,
+          validation: 100,
+          coverage: 20,
+          serpSampling: 300,
+          serpInterpretation: 90,
+          domainEnrichment: 150,
+          report: 40,
+        },
+      },
+    });
+    const serialized = JSON.stringify(result.process);
+    expect(serialized).not.toContain("eligible mixed evidence");
+    expect(serialized).not.toContain("https://acme.test");
+    expect(serialized).not.toContain("_test_provider_unavailable");
+  });
+
+  it("emits every observed signal-state combination once in deterministic state order and separates legacy observations", () => {
+    const expectedCombinations = SIGNAL_STATES.flatMap((youngDomain) =>
+      SIGNAL_STATES.flatMap((lowOrganicTrafficDomain) =>
+        SIGNAL_STATES.map((communityResult) => ({
+          youngDomain,
+          lowOrganicTrafficDomain,
+          communityResult,
+          count: 1,
+        })),
+      ),
+    );
+    const observations = [
+      ...expectedCombinations.map((combination, index) =>
+        ledgerObservation(`combination ${index}`, [
+          combination.youngDomain,
+          combination.lowOrganicTrafficDomain,
+          combination.communityResult,
+        ]),
+      ),
+      seo("legacy signal-less row"),
+    ];
+    const result = buildKeywordOpportunityResult(input({ observations }));
+
+    expect(result.process).toMatchObject({
+      signalStates: expectedCombinations,
+      legacyWithoutSignals: 1,
+    });
+  });
+
+  it("preserves inconsistent caller-owned transport facts and marks both ledgers unaccounted", () => {
+    const result = buildKeywordOpportunityResult({
+      ...input({
+        observations: [
+          ledgerObservation("one completed candidate", [
+            "observed",
+            "not_observed",
+            "not_observed",
+          ]),
+        ],
+      }),
+      process: {
+        validation: { requested: 2 },
+        serp: { planned: 2, dispatched: 1 },
+      },
+    });
+
+    expect(result).toMatchObject({
+      process: {
+        validation: { requested: 2, accounted: false },
+        serp: {
+          planned: 2,
+          dispatched: 1,
+          completed: 1,
+          failed: 0,
+          accounted: false,
+        },
+      },
+    });
+  });
+
+  it("reports unavailable v3 SERP evidence without a reason as unreported and unaccounted", () => {
+    const result = buildKeywordOpportunityResult({
+      ...input({
+        observations: [
+          ledgerObservation(
+            "missing transport reason",
+            ["observed", "not_observed", "not_observed"],
+            {
+              serp: {
+                ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+                status: "unavailable",
+                failureReason: null,
+              },
+            },
+          ),
+        ],
+      }),
+      process: {
+        validation: { requested: 1 },
+        serp: { planned: 1, dispatched: 1 },
+      },
+    });
+
+    expect(result).toMatchObject({
+      process: {
+        serp: {
+          planned: 1,
+          dispatched: 1,
+          completed: 0,
+          failed: 1,
+          failureReasons: { unreported: 1 },
+          accounted: false,
+        },
+      },
+    });
+  });
+
+  it("defaults unmeasured thresholds and durations to null while keeping v2 readers process-optional", () => {
+    const produced: KeywordOpportunityResultV3 =
+      buildKeywordOpportunityResult(input());
+
+    expect(produced.process).toMatchObject({
+      validation: { accounted: false },
+      serp: { accounted: false },
+      thresholds: {
+        policyVersion: null,
+        youngDomainMonths: null,
+        siteDomainRank: null,
+        siteRankTier: null,
+        lowOrganicTrafficThreshold: null,
+      },
+      durationsMs: {
+        total: null,
+        validation: null,
+        coverage: null,
+        serpSampling: null,
+        serpInterpretation: null,
+        domainEnrichment: null,
+        report: null,
+      },
+    });
+
+    const { process: _process, ...cachedV2 } = produced;
+    const broadReader: KeywordOpportunityResult = cachedV2;
+    expect(broadReader.process).toBeUndefined();
+  });
+
+  it("normalizes partially supplied threshold and duration facts to explicit null during producer skew", () => {
+    const result = buildKeywordOpportunityResult({
+      ...input(),
+      process: {
+        thresholds: {
+          policyVersion: "keyword_opportunity_thresholds.v1",
+        },
+        durationsMs: { total: 12 },
+      } as unknown as NonNullable<KeywordOpportunityReportInput["process"]>,
+    });
+
+    expect(result.process).toMatchObject({
+      thresholds: {
+        policyVersion: "keyword_opportunity_thresholds.v1",
+        youngDomainMonths: null,
+        siteDomainRank: null,
+        siteRankTier: null,
+        lowOrganicTrafficThreshold: null,
+      },
+      durationsMs: {
+        total: 12,
+        validation: null,
+        coverage: null,
+        serpSampling: null,
+        serpInterpretation: null,
+        domainEnrichment: null,
+        report: null,
+      },
+    });
+  });
+
+  it("separates a legacy bare URL with unknown provenance from a truly unavailable page without leaking it", () => {
+    const current = seo("legacy provenance row", {
+      supportingPageUrl: "https://acme.test/legacy-answer",
+    });
+    const { supportingPage: _supportingPage, ...legacy } = current;
+    const result = buildKeywordOpportunityResult(
+      input({ observations: [legacy] }),
+    );
+
+    expect(result.process.supportingPages).toEqual({
+      sources: {
+        gsc_observed_query_page: 0,
+        lexical_page_match: 0,
+        inventory_url_match: 0,
+        llm_proposition_source: 0,
+      },
+      unavailable: 0,
+      sourceUnreported: 1,
+      accounted: true,
+    });
+    expect(JSON.stringify(result.process)).not.toContain("legacy-answer");
   });
 });
