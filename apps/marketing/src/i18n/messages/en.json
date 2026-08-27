@@ -2960,6 +2960,12 @@
       "commonChecksIntro": "Remaining decisions for every row:",
       "retryWithSeeds": "Use these as seeds and run again",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
+      "summary": {
+        "included": "Included",
+        "incomplete": "Detection incomplete",
+        "withheld": "Excluded",
+        "screeningProcess": "Screening process"
+      },
       "contextBoundary": "Candidate generation used a bounded context of up to 20 pages. It is not a whole-site crawl.",
       "contextSelection": "L2 selection found {eligible} eligible candidates, {excluded} excluded before page requests, {attempted} attempted, and {truncated} left unattempted after the 20-page limit.",
       "contextStopped": "Context boundary: {reason}",
@@ -3004,17 +3010,47 @@
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
+        "keywordIntent": "Keyword and intent",
+        "questionIntent": "Question and intent",
         "providerIntent": "Provider intent",
         "serpIntent": "SERP interpreted intent",
         "volume": "Volume",
         "difficulty": "KD",
         "weakest": "Weakest rank",
+        "competition": "Competition context",
         "signals": "Three-signal evidence",
         "aiOverview": "AI Overview",
         "supportingPage": "Page that answers it",
         "coverage": "Your coverage",
+        "coverageReview": "Coverage and review",
         "nextChecks": "Check before acting",
         "remainingDecisions": "Remaining decisions"
+      },
+      "values": {
+        "notReturned": "Not returned",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "supportingPage": {
+        "not_observed": "No supporting page observed",
+        "unavailable": "Supporting page unavailable"
+      },
+      "evidence": {
+        "show": "View evidence",
+        "hide": "Hide evidence",
+        "title": "Complete evidence",
+        "intentTitle": "Intent provenance",
+        "signalsTitle": "Signal provenance",
+        "reviewTitle": "Coverage and review",
+        "source": "Source",
+        "observedAt": "Observed at",
+        "modelId": "Model",
+        "promptVersion": "Prompt version",
+        "registrationDate": "Registration timestamp",
+        "marketLanguage": "Market {market} · language {language}",
+        "supportingPageUrl": "Full supporting page URL",
+        "reason": "Reason",
+        "loadedAsync": "Loaded asynchronously"
       },
       "aio": {
         "shown": "Observed on page one",
@@ -3049,6 +3085,11 @@
         "lowTrafficObserved": "{domain} · ETV {etv} · threshold {threshold}",
         "communityObserved": "{source} · {domain} · #{position}",
         "titleUnavailable": "Result title not returned"
+      },
+      "signalCompact": {
+        "youngObserved": "{domain} · {months} months old",
+        "lowTrafficObserved": "{domain} · ETV {etv}",
+        "communityObserved": "{domain} · #{position}"
       },
       "aioAvailability": {
         "observed": "Observed on page one",
