@@ -571,6 +571,55 @@ describe("query changes and actions", () => {
     expect(result.actions[0]?.destination).toBe("on-page-seo-check");
   });
 
+  it("does not read an unmeasured position as the leading band", () => {
+    // The GSC reader coerces a missing or non-numeric position to 0
+    // (search-analytics.ts, `toNumber`), and 0 <= 6 is true. Without a lower
+    // bound, a pair whose position was never returned would be announced as
+    // first seen in the leading positions — the one thing this briefing says
+    // that reports something going right.
+    const query = "content workflow guide";
+    const page = "https://example.com/guide";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 200, 20, 0), ...baselineRows("base")],
+        [queryPageRow(query, page, 200, 20, 0)],
+      ),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(
+      result.changes.some((change) => change.kind === "first_observed_leading"),
+    ).toBe(false);
+    expect(
+      result.actions.some((action) => action.kind === "first_observed_leading"),
+    ).toBe(false);
+  });
+
+  it("does not read two unmeasured positions as a position that held", () => {
+    // Both sides coerced to 0 subtract to a delta of 0, which is inside the
+    // stable band. The lane would then report that clicks fell while average
+    // position held — its whole claim — on two numbers nobody measured.
+    const query = "content workflow guide";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 400, 4, 0), ...baselineRows("base")],
+        [],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(query, 400, 40, 0), ...baselineRows("base")],
+        [],
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(
+      result.changes.some(
+        (change) => change.kind === "stable_position_click_decline",
+      ),
+    ).toBe(false);
+  });
+
   it("names a pair first seen inside the leading band", () => {
     const query = "content workflow guide";
     const page = "https://example.com/guide";
@@ -4542,6 +4591,31 @@ const GONE = "https://example.com/gone";
     // And emphatically not the property's whole rate published as its
     // non-brand one: 300/11,000 would have made this page's 500 impressions
     // expect 13.6 clicks against a true expectation of 2.5.
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("refuses the zero-click check when the query rows are a truncated prefix", () => {
+    // A prefix is not the query list. Brand rows outside it are never
+    // subtracted, so the remainder still carries brand clicks and would be
+    // published as this property's non-brand rate. The error runs toward
+    // admitting more pages, because a higher rate expects more clicks from the
+    // same impressions and it is that expectation which puts a page here.
+    const result = report({
+      currentQueryEvidence: evidence([queryRow("unrelated", 40, 1, 9)], [], {
+        queryTruncated: true,
+        pages: [pageRow(PAGE, 500, 0, 5)],
+        totals: { impressions: 11_000, clicks: 300 },
+      }),
+      previousQueryEvidence: evidence([], [], {
+        pages: [pageRow(PAGE, 500, 0, 5)],
+      }),
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["query_rows_unavailable"]);
+    expect(result.pageChecks.baseline).toBeNull();
     expect(result.pageChecks.items).toEqual([]);
   });
 

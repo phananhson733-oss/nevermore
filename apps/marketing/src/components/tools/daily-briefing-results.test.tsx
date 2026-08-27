@@ -2703,6 +2703,11 @@ describe("DailyBriefingResults folded explanation", () => {
     // And rows dropped before the four reasons ever applied are outside all of
     // them, so the count has to name itself as the usable population.
     expect(block?.textContent).toContain("usable page records");
+    // The button carries a page and no query, and On-Page Checker refuses to
+    // run without one. Said once, beside the buttons it qualifies.
+    expect(
+      block?.querySelector("[data-page-checks-handoff]")?.textContent,
+    ).toContain("needs a target query of your own");
     // And the population it read, so the list is not mistaken for the whole
     // page dimension.
     expect(

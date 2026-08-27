@@ -148,11 +148,13 @@ function destination(
 /**
  * An average position is only a position when it is above zero.
  *
- * `isMetricRowValid` accepts `position >= 0`, and the engine's own lanes guard
- * with `> 0` before computing a delta — so a zero reaches the client as a
- * readable number that means "never measured". Printing it as `0.0` puts a
- * rank better than first beside real ones. Every average position on this page
- * goes through here.
+ * The GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`), and `isMetricRowValid` accepts
+ * `position >= 0`, so a zero reaches the client as a readable number meaning
+ * "never measured". The engine's lanes now refuse to act on one; printing it
+ * as `0.0` would still put a rank better than first beside measured ones.
+ * Every average position rendered by this file goes through here — the trend
+ * chart is a separate component and still formats its own.
  */
 function positionText(
   t: ReturnType<typeof useTranslations>,
@@ -2069,6 +2071,15 @@ export function DailyBriefingResults({
                 </article>
               ))}
             </div>
+            {/* Said once, under the buttons it qualifies. The handoff carries
+                a page and no query — the queries behind a page total are
+                anonymized — and On-Page Checker will not run without one. */}
+            <p
+              data-page-checks-handoff
+              className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+            >
+              {t("pageChecks.handoff")}
+            </p>
             {/* The population this check read, so the list above is not
                 mistaken for everything the page dimension returned. */}
             {result.pageChecks.examinedRows !== null ? (

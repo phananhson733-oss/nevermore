@@ -180,6 +180,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.unavailableQueryRead",
   "review.pageNotObserved",
   "checks.title",
+  "pageChecks.handoff",
   "checks.evidence",
   "checks.notCheckable",
   "evidence.foldPageChanges",

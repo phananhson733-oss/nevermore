@@ -720,7 +720,7 @@ describe("On-Page checker local state", () => {
         // anonymized and the briefing will not invent one.
         query: null,
         page: "https://example.com/wiki/vanished",
-        evidenceId: "daily:page:page_impression_collapse",
+        evidenceId: "daily:page:page_first_observed",
       }),
     ).toBe(true);
   }
@@ -745,6 +745,17 @@ describe("On-Page checker local state", () => {
         expiresAt: now + 600_000,
       }),
     );
+    sessionStorage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "page_focused_launch",
+        url: "https://old.example/draft",
+        scope: "page",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
     stagePageScopeHandoff();
 
     const host = await render();
@@ -756,6 +767,9 @@ describe("On-Page checker local state", () => {
     expect(host.textContent).toContain(handoffNotice);
     expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
     expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    // The draft and its intent are written together, so leaving the intent
+    // behind would let the Agent resurrect the URL this handoff replaced.
+    expect(sessionStorage.getItem("gengrowth:agent-intent:seo:v3")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 

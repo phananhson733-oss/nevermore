@@ -2123,7 +2123,7 @@
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
-        "actions": "Every action opens the matching tool and privately carries whatever the signal names — the property, and a query or page where it has them — with no URL to move by hand."
+        "actions": "Every action opens the matching tool and privately carries what the signal names. Each card states which of those the next tool actually uses."
       },
       "actionKinds": {
         "click_opportunity": {
@@ -2258,7 +2258,7 @@
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
-          "body": "Carries the page URL and checks the page itself; it makes no claim about where any single query ranks."
+          "body": "Carries the page URL and checks the page itself. That tool also needs a target query of your own before it will run; this signal spans every query and this briefing will not invent one."
         }
       },
       "checks": {
@@ -2270,7 +2270,8 @@
         "title": "These pages draw impressions and no clicks at all",
         "evidence": "Page · where it stands this window",
         "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
-        "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window."
+        "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window.",
+        "handoff": "The page URL is carried over; that tool still needs a target query of your own before it will run."
       }
     },
     "trafficDrop": {

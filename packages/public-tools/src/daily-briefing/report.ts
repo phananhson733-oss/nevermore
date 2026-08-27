@@ -1120,6 +1120,10 @@ function candidatesFor(
       clickChange <= -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
       clickChangeRatio !== null &&
       clickChangeRatio <= -BRIEFING_MATERIAL_CHANGE_RATIO &&
+      // The same guard the two band lanes already apply. Without it a pair of
+      // unreturned positions, both coerced to 0, subtract to a delta of 0 and
+      // read as "average position held" — the strongest thing this lane says.
+      positionsComparable &&
       Math.abs(positionDelta) <= BRIEFING_STABLE_POSITION_DELTA
     ) {
       declines.push({
@@ -1349,7 +1353,15 @@ function candidatesFor(
       order: pair.impressions,
     });
 
-    if (pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION) {
+    // Above zero, not merely at or below six. The GSC reader coerces a
+    // missing or non-numeric position to 0 (search-analytics.ts, `toNumber`),
+    // and 0 <= 6 is true, so a row whose position was never returned would
+    // have been reported as first seen in the leading positions — the one
+    // claim on this page that says something went right.
+    if (
+      pair.position > 0 &&
+      pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION
+    ) {
       firstObservedLeadingSignalQueries.add(pair.query);
       firstObservedLeading.push(appearance("first_observed_leading"));
       continue;
@@ -1923,8 +1935,15 @@ function propertyTrendFor(
     previous.impressions,
     current.impressions,
   );
+  // Null, not zero, when either side has no measured position. The reader
+  // coerces a missing position to 0 (search-analytics.ts, `toNumber`), and a
+  // property whose position went 5 -> 0 would otherwise read as a five-place
+  // improvement across the whole site.
   const positionDelta =
-    current.position === null || previous.position === null
+    current.position === null ||
+    previous.position === null ||
+    !(current.position > 0) ||
+    !(previous.position > 0)
       ? null
       : current.position - previous.position;
 
@@ -2724,7 +2743,15 @@ function pageChecksFor({
   // the property's whole rate, brand traffic included, as its non-brand one.
   const queryRead = currentEvidence?.queryRead ?? null;
   if (queryRead === null) blockers.push("query_rows_unavailable");
-  else if (queryRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
+  else if (queryRead.paging.truncated) {
+    // A prefix is not the query list. Brand rows outside it are never
+    // subtracted, so the remainder still carries brand clicks and gets
+    // published as this property's non-brand rate. That inflates the rate,
+    // which inflates every expected-click figure, which is what admits a page
+    // to this list — the error runs toward showing more cards, not fewer.
+    // Same subtraction we cannot perform, so the same blocker.
+    blockers.push("query_rows_unavailable");
+  } else if (queryRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
     // Subtracting rows aggregated one way from totals aggregated another is
     // the same defect as dividing them.
     blockers.push("aggregation_basis_mismatch");
