@@ -571,6 +571,253 @@ describe("query changes and actions", () => {
     expect(result.actions[0]?.destination).toBe("on-page-seo-check");
   });
 
+  it("does not read an unmeasured position as the leading band", () => {
+    // The GSC reader coerces a missing or non-numeric position to 0
+    // (search-analytics.ts, `toNumber`), and 0 <= 6 is true. Without a lower
+    // bound, a pair whose position was never returned would be announced as
+    // first seen in the leading positions — the one thing this briefing says
+    // that reports something going right.
+    const query = "content workflow guide";
+    const page = "https://example.com/guide";
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(query, 200, 20, 0), ...baselineRows("base")],
+        [queryPageRow(query, page, 200, 20, 0)],
+      ),
+      previousQueryEvidence: evidence(baselineRows("base"), []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(
+      result.changes.some((change) => change.kind === "first_observed_leading"),
+    ).toBe(false);
+    expect(
+      result.actions.some((action) => action.kind === "first_observed_leading"),
+    ).toBe(false);
+    // And the lanes say the question could not be asked, rather than asking it
+    // and finding nothing. This count is what the briefing's mode is built
+    // from, so "evaluated, no signal" here would report change detection over
+    // a comparison that never ran.
+    expect(result.laneCapability.lanes.first_observed).not.toBe("evaluated");
+    expect(result.laneCapability.lanes.first_observed_leading).not.toBe(
+      "evaluated",
+    );
+    expect(
+      result.rowAccounting.byLane?.first_observed_leading?.evaluatedNoSignal,
+    ).toBe(0);
+  });
+
+  it("does not read two unmeasured positions as a position that held", () => {
+    // Both sides coerced to 0 subtract to a delta of 0, which is inside the
+    // stable band. The lane would then report that clicks fell while average
+    // position held — its whole claim — on two numbers nobody measured.
+    // One query and no baseline rows: the lane counter is shared, and a
+    // baseline row with a real position would have marked the lane evaluated
+    // on its own account and hidden what this case is about.
+    const query = "content workflow guide";
+    const result = report({
+      currentQueryEvidence: evidence([queryRow(query, 400, 4, 0)], []),
+      previousQueryEvidence: evidence([queryRow(query, 400, 40, 0)], []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(
+      result.changes.some(
+        (change) => change.kind === "stable_position_click_decline",
+      ),
+    ).toBe(false);
+    expect(result.laneCapability.lanes.stable_position_click_decline).not.toBe(
+      "evaluated",
+    );
+    expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
+  });
+
+  it("leaves a query with no measured position out of the watchlist entirely", () => {
+    // Every band is a claim about where impressions happened. A position
+    // coerced to 0 used to be filed under "far" — "ranks far down" said about
+    // a row whose position was never returned — and it spent a display row and
+    // a candidate slot saying it, beside a position cell reading "unavailable".
+    const query = "content workflow guide";
+    const result = report({
+      currentQueryEvidence: evidence([queryRow(query, 400, 4, 0)], []),
+      previousQueryEvidence: evidence([queryRow(query, 400, 40, 9)], []),
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(
+      result.queryWatchlist.items.some((item) => item.query === query),
+    ).toBe(false);
+    expect(result.queryWatchlist.candidates).toBe(0);
+    expect(result.queryWatchlist.withheldByBand?.far).toBe(0);
+  });
+
+  it("reports no position move when the prior window's position was unmeasured", () => {
+    // The CTR gap stands on the current window alone, so the action is right
+    // to fire. The delta beside it is not: subtracting a sentinel zero from a
+    // measured 9 published a nine-place move that nobody measured.
+    const target = "content workflow guide";
+    const peers = Array.from({ length: 5 }, (_, index) =>
+      queryRow(`peer ${index}`, 400, 40, 9),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(target, 1_000, 0, 9), ...peers],
+        [],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(target, 1_000, 0, 0), ...peers],
+        [],
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+    const gap = result.changes.find(
+      (change) => change.kind === "click_opportunity",
+    );
+
+    expect(gap).toBeDefined();
+    expect(gap?.positionDelta).toBeNull();
+  });
+
+  it("publishes an unmeasured trend position as null on the wire", () => {
+    // This field leaves the process: the handler puts the envelope straight
+    // into the HTTP response. Leaving the reader's sentinel 0 here published a
+    // rank better than first and made every consumer responsible for spotting
+    // it, which is a rule each of them has to remember separately.
+    const built = report({
+      trend: {
+        daily: {
+          rows: [
+            { key: "2026-08-20", clicks: 4, impressions: 800, position: 9 },
+            { key: "2026-08-21", clicks: 3, impressions: 900, position: 0 },
+            { key: "2026-08-22", clicks: 0, impressions: 0, position: 0 },
+          ],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+        hourly: {
+          rows: [],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+      },
+    });
+    const points = built.result.trend.daily.points;
+
+    expect(points.map((point) => point.position)).toEqual([9, null, null]);
+    // And the impressions the unmeasured bucket did receive are still reported.
+    expect(points.map((point) => point.impressions)).toEqual([800, 900, 0]);
+  });
+
+  it("treats a position below one as unmeasured, not as better than first", () => {
+    // Every result sits at rank 1 or worse, so an impression-weighted average
+    // of them cannot come back under 1. A `> 0` floor let 0.5 through as a
+    // real position: against a prior week of 10 it read as a nine-and-a-half
+    // place site-wide improvement and dispatched an action.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 0.5,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBeNull();
+    expect(built.result.weekly.delta?.position).toBeNull();
+    expect(built.result.propertyTrend.change?.kind).not.toBe(
+      "sitewide_visibility_gain",
+    );
+    expect(built.result.propertyTrend.action).toBeNull();
+  });
+
+  it("keeps a property that genuinely ranks first everywhere", () => {
+    // The floor of one is for provider rows. This week's own weighted average
+    // is computed here, and dividing can land it a few ulps under 1.0.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 1,
+      })),
+      ...CURRENT_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 1,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBe(1);
+    expect(built.result.weekly.delta?.position).toBe(0);
+  });
+
+  it("makes the week's average position unavailable when one day was unmeasured", () => {
+    // Six days at 8 and one whose position was never returned. Weighting the
+    // sentinel zero in pulled the week to 6.86; dropping the day instead
+    // reported 8 against a prior 10 and dispatched a site-wide visibility
+    // gain. Both are claims about a week that includes a seventh of its
+    // impressions at an unknown position — at 30 the week was 11.1 and the
+    // site had moved the other way.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_000,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date, index) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: index === 0 ? 0 : 8,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBeNull();
+    // The complete metrics stay complete: only the position failed closed.
+    expect(built.result.weekly.current?.impressions).toBe(8_400);
+    expect(built.result.weekly.current?.clicks).toBe(70);
+    expect(built.result.weekly.previous?.position).toBe(10);
+    expect(built.result.weekly.delta?.position).toBeNull();
+    expect(built.result.propertyTrend.change?.kind).not.toBe(
+      "sitewide_visibility_gain",
+    );
+    expect(built.result.propertyTrend.action).toBeNull();
+  });
+
+  it("still averages a window whose unmeasured day drew no impressions", () => {
+    // A day nobody was shown has no position to miss, and Search Console
+    // cannot weight one over no impressions. Failing the whole week closed
+    // over it would withhold an average that is fully determined.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_000,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date, index) => ({
+        date,
+        clicks: index === 0 ? 0 : 10,
+        impressions: index === 0 ? 0 : 1_200,
+        position: index === 0 ? 0 : 8,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBe(8);
+  });
+
   it("names a pair first seen inside the leading band", () => {
     const query = "content workflow guide";
     const page = "https://example.com/guide";
@@ -4542,6 +4789,51 @@ const GONE = "https://example.com/gone";
     // And emphatically not the property's whole rate published as its
     // non-brand one: 300/11,000 would have made this page's 500 impressions
     // expect 13.6 clicks against a true expectation of 2.5.
+    expect(result.pageChecks.items).toEqual([]);
+  });
+
+  it("does not call the page first-observed lane evaluated on an unmeasured position", () => {
+    // A position of 35 is an answered question: the band test ran and said no.
+    // A position of 0 is what the GSC reader leaves when the field was missing
+    // (search-analytics.ts, `toNumber`), so the band test had nothing to run
+    // on. Only the first belongs in "evaluated, no signal".
+    const result = pageReport([pageRow(PAGE, 400, 4, 0)], []);
+
+    expect(
+      result.pageChanges.some(
+        (change) => change.kind === "page_first_observed",
+      ),
+    ).toBe(false);
+    expect(result.laneCapability.pageLanes.page_first_observed).not.toBe(
+      "evaluated",
+    );
+    expect(
+      result.pageAccounting.byLane?.page_first_observed?.evaluatedNoSignal,
+    ).toBe(0);
+  });
+
+  it("refuses the zero-click check when the query rows are a truncated prefix", () => {
+    // A prefix is not the query list. Brand rows outside it are never
+    // subtracted, so the remainder still carries brand clicks and would be
+    // published as this property's non-brand rate. The error runs toward
+    // admitting more pages, because a higher rate expects more clicks from the
+    // same impressions and it is that expectation which puts a page here.
+    const result = report({
+      currentQueryEvidence: evidence([queryRow("unrelated", 40, 1, 9)], [], {
+        queryTruncated: true,
+        pages: [pageRow(PAGE, 500, 0, 5)],
+        totals: { impressions: 11_000, clicks: 300 },
+      }),
+      previousQueryEvidence: evidence([], [], {
+        pages: [pageRow(PAGE, 500, 0, 5)],
+      }),
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+    }).result;
+
+    expect(result.pageChecks.evidence).toBe("unavailable");
+    expect(result.pageChecks.blockers).toEqual(["query_rows_unavailable"]);
+    expect(result.pageChecks.baseline).toBeNull();
     expect(result.pageChecks.items).toEqual([]);
   });
 

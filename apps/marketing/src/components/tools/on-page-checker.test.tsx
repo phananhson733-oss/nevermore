@@ -709,6 +709,70 @@ describe("On-Page checker local state", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  function stagePageScopeHandoff(): void {
+    expect(
+      writeToolHandoff(sessionStorage, Date.now(), {
+        source: "daily-search-briefing",
+        destination: "on-page-seo-check",
+        scope: "page",
+        property: "sc-domain:example.com",
+        // A page signal carries no query: the queries behind it are
+        // anonymized and the briefing will not invent one.
+        query: null,
+        page: "https://example.com/wiki/vanished",
+        evidenceId: "daily:page:page_first_observed",
+      }),
+    ).toBe(true);
+  }
+
+  it("prefers a page-scope handoff to an older draft and leaves the query empty", async () => {
+    // The page-scope branch used to be its own `if`, so it set the URL and
+    // then fell into the draft branch of the next statement, which put the
+    // draft's URL and query back while the banner still said a page had been
+    // imported. Every page-scope handoff — the two page lanes and the
+    // zero-click checks — reached the tool this way.
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    sessionStorage.setItem(
+      "gengrowth:onpage-draft:v1",
+      JSON.stringify({
+        url: "https://old.example/draft",
+        targetQueries: ["old query"],
+        country: "GB",
+        locale: "en",
+        pageType: "guide",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    sessionStorage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "page_focused_launch",
+        url: "https://old.example/draft",
+        scope: "page",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    stagePageScopeHandoff();
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe(
+      "https://example.com/wiki/vanished",
+    );
+    expect(field(host, "onpage-query").value).toBe("");
+    expect(host.textContent).toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    // The draft and its intent are written together, so leaving the intent
+    // behind would let the Agent resurrect the URL this handoff replaced.
+    expect(sessionStorage.getItem("gengrowth:agent-intent:seo:v3")).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("replaces an older page-focused draft and intent as one pair while preserving history", async () => {
     globalThis.fetch = vi.fn() as unknown as typeof fetch;
     const now = Date.now();

@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DAILY_BRIEFING_CHANGE_LANES,
+  DAILY_BRIEFING_DESTINATIONS,
   DAILY_BRIEFING_PAGE_CHANGE_LANES,
+  DAILY_BRIEFING_PAGE_DESTINATIONS,
 } from "@sf/public-tools";
 
 import en from "./messages/en.json";
@@ -178,7 +180,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.unavailableQueryRead",
   "review.pageNotObserved",
   "checks.title",
-  "checks.intro",
+  "pageChecks.handoff",
   "checks.evidence",
   "checks.notCheckable",
   "evidence.foldPageChanges",
@@ -196,6 +198,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.introUnavailable",
   "review.introPositionObservation",
   "review.introCurrentWatchlist",
+  "review.introCurrentWatchlistEmpty",
   "review.withheld",
   "provisional.title",
   "provisional.intro",
@@ -536,6 +539,10 @@ describe("Daily Briefing message catalogs", () => {
 
   it("calls the action order what it is rather than a measurement", () => {
     // KIND_RANK is a fixed product priority, not a confidence anyone computed.
+    // Swept over every string in the group rather than one named key: the
+    // sentence that used to carry this risk was deleted, and a guard pinned to
+    // a single key would have gone quietly true instead of moving with the
+    // copy.
     for (const [locale, catalog] of [
       ["en", en],
       ["zh", zh],
@@ -545,9 +552,11 @@ describe("Daily Briefing message catalogs", () => {
           .dailyBriefing as Readonly<Record<string, unknown>>,
         "actions",
       );
-      expect(actions.intro, `${locale} action intro`).not.toContain(
-        locale === "en" ? "certainty" : "确定性",
-      );
+      const forbidden = locale === "en" ? "certainty" : "确定性";
+      for (const [key, value] of Object.entries(actions)) {
+        if (typeof value !== "string") continue;
+        expect(value, `${locale} actions.${key}`).not.toContain(forbidden);
+      }
     }
   });
 
@@ -568,6 +577,51 @@ describe("Daily Briefing message catalogs", () => {
         Record<string, string>
       >;
       expect(firstObserved.title).toContain(qualifier);
+    }
+  });
+
+  // Two destinations read only the property out of a handoff and drop the
+  // query and page on arrival: Traffic Drop Diagnosis
+  // (traffic-drop-tool.tsx, "handoff's page is deliberately dropped") and
+  // Opportunity Finder (quick-wins-tool.tsx, which calls selectProperty and
+  // nothing else). A card sending a reader there while its own sentence tells
+  // them to inspect a page or a query offers a button that cannot carry out
+  // the instruction printed above it.
+  const PROPERTY_ONLY_DESTINATIONS = [
+    "traffic-drop-diagnosis",
+    "seo-quick-wins",
+  ] as const;
+
+  const DISCLAIMS = {
+    en: "will not use",
+    zh: "不会用到",
+  } as const;
+
+  it("says so on every card whose next tool drops the query or page", () => {
+    const groups = [
+      ["actionKinds", DAILY_BRIEFING_DESTINATIONS] as const,
+      ["pageActionKinds", DAILY_BRIEFING_PAGE_DESTINATIONS] as const,
+    ];
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      for (const [group, destinations] of groups) {
+        const kinds = recordAt(daily(catalog), group);
+        for (const [kind, destination] of Object.entries(destinations)) {
+          if (
+            !(
+              PROPERTY_ONLY_DESTINATIONS as readonly string[]
+            ).includes(destination)
+          ) {
+            continue;
+          }
+          const body = (kinds[kind] as Readonly<Record<string, string>>).body;
+          expect(body, `${locale} ${group}.${kind}`).toContain(
+            DISCLAIMS[locale],
+          );
+        }
+      }
     }
   });
 
