@@ -377,8 +377,11 @@ export function buildCopyReport(input: CopyReportInput): string {
       ...(input.evidence === null
         ? []
         : [`No keyword evidence: ${inlineCode(input.evidence.reason)}.`]),
-      ...queryWhy,
+      // The page first. It is the bigger fact, and a reader who is told only
+      // that no query was named will go and name one against a page that
+      // cannot be read.
       ...pageWhy,
+      ...queryWhy,
       "This is not a score of zero.",
     ];
     // Richest that fits, same order the full report uses: supporting detail

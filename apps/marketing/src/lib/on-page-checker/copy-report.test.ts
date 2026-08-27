@@ -151,8 +151,13 @@ describe("buildCopyReport", () => {
       limitationText,
     });
 
-    expect(text).toContain("was not collected as a readable HTML response");
-    expect(text).toContain("No target query was submitted");
+    // Order, not just presence. A reader told only that no query was named
+    // will go and name one against a page that cannot be read, so the page
+    // fact has to come first — and two `toContain`s cannot say that.
+    const page = text.indexOf("was not collected as a readable HTML response");
+    const query = text.indexOf("No target query was submitted");
+    expect(page).toBeGreaterThanOrEqual(0);
+    expect(query).toBeGreaterThan(page);
     expect(text).not.toContain("The checks below");
     expect(text).toContain("This is not a score of zero.");
   });

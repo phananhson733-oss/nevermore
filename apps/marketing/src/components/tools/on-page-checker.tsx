@@ -421,7 +421,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       return;
     }
 
-    const result = (body as AuditResponse).data?.result;
+    // `body` is null when the response carried nothing or would not parse.
+    // The optional chain below guards `.data`, not the dereference of `body`
+    // itself, so reading it threw — and the click handler discards the
+    // promise, leaving the run showing as still running forever.
+    const result =
+      body === null || typeof body !== "object"
+        ? undefined
+        : (body as AuditResponse).data?.result;
     const evidence = result?.keywordEvidence ?? null;
     // A 2xx is not a result. An empty body, unparseable JSON or a 200 with no
     // `result` all leave this undefined, and while the keyword region was

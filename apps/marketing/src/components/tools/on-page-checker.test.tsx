@@ -590,18 +590,19 @@ describe("On-Page checker result", () => {
   });
 
   it.each([
-    ["an empty object", Response.json({}, { status: 200 })],
-    ["a body that is not JSON", new Response("<html>", { status: 200 })],
+    ["an empty object", () => Response.json({}, { status: 200 })],
+    ["a body that is not JSON", () => new Response("<html>", { status: 200 })],
+    ["an empty body", () => new Response(null, { status: 200 })],
   ])("treats %s as a failed scan, not a fact about the page", async (
     _name,
-    response,
+    make,
   ) => {
     // While the keyword region was required, a 2xx carrying nothing was caught
     // by its absence. It no longer is — so an empty 200 became a finished run
     // announcing that the crawl did not collect the visitor's page, which is
     // our failure to read the answer stated as a fact about their site.
     globalThis.fetch = vi.fn(
-      async () => response.clone(),
+      async () => make(),
     ) as unknown as typeof fetch;
 
     const host = await render();
@@ -610,6 +611,12 @@ describe("On-Page checker result", () => {
       buttonWith(host, "Check this page").click();
     });
 
+    // Asserted positively. Three negatives are all satisfied by a thrown
+    // exception that leaves the run stuck on its progress clock, which is
+    // exactly what a null body used to do.
+    expect(host.textContent).toContain(
+      "The public site could not be audited from this environment",
+    );
     expect(host.textContent).not.toContain(
       "did not collect this page as a readable HTML",
     );
