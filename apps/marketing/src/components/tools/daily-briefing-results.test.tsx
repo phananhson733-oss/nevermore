@@ -1155,6 +1155,32 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     expect(host.textContent).not.toContain("what follows is");
   });
 
+/**
+ * Every link out of this briefing that lands on one of our own tools opens a
+ * new tab and keeps its opener.
+ *
+ * Written as a sweep of the rendered output rather than a list of the
+ * `data-*` hooks, because the failure this guards against is a NEW handoff
+ * link added without them: a list would go on passing while the new link
+ * navigated this tab away. The briefing is not recoverable -- nothing is
+ * persisted, the URL carries no state, and the run spent one of the property's
+ * hourly Search Console slots -- and the handoff itself rides session storage,
+ * which a new tab receives only when it has an opener. `noopener` here means
+ * the destination reads nothing.
+ */
+function expectToolLinksOpenInANewTab(host: HTMLElement): void {
+  const links = [...host.querySelectorAll<HTMLAnchorElement>("a[href^='/']")]
+    .filter((link) => link.getAttribute("href")?.includes("/tools/") === true);
+
+  expect(links.length).toBeGreaterThan(0);
+  for (const link of links) {
+    expect(link.getAttribute("target")).toBe("_blank");
+    // Asserted exactly: the string "noopener" contains "opener".
+    expect(link.getAttribute("rel")).toBe("opener");
+    expect(link.getAttribute("rel")).not.toContain("noopener");
+  }
+}
+
   it("hands off a provisional page check without counting it as an action", async () => {
     writeToolHandoffMock.mockReturnValue(true);
     const move = provisionalMove("provisional_page_one_band_entry", 3);
@@ -1167,6 +1193,8 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     const link = host.querySelector<HTMLAnchorElement>(
       "[data-provisional-check-link]",
     )!;
+
+    expectToolLinksOpenInANewTab(host);
 
     await act(async () => {
       link.dispatchEvent(
@@ -2084,6 +2112,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "/tools/traffic-drop-diagnosis",
       "/tools/on-page-seo-check",
     ]);
+    expectToolLinksOpenInANewTab(host);
     expect(host.innerHTML).not.toContain("no%20matching%20change");
     expect(host.innerHTML).not.toContain("private.example");
   });
