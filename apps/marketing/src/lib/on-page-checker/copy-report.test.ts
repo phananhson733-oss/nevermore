@@ -238,6 +238,47 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("## Coverage");
   });
 
+  it("still hands over the graded work when the keyword region is unavailable", () => {
+    // The screen shows the score and the forty checks for this run — the
+    // keyword ceiling holds the total down, and everything else graded. The
+    // paste used to return the note alone, so the two disagreed about what the
+    // same run produced.
+    const normalized = normalizeTargetQueries(["pricing"]);
+    if (!normalized.ok) throw new Error(normalized.reason);
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "unknown",
+      evidence: buildKeywordEvidence(null, normalized.queries, null),
+      limitationText,
+      result: {
+        score: 60,
+        grade: "C",
+        counts: { pass: 12, warn: 2, fail: 1 },
+        topicFocus: null,
+        categories: [{ label: "Technical", earned: 8, available: 10 }],
+        caps: ["Held at 60: the keyword region was not measured."],
+        checks: [
+          {
+            id: "canonical",
+            state: "fail",
+            score: 0,
+            max: 4,
+            label: "Canonical",
+            detail: "The canonical points at another URL.",
+            categoryLabel: "Technical",
+          },
+        ],
+      },
+    });
+
+    expect(text).toContain("target_page_not_captured");
+    expect(text).toContain("60/100");
+    expect(text).toContain("Held at 60");
+    expect(text).toContain("## Not passing");
+    expect(text).toContain("canonical");
+  });
+
   /**
    * The two unavailable reasons are two different facts, and the report used to
    * state the first for both. "Not collected" about a page that was collected
