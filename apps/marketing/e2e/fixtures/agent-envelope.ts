@@ -43,6 +43,7 @@ export function agentEnvelope(agent: AgentKind) {
         scannedAt: "2026-08-12T10:00:00.000Z",
         targetInspected: false,
         inspectedTargetUrl: null,
+        landedTargetUrl: null,
         targetPageExtract: null,
         coverage: {
           availability: "partial",

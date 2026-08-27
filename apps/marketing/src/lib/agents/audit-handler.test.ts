@@ -427,6 +427,64 @@ describe("handleAgentAuditRequest", () => {
     expect(seen[0]).toBe(landed);
   });
 
+  it("tells the client which page it read, not which page was asked for", async () => {
+    // The two siblings above prove the landed URL decided what the providers
+    // were asked about. It never reached the report, so a visitor auditing a
+    // URL that redirects read a report about a different page than the one
+    // named at the top of it -- a tracking short link that 302s to the
+    // homepage produced a homepage audit labelled with the short link.
+    const requested = "https://acme.test/go/abc123";
+    const landed = "https://acme.test/";
+    const collected = {
+      url: requested,
+      subjectUrl: requested,
+      finalUrl: landed,
+      depth: 0,
+      initialStatus: 302,
+      finalStatus: 200,
+      redirectHops: 1,
+      contentType: "text/html; charset=utf-8",
+      robotsDirectiveState: "noindex_not_observed",
+      canonicalTarget: landed,
+      title: "T",
+      metaDescription: "D",
+      h1Count: 1,
+      headingsCount: 1,
+      wordCount: 300,
+      inboundLinks: 0,
+      outboundLinks: 0,
+      sitemapMember: true,
+      jsonLdTypes: [],
+      jsonLdErrorCount: 0,
+    };
+
+    const response = await handleAgentAuditRequest(
+      keywordRequest(["acme"]),
+      "seo",
+      dependencies({
+        delegate: async () =>
+          Response.json({
+            data: {
+              ...upstreamPayload,
+              result: {
+                ...upstreamPayload.result,
+                targetInspected: true,
+                inspectedTargetUrl: requested,
+                pages: [collected],
+              },
+            },
+          }),
+      }),
+    );
+    const body = await response.json();
+
+    // Both, not one: the report has to be able to say "you asked for A, this
+    // is B". Collapsing them into a single field would lose the half that
+    // makes the sentence worth printing.
+    expect(body.data.result.inspectedTargetUrl).toBe(requested);
+    expect(body.data.result.landedTargetUrl).toBe(landed);
+  });
+
   it("says no source was configured, not that CrUX has nothing for the page", async () => {
     // PAGESPEED_API_KEY now exists on the marketing project for Preview and
     // Production, so this is no longer the production path — but it is still
@@ -779,6 +837,7 @@ describe("handleAgentAuditRequest", () => {
           scannedAt: upstreamPayload.result.scannedAt,
           targetInspected: upstreamPayload.result.targetInspected,
           inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+          landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
           targetPageExtract: null,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
@@ -853,6 +912,7 @@ describe("handleAgentAuditRequest", () => {
       scannedAt: upstreamPayload.result.scannedAt,
       targetInspected: upstreamPayload.result.targetInspected,
       inspectedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
+      landedTargetUrl: upstreamPayload.result.inspectedTargetUrl,
       targetPageExtract: null,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,

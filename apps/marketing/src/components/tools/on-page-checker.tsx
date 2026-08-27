@@ -122,6 +122,16 @@ type RunState =
       readonly kind: "done";
       readonly evidence: KeywordEvidence;
       readonly targetUrl: string;
+      /**
+       * Where the crawl landed, when that is not where it was sent.
+       *
+       * Null when nothing redirected, or when the run could not say. A visitor
+       * auditing a URL that redirects was reading a report about a different
+       * page than the one named at the top of it -- a tracking short link that
+       * 302s to the homepage produced a homepage audit labelled with the short
+       * link. The report has to name the page it actually read.
+       */
+      readonly landedUrl: string | null;
       readonly scannedAt: string;
       readonly cacheStatus: "hit" | "miss" | "unknown";
       /** The page's own extract, or null when the run could not read it. */
@@ -419,6 +429,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       typeof result?.targetUrl === "string" ? result.targetUrl : url.trim();
     const scannedAt =
       typeof result?.scannedAt === "string" ? result.scannedAt : "";
+    // Kept only when it disagrees with the URL the report already names.
+    // Carrying it when the two are equal would put a "redirected to" line on
+    // every clean run, which says nothing and trains the reader to skip it.
+    const landed =
+      typeof result?.landedTargetUrl === "string" &&
+      result.landedTargetUrl !== targetUrl
+        ? result.landedTargetUrl
+        : null;
 
     const extract = result?.targetPageExtract ?? null;
     const siteResources = result?.siteResources ?? null;
@@ -438,6 +456,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       kind: "done",
       evidence,
       targetUrl,
+      landedUrl: landed,
       scannedAt,
       cacheStatus: cache,
       extract,
@@ -501,6 +520,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     const score = run.score;
     const text = buildCopyReport({
       targetUrl: run.targetUrl,
+      landedUrl: run.landedUrl,
       scannedAt: run.scannedAt,
       cacheStatus: run.cacheStatus,
       evidence: run.evidence,
@@ -1018,6 +1038,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
                 {t("provenance.page", { url: run.targetUrl })}
               </p>
+              {run.landedUrl === null ? null : (
+                <p
+                  data-provenance-landed
+                  className="font-mono text-[12.5px] break-all text-brand-warning"
+                >
+                  {t("provenance.landed", { url: run.landedUrl })}
+                </p>
+              )}
               <p className="text-[12.5px] text-text-dark-faint">
                 {t(`provenance.${run.cacheStatus}`, {
                   time: formatCollectedAt(run.scannedAt, locale),
