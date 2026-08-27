@@ -134,6 +134,14 @@ type RunState =
       /** The page's own extract, or null when the run could not read it. */
       readonly extract: SeoAuditTargetPageExtract | null;
       /**
+       * Whether the crawl collected the submitted page at all.
+       *
+       * Read from the response rather than inferred from the keyword region: a
+       * run that named no query has no such region, so without this a page the
+       * crawl never reached was indistinguishable from one it read fine.
+       */
+      readonly targetInspected: boolean;
+      /**
        * Scored in the browser from the same response the tables are drawn from.
        *
        * The audit stays a neutral ledger, so the number cannot arrive from the
@@ -324,6 +332,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       setUrlNotice(t("errors.urlRequired"));
       return;
     }
+    // Typing nothing is a URL-only run. Typing something that every rule
+    // rejected is not a choice the visitor made: the field looked filled, the
+    // warning under it said which words were dropped, and submitting anyway
+    // produced a report announcing that no target query was submitted.
+    if (queryText.trim() !== "" && queries.length === 0) {
+      setQueryNotice(t("errors.queriesAllRejected"));
+      return;
+    }
     // One run at a time: a second click would start a second crawl and leave
     // whichever answer arrived last on screen.
     if (inFlight.current !== null) return;
@@ -450,6 +466,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       scannedAt,
       cacheStatus: cache,
       extract,
+      targetInspected: result?.targetInspected === true,
       score,
       // Validated, not cast. The checker reads this response with a TypeScript
       // interface, which is erased at runtime — so the guard written for this
@@ -461,11 +478,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     });
 
     // A whole success is remembered, so the list never suggests a run produced
-    // something it did not — but recorded whenever the run finished, not only
-    // when it produced coverage.
+    // something it did not — recorded whenever the page was read, not only when
+    // a query was named, and never when the crawl did not reach the page.
     // The list is what the visitor checked; a URL-only run that never appeared
     // in it left somebody able to check five pages and see an empty history.
-    if (evidence === null || evidence.availability === "available") {
+    if (
+      extract !== null &&
+      (evidence === null || evidence.availability === "available")
+    ) {
       const store = webStore("local");
       if (store) {
         setHistory(
@@ -594,6 +614,9 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     if (session) {
       storeOnPageDraft(session, {
         url: url.trim(),
+        // Empty stays empty here — the draft's job is to restore what was on
+        // screen — and the Agent omits the field rather than sending `[]`,
+        // which the endpoint rejects outright.
         targetQueries: queries,
         country,
         locale: language,
@@ -1022,10 +1045,20 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
         )}
 
-        {evidence !== null && evidence.availability === "unavailable" && (
+        {/* Keyed on the page, not on the keyword region.
+        
+            Both unavailable reasons mean the same thing about the page — no
+            extract — and a run that named no query carries no region to say it
+            with, so a page the crawl never reached came back looking like a
+            successful URL-only check. */}
+        {run.kind === "done" && run.extract === null && (
           <div className="mt-4 grid gap-2">
             <p className="text-[14px] text-text-dark-primary">
-              {t(`unavailable.${evidence.reason}`)}
+              {t(
+                run.targetInspected
+                  ? "unavailable.extract_missing"
+                  : "unavailable.target_page_not_captured",
+              )}
             </p>
             <p className="text-[12.5px] text-text-dark-faint">
               {t("unavailable.notZero")}
@@ -1048,16 +1081,18 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               from a crawl that just finished, and a normalized target URL is
               indistinguishable from the one that was typed.
             */}
-            <div className="grid gap-1">
-              <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
-                {t("provenance.page", { url: run.targetUrl })}
-              </p>
-              <p className="text-[12.5px] text-text-dark-faint">
-                {t(`provenance.${run.cacheStatus}`, {
-                  time: formatCollectedAt(run.scannedAt, locale),
-                })}
-              </p>
-            </div>
+            {run.extract !== null && (
+              <div className="grid gap-1">
+                <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
+                  {t("provenance.page", { url: run.targetUrl })}
+                </p>
+                <p className="text-[12.5px] text-text-dark-faint">
+                  {t(`provenance.${run.cacheStatus}`, {
+                    time: formatCollectedAt(run.scannedAt, locale),
+                  })}
+                </p>
+              </div>
+            )}
             <OnPageReportSections
             scoreAction={scoredHere ? copyControl : undefined}
               extract={run.extract}

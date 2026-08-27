@@ -472,7 +472,7 @@ describe("On-Page checker redirected targets", () => {
     expect(field(host, "onpage-language").value).toBe("en");
     expect(field(host, "onpage-role").value).toBe("guide");
     expect(host.textContent).toContain(
-      "Nothing yet. Add a page and at least one query.",
+      "Nothing yet. Add a page URL to run; a target query is optional.",
     );
     expect(host.textContent).not.toContain(
       "This URL resolves to a different page.",
@@ -533,6 +533,62 @@ describe("On-Page checker redirected targets", () => {
 });
 
 describe("On-Page checker result", () => {
+  it("refuses to downgrade a rejected query into a query-free run", async () => {
+    // The visitor typed a keyword. Every rule threw it out, `queries` came
+    // back empty, and submitting anyway ran URL-only and reported that no
+    // target query was submitted — which is not what they did.
+    const fetchMock = vi.fn(async () => urlOnlyResponse());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await type(field(host, "onpage-query"), "x".repeat(200));
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("None of those queries could be submitted");
+  });
+
+  it("says the crawl never reached the page instead of calling it a clean run", async () => {
+    // With no query there is no keyword region to carry the reason, so a page
+    // the crawl never collected used to arrive looking like a successful
+    // URL-only check: no notice, a "Page read" line, and a history row.
+    globalThis.fetch = vi.fn(async () =>
+      Response.json(
+        {
+          data: {
+            run: { source: { cache: { status: "miss" } } },
+            result: {
+              targetUrl: extract.url,
+              scannedAt: "2026-08-17T12:00:00.000Z",
+              targetInspected: false,
+              coverage: { availability: "available", pagesInspected: 12 },
+              targetPageExtract: null,
+              records: [],
+            },
+          },
+        },
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+    const text = host.textContent ?? "";
+
+    expect(text).toContain("did not collect this page as a readable HTML");
+    expect(text).toContain("This is not a score of zero");
+    // Never "Page read" about a page that was not.
+    expect(text).not.toContain("Page read:");
+    // And not remembered: the list is checks that produced something.
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
+  });
+
   it("renders a query-free run instead of failing it", async () => {
     // A response with no keyword region used to be read as the API
     // contradicting itself and became a `scan_failed` screen. It is now what a

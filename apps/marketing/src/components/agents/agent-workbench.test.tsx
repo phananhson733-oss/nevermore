@@ -1858,6 +1858,47 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     });
   });
 
+  it("omits the field entirely when the checker handed over no query", () => {
+    // A URL-only check writes a draft with an empty list. `[]` is not the same
+    // request as no `targetQueries`: the endpoint normalises it to
+    // `empty_after_normalization` and rejects the whole call, so the report's
+    // own "open the Agent" button landed on invalid_request.
+    storePageFocusedAgentIntent(sessionStorage, "astrologywiki.com/chart");
+    storeOnPageDraft(sessionStorage, {
+      url: "astrologywiki.com/chart",
+      targetQueries: [],
+      country: "GB",
+      locale: "en-GB",
+      pageType: "guide",
+    });
+    const bodies: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/auth/session") {
+          return Response.json({ signedIn: true });
+        }
+        bodies.push(String(init?.body));
+        return Response.json(
+          successEnvelope("seo", "astrologywiki.com/chart"),
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    return (async () => {
+      renderStrict("seo");
+      await flushAsyncWork();
+      setRunContext();
+      confirmProfile();
+      await flushAsyncWork();
+
+      expect(bodies).toHaveLength(1);
+      const body = JSON.parse(String(bodies[0])) as Record<string, unknown>;
+      expect("targetQueries" in body).toBe(false);
+      expect(body.url).toBe("astrologywiki.com/chart");
+    })();
+  });
+
   /**
    * The rest of what the checker handed over, each of which could be reverted
    * without any existing assertion noticing: the page-only scope, the first query

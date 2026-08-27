@@ -222,10 +222,15 @@ function gradedSections(result: CopyReportResult): readonly string[] {
     "",
     "| Category | Score |",
     "| --- | --- |",
-    ...result.categories.map(
-      (category) =>
-        `| ${tableCell(category.label)} | ${category.earned}/${category.available} |`,
-    ),
+    // Same filter the card applies. A category with nothing gradable in it
+    // printed as `0/0` in a score table, which reads as a category that scored
+    // nothing rather than one that was never scored.
+    ...result.categories
+      .filter((category) => category.available > 0)
+      .map(
+        (category) =>
+          `| ${tableCell(category.label)} | ${category.earned}/${category.available} |`,
+      ),
     "",
     "## Not passing",
     "",

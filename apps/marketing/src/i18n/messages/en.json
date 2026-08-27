@@ -3209,7 +3209,7 @@
         "evidence": {
           "eyebrow": "STAGE 02",
           "title": "What the page shows",
-          "empty": "Nothing yet. Add a page and at least one query."
+          "empty": "Nothing yet. Add a page URL to run; a target query is optional."
         }
       },
       "fields": {
@@ -3306,7 +3306,8 @@
         "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
         "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
-        "retryAfter": "Retry in {seconds} seconds."
+        "retryAfter": "Retry in {seconds} seconds.",
+        "queriesAllRejected": "None of those queries could be submitted — see the note below and adjust them, or clear the field to run without a query."
       },
       "faq": {
         "title": "What this does and does not tell you",
@@ -3714,7 +3715,7 @@
           "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
         },
         "unscored": "Not scored",
-        "unscoredNote": "No target query was submitted, so keyword placement was not tested. Everything else was graded and the category subtotals below are complete; an overall score needs a target query.",
+        "unscoredNote": "No target query was submitted, so keyword placement was not tested. Every other scorable check was graded and the category subtotals below are complete; an overall score needs a target query.",
         "unscoredReport": "No overall score this run: no target query was submitted, so keyword placement was not tested."
       },
       "vitals": {

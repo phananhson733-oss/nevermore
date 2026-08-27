@@ -84,7 +84,12 @@ describe("buildCopyReport", () => {
         scoreUnavailable: "No overall score this run: no target query.",
         counts: { pass: 12, warn: 2, fail: 1 },
         topicFocus: null,
-        categories: [{ label: "Technical", earned: 8, available: 10 }],
+        categories: [
+          { label: "Technical", earned: 8, available: 10 },
+          // Nothing in it was gradable. `0/0` in a score table reads as a
+          // category that scored nothing rather than one never scored.
+          { label: "Keyword placement", earned: 0, available: 0 },
+        ],
         caps: [],
         checks: [
           {
@@ -109,6 +114,8 @@ describe("buildCopyReport", () => {
     expect(text).toContain("## Not passing");
     expect(text).toContain("canonical");
     expect(text).toContain("| `Technical` | 8/10 |");
+    expect(text).not.toContain("0/0");
+    expect(text).not.toContain("| `Keyword placement` |");
   });
 
   it("keeps a query-free run's reason right when the page URL alone blows the budget", () => {
