@@ -162,19 +162,70 @@ function record(
 function score(
   overrides: {
     readonly extract?: Partial<SeoAuditTargetPageExtract>;
-    readonly evidence?: KeywordEvidence;
+    readonly evidence?: KeywordEvidence | null;
     readonly siteRecords?: readonly SeoAuditRecord[];
   } = {},
 ) {
   return buildOnPageScore({
     extract: extract(overrides.extract),
-    evidence: overrides.evidence ?? evidence(),
+    evidence:
+      overrides.evidence === undefined ? evidence() : overrides.evidence,
     siteResources: SITE_RESOURCES,
     siteRecords: overrides.siteRecords ?? [],
   });
 }
 
 describe("buildOnPageScore", () => {
+  it("publishes no overall score when no target query was named", () => {
+    // Not a number over the categories that did run. Keyword placement is the
+    // largest graded category, so a total recomputed over the rest divides by
+    // a smaller denominator and reads higher than the same page scores when
+    // its subject is actually checked — which is the measurement behind the
+    // keyword_unmeasured ceiling.
+    const result = score({ evidence: null });
+
+    expect(result.score).toBeNull();
+    expect(result.grade).toBeNull();
+    // And no ceiling either: a cap bounds a number, and listing one beside an
+    // absent score reads as a penalty for a question this run never asked.
+    expect(result.caps).toEqual([]);
+    expect(result.topicFocus).toBeNull();
+  });
+
+  it("still grades every check a query-free run could run", () => {
+    const withQuery = score();
+    const withoutQuery = score({ evidence: null });
+    const gradedIds = (entry: typeof withQuery) =>
+      entry.checks.filter((check) => check.max > 0).map((check) => check.id);
+
+    // Every category except keyword is untouched: the same checks, the same
+    // points. Only the keyword ones leave, and they leave as one observation.
+    expect(withoutQuery.available).toBeGreaterThan(0);
+    expect(gradedIds(withoutQuery)).toEqual(
+      gradedIds(withQuery).filter((id) => !id.startsWith("keyword.")),
+    );
+    expect(
+      withoutQuery.categories.map((category) => category.category),
+    ).toContain("technical");
+  });
+
+  it("keeps the unmeasured ceiling for a query that could not be compared", () => {
+    // The failure and the choice are different facts. This one names a query
+    // and cannot read the page's text to compare it, so the ceiling stands.
+    const result = score({
+      evidence: {
+        availability: "unavailable",
+        reason: "extract_missing",
+        version: "keyword_evidence.v1",
+      } as unknown as KeywordEvidence,
+    });
+
+    expect(result.score).not.toBeNull();
+    expect(result.caps.map((cap) => cap.reason)).toContain(
+      "keyword_unmeasured",
+    );
+  });
+
   it("scores a well-built page in the top band", () => {
     const result = score();
 

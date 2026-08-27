@@ -235,7 +235,13 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           url: confirmedProfile.targetUrl,
           // Only when this visit came from the page checker. Without a handoff
           // the request is byte-for-byte what it was before the keyword layer.
-          ...(handoffQueriesRef.current === null
+          // Omitted when empty as well as when absent. A URL-only check hands
+          // over a draft with no queries, and `targetQueries: []` is not the
+          // same request as no `targetQueries` — the endpoint normalises an
+          // empty list to `empty_after_normalization` and rejects the whole
+          // call, so the report's own "open the Agent" button failed.
+          ...(handoffQueriesRef.current === null ||
+          handoffQueriesRef.current.length === 0
             ? {}
             : {
                 targetQueries: handoffQueriesRef.current,
