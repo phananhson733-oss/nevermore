@@ -316,7 +316,6 @@ git commit -m "fix(marketing): describe keyword evidence truthfully"
 - Create: `scripts/keyword-opportunity-calibration.mjs`
 - Create: `docs/external-reviews/2026-08-27-keyword-opportunity-calibration-baseline.md`
 - Modify: `packages/public-tools/src/keyword-opportunity/index.ts`
-- Modify: `package.json`
 
 **Step 1: Write failing pure replay tests**
 
@@ -334,8 +333,8 @@ the versioned fixture at the script boundary.
 
 **Step 4: Add the CLI and synthetic fixture**
 
-The artifact must state `synthetic: true` and `calibrated: false`. Add a package
-script such as `calibrate:keyword-opportunity`.
+The artifact must state `synthetic: true` and `calibrated: false`. Invoke the
+CLI directly so the active specification lock does not drift for a test helper.
 
 **Step 5: Generate and review the baseline**
 
@@ -346,8 +345,8 @@ owner labels are added. Do not commit fabricated precision.
 
 ```bash
 pnpm exec vitest run --project unit packages/public-tools/src/keyword-opportunity/calibration.test.ts
-pnpm calibrate:keyword-opportunity
-git add packages/public-tools/src/keyword-opportunity scripts/keyword-opportunity-calibration.mjs docs/external-reviews/2026-08-27-keyword-opportunity-calibration-baseline.md package.json
+pnpm exec tsx scripts/keyword-opportunity-calibration.mjs
+git add packages/public-tools/src/keyword-opportunity scripts/keyword-opportunity-calibration.mjs docs/external-reviews/2026-08-27-keyword-opportunity-calibration-baseline.md
 git commit -m "test(public-tools): add keyword calibration replay"
 ```
 

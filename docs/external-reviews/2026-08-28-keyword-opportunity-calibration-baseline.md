@@ -53,7 +53,7 @@ Each anonymized candidate needs:
 Run:
 
 ```bash
-pnpm calibrate:keyword-opportunity -- <snapshot.json> --out <report.json>
+pnpm exec tsx scripts/keyword-opportunity-calibration.mjs -- <snapshot.json> --out <report.json>
 ```
 
 Before changing numeric thresholds, review precision, false-positive eligible
