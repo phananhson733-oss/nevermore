@@ -32,8 +32,18 @@ export interface CopyReportCheck {
 }
 
 export interface CopyReportResult {
-  readonly score: number;
-  readonly grade: string;
+  /**
+   * Null for a URL-only run, where no target query was named.
+   *
+   * The report exists to be handed to an assistant. Left as a number over the
+   * categories that did run, that assistant would compare it with a scored
+   * page's number and act on a difference that is an artefact of a smaller
+   * denominator, so the absence is stated in words instead.
+   */
+  readonly score: number | null;
+  readonly grade: string | null;
+  /** The sentence explaining an absent score. Required when `score` is null. */
+  readonly scoreUnavailable?: string;
   readonly counts: {
     readonly pass: number;
     readonly warn: number;
@@ -70,7 +80,15 @@ export interface CopyReportInput {
   readonly targetUrl: string;
   readonly scannedAt: string;
   readonly cacheStatus: "hit" | "miss" | "unknown";
-  readonly evidence: KeywordEvidence;
+  /**
+   * Null for a URL-only run, where the visitor named no target query.
+   *
+   * Different from an `unavailable` region, which is a query that was named and
+   * could not be compared: that one ends the report, because the coverage it
+   * exists to carry does not exist. A URL-only run still has forty graded
+   * checks, and dropping them would hand the assistant a note instead of work.
+   */
+  readonly evidence: KeywordEvidence | null;
   /**
    * Localized sentence per limitation code.
    *
@@ -187,7 +205,9 @@ function gradedSections(result: CopyReportResult): readonly string[] {
     "",
     "## Score",
     "",
-    `${result.score}/100 (${inlineCode(result.grade)}). ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`,
+    result.score === null || result.grade === null
+      ? `${result.scoreUnavailable ?? "No overall score: no target query was named."} ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`
+      : `${result.score}/100 (${inlineCode(result.grade)}). ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`,
     ...(result.topicFocus === null
       ? []
       : [
@@ -292,12 +312,45 @@ export function buildCopyReport(input: CopyReportInput): string {
     `- Crawl cache: ${inlineCode(input.cacheStatus)}`,
   ];
 
-  if (input.evidence.availability === "unavailable") {
+  const result = input.result ?? null;
+
+  if (input.evidence === null) {
+    const graded = result === null ? [] : gradedSections(result);
+    const supporting =
+      result === null
+        ? []
+        : supportingSections(result, input.vitals ?? [], input.fixes ?? null);
+    const note = [
+      ...header,
+      ...BRIEFING,
+      "",
+      "## Keyword coverage",
+      "",
+      "No target query was submitted, so nothing was compared against the",
+      "page's title, description, headings or opening text. The checks below",
+      "are the ones that do not depend on a query. This is not a score of zero,",
+      "and it is not an overall score: the keyword category was not tested.",
+    ];
+    // Richest that fits, same order the full report uses: supporting detail
+    // goes before the findings it supports.
+    for (const [gradedPart, supportingPart] of [
+      [graded, supporting],
+      [graded, []],
+      [[], []],
+    ] as const) {
+      const rendered = [...note, ...gradedPart, ...supportingPart, ""]
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n");
+      if (withinBriefBudget(rendered, COPY_REPORT_MAX_BYTES)) return rendered;
+    }
+  }
+
+  if (input.evidence === null || input.evidence.availability === "unavailable") {
     // The two reasons are not the same fact. One says the page never came back
     // as readable HTML; the other says it did and its text did not survive the
     // projection. Printing the first for both misreports the second.
     const why =
-      input.evidence.reason === "target_page_not_captured"
+      input.evidence?.reason === "target_page_not_captured"
         ? [
             "The submitted page was not collected as a readable HTML response,",
             "so no coverage was measured.",
@@ -312,7 +365,7 @@ export function buildCopyReport(input: CopyReportInput): string {
       "",
       "## Result",
       "",
-      `No keyword evidence: ${inlineCode(input.evidence.reason)}.`,
+      `No keyword evidence: ${inlineCode(input.evidence?.reason ?? "no_target_query")}.`,
       ...why,
       "This is not a score of zero.",
       "",
@@ -379,7 +432,6 @@ export function buildCopyReport(input: CopyReportInput): string {
 
   const rows = evidence.queries.map(slotRow);
 
-  const result = input.result ?? null;
   const graded = result === null ? [] : gradedSections(result);
   const supporting =
     result === null

@@ -67,6 +67,50 @@ function report(raw: readonly string[] = ["pricing"]) {
 }
 
 describe("buildCopyReport", () => {
+  it("hands on a query-free run's findings instead of a note about them", () => {
+    // This paste exists to be given to an assistant that will implement the
+    // fixes. A run with no query still has forty graded checks; returning the
+    // "no keyword evidence" stub for it would hand over an explanation and
+    // none of the work.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      limitationText,
+      result: {
+        score: null,
+        grade: null,
+        scoreUnavailable: "No overall score this run: no target query.",
+        counts: { pass: 12, warn: 2, fail: 1 },
+        topicFocus: null,
+        categories: [{ label: "Technical", earned: 8, available: 10 }],
+        caps: [],
+        checks: [
+          {
+            id: "canonical",
+            state: "fail",
+            score: 0,
+            max: 4,
+            label: "Canonical",
+            detail: "The canonical points at another URL.",
+            categoryLabel: "Technical",
+          },
+        ],
+      },
+    });
+
+    expect(text).toContain("No target query was submitted");
+    expect(text).toContain("No overall score this run");
+    // The absence is words, never a number an assistant could compare with a
+    // scored page's.
+    expect(text).not.toMatch(/\b\d{1,3}\/100\b/);
+    // And the work is there.
+    expect(text).toContain("## Not passing");
+    expect(text).toContain("canonical");
+    expect(text).toContain("| `Technical` | 8/10 |");
+  });
+
   it("puts the sections in the order the reader needs them", () => {
     const text = report();
     const order = [

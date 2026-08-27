@@ -139,6 +139,47 @@ function auditResponse(
   );
 }
 
+/**
+ * The answer to a run that named no query.
+ *
+ * The API omits the keyword region entirely rather than sending it back
+ * unavailable, and carries `siteResources` so the score can be built — which is
+ * the point: everything except the keyword category still grades.
+ */
+function urlOnlyResponse(): Response {
+  return Response.json(
+    {
+      data: {
+        run: { source: { cache: { status: "miss" } } },
+        result: {
+          targetUrl: extract.url,
+          scannedAt: "2026-08-17T12:00:00.000Z",
+          targetInspected: true,
+          inspectedTargetUrl: extract.url,
+          coverage: {
+            availability: "available",
+            pagesInspected: 12,
+            urlsSkipped: 0,
+            urlsBlocked: 0,
+            urlsErrored: 0,
+          },
+          targetPageExtract: extract,
+          siteResources: {
+            robotsFetched: true,
+            robotsGroupsObserved: 3,
+            sitemapReferencesObserved: 1,
+            sitemapFetched: true,
+            sitemapUrls: [],
+            sitemapUrlsComplete: true,
+          },
+          records: [],
+        },
+      },
+    },
+    { status: 200 },
+  );
+}
+
 /** The same answer, computed for a page the visitor declared as a guide. */
 function guideResponse(queries: readonly string[]): Response {
   return Response.json(
@@ -295,12 +336,21 @@ describe("On-Page checker request", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(host.textContent).toContain("Add the page URL you want checked.");
 
+    // The URL is the only required input. A run with no query skips the one
+    // category that reads it and publishes no overall score, which is a
+    // choice — not a reason to refuse to run.
     await type(field(host, "onpage-url"), "acme.test/pricing");
     await act(async () => {
       buttonWith(host, "Check this page").click();
     });
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(host.textContent).toContain("Add at least one target query.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const body = JSON.parse(
+      String((fetchMock.mock.calls[0] as unknown[])[1] &&
+        ((fetchMock.mock.calls[0] as unknown[])[1] as { body: string }).body),
+    ) as Record<string, unknown>;
+    // Omitted, not sent empty: the request normaliser rejects an empty list
+    // outright, so `[]` would have failed the whole request as invalid.
+    expect("targetQueries" in body).toBe(false);
   });
 
   it("submits exactly the queries the comma-separated line spells out", async () => {
@@ -483,6 +533,49 @@ describe("On-Page checker redirected targets", () => {
 });
 
 describe("On-Page checker result", () => {
+  it("renders a query-free run instead of failing it", async () => {
+    // A response with no keyword region used to be read as the API
+    // contradicting itself and became a `scan_failed` screen. It is now what a
+    // URL-only run looks like, and every category except keyword still grades.
+    globalThis.fetch = vi.fn(
+      async () => urlOnlyResponse(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+    const text = host.textContent ?? "";
+
+    expect(text).not.toContain("could not be completed");
+    // The absence is said in the visitor's words, and it is a different
+    // sentence from a query that was named and could not be compared.
+    expect(text).toContain("No target query was submitted");
+    expect(text).not.toContain("No keyword evidence was measured");
+    // Rendered, not merely computed: the score card is the surface a reader
+    // sees, and an engine that returns null while a card prints a number is
+    // the failure this asserts against.
+    expect(text).toContain("Not scored");
+    // The number itself, not just the absence of an "N/100" shape: a zero in
+    // this slot reads as a verdict, and "Not scored" beside it does not undo
+    // the digit a reader has already taken in.
+    expect(
+      host.querySelector("[data-onpage-score]")?.textContent?.trim(),
+    ).toBe("—");
+    // And why, beside where the number would have been — with the fact that
+    // the subtotals below it are complete for the categories that did run.
+    expect(
+      host.querySelector("[data-onpage-unscored]")?.textContent,
+    ).toContain("keyword placement was not tested");
+    // The disclaimer qualifies a number; there is none to qualify.
+    expect(text).not.toContain("The weights behind the number are ours");
+    expect(text).not.toMatch(/\b\d{1,3}\s*\/\s*100\b/);
+    // And the checks it could run are on screen, which is the whole point of
+    // letting the run happen at all.
+    expect(text.toLowerCase()).toContain("technical");
+  });
+
   it("renders coverage, density and every limitation", async () => {
     globalThis.fetch = vi.fn(async () =>
       auditResponse(["pricing"]),
@@ -504,8 +597,16 @@ describe("On-Page checker result", () => {
      * rule is about the shapes a score takes.
      */
     expect(text).not.toMatch(/\b\d{1,3}\s*(?:\/|out of)\s*100\b/);
-    expect(text.toLowerCase()).not.toContain("overall score");
-    expect(text.toLowerCase()).not.toContain("your score");
+    // Read from the results region, not the whole page: the form's own hint
+    // has to use the words to say a URL-only run gets no overall score, and a
+    // denial is the opposite of the claim this guards against.
+    const results =
+      host
+        .querySelector('[aria-labelledby="onpage-stage-evidence"]')
+        ?.textContent?.toLowerCase() ?? "";
+    expect(results).not.toBe("");
+    expect(results).not.toContain("overall score");
+    expect(results).not.toContain("your score");
   });
 
   it("shows an absent field as not applicable rather than as a zero", async () => {

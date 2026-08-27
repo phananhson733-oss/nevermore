@@ -61,8 +61,19 @@ export const SCORE_CAP_REASONS: readonly ScoreCap[] = [
 
 export interface OnPageScore {
   readonly version: typeof SCORING_VERSION;
-  readonly score: number;
-  readonly grade: ScoreGrade;
+  /**
+   * Null when the visitor named no target query.
+   *
+   * Not zero and not a number over the categories that did run. Keyword
+   * placement is the largest graded category and the input to the topic cap;
+   * renormalising over the remaining ones divides by a smaller denominator and
+   * makes the same page score *higher* — which is the measurement behind the
+   * `keyword_unmeasured` ceiling below. A number that is not comparable to
+   * another page's number is worse than no number, so a URL-only run publishes
+   * its checks and its category subtotals and stops there.
+   */
+  readonly score: number | null;
+  readonly grade: ScoreGrade | null;
   readonly earned: number;
   readonly available: number;
   readonly categories: readonly CategoryScore[];
@@ -169,7 +180,8 @@ function lowestCeiling(
 
 export function buildOnPageScore(input: {
   readonly extract: SeoAuditTargetPageExtract;
-  readonly evidence: KeywordEvidence;
+  /** Null for a URL-only run: the visitor named no target query. */
+  readonly evidence: KeywordEvidence | null;
   readonly siteResources: SeoAuditSiteResources;
   readonly siteRecords: readonly SeoAuditRecord[];
 }): OnPageScore {
@@ -195,6 +207,11 @@ export function buildOnPageScore(input: {
   // A run where nothing could be graded scores nothing rather than 100: an
   // empty numerator over an empty denominator is not a perfect page.
   const raw = available === 0 ? 0 : Math.round((earned / available) * 100);
+  // No query, no score. Every other field below is still measured and still
+  // published — the checks ran, the category subtotals are complete for the
+  // categories that ran — but the headline number would be read against pages
+  // whose keyword category was graded, and it is not the same measurement.
+  const scored = input.evidence !== null;
 
   const focus = topicFocus(checkInput);
   const candidates: { readonly reason: ScoreCap; readonly ceiling: number | null }[] =
@@ -231,18 +248,30 @@ export function buildOnPageScore(input: {
       },
       {
         reason: "keyword_unmeasured",
+        // Only for a query that was named and could not be compared. Never
+        // having asked is handled by publishing no score at all, and charging
+        // this ceiling for it would mark a page down for the visitor's choice.
         ceiling:
-          input.evidence.availability === "available"
+          input.evidence === null || input.evidence.availability === "available"
             ? null
             : KEYWORD_UNMEASURED_CEILING,
       },
     ];
 
-  const caps = candidates.filter(
-    (candidate): candidate is { readonly reason: ScoreCap; readonly ceiling: number } =>
-      candidate.ceiling !== null && candidate.ceiling < raw,
-  );
-  const score = caps.reduce((value, cap) => Math.min(value, cap.ceiling), raw);
+  const caps = scored
+    ? candidates.filter(
+        (candidate): candidate is {
+          readonly reason: ScoreCap;
+          readonly ceiling: number;
+        } => candidate.ceiling !== null && candidate.ceiling < raw,
+      )
+    : // A ceiling bounds a number. With no number there is nothing to bound,
+      // and listing ceilings beside an absent score reads as a penalty for
+      // asking a question this run never asked.
+      [];
+  const score = scored
+    ? caps.reduce((value, cap) => Math.min(value, cap.ceiling), raw)
+    : null;
 
   const categories = CATEGORY_ORDER.map((category) => {
     const owned = checks.filter((entry) => entry.category === category);
@@ -257,7 +286,7 @@ export function buildOnPageScore(input: {
   return {
     version: SCORING_VERSION,
     score,
-    grade: gradeOf(score),
+    grade: score === null ? null : gradeOf(score),
     earned,
     available,
     categories,

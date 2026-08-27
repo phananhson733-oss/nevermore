@@ -28,7 +28,8 @@ export function OnPageReportSections({
   readonly extract: SeoAuditTargetPageExtract | null;
   readonly score: OnPageScore | null;
   readonly landscape: SerpLandscape | null;
-  readonly evidence: KeywordEvidence;
+  /** Null for a URL-only run: only the keyword parts read it. */
+  readonly evidence: KeywordEvidence | null;
   /** Rendered beside the score, where someone decides to hand this on. */
   readonly scoreAction?: ReactNode;
 }) {
