@@ -1747,6 +1747,35 @@ describe("buildKeywordOpportunityResult v3 process ledger", () => {
     });
   });
 
+  it("keeps legacy rows with no SERP status out of the transport-failure histogram", () => {
+    const result = buildKeywordOpportunityResult({
+      ...input({
+        observations: [geo("legacy question without SERP status")],
+      }),
+      process: {
+        validation: { requested: 1 },
+        serp: { planned: 1, dispatched: 1 },
+      },
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.process.serp).toEqual({
+      planned: 1,
+      dispatched: 1,
+      completed: 0,
+      failed: 0,
+      legacyStatusUnreported: 1,
+      failureReasons: {
+        provider_unavailable: 0,
+        provider_no_data: 0,
+        transport_outcome_unknown: 0,
+        budget_exhausted: 0,
+        unreported: 0,
+      },
+      accounted: false,
+    });
+  });
+
   it("defaults unmeasured thresholds and durations to null while keeping v2 readers process-optional", () => {
     const produced: KeywordOpportunityResultV3 =
       buildKeywordOpportunityResult(input());

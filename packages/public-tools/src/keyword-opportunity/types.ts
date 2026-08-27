@@ -878,6 +878,8 @@ export interface KeywordOpportunityProcessSerp {
   readonly dispatched: number | null;
   readonly completed: number;
   readonly failed: number;
+  /** Legacy observations that never carried a transport status. Not failures. */
+  readonly legacyStatusUnreported: number;
   readonly failureReasons: Readonly<
     Record<KeywordOpportunityProcessSerpFailureReason, number>
   >;

@@ -525,7 +525,12 @@ function buildKeywordOpportunityProcess(
       observation.validation.availability !== "explicit_zero",
   );
   let completed = 0;
+  let legacyStatusUnreported = 0;
   for (const observation of plannedObservations) {
+    if (observation.serp.status === undefined) {
+      legacyStatusUnreported += 1;
+      continue;
+    }
     if (observation.serp.status === "complete") {
       completed += 1;
       continue;
@@ -541,6 +546,7 @@ function buildKeywordOpportunityProcess(
   const serpCounts = [
     completed,
     failed,
+    legacyStatusUnreported,
     ...KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS.map(
       (reason) => failureReasons[reason],
     ),
@@ -655,11 +661,13 @@ function buildKeywordOpportunityProcess(
       dispatched,
       completed,
       failed,
+      legacyStatusUnreported,
       failureReasons,
       accounted:
         planned !== null &&
         dispatched !== null &&
         countsAreWholeAndNonNegative(serpCounts) &&
+        legacyStatusUnreported === 0 &&
         failureReasons.unreported === 0 &&
         planned === completed + failed &&
         dispatched === planned - failureReasons.budget_exhausted,
