@@ -874,6 +874,24 @@ interface ChangeCandidate {
  * Written as a positive assertion so a NaN falls outside the band instead of
  * being carried into an action.
  */
+/**
+ * A position difference, or null when either side was never measured.
+ *
+ * The GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`) and `isMetricRowValid` accepts it, so
+ * every subtraction has to say which of its operands it trusts. Written once
+ * because the four-clause test was already repeated at four call sites and
+ * two of them had drifted to checking only finiteness.
+ */
+function measuredPositionDelta(previous: number, current: number): number | null {
+  return Number.isFinite(previous) &&
+    Number.isFinite(current) &&
+    previous > 0 &&
+    current > 0
+    ? current - previous
+    : null;
+}
+
 function withinActionableBand(position: number): boolean {
   return (
     Number.isFinite(position) &&
@@ -1019,7 +1037,9 @@ function candidatesFor(
       clickChangeRatio:
         previous === null ? null : ratio(previous.clicks, current.clicks),
       positionDelta:
-        previous === null ? null : current.position - previous.position,
+        previous === null
+          ? null
+          : measuredPositionDelta(previous.position, current.position),
       order: row.clickGap,
     });
   }
@@ -1853,11 +1873,9 @@ function queryWatchlistFor({
           previous,
           previousBelowFloor,
           positionDelta:
-            previous === null ||
-            !Number.isFinite(current.position) ||
-            !Number.isFinite(previous.position)
+            previous === null
               ? null
-              : current.position - previous.position,
+              : measuredPositionDelta(previous.position, current.position),
         },
       ];
     })
@@ -2426,13 +2444,10 @@ function pageCandidatesFor(
         clickChangeRatio,
         impressionChange: current.impressions - previous.impressions,
         impressionChangeRatio: ratio(previous.impressions, current.impressions),
-        positionDelta:
-          Number.isFinite(current.position) &&
-          Number.isFinite(previous.position) &&
-          current.position > 0 &&
-          previous.position > 0
-            ? current.position - previous.position
-            : null,
+        positionDelta: measuredPositionDelta(
+          previous.position,
+          current.position,
+        ),
         noiseFloor,
       },
       order: -clickChange,
@@ -2530,13 +2545,9 @@ function pageCandidatesFor(
         // Null whenever either side lacks a measured position, which for this
         // lane includes every page the current window no longer returns.
         positionDelta:
-          current !== null &&
-          Number.isFinite(current.position) &&
-          Number.isFinite(previous.position) &&
-          current.position > 0 &&
-          previous.position > 0
-            ? current.position - previous.position
-            : null,
+          current === null
+            ? null
+            : measuredPositionDelta(previous.position, current.position),
         noiseFloor,
       },
       order: -impressionChange,

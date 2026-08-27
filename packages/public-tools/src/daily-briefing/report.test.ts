@@ -632,6 +632,25 @@ describe("query changes and actions", () => {
     expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
   });
 
+  it("reports no position move when either window's position was unmeasured", () => {
+    // The watchlist row and the CTR-gap row both subtract two positions. Both
+    // used to test only finiteness, so a side coerced to 0 produced a delta
+    // that reads as a move — and the watchlist sorts on its magnitude, which
+    // put an invented move above every real one.
+    const query = "content workflow guide";
+    const result = report({
+      currentQueryEvidence: evidence([queryRow(query, 400, 4, 0)], []),
+      previousQueryEvidence: evidence([queryRow(query, 400, 40, 9)], []),
+      brandTermsConfirmed: true,
+    }).result;
+    const observed = result.queryWatchlist.items.find(
+      (item) => item.query === query,
+    );
+
+    expect(observed).toBeDefined();
+    expect(observed?.positionDelta).toBeNull();
+  });
+
   it("keeps an unmeasured day out of the week's average position", () => {
     // Six measured days at position 10 and one day whose position was never
     // returned. Weighted over every impression, the sentinel zero pulled the
