@@ -1,6 +1,6 @@
 // @input  -- the site context plus every per-candidate observation the pipeline gathered
 // @output -- the finished result, its funnel, and an availability the surface must obey
-// @pos    -- projects observations through the v2 decision contract into three result lists
+// @pos    -- projects observations through the v3 decision contract into three result lists
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolResult } from "../contract.ts";
@@ -12,7 +12,12 @@ import {
   keywordOpportunityDecisionDiscounts,
 } from "./signals.ts";
 import {
+  KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS,
+  KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS,
   KEYWORD_OPPORTUNITY_SCHEMA_VERSION,
+  KEYWORD_OPPORTUNITY_SIGNAL_STATES,
+  KEYWORD_OPPORTUNITY_SUPPORTING_PAGE_SOURCES,
+  KEYWORD_OPPORTUNITY_WITHHELD_REASONS,
   KEYWORD_STAGE_GSC_COVERAGE,
   KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
   KEYWORD_STAGE_SERP_SAMPLE,
@@ -26,23 +31,23 @@ import type {
   KeywordOpportunityContext,
   KeywordOpportunityCoverage,
   KeywordOpportunityDecision,
-  KeywordOpportunityDecisionSummary,
-  KeywordOpportunityDurationSummary,
   KeywordOpportunityEnvelope,
   KeywordOpportunityFunnel,
-  KeywordOpportunityIncomplete,
+  KeywordOpportunityIncompleteV3,
   KeywordOpportunityIncompleteReason,
   KeywordOpportunityLane,
   KeywordOpportunityProcess,
-  KeywordOpportunityResultV2,
-  KeywordOpportunityRow,
-  KeywordOpportunitySerpFailureReason,
+  KeywordOpportunityProcessDurationsMs,
+  KeywordOpportunityProcessInput,
+  KeywordOpportunityProcessSerpFailureReason,
+  KeywordOpportunityProcessSignalStateCount,
+  KeywordOpportunityProcessThresholds,
+  KeywordOpportunityResultV3,
+  KeywordOpportunityRowV3,
   KeywordOpportunitySerpIntentEvidence,
   KeywordOpportunitySerpEvidence,
-  KeywordOpportunitySupportingPage,
-  KeywordOpportunitySupportingPageSummary,
   KeywordOpportunitySignals,
-  KeywordOpportunityThresholdSummary,
+  KeywordOpportunitySupportingPage,
   KeywordOpportunityValidation,
   KeywordOpportunityWithheld,
   KeywordOpportunityWithheldReason,
@@ -68,13 +73,21 @@ export interface KeywordOpportunityObservation {
   readonly propositionIndex: number | null;
   readonly validation: KeywordOpportunityValidation;
   readonly serp: KeywordOpportunitySerpEvidence;
-  /** Present on v2 observations; absent only while a v1 producer migrates. */
+  /** Present on v3 observations; absent only on the legacy signal-less path. */
   readonly serpIntent?: KeywordOpportunitySerpIntentEvidence | null;
   readonly signals?: KeywordOpportunitySignals;
   readonly aiOverview?: KeywordOpportunityAiOverviewObservation | null;
   readonly coverage: KeywordOpportunityCoverage;
+  /** Optional only for a legacy observation admitted during deployment skew. */
   readonly supportingPage?: KeywordOpportunitySupportingPage;
-  readonly supportingPageUrl: string | null;
+  /** @deprecated A legacy observation may carry only this unproven URL. */
+  readonly supportingPageUrl?: string | null;
+}
+
+/** The observation shape required from the v3 handler. */
+export interface KeywordOpportunityObservationV3
+  extends KeywordOpportunityObservation {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /**
@@ -104,12 +117,8 @@ export interface KeywordOpportunityReportInput {
   readonly observations: readonly KeywordOpportunityObservation[];
   /** Stage names that could not run, e.g. "serp_sample" or "gsc_coverage". */
   readonly unavailableStages: readonly string[];
-  readonly serpPlanned?: number;
-  readonly serpFailureReasons?: Readonly<
-    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
-  >;
-  readonly thresholds?: KeywordOpportunityThresholdSummary;
-  readonly durationsMs?: KeywordOpportunityDurationSummary;
+  /** Caller-owned transport, threshold and timing facts for reconciliation. */
+  readonly process?: KeywordOpportunityProcessInput;
   /**
    * When the run finished, supplied by the caller.
    *
@@ -117,6 +126,27 @@ export interface KeywordOpportunityReportInput {
    * nondeterministic or forced to stub a global.
    */
   readonly completedAt: string;
+}
+
+function safeLegacySupportingPageUrl(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== "string") return null;
+  if (!/^https?:\/\/[^/?#]+(?:[/?#]|$)/i.test(value)) return null;
+  try {
+    const parsed = new URL(value);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.host === "" ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -130,10 +160,9 @@ export interface KeywordOpportunityReportInput {
 function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   if (isKeywordAlreadyCovered(observation.coverage)) return false;
   if (observation.lane === "geo") {
-    return (
-      (observation.supportingPage?.state ?? "not_observed") === "observed" ||
-      observation.supportingPageUrl !== null
-    );
+    return observation.supportingPage?.availability === "available" ||
+      (observation.supportingPage === undefined &&
+        safeLegacySupportingPageUrl(observation.supportingPageUrl) !== null);
   }
   return (
     observation.validation.availability === "available" &&
@@ -141,16 +170,38 @@ function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   );
 }
 
+function toSupportingPageUrl(
+  supportingPage: KeywordOpportunitySupportingPage,
+): string | null {
+  return supportingPage.availability === "available"
+    ? supportingPage.url
+    : null;
+}
+
+function observationSupportingPage(
+  observation: KeywordOpportunityObservation,
+): KeywordOpportunitySupportingPage {
+  return (
+    observation.supportingPage ?? {
+      availability: "unavailable",
+      source: null,
+      url: null,
+    }
+  );
+}
+
+function observationSupportingPageUrl(
+  observation: KeywordOpportunityObservation,
+): string | null {
+  return observation.supportingPage === undefined
+    ? safeLegacySupportingPageUrl(observation.supportingPageUrl)
+    : toSupportingPageUrl(observation.supportingPage);
+}
+
 function hasObservedExistingPage(
   coverage: KeywordOpportunityCoverage,
 ): boolean {
   return isKeywordAlreadyCovered(coverage);
-}
-
-function supportingPageOrDefault(
-  observation: KeywordOpportunityObservation,
-): KeywordOpportunitySupportingPage {
-  return observation.supportingPage ?? { state: "not_observed" };
 }
 
 type KeywordOpportunityClassification =
@@ -171,7 +222,7 @@ type KeywordOpportunityClassification =
     };
 
 /**
- * Classify v2 evidence while retaining a narrow legacy path for old bundles.
+ * Classify v3 evidence while retaining a narrow legacy path for old bundles.
  * New producers always supply `signals`; their unknowns therefore reach the
  * incomplete section instead of inheriting the old binary shown/withheld gate.
  */
@@ -327,6 +378,329 @@ function countFunnel(
   };
 }
 
+function countsAreWholeAndNonNegative(values: readonly number[]): boolean {
+  return values.every((value) => Number.isInteger(value) && value >= 0);
+}
+
+function reportedCount(value: number | undefined): number | null {
+  return value !== undefined && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function processSerpFailureReason(
+  observation: KeywordOpportunityObservation,
+): KeywordOpportunityProcessSerpFailureReason {
+  switch (observation.serp.failureReason) {
+    case "provider_unavailable":
+    case "provider_no_data":
+    case "transport_outcome_unknown":
+    case "budget_exhausted":
+      return observation.serp.failureReason;
+    default:
+      return "unreported";
+  }
+}
+
+function unmeasuredThresholds(): KeywordOpportunityProcessThresholds {
+  return {
+    policyVersion: null,
+    youngDomainMonths: null,
+    siteDomainRank: null,
+    siteRankTier: null,
+    lowOrganicTrafficThreshold: null,
+  };
+}
+
+function unmeasuredDurations(): KeywordOpportunityProcessDurationsMs {
+  return {
+    total: null,
+    validation: null,
+    coverage: null,
+    serpSampling: null,
+    serpInterpretation: null,
+    domainEnrichment: null,
+    report: null,
+  };
+}
+
+function processThresholds(
+  input: KeywordOpportunityProcessInput | undefined,
+): KeywordOpportunityProcessThresholds {
+  const thresholds = input?.thresholds;
+  return thresholds === undefined
+    ? unmeasuredThresholds()
+    : {
+        policyVersion: thresholds.policyVersion ?? null,
+        youngDomainMonths: thresholds.youngDomainMonths ?? null,
+        siteDomainRank: thresholds.siteDomainRank ?? null,
+        siteRankTier: thresholds.siteRankTier ?? null,
+        lowOrganicTrafficThreshold:
+          thresholds.lowOrganicTrafficThreshold ?? null,
+      };
+}
+
+function processDurations(
+  input: KeywordOpportunityProcessInput | undefined,
+): KeywordOpportunityProcessDurationsMs {
+  const durations = input?.durationsMs;
+  return durations === undefined
+    ? unmeasuredDurations()
+    : {
+        total: durations.total ?? null,
+        validation: durations.validation ?? null,
+        coverage: durations.coverage ?? null,
+        serpSampling: durations.serpSampling ?? null,
+        serpInterpretation: durations.serpInterpretation ?? null,
+        domainEnrichment: durations.domainEnrichment ?? null,
+        report: durations.report ?? null,
+      };
+}
+
+function buildSignalStateCounts(
+  observations: readonly KeywordOpportunityObservation[],
+): readonly KeywordOpportunityProcessSignalStateCount[] {
+  const counts: KeywordOpportunityProcessSignalStateCount[] = [];
+  for (const youngDomain of KEYWORD_OPPORTUNITY_SIGNAL_STATES) {
+    for (const lowOrganicTrafficDomain of KEYWORD_OPPORTUNITY_SIGNAL_STATES) {
+      for (const communityResult of KEYWORD_OPPORTUNITY_SIGNAL_STATES) {
+        const count = observations.filter(
+          (observation) =>
+            observation.signals?.youngDomain.state === youngDomain &&
+            observation.signals.lowOrganicTrafficDomain.state ===
+              lowOrganicTrafficDomain &&
+            observation.signals.communityResult.state === communityResult,
+        ).length;
+        if (count > 0) {
+          counts.push({
+            youngDomain,
+            lowOrganicTrafficDomain,
+            communityResult,
+            count,
+          });
+        }
+      }
+    }
+  }
+  return counts;
+}
+
+function buildKeywordOpportunityProcess(
+  input: KeywordOpportunityReportInput,
+  eligible: readonly {
+    readonly observation: KeywordOpportunityObservation;
+    readonly decision: KeywordOpportunityDecision | null;
+  }[],
+  withheld: readonly KeywordOpportunityWithheld[],
+  incomplete: readonly KeywordOpportunityIncompleteV3[],
+): KeywordOpportunityProcess {
+  const observations = input.observations;
+  const available = observations.filter(
+    (observation) => observation.validation.availability === "available",
+  ).length;
+  const explicitZero = observations.filter(
+    (observation) => observation.validation.availability === "explicit_zero",
+  ).length;
+  const providerNoData = observations.filter(
+    (observation) =>
+      observation.validation.availability === "provider_no_data",
+  ).length;
+  const validationRequested = reportedCount(
+    input.process?.validation?.requested,
+  );
+  const validationCounts = [available, explicitZero, providerNoData];
+
+  const failureReasons: Record<
+    KeywordOpportunityProcessSerpFailureReason,
+    number
+  > = {
+    provider_unavailable: 0,
+    provider_no_data: 0,
+    transport_outcome_unknown: 0,
+    budget_exhausted: 0,
+    unreported: 0,
+  };
+  const plannedObservations = observations.filter(
+    (observation) =>
+      observation.validation.availability !== "explicit_zero",
+  );
+  let completed = 0;
+  let legacyStatusUnreported = 0;
+  for (const observation of plannedObservations) {
+    if (observation.serp.status === undefined) {
+      legacyStatusUnreported += 1;
+      continue;
+    }
+    if (observation.serp.status === "complete") {
+      completed += 1;
+      continue;
+    }
+    failureReasons[processSerpFailureReason(observation)] += 1;
+  }
+  const failed = KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS.reduce(
+    (sum, reason) => sum + failureReasons[reason],
+    0,
+  );
+  const planned = reportedCount(input.process?.serp?.planned);
+  const dispatched = reportedCount(input.process?.serp?.dispatched);
+  const serpCounts = [
+    completed,
+    failed,
+    legacyStatusUnreported,
+    ...KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS.map(
+      (reason) => failureReasons[reason],
+    ),
+  ];
+
+  const withheldReasons: Record<KeywordOpportunityWithheldReason, number> = {
+    volume_priced_at_zero: 0,
+    volume_not_returned: 0,
+    already_covered: 0,
+    page_one_contested: 0,
+    page_one_ranks_unresolved: 0,
+    serp_sample_budget_exhausted: 0,
+    serp_sample_unavailable: 0,
+    no_supporting_page: 0,
+    all_signals_not_observed: 0,
+  };
+  for (const entry of withheld) withheldReasons[entry.reason] += 1;
+  const incompleteReasons: Record<KeywordOpportunityIncompleteReason, number> =
+    {
+      serp_evidence_unavailable: 0,
+      young_domain_signal_unavailable: 0,
+      low_organic_traffic_signal_unavailable: 0,
+      community_result_signal_unavailable: 0,
+    };
+  for (const entry of incomplete) incompleteReasons[entry.reason] += 1;
+  const withheldReasonsTotal = KEYWORD_OPPORTUNITY_WITHHELD_REASONS.reduce(
+    (sum, reason) => sum + withheldReasons[reason],
+    0,
+  );
+  const incompleteReasonsTotal = KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS.reduce(
+    (sum, reason) => sum + incompleteReasons[reason],
+    0,
+  );
+  const positiveWithUnavailableSignals = eligible.filter(({ observation }) => {
+    const signals = observation.signals;
+    if (signals === undefined) return false;
+    const states = [
+      signals.youngDomain.state,
+      signals.lowOrganicTrafficDomain.state,
+      signals.communityResult.state,
+    ];
+    return states.includes("observed") && states.includes("unavailable");
+  }).length;
+
+  const supportingPageSources: Record<
+    (typeof KEYWORD_OPPORTUNITY_SUPPORTING_PAGE_SOURCES)[number],
+    number
+  > = {
+    gsc_observed_query_page: 0,
+    lexical_page_match: 0,
+    inventory_url_match: 0,
+    llm_proposition_source: 0,
+  };
+  let supportingPageUnavailable = 0;
+  let supportingPageSourceUnreported = 0;
+  for (const observation of observations) {
+    const supportingPage = observation.supportingPage;
+    if (supportingPage === undefined) {
+      if (safeLegacySupportingPageUrl(observation.supportingPageUrl) !== null) {
+        supportingPageSourceUnreported += 1;
+      } else {
+        supportingPageUnavailable += 1;
+      }
+      continue;
+    }
+    if (supportingPage.availability !== "available") {
+      supportingPageUnavailable += 1;
+      continue;
+    }
+    switch (supportingPage.source) {
+      case "gsc_observed_query_page":
+      case "lexical_page_match":
+      case "inventory_url_match":
+      case "llm_proposition_source":
+        supportingPageSources[supportingPage.source] += 1;
+        break;
+    }
+  }
+  const supportingPageCount =
+    supportingPageUnavailable +
+    supportingPageSourceUnreported +
+    KEYWORD_OPPORTUNITY_SUPPORTING_PAGE_SOURCES.reduce(
+      (sum, source) => sum + supportingPageSources[source],
+      0,
+    );
+  const decisionCounts = [
+    eligible.length,
+    withheld.length,
+    incomplete.length,
+    positiveWithUnavailableSignals,
+    ...KEYWORD_OPPORTUNITY_WITHHELD_REASONS.map(
+      (reason) => withheldReasons[reason],
+    ),
+    ...KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS.map(
+      (reason) => incompleteReasons[reason],
+    ),
+  ];
+
+  return {
+    validation: {
+      requested: validationRequested,
+      available,
+      explicitZero,
+      providerNoData,
+      accounted:
+        validationRequested !== null &&
+        countsAreWholeAndNonNegative(validationCounts) &&
+        validationRequested === available + explicitZero + providerNoData,
+    },
+    serp: {
+      planned,
+      dispatched,
+      completed,
+      failed,
+      legacyStatusUnreported,
+      failureReasons,
+      accounted:
+        planned !== null &&
+        dispatched !== null &&
+        countsAreWholeAndNonNegative(serpCounts) &&
+        legacyStatusUnreported === 0 &&
+        failureReasons.unreported === 0 &&
+        planned === completed + failed &&
+        dispatched === planned - failureReasons.budget_exhausted,
+    },
+    decisions: {
+      eligible: eligible.length,
+      withheld: withheld.length,
+      incomplete: incomplete.length,
+      positiveWithUnavailableSignals,
+      withheldReasons,
+      incompleteReasons,
+      accounted:
+        countsAreWholeAndNonNegative(decisionCounts) &&
+        observations.length ===
+          eligible.length + withheld.length + incomplete.length &&
+        withheld.length === withheldReasonsTotal &&
+        incomplete.length === incompleteReasonsTotal,
+    },
+    supportingPages: {
+      sources: supportingPageSources,
+      sourceUnreported: supportingPageSourceUnreported,
+      unavailable: supportingPageUnavailable,
+      accounted: supportingPageCount === observations.length,
+    },
+    signalStates: buildSignalStateCounts(observations),
+    legacyWithoutSignals: observations.filter(
+      (observation) => observation.signals === undefined,
+    ).length,
+    thresholds: processThresholds(input.process),
+    durationsMs: processDurations(input.process),
+  };
+}
+
 /**
  * What to tell a reader whose run came back thin.
  *
@@ -369,141 +743,16 @@ function resolveAvailability(
   return "available";
 }
 
-function countReasons<T extends string>(
-  values: readonly T[],
-): Readonly<Partial<Record<T, number>>> {
-  const counts: Partial<Record<T, number>> = {};
-  for (const value of values) {
-    counts[value] = (counts[value] ?? 0) + 1;
-  }
-  return counts;
-}
-
-function summarizeSupportingPages(
-  observations: readonly KeywordOpportunityObservation[],
-): KeywordOpportunitySupportingPageSummary {
-  let gscObservedQueryPage = 0;
-  let lexicalPageMatch = 0;
-  let llmPropositionSource = 0;
-  let inventoryUrlMatch = 0;
-  let notObserved = 0;
-
-  for (const observation of observations) {
-    const supportingPage = supportingPageOrDefault(observation);
-    if (supportingPage.state !== "observed") {
-      notObserved += 1;
-      continue;
-    }
-    switch (supportingPage.source) {
-      case "gsc_observed_query_page":
-        gscObservedQueryPage += 1;
-        break;
-      case "lexical_page_match":
-        lexicalPageMatch += 1;
-        break;
-      case "llm_proposition_source":
-        llmPropositionSource += 1;
-        break;
-      case "inventory_url_match":
-        inventoryUrlMatch += 1;
-        break;
-    }
-  }
-
-  return {
-    gscObservedQueryPage,
-    lexicalPageMatch,
-    llmPropositionSource,
-    inventoryUrlMatch,
-    notObserved,
-  };
-}
-
-function summarizeDecisions(
-  observations: readonly KeywordOpportunityObservation[],
-  eligibleCount: number,
-  withheld: readonly KeywordOpportunityWithheld[],
-  incomplete: readonly KeywordOpportunityIncomplete[],
-): KeywordOpportunityDecisionSummary {
-  const positiveWithUnavailableSignals = observations.filter((observation) => {
-    if (observation.signals === undefined) return false;
-    const states = [
-      observation.signals.youngDomain.state,
-      observation.signals.lowOrganicTrafficDomain.state,
-      observation.signals.communityResult.state,
-    ];
-    return states.includes("observed") && states.includes("unavailable");
-  }).length;
-
-  return {
-    eligible: eligibleCount,
-    withheld: withheld.length,
-    incomplete: incomplete.length,
-    positiveWithUnavailableSignals,
-    withheldReasons: countReasons(withheld.map((entry) => entry.reason)),
-    incompleteReasons: countReasons(incomplete.map((entry) => entry.reason)),
-  };
-}
-
-function summarizeProcess(
-  input: KeywordOpportunityReportInput,
-  observations: readonly KeywordOpportunityObservation[],
-  eligibleCount: number,
-  withheld: readonly KeywordOpportunityWithheld[],
-  incomplete: readonly KeywordOpportunityIncomplete[],
-): KeywordOpportunityProcess {
-  const completed = observations.filter(
-    (observation) =>
-      observation.validation.availability !== "explicit_zero" &&
-      observation.serp.status === "complete",
-  ).length;
-  const planned =
-    input.serpPlanned ??
-    observations.filter(
-      (observation) => observation.validation.availability !== "explicit_zero",
-    ).length;
-  const failureReasons = {
-    ...(input.serpFailureReasons ?? {}),
-  } satisfies Partial<Record<KeywordOpportunitySerpFailureReason, number>>;
-
-  return {
-    serp: {
-      planned,
-      completed,
-      failed: Math.max(planned - completed, 0),
-      failureReasons,
-    },
-    supportingPages: summarizeSupportingPages(observations),
-    decisions: summarizeDecisions(
-      observations,
-      eligibleCount,
-      withheld,
-      incomplete,
-    ),
-    thresholds: input.thresholds ?? {
-      siteDomainRank: null,
-      lowOrganicTrafficThreshold: null,
-    },
-    durationsMs: input.durationsMs ?? {
-      total: 0,
-      coverage: null,
-      serpSampling: null,
-      serpInterpretation: null,
-      domainEnrichment: null,
-    },
-  };
-}
-
 /** Assemble the finished result from observations that are already judged. */
 export function buildKeywordOpportunityResult(
   input: KeywordOpportunityReportInput,
-): KeywordOpportunityResultV2 {
+): KeywordOpportunityResultV3 {
   const eligible: Array<{
     readonly observation: KeywordOpportunityObservation;
     readonly decision: KeywordOpportunityDecision | null;
   }> = [];
   const withheld: KeywordOpportunityWithheld[] = [];
-  const incomplete: KeywordOpportunityIncomplete[] = [];
+  const incomplete: KeywordOpportunityIncompleteV3[] = [];
 
   for (const observation of input.observations) {
     const classification = classifyObservation(
@@ -534,7 +783,8 @@ export function buildKeywordOpportunityResult(
         aiOverview: publicAiOverviewEvidence(observation.aiOverview),
         reason: classification.reason,
         decision: classification.decision,
-        supportingPage: supportingPageOrDefault(observation),
+        supportingPage: observationSupportingPage(observation),
+        supportingPageUrl: observationSupportingPageUrl(observation),
       });
     }
   }
@@ -542,7 +792,7 @@ export function buildKeywordOpportunityResult(
   const shown = eligible.map(({ observation }) => observation);
   const clusters = clusterKeywords(shown.map((row) => row.keyword));
   const clusterIds = keywordClusterIndex(clusters);
-  const rows: KeywordOpportunityRow[] = eligible.map(
+  const rows: KeywordOpportunityRowV3[] = eligible.map(
     ({ observation, decision }) => ({
       keyword: observation.keyword,
       lane: observation.lane,
@@ -560,11 +810,17 @@ export function buildKeywordOpportunityResult(
             decision,
           }),
       coverage: observation.coverage,
-      supportingPage: supportingPageOrDefault(observation),
-      supportingPageUrl: observation.supportingPageUrl,
+      supportingPage: observationSupportingPage(observation),
+      supportingPageUrl: observationSupportingPageUrl(observation),
       nextChecks: keywordNextChecks(observation),
       clusterId: clusterIds.get(observation.keyword) ?? null,
     }),
+  );
+  const process = buildKeywordOpportunityProcess(
+    input,
+    eligible,
+    withheld,
+    incomplete,
   );
 
   return {
@@ -577,15 +833,9 @@ export function buildKeywordOpportunityResult(
     incomplete,
     clusters,
     funnel: countFunnel(input, shown),
-    process: summarizeProcess(
-      input,
-      input.observations,
-      rows.length,
-      withheld,
-      incomplete,
-    ),
     unavailableStages: input.unavailableStages,
     nextStepSuggestions: nextSteps(input, rows.length, incomplete.length),
+    process,
   };
 }
 

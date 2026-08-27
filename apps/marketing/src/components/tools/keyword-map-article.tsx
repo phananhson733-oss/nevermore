@@ -267,14 +267,15 @@ function EnArticle() {
         </h3>
         <p className={P}>
           Every deduplicated candidate except one the provider explicitly priced
-          at zero is attempted. Page-one reads run in ordered parallel waves of
-          up to ten, so a provider gap stays attached to that keyword rather than
+          at zero enters a replenishing pool of up to ten concurrent requests,
+          so a provider gap stays attached to that keyword rather than
           silently shortening the plan. Each completed page reports three raw
           opportunity signals separately: a domain registered within 24 months,
           a domain whose estimated organic traffic is below the requesting
           site&apos;s tier threshold, or a community result. One observed signal
-          makes a candidate eligible; any unavailable required signal leaves it
-          incomplete; only three completed negatives exclude it.
+          makes a candidate eligible even when a sibling signal is unavailable;
+          without a positive, unavailable evidence stays incomplete, and only
+          three completed negatives exclude it.
         </p>
         <p className={P}>
           The provider&apos;s keyword intent and the model&apos;s interpretation of
@@ -365,9 +366,9 @@ function ZhArticle() {
 
         <h3 className={H3}>除明确核价为零外，每个候选词都检查真实第一页</h3>
         <p className={P}>
-          去重候选词中，除数据源明确核价为零的词以外，每一个都会尝试读取第一页。读取按固定顺序、每波最多十个并行执行；数据源缺口会留在对应关键词上，不会悄悄缩短计划。每个完成的第一页分别报告三项原始机会信号：注册不超过
+          去重候选词中，除数据源明确核价为零的词以外，每一个都会进入最多十个并发请求的持续补位池；数据源缺口会留在对应关键词上，不会悄悄缩短计划。每个完成的第一页分别报告三项原始机会信号：注册不超过
           24
-          个月的域名、自然搜索预估流量低于当前站点层级阈值的域名、或社区结果。观测到任一信号即可进入机会区；任何一项必需证据不可用，就留在「检测未完成」；只有三项都完成且均为阴性才会排除。
+          个月的域名、自然搜索预估流量低于当前站点层级阈值的域名、或社区结果。观测到任一信号即可进入机会区，即使同层另一项证据不可用也保留；没有正向信号时，缺失证据留在「检测未完成」；只有三项都完成且均为阴性才会排除。
         </p>
         <p className={P}>
           数据源返回的关键词意图，和模型对自然结果前十名的解读，会分列展示并保留各自来源。AI

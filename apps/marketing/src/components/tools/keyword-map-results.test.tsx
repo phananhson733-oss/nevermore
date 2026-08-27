@@ -165,7 +165,7 @@ function v2GeoRow(keyword: string): KeywordOpportunityRow {
     lane: "geo",
     questionForm: true,
     supportingPage: {
-      state: "observed",
+      availability: "available",
       source: "llm_proposition_source",
       url: "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
     },
@@ -508,11 +508,13 @@ describe("keyword map results", () => {
       const notObserved = {
         ...observedBase,
         keyword: "geo supporting page not observed",
+        supportingPage: undefined,
         supportingPageUrl: null,
       };
       const unavailable = {
         ...observedBase,
         keyword: "geo supporting page unavailable",
+        supportingPage: undefined,
         supportingPageUrl: "not a valid supporting URL",
       };
       const markup = render(
@@ -556,20 +558,38 @@ describe("keyword map results", () => {
       unavailableStages: ["serp_sample"],
       funnel: { ...FUNNEL, serpSampled: 0, winnableEvidence: 0 },
       process: {
+        validation: {
+          requested: 3,
+          available: 1,
+          explicitZero: 1,
+          providerNoData: 1,
+          accounted: true,
+        },
         serp: {
           planned: 2,
+          dispatched: 2,
           completed: 0,
           failed: 2,
+          legacyStatusUnreported: 0,
           failureReasons: {
             provider_unavailable: 2,
+            provider_no_data: 0,
+            transport_outcome_unknown: 0,
+            budget_exhausted: 0,
+            unreported: 0,
           },
+          accounted: true,
         },
         supportingPages: {
-          gscObservedQueryPage: 0,
-          lexicalPageMatch: 1,
-          llmPropositionSource: 0,
-          inventoryUrlMatch: 0,
-          notObserved: 2,
+          sources: {
+            gsc_observed_query_page: 0,
+            lexical_page_match: 1,
+            llm_proposition_source: 0,
+            inventory_url_match: 0,
+          },
+          sourceUnreported: 0,
+          unavailable: 2,
+          accounted: true,
         },
         decisions: {
           eligible: 1,
@@ -578,21 +598,40 @@ describe("keyword map results", () => {
           positiveWithUnavailableSignals: 1,
           withheldReasons: {
             volume_priced_at_zero: 1,
+            volume_not_returned: 0,
+            already_covered: 0,
+            page_one_contested: 0,
+            page_one_ranks_unresolved: 0,
+            serp_sample_budget_exhausted: 0,
+            serp_sample_unavailable: 0,
+            no_supporting_page: 0,
+            all_signals_not_observed: 0,
           },
           incompleteReasons: {
             serp_evidence_unavailable: 1,
+            young_domain_signal_unavailable: 0,
+            low_organic_traffic_signal_unavailable: 0,
+            community_result_signal_unavailable: 0,
           },
+          accounted: true,
         },
+        signalStates: [],
+        legacyWithoutSignals: 0,
         thresholds: {
+          policyVersion: "keyword_opportunity_thresholds.v1",
+          youngDomainMonths: 24,
           siteDomainRank: 180,
+          siteRankTier: "rank_1_200",
           lowOrganicTrafficThreshold: 5_000,
         },
         durationsMs: {
           total: 3_200,
+          validation: 100,
           coverage: 400,
           serpSampling: 1_200,
           serpInterpretation: 300,
           domainEnrichment: 700,
+          report: 50,
         },
       },
     });
@@ -628,13 +667,15 @@ describe("keyword map results", () => {
     expect(details.match(/not checked/g)).toHaveLength(2);
     for (const copy of [
       "Run ledger",
-      "Page-one sampling planned 2, completed 0, and left 2 unavailable.",
+      "Page-one sampling planned 2, dispatched 2, completed 0, and left 2 unavailable.",
       "Unavailable page-one reads: Results-page provider unavailable 2.",
+      "Pricing requested 3: 1 measured positive, 1 explicit zero, 1 provider no data.",
       "Supporting-page evidence across all candidates",
-      "Crawled page match 1",
+      "Related crawled page 1",
       "Decision totals: 1 eligible, 1 excluded, 1 incomplete.",
-      "Low-traffic threshold used for this site: rank 180, threshold 5,000.",
+      "Provisional policy keyword_opportunity_thresholds.v1",
       "Stage time: total 3,200ms.",
+      "All reported ledger totals reconcile.",
     ]) {
       expect(details).toContain(copy);
     }
@@ -1532,16 +1573,18 @@ describe("keyword map results", () => {
         locale === "en"
           ? [
               "up to 20 pages",
+              "The model proposes",
               "Every candidate except an explicit-zero term",
-              "parallel waves of up to ten",
+              "replenishing pool of up to ten concurrent",
               "provider availability",
               "answer assessment",
               "ranking discount, never a veto",
             ]
           : [
               "最多 20 个页面",
+              "模型根据你确认的站点上下文提出候选词",
               "除明确核价为零以外的每个候选词",
-              "每波最多 10 个并行",
+              "最多 10 个并发请求的持续补位池",
               "数据源可用性",
               "答案评估",
               "只作为排序折扣，绝不作为否决条件",
@@ -1556,6 +1599,10 @@ describe("keyword map results", () => {
         "单次成本上限",
         "逐个打开",
         "大约两分钟",
+        "Candidates are priced, not guessed",
+        "候选词是核价出来的，不是猜的",
+        "fixed parallel waves",
+        "按固定顺序、每波",
       ]) {
         expect(serialized).not.toContain(stale);
       }

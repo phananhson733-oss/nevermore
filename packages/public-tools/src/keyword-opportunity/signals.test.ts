@@ -75,34 +75,49 @@ describe("classifyKeywordOpportunitySignals", () => {
     });
   });
 
-  it("keeps a positive signal eligible even when another sibling stayed unavailable", () => {
-    expect(
-      classifyKeywordOpportunitySignals(
+  it.each([
+    [
+      "young domain with unavailable organic traffic",
+      "young_domain",
+      () =>
         signals({
           youngDomain: {
             state: "observed",
             observation: {
               domain: "young.test",
-              registrationDate: "2026-01-01T00:00:00.000Z",
-              observedAt: "2026-08-10T00:00:00.000Z",
+              registrationDate: "2026-01-01",
+              observedAt: "2026-08-27T00:00:00.000Z",
               ageMonths: 7,
             },
           },
           lowOrganicTrafficDomain: UNKNOWN,
         }),
-      ),
-    ).toEqual({
-      disposition: "eligible",
-      basis: "positive_signal_observed",
-      positiveSignals: ["young_domain"],
-      incompleteReason: null,
-    });
-  });
-
-  it("keeps a positive signal eligible even when another signal stayed unavailable", () => {
-    expect(
-      classifyKeywordOpportunitySignals(
+    ],
+    [
+      "low organic traffic with unavailable community evidence",
+      "low_organic_traffic_domain",
+      () =>
         signals({
+          lowOrganicTrafficDomain: {
+            state: "observed",
+            observation: {
+              domain: "small.test",
+              organicEtv: 120,
+              threshold: 5_000,
+              marketCode: "us",
+              languageCode: "en",
+              observedAt: "2026-08-27T00:00:00.000Z",
+            },
+          },
+          communityResult: UNKNOWN,
+        }),
+    ],
+    [
+      "community result with unavailable young-domain evidence",
+      "community_result",
+      () =>
+        signals({
+          youngDomain: UNKNOWN,
           communityResult: {
             state: "observed",
             observation: {
@@ -112,16 +127,23 @@ describe("classifyKeywordOpportunitySignals", () => {
               source: "provider_item_type",
             },
           },
-          youngDomain: UNKNOWN,
         }),
-      ),
-    ).toEqual({
-      disposition: "eligible",
-      basis: "positive_signal_observed",
-      positiveSignals: ["community_result"],
-      incompleteReason: null,
-    });
-  });
+    ],
+  ] as const)(
+    "admits an observed %s signal without rewriting unavailable evidence",
+    (_description, positiveSignal, makeSignals) => {
+      const observation = makeSignals();
+      const snapshot = structuredClone(observation);
+
+      expect(classifyKeywordOpportunitySignals(observation)).toEqual({
+        disposition: "eligible",
+        basis: "positive_signal_observed",
+        positiveSignals: [positiveSignal],
+        incompleteReason: null,
+      });
+      expect(observation).toEqual(snapshot);
+    },
+  );
 
   it("excludes only when all three completed as not observed", () => {
     expect(classifyKeywordOpportunitySignals(signals())).toEqual({

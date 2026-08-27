@@ -234,6 +234,37 @@ function ExportButton({
   );
 }
 
+/** Keep the complete public evidence ledger locally; this creates no server write. */
+function AuditJsonButton({
+  result,
+}: {
+  readonly result: KeywordOpportunityResult;
+}) {
+  const t = useTranslations("tools.keywordMap");
+
+  function download() {
+    const blob = new Blob([`${JSON.stringify(result, null, 2)}\n`], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `keyword-opportunity-audit-${result.marketCode.toLowerCase()}-${result.languageCode.toLowerCase()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+    >
+      {t("exportAuditJson")}
+    </button>
+  );
+}
+
 /**
  * What the run thinks of itself, and what to change — together, at the top.
  *
@@ -334,7 +365,10 @@ function ResultSummary({
             })}
           </p>
         </div>
-        {result.rows.length > 0 ? <ExportButton result={result} /> : null}
+        <div className="flex flex-wrap gap-2">
+          {result.rows.length > 0 ? <ExportButton result={result} /> : null}
+          <AuditJsonButton result={result} />
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -516,13 +550,14 @@ function ProcessLedger({
   const process = result.process;
   if (process === undefined) return null;
 
+  const measuredCount = (value: number | null): string =>
+    value === null ? t("notMeasured") : formatCount(value, locale);
+
   const supportingPageBreakdown = formatBreakdown(
     {
-      gsc_observed_query_page: process.supportingPages.gscObservedQueryPage,
-      lexical_page_match: process.supportingPages.lexicalPageMatch,
-      llm_proposition_source: process.supportingPages.llmPropositionSource,
-      inventory_url_match: process.supportingPages.inventoryUrlMatch,
-      not_observed: process.supportingPages.notObserved,
+      ...process.supportingPages.sources,
+      source_unreported: process.supportingPages.sourceUnreported,
+      unavailable: process.supportingPages.unavailable,
     },
     (key) => label(`supportingPageSources.${key}`, key),
     locale,
@@ -545,9 +580,11 @@ function ProcessLedger({
   const durationBreakdown = (
     [
       ["coverage", process.durationsMs.coverage],
+      ["validation", process.durationsMs.validation],
       ["serpSampling", process.durationsMs.serpSampling],
       ["serpInterpretation", process.durationsMs.serpInterpretation],
       ["domainEnrichment", process.durationsMs.domainEnrichment],
+      ["report", process.durationsMs.report],
     ] as const
   )
     .flatMap(([key, value]) =>
@@ -558,22 +595,43 @@ function ProcessLedger({
           ],
     )
     .join(" · ");
+  const accounted =
+    process.validation.accounted &&
+    process.serp.accounted &&
+    process.decisions.accounted &&
+    process.supportingPages.accounted;
 
   return (
     <div className="mt-4 space-y-2.5 border-t border-brand-border-faint pt-3">
       <p className={LABEL}>{t("process.title")}</p>
       <p className={SECTION_INTRO}>
         {t("process.serpSummary", {
-          planned: process.serp.planned,
+          planned: measuredCount(process.serp.planned),
+          dispatched: measuredCount(process.serp.dispatched),
           completed: process.serp.completed,
           failed: process.serp.failed,
         })}
       </p>
+      {process.serp.legacyStatusUnreported > 0 ? (
+        <p className={SECTION_INTRO}>
+          {t("process.legacyStatusUnreported", {
+            count: process.serp.legacyStatusUnreported,
+          })}
+        </p>
+      ) : null}
       {failureBreakdown === "" ? null : (
         <p className={SECTION_INTRO}>
           {t("process.serpFailures", { reasons: failureBreakdown })}
         </p>
       )}
+      <p className={SECTION_INTRO}>
+        {t("process.validation", {
+          requested: measuredCount(process.validation.requested),
+          available: process.validation.available,
+          explicitZero: process.validation.explicitZero,
+          providerNoData: process.validation.providerNoData,
+        })}
+      </p>
       <p className={SECTION_INTRO}>
         {t("process.supportingPages", {
           breakdown: supportingPageBreakdown,
@@ -607,6 +665,12 @@ function ProcessLedger({
         {process.thresholds.lowOrganicTrafficThreshold === null
           ? t("process.thresholdUnavailable")
           : t("process.threshold", {
+              policy: process.thresholds.policyVersion ?? "—",
+              months:
+                process.thresholds.youngDomainMonths === null
+                  ? "—"
+                  : process.thresholds.youngDomainMonths,
+              tier: process.thresholds.siteRankTier ?? "—",
               rank:
                 process.thresholds.siteDomainRank === null
                   ? "—"
@@ -618,10 +682,17 @@ function ProcessLedger({
             })}
       </p>
       <p className={SECTION_INTRO}>
-        {t("process.durations", {
-          total: formatCount(process.durationsMs.total, locale),
-          breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
-        })}
+        {process.durationsMs.total === null
+          ? t("process.durationsPartial", {
+              breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
+            })
+          : t("process.durations", {
+              total: formatCount(process.durationsMs.total, locale),
+              breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
+            })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t(accounted ? "process.accounted" : "process.unaccounted")}
       </p>
     </div>
   );
@@ -920,7 +991,7 @@ function IntentSummary({
 type SupportingPagePresentation =
   | { readonly state: "not_observed" | "unavailable" }
   | {
-      readonly state: "observed";
+      readonly state: "available";
       readonly source: string | null;
       readonly compact: string;
       readonly full: string;
@@ -930,14 +1001,15 @@ function supportingPagePresentation(
   supportingPage: KeywordOpportunityRow["supportingPage"] | undefined,
   value: string | null,
 ): SupportingPagePresentation {
-  if (value === null) {
+  const pageUrl =
+    supportingPage?.availability === "available" ? supportingPage.url : value;
+  if (pageUrl === null) {
     return {
-      state:
-        supportingPage?.state === "observed" ? "not_observed" : (supportingPage?.state ?? "not_observed"),
+      state: supportingPage === undefined ? "not_observed" : "unavailable",
     };
   }
   try {
-    const parsed = new URL(value);
+    const parsed = new URL(pageUrl);
     if (
       (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
       parsed.host === ""
@@ -945,11 +1017,13 @@ function supportingPagePresentation(
       return { state: "unavailable" };
     }
     return {
-      state: "observed",
+      state: "available",
       source:
-        supportingPage?.state === "observed" ? supportingPage.source : null,
+        supportingPage?.availability === "available"
+          ? supportingPage.source
+          : null,
       compact: `${parsed.host}${parsed.pathname}`,
-      full: value,
+      full: pageUrl,
     };
   } catch {
     return { state: "unavailable" };
@@ -966,7 +1040,7 @@ function SupportingPageSummary({
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
   const page = supportingPagePresentation(supportingPage, value);
-  if (page.state === "observed") {
+  if (page.state === "available") {
     return (
       <div className={`${META_TEXT} space-y-1 break-words text-text-dark-secondary`}>
         <p>{page.compact}</p>
@@ -1255,7 +1329,7 @@ function EvidenceDetailRow({
               <EvidenceFact label={t("columns.coverage")}>
                 {label(`coverage.${row.coverage}`, row.coverage)}
               </EvidenceFact>
-              {supportingPage.state === "observed" ? (
+              {supportingPage.state === "available" ? (
                 <>
                   <EvidenceFact label={t("evidence.supportingPageUrl")}>
                     <span className="break-all">{supportingPage.full}</span>

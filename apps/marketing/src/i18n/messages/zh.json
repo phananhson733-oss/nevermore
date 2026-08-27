@@ -2951,12 +2951,13 @@
       "startOver": "重新开始",
       "running": "正在运行…",
       "runningTitle": "正在生成机会地图",
-      "runningBody": "给候选词核价、读取你的 Search Console 证据，并对除明确核价为零以外的每个候选词检查第一页；按每波最多 10 个并行执行。用时取决于候选词数量和本次数据源响应。",
+      "runningBody": "给模型提出的候选词核价、读取你的 Search Console 证据，并对除明确核价为零以外的每个候选词检查第一页；使用最多 10 个并发请求的持续补位池。用时取决于候选词数量和本次数据源响应。",
       "runningStatus": "仍在运行，已用时 {seconds} 秒。",
       "elapsed": "已用时 {seconds} 秒",
       "statusDone": "完成，{count} 条机会。",
       "cooldown": "还有 {seconds} 秒可重试。",
       "exportCsv": "导出 CSV",
+      "exportAuditJson": "导出审计 JSON",
       "commonChecksIntro": "每一行仍需你决定：",
       "retryWithSeeds": "把这些词填入种子再跑一次",
       "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
@@ -2984,11 +2985,11 @@
         "volumePositive": "有搜索量",
         "alreadyCovered": "已在服务",
         "serpSampled": "已抽样第一页",
-        "winnableEvidence": "第一页有弱站",
+        "winnableEvidence": "第一页弱度上下文",
         "shown": "已展示"
       },
       "weakestHint": "最弱排名只是第一页的一项原始事实，不再单独作为判定规则。机会判定会分别报告三项信号：年轻域名、低自然搜索流量域名或社区结果。只要已有正向信号，这一行仍会保留；只有在没有任何正向信号时，缺失证据才会把它留在「检测未完成」。",
-      "geoHint": "这些是用同一套三项第一页信号判定的问句候选词。只有观测到支持页面时才会展示；数据源没有返回需求量时，不会声称存在需求。",
+      "geoHint": "这些是用同一套三项第一页信号判定的问句候选词。相关页或候选来源页会连同准确依据一起展示；数据源没有返回需求量时，不会声称存在需求。",
       "eligibleTitle": "符合条件的机会",
       "eligibleIntro": "至少观测到一项必需的机会信号。AI Overview 的答案完整度只会降低排序，绝不会排除候选词。",
       "withheldTitle": "已排除",
@@ -3020,7 +3021,7 @@
         "competition": "竞争上下文",
         "signals": "三项信号证据",
         "aiOverview": "AI Overview",
-        "supportingPage": "支持页面",
+        "supportingPage": "相关页或来源页",
         "coverage": "你的覆盖情况",
         "coverageReview": "覆盖与复核",
         "nextChecks": "动手前先查",
@@ -3036,11 +3037,12 @@
         "unavailable": "支持页面不可用"
       },
       "supportingPageSources": {
-        "gsc_observed_query_page": "已观测查询页面",
-        "lexical_page_match": "页面词面匹配",
-        "llm_proposition_source": "命题来源页",
-        "inventory_url_match": "Sitemap URL 匹配",
-        "not_observed": "未观测到支持页面"
+        "gsc_observed_query_page": "实测查询页面",
+        "lexical_page_match": "相关抓取页面",
+        "llm_proposition_source": "候选词来源页",
+        "inventory_url_match": "可能已有页面",
+        "source_unreported": "旧结果未上报页面来源",
+        "unavailable": "没有可用页面引用"
       },
       "evidence": {
         "show": "查看证据",
@@ -3062,27 +3064,35 @@
       },
       "process": {
         "title": "本次运行台账",
-        "serpSummary": "第一页抽样计划 {planned} 个，完成 {completed} 个，仍有 {failed} 个不可用。",
+        "validation": "核价请求 {requested} 个：有实测量 {available} 个，明确零量 {explicitZero} 个，数据源无数据 {providerNoData} 个。",
+        "serpSummary": "第一页抽样计划 {planned} 个，实际发出 {dispatched} 个，完成 {completed} 个，仍有 {failed} 个不可用。",
+        "legacyStatusUnreported": "{count} 个旧版候选词没有携带抽样状态。",
         "serpFailures": "第一页抽样不可用的原因：{reasons}。",
         "failureReasons": {
           "provider_unavailable": "结果页 provider 不可用",
           "provider_no_data": "provider 未返回第一页数据",
           "transport_outcome_unknown": "抽样结果未上报",
-          "budget_exhausted": "运行预算耗尽，未能发出请求"
+          "budget_exhausted": "运行预算耗尽，未能发出请求",
+          "unreported": "不可用结果没有携带失败原因"
         },
         "supportingPages": "所有候选词的支持页面证据：{breakdown}。",
         "decisions": "判定总数：符合条件 {eligible} 个，已排除 {withheld} 个，检测未完成 {incomplete} 个。",
         "withheldReasons": "排除原因：{reasons}。",
         "incompleteReasons": "未完成原因：{reasons}。",
         "positiveWithUnavailable": "{count} 个候选词在保留正向信号的同时，还有同层证据不可用。",
-        "threshold": "本次站点使用的低流量阈值：站点权重 {rank}，阈值 {threshold}。",
+        "threshold": "临时策略 {policy}：年轻域名不超过 {months} 个月；站点层级 {tier}、权重 {rank}、低流量阈值 {threshold}。",
         "thresholdUnavailable": "当前站点自身权重层级未解析出来，所以低流量阈值保持不可用。",
         "durations": "阶段耗时：总计 {total}ms。拆分：{breakdown}。",
+        "durationsPartial": "已测阶段耗时：{breakdown}。总耗时和报告组装耗时未测量。",
+        "accounted": "所有已上报台账总数均可对账。",
+        "unaccounted": "至少一项台账总数未测量或未能对账；这些总数仍属于不完整证据。",
         "durationStages": {
+          "validation": "关键词核价",
           "coverage": "Search Console 覆盖读取",
           "serpSampling": "第一页抽样",
           "serpInterpretation": "SERP 解读",
-          "domainEnrichment": "域名补充证据"
+          "domainEnrichment": "域名补充证据",
+          "report": "报告组装"
         }
       },
       "aio": {

@@ -15,9 +15,9 @@ import type {
 
 /**
  * Apply the three-question rule without collapsing unknown evidence to false.
- * A positive signal stays positive even when a sibling signal is unavailable;
- * only a row with no positive signal falls back to incomplete-on-unknown or
- * excluded-on-three-negatives.
+ * One observed positive admits the candidate even when a sibling signal is
+ * unavailable; only no-positive unknowns stay incomplete, and only three
+ * completed negatives may exclude.
  */
 export function classifyKeywordOpportunitySignals(
   signals: KeywordOpportunitySignals,
@@ -74,7 +74,7 @@ export function classifyKeywordOpportunitySignals(
   };
 }
 
-/** AI Overview assessment is a ranking discount in v2, never an exclusion. */
+/** AI Overview assessment is a ranking discount, never an exclusion. */
 export function keywordOpportunityDecisionDiscounts(
   aiOverview: KeywordOpportunityAiOverviewObservation | null | undefined,
 ): readonly KeywordOpportunityDecisionDiscount[] {

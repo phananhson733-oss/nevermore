@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "keyword_opportunity_calibration_snapshot.v1",
+  "synthetic": true,
+  "candidates": [
+    {
+      "candidateId": "positive-with-unknown",
+      "lane": "seo",
+      "discoveryBasis": "traditional_expansion",
+      "siteDomainRank": 180,
+      "explicitZero": false,
+      "alreadyCovered": false,
+      "serpComplete": true,
+      "domainRegistrationAgeMonths": [12, null],
+      "domainOrganicEtv": [20000, null],
+      "communityObserved": false,
+      "label": "true_opportunity"
+    },
+    {
+      "candidateId": "traffic-threshold-flip",
+      "lane": "seo",
+      "discoveryBasis": "traditional_expansion",
+      "siteDomainRank": 180,
+      "explicitZero": false,
+      "alreadyCovered": false,
+      "serpComplete": true,
+      "domainRegistrationAgeMonths": [48, 60],
+      "domainOrganicEtv": [6000, 20000],
+      "communityObserved": false,
+      "label": "true_opportunity"
+    },
+    {
+      "candidateId": "completed-negative",
+      "lane": "geo",
+      "discoveryBasis": "site_proposition",
+      "siteDomainRank": 180,
+      "explicitZero": false,
+      "alreadyCovered": false,
+      "serpComplete": true,
+      "domainRegistrationAgeMonths": [48, 60],
+      "domainOrganicEtv": [20000, 30000],
+      "communityObserved": false,
+      "label": "not_opportunity"
+    }
+  ]
+}

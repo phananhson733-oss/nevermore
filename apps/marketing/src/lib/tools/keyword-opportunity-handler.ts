@@ -8,6 +8,7 @@ import {
   buildKeywordCoverageIndex,
   createPublicToolError,
   judgeKeywordWinnability,
+  KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
   KEYWORD_OPPORTUNITY_UNSAMPLED,
   keywordCoverageProperty,
   keywordTokens,
@@ -26,7 +27,7 @@ import {
   type KeywordOpportunityBasis,
   type KeywordOpportunityContext,
   type KeywordOpportunityErrorCode,
-  type KeywordOpportunityObservation,
+  type KeywordOpportunityObservationV3,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
   type KeywordOpportunityProviderIntent,
@@ -49,6 +50,8 @@ import {
 } from "./keyword-cost-guard.ts";
 import {
   buildKeywordSignalEvidence,
+  KEYWORD_YOUNG_DOMAIN_MONTHS,
+  keywordSiteRankTier,
   keywordSiteTrafficThreshold,
 } from "./keyword-signal-evidence.ts";
 import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
@@ -336,7 +339,7 @@ export interface KeywordOpportunityDependencies {
     readonly marketCode: string;
     readonly languageCode: string;
   }) => Promise<readonly KeywordSerpSampleResult[]>;
-  /** Optional for injected/pre-v2 callers; production always supplies it. */
+  /** Optional for injected legacy callers; production always supplies it. */
   readonly interpretSerpEvidence?: (
     inputs: readonly KeywordSerpInterpretationInput[],
   ) => Promise<readonly KeywordSerpInterpretation[]>;
@@ -410,7 +413,7 @@ function isLegacyCoverageRead(
   return Array.isArray(read);
 }
 
-/** Preserve existing injected query-only readers while production returns v2. */
+/** Preserve injected query-only readers while production uses a structured read. */
 function normalizeCoverageRead(
   read: KeywordCoverageRead | readonly KeywordCoverageQueryRow[],
 ): KeywordCoverageRead {
@@ -803,14 +806,12 @@ export async function handleKeywordOpportunitiesRequest(
   let costCandidateCount = 0;
   let costSerpSampled = 0;
   let reportProduced = false;
-  const runStartedAt = dependencies.now().getTime();
+  let validationDurationMs: number | null = null;
   let coverageDurationMs: number | null = null;
   let serpSamplingDurationMs: number | null = null;
   let serpInterpretationDurationMs: number | null = null;
   let domainEnrichmentDurationMs: number | null = null;
-  let serpFailureReasons: Readonly<
-    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
-  > = {};
+  const totalStartedAt = dependencies.now().getTime();
   try {
     const drafts = await dependencies.expandCandidates({
       propositions: token.propositions,
@@ -839,6 +840,7 @@ export async function handleKeywordOpportunitiesRequest(
     const candidates = [...unique.values()].slice(0, KEYWORD_CANDIDATE_CAP);
     costCandidateCount = candidates.length;
 
+    const validationStartedAt = dependencies.now().getTime();
     const providerRows = await dependencies.validateVolumes({
       keywords: candidates.map((candidate) => candidate.keyword),
       marketCode: token.marketCode,
@@ -848,6 +850,8 @@ export async function handleKeywordOpportunitiesRequest(
       candidates.map((candidate) => candidate.keyword),
       providerRows,
     );
+    validationDurationMs =
+      dependencies.now().getTime() - validationStartedAt;
 
     // Null all the way through when the sample was never read, so the domain
     // layer can tell "the property served nothing" from "nobody looked". An
@@ -883,7 +887,7 @@ export async function handleKeywordOpportunitiesRequest(
         ) {
           unavailableStages.push(KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED);
         }
-      } catch (error) {
+      } catch {
         // Coverage is the one stage whose absence must not stop the run:
         // without it the tool cannot say a term is already served, which is a
         // weaker claim, not a wrong one. It is named so the result reads
@@ -895,7 +899,6 @@ export async function handleKeywordOpportunitiesRequest(
             tool: "keyword_opportunity",
             stage: "gsc_coverage",
             reason: "read_failed",
-            message: error instanceof Error ? error.message : "unknown",
           }),
         );
       }
@@ -962,10 +965,10 @@ export async function handleKeywordOpportunitiesRequest(
       };
     });
 
-    // v2 samples the immutable deduplicated plan in input order. The only
-    // intentional omission is a provider-priced numeric zero; provider silence
-    // and existing-page evidence still receive the same SERP facts as every
-    // other candidate.
+    // The current pipeline samples the immutable deduplicated plan in input
+    // order. The only intentional omission is a provider-priced numeric zero;
+    // provider silence and existing-page evidence still receive the same SERP
+    // facts as every other candidate.
     const sampleTargets = priced.filter(
       (row) => row.validation.availability !== "explicit_zero",
     );
@@ -1003,8 +1006,8 @@ export async function handleKeywordOpportunitiesRequest(
           };
         }
         // The optional branch is the ten-minute compatibility window for an
-        // injected/pre-v2 producer. Task 8A production outcomes always carry the
-        // status explicitly.
+        // injected legacy producer. Current production outcomes always carry
+        // the status explicitly.
         const status = returned.status ?? "complete";
         return status === "complete"
           ? {
@@ -1037,15 +1040,12 @@ export async function handleKeywordOpportunitiesRequest(
       // histogram is what an operator has. The 2026-08-21 partial run gave
       // exactly one number — 46 rows short — and no way to tell whether the
       // fix was more throughput or fewer requests, which are opposites.
-      const failureCounts: Partial<
-        Record<KeywordOpportunitySerpFailureReason, number>
-      > = {};
+      const failureCounts: Record<string, number> = {};
       for (const sample of attemptedSamples) {
         if (sample.status === "complete") continue;
-        const reason = sample.failureReason ?? "provider_unavailable";
+        const reason = sample.failureReason ?? "unreported";
         failureCounts[reason] = (failureCounts[reason] ?? 0) + 1;
       }
-      serpFailureReasons = failureCounts;
       console.info(
         JSON.stringify({
           tool: "keyword_opportunity",
@@ -1281,10 +1281,9 @@ export async function handleKeywordOpportunitiesRequest(
     domainEnrichmentDurationMs =
       enrichmentHasWork && enrichmentAffordable
         ? dependencies.now().getTime() - domainEnrichmentStartedAt
-        : enrichmentHasWork
-          ? 0
-          : null;
+        : null;
     const siteTrafficThreshold = keywordSiteTrafficThreshold(siteDomainRank);
+    const siteRankTier = keywordSiteRankTier(siteDomainRank);
     const samplesByKeyword = new Map(
       attemptedSamples.map((sample) => [
         keywordVolumeKey(sample.keyword),
@@ -1292,7 +1291,7 @@ export async function handleKeywordOpportunitiesRequest(
       ]),
     );
 
-    const observations: KeywordOpportunityObservation[] = priced.map((row) => {
+    const observations: KeywordOpportunityObservationV3[] = priced.map((row) => {
       const attempted = samplesByKeyword.get(
         keywordVolumeKey(row.candidate.keyword),
       );
@@ -1390,7 +1389,6 @@ export async function handleKeywordOpportunitiesRequest(
         aiOverview,
         coverage: row.coverage.state,
         supportingPage: row.coverage.supportingPage,
-        supportingPageUrl: row.coverage.supportingPageUrl,
       };
     });
 
@@ -1404,28 +1402,64 @@ export async function handleKeywordOpportunitiesRequest(
       stopReason: token.stopReason,
     };
 
-    const payload = buildKeywordOpportunityPayload({
+    const reportStartedAt = dependencies.now().getTime();
+    const payloadWithPendingDurations = buildKeywordOpportunityPayload({
       marketCode: token.marketCode,
       languageCode: token.languageCode,
       context,
       generated: drafts.length,
       observations,
       unavailableStages,
-      serpPlanned: attemptedSamples.length,
-      serpFailureReasons,
-      thresholds: {
-        siteDomainRank,
-        lowOrganicTrafficThreshold: siteTrafficThreshold,
-      },
-      durationsMs: {
-        total: dependencies.now().getTime() - runStartedAt,
-        coverage: coverageDurationMs,
-        serpSampling: serpSamplingDurationMs,
-        serpInterpretation: serpInterpretationDurationMs,
-        domainEnrichment: domainEnrichmentDurationMs,
+      process: {
+        validation: { requested: candidates.length },
+        serp: {
+          planned: attemptedSamples.length,
+          dispatched: attemptedSamples.filter(
+            (sample) => sample.failureReason !== "budget_exhausted",
+          ).length,
+        },
+        thresholds: {
+          policyVersion: KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
+          youngDomainMonths: KEYWORD_YOUNG_DOMAIN_MONTHS,
+          siteDomainRank,
+          siteRankTier,
+          lowOrganicTrafficThreshold: siteTrafficThreshold,
+        },
+        durationsMs: {
+          total: null,
+          validation: validationDurationMs,
+          coverage: coverageDurationMs,
+          serpSampling: serpSamplingDurationMs,
+          serpInterpretation: serpInterpretationDurationMs,
+          domainEnrichment: domainEnrichmentDurationMs,
+          report: null,
+        },
       },
       completedAt: runObservedAt,
     });
+    const reportFinishedAt = dependencies.now().getTime();
+    const payload = {
+      ...payloadWithPendingDurations,
+      result: {
+        ...payloadWithPendingDurations.result,
+        process: {
+          ...payloadWithPendingDurations.result.process,
+          durationsMs: {
+            ...payloadWithPendingDurations.result.process.durationsMs,
+            total: reportFinishedAt - totalStartedAt,
+            report: reportFinishedAt - reportStartedAt,
+          },
+        },
+      },
+    };
+
+    console.info(
+      JSON.stringify({
+        tool: "keyword_opportunity",
+        stage: "process_ledger",
+        process: payload.result.process,
+      }),
+    );
 
     reportProduced = true;
     return json({ data: payload }, 200);
@@ -1444,7 +1478,7 @@ export async function handleKeywordOpportunitiesRequest(
       JSON.stringify({
         tool: "keyword_opportunity",
         stage: "opportunities",
-        message: error instanceof Error ? error.message : "unknown",
+        reason: "unexpected_error",
       }),
     );
     return json(createPublicToolError("keyword_source_unavailable"), 502);
