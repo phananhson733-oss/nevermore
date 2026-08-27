@@ -16,6 +16,7 @@ import {
 import { KEYWORD_OPPORTUNITY_UNSAMPLED } from "./winnability.ts";
 import type {
   KeywordOpportunityContext,
+  KeywordOpportunityResult,
   KeywordOpportunitySerpEvidence,
   KeywordOpportunityValidation,
 } from "./types.ts";
@@ -833,10 +834,20 @@ describe("buildKeywordOpportunityResult passthrough", () => {
 });
 
 describe("buildKeywordOpportunityPayload", () => {
-  it("publishes the v2 schema explicitly", () => {
-    expect(KEYWORD_OPPORTUNITY_SCHEMA_VERSION).toBe(
-      "keyword_opportunity_map.v2",
+  it("publishes v3 while broad readers remain compatible with omitted producer-only fields", () => {
+    const envelope = buildKeywordOpportunityPayload(
+      input({ observations: shownSeoRows(KEYWORD_OPPORTUNITY_MIN_ROWS) }),
     );
+
+    expect(KEYWORD_OPPORTUNITY_SCHEMA_VERSION).toBe(
+      "keyword_opportunity_map.v3",
+    );
+    expect(envelope.run.schemaVersion).toBe("keyword_opportunity_map.v3");
+
+    const { incomplete, ...cachedResult } = envelope.result;
+    const broadReader: KeywordOpportunityResult = cachedResult;
+    expect(incomplete).toEqual([]);
+    expect(broadReader.incomplete).toBeUndefined();
   });
 
   it("stamps the envelope as an unpersisted public preview, which is the true description of this run", () => {

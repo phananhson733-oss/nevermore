@@ -75,6 +75,76 @@ describe("classifyKeywordOpportunitySignals", () => {
     });
   });
 
+  it.each([
+    [
+      "young domain with unavailable organic traffic",
+      "young_domain",
+      () =>
+        signals({
+          youngDomain: {
+            state: "observed",
+            observation: {
+              domain: "young.test",
+              registrationDate: "2026-01-01",
+              observedAt: "2026-08-27T00:00:00.000Z",
+              ageMonths: 7,
+            },
+          },
+          lowOrganicTrafficDomain: UNKNOWN,
+        }),
+    ],
+    [
+      "low organic traffic with unavailable community evidence",
+      "low_organic_traffic_domain",
+      () =>
+        signals({
+          lowOrganicTrafficDomain: {
+            state: "observed",
+            observation: {
+              domain: "small.test",
+              organicEtv: 120,
+              threshold: 5_000,
+              marketCode: "us",
+              languageCode: "en",
+              observedAt: "2026-08-27T00:00:00.000Z",
+            },
+          },
+          communityResult: UNKNOWN,
+        }),
+    ],
+    [
+      "community result with unavailable young-domain evidence",
+      "community_result",
+      () =>
+        signals({
+          youngDomain: UNKNOWN,
+          communityResult: {
+            state: "observed",
+            observation: {
+              domain: "forum.test",
+              url: "https://forum.test/thread",
+              position: 4,
+              source: "provider_item_type",
+            },
+          },
+        }),
+    ],
+  ] as const)(
+    "admits an observed %s signal without rewriting unavailable evidence",
+    (_description, positiveSignal, makeSignals) => {
+      const observation = makeSignals();
+      const snapshot = structuredClone(observation);
+
+      expect(classifyKeywordOpportunitySignals(observation)).toEqual({
+        disposition: "eligible",
+        basis: "positive_signal_observed",
+        positiveSignals: [positiveSignal],
+        incompleteReason: null,
+      });
+      expect(observation).toEqual(snapshot);
+    },
+  );
+
   it("excludes only when all three completed as not observed", () => {
     expect(classifyKeywordOpportunitySignals(signals())).toEqual({
       disposition: "excluded",

@@ -5,7 +5,7 @@
 
 import type { PublicToolResultEnvelope } from "../contract.ts";
 
-export const KEYWORD_OPPORTUNITY_SCHEMA_VERSION = "keyword_opportunity_map.v2";
+export const KEYWORD_OPPORTUNITY_SCHEMA_VERSION = "keyword_opportunity_map.v3";
 
 /**
  * Where a candidate came from.
@@ -732,7 +732,7 @@ export interface KeywordOpportunityResult {
   readonly nextStepSuggestions: readonly string[];
 }
 
-/** The emitted v2 result; `incomplete` is always present, including when empty. */
+/** The producer result; `incomplete` is always present, including when empty. */
 export interface KeywordOpportunityResultV2 extends KeywordOpportunityResult {
   readonly incomplete: readonly KeywordOpportunityIncomplete[];
 }
