@@ -1542,7 +1542,7 @@ const PROVISIONAL_KIND_RANK: Readonly<
   provisional_actionable_position_decline: 1,
 };
 
-const DESTINATIONS: Readonly<
+export const DAILY_BRIEFING_DESTINATIONS: Readonly<
   Record<DailyBriefingChangeKind, DailyBriefingAction["destination"]>
 > = {
   click_opportunity: "seo-quick-wins",
@@ -1679,7 +1679,7 @@ function selectChanges(
     if (page !== null) {
       actions.push({
         kind: candidate.kind,
-        destination: DESTINATIONS[candidate.kind],
+        destination: DAILY_BRIEFING_DESTINATIONS[candidate.kind],
         query: candidate.query,
         page,
       });
@@ -2152,10 +2152,19 @@ const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
   page_first_observed: 2,
 };
 
-const PAGE_DESTINATIONS: Readonly<
+export const DAILY_BRIEFING_PAGE_DESTINATIONS: Readonly<
   Record<DailyBriefingPageChangeKind, DailyBriefingPageAction["destination"]>
 > = {
-  page_impression_collapse: "traffic-drop-diagnosis",
+  // The one lane whose next step is about the URL itself. A collapse asks
+  // whether the page still answers, still allows crawling, still points its
+  // canonical at itself and has not become a redirect — four questions only a
+  // tool that fetches the page can put. Traffic Drop Diagnosis discards the
+  // page and diagnoses the property, so sending a collapse there offered a
+  // button that could not carry out the sentence printed above it, and two
+  // collapsed pages produced two buttons with identical downstream effect.
+  page_impression_collapse: "on-page-seo-check",
+  // Still the property: a click decline at unchanged coverage is a demand and
+  // ranking question, and fetching the HTML answers neither.
   page_click_decline: "traffic-drop-diagnosis",
   page_first_observed: "on-page-seo-check",
 };
@@ -2613,7 +2622,7 @@ function selectPageChanges(
     // lanes there is no withheld-attribution case to fall through here.
     actions: changes.map((change) => ({
       kind: change.kind,
-      destination: PAGE_DESTINATIONS[change.kind],
+      destination: DAILY_BRIEFING_PAGE_DESTINATIONS[change.kind],
       page: change.page,
     })),
     eligible: eligible.length,

@@ -2080,7 +2080,7 @@
       },
       "changeKinds": {
         "click_opportunity": {
-          "title": "Visibility rose beyond the clicks it earned",
+          "title": "Clicks trail this property's own baseline for the same position band",
           "body": "The query cleared the sample floor and trails a usable leave-one-out CTR baseline from this property. This is a measured gap, not a forecast of recoverable clicks."
         },
         "stable_position_click_decline": {
@@ -2106,9 +2106,8 @@
       },
       "actions": {
         "title": "Today's recommended actions",
-        "intro": "Two kinds. Triggered: offered only where there is strict evidence, and never padded when there is none — though what the evidence is differs by path, some comparing two windows, some measuring the current window against this property's own baseline, and some resting only on the prior window's visible records not containing the row. Each action card states its own. Routine: no change evidence at all, and worth doing about this property as it stands. Both are grouped by query, page and property; the groups are not ordered against each other, because they do not measure the same population, and their counts are never added.",
         "empty": "No action carries strict evidence this run.",
-        "rank": "Rank {rank}",
+        "rank": "{rank} within this group",
         "why": "Why this action appears",
         "evidence": "Evidence behind this action",
         "propertyEvidence": "Property-level evidence behind this action",
@@ -2119,7 +2118,8 @@
         "groupQuery": "Query evidence",
         "groupPage": "Page evidence",
         "groupProperty": "Property evidence",
-        "groupRoutine": "Routine · {queries} queries · {pages} pages (no change evidence; standing work)"
+        "groupRoutine": "Routine · {queries} queries · {pages} pages (no change evidence; standing work)",
+        "pageWeekly": "Previous 7 days → current 7 days: clicks {clicks}; impressions {impressions}; average position {position}."
       },
       "preview": {
         "changes": "Run the briefing to generate evidence-backed changes from your latest complete comparison windows.",
@@ -2128,19 +2128,19 @@
       "actionKinds": {
         "click_opportunity": {
           "title": "Inspect the CTR gap against your own site curve",
-          "body": "Open Opportunity Finder to examine this query with the full baseline and its limitations."
+          "body": "Opportunity Finder ranks opportunities across the property and will not use this query. The gap here is already the comparison against this property's own baseline."
         },
         "stable_position_click_decline": {
           "title": "Check whether the click loss is sustained",
-          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
+          "body": "The next tool diagnoses the property and will not use this query or page."
         },
         "first_observed": {
           "title": "Inspect the page against the target query",
-          "body": "Open On-Page SEO Checker with the page and query prefilled, then verify what the public HTML actually supports."
+          "body": "The page and query arrive prefilled; verify what the public HTML actually supports."
         },
         "first_observed_leading": {
           "title": "Shore up the page while its average position holds at six or better",
-          "body": "Opens On-Page SEO Checker with the page and query prefilled, so you can see what the public HTML actually supports. This briefing has not judged why the pair reached this position, and promises nothing about it staying."
+          "body": "The page and query arrive prefilled, so you can see what the public HTML actually supports. This briefing has not judged why the pair reached this position, and promises nothing about it staying."
         },
         "average_position_crossed_page_one_band": {
           "title": "Review the query that moved into the 1-10 band",
@@ -2148,21 +2148,21 @@
         },
         "actionable_position_decline": {
           "title": "Diagnose the in-band position decline",
-          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property, query and page, but that tool diagnoses a property and uses only the property; the figures below have to be read again there."
+          "body": "The next tool diagnoses the property and will not use this query or page."
         }
       },
       "propertyActionKinds": {
         "sitewide_click_decline": {
           "title": "Diagnose the property-wide click decline",
-          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
+          "body": "This briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_decline": {
           "title": "Diagnose the property-wide visibility decline",
-          "body": "Opens Traffic Drop Diagnosis carrying the property privately. The weekly comparison has to be read again there; this briefing did not attribute the decline to a query or page."
+          "body": "This briefing did not attribute the decline to a query or page."
         },
         "sitewide_visibility_gain": {
-          "title": "Inspect the property-wide visibility gain",
-          "body": "Opens GSC Opportunity Finder carrying the property privately. The next tool ranks query opportunities independently; this briefing invented no query or page."
+          "title": "The property moved up week over week — see where the opportunity sits",
+          "body": "The next tool ranks this property's query opportunities independently; this briefing invented no query or page."
         }
       },
       "actionDestinations": {
@@ -2250,29 +2250,27 @@
       "pageActionKinds": {
         "page_impression_collapse": {
           "title": "Confirm this page is still there",
-          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. Impressions vanishing wholesale usually points at the page itself: check that it still loads, that crawling is not blocked, that its canonical still points at itself, and that it has not been turned into a redirect. This briefing has not judged the cause, and has attributed it to no query."
+          "body": "Fetch the page itself: whether it still answers, whether robots blocks it, whether its canonical still points at itself, and whether it has become a redirect. When the HTML cannot be fetched the checker says so, and that is itself the answer. This briefing has not judged the cause."
         },
         "page_click_decline": {
           "title": "Diagnose this page's click decline",
-          "body": "Opens Traffic Drop Diagnosis. The handoff privately carries the property and this page, but that tool diagnoses a property and uses only the property; the weekly figures below have to be read again there. This briefing has not attributed the decline to any query."
+          "body": "The next tool diagnoses the property and will not use this page. This briefing has attributed the decline to no query."
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
-          "body": "Opens On-Page Checker carrying the page URL privately. It checks the page itself and makes no claim about where any single query ranks."
+          "body": "Carries the page URL and checks the page itself; it makes no claim about where any single query ranks."
         }
       },
       "checks": {
         "title": "No query-level change known, still worth a look",
-        "intro": "These entries come from the query records already shown above. They say where those **queries** currently sit and nothing more: no change is claimed for them, and none is an evidence-backed action. What the page dimension found is a separate question and does not contradict this.",
         "evidence": "Where this query currently sits, not evidence of change",
         "notCheckable": "Another {count} shown rows carry no check: the page could not be attributed, or the current position falls outside the band this check covers."
       },
       "pageChecks": {
         "title": "These pages draw impressions and no clicks at all",
         "evidence": "Page · where it stands this window",
-        "intro": "At this property's own click-through rate of {ctr}, each page below was shown often enough to expect at least three clicks and drew none. That rate comes from this property's own non-brand data for this window, not from an industry average. Only pages averaging inside the top ten are listed: a page further down draws no clicks because almost nobody is shown it, and looking at how its result appears will not change that. Nothing here is claimed to have changed — only that at the rate this property actually converts, zero clicks on these pages does not look like chance.",
-        "body": "{impressions} impressions this window at average position {position}. This property's own rate expects {expected} clicks; none arrived.",
-        "examined": "{rows} page records were read this run. The rest either drew clicks or were not shown often enough for zero to mean anything."
+        "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
+        "examined": "{rows} page records were read this run. The rest already produced a page signal above, drew clicks, averaged outside the 1-10 band or carried no readable position, or were not shown often enough for zero to mean anything."
       }
     },
     "trafficDrop": {

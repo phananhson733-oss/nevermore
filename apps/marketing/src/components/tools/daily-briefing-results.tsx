@@ -80,7 +80,8 @@ interface DailyBriefingResultsProps {
 interface ResultPreviewSectionProps {
   readonly id: string;
   readonly title: string;
-  readonly intro: string;
+  /** Null where the section's own headings already carry the framing. */
+  readonly intro: string | null;
   readonly body: string;
   readonly kind: "changes" | "actions";
 }
@@ -397,9 +398,11 @@ function ResultPreviewSection({
       >
         {title}
       </h3>
-      <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {intro}
-      </p>
+      {intro === null ? null : (
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {intro}
+        </p>
+      )}
       <div className={`${CARD} mt-4`}>
         <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {body}
@@ -840,7 +843,7 @@ export function DailyBriefingResultPreview() {
         id="daily-briefing-preview-actions"
         kind="actions"
         title={t("actions.title")}
-        intro={t("actions.intro")}
+        intro={null}
         body={t("preview.actions")}
       />
     </div>
@@ -1682,9 +1685,6 @@ export function DailyBriefingResults({
         >
           {t("actions.title")}
         </h3>
-        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("actions.intro")}
-        </p>
         {queryActions.length === 0 &&
         pageActions.length === 0 &&
         propertyAction === null ? (
@@ -1820,11 +1820,39 @@ export function DailyBriefingResults({
                         <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {change.page}
                         </p>
-                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                          {metricsLine(t, locale, {
-                            clicks: change.current?.clicks ?? 0,
-                            impressions: change.current?.impressions ?? 0,
-                            position: change.current?.position ?? null,
+                        {/* Both windows, not just the current one. Every
+                            page lane is named after a movement between two
+                            windows, and the collapse lane is named after the
+                            impressions specifically; printing the current
+                            side alone left the number the card is named for
+                            nowhere on the page. */}
+                        <p
+                          data-page-action-weekly
+                          className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary"
+                        >
+                          {t("actions.pageWeekly", {
+                            clicks: comparison(
+                              change.previous?.clicks ?? null,
+                              change.current?.clicks ?? 0,
+                              (value) => number(locale, value),
+                              t("changes.notObserved"),
+                            ),
+                            impressions: comparison(
+                              change.previous?.impressions ?? null,
+                              change.current?.impressions ?? 0,
+                              (value) => number(locale, value),
+                              t("changes.notObserved"),
+                            ),
+                            position: comparisonToPossiblyUnmeasured(
+                              change.previous?.position ?? null,
+                              change.current?.position ?? null,
+                              (value) =>
+                                Number.isFinite(value)
+                                  ? value.toFixed(1)
+                                  : t("kpis.unavailable"),
+                              t("changes.notObserved"),
+                              t("kpis.unavailable"),
+                            ),
                           })}
                         </p>
                       </div>
@@ -1938,14 +1966,9 @@ export function DailyBriefingResults({
                 to become one there is nothing to introduce, only a gap to
                 explain, so the panel narrows to that sentence. */}
             {suggestedChecks.length > 0 ? (
-              <>
-                <h4 className="text-[15px] font-semibold text-text-dark-primary">
-                  {t("checks.title")}
-                </h4>
-                <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                  {t("checks.intro")}
-                </p>
-              </>
+              <h4 className="text-[15px] font-semibold text-text-dark-primary">
+                {t("checks.title")}
+              </h4>
             ) : null}
             <div className="mt-3 grid gap-3">
               {suggestedChecks.map((check) => {
@@ -2004,16 +2027,6 @@ export function DailyBriefingResults({
             <h4 className="text-[15px] font-semibold text-text-dark-primary">
               {t("pageChecks.title")}
             </h4>
-            {/* The rate is named, because the whole claim rests on it and it
-                is this property's own, not an industry figure. */}
-            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-              {t("pageChecks.intro", {
-                ctr:
-                  pageCheckBaseline === null
-                    ? t("kpis.unavailable")
-                    : percent(pageCheckBaseline.ctr),
-              })}
-            </p>
             <div className="mt-3 grid gap-3">
               {pageChecks.map((check) => (
                 <article
@@ -2027,10 +2040,17 @@ export function DailyBriefingResults({
                       {check.page}
                     </p>
                     <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                      {/* The rate is named on the row it justifies, because
+                          the whole claim rests on it and it is this property's
+                          own, not an industry figure. */}
                       {t("pageChecks.body", {
                         impressions: number(locale, check.impressions),
                         position: check.position.toFixed(1),
                         expected: check.expectedClicks.toFixed(1),
+                        ctr:
+                          pageCheckBaseline === null
+                            ? t("kpis.unavailable")
+                            : percent(pageCheckBaseline.ctr),
                       })}
                     </p>
                   </div>

@@ -3771,7 +3771,7 @@ const GONE = "https://example.com/gone";
     expect(result.pageActions).toEqual([
       {
         kind: "page_impression_collapse",
-        destination: "traffic-drop-diagnosis",
+        destination: "on-page-seo-check",
         page: "https://example.com/other",
       },
       {
@@ -4217,7 +4217,7 @@ const GONE = "https://example.com/gone";
     expect(result.pageActions).toEqual([
       {
         kind: "page_impression_collapse",
-        destination: "traffic-drop-diagnosis",
+        destination: "on-page-seo-check",
         page: GONE,
       },
     ]);

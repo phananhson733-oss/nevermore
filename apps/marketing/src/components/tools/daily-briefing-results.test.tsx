@@ -1488,7 +1488,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
     expect(row?.getAttribute("data-action-rank")).toBe("1");
     expect(row?.querySelector("[data-action-rank-badge]")?.getAttribute("aria-label")).toBe(
-      "Rank 1",
+      "1 within this group",
     );
     expect(row?.textContent).toContain("Diagnose the property-wide click decline");
     expect(row?.textContent).toContain(PROPERTY);
@@ -1568,7 +1568,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "[data-property-action] [data-action-link]",
     );
 
-    expect(host.textContent).toContain("Inspect the property-wide visibility gain");
+    expect(host.textContent).toContain("The property moved up week over week");
     expect(host.querySelector("[data-site-trend]")).toBeNull();
     expect(link?.getAttribute("href")).toBe("/tools/seo-quick-wins");
     expect(link?.getAttribute("href")).not.toContain(PROPERTY);
@@ -1709,7 +1709,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     );
     expect(host.textContent).toContain("20 → 12");
     expect(host.textContent).toContain("8.0 → 8.2");
-    expect(host.textContent).toContain("Visibility rose beyond the clicks it earned");
+    expect(host.textContent).toContain("Clicks trail this property's own baseline for the same position band");
     expect(host.textContent).toContain("Not observed in the comparison window");
     expect(host.textContent).toContain("not proof of new indexing");
     expect(host.textContent).not.toContain("click_opportunity");
@@ -1994,7 +1994,7 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
     for (const [index, row] of rows.entries()) {
       const rank = row.querySelector("[data-action-rank-badge]");
       expect(rank).not.toBeNull();
-      expect(rank?.getAttribute("aria-label")).toBe(`Rank ${index + 1}`);
+      expect(rank?.getAttribute("aria-label")).toBe(`${index + 1} within this group`);
       expect(rank?.textContent?.trim()).toBe(String(index + 1));
       expect(row.querySelector("[data-action-evidence]")).not.toBeNull();
       expect(row.querySelectorAll("[data-action-link]")).toHaveLength(1);
@@ -2357,8 +2357,15 @@ describe("DailyBriefingResults folded explanation", () => {
         node.getAttribute("data-action-group"),
       ),
     ).toEqual(["query", "page", "property"]);
-    expect(host.querySelector('[data-result-section="actions"]')?.textContent)
-      .toContain("the groups are not ordered against each other");
+    // The boundary has to be readable, not only queryable: each group carries
+    // its own visible label, which is what a reader has instead of the
+    // sentence this section used to open with.
+    const actionsText = host.querySelector(
+      '[data-result-section="actions"]',
+    )?.textContent;
+    expect(actionsText).toContain("Query evidence");
+    expect(actionsText).toContain("Page evidence");
+    expect(actionsText).toContain("Property evidence");
   });
 
   it("renders both budgets at once without either capping the other", async () => {
@@ -2514,6 +2521,86 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(row).not.toBeNull();
   });
 
+  it("puts the impressions a collapse is named after on its action card", async () => {
+    // The page review table compares clicks and position only. Before this,
+    // the action card printed the current window alone, so the prior-window
+    // impressions — the single number this lane's title, threshold and name
+    // all refer to — appeared nowhere on the page, and the card could not be
+    // checked against the claim it made.
+    const gone = pageChange({
+      kind: "page_impression_collapse",
+      current: null,
+      clickChange: -20,
+      clickChangeRatio: -1,
+      impressionChange: -400,
+      impressionChangeRatio: -1,
+      positionDelta: null,
+      noiseFloor: {
+        basis: "impressions",
+        observedChange: -400,
+        minimumForAction: 2 * Math.sqrt(400),
+        cleared: true,
+      },
+    });
+    const host = await renderResults(
+      envelope({
+        pageChanges: [gone],
+        pageActions: [
+          pageAction({
+            kind: "page_impression_collapse",
+            destination: "traffic-drop-diagnosis",
+          }),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const weekly = host.querySelector(
+      "[data-page-action] [data-page-action-weekly]",
+    );
+
+    expect(weekly).not.toBeNull();
+    expect(weekly?.textContent).toContain("400 → 0");
+    expect(weekly?.textContent).toContain("20 → 0");
+    // Still never a position invented for a window that measured none.
+    expect(weekly?.textContent).not.toContain("9.1 → 0.0");
+    expect(weekly?.textContent).toContain(
+      `9.1 → ${en.tools.dailyBriefing.kpis.unavailable}`,
+    );
+  });
+
+  it("names the prior window as unobserved on a page it saw for the first time", async () => {
+    const first = pageChange({
+      kind: "page_first_observed",
+      previous: null,
+      clickChange: null,
+      clickChangeRatio: null,
+      impressionChange: null,
+      impressionChangeRatio: null,
+      positionDelta: null,
+      noiseFloor: null,
+    });
+    const host = await renderResults(
+      envelope({
+        pageChanges: [first],
+        pageActions: [
+          pageAction({
+            kind: "page_first_observed",
+            destination: "on-page-seo-check",
+          }),
+        ],
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+    const weekly = host.querySelector(
+      "[data-page-action] [data-page-action-weekly]",
+    );
+
+    // An absent prior window is said, not printed as a zero it never measured.
+    const notObserved = en.tools.dailyBriefing.changes.notObserved;
+    expect(weekly?.textContent).toContain(`${notObserved} → 380`);
+    expect(weekly?.textContent).not.toContain("0 → 380");
+  });
+
   it("states the prior-window total the collapse split is counted against", async () => {
     const host = await renderResults(
       envelope({
@@ -2578,7 +2665,7 @@ describe("DailyBriefingResults folded explanation", () => {
     expect(block?.textContent).toContain("this property's own");
     // The gate the list applies is disclosed, so a page with volume and no
     // clicks that is missing from the list has a stated reason to be.
-    expect(block?.textContent).toContain("top ten");
+    expect(block?.textContent).toContain("outside the 1-10 band");
     // And the population it read, so the list is not mistaken for the whole
     // page dimension.
     expect(
@@ -2938,7 +3025,11 @@ describe("DailyBriefingResults folded explanation", () => {
     // Scoped to the query, so a page-level finding on the same URL does not
     // read as contradicted by it.
     expect(checks?.textContent).toContain("No query-level change known");
-    expect(checks?.textContent).toContain("no change is claimed for them");
+    // Carried by the per-row label now that the section opens straight into
+    // the rows: a check states where a query sits and claims no change.
+    expect(checks?.textContent).toContain(
+      "Where this query currently sits, not evidence of change",
+    );
     expect(checks?.textContent).toContain(CHECK_QUERY);
     expect(checks?.textContent).toContain(CHECK_PAGE);
     expect(
