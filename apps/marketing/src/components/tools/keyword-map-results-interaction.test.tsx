@@ -6,7 +6,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   KeywordOpportunityResult,
   KeywordOpportunityRow,
@@ -123,7 +123,7 @@ function completeRow(
     supportingPage:
       lane === "geo"
         ? {
-            state: "observed",
+            availability: "available",
             source: "llm_proposition_source",
             url: "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
           }
@@ -189,6 +189,7 @@ afterEach(async () => {
     root = null;
   }
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
 async function renderResults(
@@ -222,6 +223,66 @@ async function click(element: HTMLElement): Promise<void> {
 }
 
 describe("KeywordMapResults evidence expansion", () => {
+  it("downloads the exact in-memory public result as an audit JSON", async () => {
+    const row = completeRow("exportable evidence");
+    const expected = result([row]);
+    const host = await renderResults([row]);
+    const button = Array.from(host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Export audit JSON",
+    );
+    let captured: Blob | null = null;
+    const createDescriptor = Object.getOwnPropertyDescriptor(
+      URL,
+      "createObjectURL",
+    );
+    const revokeDescriptor = Object.getOwnPropertyDescriptor(
+      URL,
+      "revokeObjectURL",
+    );
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn((blob: Blob) => {
+        captured = blob;
+        return "blob:keyword-audit";
+      }),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    let downloadName = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      function captureDownload(this: HTMLAnchorElement) {
+        downloadName = this.download;
+      },
+    );
+
+    try {
+      expect(button).not.toBeUndefined();
+      await click(button as HTMLButtonElement);
+      expect(downloadName).toBe("keyword-opportunity-audit-us-en.json");
+      expect(captured).not.toBeNull();
+      const body = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener("load", () => resolve(String(reader.result)));
+        reader.addEventListener("error", () => reject(reader.error));
+        reader.readAsText(captured as Blob);
+      });
+      expect(JSON.parse(body)).toEqual(expected);
+    } finally {
+      if (createDescriptor === undefined) {
+        Reflect.deleteProperty(URL, "createObjectURL");
+      } else {
+        Object.defineProperty(URL, "createObjectURL", createDescriptor);
+      }
+      if (revokeDescriptor === undefined) {
+        Reflect.deleteProperty(URL, "revokeObjectURL");
+      } else {
+        Object.defineProperty(URL, "revokeObjectURL", revokeDescriptor);
+      }
+    }
+  });
+
   it.each(["en", "zh"] as const)(
     "mounts complete SEO provenance on demand and unmounts it when closed in %s",
     async (locale) => {
@@ -309,6 +370,6 @@ describe("KeywordMapResults evidence expansion", () => {
     expect(
       host.querySelector('[data-keyword-detail="expandable geo evidence"]')
         ?.textContent,
-    ).toContain("Proposition source page");
+    ).toContain("Candidate source page");
   });
 });

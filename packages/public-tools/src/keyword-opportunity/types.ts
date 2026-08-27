@@ -145,22 +145,6 @@ export type KeywordOpportunityCoverage =
   /** The available inventory has a known omission or malformed URL. */
   | "inventory_truncated";
 
-export type KeywordOpportunitySupportingPageSource =
-  | "gsc_observed_query_page"
-  | "lexical_page_match"
-  | "llm_proposition_source"
-  | "inventory_url_match";
-
-export type KeywordOpportunitySupportingPage =
-  | {
-      readonly state: "observed";
-      readonly source: KeywordOpportunitySupportingPageSource;
-      readonly url: string;
-    }
-  | {
-      readonly state: "not_observed";
-    };
-
 /** A check the reader should run before acting on a row. Never a verdict. */
 export type KeywordOpportunityCheck =
   | "read_page_one_intent"
@@ -725,7 +709,6 @@ export interface KeywordOpportunityIncomplete {
   readonly discoveryBasis: KeywordOpportunityBasis;
   readonly validation: KeywordOpportunityValidation;
   readonly coverage: KeywordOpportunityCoverage;
-  readonly supportingPage?: KeywordOpportunitySupportingPage;
   readonly serp: KeywordOpportunitySerpEvidence;
   readonly serpIntent: KeywordOpportunitySerpIntentEvidence | null;
   readonly signals: KeywordOpportunitySignals;
@@ -971,8 +954,6 @@ export interface KeywordOpportunityResult {
    */
   readonly unavailableStages: readonly string[];
   readonly nextStepSuggestions: readonly string[];
-  /** Optional only so a cached v2 result remains readable during deployment skew. */
-  readonly process?: KeywordOpportunityProcess;
 }
 
 /**

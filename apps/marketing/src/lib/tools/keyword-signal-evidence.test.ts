@@ -4,6 +4,8 @@ import type { DomainRegistrationEvidence } from "@sf/sources";
 import type { KeywordSerpSampleResult } from "./keyword-opportunity-handler.ts";
 import {
   buildKeywordSignalEvidence,
+  KEYWORD_YOUNG_DOMAIN_MONTHS,
+  keywordSiteRankTier,
   keywordSiteTrafficThreshold,
 } from "./keyword-signal-evidence.ts";
 
@@ -69,6 +71,14 @@ function evidence(
 }
 
 describe("keywordSiteTrafficThreshold", () => {
+  it("publishes the exact provisional policy inputs used by the run", () => {
+    expect(KEYWORD_YOUNG_DOMAIN_MONTHS).toBe(24);
+    expect(keywordSiteRankTier(200)).toBe("rank_1_200");
+    expect(keywordSiteRankTier(201)).toBe("rank_201_500");
+    expect(keywordSiteRankTier(501)).toBe("rank_501_1000");
+    expect(keywordSiteRankTier(0)).toBeNull();
+  });
+
   it.each([
     [1, 5_000],
     [200, 5_000],

@@ -8,6 +8,7 @@ import {
   buildKeywordCoverageIndex,
   createPublicToolError,
   judgeKeywordWinnability,
+  KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
   KEYWORD_OPPORTUNITY_UNSAMPLED,
   keywordCoverageProperty,
   keywordTokens,
@@ -49,6 +50,8 @@ import {
 } from "./keyword-cost-guard.ts";
 import {
   buildKeywordSignalEvidence,
+  KEYWORD_YOUNG_DOMAIN_MONTHS,
+  keywordSiteRankTier,
   keywordSiteTrafficThreshold,
 } from "./keyword-signal-evidence.ts";
 import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
@@ -803,14 +806,11 @@ export async function handleKeywordOpportunitiesRequest(
   let costCandidateCount = 0;
   let costSerpSampled = 0;
   let reportProduced = false;
-  const runStartedAt = dependencies.now().getTime();
+  let validationDurationMs: number | null = null;
   let coverageDurationMs: number | null = null;
   let serpSamplingDurationMs: number | null = null;
   let serpInterpretationDurationMs: number | null = null;
   let domainEnrichmentDurationMs: number | null = null;
-  let serpFailureReasons: Readonly<
-    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
-  > = {};
   try {
     const drafts = await dependencies.expandCandidates({
       propositions: token.propositions,
@@ -839,6 +839,7 @@ export async function handleKeywordOpportunitiesRequest(
     const candidates = [...unique.values()].slice(0, KEYWORD_CANDIDATE_CAP);
     costCandidateCount = candidates.length;
 
+    const validationStartedAt = dependencies.now().getTime();
     const providerRows = await dependencies.validateVolumes({
       keywords: candidates.map((candidate) => candidate.keyword),
       marketCode: token.marketCode,
@@ -848,6 +849,8 @@ export async function handleKeywordOpportunitiesRequest(
       candidates.map((candidate) => candidate.keyword),
       providerRows,
     );
+    validationDurationMs =
+      dependencies.now().getTime() - validationStartedAt;
 
     // Null all the way through when the sample was never read, so the domain
     // layer can tell "the property served nothing" from "nobody looked". An
@@ -1037,15 +1040,12 @@ export async function handleKeywordOpportunitiesRequest(
       // histogram is what an operator has. The 2026-08-21 partial run gave
       // exactly one number — 46 rows short — and no way to tell whether the
       // fix was more throughput or fewer requests, which are opposites.
-      const failureCounts: Partial<
-        Record<KeywordOpportunitySerpFailureReason, number>
-      > = {};
+      const failureCounts: Record<string, number> = {};
       for (const sample of attemptedSamples) {
         if (sample.status === "complete") continue;
-        const reason = sample.failureReason ?? "provider_unavailable";
+        const reason = sample.failureReason ?? "unreported";
         failureCounts[reason] = (failureCounts[reason] ?? 0) + 1;
       }
-      serpFailureReasons = failureCounts;
       console.info(
         JSON.stringify({
           tool: "keyword_opportunity",
@@ -1281,10 +1281,9 @@ export async function handleKeywordOpportunitiesRequest(
     domainEnrichmentDurationMs =
       enrichmentHasWork && enrichmentAffordable
         ? dependencies.now().getTime() - domainEnrichmentStartedAt
-        : enrichmentHasWork
-          ? 0
-          : null;
+        : null;
     const siteTrafficThreshold = keywordSiteTrafficThreshold(siteDomainRank);
+    const siteRankTier = keywordSiteRankTier(siteDomainRank);
     const samplesByKeyword = new Map(
       attemptedSamples.map((sample) => [
         keywordVolumeKey(sample.keyword),
@@ -1410,21 +1409,41 @@ export async function handleKeywordOpportunitiesRequest(
       generated: drafts.length,
       observations,
       unavailableStages,
-      serpPlanned: attemptedSamples.length,
-      serpFailureReasons,
-      thresholds: {
-        siteDomainRank,
-        lowOrganicTrafficThreshold: siteTrafficThreshold,
-      },
-      durationsMs: {
-        total: dependencies.now().getTime() - runStartedAt,
-        coverage: coverageDurationMs,
-        serpSampling: serpSamplingDurationMs,
-        serpInterpretation: serpInterpretationDurationMs,
-        domainEnrichment: domainEnrichmentDurationMs,
+      process: {
+        validation: { requested: candidates.length },
+        serp: {
+          planned: attemptedSamples.length,
+          dispatched: attemptedSamples.filter(
+            (sample) => sample.failureReason !== "budget_exhausted",
+          ).length,
+        },
+        thresholds: {
+          policyVersion: KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
+          youngDomainMonths: KEYWORD_YOUNG_DOMAIN_MONTHS,
+          siteDomainRank,
+          siteRankTier,
+          lowOrganicTrafficThreshold: siteTrafficThreshold,
+        },
+        durationsMs: {
+          total: null,
+          validation: validationDurationMs,
+          coverage: coverageDurationMs,
+          serpSampling: serpSamplingDurationMs,
+          serpInterpretation: serpInterpretationDurationMs,
+          domainEnrichment: domainEnrichmentDurationMs,
+          report: null,
+        },
       },
       completedAt: runObservedAt,
     });
+
+    console.info(
+      JSON.stringify({
+        tool: "keyword_opportunity",
+        stage: "process_ledger",
+        process: payload.result.process,
+      }),
+    );
 
     reportProduced = true;
     return json({ data: payload }, 200);

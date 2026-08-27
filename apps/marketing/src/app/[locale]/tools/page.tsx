@@ -83,8 +83,8 @@ const PLANNING_TOOLS = [
       // Not "only after demand signals are verified": the GEO lane is
       // deliberately not gated on demand data, so that promise is broken by
       // every question-form row the tool is designed to return.
-      en: "Reads your site, then shows search terms with measured demand and a weak site already on page one, plus the questions your pages already answer.",
-      zh: "先读你的站点，再给出「有实测搜索量、且第一页已经有弱站」的词，以及你的页面已经能回答的问题。",
+      en: "Reads your site, lets a model propose candidates, then prices and checks page one for young-domain, low-traffic-domain or community-result evidence.",
+      zh: "先读你的站点，由模型提出候选词，再由数据源核价并检查第一页的年轻域名、低流量域名或社区结果证据。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "planning",

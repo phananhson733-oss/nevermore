@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   KeywordCoverageRead,
+  KeywordOpportunityProcess,
   KeywordOpportunityProviderRow,
 } from "@sf/public-tools";
 import { SourceError, type DomainRegistrationEvidence } from "@sf/sources";
@@ -376,19 +377,26 @@ interface OpportunitiesBody {
           readonly communityResult: { readonly state: string };
         };
       }[];
+      readonly process: KeywordOpportunityProcess;
     };
   };
 }
 
 /** Every line the handler wrote to `console.error` during one case. */
 let logged: string[] = [];
+/** Privacy-safe informational summaries written during one case. */
+let infoLogged: string[] = [];
 
 beforeEach(() => {
   logged = [];
+  infoLogged = [];
   // Silenced and captured: the failure reason IS the product on the error
   // paths, so a case can assert on it instead of merely on a call count.
   vi.spyOn(console, "error").mockImplementation((line: unknown) => {
     logged.push(String(line));
+  });
+  vi.spyOn(console, "info").mockImplementation((line: unknown) => {
+    infoLogged.push(String(line));
   });
 });
 
@@ -2401,6 +2409,103 @@ describe("handleKeywordOpportunitiesRequest", () => {
       completedAt: COMPLETED_AT,
     });
     expect(parsed.data.result.availability).toBe("available");
+  });
+
+  it("reports caller-owned transport facts, provisional thresholds and measured stage durations without sensitive text", async () => {
+    let nowMs = Date.parse(COMPLETED_AT);
+    const advance = <T>(milliseconds: number, value: T): Promise<T> => {
+      nowMs += milliseconds;
+      return Promise.resolve(value);
+    };
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        now: () => new Date(nowMs),
+        validateVolumes: ({ keywords }) => advance(11, rows(keywords)),
+        readCoverageQueries: () => advance(13, cleanCoverageRead()),
+        sampleSerp: ({ keywords }) =>
+          advance(
+            17,
+            keywords.map((keyword) => completeSample(keyword)),
+          ),
+        interpretSerpEvidence: (samples) =>
+          advance(
+            19,
+            samples.map((sample) => ({
+              keyword: sample.keyword,
+              availability: "available" as const,
+              intent: "informational" as const,
+              aiOverviewAssessment: "unavailable" as const,
+              reason: "No AI Overview content was returned.",
+              observedAt: sample.observedAt,
+              modelId: "test-model",
+              promptVersion: "keyword_serp_interpretation.v1" as const,
+            })),
+          ),
+        resolveDomainRanks: (domains) =>
+          advance(
+            5,
+            new Map(domains.map((domain) => [domain, 40] as const)),
+          ),
+        resolveDomainTraffic: ({ domains }) =>
+          advance(
+            7,
+            new Map(domains.map((domain) => [domain, 100] as const)),
+          ),
+        resolveDomainRegistrations: (domains) =>
+          advance(
+            11,
+            new Map(
+              domains.map(
+                (domain) => [domain, availableRegistration(domain)] as const,
+              ),
+            ),
+          ),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.process).toMatchObject({
+      validation: { requested: 6, accounted: true },
+      serp: {
+        planned: 6,
+        dispatched: 6,
+        completed: 6,
+        failed: 0,
+        legacyStatusUnreported: 0,
+        accounted: true,
+      },
+      thresholds: {
+        policyVersion: "keyword_opportunity_thresholds.v1",
+        youngDomainMonths: 24,
+        siteDomainRank: 40,
+        siteRankTier: "rank_1_200",
+        lowOrganicTrafficThreshold: 5_000,
+      },
+      durationsMs: {
+        total: null,
+        validation: 11,
+        coverage: 13,
+        serpSampling: 17,
+        serpInterpretation: 19,
+        domainEnrichment: 23,
+        report: null,
+      },
+    });
+
+    const ledgerLog = infoLogged
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry["stage"] === "process_ledger");
+    expect(ledgerLog).toEqual({
+      tool: "keyword_opportunity",
+      stage: "process_ledger",
+      process: parsed.data.result.process,
+    });
+    expect(JSON.stringify(ledgerLog)).not.toContain(SITE_URL);
+    expect(JSON.stringify(ledgerLog)).not.toContain(DRAFTS[0]?.keyword);
+    expect(JSON.stringify(ledgerLog)).not.toContain("small-blog.com");
   });
 
   it("releases the Search Console gate after a successful run", async () => {

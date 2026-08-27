@@ -108,7 +108,7 @@ function row(
       isEstimate: false,
     },
     coverage: "not_observed_in_gsc_query_sample",
-    supportingPage: { state: "not_observed" },
+    supportingPage: { availability: "unavailable", source: null, url: null },
     supportingPageUrl: null,
     nextChecks: ["read_page_one_intent", "judge_commercial_fit"],
     clusterId: "cluster-1",
