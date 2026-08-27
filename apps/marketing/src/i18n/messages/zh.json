@@ -3066,6 +3066,9 @@
         "transactional": "交易型",
         "mixed": "混合型"
       },
+      "serpIntentSources": {
+        "serp_top_ten_interpretation": "自然搜索结果前十解读"
+      },
       "signalNames": {
         "young_domain": "年轻域名",
         "low_organic_traffic_domain": "低自然搜索流量域名",

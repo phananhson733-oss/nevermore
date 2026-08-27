@@ -244,6 +244,14 @@ describe("KeywordMapResults evidence expansion", () => {
       expect(detail?.getAttribute("id")).toBe(
         toggle?.getAttribute("aria-controls"),
       );
+      expect(detail?.textContent).toContain(
+        locale === "en"
+          ? "Top-ten organic results interpretation"
+          : "自然搜索结果前十解读",
+      );
+      expect(detail?.textContent).not.toContain(
+        "serp_top_ten_interpretation",
+      );
       for (const evidence of [
         "gpt-5.4-mini",
         "keyword_serp_interpretation.v1",

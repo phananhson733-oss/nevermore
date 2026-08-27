@@ -3066,6 +3066,9 @@
         "transactional": "Transactional",
         "mixed": "Mixed"
       },
+      "serpIntentSources": {
+        "serp_top_ten_interpretation": "Top-ten organic results interpretation"
+      },
       "signalNames": {
         "young_domain": "Young domain",
         "low_organic_traffic_domain": "Low organic traffic domain",
