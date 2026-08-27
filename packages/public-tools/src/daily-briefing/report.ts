@@ -354,7 +354,15 @@ function trendSeriesFor(
       clicks: row.clicks,
       impressions: row.impressions,
       ctr: row.impressions > 0 ? row.clicks / row.impressions : null,
-      position: row.impressions > 0 ? row.position : null,
+      // Null for an unmeasured position as well as for a bucket nobody was
+      // shown. The GSC reader coerces a missing or non-numeric position to 0
+      // (search-analytics.ts, `toNumber`), and this field is what the wire
+      // carries — leaving the sentinel here published a rank better than first
+      // and made every consumer responsible for recognising it.
+      position:
+        row.impressions > 0 && isMeasuredPosition(row.position)
+          ? row.position
+          : null,
     });
   }
   points.sort((left, right) => left.key.localeCompare(right.key));
@@ -414,10 +422,30 @@ function kpisForDates(
   let clicks = 0;
   let impressions = 0;
   let weightedPosition = 0;
+  // One day with traffic and no position makes the window's average
+  // unavailable, not approximate.
+  //
+  // The GSC reader coerces a missing or non-numeric position to 0
+  // (search-analytics.ts, `toNumber`). Weighting that in pulled the average
+  // below every day actually measured. But dropping the day instead is not a
+  // fix either: the remaining days are a subset, and calling their average the
+  // week's average hides an unknown weight that can change the size of a move
+  // and its direction. Six days at 8 with a seventh unmeasured reported 8
+  // against a prior 10 and dispatched a site-wide visibility gain; had that
+  // day been at 30, the week was 11.1 and the site had moved the other way.
+  //
+  // Clicks, impressions and CTR are unaffected — they are complete — so only
+  // the position goes null and only position-dependent claims fail closed.
+  let positionUnavailable = false;
   for (const row of selected) {
     if (row === undefined) return null;
     clicks += row.clicks;
     impressions += row.impressions;
+    if (row.impressions === 0) continue;
+    if (!isMeasuredPosition(row.position)) {
+      positionUnavailable = true;
+      continue;
+    }
     weightedPosition += row.position * row.impressions;
   }
 
@@ -425,7 +453,10 @@ function kpisForDates(
     clicks,
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
-    position: impressions > 0 ? weightedPosition / impressions : null,
+    position:
+      positionUnavailable || impressions === 0
+        ? null
+        : weightedPosition / impressions,
   };
 }
 
@@ -860,10 +891,43 @@ interface ChangeCandidate {
  * Written as a positive assertion so a NaN falls outside the band instead of
  * being carried into an action.
  */
+/**
+ * Whether a position Search Console returned is one it actually measured.
+ *
+ * The floor is 1, not 0. Every individual result sits at rank 1 or worse, so
+ * an impression-weighted average of them cannot come back below 1 — a value in
+ * `(0, 1)` is as malformed as the 0 the reader leaves when the field was
+ * missing (search-analytics.ts, `toNumber`), and `> 0` let it through as a
+ * position better than first: 0.5 against a prior 10 dispatched a site-wide
+ * visibility gain.
+ *
+ * For provider rows only. A weighted average this code computes is derived
+ * from values that already passed here, and floating-point division can land
+ * it a few ulps under 1.0 for a property that genuinely ranks first
+ * everywhere.
+ */
+function isMeasuredPosition(value: number): boolean {
+  return Number.isFinite(value) && value >= 1;
+}
+
+/**
+ * A position difference, or null when either side was never measured.
+ *
+ * The GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`) and `isMetricRowValid` accepts it, so
+ * every subtraction has to say which of its operands it trusts. Written once
+ * because the four-clause test was already repeated at four call sites and
+ * two of them had drifted to checking only finiteness.
+ */
+function measuredPositionDelta(previous: number, current: number): number | null {
+  return isMeasuredPosition(previous) && isMeasuredPosition(current)
+    ? current - previous
+    : null;
+}
+
 function withinActionableBand(position: number): boolean {
   return (
-    Number.isFinite(position) &&
-    position > 0 &&
+    isMeasuredPosition(position) &&
     position <= BRIEFING_ACTIONABLE_POSITION_MAX
   );
 }
@@ -1005,7 +1069,9 @@ function candidatesFor(
       clickChangeRatio:
         previous === null ? null : ratio(previous.clicks, current.clicks),
       positionDelta:
-        previous === null ? null : current.position - previous.position,
+        previous === null
+          ? null
+          : measuredPositionDelta(previous.position, current.position),
       order: row.clickGap,
     });
   }
@@ -1056,10 +1122,8 @@ function candidatesFor(
     }
 
     const positionsComparable =
-      Number.isFinite(current.position) &&
-      Number.isFinite(previous.position) &&
-      current.position > 0 &&
-      previous.position > 0;
+      isMeasuredPosition(current.position) &&
+      isMeasuredPosition(previous.position);
     const positionDelta = current.position - previous.position;
     const crossedIntoTopBand =
       positionsComparable &&
@@ -1102,7 +1166,16 @@ function candidatesFor(
     // paired question below. Each lane is asked independently: short-circuiting
     // to the next query on the first hit made source order act as a priority,
     // which is the ordering bug KIND_RANK exists to prevent.
-    if (previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS) {
+    // Positions have to be comparable too. This lane's whole claim is that
+    // clicks fell while average position held, so a pair whose positions were
+    // never measured cannot be asked the question — filing it under
+    // "evaluated, no signal" says a check ran that could not run, and this
+    // count is what decides the lane's state, the row split, and through them
+    // the briefing's mode and cadence.
+    if (
+      positionsComparable &&
+      previous.clicks >= BRIEFING_CLICK_DECLINE_MIN_PREVIOUS_CLICKS
+    ) {
       clickDeclineCapableQueries += 1;
     }
     if (positionsComparable) {
@@ -1120,6 +1193,10 @@ function candidatesFor(
       clickChange <= -BRIEFING_MIN_ABSOLUTE_CLICK_CHANGE &&
       clickChangeRatio !== null &&
       clickChangeRatio <= -BRIEFING_MATERIAL_CHANGE_RATIO &&
+      // The same guard the two band lanes already apply. Without it a pair of
+      // unreturned positions, both coerced to 0, subtract to a delta of 0 and
+      // read as "average position held" — the strongest thing this lane says.
+      positionsComparable &&
       Math.abs(positionDelta) <= BRIEFING_STABLE_POSITION_DELTA
     ) {
       declines.push({
@@ -1318,6 +1395,13 @@ function candidatesFor(
       continue;
     }
 
+    // Both of these lanes decide which band the pair landed in, so a position
+    // that was never measured leaves the question undecidable rather than
+    // answered in the negative. The GSC reader coerces a missing position to 0
+    // (search-analytics.ts, `toNumber`), and counting such a pair as evaluated
+    // reported "evaluated, no signal" on a comparison that never happened.
+    if (!isMeasuredPosition(pair.position)) continue;
+
     // Evaluable is claimed here rather than at the impression floor: an
     // attribution we could not trust was never evaluated, and filing it under
     // "evaluated, no signal" would rebuild the conflation the row split exists
@@ -1349,6 +1433,10 @@ function candidatesFor(
       order: pair.impressions,
     });
 
+    // Zero is excluded above, where the pair is refused evaluability at all.
+    // Testing only `<= 6` here would otherwise report a pair whose position
+    // was never returned as first seen in the leading positions — the one
+    // claim on this page that says something went right.
     if (pair.position <= BRIEFING_LEADING_BAND_MAX_POSITION) {
       firstObservedLeadingSignalQueries.add(pair.query);
       firstObservedLeading.push(appearance("first_observed_leading"));
@@ -1542,7 +1630,7 @@ const PROVISIONAL_KIND_RANK: Readonly<
   provisional_actionable_position_decline: 1,
 };
 
-const DESTINATIONS: Readonly<
+export const DAILY_BRIEFING_DESTINATIONS: Readonly<
   Record<DailyBriefingChangeKind, DailyBriefingAction["destination"]>
 > = {
   click_opportunity: "seo-quick-wins",
@@ -1679,7 +1767,7 @@ function selectChanges(
     if (page !== null) {
       actions.push({
         kind: candidate.kind,
-        destination: DESTINATIONS[candidate.kind],
+        destination: DAILY_BRIEFING_DESTINATIONS[candidate.kind],
         query: candidate.query,
         page,
       });
@@ -1701,8 +1789,19 @@ function selectChanges(
  * Console reports, so it says where the property tends to be seen, never that
  * a page holds a fixed place.
  */
-function observationBandFor(position: number): DailyBriefingObservationBand {
-  if (!Number.isFinite(position) || position <= 0) return "far";
+/**
+ * Which band a query currently sits in, or null when it cannot be placed.
+ *
+ * Null rather than `far`. Every band is a claim about where impressions
+ * happened, and the GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`) — so mapping a non-positive position to
+ * `far` published "ranks far down" about a row whose position was never
+ * returned, and spent a display row and a candidate slot saying it.
+ */
+function observationBandFor(
+  position: number,
+): DailyBriefingObservationBand | null {
+  if (!isMeasuredPosition(position)) return null;
   if (position <= BRIEFING_TOP_BAND_MAX_POSITION) return "page_one";
   if (position <= BRIEFING_OBSERVATION_NEAR_BAND_MAX) return "near_page_one";
   if (position <= BRIEFING_OBSERVATION_MID_BAND_MAX) return "mid";
@@ -1776,6 +1875,12 @@ function queryWatchlistFor({
       ) {
         return [];
       }
+      // This whole list says where a query currently sits, so a row whose
+      // position was never measured has nothing to be listed for. Dropped
+      // before it becomes a candidate, the same as a row below the sample
+      // floor: both are rows this list cannot speak about.
+      const band = observationBandFor(current.position);
+      if (band === null) return [];
       const kind =
         current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS
           ? "sample_floor_reached"
@@ -1807,7 +1912,7 @@ function queryWatchlistFor({
       return [
         {
           kind,
-          band: observationBandFor(current.position),
+          band,
           query: current.query,
           page,
           pageEvidence: page === null ? "unavailable" : "observed",
@@ -1815,11 +1920,9 @@ function queryWatchlistFor({
           previous,
           previousBelowFloor,
           positionDelta:
-            previous === null ||
-            !Number.isFinite(current.position) ||
-            !Number.isFinite(previous.position)
+            previous === null
               ? null
-              : current.position - previous.position,
+              : measuredPositionDelta(previous.position, current.position),
         },
       ];
     })
@@ -1923,8 +2026,18 @@ function propertyTrendFor(
     previous.impressions,
     current.impressions,
   );
+  // Null, not zero, when either side has no measured position. The reader
+  // coerces a missing position to 0 (search-analytics.ts, `toNumber`), and a
+  // property whose position went 5 -> 0 would otherwise read as a five-place
+  // improvement across the whole site.
   const positionDelta =
-    current.position === null || previous.position === null
+    current.position === null ||
+    previous.position === null ||
+    // Computed weekly averages, so the floor is above zero rather than the
+    // provider floor of one: a property ranking first everywhere can divide to
+    // a hair under 1.0.
+    !(current.position > 0) ||
+    !(previous.position > 0)
       ? null
       : current.position - previous.position;
 
@@ -2152,9 +2265,24 @@ const PAGE_KIND_RANK: Readonly<Record<DailyBriefingPageChangeKind, number>> = {
   page_first_observed: 2,
 };
 
-const PAGE_DESTINATIONS: Readonly<
+export const DAILY_BRIEFING_PAGE_DESTINATIONS: Readonly<
   Record<DailyBriefingPageChangeKind, DailyBriefingPageAction["destination"]>
 > = {
+  // Both of these stay on the property, and neither is a good fit.
+  //
+  // A collapse asks whether the URL still answers, still allows crawling,
+  // still points its canonical at itself and has not become a redirect, and
+  // Traffic Drop Diagnosis can put none of those questions — it drops the page
+  // and diagnoses the property. On-Page Checker can put all four, but its form
+  // refuses to run without at least one target query (on-page-checker.tsx,
+  // `queries.length === 0` -> queryRequired), and the queries behind a page
+  // move are anonymized, so this lane has none to hand it and must not invent
+  // one. Routing here would land the visitor on a form they cannot submit.
+  //
+  // So the copy on these two cards states what the next tool actually does and
+  // leaves the URL-level checks as something the reader does themselves. The
+  // honest fix is a URL-only mode in On-Page Checker; until that exists,
+  // pointing a page lane at it would be a button that cannot be pressed.
   page_impression_collapse: "traffic-drop-diagnosis",
   page_click_decline: "traffic-drop-diagnosis",
   page_first_observed: "on-page-seo-check",
@@ -2289,6 +2417,13 @@ function pageCandidatesFor(
         absenceBlockedRows += 1;
         continue;
       }
+      // A position of 35 is an answered question: the band test ran and said
+      // no. A position of 0 is not — the GSC reader leaves that when the
+      // field was missing (search-analytics.ts, `toNumber`), so the band test
+      // had nothing to run on. Only the first belongs in "evaluated, no
+      // signal", which is the count this lane's state and row split are
+      // built from.
+      if (!isMeasuredPosition(current.position)) continue;
       firstObservedCapableRows += 1;
       if (withinActionableBand(current.position)) {
         firstObserved.push({
@@ -2359,13 +2494,10 @@ function pageCandidatesFor(
         clickChangeRatio,
         impressionChange: current.impressions - previous.impressions,
         impressionChangeRatio: ratio(previous.impressions, current.impressions),
-        positionDelta:
-          Number.isFinite(current.position) &&
-          Number.isFinite(previous.position) &&
-          current.position > 0 &&
-          previous.position > 0
-            ? current.position - previous.position
-            : null,
+        positionDelta: measuredPositionDelta(
+          previous.position,
+          current.position,
+        ),
         noiseFloor,
       },
       order: -clickChange,
@@ -2463,13 +2595,9 @@ function pageCandidatesFor(
         // Null whenever either side lacks a measured position, which for this
         // lane includes every page the current window no longer returns.
         positionDelta:
-          current !== null &&
-          Number.isFinite(current.position) &&
-          Number.isFinite(previous.position) &&
-          current.position > 0 &&
-          previous.position > 0
-            ? current.position - previous.position
-            : null,
+          current === null
+            ? null
+            : measuredPositionDelta(previous.position, current.position),
         noiseFloor,
       },
       order: -impressionChange,
@@ -2613,7 +2741,7 @@ function selectPageChanges(
     // lanes there is no withheld-attribution case to fall through here.
     actions: changes.map((change) => ({
       kind: change.kind,
-      destination: PAGE_DESTINATIONS[change.kind],
+      destination: DAILY_BRIEFING_PAGE_DESTINATIONS[change.kind],
       page: change.page,
     })),
     eligible: eligible.length,
@@ -2709,7 +2837,15 @@ function pageChecksFor({
   // the property's whole rate, brand traffic included, as its non-brand one.
   const queryRead = currentEvidence?.queryRead ?? null;
   if (queryRead === null) blockers.push("query_rows_unavailable");
-  else if (queryRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
+  else if (queryRead.paging.truncated) {
+    // A prefix is not the query list. Brand rows outside it are never
+    // subtracted, so the remainder still carries brand clicks and gets
+    // published as this property's non-brand rate. That inflates the rate,
+    // which inflates every expected-click figure, which is what admits a page
+    // to this list — the error runs toward showing more cards, not fewer.
+    // Same subtraction we cannot perform, so the same blocker.
+    blockers.push("query_rows_unavailable");
+  } else if (queryRead.responseAggregationType !== PAGE_AGGREGATION_BASIS) {
     // Subtracting rows aggregated one way from totals aggregated another is
     // the same defect as dividing them.
     blockers.push("aggregation_basis_mismatch");
@@ -2777,8 +2913,7 @@ function pageChecksFor({
     if (actionedPages.has(row.page)) continue;
     if (row.clicks !== 0) continue;
     if (
-      !Number.isFinite(row.position) ||
-      row.position <= 0 ||
+      !isMeasuredPosition(row.position) ||
       row.position > BRIEFING_TOP_BAND_MAX_POSITION
     ) {
       continue;

@@ -120,7 +120,16 @@ export interface DailyBriefingKpis {
   readonly impressions: number;
   /** Null when impressions are zero. */
   readonly ctr: number | null;
-  /** Null when impressions are zero. */
+  /**
+   * Null when impressions are zero, and null when any day that did draw
+   * impressions carries no measured position.
+   *
+   * A window average is a claim about the whole window. Weighting an
+   * unmeasured day in pulls it below every day actually measured; dropping the
+   * day averages a subset and hides an unknown weight that can change the size
+   * of a move and its direction. So the position fails closed while clicks,
+   * impressions and CTR — complete either way — are still reported.
+   */
   readonly position: number | null;
 }
 
@@ -148,7 +157,13 @@ export interface DailyBriefingTrendPoint {
   readonly impressions: number;
   /** Null when the point has no impressions. */
   readonly ctr: number | null;
-  /** Null when the point has no impressions. */
+  /**
+   * Null when the point has no impressions, or when none was measured.
+   *
+   * Search Console cannot weight a position over impressions nobody received,
+   * and the reader leaves 0 where the field was missing — both reach here as
+   * null, so a number in this field is always a measured position.
+   */
   readonly position: number | null;
 }
 
@@ -579,7 +594,13 @@ export interface DailyBriefingPageChecks {
   readonly baseline: DailyBriefingPageCheckBaseline | null;
   readonly blockers: readonly DailyBriefingPageCheckBlocker[];
   readonly items: readonly DailyBriefingPageCheck[];
-  /** Current page rows this check read and rejected. Null when it never ran. */
+  /**
+   * Every usable current page row this check read, `items` included.
+   *
+   * Not the rejected count: the sentence built on it says N were read and the
+   * rest were left out for a stated reason, which only holds if N is the whole
+   * population rather than the remainder.
+   */
   readonly examinedRows: number | null;
 }
 

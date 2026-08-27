@@ -80,7 +80,8 @@ interface DailyBriefingResultsProps {
 interface ResultPreviewSectionProps {
   readonly id: string;
   readonly title: string;
-  readonly intro: string;
+  /** Null where the section's own headings already carry the framing. */
+  readonly intro: string | null;
   readonly body: string;
   readonly kind: "changes" | "actions";
 }
@@ -144,6 +145,26 @@ function destination(
  * impressions and therefore no position to weight, which reads the same here
  * as a position that came back non-finite.
  */
+/**
+ * An average position is only a position when it is above zero.
+ *
+ * The GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`), and `isMetricRowValid` accepts
+ * `position >= 0`, so a zero reaches the client as a readable number meaning
+ * "never measured". The engine's lanes now refuse to act on one; printing it
+ * as `0.0` would still put a rank better than first beside measured ones.
+ * Every average position rendered by this file goes through here — the trend
+ * chart is a separate component and still formats its own.
+ */
+function positionText(
+  t: ReturnType<typeof useTranslations>,
+  value: number | null,
+): string {
+  return value !== null && Number.isFinite(value) && value > 0
+    ? value.toFixed(1)
+    : t("kpis.unavailable");
+}
+
 function metricsLine(
   t: ReturnType<typeof useTranslations>,
   locale: string,
@@ -158,10 +179,7 @@ function metricsLine(
     clicks: number(locale, row.clicks),
     impressions: number(locale, row.impressions),
     ctr: ctr === null ? t("kpis.unavailable") : percent(ctr),
-    position:
-      row.position !== null && Number.isFinite(row.position)
-        ? row.position.toFixed(1)
-        : t("kpis.unavailable"),
+    position: positionText(t, row.position),
   });
 }
 
@@ -251,14 +269,27 @@ function reviewEmptyMessageKey(
   }
 }
 
-function reviewIntroKey(mode: DailyBriefingMode): string {
+/**
+ * `statedPositions` is how many current positions the watchlist could state.
+ *
+ * The watchlist mode is the fallback the engine reaches when no lane could be
+ * evaluated, and it is reached whether or not any position turned out to be
+ * statable. A run whose positions were all unmeasured therefore opened with
+ * "only current-window positions are listed" above a table listing none.
+ */
+function reviewIntroKey(
+  mode: DailyBriefingMode,
+  statedPositions: number,
+): string {
   switch (mode) {
     case "change_detection":
       return "review.intro";
     case "position_observation":
       return "review.introPositionObservation";
     case "current_position_watchlist":
-      return "review.introCurrentWatchlist";
+      return statedPositions > 0
+        ? "review.introCurrentWatchlist"
+        : "review.introCurrentWatchlistEmpty";
     case "unavailable":
       return "review.introUnavailable";
   }
@@ -326,7 +357,7 @@ function propertyWeeklyComparisons(
     position: nullableComparison(
       change.previous.position,
       change.current.position,
-      (value) => value.toFixed(1),
+      (value) => positionText(t, value),
       t("kpis.unavailable"),
     ),
   };
@@ -397,9 +428,11 @@ function ResultPreviewSection({
       >
         {title}
       </h3>
-      <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {intro}
-      </p>
+      {intro === null ? null : (
+        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {intro}
+        </p>
+      )}
       <div className={`${CARD} mt-4`}>
         <p className="max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {body}
@@ -840,7 +873,7 @@ export function DailyBriefingResultPreview() {
         id="daily-briefing-preview-actions"
         kind="actions"
         title={t("actions.title")}
-        intro={t("actions.intro")}
+        intro={null}
         body={t("preview.actions")}
       />
     </div>
@@ -1187,7 +1220,7 @@ export function DailyBriefingResults({
           {t("review.title")}
         </h3>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t(reviewIntroKey(result.mode))}
+          {t(reviewIntroKey(result.mode, result.queryWatchlist.items.length))}
         </p>
         {ctrLane.state !== "evaluated" ? (
           <div
@@ -1348,10 +1381,7 @@ export function DailyBriefingResults({
                     {comparison(
                       change.previous?.position ?? null,
                       change.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("changes.notObserved"),
                     )}
                   </p>
@@ -1416,10 +1446,7 @@ export function DailyBriefingResults({
                     {comparison(
                       move.previous.position,
                       move.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("changes.notObserved"),
                     )}
                   </p>
@@ -1510,10 +1537,7 @@ export function DailyBriefingResults({
                     {comparison(
                       observation.previous?.position ?? null,
                       observation.current.position,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       priorFallback,
                     )}
                   </p>
@@ -1613,10 +1637,7 @@ export function DailyBriefingResults({
                     {comparisonToPossiblyUnmeasured(
                       change.previous?.position ?? null,
                       change.current?.position ?? null,
-                      (value) =>
-                        Number.isFinite(value)
-                          ? value.toFixed(1)
-                          : t("kpis.unavailable"),
+                      (value) => positionText(t, value),
                       t("review.pageNotObserved"),
                       t("kpis.unavailable"),
                     )}
@@ -1682,9 +1703,6 @@ export function DailyBriefingResults({
         >
           {t("actions.title")}
         </h3>
-        <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("actions.intro")}
-        </p>
         {queryActions.length === 0 &&
         pageActions.length === 0 &&
         propertyAction === null ? (
@@ -1820,11 +1838,36 @@ export function DailyBriefingResults({
                         <p className="mt-1 break-all text-[11.5px] leading-[1.5] text-text-dark-secondary">
                           {change.page}
                         </p>
-                        <p className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary">
-                          {metricsLine(t, locale, {
-                            clicks: change.current?.clicks ?? 0,
-                            impressions: change.current?.impressions ?? 0,
-                            position: change.current?.position ?? null,
+                        {/* Both windows, not just the current one. Every
+                            page lane is named after a movement between two
+                            windows, and the collapse lane is named after the
+                            impressions specifically; printing the current
+                            side alone left the number the card is named for
+                            nowhere on the page. */}
+                        <p
+                          data-page-action-weekly
+                          className="mt-1.5 text-[11.5px] leading-[1.5] text-text-dark-secondary"
+                        >
+                          {t("actions.pageWeekly", {
+                            clicks: comparison(
+                              change.previous?.clicks ?? null,
+                              change.current?.clicks ?? 0,
+                              (value) => number(locale, value),
+                              t("changes.notObserved"),
+                            ),
+                            impressions: comparison(
+                              change.previous?.impressions ?? null,
+                              change.current?.impressions ?? 0,
+                              (value) => number(locale, value),
+                              t("changes.notObserved"),
+                            ),
+                            position: comparisonToPossiblyUnmeasured(
+                              change.previous?.position ?? null,
+                              change.current?.position ?? null,
+                              (value) => positionText(t, value),
+                              t("changes.notObserved"),
+                              t("kpis.unavailable"),
+                            ),
                           })}
                         </p>
                       </div>
@@ -1938,14 +1981,9 @@ export function DailyBriefingResults({
                 to become one there is nothing to introduce, only a gap to
                 explain, so the panel narrows to that sentence. */}
             {suggestedChecks.length > 0 ? (
-              <>
-                <h4 className="text-[15px] font-semibold text-text-dark-primary">
-                  {t("checks.title")}
-                </h4>
-                <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                  {t("checks.intro")}
-                </p>
-              </>
+              <h4 className="text-[15px] font-semibold text-text-dark-primary">
+                {t("checks.title")}
+              </h4>
             ) : null}
             <div className="mt-3 grid gap-3">
               {suggestedChecks.map((check) => {
@@ -2004,16 +2042,6 @@ export function DailyBriefingResults({
             <h4 className="text-[15px] font-semibold text-text-dark-primary">
               {t("pageChecks.title")}
             </h4>
-            {/* The rate is named, because the whole claim rests on it and it
-                is this property's own, not an industry figure. */}
-            <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-              {t("pageChecks.intro", {
-                ctr:
-                  pageCheckBaseline === null
-                    ? t("kpis.unavailable")
-                    : percent(pageCheckBaseline.ctr),
-              })}
-            </p>
             <div className="mt-3 grid gap-3">
               {pageChecks.map((check) => (
                 <article
@@ -2027,10 +2055,17 @@ export function DailyBriefingResults({
                       {check.page}
                     </p>
                     <p className="mt-1.5 text-[12px] leading-[1.6] text-text-dark-secondary">
+                      {/* The rate is named on the row it justifies, because
+                          the whole claim rests on it and it is this property's
+                          own, not an industry figure. */}
                       {t("pageChecks.body", {
                         impressions: number(locale, check.impressions),
-                        position: check.position.toFixed(1),
+                        position: positionText(t, check.position),
                         expected: check.expectedClicks.toFixed(1),
+                        ctr:
+                          pageCheckBaseline === null
+                            ? t("kpis.unavailable")
+                            : percent(pageCheckBaseline.ctr),
                       })}
                     </p>
                   </div>
@@ -2049,6 +2084,15 @@ export function DailyBriefingResults({
                 </article>
               ))}
             </div>
+            {/* Said once, under the buttons it qualifies. The handoff carries
+                a page and no query — the queries behind a page total are
+                anonymized — and On-Page Checker will not run without one. */}
+            <p
+              data-page-checks-handoff
+              className="mt-3 max-w-3xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+            >
+              {t("pageChecks.handoff")}
+            </p>
             {/* The population this check read, so the list above is not
                 mistaken for everything the page dimension returned. */}
             {result.pageChecks.examinedRows !== null ? (
