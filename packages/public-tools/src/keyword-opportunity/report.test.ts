@@ -1752,8 +1752,8 @@ describe("buildKeywordOpportunityResult v3 process ledger", () => {
       buildKeywordOpportunityResult(input());
 
     expect(produced.process).toMatchObject({
-      validation: { accounted: false },
-      serp: { accounted: false },
+      validation: { requested: null, accounted: false },
+      serp: { planned: null, dispatched: null, accounted: false },
       thresholds: {
         policyVersion: null,
         youngDomainMonths: null,
@@ -1775,6 +1775,48 @@ describe("buildKeywordOpportunityResult v3 process ledger", () => {
     const { process: _process, ...cachedV2 } = produced;
     const broadReader: KeywordOpportunityResult = cachedV2;
     expect(broadReader.process).toBeUndefined();
+  });
+
+  it("normalizes invalid caller-owned transport counts to null without hiding observation-derived evidence", () => {
+    const result = buildKeywordOpportunityResult({
+      ...input({
+        observations: [
+          ledgerObservation("completed observation", [
+            "observed",
+            "not_observed",
+            "not_observed",
+          ]),
+        ],
+      }),
+      process: {
+        validation: { requested: -1 },
+        serp: { planned: Number.NaN, dispatched: 1.5 },
+      },
+    });
+
+    expect(result.process).toMatchObject({
+      validation: {
+        requested: null,
+        available: 1,
+        explicitZero: 0,
+        providerNoData: 0,
+        accounted: false,
+      },
+      serp: {
+        planned: null,
+        dispatched: null,
+        completed: 1,
+        failed: 0,
+        failureReasons: {
+          provider_unavailable: 0,
+          provider_no_data: 0,
+          transport_outcome_unknown: 0,
+          budget_exhausted: 0,
+          unreported: 0,
+        },
+        accounted: false,
+      },
+    });
   });
 
   it("normalizes partially supplied threshold and duration facts to explicit null during producer skew", () => {

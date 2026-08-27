@@ -863,7 +863,8 @@ export interface KeywordOpportunityProcessInput {
 }
 
 export interface KeywordOpportunityProcessValidation {
-  readonly requested: number;
+  /** Null when the producer did not report a valid requested count. */
+  readonly requested: number | null;
   readonly available: number;
   readonly explicitZero: number;
   readonly providerNoData: number;
@@ -871,8 +872,10 @@ export interface KeywordOpportunityProcessValidation {
 }
 
 export interface KeywordOpportunityProcessSerp {
-  readonly planned: number;
-  readonly dispatched: number;
+  /** Null when the producer did not report a valid plan count. */
+  readonly planned: number | null;
+  /** Null when the producer did not report a valid dispatch count. */
+  readonly dispatched: number | null;
   readonly completed: number;
   readonly failed: number;
   readonly failureReasons: Readonly<

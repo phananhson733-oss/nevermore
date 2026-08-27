@@ -382,6 +382,12 @@ function countsAreWholeAndNonNegative(values: readonly number[]): boolean {
   return values.every((value) => Number.isInteger(value) && value >= 0);
 }
 
+function reportedCount(value: number | undefined): number | null {
+  return value !== undefined && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
 function processSerpFailureReason(
   observation: KeywordOpportunityObservation,
 ): KeywordOpportunityProcessSerpFailureReason {
@@ -499,14 +505,10 @@ function buildKeywordOpportunityProcess(
     (observation) =>
       observation.validation.availability === "provider_no_data",
   ).length;
-  const suppliedValidationRequested = input.process?.validation?.requested;
-  const validationRequested = suppliedValidationRequested ?? observations.length;
-  const validationCounts = [
-    validationRequested,
-    available,
-    explicitZero,
-    providerNoData,
-  ];
+  const validationRequested = reportedCount(
+    input.process?.validation?.requested,
+  );
+  const validationCounts = [available, explicitZero, providerNoData];
 
   const failureReasons: Record<
     KeywordOpportunityProcessSerpFailureReason,
@@ -534,14 +536,9 @@ function buildKeywordOpportunityProcess(
     (sum, reason) => sum + failureReasons[reason],
     0,
   );
-  const suppliedSerpPlanned = input.process?.serp?.planned;
-  const suppliedSerpDispatched = input.process?.serp?.dispatched;
-  const planned = suppliedSerpPlanned ?? plannedObservations.length;
-  const dispatched =
-    suppliedSerpDispatched ?? planned - failureReasons.budget_exhausted;
+  const planned = reportedCount(input.process?.serp?.planned);
+  const dispatched = reportedCount(input.process?.serp?.dispatched);
   const serpCounts = [
-    planned,
-    dispatched,
     completed,
     failed,
     ...KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS.map(
@@ -649,7 +646,7 @@ function buildKeywordOpportunityProcess(
       explicitZero,
       providerNoData,
       accounted:
-        suppliedValidationRequested !== undefined &&
+        validationRequested !== null &&
         countsAreWholeAndNonNegative(validationCounts) &&
         validationRequested === available + explicitZero + providerNoData,
     },
@@ -660,8 +657,8 @@ function buildKeywordOpportunityProcess(
       failed,
       failureReasons,
       accounted:
-        suppliedSerpPlanned !== undefined &&
-        suppliedSerpDispatched !== undefined &&
+        planned !== null &&
+        dispatched !== null &&
         countsAreWholeAndNonNegative(serpCounts) &&
         failureReasons.unreported === 0 &&
         planned === completed + failed &&
