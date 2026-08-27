@@ -20,7 +20,6 @@ import {
   META_TEXT,
   number,
   pagePath,
-  TABLE_TEXT,
   translated,
   type ChipTone,
   type Translate,
@@ -95,11 +94,12 @@ function statusTone(
 }
 
 /**
- * The position the pill will compose into its label, or null.
+ * The position this row has to show, or null.
  *
- * One predicate for both the label and the title that qualifies it. Deciding
- * them separately would let a pill showing no number carry a title explaining
- * how that number was averaged.
+ * One predicate for both the chip and the title that qualifies it. Deciding
+ * them separately would let a chip showing no number carry a title explaining
+ * how that number was averaged. It is read off an OBSERVED state only: the
+ * other two carry no position by contract.
  */
 function pillPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
   const observed =
@@ -109,21 +109,6 @@ function pillPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
 }
 
 /**
- * The pill carries the average position, and nothing else repeats it.
- *
- * The state and the position answer one question -- "where am I on this query?"
- * -- and this column is read in one pass down the table, so keeping them on two
- * lines made a reader assemble every row twice. The position is composed onto
- * an OBSERVED state only: the other two states carry no position by contract,
- * and a separator with nothing after it reads as a number that failed to
- * render.
- *
- * `not_observed_in_gsc_query_sample` reads "not in sample", never "not
- * covered". Anonymized queries are absent from this bounded sample entirely, so
- * absence from it is not absence from Search -- which is exactly what this
- * report's own evidence boundaries say two cards further down.
- */
-/**
  * The state, and nothing else.
  *
  * The average position used to be folded in here -- "has impressions - avg
@@ -131,6 +116,11 @@ function pillPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
  * reading arrived attached to a state, the other loose, and neither looked
  * like the other. Both numbers are Search Console measurements of the same
  * kind; they belong in the same shape, beside the state rather than inside it.
+ *
+ * `not_observed_in_gsc_query_sample` reads "not in sample", never "not
+ * covered". Anonymized queries are absent from this bounded sample entirely, so
+ * absence from it is not absence from Search -- which is exactly what this
+ * report's own evidence boundaries say two cards further down.
  */
 function statusLabel(
   gsc: CompetitorKeywordGapRow["gsc"],
@@ -140,8 +130,25 @@ function statusLabel(
 }
 
 /**
- * What Search Console attributed to a PAGE for this query, under the pill that
- * states the query itself.
+ * The page reading, or null when the contract did not fill both halves of it.
+ *
+ * One predicate, because two readers need the same answer: the line that shows
+ * the pair, and the cell above it that has to know whether this row measured
+ * anything at all before it decides to drop its state pill.
+ */
+function pageMetrics(
+  gsc: CompetitorKeywordGapRow["gsc"],
+): { readonly impressions: number; readonly position: number } | null {
+  return gsc.evidenceBasis === "query_page" &&
+    gsc.pageImpressions !== null &&
+    gsc.pagePosition !== null
+    ? { impressions: gsc.pageImpressions, position: gsc.pagePosition }
+    : null;
+}
+
+/**
+ * What Search Console attributed to a PAGE for this query, under the reading
+ * of the query itself.
  *
  * Kept apart from the pill because the two answer different questions and can
  * disagree: a query observed on one page still carries a partial attribution,
@@ -165,6 +172,7 @@ function PageEvidence({
     gsc.pageStatus === "observed_sufficient" ||
     gsc.pageStatus === "observed_partial";
   const observedPath = pageObserved ? pagePath(gsc.pageUrl) : null;
+  const metrics = pageMetrics(gsc);
 
   return (
     <>
@@ -179,19 +187,17 @@ function PageEvidence({
           {observedPath === null ? "" : ` · ${observedPath}`}
         </div>
       ) : null}
-      {gsc.evidenceBasis === "query_page" &&
-      gsc.pageImpressions !== null &&
-      gsc.pagePosition !== null ? (
+      {metrics === null ? null : (
         <div
           data-gsc-metrics="query-page"
           className={`mt-1 ${META_TEXT} text-text-dark-secondary`}
         >
           {t("gsc.pageMetricLine", {
-            impressions: number(gsc.pageImpressions, locale),
-            position: number(gsc.pagePosition, locale, 1),
+            impressions: number(metrics.impressions, locale),
+            position: number(metrics.position, locale, 1),
           })}
         </div>
-      ) : null}
+      )}
     </>
   );
 }
@@ -238,19 +244,47 @@ export function StatusCell({
     gsc.queryStatus === "not_observed_in_gsc_query_sample"
       ? translated(t, "gsc.notObservedTitle")
       : null;
+  /**
+   * "Has impressions" is the vaguest possible reading of the numbers printed
+   * directly under it.
+   *
+   * The other three states say something no chip below can: already ranking is
+   * a band this tool drew across two thresholds, and the two unobserved states
+   * exist precisely because there is no measurement to show. `observed_weak`
+   * is the leftover -- Search Console saw the query and it did not clear the
+   * band -- which is what "64 impressions, avg position 83.1" says exactly,
+   * one line down, in the shape reserved for measurements. On the state most
+   * rows in this table are in, the pill was a line of scanning that returned
+   * nothing.
+   *
+   * Dropped only when a reading is actually on screen. The contract fills both
+   * numbers on every path that produces this state, so the fallback is for a
+   * malformed payload rather than a real run -- but a cell that renders
+   * nothing at all would be a worse answer than a vague pill.
+   */
+  const measured =
+    gsc.queryImpressions !== null ||
+    position !== null ||
+    pageMetrics(gsc) !== null;
+  const showStatePill = gsc.queryStatus !== "observed_weak" || !measured;
 
   return (
-    <>
-      <div
-        data-gsc-status
-        aria-label={[label, basis, sampleTitle]
-          .filter((part) => part !== null)
-          .join(" · ")}
-        {...(sampleTitle === null ? {} : { title: sampleTitle })}
-        className={`inline-flex rounded-full border px-2.5 py-1 ${META_TEXT} ${statusTone(gsc.queryStatus)}`}
-      >
-        {label}
-      </div>
+    // Whatever lands first in this cell sits flush with the row: the pill is
+    // not always there to absorb the leading offset, and the blocks below it
+    // each space themselves from what precedes them.
+    <div className="[&>*:first-child]:mt-0">
+      {showStatePill ? (
+        <div
+          data-gsc-status
+          aria-label={[label, basis, sampleTitle]
+            .filter((part) => part !== null)
+            .join(" · ")}
+          {...(sampleTitle === null ? {} : { title: sampleTitle })}
+          className={`inline-flex rounded-full border px-2.5 py-1 ${META_TEXT} ${statusTone(gsc.queryStatus)}`}
+        >
+          {label}
+        </div>
+      ) : null}
       {/*
         One chip per reading, in the DATUM shape rather than the pill shape.
         The rule this table is built on is that a pill is a STATE and a
@@ -302,7 +336,7 @@ export function StatusCell({
         </div>
       )}
       <PageEvidence gsc={gsc} locale={locale} t={t} />
-    </>
+    </div>
   );
 }
 
