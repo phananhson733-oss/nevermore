@@ -33,6 +33,8 @@ const V2_COLUMNS = [
   "decisionReason",
 ] as const;
 
+const SUPPORTING_PAGE_SOURCE_COLUMN = "supportingPageSource";
+
 const YOUNG_DOMAIN_OBSERVATION = {
   domain: "young.test",
   registrationDate: "2026-01-02T00:00:00.000Z",
@@ -106,6 +108,7 @@ function row(
       isEstimate: false,
     },
     coverage: "not_observed_in_gsc_query_sample",
+    supportingPage: { state: "not_observed" },
     supportingPageUrl: null,
     nextChecks: ["read_page_one_intent", "judge_commercial_fit"],
     clusterId: "cluster-1",
@@ -195,14 +198,14 @@ describe("keywordOpportunityCsv", () => {
     const [header, first] = lines(csv);
 
     expect(header).toBe(
-      `market,language,lane,keyword,volume,difficulty,weakestDomainRank,weakestDomain,weakestPosition,aiOverviewObserved,coverage,supportingPageUrl,discoveryBasis,clusterId,checks,${V2_COLUMNS.join(",")}`,
+      `market,language,lane,keyword,volume,difficulty,weakestDomainRank,weakestDomain,weakestPosition,aiOverviewObserved,coverage,${SUPPORTING_PAGE_SOURCE_COLUMN},supportingPageUrl,discoveryBasis,clusterId,checks,${V2_COLUMNS.join(",")}`,
     );
-    expect(first?.split(",").slice(0, 15)).toEqual(
-      "US,en,seo,travel espresso kit,1300,12,38,smallbrew.test,6,no,not_observed_in_gsc_query_sample,,site_proposition,cluster-1,read_page_one_intent|judge_commercial_fit".split(
+    expect(first?.split(",").slice(0, 16)).toEqual(
+      "US,en,seo,travel espresso kit,1300,12,38,smallbrew.test,6,no,not_observed_in_gsc_query_sample,,,site_proposition,cluster-1,read_page_one_intent|judge_commercial_fit".split(
         ",",
       ),
     );
-    expect(first?.split(",").slice(15)).toEqual(V2_COLUMNS.map(() => ""));
+    expect(first?.split(",").slice(16)).toEqual(V2_COLUMNS.map(() => ""));
   });
 
   it("exports public v2 provider, signal, AI Overview, and decision metadata without a raw-answer column", () => {
@@ -539,7 +542,7 @@ describe("keywordOpportunityDisplayItems", () => {
       { disposition: "eligible", candidate: oldRow },
     ]);
     expect(lines(keywordOpportunityCsv(oldResult))).toHaveLength(2);
-    expect(lines(keywordOpportunityCsv(oldResult))[1]?.split(",").slice(15)).toEqual(
+    expect(lines(keywordOpportunityCsv(oldResult))[1]?.split(",").slice(16)).toEqual(
       V2_COLUMNS.map(() => ""),
     );
   });

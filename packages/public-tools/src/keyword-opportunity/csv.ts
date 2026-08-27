@@ -37,6 +37,7 @@ const COLUMNS = [
   // claim an observation nobody made.
   "aiOverviewObserved",
   "coverage",
+  "supportingPageSource",
   "supportingPageUrl",
   "discoveryBasis",
   "clusterId",
@@ -129,6 +130,7 @@ function rowCells(
     num(row.serp.weakestTopTenPosition),
     aiOverviewCell(row.serp.pageOneItemTypes),
     text(row.coverage),
+    text(row.supportingPage?.state === "observed" ? row.supportingPage.source : ""),
     text(row.supportingPageUrl ?? ""),
     text(row.discoveryBasis),
     text(row.clusterId ?? ""),

@@ -2106,6 +2106,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
       const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
+      expect(row?.decision).toEqual(
+        expect.objectContaining({ basis: "positive_signal_observed" }),
+      );
       // Traffic resolved immediately and is kept. Racing the wave as one unit
       // would have discarded it because a third resolver hung — strictly worse
       // than the per-resolver failure isolation this wave already had, where
@@ -2201,6 +2204,15 @@ describe("handleKeywordOpportunitiesRequest", () => {
         serp: expect.objectContaining({
           status: "complete",
           verdict: "no_serp_evidence",
+        }),
+        signals: expect.objectContaining({
+          lowOrganicTrafficDomain: expect.objectContaining({
+            state: "unavailable",
+            reason: "site_rank_tier_unavailable",
+          }),
+          youngDomain: expect.objectContaining({
+            state: "observed",
+          }),
         }),
       }),
     ]);

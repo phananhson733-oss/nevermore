@@ -120,6 +120,14 @@ function completeRow(
       discounts: [],
     },
     coverage: "possible_existing_page",
+    supportingPage:
+      lane === "geo"
+        ? {
+            state: "observed",
+            source: "llm_proposition_source",
+            url: "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
+          }
+        : undefined,
     supportingPageUrl:
       lane === "geo"
         ? "https://acme.test/resources/how-to-win?utm_source=fixture#answer"
@@ -298,5 +306,9 @@ describe("KeywordMapResults evidence expansion", () => {
     ).toContain(
       "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
     );
+    expect(
+      host.querySelector('[data-keyword-detail="expandable geo evidence"]')
+        ?.textContent,
+    ).toContain("Proposition source page");
   });
 });

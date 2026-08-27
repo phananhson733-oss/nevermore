@@ -2987,7 +2987,7 @@
         "winnableEvidence": "Weak site on page one",
         "shown": "Shown"
       },
-      "weakestHint": "Weakest rank is one raw page-one fact, not the decision rule by itself. The opportunity decision uses three separately reported signals: a young domain, a low-organic-traffic domain, or a community result. Any unavailable required signal keeps the candidate incomplete.",
+      "weakestHint": "Weakest rank is one raw page-one fact, not the decision rule by itself. The opportunity decision uses three separately reported signals: a young domain, a low-organic-traffic domain, or a community result. A positive signal still qualifies the row; only a row with no positive signal falls back to incomplete-on-unavailable evidence.",
       "geoHint": "These are question-form candidates judged by the same three page-one signals. A supporting page is shown only when one was observed; no demand is claimed when the provider returned none.",
       "eligibleTitle": "Eligible opportunities",
       "eligibleIntro": "At least one required opportunity signal was observed. AI Overview answer completeness can lower ordering; it never excludes a candidate.",
@@ -3020,7 +3020,7 @@
         "competition": "Competition context",
         "signals": "Three-signal evidence",
         "aiOverview": "AI Overview",
-        "supportingPage": "Page that answers it",
+        "supportingPage": "Supporting page",
         "coverage": "Your coverage",
         "coverageReview": "Coverage and review",
         "nextChecks": "Check before acting",
@@ -3034,6 +3034,13 @@
       "supportingPage": {
         "not_observed": "No supporting page observed",
         "unavailable": "Supporting page unavailable"
+      },
+      "supportingPageSources": {
+        "gsc_observed_query_page": "Observed query page",
+        "lexical_page_match": "Crawled page match",
+        "llm_proposition_source": "Proposition source page",
+        "inventory_url_match": "Sitemap URL match",
+        "not_observed": "No supporting page observed"
       },
       "evidence": {
         "show": "View evidence",
@@ -3049,8 +3056,34 @@
         "registrationDate": "Registration timestamp",
         "marketLanguage": "Market {market} · language {language}",
         "supportingPageUrl": "Full supporting page URL",
+        "supportingPageSource": "Supporting page basis",
         "reason": "Reason",
         "loadedAsync": "Loaded asynchronously"
+      },
+      "process": {
+        "title": "Run ledger",
+        "serpSummary": "Page-one sampling planned {planned}, completed {completed}, and left {failed} unavailable.",
+        "serpFailures": "Unavailable page-one reads: {reasons}.",
+        "failureReasons": {
+          "provider_unavailable": "Results-page provider unavailable",
+          "provider_no_data": "Provider returned no page-one data",
+          "transport_outcome_unknown": "Sampling outcome unreported",
+          "budget_exhausted": "Run budget exhausted before dispatch"
+        },
+        "supportingPages": "Supporting-page evidence across all candidates: {breakdown}.",
+        "decisions": "Decision totals: {eligible} eligible, {withheld} excluded, {incomplete} incomplete.",
+        "withheldReasons": "Excluded reasons: {reasons}.",
+        "incompleteReasons": "Incomplete reasons: {reasons}.",
+        "positiveWithUnavailable": "{count, plural, one {# candidate kept a positive signal while a sibling signal stayed unavailable.} other {# candidates kept a positive signal while a sibling signal stayed unavailable.}}",
+        "threshold": "Low-traffic threshold used for this site: rank {rank}, threshold {threshold}.",
+        "thresholdUnavailable": "The site's own rank tier could not be resolved, so the low-traffic threshold stayed unavailable.",
+        "durations": "Stage time: total {total}ms. Breakdown: {breakdown}.",
+        "durationStages": {
+          "coverage": "Search Console coverage",
+          "serpSampling": "page-one sampling",
+          "serpInterpretation": "SERP interpretation",
+          "domainEnrichment": "domain enrichment"
+        }
       },
       "aio": {
         "shown": "Observed on page one",
