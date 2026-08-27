@@ -80,6 +80,7 @@ const success = {
       scannedAt: "2026-08-12T09:00:00.000Z",
       targetInspected: true,
       inspectedTargetUrl: "https://acme.test/",
+      landedTargetUrl: "https://acme.test/",
       targetPageExtract: null,
       coverage: {
         availability: "available",

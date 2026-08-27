@@ -114,6 +114,7 @@ function evidenceFor(
 function auditResponse(
   queries: readonly string[],
   cache: "hit" | "miss" = "miss",
+  landedTargetUrl: string = extract.url,
 ): Response {
   return Response.json(
     {
@@ -121,6 +122,7 @@ function auditResponse(
         run: { source: { cache: { status: cache } } },
         result: {
           targetUrl: extract.url,
+          landedTargetUrl,
           scannedAt: "2026-08-17T12:00:00.000Z",
           targetInspected: true,
           inspectedTargetUrl: extract.url,
@@ -255,6 +257,43 @@ async function fillAndRun(
     buttonWith(host, "Check this page").click();
   });
 }
+
+describe("On-Page checker provenance", () => {
+  it("names the page it read when the submitted URL redirected somewhere else", async () => {
+    // The audit follows redirects, so a URL that 302s produces a report about
+    // its destination. Every label on screen still named the URL that was
+    // typed, so a visitor auditing a tracking short link read a homepage audit
+    // labelled with the short link and had no way to tell.
+    const landed = "https://acme.test/";
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"], "miss", landed),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+
+    const line = host.querySelector("[data-provenance-landed]");
+    expect(line).not.toBeNull();
+    expect(line?.textContent).toContain(landed);
+    // Beside the URL it corrects, not instead of it: the report has to be able
+    // to say "you asked for A, this is B".
+    expect(host.textContent).toContain(extract.url);
+  });
+
+  it("says nothing about a redirect when the crawl landed where it was sent", async () => {
+    // A "redirected to" line on every clean run says nothing and trains the
+    // reader to skip it -- which is how it would be missed on the one run
+    // where it mattered.
+    globalThis.fetch = vi.fn(async () =>
+      auditResponse(["pricing"]),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await fillAndRun(host, ["pricing"]);
+
+    expect(host.querySelector("[data-provenance-landed]")).toBeNull();
+  });
+});
 
 describe("On-Page checker request", () => {
   it("sends the page, the queries, the role and the market to look up", async () => {

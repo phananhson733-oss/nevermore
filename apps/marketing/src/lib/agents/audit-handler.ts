@@ -44,9 +44,7 @@ import {
   defaultPagePerformanceReader,
   type PagePerformanceReadResult,
 } from "./page-performance-reader.ts";
-import {
-  buildSerpShapeRecords,
-} from "@sf/public-tools/seo-audit/serp-shape";
+import { buildSerpShapeRecords } from "@sf/public-tools/seo-audit/serp-shape";
 
 import { buildKeywordEvidence, normalizeSeoAuditUrl } from "@sf/public-tools";
 import { readSerpLandscape } from "../tools/serp-landscape.ts";
@@ -567,11 +565,7 @@ async function projectUpstreamError(
     }
     headers.set("Location", redirectTarget);
   }
-  return errorResponse(
-    code,
-    upstream.status,
-    headers,
-  );
+  return errorResponse(code, upstream.status, headers);
 }
 
 /**
@@ -844,6 +838,11 @@ export async function handleAgentAuditRequest(
       scannedAt: result.scannedAt,
       targetInspected: result.targetInspected,
       inspectedTargetUrl: result.inspectedTargetUrl,
+      // The same value the Search Console and CrUX lookups above were already
+      // built on. It decided which page those providers were asked about, and
+      // until now it was the one reader of this run that never saw it: the
+      // report named the URL that was typed, whichever page it audited.
+      landedTargetUrl: landedTargetUrl(result),
       // Rebuilt field by field, like every other projected value. Forwarding
       // the object would publish whatever an upstream or cached payload
       // happened to carry beside these fields.
