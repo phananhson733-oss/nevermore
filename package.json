@@ -34,6 +34,7 @@
     "artifact:verify": "node --test scripts/artifact-path-guard.test.cjs && node scripts/verify-static-customer-artifact.cjs && node scripts/verify-product-manual.cjs",
     "artifact:regen": "pnpm artifact:build && pnpm artifact:manual",
     "test": "vitest run --project unit",
+    "calibrate:keyword-opportunity": "tsx scripts/keyword-opportunity-calibration.mjs",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",
     "test:sql:marketing": "vitest run --project marketing-sql",

@@ -1,0 +1,140 @@
+{
+  "artifactVersion": "keyword_opportunity_calibration_report.v1",
+  "inputSha256": "c34de278771475d1e2b440e652f499ebf796f79d1d91bbd189e515493702d761",
+  "source": "/Users/wzb/.config/superpowers/worktrees/signalframe-mvp-app/keyword-foundation-remediation-final-20260828/packages/public-tools/src/keyword-opportunity/__fixtures__/calibration-synthetic.v1.json",
+  "schemaVersion": "keyword_opportunity_calibration_snapshot.v1",
+  "synthetic": true,
+  "calibrated": false,
+  "variants": [
+    {
+      "id": "strict-v2",
+      "eligible": 0,
+      "incomplete": 1,
+      "excluded": 2,
+      "yield": 0,
+      "incompleteRate": 0.3333333333333333,
+      "exclusionRate": 0.6666666666666666,
+      "candidates": [
+        {
+          "candidateId": "positive-with-unknown",
+          "disposition": "incomplete",
+          "positiveSignals": [
+            "young_domain"
+          ]
+        },
+        {
+          "candidateId": "traffic-threshold-flip",
+          "disposition": "excluded",
+          "positiveSignals": []
+        },
+        {
+          "candidateId": "completed-negative",
+          "disposition": "excluded",
+          "positiveSignals": []
+        }
+      ],
+      "labelled": {
+        "labelledCandidates": 3,
+        "eligibleTrueOpportunities": 0,
+        "falsePositiveEligible": 0,
+        "missedTrueOpportunities": 2,
+        "precisionEligible": null
+      }
+    },
+    {
+      "id": "positive-first-v3",
+      "eligible": 1,
+      "incomplete": 0,
+      "excluded": 2,
+      "yield": 0.3333333333333333,
+      "incompleteRate": 0,
+      "exclusionRate": 0.6666666666666666,
+      "candidates": [
+        {
+          "candidateId": "positive-with-unknown",
+          "disposition": "eligible",
+          "positiveSignals": [
+            "young_domain"
+          ]
+        },
+        {
+          "candidateId": "traffic-threshold-flip",
+          "disposition": "excluded",
+          "positiveSignals": []
+        },
+        {
+          "candidateId": "completed-negative",
+          "disposition": "excluded",
+          "positiveSignals": []
+        }
+      ],
+      "labelled": {
+        "labelledCandidates": 3,
+        "eligibleTrueOpportunities": 1,
+        "falsePositiveEligible": 0,
+        "missedTrueOpportunities": 1,
+        "precisionEligible": 1
+      }
+    },
+    {
+      "id": "positive-first-weak-tier-10k",
+      "eligible": 2,
+      "incomplete": 0,
+      "excluded": 1,
+      "yield": 0.6666666666666666,
+      "incompleteRate": 0,
+      "exclusionRate": 0.3333333333333333,
+      "candidates": [
+        {
+          "candidateId": "positive-with-unknown",
+          "disposition": "eligible",
+          "positiveSignals": [
+            "young_domain"
+          ]
+        },
+        {
+          "candidateId": "traffic-threshold-flip",
+          "disposition": "eligible",
+          "positiveSignals": [
+            "low_organic_traffic_domain"
+          ]
+        },
+        {
+          "candidateId": "completed-negative",
+          "disposition": "excluded",
+          "positiveSignals": []
+        }
+      ],
+      "labelled": {
+        "labelledCandidates": 3,
+        "eligibleTrueOpportunities": 2,
+        "falsePositiveEligible": 0,
+        "missedTrueOpportunities": 0,
+        "precisionEligible": 1
+      }
+    }
+  ],
+  "flips": [
+    {
+      "candidateId": "positive-with-unknown",
+      "fromVariant": "strict-v2",
+      "fromDisposition": "incomplete",
+      "toVariant": "positive-first-v3",
+      "toDisposition": "eligible"
+    },
+    {
+      "candidateId": "positive-with-unknown",
+      "fromVariant": "strict-v2",
+      "fromDisposition": "incomplete",
+      "toVariant": "positive-first-weak-tier-10k",
+      "toDisposition": "eligible"
+    },
+    {
+      "candidateId": "traffic-threshold-flip",
+      "fromVariant": "strict-v2",
+      "fromDisposition": "excluded",
+      "toVariant": "positive-first-weak-tier-10k",
+      "toDisposition": "eligible"
+    }
+  ]
+}

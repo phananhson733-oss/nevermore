@@ -60,3 +60,19 @@ export type {
   KeywordOpportunityObservationV3,
   KeywordOpportunityReportInput,
 } from "./report.ts";
+export {
+  KEYWORD_OPPORTUNITY_CALIBRATION_SCHEMA_VERSION,
+  compareKeywordOpportunityCalibration,
+  evaluateKeywordOpportunityCalibration,
+} from "./calibration.ts";
+export type {
+  KeywordOpportunityCalibrationCandidate,
+  KeywordOpportunityCalibrationCandidateResult,
+  KeywordOpportunityCalibrationComparison,
+  KeywordOpportunityCalibrationDisposition,
+  KeywordOpportunityCalibrationEvaluation,
+  KeywordOpportunityCalibrationLabel,
+  KeywordOpportunityCalibrationLabelledMetrics,
+  KeywordOpportunityCalibrationSnapshotV1,
+  KeywordOpportunityCalibrationVariant,
+} from "./calibration.ts";
