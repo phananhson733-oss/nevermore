@@ -85,6 +85,18 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     expect(checker).toBeInstanceOf(HTMLAnchorElement);
     expect(checker.getAttribute("href")).toBe("/zh/tools/on-page-seo-check");
     expect(checker.getAttribute("href")).not.toContain("?");
+    // This run is a manual snapshot with no persistence: navigating this tab
+    // away discards a paid report and Back returns to an empty form. So the
+    // handoff opens a new tab -- and keeps an opener, which is the part that is
+    // easy to "fix" into a bug. Session storage is copied into a new tab only
+    // when that tab has an opener, and `target="_blank"` is noopener by default
+    // in current browsers, so `noopener` here would deliver the visitor to a
+    // destination that reads nothing and looks like it lost the property.
+    // Measured in Chromium and WebKit. Asserted exactly, because the string
+    // "noopener" contains "opener".
+    expect(checker.getAttribute("target")).toBe("_blank");
+    expect(checker.getAttribute("rel")).toBe("opener");
+    expect(checker.getAttribute("rel")).not.toContain("noopener");
     checker.addEventListener("click", (event) => event.preventDefault(), {
       once: true,
     });
@@ -239,7 +251,10 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     expect(pageLink).toBeInstanceOf(HTMLAnchorElement);
     expect(pageLink.getAttribute("href")).toBe("https://example.com/partial");
     expect(pageLink.getAttribute("target")).toBe("_blank");
+    // The opposite call, on purpose: this one leaves our origin and carries no
+    // handoff, so it gets the full noopener/noreferrer treatment.
     expect(pageLink.getAttribute("rel")).toContain("noopener");
+    expect(pageLink.getAttribute("rel")).toContain("noreferrer");
     expect(
       tableRow(host, "unsafe page").querySelector(
         '[data-row-action="open-observed-page"]',
@@ -403,6 +418,11 @@ describe("CompetitorKeywordGapResults actions and exports", () => {
     const link = finder("strong review") as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/tools/seo-quick-wins");
     expect(link.getAttribute("href")).not.toContain("?");
+    // Same reasoning as the checker link above: a new tab that keeps its
+    // opener, because the handoff rides session storage.
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("opener");
+    expect(link.getAttribute("rel")).not.toContain("noopener");
     link.addEventListener("click", (event) => event.preventDefault(), {
       once: true,
     });
