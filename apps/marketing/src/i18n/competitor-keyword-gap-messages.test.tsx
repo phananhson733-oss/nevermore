@@ -248,7 +248,9 @@ describe.each([
     rankingStatus: "Already ranking",
     positionChip: "avg position 4.1",
     positionTitle:
-      "Impression-weighted average position across the 28-day Search Console window, which ends three days behind today.",
+      "Average position for this keyword as an EXACT query: impression-weighted across the 28-day Search Console window, which ends three days behind today. A \u201Ccontains\u201D filter in Search Console shows a much larger number, because that sums every query containing the term.",
+    impressionsTitle:
+      "Impressions for this keyword as an EXACT query, across the 28-day Search Console window. A \u201Ccontains\u201D filter in Search Console shows a much larger number, because that sums every query containing the term.",
     impressionsLine: "900 impressions",
     notInSample: "Not in sample",
     notObservedTitle:
@@ -276,7 +278,9 @@ describe.each([
     rankingStatus: "已在排",
     positionChip: "均位 4.1",
     positionTitle:
-      "在 28 天 Search Console 窗口内按曝光加权的平均排名；该窗口比今天滞后 3 天。",
+      "这个关键词作为精确查询的均位：28 天 Search Console 窗口内按曝光加权，窗口比今天滞后 3 天。GSC 里用「包含」筛选看到的数会大得多，那是所有含这个词的查询之和。",
+    impressionsTitle:
+      "这个关键词作为精确查询的曝光，取 28 天 Search Console 窗口。GSC 里用「包含」筛选看到的数会大得多，那是所有含这个词的查询之和。",
     impressionsLine: "曝光 900",
     notInSample: "样本未观测",
     notObservedTitle:
@@ -329,6 +333,12 @@ describe.each([
     expect(impressions).toHaveLength(1);
     expect(impressions[0]?.textContent).toBe(expected.impressionsLine);
     expect(impressions[0]?.textContent).not.toContain("4.1");
+    // Both readings say which measurement they are. A visitor checking either
+    // against Search Console reaches for the "contains" filter one click away
+    // there and reads a number two orders of magnitude bigger.
+    expect(impressions[0]?.getAttribute("title")).toBe(
+      expected.impressionsTitle,
+    );
 
     // "avg position 4.1" is present tense about Search from a lagged, averaged
     // sample. The qualification followed the number out of the pill, so it is

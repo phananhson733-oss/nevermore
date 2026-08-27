@@ -851,6 +851,27 @@ describe("CompetitorKeywordGapResults", () => {
     ).toBe("gsc.positionTitle");
   });
 
+  it("puts the source legend under the subtitle, not across from it", async () => {
+    // Structural, not visual: the legend explains the badges in the column
+    // headers, so it belongs in the block that says what the table is, below
+    // the sentence it qualifies. Opposite the title it read as a second
+    // heading and shared a container with the export button, which it has
+    // nothing to do with.
+    const host = await renderResults(withResult({ rows: productionRows() }));
+    const heading = host.querySelector("#competitor-keyword-gap-table-title");
+    const block = heading?.parentElement;
+    const legend = host.querySelector("[data-table-legend]");
+    const exportButton = host.querySelector("[data-export-csv]");
+
+    expect(heading).not.toBeNull();
+    expect(legend).not.toBeNull();
+    expect(block?.contains(legend as Node)).toBe(true);
+    expect(block?.contains(exportButton as Node)).toBe(false);
+    // After the subtitle, not before it: the legend qualifies that sentence.
+    const order = (heading as Element).compareDocumentPosition(legend as Node);
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("gives the state, the impressions and the position a chip each", async () => {
     const strong = rowWithGsc(
       0,
@@ -984,6 +1005,11 @@ describe("CompetitorKeywordGapResults", () => {
       "gsc.impressionsLine:impressions=318",
     );
     expect(impressions?.textContent).not.toContain("position=");
+    // Both readings name the measurement they are. Someone comparing either
+    // one against Search Console reaches for the "contains" filter that is one
+    // click away there, and reads a number for every query with this term in
+    // it -- two orders of magnitude larger, and about a different question.
+    expect(impressions?.getAttribute("title")).toBe("gsc.impressionsTitle");
     expect(host.textContent).not.toContain("gsc.metricLine");
   });
 });

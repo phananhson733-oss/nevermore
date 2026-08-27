@@ -263,6 +263,16 @@ export function StatusCell({
           {gsc.queryImpressions === null ? null : (
             <span
               data-gsc-metrics="query"
+              // Both readings carry the same qualification, because both invite
+              // the same comparison: a visitor checks this against Search
+              // Console, reaches for the "contains" filter that is one click
+              // away there, and reads a number two orders of magnitude larger
+              // for every query with this term in it. Naming the basis is what
+              // makes the two reconcilable instead of contradictory.
+              aria-label={`${t("gsc.impressionsLine", {
+                impressions: number(gsc.queryImpressions, locale),
+              })} · ${translated(t, "gsc.impressionsTitle")}`}
+              title={translated(t, "gsc.impressionsTitle")}
               className={`${DATA_CHIP} ${chipTone("neutral")}`}
             >
               {t("gsc.impressionsLine", {
