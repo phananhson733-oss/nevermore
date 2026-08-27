@@ -75,6 +75,54 @@ describe("classifyKeywordOpportunitySignals", () => {
     });
   });
 
+  it("keeps a positive signal eligible even when another sibling stayed unavailable", () => {
+    expect(
+      classifyKeywordOpportunitySignals(
+        signals({
+          youngDomain: {
+            state: "observed",
+            observation: {
+              domain: "young.test",
+              registrationDate: "2026-01-01T00:00:00.000Z",
+              observedAt: "2026-08-10T00:00:00.000Z",
+              ageMonths: 7,
+            },
+          },
+          lowOrganicTrafficDomain: UNKNOWN,
+        }),
+      ),
+    ).toEqual({
+      disposition: "eligible",
+      basis: "positive_signal_observed",
+      positiveSignals: ["young_domain"],
+      incompleteReason: null,
+    });
+  });
+
+  it("keeps a positive signal eligible even when another signal stayed unavailable", () => {
+    expect(
+      classifyKeywordOpportunitySignals(
+        signals({
+          communityResult: {
+            state: "observed",
+            observation: {
+              domain: "forum.test",
+              url: "https://forum.test/thread",
+              position: 4,
+              source: "provider_item_type",
+            },
+          },
+          youngDomain: UNKNOWN,
+        }),
+      ),
+    ).toEqual({
+      disposition: "eligible",
+      basis: "positive_signal_observed",
+      positiveSignals: ["community_result"],
+      incompleteReason: null,
+    });
+  });
+
   it("excludes only when all three completed as not observed", () => {
     expect(classifyKeywordOpportunitySignals(signals())).toEqual({
       disposition: "excluded",

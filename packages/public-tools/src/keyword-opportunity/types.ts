@@ -134,6 +134,22 @@ export type KeywordOpportunityCoverage =
   /** The available inventory has a known omission or malformed URL. */
   | "inventory_truncated";
 
+export type KeywordOpportunitySupportingPageSource =
+  | "gsc_observed_query_page"
+  | "lexical_page_match"
+  | "llm_proposition_source"
+  | "inventory_url_match";
+
+export type KeywordOpportunitySupportingPage =
+  | {
+      readonly state: "observed";
+      readonly source: KeywordOpportunitySupportingPageSource;
+      readonly url: string;
+    }
+  | {
+      readonly state: "not_observed";
+    };
+
 /** A check the reader should run before acting on a row. Never a verdict. */
 export type KeywordOpportunityCheck =
   | "read_page_one_intent"
@@ -599,6 +615,8 @@ export interface KeywordOpportunityRow {
   readonly aiOverview?: KeywordOpportunityAiOverviewEvidence | null;
   readonly decision?: KeywordOpportunityDecision;
   readonly coverage: KeywordOpportunityCoverage;
+  /** Explicit provenance for the page shown alongside this keyword. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
   /** The crawled page that already answers this, when one does. */
   readonly supportingPageUrl: string | null;
   readonly nextChecks: readonly KeywordOpportunityCheck[];
@@ -620,6 +638,7 @@ export interface KeywordOpportunityIncomplete {
   readonly discoveryBasis: KeywordOpportunityBasis;
   readonly validation: KeywordOpportunityValidation;
   readonly coverage: KeywordOpportunityCoverage;
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
   readonly serp: KeywordOpportunitySerpEvidence;
   readonly serpIntent: KeywordOpportunitySerpIntentEvidence | null;
   readonly signals: KeywordOpportunitySignals;
@@ -711,6 +730,57 @@ export interface KeywordOpportunityFunnel {
   readonly shown: number;
 }
 
+export interface KeywordOpportunityProcessSerp {
+  readonly planned: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly failureReasons: Readonly<
+    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
+  >;
+}
+
+export interface KeywordOpportunitySupportingPageSummary {
+  readonly gscObservedQueryPage: number;
+  readonly lexicalPageMatch: number;
+  readonly llmPropositionSource: number;
+  readonly inventoryUrlMatch: number;
+  readonly notObserved: number;
+}
+
+export interface KeywordOpportunityDecisionSummary {
+  readonly eligible: number;
+  readonly withheld: number;
+  readonly incomplete: number;
+  readonly positiveWithUnavailableSignals: number;
+  readonly withheldReasons: Readonly<
+    Partial<Record<KeywordOpportunityWithheldReason, number>>
+  >;
+  readonly incompleteReasons: Readonly<
+    Partial<Record<KeywordOpportunityIncompleteReason, number>>
+  >;
+}
+
+export interface KeywordOpportunityThresholdSummary {
+  readonly siteDomainRank: number | null;
+  readonly lowOrganicTrafficThreshold: number | null;
+}
+
+export interface KeywordOpportunityDurationSummary {
+  readonly total: number;
+  readonly coverage: number | null;
+  readonly serpSampling: number | null;
+  readonly serpInterpretation: number | null;
+  readonly domainEnrichment: number | null;
+}
+
+export interface KeywordOpportunityProcess {
+  readonly serp: KeywordOpportunityProcessSerp;
+  readonly supportingPages: KeywordOpportunitySupportingPageSummary;
+  readonly decisions: KeywordOpportunityDecisionSummary;
+  readonly thresholds: KeywordOpportunityThresholdSummary;
+  readonly durationsMs: KeywordOpportunityDurationSummary;
+}
+
 export interface KeywordOpportunityResult {
   readonly availability: KeywordOpportunityAvailability;
   readonly marketCode: string;
@@ -722,6 +792,8 @@ export interface KeywordOpportunityResult {
   readonly incomplete?: readonly KeywordOpportunityIncomplete[];
   readonly clusters: readonly KeywordOpportunityCluster[];
   readonly funnel: KeywordOpportunityFunnel;
+  /** Run-scoped ledger that reconciles the whole candidate set. */
+  readonly process?: KeywordOpportunityProcess;
   /**
    * Which parts of the run could not be completed, by name.
    *
@@ -735,6 +807,7 @@ export interface KeywordOpportunityResult {
 /** The emitted v2 result; `incomplete` is always present, including when empty. */
 export interface KeywordOpportunityResultV2 extends KeywordOpportunityResult {
   readonly incomplete: readonly KeywordOpportunityIncomplete[];
+  readonly process: KeywordOpportunityProcess;
 }
 
 export type KeywordOpportunityEnvelope = PublicToolResultEnvelope<

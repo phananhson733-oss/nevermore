@@ -2048,7 +2048,8 @@ describe("handleKeywordOpportunitiesRequest", () => {
       // able to hold the route past the platform ceiling, where the response
       // stops existing.
       expect(response.status).toBe(200);
-      expect(parsed.data.result.availability).toBe("insufficient_evidence");
+      expect(parsed.data.result.availability).toBe("available");
+      expect(parsed.data.result.rows.length).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
@@ -2077,19 +2078,22 @@ describe("handleKeywordOpportunitiesRequest", () => {
       await vi.advanceTimersByTimeAsync(30_000);
       const response = await pending;
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
+      expect(row?.decision).toEqual(
+        expect.objectContaining({ basis: "positive_signal_observed" }),
+      );
       // Traffic resolved immediately and is kept. Racing the wave as one unit
       // would have discarded it because a third resolver hung — strictly worse
       // than the per-resolver failure isolation this wave already had, where
       // one dead resolver never cost the other two their answers.
-      expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+      expect(row?.signals?.lowOrganicTrafficDomain.state).toBe(
         "observed",
       );
       // Only the resolver that ran out of budget reports unknown, and it says
       // unknown rather than young.
-      expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+      expect(row?.signals?.youngDomain.state).toBe("unavailable");
     } finally {
       vi.useRealTimers();
     }
@@ -2134,29 +2138,32 @@ describe("handleKeywordOpportunitiesRequest", () => {
         }),
       );
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
-      expect(incomplete?.serp.status).toBe("complete");
-      expect(incomplete?.serp.organicResults).toHaveLength(1);
+      expect(row?.decision).toEqual(
+        expect.objectContaining({ basis: "positive_signal_observed" }),
+      );
+      expect(row?.serp.status).toBe("complete");
+      expect(row?.serp.organicResults).toHaveLength(1);
       expect(resolveDomainRanks).toHaveBeenCalledTimes(1);
       expect(resolveDomainTraffic).toHaveBeenCalledTimes(1);
       expect(resolveDomainRegistrations).toHaveBeenCalledTimes(1);
       if (failedStage === "registration") {
-        expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+        expect(row?.signals?.youngDomain.state).toBe("unavailable");
+        expect(row?.signals?.lowOrganicTrafficDomain.state).toBe(
           "observed",
         );
       } else {
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
+        expect(row?.signals?.lowOrganicTrafficDomain.state).toBe(
           "unavailable",
         );
-        expect(incomplete?.signals.youngDomain.state).toBe("observed");
+        expect(row?.signals?.youngDomain.state).toBe("observed");
       }
     },
   );
 
-  it("does not turn provider rank zero into a v2 eligible decision", async () => {
+  it("keeps a positive signal eligible even when provider rank zero leaves the low-traffic signal unavailable", async () => {
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
@@ -2170,17 +2177,29 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const parsed = (await response.json()) as OpportunitiesBody;
 
     expect(response.status).toBe(200);
-    expect(parsed.data.result.rows).toEqual([]);
-    expect(parsed.data.result.incomplete).toEqual([
+    expect(parsed.data.result.rows).toEqual([
       expect.objectContaining({
         keyword: "rank zero candidate",
-        reason: "low_organic_traffic_signal_unavailable",
+        decision: expect.objectContaining({
+          basis: "positive_signal_observed",
+          positiveSignals: ["young_domain"],
+        }),
         serp: expect.objectContaining({
           status: "complete",
           verdict: "no_serp_evidence",
         }),
+        signals: expect.objectContaining({
+          lowOrganicTrafficDomain: expect.objectContaining({
+            state: "unavailable",
+            reason: "site_rank_tier_unavailable",
+          }),
+          youngDomain: expect.objectContaining({
+            state: "observed",
+          }),
+        }),
       }),
     ]);
+    expect(parsed.data.result.incomplete).toEqual([]);
   });
 
   it("carries the provider intent as its own fact", async () => {

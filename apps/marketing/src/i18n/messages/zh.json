@@ -2987,7 +2987,7 @@
         "winnableEvidence": "第一页有弱站",
         "shown": "已展示"
       },
-      "weakestHint": "最弱排名只是第一页的一项原始事实，不再单独作为判定规则。机会判定会分别报告三项信号：年轻域名、低自然搜索流量域名或社区结果。任何一项必需证据不可用，候选词都会留在「检测未完成」。",
+      "weakestHint": "最弱排名只是第一页的一项原始事实，不再单独作为判定规则。机会判定会分别报告三项信号：年轻域名、低自然搜索流量域名或社区结果。只要已有正向信号，这一行仍会保留；只有在没有任何正向信号时，缺失证据才会把它留在「检测未完成」。",
       "geoHint": "这些是用同一套三项第一页信号判定的问句候选词。只有观测到支持页面时才会展示；数据源没有返回需求量时，不会声称存在需求。",
       "eligibleTitle": "符合条件的机会",
       "eligibleIntro": "至少观测到一项必需的机会信号。AI Overview 的答案完整度只会降低排序，绝不会排除候选词。",
@@ -3020,7 +3020,7 @@
         "competition": "竞争上下文",
         "signals": "三项信号证据",
         "aiOverview": "AI Overview",
-        "supportingPage": "回答它的页面",
+        "supportingPage": "支持页面",
         "coverage": "你的覆盖情况",
         "coverageReview": "覆盖与复核",
         "nextChecks": "动手前先查",
@@ -3034,6 +3034,13 @@
       "supportingPage": {
         "not_observed": "未观测到支持页面",
         "unavailable": "支持页面不可用"
+      },
+      "supportingPageSources": {
+        "gsc_observed_query_page": "已观测查询页面",
+        "lexical_page_match": "页面词面匹配",
+        "llm_proposition_source": "命题来源页",
+        "inventory_url_match": "Sitemap URL 匹配",
+        "not_observed": "未观测到支持页面"
       },
       "evidence": {
         "show": "查看证据",
@@ -3049,8 +3056,34 @@
         "registrationDate": "注册时间戳",
         "marketLanguage": "市场 {market} · 语言 {language}",
         "supportingPageUrl": "完整支持页面 URL",
+        "supportingPageSource": "支持页面依据",
         "reason": "原因",
         "loadedAsync": "异步加载"
+      },
+      "process": {
+        "title": "本次运行台账",
+        "serpSummary": "第一页抽样计划 {planned} 个，完成 {completed} 个，仍有 {failed} 个不可用。",
+        "serpFailures": "第一页抽样不可用的原因：{reasons}。",
+        "failureReasons": {
+          "provider_unavailable": "结果页 provider 不可用",
+          "provider_no_data": "provider 未返回第一页数据",
+          "transport_outcome_unknown": "抽样结果未上报",
+          "budget_exhausted": "运行预算耗尽，未能发出请求"
+        },
+        "supportingPages": "所有候选词的支持页面证据：{breakdown}。",
+        "decisions": "判定总数：符合条件 {eligible} 个，已排除 {withheld} 个，检测未完成 {incomplete} 个。",
+        "withheldReasons": "排除原因：{reasons}。",
+        "incompleteReasons": "未完成原因：{reasons}。",
+        "positiveWithUnavailable": "{count} 个候选词在保留正向信号的同时，还有同层证据不可用。",
+        "threshold": "本次站点使用的低流量阈值：站点权重 {rank}，阈值 {threshold}。",
+        "thresholdUnavailable": "当前站点自身权重层级未解析出来，所以低流量阈值保持不可用。",
+        "durations": "阶段耗时：总计 {total}ms。拆分：{breakdown}。",
+        "durationStages": {
+          "coverage": "Search Console 覆盖读取",
+          "serpSampling": "第一页抽样",
+          "serpInterpretation": "SERP 解读",
+          "domainEnrichment": "域名补充证据"
+        }
       },
       "aio": {
         "shown": "第一页已观测到",

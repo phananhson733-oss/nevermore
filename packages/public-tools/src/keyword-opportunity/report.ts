@@ -26,16 +26,23 @@ import type {
   KeywordOpportunityContext,
   KeywordOpportunityCoverage,
   KeywordOpportunityDecision,
+  KeywordOpportunityDecisionSummary,
+  KeywordOpportunityDurationSummary,
   KeywordOpportunityEnvelope,
   KeywordOpportunityFunnel,
   KeywordOpportunityIncomplete,
   KeywordOpportunityIncompleteReason,
   KeywordOpportunityLane,
+  KeywordOpportunityProcess,
   KeywordOpportunityResultV2,
   KeywordOpportunityRow,
+  KeywordOpportunitySerpFailureReason,
   KeywordOpportunitySerpIntentEvidence,
   KeywordOpportunitySerpEvidence,
+  KeywordOpportunitySupportingPage,
+  KeywordOpportunitySupportingPageSummary,
   KeywordOpportunitySignals,
+  KeywordOpportunityThresholdSummary,
   KeywordOpportunityValidation,
   KeywordOpportunityWithheld,
   KeywordOpportunityWithheldReason,
@@ -66,6 +73,7 @@ export interface KeywordOpportunityObservation {
   readonly signals?: KeywordOpportunitySignals;
   readonly aiOverview?: KeywordOpportunityAiOverviewObservation | null;
   readonly coverage: KeywordOpportunityCoverage;
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
   readonly supportingPageUrl: string | null;
 }
 
@@ -96,6 +104,12 @@ export interface KeywordOpportunityReportInput {
   readonly observations: readonly KeywordOpportunityObservation[];
   /** Stage names that could not run, e.g. "serp_sample" or "gsc_coverage". */
   readonly unavailableStages: readonly string[];
+  readonly serpPlanned?: number;
+  readonly serpFailureReasons?: Readonly<
+    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
+  >;
+  readonly thresholds?: KeywordOpportunityThresholdSummary;
+  readonly durationsMs?: KeywordOpportunityDurationSummary;
   /**
    * When the run finished, supplied by the caller.
    *
@@ -116,7 +130,10 @@ export interface KeywordOpportunityReportInput {
 function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   if (isKeywordAlreadyCovered(observation.coverage)) return false;
   if (observation.lane === "geo") {
-    return observation.supportingPageUrl !== null;
+    return (
+      (observation.supportingPage?.state ?? "not_observed") === "observed" ||
+      observation.supportingPageUrl !== null
+    );
   }
   return (
     observation.validation.availability === "available" &&
@@ -128,6 +145,12 @@ function hasObservedExistingPage(
   coverage: KeywordOpportunityCoverage,
 ): boolean {
   return isKeywordAlreadyCovered(coverage);
+}
+
+function supportingPageOrDefault(
+  observation: KeywordOpportunityObservation,
+): KeywordOpportunitySupportingPage {
+  return observation.supportingPage ?? { state: "not_observed" };
 }
 
 type KeywordOpportunityClassification =
@@ -346,6 +369,131 @@ function resolveAvailability(
   return "available";
 }
 
+function countReasons<T extends string>(
+  values: readonly T[],
+): Readonly<Partial<Record<T, number>>> {
+  const counts: Partial<Record<T, number>> = {};
+  for (const value of values) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function summarizeSupportingPages(
+  observations: readonly KeywordOpportunityObservation[],
+): KeywordOpportunitySupportingPageSummary {
+  let gscObservedQueryPage = 0;
+  let lexicalPageMatch = 0;
+  let llmPropositionSource = 0;
+  let inventoryUrlMatch = 0;
+  let notObserved = 0;
+
+  for (const observation of observations) {
+    const supportingPage = supportingPageOrDefault(observation);
+    if (supportingPage.state !== "observed") {
+      notObserved += 1;
+      continue;
+    }
+    switch (supportingPage.source) {
+      case "gsc_observed_query_page":
+        gscObservedQueryPage += 1;
+        break;
+      case "lexical_page_match":
+        lexicalPageMatch += 1;
+        break;
+      case "llm_proposition_source":
+        llmPropositionSource += 1;
+        break;
+      case "inventory_url_match":
+        inventoryUrlMatch += 1;
+        break;
+    }
+  }
+
+  return {
+    gscObservedQueryPage,
+    lexicalPageMatch,
+    llmPropositionSource,
+    inventoryUrlMatch,
+    notObserved,
+  };
+}
+
+function summarizeDecisions(
+  observations: readonly KeywordOpportunityObservation[],
+  eligibleCount: number,
+  withheld: readonly KeywordOpportunityWithheld[],
+  incomplete: readonly KeywordOpportunityIncomplete[],
+): KeywordOpportunityDecisionSummary {
+  const positiveWithUnavailableSignals = observations.filter((observation) => {
+    if (observation.signals === undefined) return false;
+    const states = [
+      observation.signals.youngDomain.state,
+      observation.signals.lowOrganicTrafficDomain.state,
+      observation.signals.communityResult.state,
+    ];
+    return states.includes("observed") && states.includes("unavailable");
+  }).length;
+
+  return {
+    eligible: eligibleCount,
+    withheld: withheld.length,
+    incomplete: incomplete.length,
+    positiveWithUnavailableSignals,
+    withheldReasons: countReasons(withheld.map((entry) => entry.reason)),
+    incompleteReasons: countReasons(incomplete.map((entry) => entry.reason)),
+  };
+}
+
+function summarizeProcess(
+  input: KeywordOpportunityReportInput,
+  observations: readonly KeywordOpportunityObservation[],
+  eligibleCount: number,
+  withheld: readonly KeywordOpportunityWithheld[],
+  incomplete: readonly KeywordOpportunityIncomplete[],
+): KeywordOpportunityProcess {
+  const completed = observations.filter(
+    (observation) =>
+      observation.validation.availability !== "explicit_zero" &&
+      observation.serp.status === "complete",
+  ).length;
+  const planned =
+    input.serpPlanned ??
+    observations.filter(
+      (observation) => observation.validation.availability !== "explicit_zero",
+    ).length;
+  const failureReasons = {
+    ...(input.serpFailureReasons ?? {}),
+  } satisfies Partial<Record<KeywordOpportunitySerpFailureReason, number>>;
+
+  return {
+    serp: {
+      planned,
+      completed,
+      failed: Math.max(planned - completed, 0),
+      failureReasons,
+    },
+    supportingPages: summarizeSupportingPages(observations),
+    decisions: summarizeDecisions(
+      observations,
+      eligibleCount,
+      withheld,
+      incomplete,
+    ),
+    thresholds: input.thresholds ?? {
+      siteDomainRank: null,
+      lowOrganicTrafficThreshold: null,
+    },
+    durationsMs: input.durationsMs ?? {
+      total: 0,
+      coverage: null,
+      serpSampling: null,
+      serpInterpretation: null,
+      domainEnrichment: null,
+    },
+  };
+}
+
 /** Assemble the finished result from observations that are already judged. */
 export function buildKeywordOpportunityResult(
   input: KeywordOpportunityReportInput,
@@ -386,6 +534,7 @@ export function buildKeywordOpportunityResult(
         aiOverview: publicAiOverviewEvidence(observation.aiOverview),
         reason: classification.reason,
         decision: classification.decision,
+        supportingPage: supportingPageOrDefault(observation),
       });
     }
   }
@@ -411,6 +560,7 @@ export function buildKeywordOpportunityResult(
             decision,
           }),
       coverage: observation.coverage,
+      supportingPage: supportingPageOrDefault(observation),
       supportingPageUrl: observation.supportingPageUrl,
       nextChecks: keywordNextChecks(observation),
       clusterId: clusterIds.get(observation.keyword) ?? null,
@@ -427,6 +577,13 @@ export function buildKeywordOpportunityResult(
     incomplete,
     clusters,
     funnel: countFunnel(input, shown),
+    process: summarizeProcess(
+      input,
+      input.observations,
+      rows.length,
+      withheld,
+      incomplete,
+    ),
     unavailableStages: input.unavailableStages,
     nextStepSuggestions: nextSteps(input, rows.length, incomplete.length),
   };

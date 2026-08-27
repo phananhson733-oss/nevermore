@@ -47,7 +47,10 @@ import {
   reportKeywordRunCost,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
-import { buildKeywordSignalEvidence } from "./keyword-signal-evidence.ts";
+import {
+  buildKeywordSignalEvidence,
+  keywordSiteTrafficThreshold,
+} from "./keyword-signal-evidence.ts";
 import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
 import type {
   KeywordSerpInterpretation,
@@ -800,6 +803,14 @@ export async function handleKeywordOpportunitiesRequest(
   let costCandidateCount = 0;
   let costSerpSampled = 0;
   let reportProduced = false;
+  const runStartedAt = dependencies.now().getTime();
+  let coverageDurationMs: number | null = null;
+  let serpSamplingDurationMs: number | null = null;
+  let serpInterpretationDurationMs: number | null = null;
+  let domainEnrichmentDurationMs: number | null = null;
+  let serpFailureReasons: Readonly<
+    Partial<Record<KeywordOpportunitySerpFailureReason, number>>
+  > = {};
   try {
     const drafts = await dependencies.expandCandidates({
       propositions: token.propositions,
@@ -843,6 +854,7 @@ export async function handleKeywordOpportunitiesRequest(
     // empty array here would collapse the two and put a false negative on
     // every row.
     let coverageRead: KeywordCoverageRead | null = null;
+    const coverageStartedAt = dependencies.now().getTime();
     // The grant lists properties, not sites. Resolving here also answers
     // whether this visitor is entitled to read the site at all: no match means
     // no property whose queries we may fetch.
@@ -888,6 +900,7 @@ export async function handleKeywordOpportunitiesRequest(
         );
       }
     }
+    coverageDurationMs = dependencies.now().getTime() - coverageStartedAt;
     const coverageIndex =
       coverageRead === null
         ? null
@@ -957,6 +970,7 @@ export async function handleKeywordOpportunitiesRequest(
       (row) => row.validation.availability !== "explicit_zero",
     );
     const runObservedAt = dependencies.now().toISOString();
+    const serpSamplingStartedAt = dependencies.now().getTime();
     const returnedSamples =
       sampleTargets.length === 0
         ? []
@@ -1013,6 +1027,8 @@ export async function handleKeywordOpportunitiesRequest(
     const completeSamples = attemptedSamples.filter(
       (sample) => sample.status === "complete",
     );
+    serpSamplingDurationMs =
+      dependencies.now().getTime() - serpSamplingStartedAt;
     costSerpSampled = completeSamples.length;
     if (completeSamples.length < attemptedSamples.length) {
       // The one line that tells a budget gap apart from a provider outage.
@@ -1021,12 +1037,15 @@ export async function handleKeywordOpportunitiesRequest(
       // histogram is what an operator has. The 2026-08-21 partial run gave
       // exactly one number — 46 rows short — and no way to tell whether the
       // fix was more throughput or fewer requests, which are opposites.
-      const failureCounts: Record<string, number> = {};
+      const failureCounts: Partial<
+        Record<KeywordOpportunitySerpFailureReason, number>
+      > = {};
       for (const sample of attemptedSamples) {
         if (sample.status === "complete") continue;
-        const reason = sample.failureReason ?? "unreported";
+        const reason = sample.failureReason ?? "provider_unavailable";
         failureCounts[reason] = (failureCounts[reason] ?? 0) + 1;
       }
+      serpFailureReasons = failureCounts;
       console.info(
         JSON.stringify({
           tool: "keyword_opportunity",
@@ -1059,6 +1078,7 @@ export async function handleKeywordOpportunitiesRequest(
       interpretationInputs.length > 0 &&
       dependencies.interpretSerpEvidence !== undefined
     ) {
+      const interpretationStartedAt = dependencies.now().getTime();
       try {
         returnedInterpretations =
           await dependencies.interpretSerpEvidence(interpretationInputs);
@@ -1071,8 +1091,11 @@ export async function handleKeywordOpportunitiesRequest(
               error instanceof KeywordLlmError
                 ? error.reason
                 : "interpretation_unavailable",
-          }),
+            }),
         );
+      } finally {
+        serpInterpretationDurationMs =
+          dependencies.now().getTime() - interpretationStartedAt;
       }
     }
     const completeInterpretationKeys = new Set(
@@ -1125,6 +1148,7 @@ export async function handleKeywordOpportunitiesRequest(
       string,
       DomainRegistrationEvidence
     > | null = null;
+    const domainEnrichmentStartedAt = dependencies.now().getTime();
     // The enrichments are optional, unbounded, and last. RDAP alone resolves
     // one entry per organic domain — several hundred after de-duplication — at
     // ten in flight, so its worst case is dozens of rounds, not the single
@@ -1254,6 +1278,13 @@ export async function handleKeywordOpportunitiesRequest(
     }
     const siteDomainRank =
       siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);
+    domainEnrichmentDurationMs =
+      enrichmentHasWork && enrichmentAffordable
+        ? dependencies.now().getTime() - domainEnrichmentStartedAt
+        : enrichmentHasWork
+          ? 0
+          : null;
+    const siteTrafficThreshold = keywordSiteTrafficThreshold(siteDomainRank);
     const samplesByKeyword = new Map(
       attemptedSamples.map((sample) => [
         keywordVolumeKey(sample.keyword),
@@ -1358,6 +1389,7 @@ export async function handleKeywordOpportunitiesRequest(
         signals: enriched.signals,
         aiOverview,
         coverage: row.coverage.state,
+        supportingPage: row.coverage.supportingPage,
         supportingPageUrl: row.coverage.supportingPageUrl,
       };
     });
@@ -1379,6 +1411,19 @@ export async function handleKeywordOpportunitiesRequest(
       generated: drafts.length,
       observations,
       unavailableStages,
+      serpPlanned: attemptedSamples.length,
+      serpFailureReasons,
+      thresholds: {
+        siteDomainRank,
+        lowOrganicTrafficThreshold: siteTrafficThreshold,
+      },
+      durationsMs: {
+        total: dependencies.now().getTime() - runStartedAt,
+        coverage: coverageDurationMs,
+        serpSampling: serpSamplingDurationMs,
+        serpInterpretation: serpInterpretationDurationMs,
+        domainEnrichment: domainEnrichmentDurationMs,
+      },
       completedAt: runObservedAt,
     });
 
