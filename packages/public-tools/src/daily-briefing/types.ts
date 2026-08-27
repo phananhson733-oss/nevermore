@@ -579,7 +579,13 @@ export interface DailyBriefingPageChecks {
   readonly baseline: DailyBriefingPageCheckBaseline | null;
   readonly blockers: readonly DailyBriefingPageCheckBlocker[];
   readonly items: readonly DailyBriefingPageCheck[];
-  /** Current page rows this check read and rejected. Null when it never ran. */
+  /**
+   * Every usable current page row this check read, `items` included.
+   *
+   * Not the rejected count: the sentence built on it says N were read and the
+   * rest were left out for a stated reason, which only holds if N is the whole
+   * population rather than the remainder.
+   */
   readonly examinedRows: number | null;
 }
 
