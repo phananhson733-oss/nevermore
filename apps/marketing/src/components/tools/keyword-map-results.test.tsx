@@ -164,6 +164,11 @@ function v2GeoRow(keyword: string): KeywordOpportunityRow {
     ...base,
     lane: "geo",
     questionForm: true,
+    supportingPage: {
+      state: "observed",
+      source: "llm_proposition_source",
+      url: "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
+    },
     supportingPageUrl:
       "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
   };
@@ -550,6 +555,46 @@ describe("keyword map results", () => {
       availability: "partial",
       unavailableStages: ["serp_sample"],
       funnel: { ...FUNNEL, serpSampled: 0, winnableEvidence: 0 },
+      process: {
+        serp: {
+          planned: 2,
+          completed: 0,
+          failed: 2,
+          failureReasons: {
+            provider_unavailable: 2,
+          },
+        },
+        supportingPages: {
+          gscObservedQueryPage: 0,
+          lexicalPageMatch: 1,
+          llmPropositionSource: 0,
+          inventoryUrlMatch: 0,
+          notObserved: 2,
+        },
+        decisions: {
+          eligible: 1,
+          withheld: 1,
+          incomplete: 1,
+          positiveWithUnavailableSignals: 1,
+          withheldReasons: {
+            volume_priced_at_zero: 1,
+          },
+          incompleteReasons: {
+            serp_evidence_unavailable: 1,
+          },
+        },
+        thresholds: {
+          siteDomainRank: 180,
+          lowOrganicTrafficThreshold: 5_000,
+        },
+        durationsMs: {
+          total: 3_200,
+          coverage: 400,
+          serpSampling: 1_200,
+          serpInterpretation: 300,
+          domainEnrichment: 700,
+        },
+      },
     });
     const markup = render("en", value);
     const marker = 'data-result-summary=""';
@@ -581,6 +626,18 @@ describe("keyword map results", () => {
       details.indexOf("Generated"),
     );
     expect(details.match(/not checked/g)).toHaveLength(2);
+    for (const copy of [
+      "Run ledger",
+      "Page-one sampling planned 2, completed 0, and left 2 unavailable.",
+      "Unavailable page-one reads: Results-page provider unavailable 2.",
+      "Supporting-page evidence across all candidates",
+      "Crawled page match 1",
+      "Decision totals: 1 eligible, 1 excluded, 1 incomplete.",
+      "Low-traffic threshold used for this site: rank 180, threshold 5,000.",
+      "Stage time: total 3,200ms.",
+    ]) {
+      expect(details).toContain(copy);
+    }
   });
 
   it.each(["en", "zh"] as const)("renders a full run in %s", (locale) => {

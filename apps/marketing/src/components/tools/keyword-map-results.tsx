@@ -410,6 +410,7 @@ function ResultSummary({
             />
           ))}
         </div>
+        <ProcessLedger result={result} locale={locale} />
       </details>
     </section>
   );
@@ -486,6 +487,141 @@ function Tile({
       )}
       <p className="mt-2 text-[11px] leading-tight text-text-dark-secondary sm:mt-2.5 sm:text-[12.5px]">
         {label}
+      </p>
+    </div>
+  );
+}
+
+function formatBreakdown(
+  counts: Readonly<Record<string, number>>,
+  labelFor: (key: string) => string,
+  locale: string,
+): string {
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, count]) => `${labelFor(key)} ${formatCount(count, locale)}`)
+    .join(" · ");
+}
+
+function ProcessLedger({
+  result,
+  locale,
+}: {
+  readonly result: KeywordOpportunityResult;
+  readonly locale: string;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const process = result.process;
+  if (process === undefined) return null;
+
+  const supportingPageBreakdown = formatBreakdown(
+    {
+      gsc_observed_query_page: process.supportingPages.gscObservedQueryPage,
+      lexical_page_match: process.supportingPages.lexicalPageMatch,
+      llm_proposition_source: process.supportingPages.llmPropositionSource,
+      inventory_url_match: process.supportingPages.inventoryUrlMatch,
+      not_observed: process.supportingPages.notObserved,
+    },
+    (key) => label(`supportingPageSources.${key}`, key),
+    locale,
+  );
+  const withheldBreakdown = formatBreakdown(
+    process.decisions.withheldReasons,
+    (key) => label(`withheld.${key}`, key),
+    locale,
+  );
+  const incompleteBreakdown = formatBreakdown(
+    process.decisions.incompleteReasons,
+    (key) => label(`incomplete.${key}`, key),
+    locale,
+  );
+  const failureBreakdown = formatBreakdown(
+    process.serp.failureReasons,
+    (key) => label(`process.failureReasons.${key}`, key),
+    locale,
+  );
+  const durationBreakdown = (
+    [
+      ["coverage", process.durationsMs.coverage],
+      ["serpSampling", process.durationsMs.serpSampling],
+      ["serpInterpretation", process.durationsMs.serpInterpretation],
+      ["domainEnrichment", process.durationsMs.domainEnrichment],
+    ] as const
+  )
+    .flatMap(([key, value]) =>
+      value === null
+        ? []
+        : [
+            `${label(`process.durationStages.${key}`, key)} ${formatCount(value, locale)}ms`,
+          ],
+    )
+    .join(" · ");
+
+  return (
+    <div className="mt-4 space-y-2.5 border-t border-brand-border-faint pt-3">
+      <p className={LABEL}>{t("process.title")}</p>
+      <p className={SECTION_INTRO}>
+        {t("process.serpSummary", {
+          planned: process.serp.planned,
+          completed: process.serp.completed,
+          failed: process.serp.failed,
+        })}
+      </p>
+      {failureBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.serpFailures", { reasons: failureBreakdown })}
+        </p>
+      )}
+      <p className={SECTION_INTRO}>
+        {t("process.supportingPages", {
+          breakdown: supportingPageBreakdown,
+        })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t("process.decisions", {
+          eligible: process.decisions.eligible,
+          withheld: process.decisions.withheld,
+          incomplete: process.decisions.incomplete,
+        })}
+      </p>
+      {withheldBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.withheldReasons", { reasons: withheldBreakdown })}
+        </p>
+      )}
+      {incompleteBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.incompleteReasons", { reasons: incompleteBreakdown })}
+        </p>
+      )}
+      {process.decisions.positiveWithUnavailableSignals > 0 ? (
+        <p className={SECTION_INTRO}>
+          {t("process.positiveWithUnavailable", {
+            count: process.decisions.positiveWithUnavailableSignals,
+          })}
+        </p>
+      ) : null}
+      <p className={SECTION_INTRO}>
+        {process.thresholds.lowOrganicTrafficThreshold === null
+          ? t("process.thresholdUnavailable")
+          : t("process.threshold", {
+              rank:
+                process.thresholds.siteDomainRank === null
+                  ? "—"
+                  : formatCount(process.thresholds.siteDomainRank, locale),
+              threshold: formatCount(
+                process.thresholds.lowOrganicTrafficThreshold,
+                locale,
+              ),
+            })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t("process.durations", {
+          total: formatCount(process.durationsMs.total, locale),
+          breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
+        })}
       </p>
     </div>
   );
@@ -712,7 +848,10 @@ function KeywordResultRow({
           </>
         ) : (
           <td className="w-[190px] py-4 pr-5">
-            <SupportingPageSummary value={row.supportingPageUrl} />
+            <SupportingPageSummary
+              supportingPage={row.supportingPage}
+              value={row.supportingPageUrl}
+            />
           </td>
         )}
         <td className="w-[230px] py-4 pr-5 text-text-dark-secondary">
@@ -782,14 +921,21 @@ type SupportingPagePresentation =
   | { readonly state: "not_observed" | "unavailable" }
   | {
       readonly state: "observed";
+      readonly source: string | null;
       readonly compact: string;
       readonly full: string;
     };
 
 function supportingPagePresentation(
+  supportingPage: KeywordOpportunityRow["supportingPage"] | undefined,
   value: string | null,
 ): SupportingPagePresentation {
-  if (value === null) return { state: "not_observed" };
+  if (value === null) {
+    return {
+      state:
+        supportingPage?.state === "observed" ? "not_observed" : (supportingPage?.state ?? "not_observed"),
+    };
+  }
   try {
     const parsed = new URL(value);
     if (
@@ -800,6 +946,8 @@ function supportingPagePresentation(
     }
     return {
       state: "observed",
+      source:
+        supportingPage?.state === "observed" ? supportingPage.source : null,
       compact: `${parsed.host}${parsed.pathname}`,
       full: value,
     };
@@ -808,14 +956,26 @@ function supportingPagePresentation(
   }
 }
 
-function SupportingPageSummary({ value }: { readonly value: string | null }) {
+function SupportingPageSummary({
+  supportingPage,
+  value,
+}: {
+  readonly supportingPage: KeywordOpportunityRow["supportingPage"] | undefined;
+  readonly value: string | null;
+}) {
   const t = useTranslations("tools.keywordMap");
-  const page = supportingPagePresentation(value);
+  const label = useOptionalLabel();
+  const page = supportingPagePresentation(supportingPage, value);
   if (page.state === "observed") {
     return (
-      <p className={`${META_TEXT} break-words text-text-dark-secondary`}>
-        {page.compact}
-      </p>
+      <div className={`${META_TEXT} space-y-1 break-words text-text-dark-secondary`}>
+        <p>{page.compact}</p>
+        {page.source === null ? null : (
+          <p className="text-text-dark-faint">
+            {label(`supportingPageSources.${page.source}`, page.source)}
+          </p>
+        )}
+      </div>
     );
   }
   return (
@@ -1026,7 +1186,10 @@ function EvidenceDetailRow({
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
   const intent = row.serpIntent;
-  const supportingPage = supportingPagePresentation(row.supportingPageUrl);
+  const supportingPage = supportingPagePresentation(
+    row.supportingPage,
+    row.supportingPageUrl,
+  );
 
   return (
     <tr
@@ -1093,9 +1256,19 @@ function EvidenceDetailRow({
                 {label(`coverage.${row.coverage}`, row.coverage)}
               </EvidenceFact>
               {supportingPage.state === "observed" ? (
-                <EvidenceFact label={t("evidence.supportingPageUrl")}>
-                  <span className="break-all">{supportingPage.full}</span>
-                </EvidenceFact>
+                <>
+                  <EvidenceFact label={t("evidence.supportingPageUrl")}>
+                    <span className="break-all">{supportingPage.full}</span>
+                  </EvidenceFact>
+                  <EvidenceFact label={t("evidence.supportingPageSource")}>
+                    {supportingPage.source === null
+                      ? "—"
+                      : label(
+                          `supportingPageSources.${supportingPage.source}`,
+                          supportingPage.source,
+                        )}
+                  </EvidenceFact>
+                </>
               ) : null}
               <EvidenceFact label={t("columns.remainingDecisions")}>
                 <FullRowChecks checks={row.nextChecks} />

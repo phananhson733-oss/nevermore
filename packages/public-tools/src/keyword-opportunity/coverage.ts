@@ -4,7 +4,11 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { normalizeQuery } from "../site-baseline/normalize.ts";
-import type { KeywordOpportunityCoverage } from "./types.ts";
+import type {
+  KeywordOpportunityCoverage,
+  KeywordOpportunitySupportingPage,
+  KeywordOpportunitySupportingPageSource,
+} from "./types.ts";
 
 /**
  * Impressions a query needs before its position carries any weight.
@@ -52,7 +56,22 @@ export interface KeywordCoverageInventory {
 
 export interface KeywordCoverageObservation {
   readonly state: KeywordOpportunityCoverage;
+  readonly supportingPage: KeywordOpportunitySupportingPage;
   readonly supportingPageUrl: string | null;
+}
+
+function observedSupportingPage(
+  source: KeywordOpportunitySupportingPageSource,
+  url: string,
+): KeywordOpportunitySupportingPage {
+  return { state: "observed", source, url };
+}
+
+function supportingPageFrom(
+  url: string | null,
+  source: KeywordOpportunitySupportingPageSource,
+): KeywordOpportunitySupportingPage {
+  return url === null ? { state: "not_observed" } : observedSupportingPage(source, url);
 }
 
 const TOKEN_PATTERN = /[\p{Letter}\p{Number}]+/gu;
@@ -245,6 +264,7 @@ export function observeKeywordCoverage(
   inventory: KeywordCoverageInventory | null = null,
 ): KeywordCoverageObservation {
   const exact = exactIndex?.get(normalizeQuery(keyword));
+  const related = relatedPage(keyword, pages);
   if (
     exact !== undefined &&
     exact.impressions >= KEYWORD_COVERAGE_MIN_IMPRESSIONS
@@ -254,16 +274,28 @@ export function observeKeywordCoverage(
         exact.weightedPosition <= KEYWORD_COVERAGE_STRONG_POSITION
           ? "observed_exact_strong"
           : "observed_exact_weak",
-      supportingPageUrl:
-        exact.supportingPageUrl ??
-        relatedPage(keyword, pages) ??
-        attributedPageUrl,
+      supportingPage:
+        exact.supportingPageUrl !== null
+          ? observedSupportingPage(
+              "gsc_observed_query_page",
+              exact.supportingPageUrl,
+            )
+          : related !== null
+            ? observedSupportingPage("lexical_page_match", related)
+            : supportingPageFrom(
+                attributedPageUrl,
+                "llm_proposition_source",
+              ),
+      supportingPageUrl: exact.supportingPageUrl ?? related ?? attributedPageUrl,
     };
   }
 
-  const related = relatedPage(keyword, pages);
   if (related !== null) {
-    return { state: "related_coverage_unverified", supportingPageUrl: related };
+    return {
+      state: "related_coverage_unverified",
+      supportingPage: observedSupportingPage("lexical_page_match", related),
+      supportingPageUrl: related,
+    };
   }
 
   if (
@@ -273,6 +305,10 @@ export function observeKeywordCoverage(
   ) {
     return {
       state: "inventory_unavailable",
+      supportingPage: supportingPageFrom(
+        attributedPageUrl,
+        "llm_proposition_source",
+      ),
       supportingPageUrl: attributedPageUrl,
     };
   }
@@ -281,6 +317,10 @@ export function observeKeywordCoverage(
   if (inventoryMatch.url !== null) {
     return {
       state: "possible_existing_page",
+      supportingPage: observedSupportingPage(
+        "inventory_url_match",
+        inventoryMatch.url,
+      ),
       supportingPageUrl: inventoryMatch.url,
     };
   }
@@ -292,6 +332,10 @@ export function observeKeywordCoverage(
   ) {
     return {
       state: "inventory_truncated",
+      supportingPage: supportingPageFrom(
+        attributedPageUrl,
+        "llm_proposition_source",
+      ),
       supportingPageUrl: attributedPageUrl,
     };
   }
@@ -301,6 +345,10 @@ export function observeKeywordCoverage(
     // Attribution alone leaves the state untouched but still names the page,
     // which is what the GEO lane is judged on: nothing here says the site
     // ranks, only that this is where the claim behind the question came from.
+    supportingPage: supportingPageFrom(
+      attributedPageUrl,
+      "llm_proposition_source",
+    ),
     supportingPageUrl: attributedPageUrl,
   };
 }

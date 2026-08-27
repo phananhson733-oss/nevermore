@@ -1218,4 +1218,150 @@ describe("buildKeywordOpportunityResult v2 evidence decisions", () => {
       }),
     ]);
   });
+
+  it("carries the supporting-page provenance into eligible rows", () => {
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [
+          v2Seo("basis row", {
+            supportingPage: {
+              state: "observed",
+              source: "lexical_page_match",
+              url: "https://acme.test/guides/how-billing-works",
+            },
+            supportingPageUrl: "https://acme.test/guides/how-billing-works",
+          }),
+        ],
+      }),
+    );
+
+    expect(result.rows[0]?.supportingPage).toEqual({
+      state: "observed",
+      source: "lexical_page_match",
+      url: "https://acme.test/guides/how-billing-works",
+    });
+  });
+
+  it("reports a process ledger that separates sampling, supporting-page provenance, and mixed positive-plus-unavailable evidence", () => {
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: [
+          v2Seo("eligible with mixed evidence", {
+            signals: {
+              youngDomain: {
+                state: "observed",
+                observation: {
+                  domain: "new.example",
+                  registrationDate: COMPLETED_AT,
+                  observedAt: COMPLETED_AT,
+                  ageMonths: 7,
+                },
+              },
+              lowOrganicTrafficDomain: {
+                state: "unavailable",
+                observation: null,
+                reason: "traffic_stage_failed",
+              },
+              communityResult: {
+                state: "not_observed",
+                observation: null,
+              },
+            },
+            supportingPage: {
+              state: "observed",
+              source: "llm_proposition_source",
+              url: "https://acme.test/pricing",
+            },
+            supportingPageUrl: "https://acme.test/pricing",
+          }),
+          v2Seo("excluded zero", {
+            validation: EXPLICIT_ZERO,
+            serp: {
+              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
+              status: "unavailable",
+            },
+            supportingPage: { state: "not_observed" },
+          }),
+          v2Seo("inventory match", {
+            supportingPage: {
+              state: "observed",
+              source: "inventory_url_match",
+              url: "https://acme.test/templates/invoice",
+            },
+            supportingPageUrl: "https://acme.test/templates/invoice",
+          }),
+          v2Seo("incomplete community", {
+            supportingPage: { state: "not_observed" },
+            signals: {
+              youngDomain: {
+                state: "not_observed",
+                observation: null,
+              },
+              lowOrganicTrafficDomain: {
+                state: "not_observed",
+                observation: null,
+              },
+              communityResult: {
+                state: "unavailable",
+                observation: null,
+                reason: "community_stage_failed",
+              },
+            },
+          }),
+        ],
+        serpPlanned: 3,
+        serpFailureReasons: {},
+        thresholds: {
+          siteDomainRank: 180,
+          lowOrganicTrafficThreshold: 5_000,
+        },
+        durationsMs: {
+          total: 3_200,
+          coverage: 400,
+          serpSampling: 1_200,
+          serpInterpretation: 300,
+          domainEnrichment: 700,
+        },
+      }),
+    );
+
+    expect(result.process).toEqual({
+      serp: {
+        planned: 3,
+        completed: 3,
+        failed: 0,
+        failureReasons: {},
+      },
+      supportingPages: {
+        gscObservedQueryPage: 0,
+        lexicalPageMatch: 0,
+        llmPropositionSource: 1,
+        inventoryUrlMatch: 1,
+        notObserved: 2,
+      },
+      decisions: {
+        eligible: 2,
+        withheld: 1,
+        incomplete: 1,
+        positiveWithUnavailableSignals: 1,
+        withheldReasons: {
+          volume_priced_at_zero: 1,
+        },
+        incompleteReasons: {
+          community_result_signal_unavailable: 1,
+        },
+      },
+      thresholds: {
+        siteDomainRank: 180,
+        lowOrganicTrafficThreshold: 5_000,
+      },
+      durationsMs: {
+        total: 3_200,
+        coverage: 400,
+        serpSampling: 1_200,
+        serpInterpretation: 300,
+        domainEnrichment: 700,
+      },
+    });
+  });
 });
