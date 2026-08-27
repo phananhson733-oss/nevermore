@@ -2960,6 +2960,12 @@
       "commonChecksIntro": "每一行仍需你决定：",
       "retryWithSeeds": "把这些词填入种子再跑一次",
       "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
+      "summary": {
+        "included": "已纳入",
+        "incomplete": "检测未完成",
+        "withheld": "已排除",
+        "screeningProcess": "查看本次筛选过程"
+      },
       "contextBoundary": "候选词生成使用最多 20 个页面的有限上下文，并不代表全站完整抓取。",
       "contextSelection": "L2 选页找到 {eligible} 个合格候选页，{excluded} 个在页面请求前排除，实际尝试 {attempted} 个，达到 20 页上限后还有 {truncated} 个未尝试。",
       "contextStopped": "上下文边界：{reason}",
@@ -3004,17 +3010,47 @@
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
+        "keywordIntent": "关键词与意图",
+        "questionIntent": "问句与意图",
         "providerIntent": "数据源意图",
         "serpIntent": "SERP 解读意图",
         "volume": "搜索量",
         "difficulty": "KD",
         "weakest": "最弱排名",
+        "competition": "竞争上下文",
         "signals": "三项信号证据",
         "aiOverview": "AI Overview",
         "supportingPage": "回答它的页面",
         "coverage": "你的覆盖情况",
+        "coverageReview": "覆盖与复核",
         "nextChecks": "动手前先查",
         "remainingDecisions": "仍需决定"
+      },
+      "values": {
+        "notReturned": "未返回",
+        "yes": "是",
+        "no": "否"
+      },
+      "supportingPage": {
+        "not_observed": "未观测到支持页面",
+        "unavailable": "支持页面不可用"
+      },
+      "evidence": {
+        "show": "查看证据",
+        "hide": "收起证据",
+        "title": "完整证据",
+        "intentTitle": "意图溯源",
+        "signalsTitle": "信号溯源",
+        "reviewTitle": "覆盖与复核",
+        "source": "来源",
+        "observedAt": "观测时间",
+        "modelId": "模型",
+        "promptVersion": "Prompt 版本",
+        "registrationDate": "注册时间戳",
+        "marketLanguage": "市场 {market} · 语言 {language}",
+        "supportingPageUrl": "完整支持页面 URL",
+        "reason": "原因",
+        "loadedAsync": "异步加载"
       },
       "aio": {
         "shown": "第一页已观测到",
@@ -3029,6 +3065,9 @@
         "commercial": "商业调研型",
         "transactional": "交易型",
         "mixed": "混合型"
+      },
+      "serpIntentSources": {
+        "serp_top_ten_interpretation": "自然搜索结果前十解读"
       },
       "signalNames": {
         "young_domain": "年轻域名",
@@ -3049,6 +3088,11 @@
         "lowTrafficObserved": "{domain} · ETV {etv} · 阈值 {threshold}",
         "communityObserved": "{source} · {domain} · 第 {position} 位",
         "titleUnavailable": "结果标题未返回"
+      },
+      "signalCompact": {
+        "youngObserved": "{domain} · 站龄 {months} 个月",
+        "lowTrafficObserved": "{domain} · ETV {etv}",
+        "communityObserved": "{domain} · 第 {position} 位"
       },
       "aioAvailability": {
         "observed": "第一页已观测到",
@@ -5656,6 +5700,7 @@
         "unknown": "本次 Agent 运行未能完成。"
       },
       "capturedReport": "阶段 02 · 已采集报告",
+      "capturedLanded": "跳转到了 {url}，本报告读的是这个页面。",
       "finalOrigin": "最终公开源站",
       "capturedAt": "采集时间",
       "availability": {

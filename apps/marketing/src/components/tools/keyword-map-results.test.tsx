@@ -158,6 +158,17 @@ function v2SeoRow(keyword: string): KeywordOpportunityRow {
   };
 }
 
+function v2GeoRow(keyword: string): KeywordOpportunityRow {
+  const base = v2SeoRow(keyword);
+  return {
+    ...base,
+    lane: "geo",
+    questionForm: true,
+    supportingPageUrl:
+      "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
+  };
+}
+
 function incomplete(
   keyword: string,
   reason: KeywordOpportunityIncomplete["reason"],
@@ -303,6 +314,28 @@ function tableRowFor(markup: string, keyword: string): string {
   return markup.slice(start, end);
 }
 
+function summaryRowFor(markup: string, keyword: string): string {
+  const marker = `data-keyword-row="${keyword}"`;
+  const at = markup.indexOf(marker);
+  expect(at, `no summary row for ${keyword}`).toBeGreaterThan(-1);
+  const start = markup.lastIndexOf("<tr", at);
+  const end = markup.indexOf("</tr>", at);
+  expect(start, `${keyword} is not inside a summary row`).toBeGreaterThan(-1);
+  expect(end, `${keyword} summary row never closes`).toBeGreaterThan(at);
+  return markup.slice(start, end);
+}
+
+function tableFor(markup: string, lane: "seo" | "geo"): string {
+  const marker = `data-keyword-table="${lane}"`;
+  const at = markup.indexOf(marker);
+  expect(at, `no ${lane} keyword table`).toBeGreaterThan(-1);
+  const start = markup.lastIndexOf("<table", at);
+  const end = markup.indexOf("</table>", at);
+  expect(start, `${lane} marker is not inside a table`).toBeGreaterThan(-1);
+  expect(end, `${lane} table never closes`).toBeGreaterThan(at);
+  return markup.slice(start, end);
+}
+
 function detailsFor(markup: string, label: string): string {
   const at = markup.indexOf(asRendered(label));
   expect(at, `no details group labelled ${label}`).toBeGreaterThan(-1);
@@ -314,6 +347,242 @@ function detailsFor(markup: string, label: string): string {
 }
 
 describe("keyword map results", () => {
+  it("renders six SEO columns and five GEO columns in locally scrollable compact tables", () => {
+    const seo = v2SeoRow("compact seo keyword");
+    const geo = v2GeoRow("compact geo question");
+    const markup = render("en", result({ rows: [seo, geo] }));
+    const seoTable = tableFor(markup, "seo");
+    const geoTable = tableFor(markup, "geo");
+
+    expect(seoTable.match(/<th\b/g)).toHaveLength(6);
+    expect(geoTable.match(/<th\b/g)).toHaveLength(5);
+    expect(seoTable).toContain("min-w-[1160px]");
+    expect(geoTable).toContain("min-w-[1120px]");
+    expect(seoTable).not.toContain("min-w-[1480px]");
+    expect(geoTable).not.toContain("min-w-[1480px]");
+    expect(seoTable).toContain("text-[13px]");
+    expect(seoTable).toContain("leading-[1.45]");
+    expect(seoTable).toContain("text-[15.5px]");
+    expect(seoTable).toContain("tabular-nums");
+
+    for (const lane of ["seo", "geo"] as const) {
+      const marker = `data-keyword-scroll="${lane}"`;
+      const at = markup.indexOf(marker);
+      expect(at, `no ${lane} scroll container`).toBeGreaterThan(-1);
+      const start = markup.lastIndexOf("<div", at);
+      const end = markup.indexOf(">", at);
+      const scroll = markup.slice(start, end);
+      expect(scroll).toContain('tabindex="0"');
+      expect(scroll).toContain('role="region"');
+      expect(scroll).toContain(`aria-labelledby="keyword-lane-${lane}"`);
+      expect(scroll).toContain("overflow-x-auto");
+      expect(scroll).toContain("focus-visible:outline");
+    }
+  });
+
+  it("keeps the fixed cell widths inside the SEO and GEO compact budgets", () => {
+    const seo = v2SeoRow("budgeted seo keyword");
+    const geo = v2GeoRow("budgeted geo question");
+    const markup = render("en", result({ rows: [seo, geo] }));
+    const widthsFor = (row: KeywordOpportunityRow): number[] =>
+      [...summaryRowFor(markup, row.keyword).matchAll(/\bw-\[(\d+)px\]/g)].map(
+        (match) => Number(match[1]),
+      );
+    const seoWidths = widthsFor(seo);
+    const geoWidths = widthsFor(geo);
+
+    expect(seoWidths).toEqual([220, 100, 190, 230, 170, 230]);
+    expect(geoWidths).toEqual([220, 190, 230, 170, 230]);
+    expect(seoWidths.reduce((total, width) => total + width, 0)).toBeLessThanOrEqual(
+      1160,
+    );
+    expect(geoWidths.reduce((total, width) => total + width, 0)).toBeLessThanOrEqual(
+      1120,
+    );
+  });
+
+  it.each(["en", "zh"] as const)(
+    "keeps decision facts in the compact SEO row and technical provenance out in %s",
+    (locale) => {
+      const row = v2SeoRow("compact evidence keyword");
+      const markup = render(locale, result({ rows: [row] }));
+      const summary = summaryRowFor(markup, row.keyword);
+      const expected =
+        locale === "en"
+          ? [
+              "Provider intent",
+              "Commercial",
+              "SERP interpreted intent",
+              "Informational",
+              "Volume",
+              "320",
+              "KD",
+              "14",
+              "Weakest rank",
+              "8",
+              "example.com",
+              "#4",
+              "Young domain",
+              "13 months old",
+              "Low organic traffic domain",
+              "ETV 420",
+              "Community result",
+              "reddit.com",
+              "Provider availability",
+              "Observed on page one",
+              "Answer assessment",
+              "Complete answer",
+              "A sitemap URL looks related; verify the page",
+              "Decide whether this demand is your buyer",
+            ]
+          : [
+              "数据源意图",
+              "商业调研型",
+              "SERP 解读意图",
+              "信息型",
+              "搜索量",
+              "320",
+              "KD",
+              "14",
+              "最弱排名",
+              "8",
+              "example.com",
+              "#4",
+              "年轻域名",
+              "站龄 13 个月",
+              "低自然搜索流量域名",
+              "ETV 420",
+              "社区结果",
+              "reddit.com",
+              "数据源可用性",
+              "第一页已观测到",
+              "答案评估",
+              "完整回答",
+              "Sitemap 中有疑似相关页面，需核对",
+              "判断这波需求是不是你的买家",
+            ];
+      for (const copy of expected) expect(summary).toContain(copy);
+      for (const technical of [
+        "gpt-5.4-mini",
+        "keyword_serp_interpretation.v1",
+        "https://reddit.com/r/dentistry/comments/billing",
+        "Clinic billing discussion",
+        "2025-07-01",
+        locale === "en" ? "threshold 5,000" : "阈值 5,000",
+      ]) {
+        expect(summary).not.toContain(technical);
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "renders GEO as a five-column lane with a readable supporting host/path in %s",
+    (locale) => {
+      const row = v2GeoRow("how does compact evidence work");
+      const markup = render(locale, result({ rows: [row] }));
+      const table = tableFor(markup, "geo");
+      const summary = summaryRowFor(markup, row.keyword);
+
+      expect(table.match(/<th\b/g)).toHaveLength(5);
+      expect(table).not.toContain(locale === "en" ? ">Volume<" : ">搜索量<");
+      expect(table).not.toContain(">KD<");
+      expect(table).not.toContain(
+        locale === "en" ? ">Weakest rank<" : ">最弱排名<",
+      );
+      expect(summary).toContain("acme.test/resources/how-to-win");
+      expect(summary).not.toContain(
+        "https://acme.test/resources/how-to-win?utm_source=fixture#answer",
+      );
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "keeps GEO no-page-observed and invalid-page-unavailable explicit in %s",
+    (locale) => {
+      const observedBase = v2GeoRow("geo support evidence");
+      const notObserved = {
+        ...observedBase,
+        keyword: "geo supporting page not observed",
+        supportingPageUrl: null,
+      };
+      const unavailable = {
+        ...observedBase,
+        keyword: "geo supporting page unavailable",
+        supportingPageUrl: "not a valid supporting URL",
+      };
+      const markup = render(
+        locale,
+        result({ rows: [notObserved, unavailable] }),
+      );
+      const notObservedRow = summaryRowFor(markup, notObserved.keyword);
+      const unavailableRow = summaryRowFor(markup, unavailable.keyword);
+      const notObservedCell = notObservedRow.match(/<td\b[\s\S]*?<\/td>/g)?.[1];
+      const unavailableCell = unavailableRow.match(/<td\b[\s\S]*?<\/td>/g)?.[1];
+
+      expect(notObservedCell).toContain(
+        locale === "en"
+          ? "No supporting page observed"
+          : "未观测到支持页面",
+      );
+      expect(unavailableCell).toContain(
+        locale === "en"
+          ? "Supporting page unavailable"
+          : "支持页面不可用",
+      );
+      expect(notObservedCell).not.toContain(">—<");
+      expect(unavailableCell).not.toContain("not a valid supporting URL");
+    },
+  );
+
+  it("combines scope, outcome counts and CSV before a collapsed native screening process", () => {
+    const value = result({
+      rows: [v2SeoRow("included keyword")],
+      incomplete: [
+        incomplete("incomplete keyword", "serp_evidence_unavailable"),
+      ],
+      withheld: [
+        {
+          keyword: "withheld keyword",
+          discoveryBasis: "site_proposition",
+          reason: "volume_priced_at_zero",
+        },
+      ],
+      availability: "partial",
+      unavailableStages: ["serp_sample"],
+      funnel: { ...FUNNEL, serpSampled: 0, winnableEvidence: 0 },
+    });
+    const markup = render("en", value);
+    const marker = 'data-result-summary=""';
+    const at = markup.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const start = markup.lastIndexOf("<section", at);
+    const end = markup.indexOf("</section>", at);
+    const summary = markup.slice(start, end);
+
+    for (const copy of [
+      "https://acme.test",
+      "United States / English",
+      "Included",
+      "1",
+      "Detection incomplete",
+      "Excluded",
+      "Export CSV",
+    ]) {
+      expect(summary).toContain(copy);
+    }
+    const detailsAt = summary.indexOf('data-screening-process=""');
+    expect(detailsAt).toBeGreaterThan(-1);
+    const detailsStart = summary.lastIndexOf("<details", detailsAt);
+    const detailsTagEnd = summary.indexOf(">", detailsAt);
+    const details = summary.slice(detailsStart);
+    expect(summary.slice(detailsStart, detailsTagEnd)).not.toContain(" open");
+    expect(details).toContain("Screening process");
+    expect(details.indexOf("Screening process")).toBeLessThan(
+      details.indexOf("Generated"),
+    );
+    expect(details.match(/not checked/g)).toHaveLength(2);
+  });
+
   it.each(["en", "zh"] as const)("renders a full run in %s", (locale) => {
     const markup = render(locale);
     expect(markup).toContain("dental billing software");
@@ -356,31 +625,23 @@ describe("keyword map results", () => {
   );
 
   it.each(["en", "zh"] as const)(
-    "renders provider facts and separately provenanced SERP inference in %s",
+    "keeps provider facts and SERP inference separate while deferring provenance in %s",
     (locale) => {
       const row = v2SeoRow("intent evidence keyword");
       const markup = render(locale, result({ rows: [row] }));
-      const tableRow = tableRowFor(markup, row.keyword);
+      const tableRow = summaryRowFor(markup, row.keyword);
       const headings =
         locale === "en"
           ? ["Provider intent", "SERP interpreted intent"]
           : ["数据源意图", "SERP 解读意图"];
       const evidence =
         locale === "en"
-          ? [
-              "Commercial",
-              "Informational",
-              "gpt-5.4-mini",
-              "keyword_serp_interpretation.v1",
-            ]
-          : [
-              "商业调研型",
-              "信息型",
-              "gpt-5.4-mini",
-              "keyword_serp_interpretation.v1",
-            ];
-      for (const copy of headings) expect(markup).toContain(copy);
+          ? ["Commercial", "Informational"]
+          : ["商业调研型", "信息型"];
+      for (const copy of headings) expect(tableRow).toContain(copy);
       for (const copy of evidence) expect(tableRow).toContain(copy);
+      expect(tableRow).not.toContain("gpt-5.4-mini");
+      expect(tableRow).not.toContain("keyword_serp_interpretation.v1");
     },
   );
 
@@ -410,10 +671,10 @@ describe("keyword map results", () => {
   );
 
   it.each(["en", "zh"] as const)(
-    "shows the three signals with their raw evidence in %s",
+    "shows compact three-signal decisions without raw technical evidence in %s",
     (locale) => {
       const row = v2SeoRow("three signals keyword");
-      const tableRow = tableRowFor(
+      const tableRow = summaryRowFor(
         render(locale, result({ rows: [row] })),
         row.keyword,
       );
@@ -421,33 +682,32 @@ describe("keyword map results", () => {
         locale === "en"
           ? [
               "Young domain",
-              "registered 2025-07-01",
               "13 months old",
               "Low organic traffic domain",
               "ETV 420",
-              "threshold 5,000",
               "Community result",
-              "Domain fallback",
               "reddit.com",
               "#5",
-              "https://reddit.com/r/dentistry/comments/billing",
-              "Clinic billing discussion",
             ]
           : [
               "年轻域名",
-              "注册于 2025-07-01",
               "站龄 13 个月",
               "低自然搜索流量域名",
               "ETV 420",
-              "阈值 5,000",
               "社区结果",
-              "域名回退识别",
               "reddit.com",
               "第 5 位",
-              "https://reddit.com/r/dentistry/comments/billing",
-              "Clinic billing discussion",
             ];
       for (const copy of expected) expect(tableRow).toContain(copy);
+      for (const technical of [
+        "2025-07-01",
+        "5,000",
+        "https://reddit.com/r/dentistry/comments/billing",
+        "Clinic billing discussion",
+        locale === "en" ? "Domain fallback" : "域名回退识别",
+      ]) {
+        expect(tableRow).not.toContain(technical);
+      }
     },
   );
 
@@ -470,15 +730,20 @@ describe("keyword map results", () => {
           },
         },
       };
-      const tableRow = tableRowFor(
+      const tableRow = summaryRowFor(
         render(locale, result({ rows: [row] })),
         row.keyword,
       );
       const expected =
         locale === "en"
-          ? ["Not observed", "Unavailable", "Site rank tier unavailable"]
-          : ["未观测到", "不可用", "站点权重层级不可用"];
+          ? ["Not observed", "Unavailable"]
+          : ["未观测到", "不可用"];
       for (const copy of expected) expect(tableRow).toContain(copy);
+      expect(tableRow).not.toContain(
+        locale === "en"
+          ? "Site rank tier unavailable"
+          : "站点权重层级不可用",
+      );
     },
   );
 
@@ -798,7 +1063,7 @@ describe("keyword map results", () => {
       asRendered(en.tools.keywordMap.lane.seo.title),
     );
     const withheld = markup.indexOf(
-      asRendered(en.tools.keywordMap.withheldTitle),
+      asRendered(en.tools.keywordMap.withheldIntro),
     );
     expect(advice).toBeGreaterThan(-1);
     expect(advice).toBeLessThan(table);
@@ -1103,7 +1368,12 @@ describe("keyword map results", () => {
     const markup = render("en", result({ rows: [row] }));
     const tableRow = tableRowFor(markup, row.keyword);
 
-    expect(tableRow).toContain("—");
+    expect(tableRow).toContain(
+      asRendered(en.tools.keywordMap.aioAvailability.unavailable),
+    );
+    expect(tableRow).toContain(
+      asRendered(en.tools.keywordMap.aioAssessments.unavailable),
+    );
     expect(tableRow).not.toContain(asRendered(en.tools.keywordMap.aio.shown));
     expect(tableRow).not.toContain(
       asRendered(en.tools.keywordMap.aio.notShown),

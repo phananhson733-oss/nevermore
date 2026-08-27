@@ -40,6 +40,7 @@ const data: AgentAuditSuccessData = {
     scannedAt: "2026-08-13T00:00:00.000Z",
     targetInspected: true,
     inspectedTargetUrl: "https://acme.test/",
+    landedTargetUrl: "https://acme.test/",
     targetPageExtract: null,
     coverage: {
       availability: "unavailable",

@@ -80,6 +80,7 @@ const success = {
       scannedAt: "2026-08-12T09:00:00.000Z",
       targetInspected: true,
       inspectedTargetUrl: "https://acme.test/",
+      landedTargetUrl: "https://acme.test/",
       targetPageExtract: null,
       coverage: {
         availability: "available",
@@ -214,7 +215,26 @@ describe("isAgentAuditSuccessEnvelope", () => {
   );
 
   describe("the derived Search Performance region", () => {
-    it("accepts the complete producer ledger including index coverage", () => {
+    it("refuses an envelope that predates a required projection field", () => {
+    // The nine fixtures this field forced open only prove the CALLERS were
+    // made to fill it, which is a compile-time fact. This is the runtime
+    // decision written down: an envelope produced by a build that predates
+    // `landedTargetUrl` is refused, not read with the field undefined.
+    //
+    // It is also the deploy-window contract. Old client + new server is safe
+    // (an old guard ignores an extra key). New client + old server is THIS
+    // path, reachable only by rolling the projection back while a newer bundle
+    // is still open in a tab -- so if that revert ever happens, the guard has
+    // to be reverted with it, and this test is what says so.
+    const malformed = structuredClone(success) as unknown as {
+      data: { result: Record<string, unknown> };
+    };
+    delete malformed.data.result["landedTargetUrl"];
+
+    expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
+  });
+
+  it("accepts the complete producer ledger including index coverage", () => {
       const abandoned = searchPerformanceRecords.find(
         (record) => record.id === "abandoned_url_impression_share",
       );

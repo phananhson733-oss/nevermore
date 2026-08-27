@@ -41,7 +41,6 @@ import { KEYWORD_EVIDENCE_RECORD_IDS } from "@sf/public-tools/seo-audit/keyword-
 import { PAGE_PERFORMANCE_RECORD_IDS } from "@sf/public-tools/seo-audit/page-performance";
 import { SERP_SHAPE_RECORD_IDS } from "@sf/public-tools/seo-audit/serp-shape";
 
-
 export { isCanonicalIsoTimestamp };
 
 export interface SerpLandscapeRow {
@@ -164,6 +163,21 @@ export type AgentAuditResult = Pick<
   | "records"
 > & {
   /**
+   * Where the crawl actually landed for the submitted page, or null.
+   *
+   * `inspectedTargetUrl` is the URL the crawl REQUESTED. On a page that
+   * redirects, the audit is of the destination while every label on screen
+   * still named the URL that was typed -- so a visitor auditing a tracking
+   * short link read a report about their homepage and had no way to tell.
+   * Search Console keys its rows by the end of the redirect journey, which is
+   * why this value already decided the GSC and CrUX lookups inside this
+   * handler; it was the only reader that could not see it.
+   *
+   * Null when the target was never inspected. Equal to the requested URL when
+   * nothing redirected, which is the common case and says so.
+   */
+  readonly landedTargetUrl: string | null;
+  /**
    * Present only when the caller sent target queries.
    *
    * Deliberately absent from `SeoAuditReport`, which is exactly the cached
@@ -228,7 +242,6 @@ export type AgentAuditResult = Pick<
    * fact already in hand.
    */
   readonly serpShape?: AgentSerpShape;
-
 };
 
 /**
@@ -274,9 +287,7 @@ export interface AgentPagePerformance {
   readonly records: SeoAuditReport["records"];
 }
 
-function isAgentPagePerformance(
-  value: unknown,
-): value is AgentPagePerformance {
+function isAgentPagePerformance(value: unknown): value is AgentPagePerformance {
   if (!isObject(value)) return false;
   if (
     value.version !== AGENT_PAGE_PERFORMANCE_VERSION ||
@@ -706,6 +717,7 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
     typeof value.siteOrigin !== "string" ||
     typeof value.targetInspected !== "boolean" ||
     !isNullableString(value.inspectedTargetUrl) ||
+    !isNullableString(value.landedTargetUrl) ||
     !isCanonicalIsoTimestamp(value.scannedAt) ||
     !isCoverage(value.coverage) ||
     !isSiteResources(value.siteResources) ||
@@ -739,9 +751,7 @@ function isAgentResult(value: unknown): value is AgentAuditResult {
       value.serpLandscape === undefined ||
       isSerpLandscapeShape(value.serpLandscape)
     ) ||
-    !(
-      value.serpShape === undefined || isAgentSerpShape(value.serpShape)
-    )
+    !(value.serpShape === undefined || isAgentSerpShape(value.serpShape))
   ) {
     return false;
   }

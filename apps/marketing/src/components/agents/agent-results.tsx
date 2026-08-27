@@ -25,6 +25,25 @@ import {
 } from "./agent-result-helpers";
 import type { AgentKind } from "./agent-types";
 
+/**
+ * The URL the crawl landed on, when that is not the URL it requested.
+ *
+ * Both halves are canonical: `inspectedTargetUrl` is the collected page's own
+ * `fetchUrl` and `landedTargetUrl` is that page's `finalUrl`. Comparing them
+ * isolates an actual redirect. Comparing either to `targetUrl` would not --
+ * that one is the submitted string, kept verbatim, so it differs from both
+ * whenever the visitor pasted a `utm_source` or a capitalised host.
+ */
+function landedElsewhere(
+  result: AgentAuditSuccessData["result"],
+): string | null {
+  const { inspectedTargetUrl: requested, landedTargetUrl: landed } = result;
+  if (requested === null || landed === null || landed === requested) {
+    return null;
+  }
+  return landed;
+}
+
 function formatCapturedAt(value: string, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return value;
@@ -73,6 +92,7 @@ export function AgentResults({
   profile,
 }: AgentResultsProps) {
   const t = useTranslations("agents.workbench");
+  const landed = landedElsewhere(data.result);
   const auditT = useTranslations("tools.seoAudit");
   const model = useMemo(
     () =>
@@ -167,6 +187,31 @@ export function AgentResults({
             >
               {data.result.targetUrl}
             </h2>
+            {/*
+              Where the crawl landed, when that is not where it was sent.
+
+              This route does not require the entry to keep its subject, so a
+              URL that redirects across pages DOES produce a report here -- of
+              the destination, under a heading naming the URL that was typed.
+              The On-Page Checker cannot reach that state at all: it runs with
+              `requireSameEntrySubject`, so a cross-page redirect is refused
+              with `target_redirected` before a report exists, and its refusal
+              screen already names the destination and offers to re-run on it.
+
+              Compared against `inspectedTargetUrl`, never `targetUrl`. The
+              submitted string is not canonicalised, so comparing to it prints
+              this line for `?utm_source=` or a capitalised host -- a
+              normalisation, not a redirect, and the reader cannot tell the
+              difference from a line that says one happened.
+            */}
+            {landed === null ? null : (
+              <p
+                data-capture-landed
+                className="mt-2 font-mono text-[12.5px] break-all text-brand-warning"
+              >
+                {t("capturedLanded", { url: landed })}
+              </p>
+            )}
             <p className="mt-2 font-mono text-[10.5px] text-text-dark-secondary">
               {t("capturedAt")}:{" "}
               {formatCapturedAt(data.result.scannedAt, locale)}

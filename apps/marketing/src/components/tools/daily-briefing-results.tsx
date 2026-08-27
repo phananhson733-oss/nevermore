@@ -1034,6 +1034,28 @@ export function DailyBriefingResults({
     .filter((part): part is string => part !== null)
     .join(" · ");
 
+  /**
+   * Every handoff link below opens a new tab, and every one of them carries
+   * `rel="opener"`.
+   *
+   * The new tab is because this briefing is not recoverable: nothing is
+   * persisted, the URL holds no state, and the run spent one of the property's
+   * hourly Search Console slots. Following an action in this tab threw all of
+   * that away and left Back pointing at an empty form.
+   *
+   * The opener is load-bearing, not an oversight to be tidied into `noopener`.
+   * A new tab receives a copy of session storage only when it keeps an opener,
+   * and current browsers apply noopener to `target="_blank"` by default --
+   * measured in Chromium and WebKit, a `noopener` destination reads `null` and
+   * looks like it lost the property this page just handed it. The destinations
+   * are our own same-origin tools -- but same-origin is a permission, not a
+   * reference: without an opener, another tab of ours cannot reach this
+   * document at all. Keeping one really does hand the destination a Window it
+   * would not otherwise have, and the honest statement of the cost is that an
+   * XSS on one of our own tool pages would also reach the tab that opened it.
+   * The bound is the destination set: fixed `/tools/` literals on our origin,
+   * with `locale` whitelisted in the locale layout before any of this renders.
+   */
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     action: DailyBriefingAction,
@@ -1470,6 +1492,8 @@ export function DailyBriefingResults({
                     <Link
                       data-provisional-check-link
                       href={localePath(locale, "/tools/on-page-seo-check")}
+                      target="_blank"
+                      rel="opener"
                       onClick={(event) => provisionalHandoff(event, move)}
                       className="mt-2 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
                     >
@@ -1782,6 +1806,8 @@ export function DailyBriefingResults({
                   <Link
                     data-action-link
                     href={localePath(locale, target.path)}
+                    target="_blank"
+                    rel="opener"
                     onClick={(event) => handoff(event, action, index)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
@@ -1876,6 +1902,8 @@ export function DailyBriefingResults({
                   <Link
                     data-action-link
                     href={localePath(locale, target.path)}
+                    target="_blank"
+                    rel="opener"
                     onClick={(event) => pageHandoff(event, action)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
@@ -1939,6 +1967,8 @@ export function DailyBriefingResults({
                 <Link
                   data-action-link
                   href={localePath(locale, propertyTarget.path)}
+                  target="_blank"
+                  rel="opener"
                   onClick={(event) => propertyHandoff(event, result.propertyTrend)}
                   className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                 >
@@ -2011,6 +2041,8 @@ export function DailyBriefingResults({
                     <Link
                       data-check-link
                       href={localePath(locale, target.path)}
+                      target="_blank"
+                      rel="opener"
                       onClick={(event) => checkHandoff(event, check)}
                       className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                     >
@@ -2072,6 +2104,8 @@ export function DailyBriefingResults({
                   <Link
                     data-page-check-link
                     href={localePath(locale, destination(check.destination).path)}
+                    target="_blank"
+                    rel="opener"
                     onClick={(event) => pageCheckHandoff(event, check)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
