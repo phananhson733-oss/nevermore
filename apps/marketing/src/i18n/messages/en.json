@@ -3418,7 +3418,6 @@
       },
       "provenance": {
         "page": "Page read: {url}",
-        "landed": "Redirected to {url} — that is the page this report read, not the URL submitted.",
         "hit": "Read out of a crawl of this site collected at {time}, which was already held — this check started no new crawl.",
         "miss": "Read out of a crawl this check started, collected at {time}.",
         "unknown": "Collected at {time}. Whether the crawl was new or already held was not reported.",
@@ -5695,6 +5694,7 @@
         "unknown": "The Agent run could not be completed."
       },
       "capturedReport": "Stage 02 · Captured report",
+      "capturedLanded": "Redirected to {url} — that is the page this report read.",
       "finalOrigin": "Final public origin",
       "capturedAt": "Captured at",
       "availability": {

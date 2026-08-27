@@ -229,7 +229,17 @@ function landedTargetUrl(result: {
   if (!result.targetInspected) return null;
   const requested = result.inspectedTargetUrl ?? result.targetUrl;
   const page = result.pages.find((entry) => entry.url === requested);
-  return page?.finalUrl ?? requested;
+  // Null, not `requested`, when no collected page matches.
+  //
+  // Failing to find the page proves nothing about where the crawl landed --
+  // only that this payload cannot say. Returning the requested URL turned that
+  // silence into the claim "it landed where it was sent", which the Agent
+  // report then renders as "no redirect" and which both provider lookups below
+  // read as a URL to ask about. A shape the contract cannot produce (the
+  // inspected URL is selected FROM `pages`, so the lookup hits on every real
+  // run) but a malformed or cross-version payload can, and the honest answer
+  // there is that the landed URL is unavailable.
+  return page?.finalUrl ?? null;
 }
 
 /**

@@ -1048,8 +1048,13 @@ export function DailyBriefingResults({
    * and current browsers apply noopener to `target="_blank"` by default --
    * measured in Chromium and WebKit, a `noopener` destination reads `null` and
    * looks like it lost the property this page just handed it. The destinations
-   * are our own same-origin tools, which same-origin already lets reach this
-   * document, so the opener reference concedes nothing new.
+   * are our own same-origin tools -- but same-origin is a permission, not a
+   * reference: without an opener, another tab of ours cannot reach this
+   * document at all. Keeping one really does hand the destination a Window it
+   * would not otherwise have, and the honest statement of the cost is that an
+   * XSS on one of our own tool pages would also reach the tab that opened it.
+   * The bound is the destination set: fixed `/tools/` literals on our origin,
+   * with `locale` whitelisted in the locale layout before any of this renders.
    */
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
