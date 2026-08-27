@@ -23,10 +23,10 @@ for (let index = 0; index < argumentsList.length; index += 1) {
   if (inputArgument !== undefined) throw new Error("only one input is allowed");
   inputArgument = value;
 }
-const inputPath = resolve(
-  inputArgument ??
-    "packages/public-tools/src/keyword-opportunity/__fixtures__/calibration-synthetic.v1.json",
-);
+const defaultInput =
+  "packages/public-tools/src/keyword-opportunity/__fixtures__/calibration-synthetic.v1.json";
+const inputReference = inputArgument ?? defaultInput;
+const inputPath = resolve(inputReference);
 const raw = await readFile(inputPath, "utf8");
 const snapshot = JSON.parse(raw);
 if (
@@ -65,7 +65,7 @@ const comparison = compareKeywordOpportunityCalibration(snapshot, [
 const artifact = {
   artifactVersion: "keyword_opportunity_calibration_report.v1",
   inputSha256: createHash("sha256").update(raw).digest("hex"),
-  source: inputPath,
+  source: inputReference,
   ...comparison,
 };
 const serialized = `${JSON.stringify(artifact, null, 2)}\n`;

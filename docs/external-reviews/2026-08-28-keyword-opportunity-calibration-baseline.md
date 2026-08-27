@@ -37,6 +37,11 @@ signal remains eligible when a sibling measurement is unavailable. The second
 threshold flip only proves that the grid runner changes the expected synthetic
 candidate. It is not authority to ship 10k.
 
+The JSON also reports observed/not-observed/unavailable/not-evaluated signal
+prevalence for every variant. When labels exist, precision inputs, false
+positives and missed positives are broken down by lane, requesting-site rank
+tier and discovery basis instead of being available only as one global total.
+
 ## Required real calibration input
 
 Each anonymized candidate needs:

@@ -6,6 +6,7 @@ import type {
   KeywordOpportunityBasis,
   KeywordOpportunityLane,
   KeywordOpportunitySignal,
+  KeywordOpportunitySiteRankTier,
 } from "./types.ts";
 
 export const KEYWORD_OPPORTUNITY_CALIBRATION_SCHEMA_VERSION =
@@ -54,19 +55,54 @@ export type KeywordOpportunityCalibrationDisposition =
   | "incomplete"
   | "excluded";
 
+type ObservedSignalState = "observed" | "not_observed" | "unavailable";
+
+export type KeywordOpportunityCalibrationSignalState =
+  | ObservedSignalState
+  | "not_evaluated";
+
+export type KeywordOpportunityCalibrationSignalStates = Readonly<
+  Record<KeywordOpportunitySignal, KeywordOpportunityCalibrationSignalState>
+>;
+
 export interface KeywordOpportunityCalibrationCandidateResult {
   readonly candidateId: string;
   readonly disposition: KeywordOpportunityCalibrationDisposition;
   readonly positiveSignals: readonly KeywordOpportunitySignal[];
+  readonly signalStates: KeywordOpportunityCalibrationSignalStates;
 }
 
-export interface KeywordOpportunityCalibrationLabelledMetrics {
+export interface KeywordOpportunityCalibrationLabelMetrics {
   readonly labelledCandidates: number;
   readonly eligibleTrueOpportunities: number;
   readonly falsePositiveEligible: number;
   readonly missedTrueOpportunities: number;
   readonly precisionEligible: number | null;
 }
+
+export interface KeywordOpportunityCalibrationGroupMetrics<
+  Group extends string,
+> extends KeywordOpportunityCalibrationLabelMetrics {
+  readonly group: Group;
+}
+
+export type KeywordOpportunityCalibrationSiteTier =
+  | KeywordOpportunitySiteRankTier
+  | "unresolved";
+
+export interface KeywordOpportunityCalibrationLabelledMetrics
+  extends KeywordOpportunityCalibrationLabelMetrics {
+  readonly byLane: readonly KeywordOpportunityCalibrationGroupMetrics<KeywordOpportunityLane>[];
+  readonly bySiteRankTier: readonly KeywordOpportunityCalibrationGroupMetrics<KeywordOpportunityCalibrationSiteTier>[];
+  readonly byDiscoveryBasis: readonly KeywordOpportunityCalibrationGroupMetrics<KeywordOpportunityBasis>[];
+}
+
+export type KeywordOpportunityCalibrationSignalPrevalence = Readonly<
+  Record<
+    KeywordOpportunitySignal,
+    Readonly<Record<KeywordOpportunityCalibrationSignalState, number>>
+  >
+>;
 
 export interface KeywordOpportunityCalibrationEvaluation {
   readonly id: string;
@@ -77,6 +113,7 @@ export interface KeywordOpportunityCalibrationEvaluation {
   readonly incompleteRate: number;
   readonly exclusionRate: number;
   readonly candidates: readonly KeywordOpportunityCalibrationCandidateResult[];
+  readonly signalPrevalence: KeywordOpportunityCalibrationSignalPrevalence;
   readonly labelled: KeywordOpportunityCalibrationLabelledMetrics | null;
 }
 
@@ -94,12 +131,10 @@ export interface KeywordOpportunityCalibrationComparison {
   }[];
 }
 
-type SignalState = "observed" | "not_observed" | "unavailable";
-
 function observedOrUnknown(
   values: readonly (number | null)[],
   predicate: (value: number) => boolean,
-): SignalState {
+): ObservedSignalState {
   const measured = values.filter((value): value is number => value !== null);
   if (measured.some(predicate)) return "observed";
   return values.length > 0 && measured.length === values.length
@@ -119,15 +154,61 @@ function trafficThreshold(
   return variant.trafficThresholds.rank501To1000;
 }
 
+function siteRankTier(rank: number | null): KeywordOpportunityCalibrationSiteTier {
+  if (!Number.isInteger(rank) || rank === null || rank < 1 || rank > 1_000) {
+    return "unresolved";
+  }
+  if (rank <= 200) return "rank_1_200";
+  if (rank <= 500) return "rank_201_500";
+  return "rank_501_1000";
+}
+
+const NOT_EVALUATED_SIGNAL_STATES = {
+  young_domain: "not_evaluated",
+  low_organic_traffic_domain: "not_evaluated",
+  community_result: "not_evaluated",
+} as const satisfies KeywordOpportunityCalibrationSignalStates;
+
+function candidateSignalStates(
+  candidate: KeywordOpportunityCalibrationCandidate,
+  variant: KeywordOpportunityCalibrationVariant,
+): KeywordOpportunityCalibrationSignalStates {
+  if (candidate.explicitZero || !candidate.serpComplete) {
+    return NOT_EVALUATED_SIGNAL_STATES;
+  }
+  const threshold = trafficThreshold(candidate.siteDomainRank, variant);
+  return {
+    young_domain: observedOrUnknown(
+      candidate.domainRegistrationAgeMonths,
+      (age) => age <= variant.youngDomainMonths,
+    ),
+    low_organic_traffic_domain:
+      threshold === null
+        ? "unavailable"
+        : observedOrUnknown(
+            candidate.domainOrganicEtv,
+            (etv) => etv < threshold,
+          ),
+    community_result:
+      candidate.communityObserved === null
+        ? "unavailable"
+        : candidate.communityObserved
+          ? "observed"
+          : "not_observed",
+  };
+}
+
 function evaluateCandidate(
   candidate: KeywordOpportunityCalibrationCandidate,
   variant: KeywordOpportunityCalibrationVariant,
 ): KeywordOpportunityCalibrationCandidateResult {
+  const signalStates = candidateSignalStates(candidate, variant);
   if (candidate.explicitZero || candidate.alreadyCovered) {
     return {
       candidateId: candidate.candidateId,
       disposition: "excluded",
       positiveSignals: [],
+      signalStates,
     };
   }
   if (!candidate.serpComplete) {
@@ -135,36 +216,21 @@ function evaluateCandidate(
       candidateId: candidate.candidateId,
       disposition: "incomplete",
       positiveSignals: [],
+      signalStates,
     };
   }
 
-  const threshold = trafficThreshold(candidate.siteDomainRank, variant);
   const states = [
-    [
-      "young_domain",
-      observedOrUnknown(
-        candidate.domainRegistrationAgeMonths,
-        (age) => age <= variant.youngDomainMonths,
-      ),
-    ],
+    ["young_domain", signalStates.young_domain],
     [
       "low_organic_traffic_domain",
-      threshold === null
-        ? "unavailable"
-        : observedOrUnknown(
-            candidate.domainOrganicEtv,
-            (etv) => etv < threshold,
-          ),
+      signalStates.low_organic_traffic_domain,
     ],
-    [
-      "community_result",
-      candidate.communityObserved === null
-        ? "unavailable"
-        : candidate.communityObserved
-          ? "observed"
-          : "not_observed",
-    ],
-  ] as const satisfies readonly (readonly [KeywordOpportunitySignal, SignalState])[];
+    ["community_result", signalStates.community_result],
+  ] as const satisfies readonly (readonly [
+    KeywordOpportunitySignal,
+    KeywordOpportunityCalibrationSignalState,
+  ])[];
   const positiveSignals = states
     .filter(([, state]) => state === "observed")
     .map(([signal]) => signal);
@@ -178,17 +244,22 @@ function evaluateCandidate(
           ? "eligible"
           : "excluded";
 
-  return { candidateId: candidate.candidateId, disposition, positiveSignals };
+  return {
+    candidateId: candidate.candidateId,
+    disposition,
+    positiveSignals,
+    signalStates,
+  };
 }
 
-function labelledMetrics(
-  snapshot: KeywordOpportunityCalibrationSnapshotV1,
+function labelMetricSummary(
+  sourceCandidates: readonly KeywordOpportunityCalibrationCandidate[],
   candidates: readonly KeywordOpportunityCalibrationCandidateResult[],
-): KeywordOpportunityCalibrationLabelledMetrics | null {
+): KeywordOpportunityCalibrationLabelMetrics | null {
   const disposition = new Map(
     candidates.map((candidate) => [candidate.candidateId, candidate.disposition]),
   );
-  const labelled = snapshot.candidates.filter(
+  const labelled = sourceCandidates.filter(
     (candidate) => candidate.label !== undefined,
   );
   if (labelled.length === 0) return null;
@@ -220,6 +291,88 @@ function labelledMetrics(
   };
 }
 
+function groupedLabelMetrics<Group extends string>(
+  sourceCandidates: readonly KeywordOpportunityCalibrationCandidate[],
+  candidates: readonly KeywordOpportunityCalibrationCandidateResult[],
+  groups: readonly Group[],
+  groupOf: (candidate: KeywordOpportunityCalibrationCandidate) => Group,
+): readonly KeywordOpportunityCalibrationGroupMetrics<Group>[] {
+  return groups.flatMap((group) => {
+    const summary = labelMetricSummary(
+      sourceCandidates.filter((candidate) => groupOf(candidate) === group),
+      candidates,
+    );
+    return summary === null ? [] : [{ group, ...summary }];
+  });
+}
+
+function labelledMetrics(
+  snapshot: KeywordOpportunityCalibrationSnapshotV1,
+  candidates: readonly KeywordOpportunityCalibrationCandidateResult[],
+): KeywordOpportunityCalibrationLabelledMetrics | null {
+  const summary = labelMetricSummary(snapshot.candidates, candidates);
+  if (summary === null) return null;
+  return {
+    ...summary,
+    byLane: groupedLabelMetrics(
+      snapshot.candidates,
+      candidates,
+      ["seo", "geo"],
+      (candidate) => candidate.lane,
+    ),
+    bySiteRankTier: groupedLabelMetrics(
+      snapshot.candidates,
+      candidates,
+      ["rank_1_200", "rank_201_500", "rank_501_1000", "unresolved"],
+      (candidate) => siteRankTier(candidate.siteDomainRank),
+    ),
+    byDiscoveryBasis: groupedLabelMetrics(
+      snapshot.candidates,
+      candidates,
+      ["site_proposition", "traditional_expansion"],
+      (candidate) => candidate.discoveryBasis,
+    ),
+  };
+}
+
+function signalPrevalence(
+  candidates: readonly KeywordOpportunityCalibrationCandidateResult[],
+): KeywordOpportunityCalibrationSignalPrevalence {
+  const prevalence: Record<
+    KeywordOpportunitySignal,
+    Record<KeywordOpportunityCalibrationSignalState, number>
+  > = {
+    young_domain: {
+      observed: 0,
+      not_observed: 0,
+      unavailable: 0,
+      not_evaluated: 0,
+    },
+    low_organic_traffic_domain: {
+      observed: 0,
+      not_observed: 0,
+      unavailable: 0,
+      not_evaluated: 0,
+    },
+    community_result: {
+      observed: 0,
+      not_observed: 0,
+      unavailable: 0,
+      not_evaluated: 0,
+    },
+  };
+  for (const candidate of candidates) {
+    for (const signal of [
+      "young_domain",
+      "low_organic_traffic_domain",
+      "community_result",
+    ] as const) {
+      prevalence[signal][candidate.signalStates[signal]] += 1;
+    }
+  }
+  return prevalence;
+}
+
 export function evaluateKeywordOpportunityCalibration(
   snapshot: KeywordOpportunityCalibrationSnapshotV1,
   variant: KeywordOpportunityCalibrationVariant,
@@ -244,6 +397,7 @@ export function evaluateKeywordOpportunityCalibration(
     incompleteRate: denominator === 0 ? 0 : incomplete / denominator,
     exclusionRate: denominator === 0 ? 0 : excluded / denominator,
     candidates,
+    signalPrevalence: signalPrevalence(candidates),
     labelled: labelledMetrics(snapshot, candidates),
   };
 }

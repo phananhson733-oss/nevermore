@@ -1311,7 +1311,14 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // their whole keyword read over a stage that never blocks the answer.
     const response = await handleKeywordOpportunitiesRequest(
       body(),
-      deps({ readCoverageQueries: () => Promise.reject(new Error("403")) }),
+      deps({
+        readCoverageQueries: () =>
+          Promise.reject(
+            new Error(
+              "sc-domain:private.example rejected secret keyword evidence",
+            ),
+          ),
+      }),
     );
     const parsed = (await response.json()) as OpportunitiesBody;
 
@@ -1327,6 +1334,13 @@ describe("handleKeywordOpportunitiesRequest", () => {
     for (const row of parsed.data.result.rows) {
       expect(row.coverage).toBe("inventory_unavailable");
     }
+    expect(logged.join("\n")).not.toContain("private.example");
+    expect(logged.join("\n")).not.toContain("secret keyword evidence");
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "gsc_coverage",
+      reason: "read_failed",
+    });
   });
 
   it("keeps positive rows but marks a truncated query-page read partial", async () => {
@@ -2485,13 +2499,13 @@ describe("handleKeywordOpportunitiesRequest", () => {
         lowOrganicTrafficThreshold: 5_000,
       },
       durationsMs: {
-        total: null,
+        total: 83,
         validation: 11,
         coverage: 13,
         serpSampling: 17,
         serpInterpretation: 19,
         domainEnrichment: 23,
-        report: null,
+        report: 0,
       },
     });
 
@@ -2526,7 +2540,10 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
-        expandCandidates: () => Promise.reject(new Error("generator down")),
+        expandCandidates: () =>
+          Promise.reject(
+            new Error("private.example secret candidate and provider body"),
+          ),
         openGscGate: () => Promise.resolve({ ok: true, release }),
       }),
     );
@@ -2536,6 +2553,13 @@ describe("handleKeywordOpportunitiesRequest", () => {
       error: { code: "keyword_source_unavailable" },
     });
     expect(release).toHaveBeenCalledTimes(1);
+    expect(logged.join("\n")).not.toContain("private.example");
+    expect(logged.join("\n")).not.toContain("secret candidate");
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "opportunities",
+      reason: "unexpected_error",
+    });
   });
 
   it("identifies a candidate-generation transport failure without blaming search data", async () => {

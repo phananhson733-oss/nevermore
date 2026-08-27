@@ -4,6 +4,7 @@ import { seal } from "../src/lib/auth/sealed-cookie";
 
 const TEST_COOKIE_KEY = "cd".repeat(32);
 process.env.TOKEN_ENCRYPTION_KEY = TEST_COOKIE_KEY;
+const LOCAL_ORIGIN = `http://127.0.0.1:${process.env.MARKETING_E2E_PORT ?? "3001"}`;
 
 const CONTEXT_API = "POST /api/tools/hidden-keywords/context";
 const OPPORTUNITIES_API = "POST /api/tools/hidden-keywords/opportunities";
@@ -291,6 +292,7 @@ interface GuardEvidence {
   contextPosts: number;
   opportunityPosts: number;
   readonly unexpected: string[];
+  readonly externalRequests: string[];
 }
 
 async function connect(page: Page): Promise<void> {
@@ -332,10 +334,32 @@ async function installGuard(
     contextPosts: 0,
     opportunityPosts: 0,
     unexpected: [],
+    externalRequests: [],
   };
+  // Default-deny every browser request outside the isolated standalone server.
+  // Registered before the API route so local API requests fall through to the
+  // more specific mock below; all other local assets continue normally.
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin === LOCAL_ORIGIN) {
+      await route.fallback();
+      return;
+    }
+    evidence.externalRequests.push(`${request.method()} ${url.origin}${url.pathname}`);
+    await route.abort("blockedbyclient");
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
-    const id = `${request.method()} ${new URL(request.url()).pathname}`;
+    const url = new URL(request.url());
+    if (url.origin !== LOCAL_ORIGIN) {
+      evidence.externalRequests.push(
+        `${request.method()} ${url.origin}${url.pathname}`,
+      );
+      await route.abort("blockedbyclient");
+      return;
+    }
+    const id = `${request.method()} ${url.pathname}`;
     if (id === CONTEXT_API) {
       evidence.contextPosts += 1;
       await route.fulfill({
@@ -387,13 +411,14 @@ test("runs the connected read-confirm-result flow without a paid request", async
   expect(evidence.contextPosts).toBe(1);
   expect(evidence.opportunityPosts).toBe(1);
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.externalRequests).toEqual([]);
 });
 
 test("keeps a partial empty run distinct from a completed negative", async ({
   page,
 }) => {
   await connect(page);
-  await installGuard(page, async (route) => {
+  const evidence = await installGuard(page, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -418,13 +443,14 @@ test("keeps a partial empty run distinct from a completed negative", async ({
   await expect(
     page.getByText(/some candidates were never judged at all/),
   ).toBeVisible();
+  expect(evidence.externalRequests).toEqual([]);
 });
 
 test("keeps the confirmed context after an opportunities error", async ({
   page,
 }) => {
   await connect(page);
-  await installGuard(page, async (route) => {
+  const evidence = await installGuard(page, async (route) => {
     await route.fulfill({
       status: 502,
       contentType: "application/json",
@@ -442,4 +468,5 @@ test("keeps the confirmed context after an opportunities error", async ({
   await expect(
     page.getByRole("button", { name: "Run the opportunity map" }),
   ).toBeVisible();
+  expect(evidence.externalRequests).toEqual([]);
 });

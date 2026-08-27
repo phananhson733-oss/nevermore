@@ -811,6 +811,7 @@ export async function handleKeywordOpportunitiesRequest(
   let serpSamplingDurationMs: number | null = null;
   let serpInterpretationDurationMs: number | null = null;
   let domainEnrichmentDurationMs: number | null = null;
+  const totalStartedAt = dependencies.now().getTime();
   try {
     const drafts = await dependencies.expandCandidates({
       propositions: token.propositions,
@@ -886,7 +887,7 @@ export async function handleKeywordOpportunitiesRequest(
         ) {
           unavailableStages.push(KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED);
         }
-      } catch (error) {
+      } catch {
         // Coverage is the one stage whose absence must not stop the run:
         // without it the tool cannot say a term is already served, which is a
         // weaker claim, not a wrong one. It is named so the result reads
@@ -898,7 +899,6 @@ export async function handleKeywordOpportunitiesRequest(
             tool: "keyword_opportunity",
             stage: "gsc_coverage",
             reason: "read_failed",
-            message: error instanceof Error ? error.message : "unknown",
           }),
         );
       }
@@ -1402,7 +1402,8 @@ export async function handleKeywordOpportunitiesRequest(
       stopReason: token.stopReason,
     };
 
-    const payload = buildKeywordOpportunityPayload({
+    const reportStartedAt = dependencies.now().getTime();
+    const payloadWithPendingDurations = buildKeywordOpportunityPayload({
       marketCode: token.marketCode,
       languageCode: token.languageCode,
       context,
@@ -1436,6 +1437,21 @@ export async function handleKeywordOpportunitiesRequest(
       },
       completedAt: runObservedAt,
     });
+    const reportFinishedAt = dependencies.now().getTime();
+    const payload = {
+      ...payloadWithPendingDurations,
+      result: {
+        ...payloadWithPendingDurations.result,
+        process: {
+          ...payloadWithPendingDurations.result.process,
+          durationsMs: {
+            ...payloadWithPendingDurations.result.process.durationsMs,
+            total: reportFinishedAt - totalStartedAt,
+            report: reportFinishedAt - reportStartedAt,
+          },
+        },
+      },
+    };
 
     console.info(
       JSON.stringify({
@@ -1462,7 +1478,7 @@ export async function handleKeywordOpportunitiesRequest(
       JSON.stringify({
         tool: "keyword_opportunity",
         stage: "opportunities",
-        message: error instanceof Error ? error.message : "unknown",
+        reason: "unexpected_error",
       }),
     );
     return json(createPublicToolError("keyword_source_unavailable"), 502);

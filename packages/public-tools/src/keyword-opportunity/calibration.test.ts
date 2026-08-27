@@ -84,6 +84,26 @@ describe("keyword opportunity calibration replay", () => {
         eligible: 0,
         incomplete: 1,
         excluded: 2,
+        signalPrevalence: {
+          young_domain: {
+            observed: 1,
+            not_observed: 2,
+            unavailable: 0,
+            not_evaluated: 0,
+          },
+          low_organic_traffic_domain: {
+            observed: 0,
+            not_observed: 2,
+            unavailable: 1,
+            not_evaluated: 0,
+          },
+          community_result: {
+            observed: 0,
+            not_observed: 3,
+            unavailable: 0,
+            not_evaluated: 0,
+          },
+        },
         labelled: expect.objectContaining({ missedTrueOpportunities: 2 }),
       }),
       expect.objectContaining({
@@ -94,6 +114,36 @@ describe("keyword opportunity calibration replay", () => {
         labelled: expect.objectContaining({
           eligibleTrueOpportunities: 1,
           missedTrueOpportunities: 1,
+          byLane: [
+            expect.objectContaining({
+              group: "seo",
+              labelledCandidates: 2,
+              eligibleTrueOpportunities: 1,
+              missedTrueOpportunities: 1,
+            }),
+            expect.objectContaining({
+              group: "geo",
+              labelledCandidates: 1,
+              eligibleTrueOpportunities: 0,
+              falsePositiveEligible: 0,
+            }),
+          ],
+          bySiteRankTier: [
+            expect.objectContaining({
+              group: "rank_1_200",
+              labelledCandidates: 3,
+            }),
+          ],
+          byDiscoveryBasis: [
+            expect.objectContaining({
+              group: "site_proposition",
+              labelledCandidates: 1,
+            }),
+            expect.objectContaining({
+              group: "traditional_expansion",
+              labelledCandidates: 2,
+            }),
+          ],
         }),
       }),
     ]);
@@ -142,6 +192,53 @@ describe("keyword opportunity calibration replay", () => {
     );
 
     expect(result.yield).toBeCloseTo(1 / 3);
+    expect(result.signalPrevalence.young_domain.observed).toBe(1);
     expect(result.labelled).toBeNull();
+  });
+
+  it("keeps unmeasured signals and unresolved rank tiers explicit", () => {
+    const snapshot: KeywordOpportunityCalibrationSnapshotV1 = {
+      ...SNAPSHOT,
+      candidates: [
+        {
+          ...SNAPSHOT.candidates[0]!,
+          candidateId: "explicit-zero-unresolved-tier",
+          siteDomainRank: null,
+          explicitZero: true,
+        },
+      ],
+    };
+
+    const result = evaluateKeywordOpportunityCalibration(
+      snapshot,
+      POSITIVE_FIRST,
+    );
+
+    expect(result.signalPrevalence).toEqual({
+      young_domain: {
+        observed: 0,
+        not_observed: 0,
+        unavailable: 0,
+        not_evaluated: 1,
+      },
+      low_organic_traffic_domain: {
+        observed: 0,
+        not_observed: 0,
+        unavailable: 0,
+        not_evaluated: 1,
+      },
+      community_result: {
+        observed: 0,
+        not_observed: 0,
+        unavailable: 0,
+        not_evaluated: 1,
+      },
+    });
+    expect(result.labelled?.bySiteRankTier).toEqual([
+      expect.objectContaining({
+        group: "unresolved",
+        labelledCandidates: 1,
+      }),
+    ]);
   });
 });
