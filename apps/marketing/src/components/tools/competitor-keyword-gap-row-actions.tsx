@@ -16,6 +16,7 @@ import { MIN_QUERY_IMPRESSIONS } from "@sf/public-tools/quick-wins/evidence";
 
 import { localePath } from "../../lib/locale-path";
 import {
+  TOOL_HANDOFF_LINK_PROPS,
   writeToolHandoff,
   type ToolHandoffPayload,
 } from "../../lib/tools/tool-handoff";
@@ -227,8 +228,7 @@ function HandoffLink({
     <a
       data-row-action={action}
       href={href}
-      target="_blank"
-      rel="opener"
+      {...TOOL_HANDOFF_LINK_PROPS}
       title={title}
       className={PRIMARY_ACTION_BUTTON}
       onClick={prepare}

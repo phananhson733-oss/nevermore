@@ -94,18 +94,32 @@ function statusTone(
 }
 
 /**
+ * Whether Search Console returned this query at all.
+ *
+ * One predicate, in one place. It was written out twice in this file with
+ * identical branch lists, so a fifth `queryStatus` value would have had to be
+ * remembered in two spots -- the same reason `pageMetrics` below exists.
+ */
+function queryObserved(gsc: CompetitorKeywordGapRow["gsc"]): boolean {
+  return (
+    gsc.queryStatus === "observed_strong" || gsc.queryStatus === "observed_weak"
+  );
+}
+
+/**
  * The position this row has to show, or null.
  *
  * One predicate for both the chip and the title that qualifies it. Deciding
  * them separately would let a chip showing no number carry a title explaining
  * how that number was averaged. It is read off an OBSERVED state only: the
  * other two carry no position by contract.
+ *
+ * Named for the query, not for a pill: the position has not rendered inside
+ * the state pill since the two were split, and on `observed_weak` -- the state
+ * most rows in this table are in -- there is no pill at all.
  */
-function pillPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
-  const observed =
-    gsc.queryStatus === "observed_strong" ||
-    gsc.queryStatus === "observed_weak";
-  return observed ? gsc.queryPosition : null;
+function queryPosition(gsc: CompetitorKeywordGapRow["gsc"]): number | null {
+  return queryObserved(gsc) ? gsc.queryPosition : null;
 }
 
 /**
@@ -150,11 +164,11 @@ function pageMetrics(
  * What Search Console attributed to a PAGE for this query, under the reading
  * of the query itself.
  *
- * Kept apart from the pill because the two answer different questions and can
- * disagree: a query observed on one page still carries a partial attribution,
- * and the page's own average position is not the query's. The page number is
- * rendered only on `query_page` evidence, which is the only basis under which
- * the contract fills it in.
+ * Kept apart from the QUERY reading above it, because the two answer different
+ * questions and can disagree: a query observed on one page still carries a
+ * partial attribution, and the page's own average position is not the query's.
+ * The page number is rendered only on `query_page` evidence, which is the only
+ * basis under which the contract fills it in.
  */
 function PageEvidence({
   gsc,
@@ -165,37 +179,46 @@ function PageEvidence({
   readonly locale: string;
   readonly t: Translate;
 }) {
-  const queryObserved =
-    gsc.queryStatus === "observed_strong" ||
-    gsc.queryStatus === "observed_weak";
   const pageObserved =
     gsc.pageStatus === "observed_sufficient" ||
     gsc.pageStatus === "observed_partial";
   const observedPath = pageObserved ? pagePath(gsc.pageUrl) : null;
   const metrics = pageMetrics(gsc);
 
+  const attribution = pageObserved || queryObserved(gsc);
+
   return (
     <>
       {gsc.evidenceBasis === "query_page" ? (
-        <div className={`mt-2 ${META_TEXT} text-text-dark-secondary`}>
+        <div className={`${META_TEXT} text-text-dark-secondary`}>
           {translated(t, "gsc.evidenceBasis.query_page")}
         </div>
       ) : null}
-      {pageObserved || queryObserved ? (
-        <div className={`mt-2 ${META_TEXT} text-text-dark-secondary`}>
-          {translated(t, `gsc.pageStatus.${gsc.pageStatus}`)}
-          {observedPath === null ? "" : ` · ${observedPath}`}
-        </div>
-      ) : null}
-      {metrics === null ? null : (
-        <div
-          data-gsc-metrics="query-page"
-          className={`mt-1 ${META_TEXT} text-text-dark-secondary`}
-        >
-          {t("gsc.pageMetricLine", {
-            impressions: number(metrics.impressions, locale),
-            position: number(metrics.position, locale, 1),
-          })}
+      {/*
+        The attribution and its numbers are one group, set tighter than the
+        gap between groups: the second line is the first line's measurement,
+        not a third thing to read. Rendered only when it has a member, because
+        an empty flex child still takes a gap from the column above it.
+      */}
+      {!attribution && metrics === null ? null : (
+        <div className="flex flex-col items-start gap-1">
+          {attribution ? (
+            <div className={`${META_TEXT} text-text-dark-secondary`}>
+              {translated(t, `gsc.pageStatus.${gsc.pageStatus}`)}
+              {observedPath === null ? "" : ` · ${observedPath}`}
+            </div>
+          ) : null}
+          {metrics === null ? null : (
+            <div
+              data-gsc-metrics="query-page"
+              className={`${META_TEXT} text-text-dark-secondary`}
+            >
+              {t("gsc.pageMetricLine", {
+                impressions: number(metrics.impressions, locale),
+                position: number(metrics.position, locale, 1),
+              })}
+            </div>
+          )}
         </div>
       )}
     </>
@@ -217,7 +240,7 @@ export function StatusCell({
     gsc.evidenceBasis === null
       ? null
       : translated(t, `gsc.evidenceBasis.${gsc.evidenceBasis}`);
-  const position = pillPosition(gsc);
+  const position = queryPosition(gsc);
   /**
    * "avg position 4.0" reads as a fact about Search right now.
    *
@@ -269,10 +292,15 @@ export function StatusCell({
   const showStatePill = gsc.queryStatus !== "observed_weak" || !measured;
 
   return (
-    // Whatever lands first in this cell sits flush with the row: the pill is
-    // not always there to absorb the leading offset, and the blocks below it
-    // each space themselves from what precedes them.
-    <div className="[&>*:first-child]:mt-0">
+    // The column owns the rhythm, so nothing in it declares a top margin.
+    //
+    // This was `[&>*:first-child]:mt-0` over children that each carried their
+    // own `mt-*` -- the only arbitrary child-selector variant in the app, and
+    // an unwritten contract with three separate things: every direct child had
+    // to own a margin, `PageEvidence` had to keep returning a fragment rather
+    // than a wrapping element, and no future block could be inserted at the
+    // top without one. None of that was checkable. A gap is.
+    <div className="flex flex-col items-start gap-2">
       {showStatePill ? (
         <div
           data-gsc-status
@@ -293,7 +321,7 @@ export function StatusCell({
         make two Search Console readings look like two more states.
       */}
       {gsc.queryImpressions === null && position === null ? null : (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {gsc.queryImpressions === null ? null : (
             <span
               data-gsc-metrics="query"

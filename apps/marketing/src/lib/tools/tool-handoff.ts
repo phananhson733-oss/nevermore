@@ -5,6 +5,37 @@
 export const TOOL_HANDOFF_KEY = "gengrowth.tool-handoff.v1";
 export const TOOL_HANDOFF_TTL_MS = 10 * 60 * 1_000;
 
+/**
+ * How a link that carries a handoff must open, for every surface that sends one.
+ *
+ * A new tab, because the reports these leave are not recoverable: manual
+ * snapshots with `persistence: "none"`, no server copy and no URL state, and
+ * the briefing additionally spends one of the property's hourly Search Console
+ * slots per run. Following an action in the same tab threw that away and left
+ * Back pointing at an empty form.
+ *
+ * `rel="opener"` is load-bearing and must not be "corrected" to `noopener`.
+ * The handoff rides session storage, a new tab receives a copy of it only when
+ * it keeps an opener, and current browsers apply noopener to `target="_blank"`
+ * by default -- measured in Chromium and WebKit, a `noopener` destination
+ * reads `null` and looks like it lost the property this page just handed it.
+ *
+ * What that costs, stated accurately: same-origin is a permission, not a
+ * reference, so keeping an opener really does hand the destination a Window it
+ * would not otherwise have. The bound is the destination set -- fixed `/tools/`
+ * literals on our own origin, with `locale` whitelisted against
+ * `routing.locales` in the locale layout before any of this renders.
+ *
+ * Spread onto the anchor rather than restated at each call site: the briefing
+ * had six copies of this pair, and nothing but a test sweep stopping a seventh
+ * link from being added without them. Cross-origin links do NOT use this --
+ * they carry no handoff and keep `noopener noreferrer`.
+ */
+export const TOOL_HANDOFF_LINK_PROPS = {
+  target: "_blank",
+  rel: "opener",
+} as const;
+
 export type ToolHandoffDestination =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
