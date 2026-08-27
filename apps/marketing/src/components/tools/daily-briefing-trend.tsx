@@ -113,24 +113,33 @@ function aggregate(points: readonly DailyBriefingTrendPoint[]) {
     (total, point) => total + point.impressions,
     0,
   );
-  // Weighted over the impressions that carry a position, not over every
-  // impression in the window. Dividing by the full total let a bucket with
-  // traffic and no measured position contribute nothing to the numerator and
-  // its whole weight to the denominator, which pulls the average toward zero
-  // — an average better than every point it averages.
+  // One bucket with traffic and no measured position makes the period's
+  // average unavailable, not approximate.
+  //
+  // Dividing by the full total let such a bucket contribute nothing to the
+  // numerator and its whole weight to the denominator, pulling the average
+  // below every point it summarised. Dropping it instead averages a subset and
+  // calls the result the period's average, which hides an unknown weight that
+  // can change both the size of a move and its direction. Clicks, impressions
+  // and CTR are complete either way, so only the position fails closed.
   let weightedPosition = 0;
-  let positionImpressions = 0;
+  let positionUnavailable = false;
   for (const point of points) {
-    if (point.position === null || !(point.position > 0)) continue;
+    if (point.impressions === 0) continue;
+    if (point.position === null || !(point.position > 0)) {
+      positionUnavailable = true;
+      continue;
+    }
     weightedPosition += point.position * point.impressions;
-    positionImpressions += point.impressions;
   }
   return {
     clicks,
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
     position:
-      positionImpressions > 0 ? weightedPosition / positionImpressions : null,
+      positionUnavailable || impressions === 0
+        ? null
+        : weightedPosition / impressions,
   } as const;
 }
 

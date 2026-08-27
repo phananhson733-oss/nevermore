@@ -269,14 +269,27 @@ function reviewEmptyMessageKey(
   }
 }
 
-function reviewIntroKey(mode: DailyBriefingMode): string {
+/**
+ * `statedPositions` is how many current positions the watchlist could state.
+ *
+ * The watchlist mode is the fallback the engine reaches when no lane could be
+ * evaluated, and it is reached whether or not any position turned out to be
+ * statable. A run whose positions were all unmeasured therefore opened with
+ * "only current-window positions are listed" above a table listing none.
+ */
+function reviewIntroKey(
+  mode: DailyBriefingMode,
+  statedPositions: number,
+): string {
   switch (mode) {
     case "change_detection":
       return "review.intro";
     case "position_observation":
       return "review.introPositionObservation";
     case "current_position_watchlist":
-      return "review.introCurrentWatchlist";
+      return statedPositions > 0
+        ? "review.introCurrentWatchlist"
+        : "review.introCurrentWatchlistEmpty";
     case "unavailable":
       return "review.introUnavailable";
   }
@@ -1207,7 +1220,7 @@ export function DailyBriefingResults({
           {t("review.title")}
         </h3>
         <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t(reviewIntroKey(result.mode))}
+          {t(reviewIntroKey(result.mode, result.queryWatchlist.items.length))}
         </p>
         {ctrLane.state !== "evaluated" ? (
           <div

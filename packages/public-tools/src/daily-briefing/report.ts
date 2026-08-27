@@ -354,7 +354,13 @@ function trendSeriesFor(
       clicks: row.clicks,
       impressions: row.impressions,
       ctr: row.impressions > 0 ? row.clicks / row.impressions : null,
-      position: row.impressions > 0 ? row.position : null,
+      // Null for an unmeasured position as well as for a bucket nobody was
+      // shown. The GSC reader coerces a missing or non-numeric position to 0
+      // (search-analytics.ts, `toNumber`), and this field is what the wire
+      // carries — leaving the sentinel here published a rank better than first
+      // and made every consumer responsible for recognising it.
+      position:
+        row.impressions > 0 && row.position > 0 ? row.position : null,
     });
   }
   points.sort((left, right) => left.key.localeCompare(right.key));
@@ -413,25 +419,32 @@ function kpisForDates(
 
   let clicks = 0;
   let impressions = 0;
-  // Weighted over the impressions that carry a position, not over every
-  // impression in the window.
+  let weightedPosition = 0;
+  // One day with traffic and no position makes the window's average
+  // unavailable, not approximate.
   //
   // The GSC reader coerces a missing or non-numeric position to 0
-  // (search-analytics.ts, `toNumber`). Adding that day's `0 * impressions` to
-  // the numerator while keeping its impressions in the denominator pulls the
-  // week's average below every day that was actually measured — six days at
-  // position 10 and one unmeasured day came out at 8.57, which the property
-  // lane then reported as a site-wide visibility gain. Guarding the aggregate
-  // afterwards cannot catch this: the polluted average is still positive.
-  let weightedPosition = 0;
-  let positionImpressions = 0;
+  // (search-analytics.ts, `toNumber`). Weighting that in pulled the average
+  // below every day actually measured. But dropping the day instead is not a
+  // fix either: the remaining days are a subset, and calling their average the
+  // week's average hides an unknown weight that can change the size of a move
+  // and its direction. Six days at 8 with a seventh unmeasured reported 8
+  // against a prior 10 and dispatched a site-wide visibility gain; had that
+  // day been at 30, the week was 11.1 and the site had moved the other way.
+  //
+  // Clicks, impressions and CTR are unaffected — they are complete — so only
+  // the position goes null and only position-dependent claims fail closed.
+  let positionUnavailable = false;
   for (const row of selected) {
     if (row === undefined) return null;
     clicks += row.clicks;
     impressions += row.impressions;
-    if (!(row.position > 0)) continue;
+    if (row.impressions === 0) continue;
+    if (!(row.position > 0)) {
+      positionUnavailable = true;
+      continue;
+    }
     weightedPosition += row.position * row.impressions;
-    positionImpressions += row.impressions;
   }
 
   return {
@@ -439,7 +452,9 @@ function kpisForDates(
     impressions,
     ctr: impressions > 0 ? clicks / impressions : null,
     position:
-      positionImpressions > 0 ? weightedPosition / positionImpressions : null,
+      positionUnavailable || impressions === 0
+        ? null
+        : weightedPosition / impressions,
   };
 }
 

@@ -198,6 +198,7 @@ const REQUIRED_LEAF_PATHS = [
   "review.introUnavailable",
   "review.introPositionObservation",
   "review.introCurrentWatchlist",
+  "review.introCurrentWatchlistEmpty",
   "review.withheld",
   "provisional.title",
   "provisional.intro",

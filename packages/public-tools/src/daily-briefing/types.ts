@@ -148,7 +148,13 @@ export interface DailyBriefingTrendPoint {
   readonly impressions: number;
   /** Null when the point has no impressions. */
   readonly ctr: number | null;
-  /** Null when the point has no impressions. */
+  /**
+   * Null when the point has no impressions, or when none was measured.
+   *
+   * Search Console cannot weight a position over impressions nobody received,
+   * and the reader leaves 0 where the field was missing — both reach here as
+   * null, so a number in this field is always a measured position.
+   */
   readonly position: number | null;
 }
 

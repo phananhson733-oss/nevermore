@@ -678,12 +678,43 @@ describe("query changes and actions", () => {
     expect(gap?.positionDelta).toBeNull();
   });
 
-  it("keeps an unmeasured day out of the week's average position", () => {
-    // Six measured days at position 10 and one day whose position was never
-    // returned. Weighted over every impression, the sentinel zero pulled the
-    // week to 8.57 against a prior week of 10 — and the property lane read
-    // that as a site-wide visibility gain and handed out an action. Guarding
-    // the aggregate afterwards cannot catch it: 8.57 is positive.
+  it("publishes an unmeasured trend position as null on the wire", () => {
+    // This field leaves the process: the handler puts the envelope straight
+    // into the HTTP response. Leaving the reader's sentinel 0 here published a
+    // rank better than first and made every consumer responsible for spotting
+    // it, which is a rule each of them has to remember separately.
+    const built = report({
+      trend: {
+        daily: {
+          rows: [
+            { key: "2026-08-20", clicks: 4, impressions: 800, position: 9 },
+            { key: "2026-08-21", clicks: 3, impressions: 900, position: 0 },
+            { key: "2026-08-22", clicks: 0, impressions: 0, position: 0 },
+          ],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+        hourly: {
+          rows: [],
+          firstIncompleteDate: null,
+          firstIncompleteHour: null,
+        },
+      },
+    });
+    const points = built.result.trend.daily.points;
+
+    expect(points.map((point) => point.position)).toEqual([9, null, null]);
+    // And the impressions the unmeasured bucket did receive are still reported.
+    expect(points.map((point) => point.impressions)).toEqual([800, 900, 0]);
+  });
+
+  it("makes the week's average position unavailable when one day was unmeasured", () => {
+    // Six days at 8 and one whose position was never returned. Weighting the
+    // sentinel zero in pulled the week to 6.86; dropping the day instead
+    // reported 8 against a prior 10 and dispatched a site-wide visibility
+    // gain. Both are claims about a week that includes a seventh of its
+    // impressions at an unknown position — at 30 the week was 11.1 and the
+    // site had moved the other way.
     const dateRows = [
       ...PREVIOUS_DATES.map((date) => ({
         date,
@@ -694,18 +725,45 @@ describe("query changes and actions", () => {
       ...CURRENT_DATES.map((date, index) => ({
         date,
         clicks: 10,
-        impressions: 1_150,
-        position: index === 0 ? 0 : 10,
+        impressions: 1_200,
+        position: index === 0 ? 0 : 8,
       })),
     ];
     const built = report({ dateRows });
 
-    expect(built.result.weekly.current?.position).toBe(10);
+    expect(built.result.weekly.current?.position).toBeNull();
+    // The complete metrics stay complete: only the position failed closed.
+    expect(built.result.weekly.current?.impressions).toBe(8_400);
+    expect(built.result.weekly.current?.clicks).toBe(70);
     expect(built.result.weekly.previous?.position).toBe(10);
+    expect(built.result.weekly.delta?.position).toBeNull();
     expect(built.result.propertyTrend.change?.kind).not.toBe(
       "sitewide_visibility_gain",
     );
     expect(built.result.propertyTrend.action).toBeNull();
+  });
+
+  it("still averages a window whose unmeasured day drew no impressions", () => {
+    // A day nobody was shown has no position to miss, and Search Console
+    // cannot weight one over no impressions. Failing the whole week closed
+    // over it would withhold an average that is fully determined.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_000,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date, index) => ({
+        date,
+        clicks: index === 0 ? 0 : 10,
+        impressions: index === 0 ? 0 : 1_200,
+        position: index === 0 ? 0 : 8,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBe(8);
   });
 
   it("names a pair first seen inside the leading band", () => {

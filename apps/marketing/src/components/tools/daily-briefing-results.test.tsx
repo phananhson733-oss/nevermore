@@ -622,11 +622,13 @@ describe("DailyBriefingResults trend and evidence facts", () => {
     expect(host.textContent).not.toContain("Current complete 7 days");
   });
 
-  it("keeps an unmeasured position out of the trend average and its label", async () => {
+  it("withholds the trend average when a bucket with traffic has no position", async () => {
     // The GSC reader coerces a missing position to 0, and this chart draws
-    // smaller positions higher. Averaged over every impression rather than the
-    // ones carrying a position, a single such bucket dragged the KPI below
-    // every point it summarised and plotted a line above all of them.
+    // smaller positions higher. Averaged over every impression, a single such
+    // bucket dragged the KPI below every point it summarised and plotted a
+    // line above all of them; averaged over only the buckets that had one, it
+    // reported 8.0 for a period where 90% of the impressions sat at an unknown
+    // position.
     const withGap: DailyBriefingEnvelope = {
       ...BASE_ENVELOPE,
       result: {
@@ -661,11 +663,13 @@ describe("DailyBriefingResults trend and evidence facts", () => {
       '[data-trend-metric="position"]',
     );
 
-    // Weighted over the 100 impressions that carry a position, so 8.0 — not
-    // 0.8, which is what dividing by all 1,000 produced.
-    expect(card?.textContent).toContain("8.0");
     expect(card?.textContent).not.toContain("0.8");
     expect(card?.textContent).not.toContain("0.0");
+    expect(card?.textContent).not.toContain("8.0");
+    // Clicks and impressions are complete, so they are still reported.
+    expect(
+      host.querySelector('[data-trend-metric="impressions"]')?.textContent,
+    ).toContain("1,000");
   });
 
   it("keeps the 24h chart available regardless of briefing action cadence", async () => {
@@ -1359,7 +1363,14 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
 
   it("explains a current-window watchlist run in its own terms", async () => {
     const host = await renderResults(
-      envelope({ mode: "current_position_watchlist" }),
+      envelope({
+        mode: "current_position_watchlist",
+        // With rows to list. The sentence is about what the table below it
+        // contains, so an empty table needs the other one.
+        queryWatchlist: watchlist("observed", [
+          observation("sample_floor_reached", 1),
+        ]),
+      }),
     );
     // The remaining review guidance still names the real reason, without a
     // redundant cadence card ahead of the chart.
@@ -1367,6 +1378,24 @@ describe("DailyBriefingResults changes, actions, and limitations", () => {
       "There is no comparable prior window this run",
     );
     expect(host.textContent).not.toContain("position-first");
+  });
+
+  it("does not promise current positions when the watchlist could state none", async () => {
+    // The engine falls back to this mode whenever no lane could be evaluated,
+    // whether or not any position turned out to be statable — a run whose
+    // positions were all unmeasured opened with "only current-window positions
+    // are listed" above a table listing none.
+    const host = await renderResults(
+      envelope({
+        mode: "current_position_watchlist",
+        queryWatchlist: watchlist("observed"),
+      }),
+    );
+
+    expect(host.textContent).not.toContain(
+      "There is no comparable prior window this run",
+    );
+    expect(host.textContent).toContain("no current position could be stated");
   });
 
   it("humanizes every limitation and never renders a raw machine code", async () => {

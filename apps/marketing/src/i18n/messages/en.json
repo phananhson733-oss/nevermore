@@ -1942,7 +1942,8 @@
         "queryGroup": "Query records",
         "groupCount": "{count, plural, one {# record} other {# records}}",
         "unavailableQueryRead": "Comparable query evidence is unavailable, so no query watchlist was inferred and no missing count was shown as zero. The page dimension was read this run, and at least one page path settled records in it without producing a result.",
-        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and at least one page path settled records in it without producing a result."
+        "partialQueryRead": "The query read returned only a partial prefix, so no watchlist representing the whole property was built from it. The page dimension was read this run, and at least one page path settled records in it without producing a result.",
+        "introCurrentWatchlistEmpty": "No comparable pair of windows this run, and no current position could be stated either — not that positions held, but that no usable average position came back on the rows this run read."
       },
       "evidence": {
         "title": "Why there were not more signals",
