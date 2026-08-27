@@ -624,6 +624,32 @@ describe("buildKeywordOpportunityResult rows", () => {
     });
   });
 
+  it.each([
+    ["malformed", "not a url"],
+    ["empty-host", "https:///path"],
+    ["credentialed", "https://user:secret@acme.test/private"],
+    ["non-http", "ftp://acme.test/archive"],
+  ])("rejects a %s legacy GEO URL", (_case, supportingPageUrl) => {
+    const current = geo("how do i bill a client", { propositionIndex: 2 });
+    const { supportingPage: _structuredPage, ...legacyFields } = current;
+    const legacyObservation = {
+      ...legacyFields,
+      supportingPageUrl,
+    } as unknown as KeywordOpportunityObservation;
+
+    const result = buildKeywordOpportunityResult(
+      input({ observations: [legacyObservation] }),
+    );
+
+    expect(result.rows).toEqual([]);
+    expect(result.withheld).toEqual([
+      expect.objectContaining({
+        keyword: "how do i bill a client",
+        reason: "no_supporting_page",
+      }),
+    ]);
+  });
+
   it("clusters only shown keywords and gives every row the id of the group it landed in", () => {
     // A withheld term inside a cluster would make the group look bigger than
     // the table it describes.

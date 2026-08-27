@@ -115,6 +115,27 @@ export interface KeywordOpportunityReportInput {
   readonly completedAt: string;
 }
 
+function safeLegacySupportingPageUrl(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== "string") return null;
+  if (!/^https?:\/\/[^/?#]+(?:[/?#]|$)/i.test(value)) return null;
+  try {
+    const parsed = new URL(value);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.host === "" ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    ) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Decide whether an observation reaches the reader.
  *
@@ -128,8 +149,7 @@ function isLegacyShown(observation: KeywordOpportunityObservation): boolean {
   if (observation.lane === "geo") {
     return observation.supportingPage?.availability === "available" ||
       (observation.supportingPage === undefined &&
-        observation.supportingPageUrl !== null &&
-        observation.supportingPageUrl !== undefined);
+        safeLegacySupportingPageUrl(observation.supportingPageUrl) !== null);
   }
   return (
     observation.validation.availability === "available" &&
@@ -161,7 +181,7 @@ function observationSupportingPageUrl(
   observation: KeywordOpportunityObservation,
 ): string | null {
   return observation.supportingPage === undefined
-    ? (observation.supportingPageUrl ?? null)
+    ? safeLegacySupportingPageUrl(observation.supportingPageUrl)
     : toSupportingPageUrl(observation.supportingPage);
 }
 
