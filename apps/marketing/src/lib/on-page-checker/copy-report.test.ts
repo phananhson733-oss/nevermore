@@ -137,6 +137,26 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("was not collected as a readable HTML response");
   });
 
+  it("names the page's own failure on a query-free run that read nothing", () => {
+    // The keyword region cannot carry this: a URL-only run has none. Without
+    // the page state the report said only that no query was submitted, and
+    // promised "the checks below" above a report with no checks — handing an
+    // assistant an unreadable page as if it were a clean structural check.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      pageState: "not_captured",
+      limitationText,
+    });
+
+    expect(text).toContain("was not collected as a readable HTML response");
+    expect(text).toContain("No target query was submitted");
+    expect(text).not.toContain("The checks below");
+    expect(text).toContain("This is not a score of zero.");
+  });
+
   it("puts the sections in the order the reader needs them", () => {
     const text = report();
     const order = [

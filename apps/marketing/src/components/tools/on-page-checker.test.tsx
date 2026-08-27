@@ -589,6 +589,33 @@ describe("On-Page checker result", () => {
     expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
   });
 
+  it.each([
+    ["an empty object", Response.json({}, { status: 200 })],
+    ["a body that is not JSON", new Response("<html>", { status: 200 })],
+  ])("treats %s as a failed scan, not a fact about the page", async (
+    _name,
+    response,
+  ) => {
+    // While the keyword region was required, a 2xx carrying nothing was caught
+    // by its absence. It no longer is — so an empty 200 became a finished run
+    // announcing that the crawl did not collect the visitor's page, which is
+    // our failure to read the answer stated as a fact about their site.
+    globalThis.fetch = vi.fn(
+      async () => response.clone(),
+    ) as unknown as typeof fetch;
+
+    const host = await render();
+    await type(field(host, "onpage-url"), "acme.test/pricing");
+    await act(async () => {
+      buttonWith(host, "Check this page").click();
+    });
+
+    expect(host.textContent).not.toContain(
+      "did not collect this page as a readable HTML",
+    );
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBeNull();
+  });
+
   it("renders a query-free run instead of failing it", async () => {
     // A response with no keyword region used to be read as the API
     // contradicting itself and became a `scan_failed` screen. It is now what a

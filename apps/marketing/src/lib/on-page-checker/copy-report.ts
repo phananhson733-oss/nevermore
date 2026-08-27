@@ -90,6 +90,15 @@ export interface CopyReportInput {
    */
   readonly evidence: KeywordEvidence | null;
   /**
+   * Whether the crawl read the submitted page, and if not, why.
+   *
+   * Passed separately because the keyword region cannot carry it: a run that
+   * named no query has no region at all, so a page the crawl never reached
+   * produced a report saying only that no query was submitted — and promising
+   * "the checks below" above a report that had none.
+   */
+  readonly pageState?: "read" | "not_captured" | "extract_missing";
+  /**
    * Localized sentence per limitation code.
    *
    * Supplied by the caller because the wording belongs to the interface, not
@@ -325,25 +334,40 @@ export function buildCopyReport(input: CopyReportInput): string {
       result === null
         ? []
         : supportingSections(result, input.vitals ?? [], input.fixes ?? null);
-    // Three causes, three sentences. Nobody asked; the page never came back as
-    // readable HTML; it came back and its text did not survive the projection.
-    // Printing one of them for all three misreports the other two.
-    const why =
-      input.evidence === null
-        ? [
-            "No target query was submitted, so nothing was compared against",
-            "the page's title, description, headings or opening text. The",
-            "checks below are the ones that do not depend on a query.",
-          ]
+    // The page first, because it is the bigger fact and the one the keyword
+    // region cannot state. `pageState` wins where it is given; the region's own
+    // reason is the fallback for callers that do not pass it.
+    const pageState =
+      input.pageState ??
+      (input.evidence === null
+        ? "read"
         : input.evidence.reason === "target_page_not_captured"
+          ? "not_captured"
+          : "extract_missing");
+    const pageWhy =
+      pageState === "not_captured"
+        ? [
+            "The submitted page was not collected as a readable HTML response,",
+            "so no coverage was measured.",
+          ]
+        : pageState === "extract_missing"
           ? [
-              "The submitted page was not collected as a readable HTML response,",
-              "so no coverage was measured.",
-            ]
-          : [
               "The submitted page was collected, but its text was not carried in",
               "the response, so no coverage was measured.",
-            ];
+            ]
+          : [];
+    // Only claimed when there are some. Printed above an empty report it was a
+    // promise the next section did not keep.
+    const queryWhy =
+      input.evidence !== null
+        ? []
+        : [
+            "No target query was submitted, so nothing was compared against",
+            "the page's title, description, headings or opening text.",
+            ...(result === null
+              ? []
+              : ["The checks below are the ones that do not depend on a query."]),
+          ];
     const note = [
       ...header,
       ...BRIEFING,
@@ -353,7 +377,8 @@ export function buildCopyReport(input: CopyReportInput): string {
       ...(input.evidence === null
         ? []
         : [`No keyword evidence: ${inlineCode(input.evidence.reason)}.`]),
-      ...why,
+      ...queryWhy,
+      ...pageWhy,
       "This is not a score of zero.",
     ];
     // Richest that fits, same order the full report uses: supporting detail

@@ -423,10 +423,19 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
 
     const result = (body as AuditResponse).data?.result;
     const evidence = result?.keywordEvidence ?? null;
-    // Absent because nothing was asked is the URL-only run working. Absent
-    // after a query was submitted is the API contradicting itself, and that is
-    // still a failure.
-    if (evidence === null && queries.length > 0) {
+    // A 2xx is not a result. An empty body, unparseable JSON or a 200 with no
+    // `result` all leave this undefined, and while the keyword region was
+    // required the missing region caught them. It no longer is, so an empty
+    // 200 became a finished run reporting that the crawl did not collect the
+    // visitor's page — inventing a fact about their site out of our own
+    // failure to read the answer.
+    //
+    // The two directions after it: no query means no keyword region, and a
+    // query means there must be one. Either contradiction is the API
+    // disagreeing with the request, not something to render.
+    const contradicts =
+      queries.length === 0 ? evidence !== null : evidence === null;
+    if (result === undefined || result === null || contradicts) {
       setRun({
         kind: "failed",
         code: "scan_failed",
@@ -536,6 +545,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       scannedAt: run.scannedAt,
       cacheStatus: run.cacheStatus,
       evidence: run.evidence,
+      // The page's own state, which the keyword region cannot carry: a
+      // URL-only run has no region at all.
+      pageState:
+        run.extract !== null
+          ? "read"
+          : run.targetInspected
+            ? "extract_missing"
+            : "not_captured",
       limitationText: Object.fromEntries(
         (run.evidence !== null && run.evidence.availability === "available"
           ? run.evidence.limitations
