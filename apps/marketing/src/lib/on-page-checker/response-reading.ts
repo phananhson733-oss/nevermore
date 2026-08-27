@@ -23,6 +23,7 @@ export interface AuditResponse {
       readonly scannedAt?: unknown;
       readonly targetInspected?: unknown;
       readonly inspectedTargetUrl?: unknown;
+      readonly landedTargetUrl?: unknown;
       readonly coverage?: Readonly<Record<string, unknown>>;
       readonly targetPageExtract?: SeoAuditTargetPageExtract | null;
       readonly siteResources?: SeoAuditSiteResources;

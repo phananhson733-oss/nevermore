@@ -172,6 +172,25 @@ interface HandoffLinkProps {
  * The handoff is written before navigation, and navigation is cancelled when it
  * could not be written: arriving at a destination that reads a property which
  * was never stored looks like the destination lost it.
+ *
+ * It opens in a new tab because this run is not recoverable. The report is a
+ * manual snapshot with `persistence: "none"` -- nothing on the server, nothing
+ * in a URL -- so navigating this tab away discards a paid run, and Back returns
+ * to an empty form rather than to the table. The competitor and own-page links
+ * beside it have opened new tabs all along; these two, which go to our OWN
+ * tools, were the ones taking the results with them.
+ *
+ * `rel="opener"` is deliberate and must not be "corrected" to `noopener`.
+ * Session storage is copied into a new tab only when that tab keeps an opener,
+ * and every modern browser now applies noopener to `target="_blank"` by
+ * default. Measured in Chromium and WebKit: with no rel, and with
+ * `noopener noreferrer`, the destination reads `null` from session storage --
+ * the handoff arrives empty and the destination looks like it lost the
+ * property. Only `rel="opener"` carries it. The destinations are our own
+ * same-origin routes, which can already reach this page's document, so the
+ * opener reference gives away nothing that same-origin did not already allow.
+ * The external links below keep `noopener noreferrer`: those ARE cross-origin,
+ * and they carry no handoff.
  */
 function HandoffLink({
   action,
@@ -195,6 +214,8 @@ function HandoffLink({
     <a
       data-row-action={action}
       href={href}
+      target="_blank"
+      rel="opener"
       title={title}
       className={PRIMARY_ACTION_BUTTON}
       onClick={prepare}

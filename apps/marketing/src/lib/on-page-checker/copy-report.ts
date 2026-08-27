@@ -68,6 +68,15 @@ export const COPY_REPORT_MAX_BYTES = 48 * 1024;
 
 export interface CopyReportInput {
   readonly targetUrl: string;
+  /**
+   * Where the crawl landed, when that is not the URL above.
+   *
+   * The receiving assistant is asked to act on this report. Without this line
+   * it is told to fix a page the audit never read: a URL that redirects
+   * produces a report about its destination, and the header named the
+   * redirect. Null when nothing redirected.
+   */
+  readonly landedUrl: string | null;
   readonly scannedAt: string;
   readonly cacheStatus: "hit" | "miss" | "unknown";
   readonly evidence: KeywordEvidence;
@@ -288,6 +297,11 @@ export function buildCopyReport(input: CopyReportInput): string {
     "# On-page SEO check",
     "",
     `- Page: ${inlineCode(input.targetUrl)}`,
+    ...(input.landedUrl === null
+      ? []
+      : [
+          `- Redirected to: ${inlineCode(input.landedUrl)} (the page this report read)`,
+        ]),
     `- Collected at: ${inlineCode(input.scannedAt)}`,
     `- Crawl cache: ${inlineCode(input.cacheStatus)}`,
   ];
