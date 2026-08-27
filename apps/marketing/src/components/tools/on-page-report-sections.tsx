@@ -28,7 +28,8 @@ export function OnPageReportSections({
   readonly extract: SeoAuditTargetPageExtract | null;
   readonly score: OnPageScore | null;
   readonly landscape: SerpLandscape | null;
-  readonly evidence: KeywordEvidence;
+  /** Null for a URL-only run: only the keyword parts read it. */
+  readonly evidence: KeywordEvidence | null;
   /** Rendered beside the score, where someone decides to hand this on. */
   readonly scoreAction?: ReactNode;
 }) {
@@ -67,7 +68,13 @@ export function OnPageReportSections({
         </section>
       )}
 
-      {landscape !== null && (
+      {/* Only for a page that was read.
+      
+          With no extract the handler had no primary query to look up and
+          reports `no_target_query` — true of a URL-only run, and a lie about a
+          run that named queries and could not read the page to compare them.
+          Neither has a results page worth a section. */}
+      {landscape !== null && extract !== null && (
         <section className="grid gap-3">
           <h3 className="text-[15px] text-text-dark-primary">
             {tLandscape("heading")}

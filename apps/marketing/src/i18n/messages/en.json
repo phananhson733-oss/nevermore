@@ -2260,7 +2260,7 @@
         },
         "page_first_observed": {
           "title": "Check the page this comparison saw first",
-          "body": "Carries the page URL and checks the page itself. That tool also needs a target query of your own before it will run; this signal spans every query and this briefing will not invent one."
+          "body": "Carries the page URL and checks the page itself; it makes no claim about where any single query ranks. Naming a target query there adds the keyword category and an overall score."
         }
       },
       "checks": {
@@ -2273,7 +2273,7 @@
         "evidence": "Page · where it stands this window",
         "body": "{impressions} impressions this window at average position {position}. At this property's own non-brand rate of {ctr}, {expected} clicks were expected; none arrived.",
         "examined": "{rows} usable page records were read this run. The rest already formed a page-signal candidate (including ones the row budget never showed), drew clicks, averaged outside the 1-10 band or carried no readable position, or were expected fewer than 3 clicks at this property's own non-brand rate for this window.",
-        "handoff": "The page URL is carried over; that tool still needs a target query of your own before it will run."
+        "handoff": "The page URL is carried over. That tool runs without a target query — it just does not test keyword placement or publish an overall score."
       }
     },
     "trafficDrop": {
@@ -3253,7 +3253,7 @@
         "evidence": {
           "eyebrow": "STAGE 02",
           "title": "What the page shows",
-          "empty": "Nothing yet. Add a page and at least one query."
+          "empty": "Nothing yet. Add a page URL to run; a target query is optional."
         }
       },
       "fields": {
@@ -3263,7 +3263,9 @@
         "language": "Language",
         "pageRole": "Page role",
         "marketScope": "Market and language are used for one thing: reading the results page in the section below. The crawl and every check built on it are the same in every market. They also travel with you into the SEO Agent.",
-        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart"
+        "queriesPlaceholder": "e.g. astrology, birth chart, natal chart",
+        "queriesOptional": "Target queries (optional, up to {max}, comma-separated)",
+        "queriesOptionalHint": "Leave it empty and the check still runs: status, robots, canonical, redirects, titles and links need no query. Only keyword placement does — so without one there is no overall score. That category is the largest part of the grade, and a total recomputed over the rest reads better than the page is."
       },
       "pageRoles": {
         "homepage": "Homepage",
@@ -3344,12 +3346,12 @@
       },
       "errors": {
         "urlRequired": "Add the page URL you want checked.",
-        "queryRequired": "Add at least one target query.",
         "queryDuplicate": "Folded {folded} repeat(s) so the same question is asked once.",
         "queryLimit": "Up to {max} queries; the {dropped} past that were not submitted.",
         "queryTooLong": "Up to {max} characters per query; {dropped} were too long and were not submitted.",
         "auth_required": "Sign in to run a check. What you typed is kept, and nothing runs until you say so.",
-        "retryAfter": "Retry in {seconds} seconds."
+        "retryAfter": "Retry in {seconds} seconds.",
+        "queriesAllRejected": "None of those queries could be submitted — see the note below and adjust them, or clear the field to run without a query."
       },
       "faq": {
         "title": "What this does and does not tell you",
@@ -3560,7 +3562,8 @@
           "brand": {
             "_label": "Brand term",
             "matched": "“{query}” matches the site's own domain, so it looks like a brand term. Brand terms sit at lower densities than topic terms by nature; this is noted, not scored."
-          }
+          },
+          "notRequested": "No target query was submitted, so nothing was compared against the page's title, description, H1, sub-headings and opening text."
         },
         "internalLinks": {
           "_label": "Internal links",
@@ -3754,7 +3757,10 @@
           "not_reachable": "Held at {ceiling}: this page returned an error status. Right now it does not exist.",
           "body_bytes": "Held at {ceiling}: too little visible text by byte count (this page's language cannot be counted in words, so bytes stand in).",
           "keyword_unmeasured": "Held at {ceiling}: keyword placement could not be measured this run, and it is the largest part of this sheet. The rest still grades, but it grades a page whose subject was never established."
-        }
+        },
+        "unscored": "Not scored",
+        "unscoredNote": "No target query was submitted, so keyword placement was not tested. Every other scorable check was graded and the category subtotals below are complete; an overall score needs a target query.",
+        "unscoredReport": "No overall score this run: no target query was submitted, so keyword placement was not tested."
       },
       "vitals": {
         "status": "status",

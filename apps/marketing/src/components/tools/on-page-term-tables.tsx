@@ -85,7 +85,8 @@ export function OnPageTermTables({
   evidence,
 }: {
   readonly extract: SeoAuditTargetPageExtract;
-  readonly evidence: KeywordEvidence;
+  /** Null for a URL-only run: there are no submitted queries to mark. */
+  readonly evidence: KeywordEvidence | null;
 }) {
   const t = useTranslations("tools.onPageChecker.terms");
   const tables = extract.termFrequencies ?? [];
@@ -95,7 +96,7 @@ export function OnPageTermTables({
 
   const queries = useMemo(
     () =>
-      evidence.availability === "available"
+      evidence !== null && evidence.availability === "available"
         ? evidence.queries.map((query) => query.displayQuery)
         : [],
     [evidence],
