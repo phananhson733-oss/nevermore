@@ -663,6 +663,10 @@ describe("DailyBriefingResults trend and evidence facts", () => {
       '[data-trend-metric="position"]',
     );
 
+    // Asserted positively as well: a card that vanished, or that printed some
+    // fourth wrong number, would satisfy the three negatives on its own.
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("—");
     expect(card?.textContent).not.toContain("0.8");
     expect(card?.textContent).not.toContain("0.0");
     expect(card?.textContent).not.toContain("8.0");

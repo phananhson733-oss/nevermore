@@ -120,7 +120,16 @@ export interface DailyBriefingKpis {
   readonly impressions: number;
   /** Null when impressions are zero. */
   readonly ctr: number | null;
-  /** Null when impressions are zero. */
+  /**
+   * Null when impressions are zero, and null when any day that did draw
+   * impressions carries no measured position.
+   *
+   * A window average is a claim about the whole window. Weighting an
+   * unmeasured day in pulls it below every day actually measured; dropping the
+   * day averages a subset and hides an unknown weight that can change the size
+   * of a move and its direction. So the position fails closed while clicks,
+   * impressions and CTR — complete either way — are still reported.
+   */
   readonly position: number | null;
 }
 

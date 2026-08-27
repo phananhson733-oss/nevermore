@@ -708,6 +708,58 @@ describe("query changes and actions", () => {
     expect(points.map((point) => point.impressions)).toEqual([800, 900, 0]);
   });
 
+  it("treats a position below one as unmeasured, not as better than first", () => {
+    // Every result sits at rank 1 or worse, so an impression-weighted average
+    // of them cannot come back under 1. A `> 0` floor let 0.5 through as a
+    // real position: against a prior week of 10 it read as a nine-and-a-half
+    // place site-wide improvement and dispatched an action.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 10,
+      })),
+      ...CURRENT_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 0.5,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBeNull();
+    expect(built.result.weekly.delta?.position).toBeNull();
+    expect(built.result.propertyTrend.change?.kind).not.toBe(
+      "sitewide_visibility_gain",
+    );
+    expect(built.result.propertyTrend.action).toBeNull();
+  });
+
+  it("keeps a property that genuinely ranks first everywhere", () => {
+    // The floor of one is for provider rows. This week's own weighted average
+    // is computed here, and dividing can land it a few ulps under 1.0.
+    const dateRows = [
+      ...PREVIOUS_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 1,
+      })),
+      ...CURRENT_DATES.map((date) => ({
+        date,
+        clicks: 10,
+        impressions: 1_200,
+        position: 1,
+      })),
+    ];
+    const built = report({ dateRows });
+
+    expect(built.result.weekly.current?.position).toBe(1);
+    expect(built.result.weekly.delta?.position).toBe(0);
+  });
+
   it("makes the week's average position unavailable when one day was unmeasured", () => {
     // Six days at 8 and one whose position was never returned. Weighting the
     // sentinel zero in pulled the week to 6.86; dropping the day instead

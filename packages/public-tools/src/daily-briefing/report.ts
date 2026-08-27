@@ -360,7 +360,9 @@ function trendSeriesFor(
       // carries — leaving the sentinel here published a rank better than first
       // and made every consumer responsible for recognising it.
       position:
-        row.impressions > 0 && row.position > 0 ? row.position : null,
+        row.impressions > 0 && isMeasuredPosition(row.position)
+          ? row.position
+          : null,
     });
   }
   points.sort((left, right) => left.key.localeCompare(right.key));
@@ -440,7 +442,7 @@ function kpisForDates(
     clicks += row.clicks;
     impressions += row.impressions;
     if (row.impressions === 0) continue;
-    if (!(row.position > 0)) {
+    if (!isMeasuredPosition(row.position)) {
       positionUnavailable = true;
       continue;
     }
@@ -890,6 +892,25 @@ interface ChangeCandidate {
  * being carried into an action.
  */
 /**
+ * Whether a position Search Console returned is one it actually measured.
+ *
+ * The floor is 1, not 0. Every individual result sits at rank 1 or worse, so
+ * an impression-weighted average of them cannot come back below 1 — a value in
+ * `(0, 1)` is as malformed as the 0 the reader leaves when the field was
+ * missing (search-analytics.ts, `toNumber`), and `> 0` let it through as a
+ * position better than first: 0.5 against a prior 10 dispatched a site-wide
+ * visibility gain.
+ *
+ * For provider rows only. A weighted average this code computes is derived
+ * from values that already passed here, and floating-point division can land
+ * it a few ulps under 1.0 for a property that genuinely ranks first
+ * everywhere.
+ */
+function isMeasuredPosition(value: number): boolean {
+  return Number.isFinite(value) && value >= 1;
+}
+
+/**
  * A position difference, or null when either side was never measured.
  *
  * The GSC reader coerces a missing or non-numeric position to 0
@@ -899,18 +920,14 @@ interface ChangeCandidate {
  * two of them had drifted to checking only finiteness.
  */
 function measuredPositionDelta(previous: number, current: number): number | null {
-  return Number.isFinite(previous) &&
-    Number.isFinite(current) &&
-    previous > 0 &&
-    current > 0
+  return isMeasuredPosition(previous) && isMeasuredPosition(current)
     ? current - previous
     : null;
 }
 
 function withinActionableBand(position: number): boolean {
   return (
-    Number.isFinite(position) &&
-    position > 0 &&
+    isMeasuredPosition(position) &&
     position <= BRIEFING_ACTIONABLE_POSITION_MAX
   );
 }
@@ -1105,10 +1122,8 @@ function candidatesFor(
     }
 
     const positionsComparable =
-      Number.isFinite(current.position) &&
-      Number.isFinite(previous.position) &&
-      current.position > 0 &&
-      previous.position > 0;
+      isMeasuredPosition(current.position) &&
+      isMeasuredPosition(previous.position);
     const positionDelta = current.position - previous.position;
     const crossedIntoTopBand =
       positionsComparable &&
@@ -1385,7 +1400,7 @@ function candidatesFor(
     // answered in the negative. The GSC reader coerces a missing position to 0
     // (search-analytics.ts, `toNumber`), and counting such a pair as evaluated
     // reported "evaluated, no signal" on a comparison that never happened.
-    if (!(pair.position > 0)) continue;
+    if (!isMeasuredPosition(pair.position)) continue;
 
     // Evaluable is claimed here rather than at the impression floor: an
     // attribution we could not trust was never evaluated, and filing it under
@@ -1786,7 +1801,7 @@ function selectChanges(
 function observationBandFor(
   position: number,
 ): DailyBriefingObservationBand | null {
-  if (!Number.isFinite(position) || position <= 0) return null;
+  if (!isMeasuredPosition(position)) return null;
   if (position <= BRIEFING_TOP_BAND_MAX_POSITION) return "page_one";
   if (position <= BRIEFING_OBSERVATION_NEAR_BAND_MAX) return "near_page_one";
   if (position <= BRIEFING_OBSERVATION_MID_BAND_MAX) return "mid";
@@ -2018,6 +2033,9 @@ function propertyTrendFor(
   const positionDelta =
     current.position === null ||
     previous.position === null ||
+    // Computed weekly averages, so the floor is above zero rather than the
+    // provider floor of one: a property ranking first everywhere can divide to
+    // a hair under 1.0.
     !(current.position > 0) ||
     !(previous.position > 0)
       ? null
@@ -2405,7 +2423,7 @@ function pageCandidatesFor(
       // had nothing to run on. Only the first belongs in "evaluated, no
       // signal", which is the count this lane's state and row split are
       // built from.
-      if (!(current.position > 0)) continue;
+      if (!isMeasuredPosition(current.position)) continue;
       firstObservedCapableRows += 1;
       if (withinActionableBand(current.position)) {
         firstObserved.push({
@@ -2895,8 +2913,7 @@ function pageChecksFor({
     if (actionedPages.has(row.page)) continue;
     if (row.clicks !== 0) continue;
     if (
-      !Number.isFinite(row.position) ||
-      row.position <= 0 ||
+      !isMeasuredPosition(row.position) ||
       row.position > BRIEFING_TOP_BAND_MAX_POSITION
     ) {
       continue;
