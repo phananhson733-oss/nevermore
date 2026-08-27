@@ -632,23 +632,50 @@ describe("query changes and actions", () => {
     expect(result.laneCapability.clickDeclineCapableQueries).toBe(0);
   });
 
-  it("reports no position move when either window's position was unmeasured", () => {
-    // The watchlist row and the CTR-gap row both subtract two positions. Both
-    // used to test only finiteness, so a side coerced to 0 produced a delta
-    // that reads as a move — and the watchlist sorts on its magnitude, which
-    // put an invented move above every real one.
+  it("leaves a query with no measured position out of the watchlist entirely", () => {
+    // Every band is a claim about where impressions happened. A position
+    // coerced to 0 used to be filed under "far" — "ranks far down" said about
+    // a row whose position was never returned — and it spent a display row and
+    // a candidate slot saying it, beside a position cell reading "unavailable".
     const query = "content workflow guide";
     const result = report({
       currentQueryEvidence: evidence([queryRow(query, 400, 4, 0)], []),
       previousQueryEvidence: evidence([queryRow(query, 400, 40, 9)], []),
       brandTermsConfirmed: true,
     }).result;
-    const observed = result.queryWatchlist.items.find(
-      (item) => item.query === query,
+
+    expect(
+      result.queryWatchlist.items.some((item) => item.query === query),
+    ).toBe(false);
+    expect(result.queryWatchlist.candidates).toBe(0);
+    expect(result.queryWatchlist.withheldByBand?.far).toBe(0);
+  });
+
+  it("reports no position move when the prior window's position was unmeasured", () => {
+    // The CTR gap stands on the current window alone, so the action is right
+    // to fire. The delta beside it is not: subtracting a sentinel zero from a
+    // measured 9 published a nine-place move that nobody measured.
+    const target = "content workflow guide";
+    const peers = Array.from({ length: 5 }, (_, index) =>
+      queryRow(`peer ${index}`, 400, 40, 9),
+    );
+    const result = report({
+      currentQueryEvidence: evidence(
+        [queryRow(target, 1_000, 0, 9), ...peers],
+        [],
+      ),
+      previousQueryEvidence: evidence(
+        [queryRow(target, 1_000, 0, 0), ...peers],
+        [],
+      ),
+      brandTermsConfirmed: true,
+    }).result;
+    const gap = result.changes.find(
+      (change) => change.kind === "click_opportunity",
     );
 
-    expect(observed).toBeDefined();
-    expect(observed?.positionDelta).toBeNull();
+    expect(gap).toBeDefined();
+    expect(gap?.positionDelta).toBeNull();
   });
 
   it("keeps an unmeasured day out of the week's average position", () => {

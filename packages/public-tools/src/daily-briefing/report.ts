@@ -1759,8 +1759,19 @@ function selectChanges(
  * Console reports, so it says where the property tends to be seen, never that
  * a page holds a fixed place.
  */
-function observationBandFor(position: number): DailyBriefingObservationBand {
-  if (!Number.isFinite(position) || position <= 0) return "far";
+/**
+ * Which band a query currently sits in, or null when it cannot be placed.
+ *
+ * Null rather than `far`. Every band is a claim about where impressions
+ * happened, and the GSC reader coerces a missing or non-numeric position to 0
+ * (search-analytics.ts, `toNumber`) — so mapping a non-positive position to
+ * `far` published "ranks far down" about a row whose position was never
+ * returned, and spent a display row and a candidate slot saying it.
+ */
+function observationBandFor(
+  position: number,
+): DailyBriefingObservationBand | null {
+  if (!Number.isFinite(position) || position <= 0) return null;
   if (position <= BRIEFING_TOP_BAND_MAX_POSITION) return "page_one";
   if (position <= BRIEFING_OBSERVATION_NEAR_BAND_MAX) return "near_page_one";
   if (position <= BRIEFING_OBSERVATION_MID_BAND_MAX) return "mid";
@@ -1834,6 +1845,12 @@ function queryWatchlistFor({
       ) {
         return [];
       }
+      // This whole list says where a query currently sits, so a row whose
+      // position was never measured has nothing to be listed for. Dropped
+      // before it becomes a candidate, the same as a row below the sample
+      // floor: both are rows this list cannot speak about.
+      const band = observationBandFor(current.position);
+      if (band === null) return [];
       const kind =
         current.impressions >= BRIEFING_MIN_ROW_IMPRESSIONS
           ? "sample_floor_reached"
@@ -1865,7 +1882,7 @@ function queryWatchlistFor({
       return [
         {
           kind,
-          band: observationBandFor(current.position),
+          band,
           query: current.query,
           page,
           pageEvidence: page === null ? "unavailable" : "observed",
