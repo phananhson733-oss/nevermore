@@ -401,7 +401,7 @@ describe("handleContentDraftSectionRequest", () => {
     }));
     const consumeQuota = vi.fn<ContentDraftHandlerDependencies["consumeQuota"]>(async () => ({ kind: "allowed", hits: 1 }));
     const response = await handleContentDraftSectionRequest(
-      request({ brief, settings: SETTINGS, section_id: "O2", sections: previous.sections, previous_run_id: previous.run.run_id }, "section"),
+      request({ brief, section_id: "O2", previous }, "section"),
       dependencies({ generateSection, consumeQuota }),
     );
     expect(response.status).toBe(200);
@@ -409,6 +409,8 @@ describe("handleContentDraftSectionRequest", () => {
     await expect(parseDraftResult(result, brief)).resolves.toMatchObject({ ok: true });
     expect(generateSection).toHaveBeenCalledTimes(1);
     expect(generateSection.mock.calls[0]?.[0].section.id).toBe("O2");
+    expect(generateSection.mock.calls[0]?.[0].settings).toEqual(previous.settings);
+    expect(result.settings).toEqual(previous.settings);
     expect(result.run.reran_from).toBe(previous.run.run_id);
     expect(result.run.run_id).not.toBe(previous.run.run_id);
     expect(result.run.budget_ms).toBe(SECTION_ENDPOINT_BUDGET_MS);
@@ -421,35 +423,41 @@ describe("handleContentDraftSectionRequest", () => {
     expect(consumeQuota.mock.calls[0]?.[1]).toBe(SECTION_ACCOUNT_MAX_PER_HOUR);
   });
 
-  it("requires the run being replaced to be named", async () => {
+  it("refuses a previous result that was edited, whatever the client says about its settings", async () => {
     const previous = await existing();
     const generateSection = vi.fn();
-    const response = await handleContentDraftSectionRequest(
-      request({ brief, settings: SETTINGS, section_id: "O2", sections: previous.sections }, "section"),
-      dependencies({ generateSection }),
-    );
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "invalid_request" } });
+    // Loosening product_mention on a result whose sections were written under gap_only
+    // changes the canonical form, so the fingerprint no longer recomputes.
+    const loosened = { ...previous, settings: { ...previous.settings, product_mention: "throughout" } };
+    const response = await handleContentDraftSectionRequest(request({ brief, section_id: "O2", previous: loosened }, "section"), dependencies({ generateSection }));
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "brief_fingerprint_mismatch" } });
+    const foreign = { ...previous, sections: previous.sections.map((section) => (section.id === "O1" ? { ...section, h2: "Someone else's heading" } : section)) };
+    const tampered = await handleContentDraftSectionRequest(request({ brief, section_id: "O1", previous: foreign }, "section"), dependencies({ generateSection }));
+    expect(tampered.status).toBe(422);
     expect(generateSection).not.toHaveBeenCalled();
   });
 
-  it("refuses sections that do not belong to the brief", async () => {
+  it("requires the previous result and a section id", async () => {
     const previous = await existing();
-    const foreign = previous.sections.map((section) => (section.id === "O1" ? { ...section, h2: "Someone else's heading" } : section));
-    const response = await handleContentDraftSectionRequest(
-      request({ brief, settings: SETTINGS, section_id: "O1", sections: foreign, previous_run_id: previous.run.run_id }, "section"),
-      dependencies(),
-    );
+    const generateSection = vi.fn();
+    const missing = await handleContentDraftSectionRequest(request({ brief, section_id: "O2" }, "section"), dependencies({ generateSection }));
+    expect(missing.status).toBe(400);
+    const noId = await handleContentDraftSectionRequest(request({ brief, previous }, "section"), dependencies({ generateSection }));
+    expect(noId.status).toBe(400);
+    expect(generateSection).not.toHaveBeenCalled();
+  });
+
+  it("refuses a previous result that belongs to another brief", async () => {
+    const previous = await existing();
+    const other = await withFingerprint({ ...brief, keyword: { ...brief.keyword, supporting: ["a different supporting term"] } });
+    const response = await handleContentDraftSectionRequest(request({ brief: other, section_id: "O2", previous }, "section"), dependencies());
     expect(response.status).toBe(422);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "brief_reference_invalid" } });
   });
 
   it("writes a section that was skipped on the first run and refuses one that was never writable", async () => {
     const previous = await runOk(dependencies(), runBody({ section_ids: ["O1", "O3"] }));
-    const response = await handleContentDraftSectionRequest(
-      request({ brief, settings: SETTINGS, section_id: "O2", sections: previous.sections, previous_run_id: previous.run.run_id }, "section"),
-      dependencies(),
-    );
+    const response = await handleContentDraftSectionRequest(request({ brief, section_id: "O2", previous }, "section"), dependencies());
     expect(response.status).toBe(200);
     const result = (await response.json()) as DraftResult;
     await expect(parseDraftResult(result, brief)).resolves.toMatchObject({ ok: true });
@@ -459,10 +467,7 @@ describe("handleContentDraftSectionRequest", () => {
       ["O3", "ok"],
     ]);
     expect(result.run.reads.sections).toEqual({ requested: 3, ok: 3, failed: 0, skipped: 0 });
-    const unknown = await handleContentDraftSectionRequest(
-      request({ brief, settings: SETTINGS, section_id: "O9", sections: previous.sections, previous_run_id: previous.run.run_id }, "section"),
-      dependencies(),
-    );
+    const unknown = await handleContentDraftSectionRequest(request({ brief, section_id: "O9", previous }, "section"), dependencies());
     expect(unknown.status).toBe(422);
     await expect(unknown.json()).resolves.toMatchObject({ error: { code: "section_not_writable" } });
   });

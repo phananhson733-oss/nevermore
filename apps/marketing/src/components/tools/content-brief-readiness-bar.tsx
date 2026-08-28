@@ -156,8 +156,8 @@ export function ReadinessBar({
               onMouseDown={(event) => {
                 if (event.button === 0 || event.button === 1) stage();
               }}
-              onContextMenu={() => {
-                stage();
+              onContextMenu={(event) => {
+                if (!stage()) event.preventDefault();
               }}
               onClick={prepare}
               className={PRIMARY_ACTION_BUTTON}

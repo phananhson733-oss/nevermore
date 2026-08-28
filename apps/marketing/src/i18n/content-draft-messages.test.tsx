@@ -39,13 +39,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-const RERUN = { used: 0, running: null, onRerun: () => undefined };
+const RERUN = { used: 0, running: null, disabled: false, onRerun: () => undefined };
 
 async function render(
   locale: "en" | "zh",
   brief: ContentBrief,
   result: DraftResult,
   host: HTMLElement = document.createElement("div"),
+  rerun: Partial<typeof RERUN> = {},
 ): Promise<HTMLElement> {
   if (!host.isConnected) document.body.append(host);
   root ??= createRoot(host);
@@ -56,13 +57,28 @@ async function render(
         <ContentDraftResults
           result={result}
           brief={brief}
-          rerun={{ ...RERUN, writable: new Set(brief.draft_readiness.writable) }}
+          rerun={{ ...RERUN, ...rerun, writable: new Set(brief.draft_readiness.writable) }}
           locale={locale}
         />
       </NextIntlClientProvider>,
     );
   });
   return host;
+}
+
+/** The Markdown the copy button must produce, composed here from the sentences alone. */
+function expectedMarkdown(result: DraftResult, notes: { failed: (reason: string) => string; skipped: string }): string {
+  const blocks = result.sections.map((section) => {
+    if (section.status === "failed") return `## ${section.h2}\n\n> ${notes.failed(section.fail_reason)}`;
+    if (section.status === "skipped") return `## ${section.h2}\n\n> ${notes.skipped}`;
+    const paragraphs = section.body.paragraphs.map((paragraph) => paragraph.sentences.map((sentence) => sentence.text).join(" "));
+    return [`## ${section.h2}`, ...paragraphs].join("\n\n");
+  });
+  return `${[`# ${result.brief_ref.keyword}`, ...blocks].join("\n\n")}\n`;
+}
+
+function catalog(locale: "en" | "zh"): Record<string, unknown> {
+  return (locale === "en" ? enMessages : zhMessages).tools.contentDraft as unknown as Record<string, unknown>;
 }
 
 function texts(host: HTMLElement, selector: string): string[] {
@@ -161,13 +177,29 @@ describe.each([
     await expandAll(host);
     const underlined = host.querySelectorAll("[data-claim-underline]");
     expect(underlined.length).toBeGreaterThan(0);
-    // Every underline has a screen-reader name beside it, outside the sentence span.
-    expect(host.querySelectorAll("[data-claim-mark]").length).toBe(underlined.length);
+    // EVERY sentence has a screen-reader name beside it, outside the sentence
+    // span -- a connective sentence too, so silence never means "unmarked".
+    const sentences = host.querySelectorAll("[data-sentence]");
+    expect(host.querySelectorAll("[data-claim-mark]").length).toBe(sentences.length);
     for (const mark of host.querySelectorAll("[data-claim-mark]")) {
       expect(mark.className).toContain("sr-only");
       expect(mark.closest("[data-sentence]")).toBeNull();
       expect(mark.nextElementSibling?.hasAttribute("data-sentence")).toBe(true);
+      expect(mark.textContent?.trim()).not.toBe("");
     }
+    expect(host.querySelectorAll('[data-claim-mark="none"]').length).toBe(
+      host.querySelectorAll('[data-sentence][data-claim="no_claim"]').length,
+    );
+    // First- and third-party differ in shape, not only in colour.
+    const first = host.querySelector('[data-claim-underline="first"]') as HTMLElement | null;
+    const third = host.querySelector('[data-claim-underline="third"]') as HTMLElement | null;
+    expect(first).not.toBeNull();
+    expect(third).not.toBeNull();
+    expect(first?.style.boxShadow).toContain("--sc-source-first");
+    expect(third?.style.boxShadow).toContain("--sc-source-third");
+    expect(first?.style.textDecoration).toContain("dotted");
+    expect(third?.style.textDecoration).toBe("");
+    expect(first?.style.cssText).not.toBe(third?.style.cssText);
     // The sentence text itself is untouched by the annotation.
     const sentenceTexts = texts(host, "[data-sentence]");
     expect(sentenceTexts).toEqual(
@@ -194,7 +226,7 @@ describe.each([
     expect(host.querySelectorAll("[data-claim-underline]").length).toBe(0);
     expect(host.querySelectorAll("[data-claim-mark]").length).toBe(0);
     for (const node of host.querySelectorAll("[data-sentence]")) {
-      expect((node as HTMLElement).style.boxShadow).toBe("");
+      expect((node as HTMLElement).style.cssText).toBe("");
     }
     expect(texts(host, "[data-sentence]")).toEqual(sentenceTexts);
     expect(texts(host, "[data-verify-item]")).toEqual(verifyBefore);
@@ -310,6 +342,11 @@ describe.each([
     const host = await render(locale, brief, first);
     await expandAll(host);
     await type(host.querySelector("#content-draft-published-url"), "https://acme.example/blog/email-warmup-guide");
+    const sectionFail = catalog(locale)["sectionFail"] as Record<string, string>;
+    const notes = {
+      failed: (reason: string) => sectionFail[reason] ?? reason,
+      skipped: (catalog(locale)["doc"] as Record<string, string>)["skippedBody"] ?? "",
+    };
 
     async function checkProjections(result: DraftResult, copyIndex: number): Promise<void> {
       await click(host.querySelector("[data-copy-markdown]"));
@@ -317,6 +354,12 @@ describe.each([
       expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
       const markdown = written[copyIndex];
       expect(markdown).toBeDefined();
+      // Exactly the sentences, paragraph by paragraph; nothing the screen
+      // adds for a screen reader leaks into the clipboard.
+      expect(markdown).toBe(expectedMarkdown(result, notes));
+      for (const mark of Object.values(catalog(locale)["claimMark"] as Record<string, string>)) {
+        expect(markdown).not.toContain(mark);
+      }
       const screenHeadings = texts(host, "[data-section-h2]");
       expect(markdownHeadings(markdown ?? "")).toEqual(screenHeadings);
       const screenGaps = texts(host, '[data-sentence][data-claim="gap"]');
@@ -349,5 +392,64 @@ describe.each([
     expect(host.querySelector("[data-open-on-page]")).not.toBeNull();
     await checkProjections(second, 1);
     expect(written[1]).not.toBe(written[0]);
+  });
+
+  it("reports the latest copy click, whatever order the clipboard settles them in", async () => {
+    const pending: { resolve: () => void; reject: () => void }[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () =>
+          new Promise<void>((resolve, reject) => {
+            pending.push({ resolve, reject });
+          }),
+      },
+    });
+    const brief = await draftBrief();
+    const host = await render(locale, brief, await draftResultFixture(brief));
+    await click(host.querySelector("[data-copy-markdown]"));
+    await click(host.querySelector("[data-copy-markdown]"));
+    expect(pending).toHaveLength(2);
+    // The second click settles first and succeeds...
+    await act(async () => {
+      pending[1]?.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+    // ...then the first, superseded one fails, and must not overwrite it.
+    await act(async () => {
+      pending[0]?.reject();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
+    expect(host.querySelector("[data-copy-failed]")).toBeNull();
+  });
+
+  it("disables every rerun control while a full generation is in flight", async () => {
+    const brief = await draftBrief();
+    const host = await render(locale, brief, await draftResultFixture(brief, { failSection: "O2" }), undefined, { disabled: true });
+    await expandAll(host);
+    const buttons = host.querySelectorAll("[data-rerun-section]");
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button instanceof HTMLButtonElement && button.disabled).toBe(true);
+    }
+  });
+
+  it("cancels the On-Page link's click and context menu when the handoff cannot be stored", async () => {
+    const brief = await draftBrief();
+    const host = await render(locale, brief, await draftResultFixture(brief));
+    await type(host.querySelector("#content-draft-published-url"), "https://acme.example/blog/email-warmup-guide");
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    for (const type of ["click", "contextmenu"]) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true });
+      await act(async () => {
+        host.querySelector("[data-open-on-page]")?.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented, type).toBe(true);
+    }
+    expect(host.querySelector("[data-handoff-failed]")).not.toBeNull();
   });
 });

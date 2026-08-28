@@ -4,7 +4,7 @@
 //            keywords, a bad brief never reaches the form, a writable-less brief disables generation,
 //            an unchecked section stays out of section_ids, a signed-out visitor never triggers a
 //            POST (and gets the handoff back for the reload), reruns send the draft's own settings and
-//            previous_run_id and are counted per POST, a failed second run keeps the last good result,
+//            the whole previous result and are counted per POST, a failed second run keeps the last good result,
 //            and a slow upload cannot overwrite a later paste
 // @pos    -- interaction contract for the Marketing Content Draft Writer form
 
@@ -29,8 +29,14 @@ import {
 } from "@sf/public-tools/content-brief/draft-fixtures";
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
-  signInDialogMock: vi.fn(({ open }: { readonly open: boolean }) =>
-    open ? <div data-testid="sign-in-dialog">sign in</div> : null,
+  signInDialogMock: vi.fn(
+    ({ open, onOpenChange }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) =>
+      open ? (
+        <div data-testid="sign-in-dialog">
+          sign in
+          <button type="button" data-testid="sign-in-cancel" onClick={() => onOpenChange(false)} />
+        </div>
+      ) : null,
   ),
   trackMarketingEventMock: vi.fn(),
 }));
@@ -60,9 +66,9 @@ vi.mock("./content-draft-results", () => ({
     rerun,
   }: {
     readonly result: { readonly run: { readonly run_id: string }; readonly sections: readonly { readonly id: string }[] };
-    readonly rerun: { readonly used: number; readonly onRerun: (id: string) => void };
+    readonly rerun: { readonly used: number; readonly disabled: boolean; readonly onRerun: (id: string) => void };
   }) => (
-    <div data-testid="draft-results" data-run-id={result.run.run_id}>
+    <div data-testid="draft-results" data-run-id={result.run.run_id} data-rerun-disabled={rerun.disabled}>
       <span data-testid="reruns-used">{rerun.used}</span>
       {result.sections.map((section) => (
         <button key={section.id} type="button" data-testid={`rerun-${section.id}`} onClick={() => rerun.onRerun(section.id)} />
@@ -116,14 +122,21 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function renderTool(): Promise<HTMLElement> {
+async function renderTool(authenticated = true): Promise<HTMLElement> {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
-    root?.render(<ContentDraftTool locale="en" />);
+    root?.render(<ContentDraftTool locale="en" authenticated={authenticated} />);
   });
   return host;
+}
+
+function storeHandoff(brief: ContentBrief): string {
+  const now = Date.now();
+  const raw = JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief });
+  window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
+  return raw;
 }
 
 async function settle(): Promise<void> {
@@ -284,6 +297,41 @@ describe("ContentDraftTool intake (handoff §8 items 19-20)", () => {
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
   });
 
+  it("does not take the handoff for a visitor the server knows is signed out; it says a brief is waiting", async () => {
+    const brief = await draftBrief();
+    const raw = storeHandoff(brief);
+    const host = await renderTool(false);
+    await settle();
+    // The hero sign-in CTA will reload the page; the page after that reload consumes it.
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
+    expect(host.querySelector("[data-handoff-pending]")).not.toBeNull();
+    expect(host.querySelector('[data-intake-phase="empty"]')).not.toBeNull();
+    expect(host.querySelector("form[data-content-draft-form]")).toBeNull();
+  });
+
+  it("clears the opener's copy the moment the handoff is taken, before it is parsed", async () => {
+    const brief = await draftBrief();
+    const raw = storeHandoff(brief);
+    const openerStore = new Map<string, string>([[CONTENT_BRIEF_HANDOFF_KEY, raw]]);
+    Object.defineProperty(window, "opener", {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => openerStore.get(key) ?? null,
+          removeItem: (key: string) => openerStore.delete(key),
+          setItem: () => undefined,
+        },
+      },
+    });
+    try {
+      await renderTool();
+      // Synchronously after mount: not waiting on the fingerprint digest.
+      expect(openerStore.has(CONTENT_BRIEF_HANDOFF_KEY)).toBe(false);
+    } finally {
+      Object.defineProperty(window, "opener", { configurable: true, value: null });
+    }
+  });
+
   it("reports an expired handoff in its own words", async () => {
     const brief = await draftBrief();
     const created = Date.now() - CONTENT_BRIEF_HANDOFF_TTL_MS - 1_000;
@@ -353,6 +401,66 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
+  });
+
+  it("removes the restored handoff again when the sign-in dialog is closed without signing in", async () => {
+    const brief = await draftBrief();
+    const raw = storeHandoff(brief);
+    const host = await renderTool();
+    await settle();
+    await click(host.querySelector("[data-run-draft]"));
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
+    await click(host.querySelector('[data-testid="sign-in-cancel"]'));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    // The brief itself is still loaded: only the envelope for the reload is gone.
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
+  });
+
+  it("removes the restored handoff again on Replace, and a brief pasted afterwards does not bring it back", async () => {
+    const brief = await draftBrief();
+    storeHandoff(brief);
+    const host = await renderTool();
+    await settle();
+    await click(host.querySelector("[data-run-draft]"));
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).not.toBeNull();
+    // The paste and upload entrances only exist once the loaded brief is
+    // replaced, so Replace is the gesture that clears it; the paste that
+    // follows starts a new generation and never restores anything.
+    await click(host.querySelector("[data-replace-brief]"));
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+    const pasted = await withFingerprint(contentBriefFixture());
+    await pasteBrief(host, pasted);
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+    globalThis.fetch = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ signedIn: false }))) as unknown as typeof fetch;
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("does not remove a newer handoff another tab wrote in the meantime", async () => {
+    const brief = await draftBrief();
+    storeHandoff(brief);
+    const host = await renderTool();
+    await settle();
+    await click(host.querySelector("[data-run-draft]"));
+    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "newer");
+    await click(host.querySelector('[data-testid="sign-in-cancel"]'));
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe("newer");
+  });
+
+  it("refuses to open sign-in when the handoff cannot be put back, and says so", async () => {
+    const brief = await draftBrief();
+    storeHandoff(brief);
+    const host = await renderTool();
+    await settle();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
+    expect(host.querySelector("[data-handoff-restore-failed]")).not.toBeNull();
+    expect(callsTo("/api/tools/content-draft/run")).toHaveLength(0);
   });
 
   it("leaves an unchecked section out of section_ids and renders the returned draft", async () => {
@@ -436,7 +544,7 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
 });
 
 describe("ContentDraftTool reruns and result replacement", () => {
-  it("reruns with the draft's own settings and previous_run_id, and flags changed form settings", async () => {
+  it("reruns with the whole previous result (its own settings, not the form's) and flags changed form settings", async () => {
     const brief = await draftBrief();
     const first = await draftResultFixture(brief, { failSection: "O2" });
     const second = await rerunOf(await draftResultFixture(brief), first.run.run_id, "draft_01J6RERUN0000000000000002");
@@ -451,18 +559,13 @@ describe("ContentDraftTool reruns and result replacement", () => {
     await click(host.querySelector('[data-testid="rerun-O2"]'));
     await settle();
     const [request] = callsTo("/api/tools/content-draft/section");
-    expect(Object.keys(request?.body ?? {}).sort()).toEqual([
-      "brief",
-      "previous_run_id",
-      "section_id",
-      "sections",
-      "settings",
-    ]);
+    expect(Object.keys(request?.body ?? {}).sort()).toEqual(["brief", "previous", "section_id"]);
     expect(request?.body?.["section_id"]).toBe("O2");
-    expect(request?.body?.["previous_run_id"]).toBe(first.run.run_id);
-    // The draft's settings, not the form's: the form now says "technical".
-    expect(request?.body?.["settings"]).toEqual(first.settings);
-    expect(request?.body?.["sections"]).toEqual(first.sections);
+    expect((request?.body?.["brief"] as ContentBrief).run.fingerprint).toBe(brief.run.fingerprint);
+    // The whole previous result, verbatim: its settings are the draft's own,
+    // not the form's (which now says "technical").
+    expect(request?.body?.["previous"]).toEqual(first);
+    expect((request?.body?.["previous"] as DraftResult).settings).toEqual(first.settings);
     expect(runId(host)).toBe(second.run.run_id);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
     // Still flagged: the new result carries the old settings too.
@@ -524,6 +627,36 @@ describe("ContentDraftTool reruns and result replacement", () => {
     expect(runId(host)).toBe(third.run.run_id);
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("0");
     expect(host.querySelector("[data-error-code]")).toBeNull();
+  });
+
+  it("disables the old result's rerun controls while a full generation is in flight", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief);
+    let release: ((response: Response) => void) | null = null;
+    const replies: (() => Promise<Response>)[] = [
+      () => Promise.resolve(Response.json(first)),
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    ];
+    globalThis.fetch = signedInFetch(() => replies.shift()?.() ?? Promise.resolve(Response.json({ error: { code: "invalid_request" } }, { status: 400 })));
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    expect(host.querySelector('[data-testid="draft-results"]')?.getAttribute("data-rerun-disabled")).toBe("false");
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector('[data-testid="draft-results"]')?.getAttribute("data-rerun-disabled")).toBe("true");
+    // A click on the old result's rerun during the run sends nothing.
+    await click(host.querySelector('[data-testid="rerun-O1"]'));
+    expect(callsTo("/api/tools/content-draft/section")).toHaveLength(0);
+    await act(async () => {
+      release?.(Response.json({ error: { code: "rate_limited" } }, { status: 429 }));
+    });
+    await settle();
+    expect(host.querySelector('[data-testid="draft-results"]')?.getAttribute("data-rerun-disabled")).toBe("false");
+    // A failed run returns to idle: no completion announcement replays.
+    expect(host.querySelector('[role="status"]')?.textContent ?? "").not.toContain("running.complete");
+    expect(runId(host)).toBe(first.run.run_id);
   });
 
   it("replacing the brief drops the result, resets the phase, and aborts nothing that matters later", async () => {

@@ -35,7 +35,11 @@
  * A request the provider never answered — timeout, 429, 5xx, network — is
  * still a call: the deadline was spent and the provider may well have
  * billed it. Only "never sent" (nothing to ask, not configured, budget gone
- * before the first attempt) is zero.
+ * before the first attempt) is zero. Section tokens are summed over the
+ * attempts that were sent, and the sum is unknown (null) as soon as any one
+ * of them reported no usage: "100 + unknown" is not 100, and a retry that
+ * timed out must not make the section look cheaper than the first attempt
+ * alone (the shared `mergeKeywordLlmUsage` absorbs null and is not used here).
  * Configuration comes only from the `CONTENT_DRAFT_*` set resolved in
  * `content-brief-llm.ts`; there is no fallback to another tool's key.
  */
@@ -64,6 +68,7 @@ import type {
 import { boundedModelText } from "@sf/public-tools/content-brief/text";
 import {
   validateSectionOutput,
+  type SectionEvidence,
   type SectionRule,
 } from "@sf/public-tools/content-brief/validate-section";
 
@@ -83,7 +88,6 @@ import {
   createKeywordLlmClient,
   EMPTY_KEYWORD_LLM_USAGE,
   KeywordLlmError,
-  mergeKeywordLlmUsage,
   type KeywordLlmClient,
   type KeywordLlmCompletion,
   type KeywordLlmConfig,
@@ -166,7 +170,7 @@ export interface DraftSectionResult {
   readonly model_id: string | null;
   readonly temperature_requested: number;
   readonly temperature_effective: number | null;
-  /** Summed over every attempt; null only when no attempt reported usage. */
+  /** Summed over the attempts sent; null when none was sent or any one of them reported no usage. */
   readonly input_tokens: number | null;
   readonly output_tokens: number | null;
 }
@@ -400,8 +404,11 @@ type SectionOutcome =
     }
   | { readonly ok: false; readonly rejection: SectionRejection };
 
-/** Only pages that brought an excerpt are citable; the validator enforces it. */
-function sectionEvidence(input: DraftSectionInput) {
+/**
+ * Only pages that brought an excerpt are citable, and only the section that
+ * received the gap angle may take a stance; the validator enforces both.
+ */
+function sectionEvidence(input: DraftSectionInput): SectionEvidence {
   return {
     citableCrawlIds: new Set(
       input.pages
@@ -409,12 +416,34 @@ function sectionEvidence(input: DraftSectionInput) {
         .map((page) => page.id),
     ),
     profileFacts: new Map(input.facts.map((fact) => [fact.id, fact] as const)),
+    stanceAllowed: input.gapAngle !== null,
+  };
+}
+
+interface SectionTokens {
+  readonly input: number | null;
+  readonly output: number | null;
+}
+
+/**
+ * Strict sum over the attempts that were sent: one unknown makes the total
+ * unknown. No attempt sent is null too — there is nothing to report, not a
+ * known zero — which is how the brief records a call that never went out.
+ */
+function sectionTokens(sent: readonly KeywordLlmUsage[]): SectionTokens {
+  const strictSum = (values: readonly (number | null)[]): number | null => {
+    if (values.length === 0 || values.some((value) => value === null)) return null;
+    return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  };
+  return {
+    input: strictSum(sent.map((usage) => usage.inputTokens)),
+    output: strictSum(sent.map((usage) => usage.outputTokens)),
   };
 }
 
 function checkSectionReply(
   content: string,
-  evidence: ReturnType<typeof sectionEvidence>,
+  evidence: SectionEvidence,
 ): SectionOutcome {
   const shape = parseModelSectionShape(content);
   if (!shape.ok) return { ok: false, rejection: { rule: "shape", path: shape.path } };
@@ -445,11 +474,12 @@ function sectionRequest(
 
 function sectionFailure(
   reason: SectionFailReason,
-  attempts: number,
-  usage: KeywordLlmUsage,
+  sent: readonly KeywordLlmUsage[],
   modelId: string | null,
   config: KeywordLlmConfig | null,
 ): DraftSectionResult {
+  const attempts = sent.length;
+  const tokens = sectionTokens(sent);
   return {
     status: "failed",
     fail_reason: reason,
@@ -461,8 +491,8 @@ function sectionFailure(
     // The pin is what the client sent on every attempt made; before any
     // attempt there is no effective value to report.
     temperature_effective: attempts > 0 ? (config?.temperature ?? null) : null,
-    input_tokens: usage.inputTokens,
-    output_tokens: usage.outputTokens,
+    input_tokens: tokens.input,
+    output_tokens: tokens.output,
   };
 }
 
@@ -479,17 +509,16 @@ export async function generateDraftSection(
 ): Promise<DraftSectionResult> {
   languageName(input.language); // throws RangeError on a code outside the table
   const config = resolveConfig(deps);
-  if (config === null) {
-    return sectionFailure("not_configured", 0, EMPTY_KEYWORD_LLM_USAGE, null, null);
-  }
+  if (config === null) return sectionFailure("not_configured", [], null, null);
   const now = deps.now ?? Date.now;
   const client = deps.client ?? createKeywordLlmClient({ config });
   const evidence = sectionEvidence(input);
 
-  let usage = EMPTY_KEYWORD_LLM_USAGE;
+  /** One usage record per request that left the process, in order. */
+  const sent: KeywordLlmUsage[] = [];
   let modelId: string | null = null;
   let rejection: SectionRejection | null = null;
-  for (let attempt = 1; attempt <= SECTION_MAX_ATTEMPTS; attempt += 1) {
+  while (sent.length < SECTION_MAX_ATTEMPTS) {
     const timeoutMs = attemptTimeoutMs(input.deadlineAt, now(), SECTION_TIMEOUT_MS);
     if (timeoutMs === null) {
       // No budget for this attempt. Before any call the section timed out;
@@ -497,8 +526,7 @@ export async function generateDraftSection(
       // and the retry is simply unaffordable.
       return sectionFailure(
         rejection === null ? "timeout" : "validation_failed",
-        attempt - 1,
-        usage,
+        sent,
         modelId,
         config,
       );
@@ -508,34 +536,30 @@ export async function generateDraftSection(
       completion = await client.complete(sectionRequest(input, rejection, timeoutMs));
     } catch (error) {
       if (!(error instanceof KeywordLlmError)) throw error;
-      return sectionFailure(
-        FAILURE_REASONS[error.reason],
-        attempt,
-        mergeKeywordLlmUsage(usage, sentButUnanswered(error.usage)),
-        modelId,
-        config,
-      );
+      sent.push(sentButUnanswered(error.usage));
+      return sectionFailure(FAILURE_REASONS[error.reason], sent, modelId, config);
     }
-    usage = mergeKeywordLlmUsage(usage, completion.usage);
+    sent.push(completion.usage);
     modelId = completion.modelId ?? config.model;
     const outcome = checkSectionReply(completion.content, evidence);
     if (outcome.ok) {
+      const tokens = sectionTokens(sent);
       return {
         status: "ok",
         fail_reason: null,
         paragraphs: outcome.paragraphs,
         word_count: outcome.word_count,
-        attempts: attempt,
+        attempts: sent.length,
         model_id: modelId,
         temperature_requested: CONTENT_DRAFT_LLM_TEMPERATURE,
         temperature_effective: config.temperature ?? null,
-        input_tokens: usage.inputTokens,
-        output_tokens: usage.outputTokens,
+        input_tokens: tokens.input,
+        output_tokens: tokens.output,
       };
     }
     rejection = outcome.rejection;
   }
-  return sectionFailure("validation_failed", SECTION_MAX_ATTEMPTS, usage, modelId, config);
+  return sectionFailure("validation_failed", sent, modelId, config);
 }
 
 /* ------------------------------------------------------------------ */

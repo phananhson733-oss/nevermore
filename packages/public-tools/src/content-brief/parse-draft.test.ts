@@ -488,6 +488,20 @@ describe("parseDraftResult binds to the brief", () => {
     expect(await parseDraftResult(throughout, brief)).toEqual({ ok: true, value: throughout });
   });
 
+  it("only lets the gap angle's home section take a stance", async () => {
+    const stance = { text: "Pooled warmup is the better default for a new domain.", claim: "stance", evidence_refs: ["P1"], support_count: 0 };
+    // O1 was given P1 under throughout, so only the stance rule can refuse this sentence.
+    const outside = mutated(throughout, (draft) => { draft.sections[0].body.paragraphs[1].sentences.push({ ...stance }); });
+    await expectBound(outside, `${sentenceAt(0, 1, 2)}.claim`);
+    // The same sentence in O3 (the gap angle's home) is the fixture's own stance, re-pointed at P1.
+    const home = mutated(throughout, (draft) => {
+      draft.sections[2].body.paragraphs[1].sentences[2] = { ...stance };
+      draft.verify_before_publish[9] = { ...draft.verify_before_publish[9], evidence_refs: ["P1"] };
+    });
+    expectAccepted(home);
+    expect(await parseDraftResult(home, brief, { fingerprint: fakeFingerprint })).toEqual(failure("brief_fingerprint_mismatch", "run.fingerprint"));
+  });
+
   it("re-derives coverage: heuristic set, askable set, order and the unavailable gate", async () => {
     await expectBound(mutated(base, (draft) => {
       draft.coverage.items.splice(3, 1);
@@ -511,14 +525,52 @@ describe("parseDraftResult binds to the brief", () => {
       await expectBound(withReason(reason, 1), "coverage.reason");
     }
     expect(await parseDraftResult(withReason("provider_error", 1), brief, { fingerprint: fakeFingerprint })).toEqual(failure("brief_fingerprint_mismatch", "run.fingerprint"));
-    // Nothing askable: the call never went out.
+    // Nothing askable: the call never went out, so the whole read is fixed.
     await expectBound(mutated(nothingOk, (draft) => { draft.run.reads.llm_coverage = structuredClone(base.run.reads.llm_coverage); }), "run.reads.llm_coverage.status");
     await expectBound(mutated(nothingOk, (draft) => { draft.run.reads.llm_coverage.calls = 1; }), "run.reads.llm_coverage.calls");
     await expectBound(mutated(nothingOk, (draft) => {
       draft.run.reads.llm_coverage.reason = "timeout";
       draft.run.reads.llm_coverage.attempted = 1;
     }), "run.reads.llm_coverage.reason");
+    await expectBound(mutated(nothingOk, (draft) => {
+      draft.run.reads.llm_coverage.model_id = "fake-deployment";
+      draft.run.reads.llm_coverage.input_tokens = 123;
+    }), "run.reads.llm_coverage.model_id");
+    await expectBound(mutated(nothingOk, (draft) => { draft.run.reads.llm_coverage.output_tokens = 0; }), "run.reads.llm_coverage.output_tokens");
     expect(await parseDraftResult(nothingOk, brief)).toEqual({ ok: true, value: nothingOk });
+  });
+
+  it("makes a failed coverage read describe its own failure consistently", async () => {
+    const read = (reason: string, attempted: number, calls: number, extra: Draft = {}) =>
+      mutated(noCoverage, (draft) => {
+        draft.coverage = { status: "unavailable", reason, attempted };
+        draft.run.reads.llm_coverage = { status: "unavailable", reason, attempted, calls, model_id: null, input_tokens: null, output_tokens: null, ...extra };
+      });
+    const passes = async (result: DraftResult) =>
+      expect(await parseDraftResult(result, brief, { fingerprint: fakeFingerprint })).toEqual(failure("brief_fingerprint_mismatch", "run.fingerprint"));
+    // codex: an error reported for a call that was never made.
+    await expectBound(read("provider_error", 1, 0), "run.reads.llm_coverage.calls");
+    await expectBound(read("provider_error", 2, 1), "run.reads.llm_coverage.calls");
+    await passes(read("provider_error", 1, 1, { model_id: "gpt-4.1-draft" }));
+    await expectBound(read("not_configured", 1, 1), "run.reads.llm_coverage.attempted");
+    await expectBound(read("not_configured", 0, 1), "run.reads.llm_coverage.calls");
+    await expectBound(read("not_configured", 0, 0, { model_id: "gpt-4.1-draft" }), "run.reads.llm_coverage.model_id");
+    await passes(read("not_configured", 0, 0));
+    await passes(read("timeout", 1, 1, { model_id: "gpt-4.1-draft" }));
+    await passes(read("timeout", 0, 0));
+    await expectBound(read("timeout", 2, 2), "run.reads.llm_coverage.calls");
+    await expectBound(read("timeout", 1, 0), "run.reads.llm_coverage.calls");
+    await expectBound(read("timeout", 0, 0, { input_tokens: 5 }), "run.reads.llm_coverage.input_tokens");
+    await expectBound(read("validation_failed", 0, 0, { output_tokens: 7 }), "run.reads.llm_coverage.output_tokens");
+    // A verdict the call did return but the server refused: one completed call at temperature 0.
+    const refusedVerdict = (calls: number, temperature: number) =>
+      mutated(noCoverage, (draft) => {
+        draft.coverage = { status: "unavailable", reason: "validation_failed", attempted: calls };
+        draft.run.reads.llm_coverage = { ...base.run.reads.llm_coverage, calls, temperature_requested: temperature };
+      });
+    await passes(refusedVerdict(1, 0));
+    await expectBound(refusedVerdict(2, 0), "run.reads.llm_coverage.calls");
+    await expectBound(refusedVerdict(1, 0.4), "run.reads.llm_coverage.temperature_requested");
   });
 });
 

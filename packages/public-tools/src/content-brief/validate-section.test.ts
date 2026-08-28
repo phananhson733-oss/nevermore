@@ -17,6 +17,7 @@ const FACTS: ProfileFact[] = [
 const EVIDENCE: SectionEvidence = {
   citableCrawlIds: new Set(["C1", "C2"]),
   profileFacts: new Map(FACTS.map((fact) => [fact.id, fact])),
+  stanceAllowed: true,
 };
 
 function output(sentences: ModelSectionOutput["paragraphs"][number]["sentences"]): ModelSectionOutput {
@@ -64,6 +65,15 @@ describe("validateSectionOutput", () => {
   it("refuses a section with no sentences at all", () => {
     expect(validateSectionOutput({ paragraphs: [] }, EVIDENCE)).toMatchObject({ ok: false, rule: "empty_section" });
     expect(validateSectionOutput({ paragraphs: [{ sentences: [] }] }, EVIDENCE)).toMatchObject({ ok: false, rule: "empty_section" });
+  });
+
+  it("refuses a stance in a section that did not receive the gap angle", () => {
+    const elsewhere: SectionEvidence = { ...EVIDENCE, stanceAllowed: false };
+    expect(validateSectionOutput(output([{ text: "We think so.", claim: "stance", evidence_refs: ["P1"] }]), elsewhere)).toMatchObject({
+      ok: false,
+      rule: "stance_outside_gap_angle",
+    });
+    expect(validateSectionOutput(output([{ text: "Grounded.", claim: "bound", evidence_refs: ["P1"] }]), elsewhere)).toMatchObject({ ok: true });
   });
 
   it("caps the number of sentences", () => {

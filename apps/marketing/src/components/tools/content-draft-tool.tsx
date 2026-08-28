@@ -27,6 +27,7 @@ import {
 
 import {
   clearMatchingContentBriefHandoff,
+  peekContentBriefHandoff,
   restoreContentBriefHandoff,
   takeContentBriefHandoff,
 } from "../../lib/tools/content-brief-handoff";
@@ -158,9 +159,15 @@ function openerStorage(): Storage | null {
 
 export interface ContentDraftToolProps {
   readonly locale: string;
+  /**
+   * The server's verdict on this request's cookie. A visitor it already
+   * knows is signed out will sign in through the hero CTA, which reloads the
+   * page; taking the handoff before that reload would lose it.
+   */
+  readonly authenticated: boolean;
 }
 
-export function ContentDraftTool({ locale }: ContentDraftToolProps) {
+export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProps) {
   const t = useTranslations("tools.contentDraft");
   const [intake, setIntake] = useState<IntakeState>({ phase: "empty" });
   const [settings, setSettings] = useState<DraftSettings>(DEFAULT_DRAFT_SETTINGS);
@@ -175,6 +182,8 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   });
   const [result, setResult] = useState<DraftResult | null>(null);
   const [rerunsUsed, setRerunsUsed] = useState(0);
+  const [handoffPending, setHandoffPending] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const [runningSection, setRunningSection] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startedAt = useRef(0);
@@ -194,6 +203,13 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
    * the moment another brief replaces it.
    */
   const handoffRaw = useRef<string | null>(null);
+  /**
+   * The envelope put back for a sign-in reload. Anything the visitor does
+   * instead of signing in — cancelling the dialog, replacing the brief,
+   * pasting or uploading another — clears it again, so a stale brief cannot
+   * come back on the next load.
+   */
+  const restoredRaw = useRef<string | null>(null);
   const rerunsSpent = useRef(0);
 
   useEffect(() => {
@@ -207,21 +223,25 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
   }, []);
 
   // The handoff is read once and removed in the same step (handoff §5.1):
-  // a reload starts from the empty state, as item 32 requires.
+  // a reload starts from the empty state, as item 32 requires. A visitor the
+  // server knows is signed out only peeks: the hero sign-in reloads the page,
+  // and the page after that reload is the one that consumes it.
   useEffect(() => {
+    if (!authenticated) {
+      setHandoffPending(peekContentBriefHandoff(window.sessionStorage));
+      return;
+    }
     const raw = takeContentBriefHandoff(window.sessionStorage);
     if (raw === null) return;
+    // This tab holds the envelope now, parsed or not; the opener's copy is
+    // deleted at once, and only while it is still exactly this envelope.
+    const opener = openerStorage();
+    if (opener !== null) clearMatchingContentBriefHandoff(opener, raw);
     const gen = nextGeneration();
     setIntake({ phase: "parsing" });
     void parseIntake(raw, "handoff").then((next) => {
       if (!mounted.current || gen !== generation.current) return;
-      if (next.phase === "loaded") {
-        handoffRaw.current = raw;
-        // This tab holds the brief now; the opener's copy is deleted only
-        // when it is still exactly the envelope this tab consumed.
-        const opener = openerStorage();
-        if (opener !== null) clearMatchingContentBriefHandoff(opener, raw);
-      }
+      if (next.phase === "loaded") handoffRaw.current = raw;
       loadIntake(next);
     });
   }, []);
@@ -236,16 +256,26 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     return () => window.clearInterval(timer);
   }, [phase]);
 
+  // Scrolls only when a result actually arrives, never when a failed run
+  // merely returns the page to its previous result.
   useEffect(() => {
-    if (result === null || phase !== "done") return;
+    if (result === null) return;
     resultsRef.current?.scrollIntoView({ block: "start" });
-  }, [result, phase]);
+  }, [result]);
+
+  /** Removes the envelope put back for sign-in, if it is still exactly that envelope. */
+  function discardRestoredHandoff(): void {
+    if (restoredRaw.current === null) return;
+    clearMatchingContentBriefHandoff(window.sessionStorage, restoredRaw.current);
+    restoredRaw.current = null;
+  }
 
   function nextGeneration(): number {
     generation.current += 1;
     activeRequest.current?.abort();
     activeRequest.current = null;
     submissionLocked.current = false;
+    discardRestoredHandoff();
     return generation.current;
   }
 
@@ -331,10 +361,24 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
    * starts empty because nothing is put back on that path.
    */
   function openSignIn(): void {
-    if (handoffRaw.current !== null) {
-      restoreContentBriefHandoff(window.sessionStorage, handoffRaw.current);
+    if (handoffRaw.current !== null && restoredRaw.current === null) {
+      if (!restoreContentBriefHandoff(window.sessionStorage, handoffRaw.current)) {
+        // Signing in would reload into an empty page and lose the brief;
+        // say so instead of opening the dialog.
+        setRestoreFailed(true);
+        return;
+      }
+      restoredRaw.current = handoffRaw.current;
     }
+    setRestoreFailed(false);
     setSignInOpen(true);
+  }
+
+  function onSignInOpenChange(open: boolean): void {
+    setSignInOpen(open);
+    // Closed without signing in: the restored envelope must not outlive
+    // the dialog, or a later refresh resurrects a brief nobody asked for.
+    if (!open) discardRestoredHandoff();
   }
 
   /** Session first, always: a signed-out visitor gets the dialog and no paid POST is sent. */
@@ -408,8 +452,9 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     }
     setValidationKey(null);
     // The last good result stays on screen until a new one has passed the
-    // shape check; a refused or failed run leaves it exactly as it was.
-    const fallback: Phase = result === null ? "idle" : "done";
+    // shape check; a refused or failed run leaves it exactly as it was and
+    // returns the page to idle, so nothing is announced or scrolled to again.
+    const fallback: Phase = "idle";
     const gen = generation.current;
     const controller = beginRequest("running");
     try {
@@ -443,29 +488,24 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
     const controller = beginRequest("rerunning");
     setRunningSection(sectionId);
     try {
-      if (!(await signedIn(controller, gen, "done"))) return;
+      if (!(await signedIn(controller, gen, "idle"))) return;
       // Counted the moment the POST goes out, whatever comes back: the soft
       // cap bounds attempts, and a refused attempt still spent one.
       rerunsSpent.current += 1;
       setRerunsUsed(rerunsSpent.current);
-      // The server replaces the section and re-derives everything else; the
-      // page swaps the whole result rather than patching one section in. The
-      // settings sent are the draft's own: a rerun never mixes new settings
-      // into sections written under the old ones.
+      // The whole previous result travels, and the server takes settings,
+      // sections and the run id from it after its own exact parse; the page
+      // swaps in the whole reply rather than patching one section in. A rerun
+      // therefore always runs under the draft's own settings, never the
+      // form's current ones.
       const next = await post(
         controller,
         gen,
         brief,
         "/api/tools/content-draft/section",
         SECTION_LIMIT_KB,
-        {
-          brief,
-          settings: result.settings,
-          section_id: sectionId,
-          sections: result.sections,
-          previous_run_id: result.run.run_id,
-        },
-        "done",
+        { brief, section_id: sectionId, previous: result },
+        "idle",
       );
       if (next === null) return;
       setResult(next);
@@ -489,6 +529,16 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
 
   return (
     <section id="content-draft-tool" data-locale={locale} aria-busy={busy} className="min-w-0 space-y-4">
+      {handoffPending && intake.phase === "empty" ? (
+        <p data-handoff-pending role="status" className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("intake.handoffPending")}
+        </p>
+      ) : null}
+      {restoreFailed ? (
+        <p data-handoff-restore-failed role="alert" className="text-[12.5px] leading-[1.6] text-brand-error">
+          {t("intake.handoffRestoreFailed")}
+        </p>
+      ) : null}
       <ContentDraftIntake
         intake={intake}
         onSubmit={submitBrief}
@@ -591,13 +641,14 @@ export function ContentDraftTool({ locale }: ContentDraftToolProps) {
               used: rerunsUsed,
               running: runningSection,
               writable: new Set(brief.draft_readiness.writable),
+              disabled: busy,
               onRerun: (id) => void rerun(id),
             }}
             locale={locale}
           />
         </div>
       ) : null}
-      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+      <SignInDialog open={signInOpen} onOpenChange={onSignInOpenChange} />
     </section>
   );
 }

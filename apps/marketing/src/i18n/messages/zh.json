@@ -4310,6 +4310,8 @@
         "title": "载入内容简报",
         "handoffLoaded": "已从 Content Brief Builder 接收到 brief。",
         "handoffExpired": "交接过来的 brief 已过期或尚未生效。请在 Content Brief Builder 里导出 JSON 后粘贴到这里。",
+        "handoffPending": "有一份从 Content Brief Builder 交接过来的 brief 在等待。登录后将载入。",
+        "handoffRestoreFailed": "交接过来的 brief 没能在这个浏览器里保留到登录之后。请在 Content Brief Builder 里导出 JSON，登录后粘贴到这里。",
         "pasteLabel": "粘贴 brief JSON",
         "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
         "load": "载入 brief",
@@ -4482,7 +4484,8 @@
         "boundThird": "[有据 · 竞品片段]",
         "boundFirst": "[有据 · 档案事实]",
         "gap": "[缺口]",
-        "stance": "[立场]"
+        "stance": "[立场]",
+        "noClaim": "[无主张]"
       },
       "toolbar": {
         "showClaims": "显示主张标注",

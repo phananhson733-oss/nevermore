@@ -4310,6 +4310,8 @@
         "title": "Load a content brief",
         "handoffLoaded": "Brief received from the Content Brief Builder.",
         "handoffExpired": "The handed-over brief has expired or is not valid yet. Export it as JSON from the Content Brief Builder and paste it here.",
+        "handoffPending": "A brief handed over from the Content Brief Builder is waiting. Sign in and it will be loaded.",
+        "handoffRestoreFailed": "The handed-over brief could not be kept for sign-in in this browser. Export it as JSON from the Content Brief Builder and paste it here after signing in.",
         "pasteLabel": "Paste the brief JSON",
         "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
         "load": "Load brief",
@@ -4482,7 +4484,8 @@
         "boundThird": "[bound · competitor excerpt]",
         "boundFirst": "[bound · profile fact]",
         "gap": "[gap]",
-        "stance": "[stance]"
+        "stance": "[stance]",
+        "noClaim": "[no claim]"
       },
       "toolbar": {
         "showClaims": "Show claim annotations",

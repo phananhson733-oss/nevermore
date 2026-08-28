@@ -9,6 +9,7 @@ import type {
 } from "@sf/public-tools/content-brief/contract";
 import {
   DRAFT_TOTAL_BUDGET_MS,
+  SECTION_MAX_ATTEMPTS,
   SECTION_TIMEOUT_MS,
 } from "@sf/public-tools/content-brief/constants";
 import {
@@ -160,6 +161,7 @@ export function ContentDraftSettings({
           {t("settings.sections.help", {
             timeout: Math.round(SECTION_TIMEOUT_MS / 1000),
             budget: Math.round(DRAFT_TOTAL_BUDGET_MS / 1000),
+            attempts: SECTION_MAX_ATTEMPTS,
           })}
         </p>
         <ul className="mt-3 space-y-2">

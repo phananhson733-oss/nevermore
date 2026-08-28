@@ -122,17 +122,21 @@ export function HandoffBar({
   // The run on screen right now, readable from a promise that started earlier.
   const currentRunId = useRef(result.run.run_id);
   currentRunId.current = result.run.run_id;
+  // Monotonic: only the latest click's outcome may report, whatever order the
+  // clipboard settles them in.
+  const copyAttempt = useRef(0);
   const page = publishedUrl(urlInput);
   const urlInvalid = urlInput.trim() !== "" && page === null;
 
-  function prepare(event: React.MouseEvent<HTMLAnchorElement>): void {
-    if (page === null) {
-      event.preventDefault();
-      return;
-    }
-    // The tool never learned a property: the visitor's own published page is
-    // not something a Search Console property returned, so `property` is
-    // null and the checker leaves its property select unpicked.
+  /**
+   * One synchronous stage for every gesture that can open the link (click and
+   * the context menu's "open in new tab"); the caller cancels the gesture when
+   * it returns false. The tool never learned a property: the visitor's own
+   * published page is not something a Search Console property returned, so
+   * `property` is null and the checker leaves its property select unpicked.
+   */
+  function stage(): boolean {
+    if (page === null) return false;
     const payload: ToolHandoffPayload = {
       source: "content-draft",
       destination: "on-page-seo-check",
@@ -144,12 +148,13 @@ export function HandoffBar({
       marketCode: brief.keyword.market,
       languageCode: brief.keyword.language,
     };
-    if (!stored(payload)) {
-      event.preventDefault();
-      setHandoffFailed(true);
-      return;
-    }
-    setHandoffFailed(false);
+    const ok = stored(payload);
+    setHandoffFailed(!ok);
+    return ok;
+  }
+
+  function prepare(event: React.MouseEvent<HTMLAnchorElement>): void {
+    if (!stage()) event.preventDefault();
   }
 
   return (
@@ -161,9 +166,12 @@ export function HandoffBar({
           data-copy-markdown
           onClick={() => {
             const runId = result.run.run_id;
+            copyAttempt.current += 1;
+            const attempt = copyAttempt.current;
             void copyText(draftMarkdown(result, markdownNotes(t))).then((ok) => {
-              // A copy that started on a run since replaced reports nothing.
-              if (currentRunId.current !== runId) return;
+              // A copy that started on a run since replaced, or that a later
+              // click superseded, reports nothing.
+              if (currentRunId.current !== runId || copyAttempt.current !== attempt) return;
               setCopy({ runId, state: ok ? "copied" : "failed" });
             });
           }}
@@ -221,6 +229,7 @@ export function HandoffBar({
               href={localePath(locale, "/tools/on-page-seo-check")}
               {...TOOL_HANDOFF_LINK_PROPS}
               onClick={prepare}
+              onContextMenu={prepare}
               className={PRIMARY_ACTION_BUTTON}
             >
               {t("actions.openOnPage")}

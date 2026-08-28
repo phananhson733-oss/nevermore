@@ -41,7 +41,7 @@ import {
   type SectionCallMeta,
 } from "@sf/public-tools/content-brief/draft-assemble";
 import { parseContentBrief } from "@sf/public-tools/content-brief/parse-brief";
-import { parseDraftResult, parseDraftSections, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
+import { parseDraftResult, parseDraftSettings } from "@sf/public-tools/content-brief/parse-draft";
 
 import {
   getServerAuthenticatedUser,
@@ -530,35 +530,36 @@ export async function handleContentDraftSectionRequest(
   dependencies: ContentDraftHandlerDependencies = CONTENT_DRAFT_HANDLER_DEPENDENCIES,
 ): Promise<Response> {
   return handle(request, dependencies, SECTION_ENDPOINT, async ({ body, clock }) => {
-    const settings = parseDraftSettings(body["settings"]);
-    if (!settings.ok) return refuse("invalid_request", 400);
     const sectionId = readId(body["section_id"]);
-    const previousRunId = readId(body["previous_run_id"]);
-    if (sectionId === null || previousRunId === null) return refuse("invalid_request", 400);
+    if (sectionId === null) return refuse("invalid_request", 400);
     const brief = await parseBriefOrRefuse(body["brief"]);
     if (brief instanceof Response) return brief;
-    const existing = parseDraftSections(body["sections"], brief, settings.value);
-    if (!existing.ok) return refuse(existing.code, existing.code === "invalid_request" ? 400 : 422);
+    // The result being reworked is carried whole and must pass the same exact
+    // parser it passed on the way out (fingerprint included), so its settings,
+    // sections and run id are verified facts rather than loose client fields.
+    const previous = await parseDraftResult(body["previous"], brief);
+    if (!previous.ok) return refuse(previous.code, previous.code === "invalid_request" ? 400 : 422);
+    const settings = previous.value.settings;
     // A skipped section is still writable: the visitor unchecked it on the first
     // run and may ask for it now; this endpoint is how it gets written.
     const outline = brief.outline.status === "available" ? brief.outline.items.find((item) => item.id === sectionId) : undefined;
-    if (outline === undefined || !brief.draft_readiness.writable.includes(sectionId) || !existing.value.some((section) => section.id === sectionId)) {
+    if (outline === undefined || !brief.draft_readiness.writable.includes(sectionId) || !previous.value.sections.some((section) => section.id === sectionId)) {
       return refuse("section_not_writable", 422);
     }
 
     const planned: PlannedSection = { id: outline.id, h2: outline.h2, h3: outline.h3, answers: outline.answers };
-    const outcome = await generateOne(brief, planned, settings.value, dependencies, clock);
-    const sections = existing.value.map((section) => (section.id === sectionId ? outcome.section : section));
+    const outcome = await generateOne(brief, planned, settings, dependencies, clock);
+    const sections = previous.value.sections.map((section) => (section.id === sectionId ? outcome.section : section));
     // Only this request's call is known here; the earlier sections' calls are not re-reported.
     return assembleAndRespond({
       brief,
-      settings: settings.value,
+      settings,
       sections,
       calls: [outcome.call],
       dependencies,
       clock,
       budgetMs: SECTION_ENDPOINT_BUDGET_MS,
-      rerun: { previousRunId, sectionId, call: outcome.call },
+      rerun: { previousRunId: previous.value.run.run_id, sectionId, call: outcome.call },
     });
   });
 }

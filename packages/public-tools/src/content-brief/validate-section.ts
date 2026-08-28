@@ -21,6 +21,8 @@ export interface SectionEvidence {
   /** CrawlObservation ids that carried at least one excerpt — the only C* a bound claim may cite. */
   readonly citableCrawlIds: ReadonlySet<string>;
   readonly profileFacts: ReadonlyMap<string, ProfileFact>;
+  /** True only for the section that received the gap angle; a `stance` anywhere else is refused. */
+  readonly stanceAllowed: boolean;
 }
 
 export type SectionValidation =
@@ -38,6 +40,7 @@ export type SectionRule =
   | "ref_not_citable"
   | "ref_repeated"
   | "stance_needs_profile_fact"
+  | "stance_outside_gap_angle"
   | "bound_cannot_cite_inferred";
 
 const CLAIMS: ReadonlySet<string> = new Set<ClaimState>(["bound", "gap", "no_claim", "stance"]);
@@ -96,6 +99,7 @@ export function validateSectionOutput(
           break;
         }
         case "stance": {
+          if (!evidence.stanceAllowed) return fail(`${path}.claim`, "stance_outside_gap_angle");
           if (refs.length === 0 || refs.some((ref) => !ref.startsWith("P"))) {
             return fail(`${path}.evidence_refs`, "stance_needs_profile_fact");
           }

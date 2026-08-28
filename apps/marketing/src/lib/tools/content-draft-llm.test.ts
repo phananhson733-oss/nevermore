@@ -453,6 +453,72 @@ describe("generateDraftSection", () => {
     expect(rec.requests[1]?.user).toContain('rule "shape" at the whole reply');
   });
 
+  it("reports unknown tokens when any sent attempt reported none: a billed rejection plus a timed-out retry is attempts 2, tokens null", async () => {
+    const requests: KeywordLlmRequest[] = [];
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            content: json({ paragraphs: [], extra: 1 }),
+            usage: { inputTokens: 100, outputTokens: 50, requestCount: 1, retryCount: 0 },
+            modelId: "draft-deployment-2026",
+          };
+        }
+        throw new KeywordLlmError("timeout", "LLM request timed out.");
+      },
+    };
+    const result = await generateDraftSection(sectionInput(), { client, config: CONFIG, now: () => NOW });
+    expect(requests).toHaveLength(2);
+    expect(result).toMatchObject({
+      status: "failed",
+      fail_reason: "timeout",
+      attempts: 2,
+      input_tokens: null,
+      output_tokens: null,
+      model_id: "draft-deployment-2026",
+    });
+  });
+
+  it("sums tokens strictly when every sent attempt reported usage", async () => {
+    const requests: KeywordLlmRequest[] = [];
+    const client: KeywordLlmClient = {
+      complete: async (request) => {
+        requests.push(request);
+        const first = requests.length === 1;
+        return {
+          content: first ? json(boundWithoutRefs) : json(validSection()),
+          usage: { inputTokens: first ? 100 : 200, outputTokens: first ? 50 : 80, requestCount: 1, retryCount: 0 },
+          modelId: "draft-deployment-2026",
+        };
+      },
+    };
+    const result = await generateDraftSection(sectionInput(), { client, config: CONFIG, now: () => NOW });
+    expect(result).toMatchObject({ status: "ok", attempts: 2, input_tokens: 300, output_tokens: 130 });
+  });
+
+  it("refuses a stance in a section that did not receive the gap angle", async () => {
+    const rec = recorder([
+      json({
+        paragraphs: [
+          {
+            sentences: [
+              { text: "Plans start at $99 per provider.", claim: "bound", evidence_refs: ["C1"] },
+              { text: "Same-day submission changes that.", claim: "stance", evidence_refs: ["P2"] },
+            ],
+          },
+        ],
+      }),
+    ]);
+    const result = await generateDraftSection(sectionInput({ gapAngle: null }), {
+      client: rec.client,
+      config: CONFIG,
+      now: () => NOW,
+    });
+    expect(result).toMatchObject({ status: "failed", fail_reason: "validation_failed", attempts: 2 });
+    expect(rec.requests[1]?.user).toContain('rule "stance_outside_gap_angle" at paragraphs[0].sentences[1].claim');
+  });
+
   it("does not spend a retry it cannot afford: a rejected reply with no budget left is validation_failed after one attempt", async () => {
     const clock = [NOW, NOW + DRAFT_TOTAL_BUDGET_MS];
     let tick = 0;

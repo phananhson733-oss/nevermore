@@ -191,6 +191,12 @@ describe("buildDraftSectionSystemPrompt", () => {
     );
   });
 
+  it("allows a stance only in the section that carries the gap angle", () => {
+    expect(system).toContain(
+      'Only a section whose user message carries a GAP ANGLE block may use "stance"; in a section without one no sentence is "stance".',
+    );
+  });
+
   it("limits evidence to the quoted excerpts and forbids binding a number they do not state", () => {
     expect(system).toContain(
       "The only evidence is the excerpts quoted under headings in the user message — not the whole page, and not what you know about the topic.",
@@ -204,11 +210,14 @@ describe("buildDraftSectionSystemPrompt", () => {
     );
   });
 
-  it("names every claim state exactly once in the rule list", () => {
+  it("defines every claim state exactly once in the rule list", () => {
     expect(CLAIM_STATES).toEqual(["bound", "stance", "gap", "no_claim"]);
     const rules = system.slice(system.indexOf("CLAIM LABELS"), system.indexOf("OUTPUT"));
-    expect(count(rules, '"stance"')).toBe(1);
-    expect(count(rules, '"no_claim"')).toBe(1);
+    expect(count(rules, '"stance", with "evidence_refs"')).toBe(1);
+    expect(count(rules, '"no_claim", with "evidence_refs"')).toBe(1);
+    // Every other mention of "stance" in the rules is the gap-angle restriction, in rule 3 only.
+    const ruleThree = rules.split("\n").find((line) => line.startsWith("3.")) ?? "";
+    expect(count(rules, '"stance"')).toBe(count(ruleThree, '"stance"'));
   });
 });
 
@@ -290,11 +299,30 @@ describe("buildDraftSectionUserPrompt", () => {
     expect(withAngle).toContain("GAP ANGLE — the stance this section takes");
     expect(withAngle).toContain("angle: Same-day claim submission");
     expect(withAngle).toContain("rationale: No competitor page promises same-day submission.");
+    expect(withAngle).toContain('Sentences that assert it are "stance" and cite the P* ids that support it');
+    expect(withAngle).not.toContain("STANCE: this section has no gap angle");
 
     const without = buildDraftSectionUserPrompt(sectionInput({ gapAngle: null }));
     expect(without).not.toContain("GAP ANGLE");
     expect(without).not.toContain("angle:");
     expect(count(without, SITE_CONTENT_OPEN)).toBe(4);
+  });
+
+  it("without a gap angle forbids stance outright and never prints a stance permission, even for inferred facts", () => {
+    const without = buildDraftSectionUserPrompt(sectionInput({ gapAngle: null }));
+    expect(without).toContain('STANCE: this section has no gap angle, so no sentence may be "stance".');
+    expect(without).toContain(
+      '[fact id=P2 field=coreFeatures[0] derivation=inferred — cannot be cited in this section (no gap angle)] Same-day claim submission',
+    );
+    expect(without).toContain('cannot be cited in this section at all (no gap angle, so no "stance"), and never support a "bound"');
+    expect(without).not.toContain('may only be cited by a "stance" sentence');
+    expect(without).not.toContain('support a "stance" only');
+    expect(without).not.toContain('Sentences that assert it are "stance"');
+    // Every remaining mention of "stance" in the user message is a prohibition.
+    const body = without.slice(0, without.indexOf("OUTPUT JSON"));
+    for (const line of body.split("\n").filter((candidate) => candidate.includes('"stance"'))) {
+      expect(line).toMatch(/no sentence may be "stance"|no "stance"/u);
+    }
   });
 
   it("lists a page without excerpts as uncitable and bounds excerpts per page", () => {

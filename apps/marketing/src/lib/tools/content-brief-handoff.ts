@@ -86,6 +86,19 @@ export function takeContentBriefHandoff(storage: ToolHandoffStorage): string | n
 }
 
 /**
+ * Whether a handoff is waiting, without consuming it. For a visitor the
+ * server already knows is signed out: the sign-in they are about to do
+ * reloads the page, and a brief taken before that reload would be lost.
+ */
+export function peekContentBriefHandoff(storage: ToolHandoffStorage): boolean {
+  try {
+    return storage.getItem(CONTENT_BRIEF_HANDOFF_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Puts a consumed envelope back exactly as it was read, TTL and all.
  *
  * For one path only: a signed-out visitor whose sign-in will reload the page.

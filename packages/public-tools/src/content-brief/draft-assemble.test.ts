@@ -65,7 +65,7 @@ function okSection(value: ContentBrief, id: string, settings = SETTINGS): DraftS
     ],
   };
   const facts = new Map((value.evidence.profile?.facts ?? []).filter((item) => scope.profileFactIds.has(item.id)).map((item) => [item.id, item]));
-  const validated = validateSectionOutput(output, { citableCrawlIds: scope.citableCrawlIds, profileFacts: facts });
+  const validated = validateSectionOutput(output, { citableCrawlIds: scope.citableCrawlIds, profileFacts: facts, stanceAllowed: scope.stanceAllowed });
   if (!validated.ok) throw new Error(`fixture section ${id} failed ${validated.rule}`);
   return {
     id,
@@ -126,7 +126,9 @@ describe("sectionEvidenceScope", () => {
     expect([...sectionEvidenceScope(value, "O1", { ...SETTINGS, product_mention: "none" }).profileFactIds]).toEqual([]);
     expect([...sectionEvidenceScope(value, "O3", { ...SETTINGS, product_mention: "none" }).profileFactIds]).toEqual([]);
     expect([...sectionEvidenceScope(value, "O1", { ...SETTINGS, product_mention: "throughout" }).profileFactIds]).toEqual(["P1", "P2"]);
-    expect(sectionEvidenceScope(value, "O99", SETTINGS)).toEqual({ citableCrawlIds: new Set(), profileFactIds: new Set() });
+    expect(sectionEvidenceScope(value, "O99", SETTINGS)).toEqual({ citableCrawlIds: new Set(), profileFactIds: new Set(), stanceAllowed: false });
+    expect(o1.stanceAllowed).toBe(false);
+    expect(o3.stanceAllowed).toBe(true);
   });
 });
 

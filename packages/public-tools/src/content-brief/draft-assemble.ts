@@ -98,6 +98,8 @@ export function gapAngleSectionId(brief: ContentBrief): string | null {
 export interface SectionEvidenceScope {
   readonly citableCrawlIds: ReadonlySet<string>;
   readonly profileFactIds: ReadonlySet<string>;
+  /** Only the section that received the gap angle may take a `stance` (contract: stance comes from gap_angle). */
+  readonly stanceAllowed: boolean;
 }
 
 export function sectionEvidenceScope(
@@ -121,7 +123,7 @@ export function sectionEvidenceScope(
         : gapAngleSectionId(brief) === sectionId && brief.gap_angle.status === "available"
           ? new Set(brief.gap_angle.profile_fact_refs.filter((id) => allFacts.some((fact) => fact.id === id)))
           : new Set<string>();
-  return { citableCrawlIds, profileFactIds };
+  return { citableCrawlIds, profileFactIds, stanceAllowed: gapAngleSectionId(brief) === sectionId };
 }
 
 /* ------------------------------------------------------------------ */

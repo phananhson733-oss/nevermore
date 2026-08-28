@@ -659,7 +659,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Content drafting",
     title: "Write a draft in which every sentence carries its claim state",
     description:
-      "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: each sentence is marked bound, gap, stance or no-claim, with its evidence references listed where a bound or stance sentence cites them; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
+      "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: each sentence is marked with its claim state (bound, gap, stance or no-claim) and its source layer, and the sentences a human must verify list their references in the verify list; a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
     sourceLabel: "A GenGrowth sign-in and a content brief are required",
     sourceDetail:
       "The draft takes a Content Brief as its only input — handed over from the brief tool, pasted, or uploaded as JSON — and re-checks its fingerprint before using it. The competitor excerpts and profile facts the brief carries are the only evidence a sentence may cite.",
@@ -678,7 +678,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Each section written by its own model call, annotated as it is written",
-        text: "Sections are generated in parallel with their own timeouts and a bounded number of attempts each. The model marks every sentence with its claim state and, for bound and stance sentences, cites the competitor excerpts or profile facts behind it; the server validates those references and reports the section as failed rather than rewriting a claim.",
+        text: "Sections are generated in parallel with their own timeouts and a bounded number of attempts each. The model marks every sentence with its claim state and cites competitor excerpts or profile facts where it relies on them; the server validates those references and reports the section as failed rather than rewriting a claim.",
       },
       {
         name: "Another, separate call checks coverage",
@@ -689,7 +689,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "A draft in sections, with claim annotations",
-        body: "Every sentence carries a claim state, and bound or stance sentences list their references where they cite any. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
+        body: "Every sentence carries a claim state and a source layer; the sentences that need human verification list their references in the verify list. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
       },
       {
         label: "Coverage as three raw counts",
@@ -1322,7 +1322,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "内容初稿",
     title: "生成一份每句话都带主张状态的初稿",
     description:
-      "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话标为有据、缺口、立场或无主张，有据句和立场句在有引用时列出证据引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
+      "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话标出主张状态（有据、缺口、立场或无主张）与来源层，需要人工核实的句子在核实清单里列出引用；一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
     sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
     sourceDetail:
       "初稿只接受 Content Brief 作为输入——从简报工具交接、粘贴或上传 JSON——使用前会重新核对指纹。简报里带的竞品片段与档案事实是句子唯一可引用的证据。",
@@ -1341,7 +1341,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "每节由各自的模型调用生成，边写边标注",
-        text: "各节并行生成，各有自己的超时和有上限的尝试次数。模型给每句话标主张状态，有据句和立场句还要引用背后的竞品片段或档案事实；服务端校验这些引用，不通过就把该节记为失败，绝不改写主张。",
+        text: "各节并行生成，各有自己的超时和有上限的尝试次数。模型给每句话标主张状态，并在依赖竞品片段或档案事实的地方引用它们；服务端校验这些引用，不通过就把该节记为失败，绝不改写主张。",
       },
       {
         name: "另一次独立调用校验覆盖度",
@@ -1352,7 +1352,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     outputs: [
       {
         label: "分节初稿，带主张标注",
-        body: "每句话带主张状态，有据句和立场句在有引用时列出引用。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
+        body: "每句话带主张状态与来源层；需要人工核实的句子在核实清单里列出引用。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
       },
       {
         label: "覆盖度只有三个原始计数",

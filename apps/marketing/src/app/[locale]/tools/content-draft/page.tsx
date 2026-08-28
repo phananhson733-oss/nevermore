@@ -90,7 +90,7 @@ export default async function ContentDraftPage({
             },
           }}
         >
-          <ContentDraftTool locale={locale} />
+          <ContentDraftTool locale={locale} authenticated={authentication === "authenticated"} />
         </NextIntlClientProvider>
       </ConnectedToolPage>
     </>

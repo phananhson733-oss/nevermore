@@ -120,6 +120,15 @@ describe("ReadinessBar draft handoff", () => {
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
   });
 
+  it("cancels the context menu when the handoff cannot be written", async () => {
+    const host = await render(await withFingerprint(validContentBrief()));
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    expect(await fire(host, "contextmenu")).toBe(false);
+    expect(host.querySelector("[data-generate-draft-failed]")).not.toBeNull();
+  });
+
   it("clears a stale handoff when the new one cannot be written", async () => {
     window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "stale");
     const host = await render(await withFingerprint(validContentBrief()));

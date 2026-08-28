@@ -40,7 +40,11 @@ describe("content draft page auth handoff", () => {
 
   it("mounts the draft tool under the content-draft shell content", () => {
     const source = readFileSync(PAGE, "utf8");
-    expect(source).toContain("<ContentDraftTool locale={locale} />");
+    // The server's verdict reaches the tool, so a signed-out visitor's handoff
+    // survives the hero sign-in reload instead of being taken before it.
+    expect(source).toContain(
+      '<ContentDraftTool locale={locale} authenticated={authentication === "authenticated"} />',
+    );
     expect(source).toContain('getConnectedToolContent(locale, "content-draft")');
   });
 });

@@ -3,7 +3,7 @@
 // @pos    -- the shared draft-side test fixture; parser, handler and UI tests start from this instead of hand-writing a DraftResult
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { DRAFT_TOTAL_BUDGET_MS } from "./constants.ts";
+import { DRAFT_TOTAL_BUDGET_MS, SECTION_ENDPOINT_BUDGET_MS } from "./constants.ts";
 import type {
   ContentBrief,
   DraftResult,
@@ -41,9 +41,17 @@ export interface DraftFixtureOptions {
   readonly coverage?: "unavailable";
   /** Which profile facts each section may cite (sectionEvidenceScope); `gap_only` by default. */
   readonly productMention?: DraftResult["settings"]["product_mention"];
+  /**
+   * The section endpoint's reply (handoff §5.2): a new run id, `reran_from` =
+   * previousRunId, `budget_ms` = SECTION_ENDPOINT_BUDGET_MS, and an
+   * `llm_sections` aggregate reflecting only the one section rewritten. The
+   * section must not be skipped in this fixture.
+   */
+  readonly rerun?: { readonly previousRunId: string; readonly sectionId: string };
 }
 
 export const DRAFT_FIXTURE_RUN_ID = "draft_01J6FIXTURE000000000000001";
+export const DRAFT_FIXTURE_RERUN_ID = "draft_01J6FIXTURE000000000000002";
 const COLLECTED_AT = "2026-08-28T10:05:00.000Z";
 const SECTION_TEMPERATURE = 0.4;
 const SECTION_MODEL_ID = "gpt-4.1-draft";
@@ -221,12 +229,20 @@ export async function draftResultFixture(brief: ContentBrief, options: DraftFixt
   // Nothing askable: the coverage call never went out, and every item is the server's own verdict.
   const modelItems = verdict === null ? (decided.askable.length === 0 ? [] : null) : verdict.items;
   const coverage = buildCoverage(brief, decided.heuristic, modelItems, llmCoverage);
-  const calls = sections.flatMap((section) => {
-    const call = fixtureCallOf(section);
-    return call === null ? [] : [call];
-  });
+  const rerunCall = options.rerun === undefined ? null : rerunCallOf(sections, options.rerun.sectionId);
+  const calls =
+    rerunCall !== null
+      ? [rerunCall]
+      : sections.flatMap((section) => {
+          const call = fixtureCallOf(section);
+          return call === null ? [] : [call];
+        });
+  const run =
+    options.rerun === undefined
+      ? { run_id: DRAFT_FIXTURE_RUN_ID, reran_from: null, collected_at: COLLECTED_AT, elapsed_ms: 31_200, budget_ms: DRAFT_TOTAL_BUDGET_MS }
+      : { run_id: DRAFT_FIXTURE_RERUN_ID, reran_from: options.rerun.previousRunId, collected_at: COLLECTED_AT, elapsed_ms: 12_400, budget_ms: SECTION_ENDPOINT_BUDGET_MS };
   return assembleDraftResult({
-    run: { run_id: DRAFT_FIXTURE_RUN_ID, reran_from: null, collected_at: COLLECTED_AT, elapsed_ms: 31_200, budget_ms: DRAFT_TOTAL_BUDGET_MS },
+    run,
     brief,
     settings,
     sections,
@@ -234,6 +250,15 @@ export async function draftResultFixture(brief: ContentBrief, options: DraftFixt
     llmSections: aggregateSectionLlm(calls, SECTION_TEMPERATURE),
     llmCoverage,
   });
+}
+
+/** The one call a rerun made: the rewritten section's own record, nothing else. */
+function rerunCallOf(sections: readonly DraftSection[], sectionId: string): SectionCallMeta {
+  const section = sections.find((candidate) => candidate.id === sectionId);
+  if (section === undefined) throw new Error(`draft fixture: rerun section ${sectionId} is not in the draft`);
+  const call = fixtureCallOf(section);
+  if (call === null) throw new Error(`draft fixture: rerun section ${sectionId} is skipped and made no call`);
+  return call;
 }
 
 /** The brief a draft is normally written against: GSC and profile connected, LLM complete, fingerprint stamped. */

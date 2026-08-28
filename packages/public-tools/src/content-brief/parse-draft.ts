@@ -391,6 +391,7 @@ export function sectionEvidenceFor(brief: ContentBrief, sectionId: string, setti
   return {
     citableCrawlIds: scope.citableCrawlIds,
     profileFacts: new Map(facts.map((fact) => [fact.id, fact] as const)),
+    stanceAllowed: scope.stanceAllowed,
   };
 }
 
@@ -407,6 +408,7 @@ function permissiveEvidenceOf(section: OkSection): SectionEvidence {
   return {
     citableCrawlIds: new Set(refs.filter((ref) => ref.startsWith("C"))),
     profileFacts: new Map(facts.map((fact) => [fact.id, fact] as const)),
+    stanceAllowed: true,
   };
 }
 
@@ -646,24 +648,55 @@ function checkCoverageLocal(result: DraftResult): Violation {
   return recomputed(counts, { total: field.total, covered: field.covered, partial: field.partial, none: field.none }, "coverage");
 }
 
+/** The read a coverage step that had nothing to ask leaves behind: no call, no usage, no deployment. */
+const COVERAGE_NOT_ASKED: LlmReadMeta = {
+  status: "unavailable",
+  reason: "insufficient_evidence",
+  attempted: 0,
+  calls: 0,
+  model_id: null,
+  input_tokens: null,
+  output_tokens: null,
+};
+
+/**
+ * A failed coverage read with questions to ask: attempts and calls agree
+ * (a missing configuration sends nothing; a timeout either sent the one
+ * call or ran out of budget before it), and a read that never called has
+ * no deployment and no usage to report.
+ */
+function checkFailedCoverageRead(llm: Extract<LlmReadMeta, { status: "unavailable" }>): Violation {
+  const noCall = llm.attempted === 0 && llm.calls === 0;
+  if (llm.reason === "not_configured") {
+    if (llm.attempted !== 0) return reference(`${LLM_COVERAGE}.attempted`);
+    if (llm.calls !== 0) return reference(`${LLM_COVERAGE}.calls`);
+  } else if (llm.reason === "timeout") {
+    if (!noCall && !(llm.attempted === 1 && llm.calls === 1)) return reference(`${LLM_COVERAGE}.calls`);
+  } else if (llm.attempted !== llm.calls) {
+    return reference(`${LLM_COVERAGE}.calls`);
+  }
+  if (llm.calls === 0) {
+    if (llm.model_id !== null) return reference(`${LLM_COVERAGE}.model_id`);
+    if (llm.input_tokens !== null) return reference(`${LLM_COVERAGE}.input_tokens`);
+    if (llm.output_tokens !== null) return reference(`${LLM_COVERAGE}.output_tokens`);
+  }
+  return null;
+}
+
 /**
  * The coverage ledger against what there was to ask: with nothing askable
  * the call never went out; with questions to ask, a missing verdict can only
- * be the call's own failure, never a reason that says it was not needed.
+ * be the call's own failure, never a reason that says it was not needed,
+ * and the read must describe that failure consistently.
  */
 function checkCoverageLedger(result: DraftResult, askable: readonly string[]): Violation {
   const llm = result.run.reads.llm_coverage;
-  if (askable.length === 0) {
-    const expected = { status: "unavailable", reason: "insufficient_evidence", attempted: 0, calls: 0 };
-    const actual =
-      llm.status === "unavailable"
-        ? { status: llm.status, reason: llm.reason, attempted: llm.attempted, calls: llm.calls }
-        : { status: llm.status, calls: llm.calls };
-    return recomputed(expected, actual, LLM_COVERAGE);
-  }
+  if (askable.length === 0) return recomputed(COVERAGE_NOT_ASKED, llm, LLM_COVERAGE);
   const { coverage: field } = result;
-  if (field.status === "unavailable" && NOT_A_COVERAGE_FAILURE.has(field.reason)) return reference("coverage.reason");
-  return null;
+  if (field.status === "available") return null;
+  if (NOT_A_COVERAGE_FAILURE.has(field.reason)) return reference("coverage.reason");
+  // buildCoverage has already tied coverage.reason / attempted to this read.
+  return llm.status === "complete" ? checkCoverageCall(llm) : checkFailedCoverageRead(llm);
 }
 
 /** With the brief the whole field is rebuilt: heuristic set, askable set, must_answer order, total, the unavailable gate, then the ledger. */

@@ -229,7 +229,7 @@ export function buildDraftSectionSystemPrompt(): string {
     `CLAIM LABELS — every sentence carries exactly one "claim" and an "evidence_refs" list:`,
     `1. A statement taken from a competitor excerpt: "${bound}", with "evidence_refs" listing the C* id of every page whose quoted excerpt supports it. Only a page that has an excerpt in the user message may be cited.`,
     `2. A statement taken from a product fact whose derivation is declared, observed or computed: "${bound}", with "evidence_refs" listing that P* id.`,
-    `3. A sentence that takes the owner's stance or angle: "${stance}", with "evidence_refs" listing only P* ids. A fact whose derivation is inferred may be cited this way and in no other way.`,
+    `3. A sentence that takes the owner's stance or angle: "${stance}", with "evidence_refs" listing only P* ids. A fact whose derivation is inferred may be cited this way and in no other way. Only a section whose user message carries a GAP ANGLE block may use "${stance}"; in a section without one no sentence is "${stance}".`,
     `4. A statement that belongs in this section but has no support in the evidence: "${gap}", with "evidence_refs" empty.`,
     `5. A connecting, transitional, inferential or organising sentence that asserts nothing: "${noClaim}", with "evidence_refs" empty.`,
     `6. When unsure which label applies, use "${gap}". Over-reporting a gap is fine; under-reporting one is not.`,
@@ -314,32 +314,52 @@ function renderPages(pages: readonly DraftSectionPage[]): string {
   ].join("\n");
 }
 
-function renderFact(fact: ProfileFact): string {
+function renderFact(fact: ProfileFact, stanceAllowed: boolean): string {
   const derivation =
-    fact.derivation === "inferred"
-      ? `derivation=inferred — may only be cited by a "${CLAIM_STATES[1]}" sentence`
-      : `derivation=${fact.derivation}`;
+    fact.derivation !== "inferred"
+      ? `derivation=${fact.derivation}`
+      : stanceAllowed
+        ? `derivation=inferred — may only be cited by a "${CLAIM_STATES[1]}" sentence`
+        : "derivation=inferred — cannot be cited in this section (no gap angle)";
   return `[fact id=${id(fact.id)} field=${sanitizeForPrompt(
     fact.field,
     MAX_FIELD_PATH_CHARS,
   )} ${derivation}] ${sanitizeForPrompt(fact.text, PROFILE_FACT_MAX_CHARS)}`;
 }
 
-function renderFacts(facts: readonly ProfileFact[]): string {
+/**
+ * The inferred-fact note depends on whether this section may take a stance:
+ * with the gap angle, inferred facts support a stance and nothing else;
+ * without it, they cannot be cited at all, and the note must not read as a
+ * permission.
+ */
+function renderFacts(facts: readonly ProfileFact[], stanceAllowed: boolean): string {
   if (facts.length === 0) {
     return `PRODUCT FACTS: none for this section. No sentence may cite a P* id, so no sentence may be "${CLAIM_STATES[1]}"; a "${CLAIM_STATES[0]}" claim may only cite C* ids.`;
   }
+  const inferredNote = stanceAllowed
+    ? `support a "${CLAIM_STATES[1]}" only, never a "${CLAIM_STATES[0]}"`
+    : `cannot be cited in this section at all (no gap angle, so no "${CLAIM_STATES[1]}"), and never support a "${CLAIM_STATES[0]}"`;
   return [
-    `PRODUCT FACTS — the owner's product profile. "inferred" facts were guessed by a model when the profile was built and support a "${CLAIM_STATES[1]}" only, never a "${CLAIM_STATES[0]}":`,
+    `PRODUCT FACTS — the owner's product profile. "inferred" facts were guessed by a model when the profile was built and ${inferredNote}:`,
     SITE_CONTENT_OPEN,
-    facts.map(renderFact).join("\n"),
+    facts.map((fact) => renderFact(fact, stanceAllowed)).join("\n"),
     SITE_CONTENT_CLOSE,
   ].join("\n");
 }
 
-/** Only rendered on the section the gap angle is mounted on. */
-function renderGapAngle(gapAngle: DraftSectionInput["gapAngle"]): string[] {
-  if (gapAngle === null) return [];
+/**
+ * The gap angle block on the one section it is mounted on; on every other
+ * section a one-line prohibition instead, so the only place "stance" is
+ * allowed is the place the angle is quoted.
+ */
+function renderStance(gapAngle: DraftSectionInput["gapAngle"]): string[] {
+  if (gapAngle === null) {
+    return [
+      `STANCE: this section has no gap angle, so no sentence may be "${CLAIM_STATES[1]}".`,
+      "",
+    ];
+  }
   return [
     `GAP ANGLE — the stance this section takes, which competitor pages do not. Sentences that assert it are "${CLAIM_STATES[1]}" and cite the P* ids that support it:`,
     SITE_CONTENT_OPEN,
@@ -428,9 +448,9 @@ export function buildDraftSectionUserPrompt(
     "",
     renderPages(input.pages),
     "",
-    renderFacts(input.facts),
+    renderFacts(input.facts, input.gapAngle !== null),
     "",
-    ...renderGapAngle(input.gapAngle),
+    ...renderStance(input.gapAngle),
     renderStyle(input.settings),
     "",
     "RULES",

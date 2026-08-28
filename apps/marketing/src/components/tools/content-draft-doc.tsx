@@ -37,14 +37,22 @@ const OPEN_BY_DEFAULT = 2;
  * it. The three colours are the source layers of §7 plus the error token for
  * a gap; a connective sentence draws nothing.
  */
-const CLAIM_UNDERLINE: Readonly<Record<Exclude<ClaimTone, null>, string>> = {
-  first: "inset 0 -2px 0 var(--sc-source-first)",
-  third: "inset 0 -2px 0 var(--sc-source-third)",
-  gap: "inset 0 -2px 0 var(--sc-error)",
+const CLAIM_UNDERLINE: Readonly<Record<Exclude<ClaimTone, null>, React.CSSProperties>> = {
+  // First-party differs from third-party in shape as well as colour: the
+  // same rule plus a dotted underline, so the two layers survive a monochrome
+  // rendering or a colour-vision deficiency.
+  first: {
+    boxShadow: "inset 0 -2px 0 var(--sc-source-first)",
+    textDecoration: "underline dotted",
+    textDecorationColor: "var(--sc-source-first)",
+    textUnderlineOffset: "0.2em",
+  },
+  third: { boxShadow: "inset 0 -2px 0 var(--sc-source-third)" },
+  gap: { boxShadow: "inset 0 -2px 0 var(--sc-error)" },
 };
 
 function underlineStyle(tone: ClaimTone): React.CSSProperties | undefined {
-  return tone === null ? undefined : { boxShadow: CLAIM_UNDERLINE[tone] };
+  return tone === null ? undefined : CLAIM_UNDERLINE[tone];
 }
 
 /** A sample of one underline for legends; the toolbar renders these instead of naming a token. */
@@ -66,18 +74,20 @@ export function ClaimSwatch({
   );
 }
 
-/** The screen-reader name of an annotation; colour alone is not information. */
-function claimMarkKey(claim: Sentence["claim"], tone: Exclude<ClaimTone, null>): string {
+/** The screen-reader name of an annotation; colour alone is not information, and every state has one. */
+function claimMarkKey(claim: Sentence["claim"], tone: ClaimTone): string {
   if (claim === "bound") return tone === "third" ? "claimMark.boundThird" : "claimMark.boundFirst";
   if (claim === "stance") return "claimMark.stance";
-  return "claimMark.gap";
+  if (claim === "gap") return "claimMark.gap";
+  return "claimMark.noClaim";
 }
 
 /**
  * The mark sits OUTSIDE the `data-sentence` span: that span's text is what
  * the Markdown projection is held to, character for character, so nothing
- * may be added inside it. With annotations off neither the mark nor the
- * underline is rendered.
+ * may be added inside it. Every sentence gets one while annotations are on,
+ * a connective sentence included; with annotations off neither the mark nor
+ * the underline is rendered.
  */
 function SentenceSpan({
   sentence,
@@ -91,8 +101,8 @@ function SentenceSpan({
   const tone = annotate ? claimTone(sentence) : null;
   return (
     <>
-      {tone !== null ? (
-        <span data-claim-mark={tone} className="sr-only">
+      {annotate ? (
+        <span data-claim-mark={tone ?? "none"} className="sr-only">
           {translated(t, claimMarkKey(sentence.claim, tone))}{" "}
         </span>
       ) : null}
@@ -171,6 +181,8 @@ export interface RerunState {
   readonly running: string | null;
   /** The brief's writable ids: a skipped section still in it can be generated on its own. */
   readonly writable: ReadonlySet<string>;
+  /** True while a full generation is in flight: the buttons of the result still on screen must not look live. */
+  readonly disabled: boolean;
   readonly onRerun: (sectionId: string) => void;
 }
 
@@ -197,7 +209,7 @@ function SectionCard({
 }) {
   const [open, setOpen] = useState(index < OPEN_BY_DEFAULT || section.status === "failed");
   const exhausted = rerun.used >= SECTION_RERUN_SOFT_MAX;
-  const busy = rerun.running !== null;
+  const busy = rerun.disabled || rerun.running !== null;
   return (
     <li
       data-draft-section={section.id}
