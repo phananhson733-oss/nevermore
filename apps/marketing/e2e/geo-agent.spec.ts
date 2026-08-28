@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test, type Page, type Request } from "@playwright/test";
 
 import { deriveGeoRunCoverage } from "../src/lib/agents/geo-report-derive";
@@ -7,6 +8,16 @@ import {
 } from "../src/lib/agents/geo-sampling";
 import type { GeoQuerySetV1 } from "../src/lib/agents/geo-query-contract";
 import type { GeoContextSnapshotV1 } from "../src/lib/agents/geo-context";
+import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  canonicalProfileJson,
+  emptyMarketingWebsiteProfile,
+  type MarketingWebsiteProfileV1,
+  type WebsiteDetails,
+  type WebsiteProfileReferenceV1,
+  type WebsiteSummary,
+} from "../src/lib/account-websites/contracts";
 
 /**
  * The GEO Agent, driven the way a visitor drives it.
@@ -19,6 +30,125 @@ import type { GeoContextSnapshotV1 } from "../src/lib/agents/geo-context";
  */
 
 const RUN_ENDPOINT = "**/api/agents/geo/run";
+const PROFILE_NOW = "2026-08-28T00:00:00.000Z";
+const PROFILE_WEBSITE_ID = "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6";
+const PROFILE_SNAPSHOT_ID = "a53f4ddb-7cd6-42da-af53-88cc68b41987";
+const PROFILE_REVISION = 7;
+
+function confirmedGeoProfile(): MarketingWebsiteProfileV1 {
+  return {
+    ...emptyMarketingWebsiteProfile(),
+    productName: "Profile Acme",
+    oneLinePositioning: "Evidence-led AI visibility monitoring",
+    valueProposition: "Show growth teams where assistants miss their sources",
+    categories: ["AI visibility tracking"],
+    primaryIcp: "Growth teams",
+    buyer: "Head of growth",
+    user: "SEO analysts",
+    jtbd: "Know whether assistants cite us",
+    useCases: ["Monitor citation gaps"],
+    outcomes: ["Increase source coverage"],
+    barriers: ["Sparse public evidence"],
+    directCompetitors: ["RivalCo"],
+    indirectAlternatives: ["Manual prompt checks"],
+    country: "US",
+    locale: "en-US",
+  };
+}
+
+function profileHash(profile: MarketingWebsiteProfileV1): string {
+  return createHash("sha256")
+    .update(canonicalProfileJson(profile))
+    .digest("hex");
+}
+
+function confirmedGeoWebsite(profile: MarketingWebsiteProfileV1): {
+  readonly summary: WebsiteSummary;
+  readonly details: WebsiteDetails;
+  readonly reference: WebsiteProfileReferenceV1;
+} {
+  const hash = profileHash(profile);
+  const reference: WebsiteProfileReferenceV1 = {
+    schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+    websiteId: PROFILE_WEBSITE_ID,
+    snapshotId: PROFILE_SNAPSHOT_ID,
+    snapshotRevision: PROFILE_REVISION,
+    profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+    profileHash: hash,
+  };
+  const summary: WebsiteSummary = {
+    websiteId: PROFILE_WEBSITE_ID,
+    origin: "https://acme.test",
+    host: "acme.test",
+    canonicalSiteKey: "acme.test",
+    displayName: "Acme saved profile",
+    isPrimary: true,
+    profileState: "confirmed",
+    confirmedSnapshotId: PROFILE_SNAPSHOT_ID,
+    confirmedSnapshotRevision: PROFILE_REVISION,
+    confirmedAt: PROFILE_NOW,
+    createdAt: PROFILE_NOW,
+    updatedAt: PROFILE_NOW,
+  };
+  return {
+    summary,
+    reference,
+    details: {
+      ...summary,
+      draft: {
+        draftVersion: 1,
+        updatedAt: PROFILE_NOW,
+        profileHash: hash,
+        profile,
+      },
+      currentConfirmedSnapshot: {
+        ...reference,
+        confirmedAt: PROFILE_NOW,
+        profile,
+      },
+    },
+  };
+}
+
+interface WebsiteProfileHarness {
+  readonly reference: WebsiteProfileReferenceV1;
+  readonly listRequests: () => number;
+  readonly detailRequests: () => number;
+}
+
+async function installConfirmedWebsiteProfile(
+  page: Page,
+): Promise<WebsiteProfileHarness> {
+  const fixture = confirmedGeoWebsite(confirmedGeoProfile());
+  let listRequests = 0;
+  let detailRequests = 0;
+
+  await page.route("**/api/account/websites", async (route) => {
+    listRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { websites: [fixture.summary] } }),
+    });
+  });
+  await page.route(
+    `**/api/account/websites/${PROFILE_WEBSITE_ID}`,
+    async (route) => {
+      detailRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { website: fixture.details } }),
+      });
+    },
+  );
+
+  return {
+    reference: fixture.reference,
+    listRequests: () => listRequests,
+    detailRequests: () => detailRequests,
+  };
+}
 
 interface RunRequestBody {
   readonly schemaVersion: string;
@@ -214,6 +344,157 @@ test("posts exactly the facts the visitor confirmed, and the real plan size", as
   expect(body.querySet.queries.every((query) => query.userConfirmed)).toBe(
     true,
   );
+});
+
+test("references one exact website snapshot, reviews pinned context, and restores it without another lookup or run", async ({
+  page,
+}) => {
+  const harness = await install(page);
+  const website = await installConfirmedWebsiteProfile(page);
+
+  await page.goto("/agents/geo");
+  await page.fill("#geo-url", "https://www.acme.test/pricing");
+
+  // The private website store stays untouched until the visitor explicitly
+  // opens the saved-profile chooser.
+  expect(website.listRequests()).toBe(0);
+  expect(website.detailRequests()).toBe(0);
+  await page
+    .getByRole("button", { name: "Use saved website profile" })
+    .click();
+  await expect(page.getByText("Exact URL match")).toBeVisible();
+  await expect(page.locator("#agent-website-profile")).toHaveValue(
+    PROFILE_WEBSITE_ID,
+  );
+  expect(website.listRequests()).toBe(1);
+  expect(website.detailRequests()).toBe(1);
+
+  // GEO deliberately exposes Reference only. Import would create a detached
+  // copy and would make a later report look reproducible when it is not.
+  await expect(page.getByRole("button", { name: "Import" })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Reference exact version" })
+    .click();
+  await expect(page.locator("#geo-product")).toHaveValue("Profile Acme");
+  await expect(page.locator("#geo-category")).toHaveValue(
+    "AI visibility tracking",
+  );
+  await expect(page.locator("#geo-buyer")).toHaveValue("Head of growth");
+  await expect(page.locator("#geo-jtbd")).toHaveValue(
+    "Know whether assistants cite us",
+  );
+  await expect(page.locator("#geo-market")).toHaveValue("US");
+
+  const contextBanner = page.locator(
+    "[data-geo-website-profile-reference]",
+  );
+  await expect(contextBanner).toHaveAttribute(
+    "data-snapshot-revision",
+    String(PROFILE_REVISION),
+  );
+  await expect(contextBanner).toHaveAttribute(
+    "data-profile-hash",
+    website.reference.profileHash,
+  );
+
+  await page.getByRole("button", { name: "Review the facts" }).click();
+  const alias = page.locator('input[id^="geo-alias-"]').first();
+  const category = page.locator("#geo-category-confirm");
+  const confirm = page.getByRole("button", {
+    name: "Confirm and generate the questions",
+  });
+  await expect(alias).not.toBeChecked();
+  await expect(category).not.toBeChecked();
+  await expect(confirm).toBeDisabled();
+
+  // These Product/ICP-derived fields are not editable run overlays. The user
+  // sees the exact values that will be pinned before any provider call.
+  await expect(
+    page.locator('[data-geo-hidden-profile-field="user"]'),
+  ).toContainText("SEO analysts");
+  await expect(
+    page.locator('[data-geo-hidden-profile-field="use_cases"]'),
+  ).toContainText("Monitor citation gaps");
+  await expect(
+    page.locator('[data-geo-hidden-profile-field="outcomes"]'),
+  ).toContainText("Increase source coverage");
+  await expect(
+    page.locator('[data-geo-hidden-profile-field="barriers"]'),
+  ).toContainText("Sparse public evidence");
+  await expect(
+    page.locator('[data-geo-hidden-profile-field="indirect_alternatives"]'),
+  ).toContainText("Manual prompt checks");
+
+  await alias.check();
+  await category.check();
+  await confirm.click();
+  await page.getByRole("button", { name: /Run 18 provider calls/ }).click();
+  await expect(page.getByText("What this run observed")).toBeVisible();
+
+  expect(harness.runRequests).toHaveLength(1);
+  const body = harness.runRequests[0]!;
+  expect(body.context.websiteProfileReference).toEqual(website.reference);
+  expect(body.context).toMatchObject({
+    targetUrl: "https://www.acme.test/pricing",
+    targetHost: "acme.test",
+    productName: "Profile Acme",
+    category: "AI visibility tracking",
+    buyer: "Head of growth",
+    user: "SEO analysts",
+    jtbd: "Know whether assistants cite us",
+    useCases: ["Monitor citation gaps"],
+    outcomes: ["Increase source coverage"],
+    barriers: ["Sparse public evidence"],
+    directCompetitors: ["RivalCo"],
+    indirectAlternatives: ["Manual prompt checks"],
+  });
+  for (const field of [
+    "user",
+    "use_cases",
+    "outcomes",
+    "barriers",
+    "indirect_alternatives",
+  ]) {
+    expect(body.context.sourceSummary).toContainEqual({
+      field,
+      source: "saved_website_profile",
+      limitationCode: "pinned_snapshot",
+    });
+  }
+  expect(body.querySet.queries.every((query) => query.userConfirmed)).toBe(
+    true,
+  );
+
+  const reportReference = page.locator(
+    "[data-geo-report-website-profile-reference]",
+  );
+  await expect(reportReference).toHaveAttribute(
+    "data-snapshot-revision",
+    String(PROFILE_REVISION),
+  );
+  await expect(reportReference).toHaveAttribute(
+    "data-profile-hash",
+    website.reference.profileHash,
+  );
+
+  const listBeforeLocaleSwitch = website.listRequests();
+  const detailBeforeLocaleSwitch = website.detailRequests();
+  await page.getByRole("button", { name: "切换到中文" }).click();
+  await expect(page).toHaveURL(/\/zh\/agents\/geo$/u);
+  const restoredReference = page.locator(
+    "[data-geo-report-website-profile-reference]",
+  );
+  await expect(restoredReference).toHaveAttribute(
+    "data-snapshot-revision",
+    String(PROFILE_REVISION),
+  );
+  await expect(restoredReference).toHaveAttribute(
+    "data-profile-hash",
+    website.reference.profileHash,
+  );
+  expect(harness.runRequests).toHaveLength(1);
+  expect(website.listRequests()).toBe(listBeforeLocaleSwitch);
+  expect(website.detailRequests()).toBe(detailBeforeLocaleSwitch);
 });
 
 test("shows evidence, sources and solutions on one page with one copy action", async ({
