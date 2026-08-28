@@ -81,9 +81,8 @@ other paid production call was made.
 | Workflow Vitest integration | PASS: 1 file, 2 tests; typed failure and active-hook redirect execute through the real local Workflow harness |
 | Browser interaction suite | PASS: 10 tests; 3 website-profile scenarios plus 7 durable/legacy/evidence scenarios |
 | Marketing TypeScript | PASS |
-| Public-tools TypeScript | PASS before upstream merge; must be rerun on the final documentation commit |
-| Sources TypeScript | PASS before upstream merge; must be rerun on the final documentation commit |
-| Changed-file ESLint | PASS before upstream merge; must be rerun on the final documentation commit |
+| Full workspace TypeScript | PASS: root E2E plus every workspace with a typecheck script, including Marketing, public-tools, sources, Product, and Worker |
+| Changed-file ESLint | PASS on every changed TypeScript, TSX, and MJS file |
 | Marketing production build | PASS: 270 static/dynamic pages, 18 Workflow steps, 1 Workflow, and the three managed internal routes |
 | Secrets scan | PASS: 4 files, 75 tests, no OAuth token, API key, private key, JWT, or secret value found |
 | `verify:docs` | PASS: 14 tests |
@@ -95,11 +94,13 @@ other paid production call was made.
 
 These failures were not edited or weakened to make the branch appear green:
 
-1. Full unit suite: 902 files passed and one existing blog-content assertion
-   failed; 13,365 tests passed and one failed. The assertion expects 80 English
+1. Full unit suite: 928 files passed and one existing blog-content assertion
+   failed; 13,733 tests passed and one failed. The assertion expects 80 English
    posts while the integrated content set contains 83. This branch does not
    change that test or blog content.
-2. Full Marketing lint: four existing errors remain in untouched files:
+2. Full root lint first stops on two existing public-tools errors in untouched
+   `seo-audit/keyword-evidence/extract.test.ts` and `seo-audit/model.ts` files.
+   A separate full Marketing lint reports four existing errors in untouched files:
    `competitor-keyword-gap-tool.test.tsx`, `on-page-check-list.tsx`, and two in
    `draft-handler.ts`. Changed Workflow files pass scoped lint.
 3. `verify:spec`: the active v0.4 lock already expects an older root
