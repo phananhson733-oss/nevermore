@@ -476,7 +476,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "How long does it take?",
         answer:
-          "The site read is bounded to 20 pages. Candidate pricing and page-one checks then continue through every candidate except an explicit-zero term in a replenishing pool of up to ten concurrent requests, so there is no fixed duration promise; elapsed time depends on the candidate count and provider responses.",
+          "The site read is bounded to 20 pages. Candidate pricing and page-one checks then continue through every candidate except an explicit-zero term in durable waves of up to ten concurrent requests. Completed keywords are checkpointed independently, so there is no fixed duration promise; elapsed time depends on the candidate count and provider responses.",
       },
     ],
   },
@@ -965,7 +965,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "要跑多久？",
         answer:
-          "站点读取最多覆盖 20 个页面。随后会用最多 10 个并发请求的持续补位池，继续核价并检查除明确核价为零以外的每个候选词，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
+          "站点读取最多覆盖 20 个页面。随后会用每批最多 10 个并发请求的耐久步骤，继续核价并检查除明确核价为零以外的每个候选词。完成的关键词会独立写入检查点，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
       },
     ],
   },
