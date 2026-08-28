@@ -284,6 +284,17 @@ export async function handleCitabilityRequest(
       return fail("not_utf8", 422);
     }
 
+    // A charset declared only in a <meta> tag never reaches the header, and
+    // the fetch layer decodes as UTF-8 either way. What comes back is a page
+    // of replacement characters, which then count as visible text and pass
+    // the "the HTML carries the copy" check while every term in the visitor's
+    // own language fails to match. One bad decode, two opposite lies.
+    const body = page.body ?? "";
+    const replacements = (body.match(/\ufffd/gu) ?? []).length;
+    if (body.length > 0 && replacements / body.length > 0.02) {
+      return fail("not_utf8", 422);
+    }
+
     const finalUrl = page.finalUrl ?? normalized.url;
     const origin = new URL(finalUrl).origin;
     // The pre-flight bucket was keyed on the submitted host; a redirect moves
@@ -302,7 +313,7 @@ export async function handleCitabilityRequest(
       {
         url: normalized.url,
         finalUrl,
-        rawHtml: page.body ?? "",
+        rawHtml: body,
         bodyComplete: page.bodyComplete !== false,
         robots,
         llmsTxt,

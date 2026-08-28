@@ -149,7 +149,26 @@ function rulesForUserAgent(
  * so scanning gives the same answer in linear time. A trailing `$` is the one
  * case that needs the final literal pinned to the end instead.
  */
-function globMatches(path: string, pattern: string): boolean {
+/**
+ * Percent-escapes decoded where they decode cleanly.
+ *
+ * `URL.pathname` percent-encodes non-ASCII, while robots.txt carries whatever
+ * bytes the site wrote - usually the characters themselves. Comparing the two
+ * directly means a `Disallow: /博客/` never matches `/%E5%8D%9A%E5%AE%A2/`, so
+ * a site that closed a directory to AI crawlers is told nothing blocks them.
+ */
+function decodeForMatch(value: string): string {
+  if (!value.includes("%")) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function globMatches(rawPath: string, rawPattern: string): boolean {
+  const path = decodeForMatch(rawPath);
+  const pattern = decodeForMatch(rawPattern);
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
   const segments = body.split("*");

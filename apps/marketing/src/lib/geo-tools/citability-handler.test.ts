@@ -362,6 +362,29 @@ describe("truncation and encoding", () => {
     expect(await errorCode(response)).toBe("not_utf8");
   });
 
+  it("refuses a page whose charset was only declared in a meta tag", async () => {
+    // No charset in the header, so the fetch layer decoded it as UTF-8 and
+    // handed back replacement characters.
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({
+        fetchResource: async (url) =>
+          url.endsWith("/guide")
+            ? {
+                kind: "ok",
+                status: 200,
+                contentType: "text/html",
+                finalUrl: url,
+                body: `<html><head><meta charset="gb2312"></head><body>${"\ufffd".repeat(600)}</body></html>`,
+                bodyComplete: true,
+              }
+            : { kind: "ok", status: 404, body: "" },
+      }),
+    );
+    expect(response.status).toBe(422);
+    expect(await errorCode(response)).toBe("not_utf8");
+  });
+
   it("charges the target budget again when a redirect lands elsewhere", async () => {
     const chargeTarget = vi.fn(async () => ({ ok: true as const }));
     await handleCitabilityRequest(

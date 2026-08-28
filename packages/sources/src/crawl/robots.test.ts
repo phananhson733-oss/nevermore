@@ -231,3 +231,29 @@ describe("robots matching is linear", () => {
     expect(denied("/a/b/private/ok")).toBe(false);
   });
 });
+
+describe("robots matching and percent-encoding", () => {
+  it("matches a non-ASCII rule against an encoded path", () => {
+    const { groups } = parseRobots(
+      "User-agent: *\nDisallow: /博客/\n",
+      ORIGIN,
+      true,
+    );
+    // `new URL(...).pathname` gives the encoded form; the file carries the
+    // characters. Compared as-is, a closed directory reads as fully open.
+    expect(
+      isPathAllowed(groups, "GPTBot", "/%E5%8D%9A%E5%AE%A2/%E6%96%87%E7%AB%A0"),
+    ).toBe(false);
+    expect(isPathAllowed(groups, "GPTBot", "/博客/文章")).toBe(false);
+    expect(isPathAllowed(groups, "GPTBot", "/blog/post")).toBe(true);
+  });
+
+  it("leaves a malformed escape alone rather than throwing", () => {
+    const { groups } = parseRobots(
+      "User-agent: *\nDisallow: /a%ZZ/\n",
+      ORIGIN,
+      true,
+    );
+    expect(isPathAllowed(groups, "GPTBot", "/a%ZZ/b")).toBe(false);
+  });
+});
