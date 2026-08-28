@@ -80,11 +80,16 @@ const THRESHOLD_COPY: readonly {
     ],
   },
   {
-    // The run endpoint's cap; the section endpoint's is larger and the page
-    // formats whichever route refused the body.
+    // The run endpoint's cap; the page formats whichever route refused the body.
     path: "errors.payload_too_large",
-    values: { kb: DRAFT_REQUEST_MAX_BYTES / 1024 },
-    pinned: [["kb", DRAFT_REQUEST_MAX_BYTES / 1024]],
+    values: { kb: Math.round(DRAFT_REQUEST_MAX_BYTES / 1024) },
+    pinned: [["kb", Math.round(DRAFT_REQUEST_MAX_BYTES / 1024)]],
+  },
+  {
+    // The section endpoint's cap: the brief plus a whole previous DraftResult.
+    path: "errors.payload_too_large",
+    values: { kb: Math.round(SECTION_REQUEST_MAX_BYTES / 1024) },
+    pinned: [["kb", Math.round(SECTION_REQUEST_MAX_BYTES / 1024)]],
   },
   {
     path: "running.elapsed",

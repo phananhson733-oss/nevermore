@@ -6,6 +6,8 @@
 
 import { useTranslations } from "next-intl";
 
+import { useSignedInListener } from "./use-signed-in-listener";
+
 import {
   Dialog,
   DialogContent,
@@ -33,11 +35,20 @@ import { GoogleSignInButton } from "./google-sign-in-button";
 export function SignInDialog({
   open,
   onOpenChange,
+  onSignedIn,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /**
+   * Called synchronously once a credential became a session, immediately
+   * before the reload that follows. Registered for as long as this dialog is
+   * mounted, open or not: a credential posted before the dialog closed still
+   * completes, and the caller's state must still survive the reload.
+   */
+  readonly onSignedIn?: () => void;
 }) {
   const t = useTranslations();
+  useSignedInListener(onSignedIn);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

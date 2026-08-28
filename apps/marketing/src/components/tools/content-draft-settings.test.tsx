@@ -64,15 +64,28 @@ async function render(locale: "en" | "zh"): Promise<HTMLElement> {
   return host;
 }
 
+const PHRASES = {
+  en: {
+    attempts: `at most ${SECTION_MAX_ATTEMPTS} attempts`,
+    timeout: `a ${SECTION_TIMEOUT_MS / 1_000}s timeout`,
+    budget: `a ${DRAFT_TOTAL_BUDGET_MS / 1_000}s total budget`,
+  },
+  zh: {
+    attempts: `最多 ${SECTION_MAX_ATTEMPTS} 次尝试`,
+    timeout: `每次超时 ${SECTION_TIMEOUT_MS / 1_000} 秒`,
+    budget: `总预算 ${DRAFT_TOTAL_BUDGET_MS / 1_000} 秒`,
+  },
+} as const;
+
 describe.each(["en", "zh"] as const)("ContentDraftSettings (%s)", (locale) => {
-  it("prints attempts, timeout and budget as numbers, never as a leftover placeholder", async () => {
+  it("prints attempts, timeout and budget inside their full phrases, never as a leftover placeholder", async () => {
     const host = await render(locale);
-    const text = host.textContent ?? "";
-    expect(text).not.toMatch(/\{[a-zA-Z]+\}/);
-    expect(text).toContain(String(SECTION_MAX_ATTEMPTS));
-    expect(text).toContain(String(SECTION_TIMEOUT_MS / 1_000));
-    expect(text).toContain(String(DRAFT_TOTAL_BUDGET_MS / 1_000));
-    expect(text).not.toMatch(/tools\.contentDraft|settings\./);
+    const help = host.querySelector("[data-sections-help]")?.textContent ?? "";
+    expect(help).not.toMatch(/\{[a-zA-Z]+\}/);
+    expect(help).toContain(PHRASES[locale].attempts);
+    expect(help).toContain(PHRASES[locale].timeout);
+    expect(help).toContain(PHRASES[locale].budget);
+    expect(host.textContent ?? "").not.toMatch(/tools\.contentDraft|settings\./);
     expect(host.querySelectorAll("[data-section-checkbox]").length).toBeGreaterThan(0);
   });
 });

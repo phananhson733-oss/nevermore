@@ -538,7 +538,9 @@ export async function handleContentDraftSectionRequest(
     // parser it passed on the way out (fingerprint included), so its settings,
     // sections and run id are verified facts rather than loose client fields.
     const previous = await parseDraftResult(body["previous"], brief);
-    if (!previous.ok) return refuse(previous.code, previous.code === "invalid_request" ? 400 : 422);
+    // Whatever the parser objected to, the visitor's remedy is the same — the
+    // brief is fine, the draft on their screen is not — so one closed code.
+    if (!previous.ok) return refuse("previous_draft_invalid", previous.code === "invalid_request" ? 400 : 422);
     const settings = previous.value.settings;
     // A skipped section is still writable: the visitor unchecked it on the first
     // run and may ask for it now; this endpoint is how it gets written.

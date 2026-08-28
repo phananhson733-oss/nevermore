@@ -181,12 +181,26 @@ describe.each([
     // span -- a connective sentence too, so silence never means "unmarked".
     const sentences = host.querySelectorAll("[data-sentence]");
     expect(host.querySelectorAll("[data-claim-mark]").length).toBe(sentences.length);
+    const claimMark = catalog(locale)["claimMark"] as Record<string, string>;
+    const seen = new Set<string>();
     for (const mark of host.querySelectorAll("[data-claim-mark]")) {
       expect(mark.className).toContain("sr-only");
       expect(mark.closest("[data-sentence]")).toBeNull();
-      expect(mark.nextElementSibling?.hasAttribute("data-sentence")).toBe(true);
-      expect(mark.textContent?.trim()).not.toBe("");
+      const sentence = mark.nextElementSibling;
+      expect(sentence?.hasAttribute("data-sentence")).toBe(true);
+      const claim = sentence?.getAttribute("data-claim");
+      const tone = mark.getAttribute("data-claim-mark");
+      const expected =
+        claim === "no_claim" ? claimMark["noClaim"]
+        : claim === "gap" ? claimMark["gap"]
+        : claim === "stance" ? claimMark["stance"]
+        : tone === "third" ? claimMark["boundThird"]
+        : claimMark["boundFirst"];
+      expect(mark.textContent?.trim(), `${claim}/${tone}`).toBe(expected);
+      seen.add(`${claim}/${tone}`);
     }
+    // Every state the mark can take was actually rendered and checked.
+    expect([...seen].sort()).toEqual(["bound/first", "bound/third", "gap/gap", "no_claim/none", "stance/first"]);
     expect(host.querySelectorAll('[data-claim-mark="none"]').length).toBe(
       host.querySelectorAll('[data-sentence][data-claim="no_claim"]').length,
     );
@@ -423,6 +437,37 @@ describe.each([
     });
     expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
     expect(host.querySelector("[data-copy-failed]")).toBeNull();
+  });
+
+  it("reports a failed latest copy in words, and clears it when the next copy succeeds", async () => {
+    const pending: { resolve: () => void; reject: () => void }[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () =>
+          new Promise<void>((resolve, reject) => {
+            pending.push({ resolve, reject });
+          }),
+      },
+    });
+    const brief = await draftBrief();
+    const host = await render(locale, brief, await draftResultFixture(brief));
+    await click(host.querySelector("[data-copy-markdown]"));
+    await act(async () => {
+      pending[0]?.reject();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(
+      (catalog(locale)["actions"] as Record<string, string>)["copyFailed"],
+    );
+    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copyLabel);
+    await click(host.querySelector("[data-copy-markdown]"));
+    await act(async () => {
+      pending[1]?.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.querySelector("[data-copy-failed]")).toBeNull();
+    expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copiedLabel);
   });
 
   it("disables every rerun control while a full generation is in flight", async () => {

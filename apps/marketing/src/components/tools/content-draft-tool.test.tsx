@@ -23,20 +23,36 @@ import {
   contentBriefFixture,
   withFingerprint,
 } from "@sf/public-tools/content-brief/fixtures";
+import { parseContentBriefHandoff } from "@sf/public-tools/content-brief/parse-brief";
 import {
   draftBrief,
   draftResultFixture,
 } from "@sf/public-tools/content-brief/draft-fixtures";
 
 const { signInDialogMock, trackMarketingEventMock } = vi.hoisted(() => ({
+  // The succeed control is rendered whether the dialog is open or not: a
+  // credential posted before the dialog closed still completes, and the
+  // real dialog keeps its onSignedIn registered for as long as it is mounted.
   signInDialogMock: vi.fn(
-    ({ open, onOpenChange }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) =>
-      open ? (
-        <div data-testid="sign-in-dialog">
-          sign in
-          <button type="button" data-testid="sign-in-cancel" onClick={() => onOpenChange(false)} />
-        </div>
-      ) : null,
+    ({
+      open,
+      onOpenChange,
+      onSignedIn,
+    }: {
+      readonly open: boolean;
+      readonly onOpenChange: (open: boolean) => void;
+      readonly onSignedIn?: () => void;
+    }) => (
+      <>
+        {open ? (
+          <div data-testid="sign-in-dialog">
+            sign in
+            <button type="button" data-testid="sign-in-cancel" onClick={() => onOpenChange(false)} />
+          </div>
+        ) : null}
+        <button type="button" data-testid="sign-in-succeed" onClick={() => onSignedIn?.()} />
+      </>
+    ),
   ),
   trackMarketingEventMock: vi.fn(),
 }));
@@ -390,77 +406,108 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     expect(trackMarketingEventMock).not.toHaveBeenCalled();
   });
 
-  it("puts a consumed handoff back verbatim before opening sign-in, so the reload consumes it again", async () => {
+  it("writes the brief for the reload only once a credential became a session, even after the dialog was closed", async () => {
     const brief = await draftBrief();
-    const now = Date.now();
-    const raw = JSON.stringify({ version: 1, created_at: now, expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS, brief });
-    window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
+    storeHandoff(brief);
     const host = await renderTool();
     await settle();
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
     await click(host.querySelector("[data-run-draft]"));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
-    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
-  });
-
-  it("removes the restored handoff again when the sign-in dialog is closed without signing in", async () => {
-    const brief = await draftBrief();
-    const raw = storeHandoff(brief);
-    const host = await renderTool();
-    await settle();
-    await click(host.querySelector("[data-run-draft]"));
-    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(raw);
+    // Opening the dialog writes nothing: a cancelled sign-in leaves no brief behind.
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
     await click(host.querySelector('[data-testid="sign-in-cancel"]'));
     expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
-    // The brief itself is still loaded: only the envelope for the reload is gone.
-    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
+    // The credential POST that was in flight completes after the close: the
+    // brief is written immediately before the reload that follows.
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = await parseContentBriefHandoff(JSON.parse(raw ?? "null"));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.brief.run.fingerprint).toBe(brief.run.fingerprint);
   });
 
-  it("removes the restored handoff again on Replace, and a brief pasted afterwards does not bring it back", async () => {
+  it("removes the envelope written for the reload again on Replace, and leaves a newer one another tab wrote", async () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
     await settle();
-    await click(host.querySelector("[data-run-draft]"));
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).not.toBeNull();
-    // The paste and upload entrances only exist once the loaded brief is
-    // replaced, so Replace is the gesture that clears it; the paste that
-    // follows starts a new generation and never restores anything.
     await click(host.querySelector("[data-replace-brief]"));
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+
     const pasted = await withFingerprint(contentBriefFixture());
     await pasteBrief(host, pasted);
-    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
-    globalThis.fetch = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ signedIn: false }))) as unknown as typeof fetch;
-    await click(host.querySelector("[data-run-draft]"));
-    expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
-    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
-  });
-
-  it("does not remove a newer handoff another tab wrote in the meantime", async () => {
-    const brief = await draftBrief();
-    storeHandoff(brief);
-    const host = await renderTool();
-    await settle();
-    await click(host.querySelector("[data-run-draft]"));
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).not.toBeNull();
     window.sessionStorage.setItem(CONTENT_BRIEF_HANDOFF_KEY, "newer");
-    await click(host.querySelector('[data-testid="sign-in-cancel"]'));
+    await click(host.querySelector("[data-replace-brief]"));
     expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe("newer");
   });
 
-  it("refuses to open sign-in when the handoff cannot be put back, and says so", async () => {
+  it("says so when the brief cannot be kept for the reload, and clears that notice on the next run or Replace", async () => {
     const brief = await draftBrief();
     storeHandoff(brief);
     const host = await renderTool();
     await settle();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(host.querySelector("[data-handoff-keep-failed]")).not.toBeNull();
+    setItem.mockRestore();
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector("[data-handoff-keep-failed]")).toBeNull();
+    await click(host.querySelector('[data-testid="sign-in-cancel"]'));
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
-    await click(host.querySelector("[data-run-draft]"));
-    expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
-    expect(host.querySelector("[data-handoff-restore-failed]")).not.toBeNull();
-    expect(callsTo("/api/tools/content-draft/run")).toHaveLength(0);
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(host.querySelector("[data-handoff-keep-failed]")).not.toBeNull();
+    vi.restoreAllMocks();
+    await click(host.querySelector("[data-replace-brief]"));
+    expect(host.querySelector("[data-handoff-keep-failed]")).toBeNull();
+  });
+
+  it("lets a brief loaded before sign-in replace the waiting handoff, so the reload loads the visitor's choice", async () => {
+    const waiting = await draftBrief();
+    const pasted = await withFingerprint(contentBriefFixture());
+    expect(pasted.run.fingerprint).not.toBe(waiting.run.fingerprint);
+    const rawA = storeHandoff(waiting);
+    const host = await renderTool(false);
+    await settle();
+    expect(host.querySelector("[data-handoff-pending]")).not.toBeNull();
+    await pasteBrief(host, pasted);
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+    expect(host.querySelector("[data-handoff-pending]")).toBeNull();
+    const rawB = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
+    expect(rawB).not.toBeNull();
+    expect(rawB).not.toBe(rawA);
+    const parsed = await parseContentBriefHandoff(JSON.parse(rawB ?? "null"));
+    expect(parsed.ok && parsed.value.brief.run.fingerprint).toBe(pasted.run.fingerprint);
+
+    // Sign-in reloads: the page after it is authenticated and consumes B.
+    await act(async () => root?.unmount());
+    root = null;
+    document.body.replaceChildren();
+    const reloaded = await renderTool(true);
+    await settle();
+    expect(reloaded.querySelector('[data-brief-source="handoff"]')).not.toBeNull();
+    expect(reloaded.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("leaves the waiting handoff alone when the brief loaded before sign-in is rejected", async () => {
+    const rawA = storeHandoff(await draftBrief());
+    const host = await renderTool(false);
+    await settle();
+    await type(host.querySelector("[data-paste-brief]"), "{ not json");
+    await click(host.querySelector("[data-load-brief]"));
+    expect(host.querySelector("[data-intake-rejected]")).not.toBeNull();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(rawA);
   });
 
   it("leaves an unchecked section out of section_ids and renders the returned draft", async () => {
@@ -570,6 +617,22 @@ describe("ContentDraftTool reruns and result replacement", () => {
     expect(host.querySelector('[data-testid="reruns-used"]')?.textContent).toBe("1");
     // Still flagged: the new result carries the old settings too.
     expect(host.querySelector("[data-settings-changed]")).not.toBeNull();
+  });
+
+  it("renders the section endpoint's previous_draft_invalid refusal and keeps the result on screen", async () => {
+    const brief = await draftBrief();
+    const first = await draftResultFixture(brief);
+    globalThis.fetch = signedInFetch(
+      () => Response.json(first),
+      () => Response.json({ error: { code: "previous_draft_invalid" } }, { status: 422 }),
+    );
+    const host = await renderTool();
+    await loadAndRun(host, brief);
+    await click(host.querySelector('[data-testid="rerun-O1"]'));
+    await settle();
+    expect(host.querySelector("[data-error-code]")?.getAttribute("data-error-code")).toBe("previous_draft_invalid");
+    expect(host.querySelector("[data-error-code]")?.textContent).toContain("errors.previous_draft_invalid");
+    expect(runId(host)).toBe(first.run.run_id);
   });
 
   it("counts every section POST against the soft cap, failures included, and stops sending at the cap", async () => {

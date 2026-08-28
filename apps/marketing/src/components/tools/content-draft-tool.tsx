@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   DRAFT_RESULT_SCHEMA,
@@ -28,8 +28,8 @@ import {
 import {
   clearMatchingContentBriefHandoff,
   peekContentBriefHandoff,
-  restoreContentBriefHandoff,
   takeContentBriefHandoff,
+  writeContentBriefHandoff,
 } from "../../lib/tools/content-brief-handoff";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { trackMarketingEvent } from "../layout/google-analytics";
@@ -183,7 +183,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   const [result, setResult] = useState<DraftResult | null>(null);
   const [rerunsUsed, setRerunsUsed] = useState(0);
   const [handoffPending, setHandoffPending] = useState(false);
-  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [keepFailed, setKeepFailed] = useState(false);
   const [runningSection, setRunningSection] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startedAt = useRef(0);
@@ -198,18 +198,17 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    */
   const generation = useRef(0);
   /**
-   * The raw handoff envelope this tab consumed, kept so that a signed-out
-   * visitor's brief can be put back for the reload sign-in causes; cleared
-   * the moment another brief replaces it.
+   * The handoff waiting for a visitor the server knows is signed out, kept
+   * verbatim (not taken). It is cleared, exactly and only, when the visitor
+   * loads another brief before signing in: that brief then takes its place.
    */
-  const handoffRaw = useRef<string | null>(null);
+  const pendingRaw = useRef<string | null>(null);
   /**
-   * The envelope put back for a sign-in reload. Anything the visitor does
-   * instead of signing in — cancelling the dialog, replacing the brief,
-   * pasting or uploading another — clears it again, so a stale brief cannot
-   * come back on the next load.
+   * The envelope this tab wrote so the loaded brief survives the reload a
+   * sign-in causes. Replacing, pasting or uploading another brief clears it
+   * exactly, so a stale brief cannot come back on the next load.
    */
-  const restoredRaw = useRef<string | null>(null);
+  const writtenRaw = useRef<string | null>(null);
   const rerunsSpent = useRef(0);
 
   useEffect(() => {
@@ -228,7 +227,8 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   // and the page after that reload is the one that consumes it.
   useEffect(() => {
     if (!authenticated) {
-      setHandoffPending(peekContentBriefHandoff(window.sessionStorage));
+      pendingRaw.current = peekContentBriefHandoff(window.sessionStorage);
+      setHandoffPending(pendingRaw.current !== null);
       return;
     }
     const raw = takeContentBriefHandoff(window.sessionStorage);
@@ -240,9 +240,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     const gen = nextGeneration();
     setIntake({ phase: "parsing" });
     void parseIntake(raw, "handoff").then((next) => {
-      if (!mounted.current || gen !== generation.current) return;
-      if (next.phase === "loaded") handoffRaw.current = raw;
-      loadIntake(next);
+      if (mounted.current && gen === generation.current) loadIntake(next);
     });
   }, []);
 
@@ -263,11 +261,27 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     resultsRef.current?.scrollIntoView({ block: "start" });
   }, [result]);
 
-  /** Removes the envelope put back for sign-in, if it is still exactly that envelope. */
-  function discardRestoredHandoff(): void {
-    if (restoredRaw.current === null) return;
-    clearMatchingContentBriefHandoff(window.sessionStorage, restoredRaw.current);
-    restoredRaw.current = null;
+  /** Removes the envelope this tab wrote for a reload, if it is still exactly that envelope. */
+  function discardWrittenHandoff(): void {
+    if (writtenRaw.current === null) return;
+    clearMatchingContentBriefHandoff(window.sessionStorage, writtenRaw.current);
+    writtenRaw.current = null;
+  }
+
+  /**
+   * Writes the loaded brief as a fresh envelope so it survives the reload a
+   * sign-in causes. Idempotent: a later write for the same brief replaces
+   * the earlier one with a fresh TTL.
+   */
+  function keepForReload(brief: ContentBrief): void {
+    const written = writeContentBriefHandoff(window.sessionStorage, Date.now(), brief);
+    if (written.ok) {
+      writtenRaw.current = written.raw;
+      setKeepFailed(false);
+    } else {
+      writtenRaw.current = null;
+      setKeepFailed(true);
+    }
   }
 
   function nextGeneration(): number {
@@ -275,12 +289,24 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     activeRequest.current?.abort();
     activeRequest.current = null;
     submissionLocked.current = false;
-    discardRestoredHandoff();
+    discardWrittenHandoff();
+    setKeepFailed(false);
     return generation.current;
   }
 
   function loadIntake(next: IntakeState): void {
-    if (next.phase !== "loaded" || next.source !== "handoff") handoffRaw.current = null;
+    if (next.phase === "loaded" && next.source !== "handoff" && !authenticated) {
+      // A brief loaded before sign-in takes the waiting handoff's place: the
+      // waiting one is cleared (only while it is still exactly what was
+      // peeked) and the new one is written for the sign-in reload, so the
+      // page after that reload consumes what the visitor chose last.
+      if (pendingRaw.current !== null) {
+        clearMatchingContentBriefHandoff(window.sessionStorage, pendingRaw.current);
+        pendingRaw.current = null;
+        setHandoffPending(false);
+      }
+      keepForReload(next.brief);
+    }
     setIntake(next);
     setResult(null);
     setRerunsUsed(0);
@@ -341,6 +367,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   function beginRequest(nextPhase: Phase): AbortController {
     submissionLocked.current = true;
     setErrorCode(null);
+    setKeepFailed(false);
     const controller = new AbortController();
     activeRequest.current = controller;
     setPhase(nextPhase);
@@ -354,32 +381,23 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     }
   }
 
-  /**
-   * Sign-in reloads the page, and the reload would find the handoff already
-   * consumed. The exact envelope this tab took is put back first (same TTL),
-   * so the page after sign-in consumes it once more; a plain refresh still
-   * starts empty because nothing is put back on that path.
-   */
   function openSignIn(): void {
-    if (handoffRaw.current !== null && restoredRaw.current === null) {
-      if (!restoreContentBriefHandoff(window.sessionStorage, handoffRaw.current)) {
-        // Signing in would reload into an empty page and lose the brief;
-        // say so instead of opening the dialog.
-        setRestoreFailed(true);
-        return;
-      }
-      restoredRaw.current = handoffRaw.current;
-    }
-    setRestoreFailed(false);
     setSignInOpen(true);
   }
 
-  function onSignInOpenChange(open: boolean): void {
-    setSignInOpen(open);
-    // Closed without signing in: the restored envelope must not outlive
-    // the dialog, or a later refresh resurrects a brief nobody asked for.
-    if (!open) discardRestoredHandoff();
-  }
+  /**
+   * Sign-in reloads the page. The loaded brief is written as a fresh
+   * envelope only once a credential has become a session, immediately
+   * before that reload — never earlier, so closing the dialog, replacing the
+   * brief or a plain refresh can neither lose it nor resurrect it. A plain
+   * refresh still starts empty: nothing is written on that path.
+   */
+  const latestIntake = useRef(intake);
+  latestIntake.current = intake;
+  const onSignedIn = useCallback((): void => {
+    const current = latestIntake.current;
+    if (current.phase === "loaded") keepForReload(current.brief);
+  }, []);
 
   /** Session first, always: a signed-out visitor gets the dialog and no paid POST is sent. */
   async function signedIn(controller: AbortController, gen: number, fallback: Phase): Promise<boolean> {
@@ -534,9 +552,9 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
           {t("intake.handoffPending")}
         </p>
       ) : null}
-      {restoreFailed ? (
-        <p data-handoff-restore-failed role="alert" className="text-[12.5px] leading-[1.6] text-brand-error">
-          {t("intake.handoffRestoreFailed")}
+      {keepFailed ? (
+        <p data-handoff-keep-failed role="alert" className="text-[12.5px] leading-[1.6] text-brand-error">
+          {t("intake.handoffKeepFailed")}
         </p>
       ) : null}
       <ContentDraftIntake
@@ -648,7 +666,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
           />
         </div>
       ) : null}
-      <SignInDialog open={signInOpen} onOpenChange={onSignInOpenChange} />
+      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} onSignedIn={onSignedIn} />
     </section>
   );
 }

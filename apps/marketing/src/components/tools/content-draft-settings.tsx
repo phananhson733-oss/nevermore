@@ -157,7 +157,7 @@ export function ContentDraftSettings({
       </div>
       <fieldset className="mt-5" disabled={disabled}>
         <legend className={FIELD_LABEL}>{t("settings.sections.label")}</legend>
-        <p className={HELP}>
+        <p data-sections-help className={HELP}>
           {t("settings.sections.help", {
             timeout: Math.round(SECTION_TIMEOUT_MS / 1000),
             budget: Math.round(DRAFT_TOTAL_BUDGET_MS / 1000),

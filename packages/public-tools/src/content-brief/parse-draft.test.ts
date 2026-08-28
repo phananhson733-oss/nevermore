@@ -7,21 +7,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import { draftFingerprint } from "./canonical.ts";
 import {
+  DRAFT_RESULT_MAX_BYTES,
   DRAFT_TOTAL_BUDGET_MS,
   MODEL_TEXT_MAX_CHARS,
+  MUST_ANSWER_CAP,
   OUTLINE_CAP,
   SECTION_BODY_MAX_BYTES,
   SECTION_ENDPOINT_BUDGET_MS,
   SECTION_MAX_ATTEMPTS,
   SECTION_MAX_SENTENCES,
+  SECTION_REQUEST_MAX_BYTES,
   SENTENCE_MAX_CHARS,
 } from "./constants.ts";
-import type { DraftResult, DraftSection, LlmReadMeta } from "./contract.ts";
-import { aggregateSectionLlm } from "./draft-assemble.ts";
-import type { SectionCallMeta } from "./draft-assemble.ts";
+import { CONTENT_BRIEF_HANDOFF_MAX_BYTES } from "./contract.ts";
+import type { ContentBrief, DraftResult, DraftSection, LlmReadMeta, ModelSentence, MustAnswerItem, OutlineItem } from "./contract.ts";
+import { aggregateSectionLlm, assembleDraftResult, buildCoverage, planSections, validateCoverageOutput } from "./draft-assemble.ts";
+import type { PlannedSection, SectionCallMeta } from "./draft-assemble.ts";
 import { draftBrief, draftResultFixture, fixtureCallOf } from "./draft-fixtures.ts";
-import { parseDraftResult, parseDraftResultShape, parseDraftSections, parseDraftSettings } from "./parse-draft.ts";
+import { contentBriefFixture, withFingerprint } from "./fixtures.ts";
+import { parseDraftResult, parseDraftResultShape, parseDraftSections, parseDraftSettings, sectionEvidenceFor } from "./parse-draft.ts";
 import type { ParseDraftFailure, RerunProvenance } from "./parse-draft.ts";
+import { validateSectionOutput } from "./validate-section.ts";
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -96,6 +102,102 @@ function okSection(result: DraftResult, index: number): Extract<DraftSection, { 
 /** The first-run aggregate the fixture would have produced for these sections. */
 function aggregateOf(sections: readonly DraftSection[]) {
   return aggregateSectionLlm(sections.flatMap((section) => fixtureCallOf(section) ?? []), 0.4);
+}
+
+function bytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+/* ------------------------------------------------------------------ */
+/* the largest contract-valid result                                   */
+/* ------------------------------------------------------------------ */
+
+/** The connected fixture brief stretched to OUTLINE_CAP sections over MUST_ANSWER_CAP questions (clusters reused). */
+async function widestBrief(): Promise<ContentBrief> {
+  const seed = contentBriefFixture({ connected: true });
+  if (seed.must_answer.status !== "available" || seed.outline.status !== "available") throw new Error("fixture: connected brief has questions and an outline");
+  const seedQuestions = seed.must_answer.items;
+  const questions = Array.from({ length: MUST_ANSWER_CAP }, (_, index): MustAnswerItem => ({
+    ...structuredClone(seedQuestions[index % seedQuestions.length] as MustAnswerItem),
+    id: `Q${index + 1}`,
+  }));
+  const provenance = seed.outline.items[0].provenance;
+  const answers = Array.from({ length: OUTLINE_CAP }, (_, index): [string, ...string[]] =>
+    index < OUTLINE_CAP - 1
+      ? [`Q${index + 1}`]
+      : [`Q${OUTLINE_CAP}`, ...Array.from({ length: MUST_ANSWER_CAP - OUTLINE_CAP }, (_, extra) => `Q${OUTLINE_CAP + extra + 1}`)],
+  );
+  const items = answers.map((sectionAnswers, index): OutlineItem => ({
+    id: `O${index + 1}`,
+    h2: `Section ${index + 1}`,
+    h3: [],
+    answers: sectionAnswers,
+    provenance: { method: "model", derived_from: [...provenance.derived_from] },
+  }));
+  const [head, ...tail] = items;
+  if (head === undefined) throw new Error("unreachable");
+  return withFingerprint({
+    ...seed,
+    must_answer: { status: "available", items: questions },
+    outline: { status: "available", items: [head, ...tail] },
+    draft_readiness: { ...seed.draft_readiness, writable: items.map((item) => item.id) },
+  });
+}
+
+/** As many full-length gap sentences as fit under SECTION_BODY_MAX_BYTES; every one lands in the verify list. */
+function fullestSection(brief: ContentBrief, planned: PlannedSection, settings: DraftResult["settings"]): DraftSection {
+  const sentence = (n: number): ModelSentence => ({
+    text: `${"a".repeat(SENTENCE_MAX_CHARS - 4)} ${n.toString().padStart(3, "0")}`,
+    claim: "gap",
+    evidence_refs: [],
+  });
+  const build = (count: number): DraftSection => {
+    const output = { paragraphs: [{ sentences: Array.from({ length: count }, (_, index) => sentence(index + 1)) }] };
+    const validated = validateSectionOutput(output, sectionEvidenceFor(brief, planned.id, settings));
+    if (!validated.ok) throw new Error(`boundary: ${planned.id} rejected at ${validated.path} (${validated.rule})`);
+    return {
+      id: planned.id,
+      h2: planned.h2,
+      answers: [...planned.answers],
+      status: "ok",
+      body: { word_count: validated.word_count, paragraphs: validated.paragraphs },
+      llm: { attempts: 1, input_tokens: 5_000, output_tokens: 2_500 },
+    };
+  };
+  let section = build(1);
+  for (let count = 2; count <= SECTION_MAX_SENTENCES; count += 1) {
+    const next = build(count);
+    if (bytes(next) > SECTION_BODY_MAX_BYTES) break;
+    section = next;
+  }
+  return section;
+}
+
+async function largestDraft(): Promise<{ brief: ContentBrief; result: DraftResult }> {
+  const wide = await widestBrief();
+  const settings = base.settings;
+  const plan = planSections(wide, wide.draft_readiness.writable);
+  if ("ok" in plan) throw new Error("boundary: nothing writable");
+  const sections = plan.requested.map((planned) => fullestSection(wide, planned, settings));
+  const askable = wide.must_answer.status === "available" ? wide.must_answer.items.map((item) => item.id) : [];
+  const owner = new Map(sections.flatMap((section) => section.answers.map((question) => [question, section.id] as const)));
+  const verdict = validateCoverageOutput(
+    { items: askable.map((question) => ({ question_id: question, status: "partial", covered_in: owner.get(question) ?? null, gap: "g".repeat(MODEL_TEXT_MAX_CHARS) })) },
+    askable,
+    new Set(sections.map((section) => section.id)),
+  );
+  if (!verdict.ok) throw new Error(`boundary: coverage rejected at ${verdict.path}`);
+  const llmCoverage = base.run.reads.llm_coverage;
+  const result = await assembleDraftResult({
+    run: { run_id: "draft_boundary", reran_from: null, collected_at: "2026-08-29T00:00:00.000Z", elapsed_ms: 0, budget_ms: DRAFT_TOTAL_BUDGET_MS },
+    brief: wide,
+    settings,
+    sections,
+    coverage: buildCoverage(wide, [], verdict.items, llmCoverage),
+    llmSections: aggregateOf(sections),
+    llmCoverage,
+  });
+  return { brief: wide, result };
 }
 
 /* ------------------------------------------------------------------ */
@@ -266,6 +368,27 @@ describe("parseDraftResultShape rejects", () => {
   it("verify items outside the contract", () => {
     expectShape(mutated(base, (draft) => { draft.verify_before_publish[0].kind = "weak"; }), "invalid_request", "verify_before_publish[0].kind");
     expectShape(mutated(base, (draft) => { draft.verify_before_publish[0].section_id = "Q1"; }), "invalid_request", "verify_before_publish[0].section_id");
+  });
+});
+
+describe("DraftResult byte cap", () => {
+  it("refuses a result over DRAFT_RESULT_MAX_BYTES before looking at its shape", () => {
+    expectShape({ ...base, padding: "x".repeat(DRAFT_RESULT_MAX_BYTES) }, "invalid_request", "");
+    expectShape({ padding: "x".repeat(DRAFT_RESULT_MAX_BYTES) }, "invalid_request", "");
+  });
+
+  it("fits the largest contract-valid result, plus a full-size brief, under the section request cap", async () => {
+    expect(MUST_ANSWER_CAP).toBeGreaterThanOrEqual(OUTLINE_CAP);
+    const big = await largestDraft();
+    expect(big.result.sections).toHaveLength(OUTLINE_CAP);
+    expect(big.result.verify_before_publish.length).toBe(big.result.sections.reduce((sum, section) => sum + (section.status === "ok" ? section.body.paragraphs[0]?.sentences.length ?? 0 : 0), 0));
+    expect(big.result.coverage).toMatchObject({ status: "available", total: MUST_ANSWER_CAP, partial: MUST_ANSWER_CAP });
+    expect(await parseDraftResult(big.result, big.brief)).toEqual({ ok: true, value: big.result });
+    const draftBytes = bytes(big.result);
+    const briefBytes = bytes(big.brief);
+    const shellBytes = bytes({ brief: big.brief, section_id: "O7", previous: big.result }) - briefBytes - draftBytes;
+    expect(draftBytes).toBeLessThanOrEqual(DRAFT_RESULT_MAX_BYTES);
+    expect(draftBytes + CONTENT_BRIEF_HANDOFF_MAX_BYTES + shellBytes).toBeLessThanOrEqual(SECTION_REQUEST_MAX_BYTES);
   });
 });
 
@@ -548,10 +671,17 @@ describe("parseDraftResult binds to the brief", () => {
       });
     const passes = async (result: DraftResult) =>
       expect(await parseDraftResult(result, brief, { fingerprint: fakeFingerprint })).toEqual(failure("brief_fingerprint_mismatch", "run.fingerprint"));
-    // codex: an error reported for a call that was never made.
+    // codex: the coverage step makes exactly one call and never retries, so an error or a rejected
+    // answer can only come from attempted 1 / calls 1.
     await expectBound(read("provider_error", 1, 0), "run.reads.llm_coverage.calls");
-    await expectBound(read("provider_error", 2, 1), "run.reads.llm_coverage.calls");
+    await expectBound(read("provider_error", 2, 1), "run.reads.llm_coverage.attempted");
+    await expectBound(read("provider_error", 0, 0), "run.reads.llm_coverage.attempted");
+    await expectBound(read("provider_error", 2, 2), "run.reads.llm_coverage.attempted");
+    await expectBound(read("validation_failed", 0, 0), "run.reads.llm_coverage.attempted");
+    await expectBound(read("validation_failed", 2, 2), "run.reads.llm_coverage.attempted");
+    await expectBound(read("validation_failed", 1, 2), "run.reads.llm_coverage.calls");
     await passes(read("provider_error", 1, 1, { model_id: "gpt-4.1-draft" }));
+    await passes(read("validation_failed", 1, 1, { model_id: "gpt-4.1-draft", input_tokens: 3_100, output_tokens: 400 }));
     await expectBound(read("not_configured", 1, 1), "run.reads.llm_coverage.attempted");
     await expectBound(read("not_configured", 0, 1), "run.reads.llm_coverage.calls");
     await expectBound(read("not_configured", 0, 0, { model_id: "gpt-4.1-draft" }), "run.reads.llm_coverage.model_id");
@@ -561,7 +691,7 @@ describe("parseDraftResult binds to the brief", () => {
     await expectBound(read("timeout", 2, 2), "run.reads.llm_coverage.calls");
     await expectBound(read("timeout", 1, 0), "run.reads.llm_coverage.calls");
     await expectBound(read("timeout", 0, 0, { input_tokens: 5 }), "run.reads.llm_coverage.input_tokens");
-    await expectBound(read("validation_failed", 0, 0, { output_tokens: 7 }), "run.reads.llm_coverage.output_tokens");
+    await expectBound(read("not_configured", 0, 0, { output_tokens: 7 }), "run.reads.llm_coverage.output_tokens");
     // A verdict the call did return but the server refused: one completed call at temperature 0.
     const refusedVerdict = (calls: number, temperature: number) =>
       mutated(noCoverage, (draft) => {

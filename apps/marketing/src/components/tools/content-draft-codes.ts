@@ -39,6 +39,7 @@ export const CONTENT_DRAFT_ERROR_CODES = [
   "brief_fingerprint_mismatch",
   "brief_reference_invalid",
   "section_not_writable",
+  "previous_draft_invalid",
   "draft_unavailable",
 ] as const satisfies readonly ContentDraftErrorCode[];
 const ERROR_CODES_COMPLETE: Complete<

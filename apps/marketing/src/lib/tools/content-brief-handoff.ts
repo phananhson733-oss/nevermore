@@ -20,7 +20,7 @@ import type { ToolHandoffStorage } from "./tool-handoff.ts";
  * session storage only reaches a new tab that keeps an opener.
  */
 export type ContentBriefHandoffWrite =
-  | { readonly ok: true; readonly bytes: number }
+  | { readonly ok: true; readonly bytes: number; readonly raw: string }
   | { readonly ok: false; readonly reason: "too_large"; readonly bytes: number }
   | { readonly ok: false; readonly reason: "storage"; readonly bytes: number };
 
@@ -59,9 +59,10 @@ export function writeContentBriefHandoff(
     expires_at: now + CONTENT_BRIEF_HANDOFF_TTL_MS,
     brief,
   };
+  const raw = JSON.stringify(handoff);
   try {
-    storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, JSON.stringify(handoff));
-    return { ok: true, bytes };
+    storage.setItem(CONTENT_BRIEF_HANDOFF_KEY, raw);
+    return { ok: true, bytes, raw };
   } catch {
     clearStale(storage);
     return { ok: false, reason: "storage", bytes };
@@ -86,15 +87,16 @@ export function takeContentBriefHandoff(storage: ToolHandoffStorage): string | n
 }
 
 /**
- * Whether a handoff is waiting, without consuming it. For a visitor the
- * server already knows is signed out: the sign-in they are about to do
- * reloads the page, and a brief taken before that reload would be lost.
+ * The raw handoff waiting, without consuming it. For a visitor the server
+ * already knows is signed out: the sign-in they are about to do reloads the
+ * page, and a brief taken before that reload would be lost. Returned verbatim
+ * so a later guarded clear can match it exactly.
  */
-export function peekContentBriefHandoff(storage: ToolHandoffStorage): boolean {
+export function peekContentBriefHandoff(storage: ToolHandoffStorage): string | null {
   try {
-    return storage.getItem(CONTENT_BRIEF_HANDOFF_KEY) !== null;
+    return storage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
   } catch {
-    return false;
+    return null;
   }
 }
 

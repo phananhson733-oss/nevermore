@@ -756,6 +756,7 @@ export type ContentDraftErrorCode =
   | "brief_fingerprint_mismatch"
   | "brief_reference_invalid" // 交叉引用不存在 / Q 被多节引用 / answers 为空 / 不变量不成立
   | "section_not_writable" // section_id 不在 draft_readiness.writable，或 writable 为空
+  | "previous_draft_invalid" // 重跑携带的上一份 DraftResult 没过 exact parser（改过 / 损坏 / 不属于这份 brief）：只能重新完整生成
   | "draft_unavailable"; // 服务端组装后的自检没过，或未预期异常：宁可不给也不给一份说不清来源的稿
 
 /**

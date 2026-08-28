@@ -78,6 +78,22 @@ function loadGsi(): Promise<void> {
   });
 }
 
+const signedInListeners = new Set<() => void>();
+
+/**
+ * Runs `listener` synchronously after a credential became a session and
+ * immediately before the page reloads. For state that must survive that
+ * reload (the draft tool's handed-over brief); the listener must not throw
+ * and must not assume the dialog that registered it is still open — a
+ * credential posted before the dialog closed still completes.
+ */
+export function onGoogleSignedIn(listener: () => void): () => void {
+  signedInListeners.add(listener);
+  return () => {
+    signedInListeners.delete(listener);
+  };
+}
+
 /** Hand a credential to the server, and reload if it became a session. */
 async function submitCredential(credential: string): Promise<void> {
   const result = await fetch("/api/auth/one-tap", {
@@ -86,6 +102,15 @@ async function submitCredential(credential: string): Promise<void> {
     body: JSON.stringify({ credential }),
   });
   if (!result.ok) return;
+
+  for (const listener of [...signedInListeners]) {
+    try {
+      listener();
+    } catch {
+      // A listener's failure must not keep a signed-in visitor on a page
+      // that still says "Sign in".
+    }
+  }
 
   // A full reload, not router.refresh(). The session lives in cookies the
   // server just wrote, but the header's sign-in control is a client component
@@ -172,7 +197,8 @@ async function start(): Promise<string | null> {
   return clientId;
 }
 
-/** Test seam: forget the memoised initialisation. */
+/** Test seam: forget the memoised initialisation and every signed-in listener. */
 export function resetGoogleIdentityForTests(): void {
   pending = null;
+  signedInListeners.clear();
 }

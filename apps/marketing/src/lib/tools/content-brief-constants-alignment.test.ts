@@ -18,14 +18,21 @@ import {
   SECTION_MAX_OUTPUT_TOKENS,
   SECTION_REQUEST_MAX_BYTES,
   DRAFT_REQUEST_MAX_BYTES,
+  DRAFT_RESULT_MAX_BYTES,
+  OUTLINE_CAP,
+  SECTION_MAX_SENTENCES,
+  SENTENCE_MAX_CHARS,
   SERP_DEADLINE_MS,
 } from "@sf/public-tools/content-brief/constants";
+import { CONTENT_BRIEF_HANDOFF_MAX_BYTES } from "@sf/public-tools/content-brief/contract";
 import { PUBLIC_RESOURCE_DEFAULT_TIMEOUT_MS } from "@sf/sources/public-http";
 
 import { COVERAGE_WINDOW_DAYS } from "./keyword-coverage-reader.ts";
 import { SERP_LANGUAGES } from "./serp-markets.ts";
 
 const BRIEF_ROUTE_MAX_DURATION_MS = 300 * 1000;
+/** Vercel serverless request body limit (4.5 MB). */
+const VERCEL_BODY_LIMIT_BYTES = 4.5 * 1024 * 1024;
 
 describe("content-brief constants stay aligned with what they mirror", () => {
   it("looks back over the same window the coverage reader uses", () => {
@@ -45,6 +52,11 @@ describe("content-brief constants stay aligned with what they mirror", () => {
   it("sizes section bodies from the model's output ceiling, not a literal", () => {
     expect(SECTION_BODY_MAX_BYTES).toBeGreaterThanOrEqual(SECTION_MAX_OUTPUT_TOKENS * 4 * 1.5);
     expect(SECTION_REQUEST_MAX_BYTES).toBeGreaterThan(DRAFT_REQUEST_MAX_BYTES);
+    // The section endpoint carries a whole DraftResult; its cap must cover the largest contract-valid one.
+    expect(SECTION_REQUEST_MAX_BYTES).toBeGreaterThan(DRAFT_RESULT_MAX_BYTES + CONTENT_BRIEF_HANDOFF_MAX_BYTES);
+    expect(DRAFT_RESULT_MAX_BYTES).toBeGreaterThan(OUTLINE_CAP * SECTION_BODY_MAX_BYTES + OUTLINE_CAP * SECTION_MAX_SENTENCES * SENTENCE_MAX_CHARS * 4);
+    // Stays under the platform's request body limit with room to spare.
+    expect(SECTION_REQUEST_MAX_BYTES).toBeLessThan(VERCEL_BODY_LIMIT_BYTES);
   });
 
   it("only refuses tokenisation for languages the SERP selector actually offers", () => {

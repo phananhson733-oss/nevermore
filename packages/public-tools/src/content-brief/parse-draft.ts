@@ -5,6 +5,7 @@
 
 import { draftFingerprint } from "./canonical.ts";
 import {
+  DRAFT_RESULT_MAX_BYTES,
   DRAFT_TOTAL_BUDGET_MS,
   MODEL_TEXT_MAX_CHARS,
   MUST_ANSWER_CAP,
@@ -346,9 +347,11 @@ const draftResult: Decoder<DraftResult> = object({
   totals: object({ word_count: integer() }),
 });
 
-/** Record check, schema literal, then the exact shape. No cross-field invariants. */
+/** Record check, byte cap, schema literal, then the exact shape. No cross-field invariants. */
 function decodeDraftShape(input: unknown, path: string): Decoded<DraftResult> {
   if (!isRecord(input)) return invalid(path);
+  const bytes = byteLength(input);
+  if (bytes === null || bytes > DRAFT_RESULT_MAX_BYTES) return invalid(path);
   if (input["schema"] !== DRAFT_RESULT_SCHEMA) {
     return { ok: false, code: "brief_schema_mismatch", path: at(path, "schema") };
   }
@@ -660,19 +663,22 @@ const COVERAGE_NOT_ASKED: LlmReadMeta = {
 };
 
 /**
- * A failed coverage read with questions to ask: attempts and calls agree
- * (a missing configuration sends nothing; a timeout either sent the one
- * call or ran out of budget before it), and a read that never called has
- * no deployment and no usage to report.
+ * A failed coverage read with questions to ask. The coverage step makes at
+ * most one call and never retries: a missing configuration sends nothing;
+ * a provider error or a rejected answer means the one call went out; a
+ * timeout either sent it or ran out of budget before it. A read that never
+ * called has no deployment and no usage to report.
  */
 function checkFailedCoverageRead(llm: Extract<LlmReadMeta, { status: "unavailable" }>): Violation {
   const noCall = llm.attempted === 0 && llm.calls === 0;
+  const oneCall = llm.attempted === 1 && llm.calls === 1;
   if (llm.reason === "not_configured") {
     if (llm.attempted !== 0) return reference(`${LLM_COVERAGE}.attempted`);
     if (llm.calls !== 0) return reference(`${LLM_COVERAGE}.calls`);
-  } else if (llm.reason === "timeout") {
-    if (!noCall && !(llm.attempted === 1 && llm.calls === 1)) return reference(`${LLM_COVERAGE}.calls`);
-  } else if (llm.attempted !== llm.calls) {
+  } else if (llm.reason === "provider_error" || llm.reason === "validation_failed") {
+    if (llm.attempted !== 1) return reference(`${LLM_COVERAGE}.attempted`);
+    if (llm.calls !== 1) return reference(`${LLM_COVERAGE}.calls`);
+  } else if (!noCall && !oneCall) {
     return reference(`${LLM_COVERAGE}.calls`);
   }
   if (llm.calls === 0) {

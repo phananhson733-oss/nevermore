@@ -4311,7 +4311,7 @@
         "handoffLoaded": "Brief received from the Content Brief Builder.",
         "handoffExpired": "The handed-over brief has expired or is not valid yet. Export it as JSON from the Content Brief Builder and paste it here.",
         "handoffPending": "A brief handed over from the Content Brief Builder is waiting. Sign in and it will be loaded.",
-        "handoffRestoreFailed": "The handed-over brief could not be kept for sign-in in this browser. Export it as JSON from the Content Brief Builder and paste it here after signing in.",
+        "handoffKeepFailed": "The loaded brief could not be kept in this browser for the reload that sign-in causes. Export it as JSON from the Content Brief Builder and paste it here after signing in.",
         "pasteLabel": "Paste the brief JSON",
         "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
         "load": "Load brief",
@@ -4375,6 +4375,7 @@
         "brief_fingerprint_mismatch": "The brief's fingerprint does not match its content: it was changed after export. Export it again from the Content Brief Builder.",
         "brief_reference_invalid": "The brief's cross-references do not hold (a section cites a question that does not exist, a question is cited by two sections, or an invariant is broken), so it was not loaded.",
         "section_not_writable": "The requested section is not writable in this brief, so the draft did not start.",
+        "previous_draft_invalid": "The existing draft no longer passes validation (it may have been edited, or it comes from an older version), so this section cannot be rerun. Generate the draft again in full.",
         "draft_unavailable": "A verifiable draft could not be produced this time. This is not about your brief; try again shortly.",
         "unknown": "The draft could not be completed."
       },

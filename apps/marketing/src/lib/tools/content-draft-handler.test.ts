@@ -431,10 +431,11 @@ describe("handleContentDraftSectionRequest", () => {
     const loosened = { ...previous, settings: { ...previous.settings, product_mention: "throughout" } };
     const response = await handleContentDraftSectionRequest(request({ brief, section_id: "O2", previous: loosened }, "section"), dependencies({ generateSection }));
     expect(response.status).toBe(422);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "brief_fingerprint_mismatch" } });
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "previous_draft_invalid" } });
     const foreign = { ...previous, sections: previous.sections.map((section) => (section.id === "O1" ? { ...section, h2: "Someone else's heading" } : section)) };
     const tampered = await handleContentDraftSectionRequest(request({ brief, section_id: "O1", previous: foreign }, "section"), dependencies({ generateSection }));
     expect(tampered.status).toBe(422);
+    await expect(tampered.json()).resolves.toMatchObject({ error: { code: "previous_draft_invalid" } });
     expect(generateSection).not.toHaveBeenCalled();
   });
 
@@ -443,6 +444,7 @@ describe("handleContentDraftSectionRequest", () => {
     const generateSection = vi.fn();
     const missing = await handleContentDraftSectionRequest(request({ brief, section_id: "O2" }, "section"), dependencies({ generateSection }));
     expect(missing.status).toBe(400);
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "previous_draft_invalid" } });
     const noId = await handleContentDraftSectionRequest(request({ brief, previous }, "section"), dependencies({ generateSection }));
     expect(noId.status).toBe(400);
     expect(generateSection).not.toHaveBeenCalled();
