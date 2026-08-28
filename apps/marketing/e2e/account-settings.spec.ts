@@ -6,6 +6,7 @@ import {
   AGENT_PROFILE_REFRESH_FIELD_PATHS,
   type AgentProfileRefreshField,
 } from "../src/lib/agents/profile-refresh-contract.ts";
+import type { AgentProfileSearchEnvelope } from "../src/lib/agents/profile-search-contract.ts";
 import {
   MARKETING_WEBSITE_PROFILE_VERSION,
   WEBSITE_PROFILE_REFERENCE_VERSION,
@@ -15,6 +16,7 @@ import {
   type WebsiteDetails,
   type WebsiteSummary,
 } from "../src/lib/account-websites/contracts.ts";
+import type { WebsiteCompetitorSearchRequest } from "../src/lib/account-websites/competitor-discovery.ts";
 
 const NOW = "2026-08-28T00:00:00.000Z";
 const SITE_IDS = [
@@ -43,6 +45,7 @@ interface MockSite {
 interface MockAccount {
   sites: MockSite[];
   conflictNextSave: boolean;
+  profileSearchRequests: WebsiteCompetitorSearchRequest[];
 }
 
 function hash(profile: MarketingWebsiteProfileV1): string {
@@ -214,6 +217,30 @@ function refreshEnvelope(sourceUrl: string) {
         fieldsMissing: fields.length - Object.keys(available).length,
       },
       fields,
+    },
+  };
+}
+
+function profileSearchEnvelope(targetHost: string): AgentProfileSearchEnvelope {
+  return {
+    data: {
+      schemaVersion: "agent_profile_search.v1",
+      agent: "seo",
+      targetHost,
+      availability: "available",
+      method: "competitors_domain",
+      market: { code: "US", locationCode: 2840, languageCode: "en" },
+      observedAt: NOW,
+      rows: [
+        {
+          kind: "organic_search_overlap",
+          domain: "rival.example",
+          intersections: 9,
+          averagePosition: 4.5,
+          summedPosition: 40.5,
+          organicEstimatedTrafficVolume: 321,
+        },
+      ],
     },
   };
 }
@@ -398,6 +425,21 @@ async function installAccountApi(page: Page, account: MockAccount) {
       return;
     }
 
+    if (path === "/api/agents/seo/profile-search" && method === "POST") {
+      const body = request.postDataJSON() as WebsiteCompetitorSearchRequest;
+      account.profileSearchRequests.push(body);
+      const requestedHost = new URL(body.url).hostname.replace(/^www\./u, "");
+      const site = account.sites.find((entry) => entry.host === requestedHost);
+      if (site === undefined) {
+        await fulfillJson(route, 404, {
+          error: { code: "website_not_found" },
+        });
+        return;
+      }
+      await fulfillJson(route, 200, profileSearchEnvelope(site.host));
+      return;
+    }
+
     await fulfillJson(route, 404, { error: { code: "not_mocked" } });
   });
 }
@@ -405,7 +447,11 @@ async function installAccountApi(page: Page, account: MockAccount) {
 test("desktop account flow adds, generates, confirms, switches primary, conflicts, and references", async ({
   page,
 }) => {
-  const account: MockAccount = { sites: [], conflictNextSave: false };
+  const account: MockAccount = {
+    sites: [],
+    conflictNextSave: false,
+    profileSearchRequests: [],
+  };
   await installConsent(page);
   await installAccountApi(page, account);
 
@@ -431,11 +477,83 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   await expect(page).toHaveURL(/\/account\/websites\/[^?]+\?generate=1/u);
   await expect(page.getByLabel("Product name")).toHaveValue("Generated Example");
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  const candidate = page.locator(
+    '[data-profile-competitor-candidate="rival.example"]',
+  );
+  await expect(candidate).toBeVisible();
+  expect(account.profileSearchRequests).toEqual([
+    {
+      url: "https://www.example.com/pricing?utm_source=account",
+      marketCode: "US",
+      languageTag: "en-US",
+      targetQuery: "",
+      productProfileSearchSeeds: [
+        "Generated Example",
+        "Generated positioning",
+        "Evidence capture",
+      ],
+    },
+  ]);
+  expect(account.sites[0]?.draft).toMatchObject({
+    directCompetitors: [],
+    indirectAlternatives: [],
+    excludedAlternatives: [],
+  });
+  expect(account.sites[0]?.snapshot).toBeNull();
+
+  await candidate
+    .getByRole("button", { name: "Direct: rival.example", exact: true })
+    .click();
+  await expect
+    .poll(() => ({
+      direct: account.sites[0]?.draft?.directCompetitors,
+      indirect: account.sites[0]?.draft?.indirectAlternatives,
+      excluded: account.sites[0]?.draft?.excludedAlternatives,
+    }))
+    .toEqual({
+      direct: ["rival.example"],
+      indirect: [],
+      excluded: [],
+    });
+  expect(account.sites[0]?.snapshot).toBeNull();
+  expect(account.profileSearchRequests).toHaveLength(1);
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+
+  await page.goto("/agents/seo");
+  await page
+    .getByLabel("Target URL")
+    .fill("https://www.example.com/pricing");
+  await page.getByRole("button", { name: "Use saved website profile" }).click();
+  await expect(page.getByText("Exact URL match")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Reference exact version" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(
+      "Confirm this website profile before importing or referencing it.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-website-profile-context="reference"]'),
+  ).toHaveCount(0);
+  await expect(page.locator('[data-profile-card="competitor"]')).not.toContainText(
+    "rival.example",
+  );
+  expect(account.sites[0]?.snapshot).toBeNull();
+  expect(account.profileSearchRequests).toHaveLength(1);
+
+  await page.goto("/account/websites/" + SITE_IDS[0]);
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  expect(account.profileSearchRequests).toHaveLength(1);
   await expect(
     page.getByRole("button", { name: "Confirm profile" }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Confirm profile" }).click();
   await expect(page.getByText("Confirmed v1")).toBeVisible();
+  expect(account.sites[0]?.snapshot?.directCompetitors).toEqual([
+    "rival.example",
+  ]);
+  expect(account.profileSearchRequests).toHaveLength(1);
 
   await page.goto("/account/websites");
   await page.getByRole("button", { name: "Add website" }).click();
@@ -469,6 +587,9 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   await expect(page.locator('[data-profile-card="product"]')).toContainText(
     "Generated Example",
   );
+  await expect(page.locator('[data-profile-card="competitor"]')).toContainText(
+    "rival.example",
+  );
 
   await page.getByLabel("Target URL").fill("unrelated.example");
   await expect(page.locator("#agent-website-profile")).toHaveValue("");
@@ -489,6 +610,7 @@ test.describe("mobile account settings", () => {
     const site: MockSite = {
       id: SITE_IDS[0],
       snapshotId: SNAPSHOT_IDS[0],
+      submittedUrl: "https://example.com/",
       origin: "https://example.com",
       host: "example.com",
       displayName: "示例网站",
@@ -498,10 +620,12 @@ test.describe("mobile account settings", () => {
       snapshot: readyProfile("示例产品"),
       snapshotRevision: 1,
     };
-    await installAccountApi(page, {
+    const account: MockAccount = {
       sites: [site],
       conflictNextSave: false,
-    });
+      profileSearchRequests: [],
+    };
+    await installAccountApi(page, account);
     await installConsent(page);
     await page.goto("/zh/account/websites");
 
@@ -542,6 +666,54 @@ test.describe("mobile account settings", () => {
     const accessibility = await new AxeBuilder({ page }).include("main").analyze();
     expect(
       accessibility.violations.filter((violation) =>
+        ["critical", "serious"].includes(violation.impact ?? ""),
+      ),
+    ).toEqual([]);
+
+    await page.goto("/zh/account/websites/" + SITE_IDS[0]);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page
+      .getByRole("button", { name: "刷新搜索格局", exact: true })
+      .click();
+    const candidate = page.locator(
+      '[data-profile-competitor-candidate="rival.example"]',
+    );
+    await expect(candidate).toBeVisible();
+    expect(account.profileSearchRequests).toHaveLength(1);
+
+    const direct = candidate.getByRole("button", {
+      name: "直接竞品: rival.example",
+      exact: true,
+    });
+    const indirect = candidate.getByRole("button", {
+      name: "间接替代: rival.example",
+      exact: true,
+    });
+    const exclude = candidate.getByRole("button", {
+      name: "排除: rival.example",
+      exact: true,
+    });
+    await expect(direct).toBeVisible();
+    await expect(indirect).toBeVisible();
+    await expect(exclude).toBeVisible();
+    await indirect.click();
+    await expect
+      .poll(() => ({
+        direct: account.sites[0]?.draft?.directCompetitors,
+        indirect: account.sites[0]?.draft?.indirectAlternatives,
+        excluded: account.sites[0]?.draft?.excludedAlternatives,
+      }))
+      .toEqual({
+        direct: [],
+        indirect: ["rival.example"],
+        excluded: [],
+      });
+
+    const candidateAccessibility = await new AxeBuilder({ page })
+      .include("main")
+      .analyze();
+    expect(
+      candidateAccessibility.violations.filter((violation) =>
         ["critical", "serious"].includes(violation.impact ?? ""),
       ),
     ).toEqual([]);

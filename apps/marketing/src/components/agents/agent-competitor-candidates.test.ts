@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
 import {
   classifyAgentCompetitorProfile,
+  classifyCompetitorRelationships,
   deriveAgentCompetitorDisplayFrame,
   deriveAgentCompetitorSuggestions,
   resolveAgentCompetitorClassification,
@@ -395,6 +396,107 @@ describe("classifyAgentCompetitorProfile", () => {
       expect(classified.reviewState).toBe("needs_confirmation");
     },
   );
+});
+
+describe("classifyCompetitorRelationships", () => {
+  it("moves a normalized domain into one relationship without mutating input", () => {
+    const before = {
+      direct: ["direct-a.example", "direct-b.example"],
+      indirect: ["rival.example", "keep-a.example", "keep-b.example"],
+      excluded: ["ignored.example"],
+    } as const;
+
+    const after = classifyCompetitorRelationships(
+      before,
+      "WWW.Rival.Example.",
+      "direct",
+    );
+
+    expect(after).toEqual({
+      direct: ["direct-a.example", "direct-b.example", "rival.example"],
+      indirect: ["keep-a.example", "keep-b.example"],
+      excluded: ["ignored.example"],
+    });
+    expect(before).toEqual({
+      direct: ["direct-a.example", "direct-b.example"],
+      indirect: ["rival.example", "keep-a.example", "keep-b.example"],
+      excluded: ["ignored.example"],
+    });
+    expect(after.direct).not.toBe(before.direct);
+    expect(after.indirect).not.toBe(before.indirect);
+    expect(after.excluded).not.toBe(before.excluded);
+  });
+
+  it.each([
+    [
+      "direct",
+      {
+        direct: ["keep-direct.example", "rival.example"],
+        indirect: ["keep-indirect.example"],
+        excluded: ["keep-excluded.example"],
+      },
+    ],
+    [
+      "indirect",
+      {
+        direct: ["keep-direct.example"],
+        indirect: ["keep-indirect.example", "rival.example"],
+        excluded: ["keep-excluded.example"],
+      },
+    ],
+    [
+      "excluded",
+      {
+        direct: ["keep-direct.example"],
+        indirect: ["keep-indirect.example"],
+        excluded: ["keep-excluded.example", "rival.example"],
+      },
+    ],
+  ] as const)("places a domain in only the %s relationship", (choice, expected) => {
+    expect(
+      classifyCompetitorRelationships(
+        {
+          direct: ["rival.example", "keep-direct.example"],
+          indirect: ["rival.example", "keep-indirect.example"],
+          excluded: ["rival.example", "keep-excluded.example"],
+        },
+        "rival.example",
+        choice,
+      ),
+    ).toEqual(expected);
+  });
+
+  it("keeps a repeated same-group decision normalized and unique", () => {
+    expect(
+      classifyCompetitorRelationships(
+        {
+          direct: ["before.example", "WWW.RIVAL.EXAMPLE", "after.example"],
+          indirect: [],
+          excluded: [],
+        },
+        "rival.example.",
+        "direct",
+      ),
+    ).toEqual({
+      direct: ["before.example", "after.example", "rival.example"],
+      indirect: [],
+      excluded: [],
+    });
+  });
+
+  it("rejects an invalid public hostname with the established error", () => {
+    expect(() =>
+      classifyCompetitorRelationships(
+        { direct: [], indirect: [], excluded: [] },
+        "localhost",
+        "direct",
+      ),
+    ).toThrowError(
+      new TypeError(
+        "Competitor domain must be a normalized public hostname.",
+      ),
+    );
+  });
 });
 
 describe("resolveAgentCompetitorClassification", () => {

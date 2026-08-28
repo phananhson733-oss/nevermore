@@ -129,7 +129,7 @@ function Metric({
 }) {
   return (
     <div className="min-w-0 border-l border-brand-border-faint pl-2.5 first:border-l-0 first:pl-0">
-      <dt className="font-mono text-[8px] leading-[1.35] tracking-[0.07em] text-text-dark-faint uppercase">
+      <dt className="font-mono text-[8px] leading-[1.35] tracking-[0.07em] text-text-dark-secondary uppercase">
         {label}
       </dt>
       <dd className="mt-1 font-mono text-[11px] text-text-dark-primary">
@@ -199,8 +199,11 @@ export function AgentProfileSearch({
     classifications,
   );
   const confirmedCount =
-    displayFrame.direct.length + displayFrame.indirect.length;
-  const excludedCount = displayFrame.excluded.length;
+    displayFrame.direct.filter(({ source }) => source === "manual").length +
+    displayFrame.indirect.filter(({ source }) => source === "manual").length;
+  const excludedCount = displayFrame.excluded.filter(
+    ({ source }) => source === "manual",
+  ).length;
 
   return (
     <section
@@ -231,7 +234,7 @@ export function AgentProfileSearch({
             aria-describedby={
               disabled && disabledReason ? disabledReasonId : undefined
             }
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[9px] border border-brand-accent/45 bg-brand-accent/[0.09] px-4 text-[11.5px] font-semibold text-brand-accent-text transition-colors hover:bg-brand-accent/[0.15] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-55 md:w-auto"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[9px] border border-brand-accent/45 bg-brand-accent/[0.09] px-4 text-[11.5px] font-semibold text-text-dark-primary transition-colors hover:bg-brand-accent/[0.15] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-55 md:w-auto"
           >
             {loading ? (
               <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
@@ -277,7 +280,7 @@ export function AgentProfileSearch({
         ) : data?.availability === "available" ? (
           <div data-profile-search-results="available" className="min-w-0">
             <div className="flex min-w-0 flex-col gap-2.5 border-b border-brand-border-faint pb-3 sm:flex-row sm:items-start sm:justify-between">
-              <p className="shrink-0 font-mono text-[8.5px] tracking-[0.05em] text-text-dark-faint">
+              <p className="shrink-0 font-mono text-[8.5px] tracking-[0.05em] text-text-dark-secondary">
                 {data.targetHost} · {data.market.code}
               </p>
             </div>
@@ -295,7 +298,7 @@ export function AgentProfileSearch({
                   data-profile-competitor-count={kind}
                   className="min-w-0 border-l border-brand-border-faint px-2.5 py-2.5 first:border-l-0 sm:px-3"
                 >
-                  <dt className="truncate font-mono text-[8px] tracking-[0.07em] text-text-dark-faint uppercase">
+                  <dt className="truncate font-mono text-[8px] tracking-[0.07em] text-text-dark-secondary uppercase">
                     {label}
                   </dt>
                   <dd className="mt-1 text-[15px] font-semibold text-text-dark-primary">
@@ -344,7 +347,7 @@ export function AgentProfileSearch({
                   >
                     <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] sm:items-center">
                       <div className="min-w-0">
-                        <p className="font-mono text-[8px] tracking-[0.08em] text-text-dark-faint uppercase">
+                        <p className="font-mono text-[8px] tracking-[0.08em] text-text-dark-secondary uppercase">
                           {copy.domainLabel}
                         </p>
                         <p
@@ -354,7 +357,7 @@ export function AgentProfileSearch({
                           {suggestion.domain}
                         </p>
                         <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
-                          <span className="rounded border border-brand-info/25 bg-brand-info/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-info uppercase">
+                          <span className="rounded border border-brand-info/25 bg-brand-info/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-text-dark-secondary uppercase">
                             {providerEvidenceLabel}
                           </span>
                           <span className="rounded border border-brand-warning/25 bg-brand-warning/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-warning uppercase">
@@ -508,7 +511,7 @@ export function AgentProfileSearch({
             </ol>
 
             {formattedFetchedAt ? (
-              <p className="border-t border-brand-border-faint pt-2.5 font-mono text-[9px] tracking-[0.04em] text-text-dark-faint">
+              <p className="border-t border-brand-border-faint pt-2.5 font-mono text-[9px] tracking-[0.04em] text-text-dark-secondary">
                 {copy.observedAtLabel}: {formattedFetchedAt}
               </p>
             ) : null}
@@ -523,7 +526,7 @@ export function AgentProfileSearch({
               message={copy.noData}
             />
             {formattedFetchedAt ? (
-              <p className="mt-2.5 font-mono text-[9px] tracking-[0.04em] text-text-dark-faint">
+              <p className="mt-2.5 font-mono text-[9px] tracking-[0.04em] text-text-dark-secondary">
                 {copy.observedAtLabel}: {formattedFetchedAt}
               </p>
             ) : null}
