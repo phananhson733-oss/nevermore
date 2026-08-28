@@ -108,6 +108,7 @@ function confirmedWebsite(profile: MarketingWebsiteProfileV1): {
     reference,
     details: {
       ...summary,
+      submittedUrl: "https://example.com/",
       draft: {
         draftVersion: 1,
         updatedAt: NOW,

@@ -5,11 +5,15 @@ as of 2026-08-28. The same-day completion audit that reopened GEO and the
 signed-in keyword/context Tool consumer is closed for those deterministic
 browser paths. The light-theme language-switch contrast issue found by the
 first full rerun was fixed, production was rebuilt, and the complete
-provider-free Marketing Playwright suite now passes 30/30. Feature unit,
-Marketing SQL, changed-file lint, typecheck, docs, build, and secret/redaction
-gates were rerun for the current worktree. The broad `apps/marketing` lint
-command still retains four unrelated baseline errors in untouched files.
-Nothing has been committed, pushed, deployed, or migrated to a hosted database.
+provider-free Marketing Playwright suite now passes 33/33. The implementation
+is merged locally with `origin/main@b7ce298e`; mainline Keyword v3/calibration
+behavior remains intact, and full submitted page URLs are now persisted as
+generation provenance without changing canonical website identity. Feature
+unit, two Marketing SQL passes, changed-file lint, repository typecheck, docs,
+build, and secret/redaction gates were rerun. The broad `apps/marketing` lint
+command still retains four unrelated baseline errors in untouched files. The
+candidate is committed locally; push, PR, hosted migration, and deployment are
+the separately authorized release phase now in progress.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -832,7 +836,7 @@ goal be marked complete.
 
 ### Browser acceptance evidence (2026-08-28)
 
-- Production Marketing build: PASS, including TypeScript and 266 generated
+- Production Marketing build: PASS, including TypeScript and 267 generated
   static paths plus the dynamic account, GEO, and keyword routes.
 - GEO plus keyword-profile specs: PASS, 12/12 tests. The added GEO path proves
   reference-only selection, current alias/category confirmation, visible pinned
@@ -841,9 +845,9 @@ goal be marked complete.
   website lookup.
 - Existing account-settings spec: PASS, 2/2 tests.
 - Complete Marketing Playwright suite under the provider-free standalone
-  server: **PASS, 30/30 tests** after the language-switch contrast fix and a
-  fresh production rebuild. The final run used the isolated local server on
-  port 3330 with provider credentials cleared.
+  server: **PASS, 33/33 tests** after the language-switch contrast and
+  submitted-source-URL fixes and a fresh production rebuild. The final run used
+  the isolated standalone server with provider credentials cleared.
 - Keyword detached Import sends editable ordinary seeds with no reference and
   performs no website write; exact Reference sends only its strict reference
   plus the visitor overlay in stage one, receives an exact acceptance echo,

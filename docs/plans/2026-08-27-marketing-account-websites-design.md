@@ -5,11 +5,13 @@ consumer matrix in this design is locally implemented and freshly reverified.
 Deterministic browser acceptance is green for GEO exact reference and the
 connected Low Competition Keyword Finder import/reference paths. After the
 light-theme language-switch contrast fix and a fresh production rebuild, the
-complete provider-free Marketing Playwright suite passes 30/30. Feature unit,
-Marketing SQL, changed-file lint, typecheck, docs, build, and secret/redaction
-gates were rerun for the current worktree; only the broad `apps/marketing`
-lint command still retains four unrelated baseline errors in untouched files.
-The work remains uncommitted and unpublished.
+complete provider-free Marketing Playwright suite passes 33/33. The feature is
+merged locally with `origin/main@b7ce298e`; current-main Keyword v3/calibration
+behavior and the submitted-source-URL provenance contract are both covered.
+Feature unit, Marketing SQL, changed-file lint, typecheck, docs, build, and
+secret/redaction gates were rerun; only the broad `apps/marketing` lint command
+still retains four unrelated baseline errors in untouched files. The candidate
+is committed locally but remains unpublished in this record.
 
 **Baseline:** `origin/main` at `806c6e04c109ba57b18b4d1e331e13b3741e17ae`
 

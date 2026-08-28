@@ -95,6 +95,7 @@ function confirmedGeoWebsite(profile: MarketingWebsiteProfileV1): {
     reference,
     details: {
       ...summary,
+      submittedUrl: "https://acme.test/",
       draft: {
         draftVersion: 1,
         updatedAt: PROFILE_NOW,

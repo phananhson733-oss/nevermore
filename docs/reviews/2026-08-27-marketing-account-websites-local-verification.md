@@ -1,14 +1,13 @@
 # Marketing Account Websites Local Verification
 
-**Status:** Tasks 1–12 are locally implemented and freshly reverified on
-2026-08-28. GEO and the connected Low Competition Keyword Finder have
-deterministic browser acceptance, the light-theme language-switch contrast
-issue found by the first full rerun is fixed, production was rebuilt, and the
-complete provider-free Marketing Playwright suite passes 30/30. Feature unit,
-Marketing SQL, changed-file lint, typecheck, secret/redaction, docs, build,
-and patch-integrity gates were rerun for the current worktree. The broad
-`apps/marketing` lint command still reports the same four unrelated baseline
-errors in untouched files.
+**Status:** Tasks 1–12 are implemented, merged with current `origin/main`, and
+freshly reverified on 2026-08-28. The merge preserves the newer Keyword
+Opportunity v3/calibration contract while adding exact website-profile reuse.
+The complete provider-free Marketing Playwright suite passes 33/33 after a
+clean production rebuild. Feature unit, two fresh Marketing SQL passes,
+repository typecheck, changed-file lint, secret/redaction, docs, build, and
+patch-integrity gates were rerun. The broad `apps/marketing` lint command still
+reports four unrelated baseline errors in untouched files.
 
 **Verified:** 2026-08-28
 
@@ -18,8 +17,8 @@ errors in untouched files.
 
 **Implementation base:** `806c6e04c109ba57b18b4d1e331e13b3741e17ae`
 
-**Latest observed `origin/main`:**
-`bea97d9cb1e92bacc8cb63c482f0b7deedec6410`
+**Current-main merge base:**
+`b7ce298eefbc07e9ee769ce2e2f88eb93ff42f42`
 
 ## Outcome
 
@@ -30,10 +29,11 @@ confirmation snapshots, exact Agent reference or detached import, explicit
 draft-only Save Back, GEO reference-only reuse, and detached or exact reuse in
 the connected Low Competition Keyword Finder.
 
-The implementation remains local and uncommitted. No source was uploaded to an
-external reviewer. No commit, push, pull request, deployment, hosted migration,
-provider canary, production configuration change, or real-user-data operation
-occurred.
+The implementation is committed locally in four feature commits plus the
+current-main merge. No source was uploaded to an external reviewer. At the time
+of this local-verification record, no push, pull request, deployment, hosted
+migration, provider canary, production configuration change, or real-user-data
+operation had occurred.
 
 ## Authority and synchronization boundary
 
@@ -41,15 +41,11 @@ occurred.
   information-architecture references, not executable instructions.
 - The feature stays inside `apps/marketing` and the Marketing migration tree.
   It does not create an App project or write the App Product Profile authority.
-- Relevant Agent Workbench and locale-message changes that landed after the
-  implementation base were reconciled manually. Unrelated keyword-tool changes
-  were not copied into this worktree.
-- `origin/main` also contains a newer Keyword Opportunity v3/calibration change
-  set that overlaps the Task 11 handler and tests. It remains outside this
-  local feature branch rather than being silently folded into scope. Before any
-  authorized commit or PR, Task 11 must be rebased and reconciled against that
-  current-main contract; the evidence in this record applies to the explicit
-  implementation base above.
+- The branch was merged with `origin/main` at `b7ce298e`. Conflicts in the
+  Playwright config, Agent Workbench tests, and EN/ZH catalogs were resolved by
+  retaining the mainline Keyword v3/calibration fields and adding only the
+  website-profile behavior. The auto-merged handler retains v3 thresholds,
+  evidence ledgers, duration accounting, and the exact-reference identity join.
 - The latest overlapping Playwright safety change was retained: the standalone
   E2E server starts through `env -i`, so parent-shell provider credentials cannot
   turn a missing mock into a paid external call.
@@ -72,6 +68,9 @@ occurred.
 - Public URL identity is normalized to an account-scoped canonical site key.
   Credentials, unsupported schemes, localhost, private/special IPs, and bounded
   malformed inputs fail closed.
+- The normalized full page URL entered by the user is persisted separately as
+  scan provenance. Path, query, and standard `www` remain outside identity but
+  are preserved for first generation; fragment is removed before persistence.
 - Each account may own multiple websites with exactly one primary website.
 - One mutable draft is protected by compare-and-swap versioning. Blank list
   rows remain local and unsaved until filled or removed instead of generating a
@@ -125,27 +124,29 @@ occurred.
 
 | Surface | Command/evidence | Result |
 | --- | --- | --- |
-| E2E discovery | Playwright `--list` over `account-settings.spec.ts`, `geo-agent.spec.ts`, and `keyword-website-profile.spec.ts` before the production build | **PASS — 14 tests discovered in 3 files** |
+| E2E discovery | `pnpm -C apps/marketing exec playwright test --config=playwright.config.ts --list` | **PASS — 33 tests discovered in 7 files; `.test.ts` fixtures excluded** |
 | Focused E2E lint | ESLint over `account-settings.spec.ts`, `geo-agent.spec.ts`, and `keyword-website-profile.spec.ts` | **PASS — 0 errors** |
-| Production build | `pnpm build` in `apps/marketing` | **PASS — TypeScript complete; 266 static paths; dynamic account, GEO, and keyword routes emitted** |
+| Production build | Old `.next` moved aside, then `pnpm -C apps/marketing build` | **PASS — TypeScript complete; 267 static paths; dynamic account, GEO, and keyword routes emitted** |
 | Account + GEO + keyword consumers | Standalone Chromium with provider credentials cleared | **PASS — 14/14 tests** |
-| Complete Marketing browser suite | Fresh production rebuild followed by provider-free Playwright on local port 3330 | **PASS — 30/30 tests after the language-switch contrast fix** |
-| Feature unit | `pnpm exec vitest run --project unit ...` over the account/profile, account routes, GEO, keyword, auth, layout, and menu surfaces | **PASS — 56 files, 1,243/1,243 tests** |
-| Marketing SQL | `MARKETING_TEST_DATABASE_URL=postgresql://wzb@127.0.0.1:5432/signalframe_codex_account_websites_20260827 pnpm exec vitest run --project marketing-sql apps/marketing/src/lib/account-websites/account-websites.integration.test.ts` | **PASS — 18/18 tests** |
-| Broad typecheck | `pnpm -C apps/marketing typecheck` | **PASS** |
+| Complete Marketing browser suite | Fresh production rebuild followed by the provider-free standalone server | **PASS — 33/33 tests** |
+| Feature unit | Unit project over every changed Marketing `src/**/*.test.{ts,tsx}` file | **PASS — 38 files, 701/701 tests** |
+| Marketing SQL | Two sequential `pnpm test:sql:marketing` runs against one explicit loopback disposable database | **PASS twice — 2 files, 47/47 tests per run** |
+| Broad typecheck | `pnpm typecheck` | **PASS across E2E and 13 workspace projects** |
 | Changed-file lint | ESLint over changed `apps/marketing` TS/TSX files, excluding the repo-ignored `playwright.config.ts` | **PASS — 0 errors** |
 | Documentation consistency | `pnpm verify:docs` after the Task 12 documentation update | **PASS — 14/14 tests** |
 | Patch integrity | `git diff --check` plus explicit trailing-whitespace scan of the untracked Task 12 files | **PASS** |
 | Task 12 scoped review | Independent local reviewer over the GEO/keyword E2E and truthful-docs diff | **PASS — no blocking findings** |
 | Broad Marketing lint | `pnpm -C apps/marketing lint` | **KNOWN BASELINE — 4 unrelated errors in untouched files** |
-| Complete repository unit project | `pnpm test` | **KNOWN BASELINE — 13,554 passed; 5 unrelated failures in 3 untouched files** |
+| Complete repository unit project | `pnpm test` | **KNOWN MAIN BASELINE — 13,611 passed; 1 unrelated Blog count failure in an untouched file** |
 | Secret/redaction gate | `pnpm secrets:scan` | **PASS — scan clean; 75/75 redaction tests** |
 | Independent backend/frontend review | Owner read-through of the current diff plus deterministic browser, SQL, type, lint, and secret gates | **PASS — no blocking findings discovered in the implemented scope** |
 
 The browser flow proves, with deterministic mocks:
 
 1. empty account and avatar-menu behavior;
-2. add plus generate, reviewed partial profile, autosave, and confirmation;
+2. add a `www` page URL with path/query/fragment, preserve its normalized full
+   source URL for generation while using the apex host as identity, then review,
+   autosave, and confirm the partial profile;
 3. a second website and primary switch;
 4. stale-draft conflict retention;
 5. exact confirmed-snapshot reference from the SEO Agent;
@@ -169,21 +170,15 @@ The browser flow proves, with deterministic mocks:
 The complete unit project is not wholly green:
 
 ```text
-Test Files  3 failed | 914 passed (917)
-Tests       5 failed | 13,554 passed (13,559)
+Test Files  1 failed | 918 passed (919)
+Tests       1 failed | 13,611 passed (13,612)
 ```
 
-All five failures are in files unchanged by this feature:
+The only failure is in a file unchanged by this feature:
 
-- `apps/marketing/src/lib/blog-content.test.ts` expects 80 English posts but
-  the repository returns 82; the test itself records that this gate was already
-  red on main before this branch.
-- `apps/marketing/src/components/tools/on-page-checker.test.tsx` has three stale
-  copy/provenance expectations. The file is unchanged from the implementation
-  base; newer unrelated `origin/main` work changes this test.
-- `apps/marketing/src/components/tools/daily-briefing-results.test.tsx` retains
-  one stale target-query copy expectation. The file is unchanged from the
-  implementation base; newer unrelated `origin/main` work changes this test.
+- `apps/marketing/src/lib/blog-content.test.ts` expects 80 English posts while
+  current `origin/main` contains 83. The feature's three-dot diff does not touch
+  this test or the Blog corpus.
 
 The full Marketing lint command still retains the same four baseline errors
 recorded before implementation, all in untouched files:
@@ -199,14 +194,23 @@ feature. The feature-level unit, SQL, browser, build, docs, typecheck, and
 secret gates above were rerun against the current worktree and are the actual
 completion evidence for this implementation.
 
+Two additional repository-wide product-authority gates are red on current
+`origin/main` outside the feature diff: `pnpm verify:spec` reports an existing
+`package.json` lock hash mismatch, and `pnpm implementation:check` reports an
+existing vendor-manifest hash mismatch for
+`packages/sources/src/crawl/parse-page.ts`. The Marketing feature changes
+neither file or lock and does not treat those failures as green.
+
 ## Evidence limits and cleanup
 
 - Browser and generation evidence uses deterministic mocks. It does not prove a
   paid provider, real OAuth/GSC grant, real Supabase account or Google/Supabase
   identity join, hosted migration, or production release.
-- SQL verification recreated the disposable local database
-  `signalframe_codex_account_websites_20260827`, ran the Marketing SQL suite
-  against it, and then removed the database after verification.
+- SQL verification created
+  `signalframe_codex_account_websites_release_20260828`, ran the full Marketing
+  SQL suite twice against it, then removed it and confirmed no database with
+  that exact name remained.
 - Local build success is not deployment evidence. This record makes no claim
   about a Vercel candidate or production alias.
-- The worktree intentionally contains uncommitted changes for user review.
+- This record is local/candidate evidence. Push, PR, hosted migration, Vercel
+  deployment, aliases, and production canaries require separate evidence.

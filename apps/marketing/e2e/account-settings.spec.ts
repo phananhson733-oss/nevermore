@@ -29,6 +29,7 @@ const SNAPSHOT_IDS = [
 interface MockSite {
   readonly id: string;
   readonly snapshotId: string;
+  submittedUrl: string;
   origin: string;
   host: string;
   displayName: string | null;
@@ -117,6 +118,7 @@ function details(site: MockSite): WebsiteDetails {
   const row = summary(site);
   return {
     ...row,
+    submittedUrl: site.submittedUrl,
     draft:
       site.draft === null
         ? null
@@ -142,8 +144,13 @@ function details(site: MockSite): WebsiteDetails {
   };
 }
 
-function refreshEnvelope(origin: string) {
-  const targetHost = new URL(origin).hostname;
+function refreshEnvelope(sourceUrl: string) {
+  const normalized = new URL(sourceUrl);
+  normalized.hash = "";
+  const submittedUrl = normalized.toString();
+  const targetHost = normalized.hostname;
+  const canonicalHost = targetHost.replace(/^www\./u, "");
+  const resolvedOrigin = `${normalized.protocol}//${canonicalHost}`;
   const available: Partial<
     Record<
       (typeof AGENT_PROFILE_REFRESH_FIELD_PATHS)[number],
@@ -167,7 +174,7 @@ function refreshEnvelope(origin: string) {
         confidence: "high",
         source: "public_page",
         limitation: null,
-        evidenceUrls: [origin + "/"],
+        evidenceUrls: [submittedUrl],
       } as AgentProfileRefreshField;
     }
     return {
@@ -186,8 +193,8 @@ function refreshEnvelope(origin: string) {
       schemaVersion: "agent_profile_refresh.v1",
       agent: "seo",
       request: {
-        submittedUrl: origin,
-        normalizedUrl: origin + "/",
+        submittedUrl,
+        normalizedUrl: submittedUrl,
         targetHost,
         marketCode: "US",
         languageTag: "en-US",
@@ -197,12 +204,12 @@ function refreshEnvelope(origin: string) {
       observedAt: NOW,
       cache: { status: "fresh", capturedAt: NOW },
       diagnostics: {
-        resolvedOrigin: origin,
+        resolvedOrigin,
         pagesFetched: 1,
         productPagesFetched: 1,
         stopReason: null,
         contextSufficient: false,
-        sourceUrls: [origin + "/"],
+        sourceUrls: [submittedUrl],
         fieldsAvailable: Object.keys(available).length,
         fieldsMissing: fields.length - Object.keys(available).length,
       },
@@ -295,6 +302,7 @@ async function installAccountApi(page: Page, account: MockAccount) {
       const parsed = new URL(
         body.url.startsWith("http") ? body.url : "https://" + body.url,
       );
+      parsed.hash = "";
       const host = parsed.hostname.replace(/^www\./u, "");
       const existing = account.sites.find((site) => site.host === host);
       if (existing !== undefined) {
@@ -310,6 +318,7 @@ async function installAccountApi(page: Page, account: MockAccount) {
       const site: MockSite = {
         id: SITE_IDS[index] as string,
         snapshotId: SNAPSHOT_IDS[index] as string,
+        submittedUrl: parsed.toString(),
         origin: "https://" + host,
         host,
         displayName: body.displayName,
@@ -412,7 +421,9 @@ test("desktop account flow adds, generates, confirms, switches primary, conflict
   await expect(avatar).toBeFocused();
 
   await page.getByRole("button", { name: "Add website" }).click();
-  await page.getByLabel("Website URL").fill("example.com");
+  await page
+    .getByLabel("Website URL")
+    .fill("https://www.example.com/pricing?utm_source=account#hero");
   await page.getByLabel("Display name (optional)").fill("Example");
   await page
     .getByRole("button", { name: "Add and generate profile" })

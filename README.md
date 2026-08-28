@@ -200,7 +200,9 @@ store temporary operational abuse-control/rate-limit state and completed crawl
 results in a shared cache. It creates no App project and writes no canonical
 product data. Separately, signed-in Marketing accounts may keep account-owned
 website profiles keyed by normalized public website URL. Each website has one
-mutable draft and immutable confirmed snapshots. The SEO Agent and its technical
+mutable draft and immutable confirmed snapshots. The full normalized page URL
+the user entered is retained as scan provenance while path, query, and standard
+`www` stay outside website identity. The SEO Agent and its technical
 focus can import a detached copy or reference an exact confirmed snapshot; GEO
 is reference-only and requires the visitor to reconfirm aliases and category for
 the current run. The connected Low Competition Keyword Finder is the concrete
