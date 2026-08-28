@@ -16,8 +16,21 @@ import type {
 } from "@sf/public-tools/keyword-opportunity/types";
 import { KEYWORD_OPPORTUNITY_ERROR_CODES } from "@sf/public-tools/keyword-opportunity/types";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
-import { formatPropertyLabel } from "@/lib/tools/property-label";
-import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import { formatPropertyLabel } from "../../lib/tools/property-label.ts";
+import { trackMarketingEvent } from "../layout/google-analytics.tsx";
+import { WebsiteProfilePicker } from "../account/website-profile-picker.tsx";
+import {
+  normalizeAccountWebsiteUrl,
+  type WebsiteDetails,
+  type WebsiteProfileReferenceV1,
+} from "../../lib/account-websites/contracts.ts";
+import {
+  importWebsiteProfileForKeywords,
+  parseAcceptedKeywordProfileReference,
+  referenceWebsiteProfileForKeywords,
+  type ImportedKeywordWebsiteProfile,
+  type ReferencedKeywordWebsiteProfile,
+} from "../../lib/account-websites/keyword-profile-bridge.ts";
 import { GscConnectPanel, gscAuthorizeHref } from "./gsc-connect-panel";
 import { GscDisconnect } from "./gsc-disconnect";
 import { keywordMapSiteUrl } from "./keyword-map-property";
@@ -77,7 +90,12 @@ interface ContextState {
   readonly productPagesFetched: number;
   readonly selection?: KeywordOpportunityContextSelection;
   readonly contextSufficient: boolean;
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
 }
+
+type KeywordWebsiteProfileContext =
+  | ImportedKeywordWebsiteProfile
+  | ReferencedKeywordWebsiteProfile;
 
 interface KeywordMapToolProps {
   readonly locale: string;
@@ -134,6 +152,8 @@ export function KeywordMapTool({
     MARKET_LANGUAGE[markets[0] ?? "US"] ?? "en",
   );
   const [seedInput, setSeedInput] = useState("");
+  const [websiteProfile, setWebsiteProfile] =
+    useState<KeywordWebsiteProfileContext | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [context, setContext] = useState<ContextState | null>(null);
   const [result, setResult] = useState<KeywordOpportunityResult | null>(null);
@@ -141,6 +161,7 @@ export function KeywordMapTool({
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const startedAt = useRef<number | null>(null);
+  const profileSelectionRequest = useRef(0);
 
   const busy = phase === "reading" || phase === "running";
 
@@ -187,6 +208,7 @@ export function KeywordMapTool({
   }, [busy]);
 
   function selectProperty(next: string) {
+    profileSelectionRequest.current += 1;
     setProperty(next);
     // The URL follows the property, because the pairing is the point: the
     // coverage read uses the property and the crawl uses the URL, and a
@@ -197,12 +219,85 @@ export function KeywordMapTool({
     setResult(null);
     setErrorCode(null);
     setPhase("idle");
+    setWebsiteProfile(null);
   }
 
   function selectMarket(next: string) {
     setMarketCode(next);
     const paired = MARKET_LANGUAGE[next];
     if (paired !== undefined) setLanguageCode(paired);
+  }
+
+  function resetRunState(): void {
+    setContext(null);
+    setResult(null);
+    setErrorCode(null);
+    setPhase("idle");
+  }
+
+  function applyProfileMarketLanguage(
+    projection: KeywordWebsiteProfileContext,
+  ): void {
+    if (markets.includes(projection.country)) {
+      setMarketCode(projection.country);
+    }
+    const language = projection.locale.split("-")[0]?.toLowerCase() ?? "";
+    if ((LANGUAGES as readonly string[]).includes(language)) {
+      setLanguageCode(language);
+    }
+  }
+
+  async function importWebsiteProfile(website: WebsiteDetails): Promise<void> {
+    const requestId = ++profileSelectionRequest.current;
+    try {
+      const projection = await importWebsiteProfileForKeywords(website);
+      if (profileSelectionRequest.current !== requestId) return;
+      setWebsiteProfile(projection);
+      setSiteUrl(projection.websiteOrigin);
+      setSeedInput(projection.editableSeeds.join(", "));
+      applyProfileMarketLanguage(projection);
+      resetRunState();
+    } catch {
+      if (profileSelectionRequest.current !== requestId) return;
+      setWebsiteProfile(null);
+      setErrorCode("unknown");
+    }
+  }
+
+  async function referenceWebsiteProfile(
+    website: WebsiteDetails,
+  ): Promise<void> {
+    const requestId = ++profileSelectionRequest.current;
+    try {
+      const projection = await referenceWebsiteProfileForKeywords(website);
+      if (profileSelectionRequest.current !== requestId) return;
+      setWebsiteProfile(projection);
+      setSiteUrl(projection.websiteOrigin);
+      // A referenced snapshot owns only its six pinned slots. Everything in
+      // this input is a new run-local overlay, so an old detached value must
+      // not silently become part of the exact-reference run.
+      setSeedInput("");
+      applyProfileMarketLanguage(projection);
+      resetRunState();
+    } catch {
+      if (profileSelectionRequest.current !== requestId) return;
+      setWebsiteProfile(null);
+      setErrorCode("unknown");
+    }
+  }
+
+  function updateSiteUrl(next: string): void {
+    profileSelectionRequest.current += 1;
+    setSiteUrl(next);
+    resetRunState();
+    if (websiteProfile === null) return;
+    const normalized = normalizeAccountWebsiteUrl(next);
+    if (
+      normalized === null ||
+      normalized.canonicalSiteKey !== websiteProfile.canonicalSiteKey
+    ) {
+      setWebsiteProfile(null);
+    }
   }
 
   function seeds(): string[] {
@@ -245,6 +340,10 @@ export function KeywordMapTool({
     setContext(null);
     setResult(null);
     try {
+      const requestedReference =
+        websiteProfile?.kind === "reference"
+          ? websiteProfile.reference
+          : null;
       const response = await fetch("/api/tools/hidden-keywords/context", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,6 +352,9 @@ export function KeywordMapTool({
           marketCode,
           languageCode,
           seeds: seeds(),
+          ...(requestedReference === null
+            ? {}
+            : { websiteProfileReference: requestedReference }),
         }),
       });
       const body = (await response.json()) as {
@@ -263,15 +365,31 @@ export function KeywordMapTool({
           productPagesFetched?: number;
           selection?: KeywordOpportunityContextSelection;
           contextSufficient?: boolean;
+          websiteProfileReference?: unknown;
         };
         error?: { code?: string };
       };
       if (!response.ok || !body.data?.contextToken) {
-        setErrorCode(body.error?.code ?? "unknown");
+        const code = body.error?.code ?? "unknown";
+        if (requestedReference !== null) {
+          if (response.status === 401 && code === "authentication_required") {
+            setErrorCode("profile_authentication_required");
+          } else if (response.status === 503 && code === "invalid_request") {
+            setErrorCode("profile_unavailable");
+          } else {
+            setErrorCode(code);
+          }
+        } else {
+          setErrorCode(code);
+        }
         setCooldownSeconds(retryAfterSecondsFrom(response));
         setPhase("idle");
         return;
       }
+      const acceptedReference = parseAcceptedKeywordProfileReference(
+        body.data.websiteProfileReference,
+        requestedReference,
+      );
       setContext({
         token: body.data.contextToken,
         propositions: body.data.propositions ?? [],
@@ -281,6 +399,9 @@ export function KeywordMapTool({
           ? {}
           : { selection: body.data.selection }),
         contextSufficient: body.data.contextSufficient ?? false,
+        ...(acceptedReference === null
+          ? {}
+          : { websiteProfileReference: acceptedReference }),
       });
       setPhase("confirm");
     } catch {
@@ -379,7 +500,7 @@ export function KeywordMapTool({
             type="url"
             value={siteUrl}
             onChange={(event) => {
-              setSiteUrl(event.target.value);
+              updateSiteUrl(event.target.value);
             }}
             disabled={busy}
             className={TEXT_FIELD}
@@ -423,8 +544,72 @@ export function KeywordMapTool({
         </label>
       </div>
 
+      <div className="mt-3.5 space-y-3">
+        <p className="max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+          {t("websiteProfileIntro")}
+        </p>
+        <WebsiteProfilePicker
+          targetUrl={siteUrl}
+          onImport={(website) => {
+            void importWebsiteProfile(website);
+          }}
+          onReference={(website) => {
+            void referenceWebsiteProfile(website);
+          }}
+        />
+      </div>
+
+      {websiteProfile !== null ? (
+        <div
+          data-keyword-profile-context={websiteProfile.kind}
+          className="mt-3.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-3.5"
+        >
+          <p className="text-[13px] font-medium text-text-dark-primary">
+            {websiteProfile.kind === "import"
+              ? t("profileImportTitle")
+              : t("profileReferenceTitle")}
+          </p>
+          {websiteProfile.kind === "import" ? (
+            <p className="mt-1 text-[12px] leading-[1.6] text-text-dark-secondary">
+              {t("profileImportBody")}
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
+                {t("profileReferenceMeta", {
+                  revision: websiteProfile.reference.snapshotRevision,
+                  hash: websiteProfile.reference.profileHash.slice(0, 8),
+                })}
+              </p>
+              <p className="mt-3 text-[11px] font-medium text-text-dark-secondary">
+                {t("profilePinnedSeedsTitle")}
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {websiteProfile.pinnedSeeds.map((seed) => (
+                  <li
+                    key={seed}
+                    className="rounded-full border border-brand-border-card px-2.5 py-1 text-[11px] text-text-dark-primary"
+                  >
+                    {seed}
+                  </li>
+                ))}
+              </ul>
+              {context?.websiteProfileReference !== undefined ? (
+                <p className="mt-3 text-[11px] text-brand-accent-text">
+                  {t("profileReferenceAccepted")}
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
+
       <label className="mt-3.5 block">
-        <span className={FIELD_LABEL}>{t("seedsLabel")}</span>
+        <span className={FIELD_LABEL}>
+          {websiteProfile?.kind === "reference"
+            ? t("profileOverlaySeedsLabel")
+            : t("seedsLabel")}
+        </span>
         <input
           type="text"
           value={seedInput}
@@ -437,7 +622,9 @@ export function KeywordMapTool({
         />
       </label>
       <p className="mt-2 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {t("seedsHint")}
+        {websiteProfile?.kind === "reference"
+          ? t("profileOverlaySeedsHint")
+          : t("seedsHint")}
       </p>
 
       {propertyTotal > properties.length ? (
@@ -503,7 +690,13 @@ export function KeywordMapTool({
            * raw string: a visitor cannot act on something we did not plan for,
            * and a bare code reads as a crash.
            */}
-          {t(`errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}`)}
+          {errorCode === "profile_authentication_required"
+            ? t("profileAuthenticationRequired")
+            : errorCode === "profile_unavailable"
+              ? t("profileUnavailable")
+              : t(
+                  `errors.${isKnownErrorCode(errorCode) ? errorCode : "unknown"}`,
+                )}
           {cooldownSeconds > 0 ? (
             <span className="mt-1.5 block font-mono text-[12px] tabular-nums">
               {t("cooldown", { seconds: cooldownSeconds })}

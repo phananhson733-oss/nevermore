@@ -83,9 +83,17 @@ export default async function LowCompetitionKeywordsPage({
         connected={session.properties !== null}
         article={<KeywordMapArticle locale={locale} />}
       >
-        {/* Only this tool's namespace crosses the client boundary. */}
+        {/* Keep the client payload tight: only Keyword Map plus the shared
+            website-profile picker copy cross the boundary. */}
         <NextIntlClientProvider
-          messages={{ tools: { keywordMap: messages.tools.keywordMap } }}
+          messages={{
+            agents: {
+              workbench: {
+                websiteProfile: messages.agents.workbench.websiteProfile,
+              },
+            },
+            tools: { keywordMap: messages.tools.keywordMap },
+          }}
         >
           <KeywordMapTool
             locale={locale}

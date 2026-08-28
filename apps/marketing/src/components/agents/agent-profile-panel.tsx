@@ -24,6 +24,7 @@ import type {
   AgentProfileRefreshData,
   AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
+import type { WebsiteProfileReferenceV1 } from "../../lib/account-websites/contracts.ts";
 import {
   classifyAgentCompetitorProfile,
   deriveAgentCompetitorDisplayFrame,
@@ -73,6 +74,13 @@ export interface AgentProfilePanelProps {
     readonly errorCode: string | null;
   };
   readonly onRefresh?: (mode: AgentProfileRefreshMode) => void;
+  readonly websiteProfile?: {
+    readonly kind: "import" | "reference";
+    readonly websiteLabel: string;
+    readonly reference: WebsiteProfileReferenceV1 | null;
+    readonly saveStatus: "idle" | "saving" | "saved" | "conflict" | "error";
+    readonly onSaveBack: () => void;
+  };
 }
 
 const TEXT_FIELDS = [
@@ -366,6 +374,7 @@ export function AgentProfilePanel({
   profileSearch,
   profileRefresh,
   onRefresh,
+  websiteProfile,
 }: AgentProfilePanelProps) {
   const t = useTranslations("agents.workbench.profile");
   const [reviewing, setReviewing] = useState(false);
@@ -737,6 +746,56 @@ export function AgentProfilePanel({
       </header>
 
       <div className="p-5 md:p-6">
+        {websiteProfile === undefined ? null : (
+          <div
+            data-website-profile-context={websiteProfile.kind}
+            className="mb-4 flex flex-col gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-semibold text-text-dark-primary">
+                {websiteProfile.websiteLabel}
+              </p>
+              <p className="mt-1 font-mono text-[10.5px] text-text-dark-faint">
+                {websiteProfile.kind === "reference" &&
+                websiteProfile.reference !== null
+                  ? t("websiteProfile.reference", {
+                      revision: websiteProfile.reference.snapshotRevision,
+                      hash: websiteProfile.reference.profileHash.slice(0, 10),
+                    })
+                  : t("websiteProfile.import")}
+              </p>
+              {websiteProfile.saveStatus === "idle" ? null : (
+                <p
+                  data-save-back-status={websiteProfile.saveStatus}
+                  className={
+                    "mt-1 text-[11px] " +
+                    (websiteProfile.saveStatus === "conflict" ||
+                    websiteProfile.saveStatus === "error"
+                      ? "text-brand-error"
+                      : "text-text-dark-secondary")
+                  }
+                >
+                  {t(
+                    "websiteProfile.saveStatus." + websiteProfile.saveStatus,
+                  )}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              data-profile-action="save-back"
+              disabled={
+                disabled ||
+                websiteProfile.saveStatus === "saving" ||
+                websiteProfile.saveStatus === "conflict"
+              }
+              onClick={websiteProfile.onSaveBack}
+              className="inline-flex h-9 items-center justify-center rounded-[8px] border border-brand-border-card px-3 text-[12px] font-medium text-text-dark-secondary transition-colors hover:border-brand-accent/50 hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-50"
+            >
+              {t("websiteProfile.saveBack")}
+            </button>
+          </div>
+        )}
         <div
           data-profile-refresh-control
           aria-busy={profileRefresh?.loading || undefined}

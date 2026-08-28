@@ -6,6 +6,7 @@ const testCookieKey = "cd".repeat(32);
 
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: "**/*.spec.ts",
   // Vitest contract fixtures live beside browser fixtures and are not E2E specs.
   testIgnore: "**/*.test.ts",
   fullyParallel: false,

@@ -1,4 +1,4 @@
-// @input  -- authenticated POST naming a site, a market and optional seed terms
+// @input  -- authenticated site/market/seeds plus an optional exact profile reference
 // @output -- the positioning read off that site plus a sealed carry-over token
 // @pos    -- thin Next.js boundary over stage one of the keyword map handler
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -15,6 +15,8 @@ import { createKeywordLlmUsageSink } from "@/lib/tools/keyword-llm-usage-sink";
 import { createKeywordCostAccumulator } from "@/lib/tools/keyword-cost-guard";
 import { createKeywordCoverageReader } from "@/lib/tools/keyword-coverage-reader";
 import { createKeywordProviderSeams } from "@/lib/tools/keyword-providers";
+import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
+import { resolveAccountWebsiteProfileReference } from "@/lib/account-websites/store";
 
 export const runtime = "nodejs";
 /**
@@ -42,6 +44,8 @@ export async function POST(request: Request): Promise<Response> {
 
   const response = await handleKeywordContextRequest(request, {
     ...DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES,
+    authenticateAccount: getServerAuthenticatedUser,
+    resolveWebsiteProfileReference: resolveAccountWebsiteProfileReference,
     costs,
     crawlContext: async (siteUrl) =>
       toKeywordContextCrawl(await crawlSiteContextProfile(siteUrl)),

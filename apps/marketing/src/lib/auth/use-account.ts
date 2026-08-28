@@ -6,10 +6,22 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  parseWebsiteList,
+  type WebsiteSummary,
+} from "../account-websites/contracts.ts";
+
 export interface AccountBalance {
   readonly total: number;
   readonly welfareRemaining: number | null;
 }
+
+export type AccountWebsitesState =
+  | { readonly status: "loading" | "unavailable" }
+  | {
+      readonly status: "ready";
+      readonly primary: WebsiteSummary | null;
+    };
 
 /**
  * Three states, not two.
@@ -25,9 +37,11 @@ export type AccountState =
   | {
       readonly status: "signed-in";
       readonly email: string | null;
+      readonly displayName: string | null;
       /** Google's photo, a sign-in-time snapshot; null for accounts without one. */
       readonly avatarUrl: string | null;
       readonly balance: AccountBalance | null;
+      readonly websites: AccountWebsitesState;
     };
 
 /**
@@ -61,12 +75,47 @@ function readBalance(body: unknown): AccountBalance | null {
   };
 }
 
-function readString(body: unknown, key: "email" | "avatarUrl"): string | null {
+function readString(
+  body: unknown,
+  key: "email" | "displayName" | "avatarUrl",
+): string | null {
   if (body === null || typeof body !== "object") return null;
   const data = (body as { data?: unknown }).data;
   if (data === null || typeof data !== "object") return null;
   const value = (data as Record<string, unknown>)[key];
-  return typeof value === "string" && value !== "" ? value : null;
+  if (typeof value !== "string" || value === "") return null;
+  if (key !== "displayName") return value;
+  const normalized = value.trim().replace(/\s+/gu, " ");
+  return normalized !== "" &&
+    normalized.length <= 160 &&
+    !Array.from(normalized).some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+    ? normalized
+    : null;
+}
+
+function readWebsites(body: unknown): AccountWebsitesState {
+  if (body === null || typeof body !== "object") {
+    return { status: "unavailable" };
+  }
+  const data = (body as { data?: unknown }).data;
+  if (data === null || typeof data !== "object") {
+    return { status: "unavailable" };
+  }
+  try {
+    const websites = parseWebsiteList(
+      (data as { websites?: unknown }).websites,
+    );
+    return {
+      status: "ready",
+      primary:
+        websites.find((website) => website.isPrimary) ?? null,
+    };
+  } catch {
+    return { status: "unavailable" };
+  }
 }
 
 /**
@@ -104,16 +153,43 @@ export function useAccount(): AccountState {
       const profile = await answer.json().catch(() => null);
       if (controller.signal.aborted) return;
       const email = readString(profile, "email");
+      const displayName = readString(profile, "displayName");
       const avatarUrl = readString(profile, "avatarUrl");
-      setState({ status: "signed-in", email, avatarUrl, balance: null });
+      setState({
+        status: "signed-in",
+        email,
+        displayName,
+        avatarUrl,
+        balance: null,
+        websites: { status: "loading" },
+      });
 
-      const credits = await fetch("/api/credits/balance", {
-        signal: controller.signal,
-      }).catch(() => null);
-      if (controller.signal.aborted || credits === null || !credits.ok) return;
-      const balance = readBalance(await credits.json().catch(() => null));
+      const [credits, websiteResponse] = await Promise.all([
+        fetch("/api/credits/balance", {
+          signal: controller.signal,
+        }).catch(() => null),
+        fetch("/api/account/websites", {
+          signal: controller.signal,
+        }).catch(() => null),
+      ]);
       if (controller.signal.aborted) return;
-      setState({ status: "signed-in", email, avatarUrl, balance });
+      const balance =
+        credits !== null && credits.ok
+          ? readBalance(await credits.json().catch(() => null))
+          : null;
+      const websites =
+        websiteResponse !== null && websiteResponse.ok
+          ? readWebsites(await websiteResponse.json().catch(() => null))
+          : { status: "unavailable" as const };
+      if (controller.signal.aborted) return;
+      setState({
+        status: "signed-in",
+        email,
+        displayName,
+        avatarUrl,
+        balance,
+        websites,
+      });
     }
 
     void load();

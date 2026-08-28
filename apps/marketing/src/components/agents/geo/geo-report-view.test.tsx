@@ -6,9 +6,14 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import en from "../../../i18n/messages/en.json";
+import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  type WebsiteProfileReferenceV1,
+} from "../../../lib/account-websites/contracts.ts";
 import type { GeoConfirmedAliasV1 } from "../../../lib/agents/geo-context";
 import type { GeoProviderObservation } from "../../../lib/agents/geo-provider";
 import type { GeoQueryUnitV1 } from "../../../lib/agents/geo-query-contract";
@@ -38,6 +43,15 @@ const CONTEXT: GeoSamplingContext = {
   targetHost: "acme.test",
   brandAliases: ALIASES,
   aliasScope: "supported",
+};
+
+const WEBSITE_PROFILE_REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 3,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: "a".repeat(64),
 };
 
 const PROBE: GeoQueryUnitV1 = {
@@ -134,7 +148,11 @@ const PROVENANCE: GeoSurfaceProvenanceV1 = {
 
 async function buildReport({
   searched = true,
-}: { readonly searched?: boolean } = {}): Promise<GeoReportDataV3> {
+  contextHash = `sha256:${"a".repeat(64)}`,
+}: {
+  readonly searched?: boolean;
+  readonly contextHash?: string;
+} = {}): Promise<GeoReportDataV3> {
   const probeSamples = [1, 2, 3].map((index) =>
     observeToSample(
       {
@@ -171,7 +189,7 @@ async function buildReport({
     runId: "run-01",
     sampledAt: "2026-08-18T09:05:00.000Z",
     targetHost: "acme.test",
-    contextHash: `sha256:${"a".repeat(64)}`,
+    contextHash,
     querySetContentHash: `sha256:${"b".repeat(64)}`,
     provenance: PROVENANCE,
   } as const;
@@ -208,6 +226,7 @@ describe("GeoReportView", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     host.remove();
+    vi.unstubAllGlobals();
   });
 
   /** The overview figure printed under a given label. */
@@ -218,7 +237,10 @@ describe("GeoReportView", () => {
     return term?.parentElement?.querySelector("dd")?.textContent?.trim();
   }
 
-  function render(report: GeoReportDataV3): void {
+  function render(
+    report: GeoReportDataV3,
+    capture?: React.ComponentProps<typeof GeoReportView>["capture"],
+  ): void {
     act(() => {
       root.render(
         <NextIntlClientProvider
@@ -228,6 +250,7 @@ describe("GeoReportView", () => {
         >
           <GeoReportView
             report={report}
+            capture={capture}
             locale="en"
             onRestart={() => undefined}
           />
@@ -244,6 +267,109 @@ describe("GeoReportView", () => {
     expect(host.textContent).toContain("openai");
     expect(host.textContent).toContain("dataforseo_chat_gpt_llm_responses_api");
     expect(host.textContent).toContain("4096");
+  });
+
+  it("shows the exact captured website-profile revision and hash without a live lookup", async () => {
+    const confirmed = await confirmGeoContext(
+      {
+        targetUrl: "https://acme.test/",
+        productName: "Acme Analytics",
+        brandAliases: [
+          {
+            alias: "Acme Analytics",
+            source: "profile_product_name",
+            confirmed: true,
+          },
+        ],
+        category: "seo reporting",
+        categoryConfirmed: true,
+        buyer: "head of growth",
+        user: "growth leads",
+        jtbd: "See whether assistants cite the site.",
+        useCases: ["Citation monitoring"],
+        outcomes: ["More cited answers"],
+        barriers: ["No visibility"],
+        directCompetitors: [],
+        indirectAlternatives: ["Manual checks"],
+        marketCode: "US",
+        targetQueryLanguage: "en",
+        sourceProfileVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+        sourceSummary: [
+          {
+            field: "product_name",
+            source: "saved_website_profile",
+            limitationCode: "pinned_snapshot",
+          },
+        ],
+        websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+      },
+      () => new Date("2026-08-19T09:00:00.000Z"),
+    );
+    if (!confirmed.ok) throw new Error("fixture context");
+    const built = await buildGeoCoreQuerySet(
+      confirmed.snapshot,
+      () => new Date("2026-08-19T09:00:00.000Z"),
+    );
+    if (!built.ok) throw new Error("fixture query set");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(await buildReport({ contextHash: confirmed.snapshot.contextHash }), {
+      context: confirmed.snapshot,
+      querySet: built.querySet,
+    });
+
+    expect(host.textContent).toContain("Captured website profile source v3");
+    expect(host.textContent).toContain(WEBSITE_PROFILE_REFERENCE.profileHash.slice(0, 10));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not label a report with a reference captured from a different context", async () => {
+    const confirmed = await confirmGeoContext(
+      {
+        targetUrl: "https://acme.test/",
+        productName: "Acme Analytics",
+        brandAliases: [
+          {
+            alias: "Acme Analytics",
+            source: "profile_product_name",
+            confirmed: true,
+          },
+        ],
+        category: "seo reporting",
+        categoryConfirmed: true,
+        buyer: "head of growth",
+        user: "",
+        jtbd: "",
+        useCases: [],
+        outcomes: [],
+        barriers: [],
+        directCompetitors: [],
+        indirectAlternatives: [],
+        marketCode: "US",
+        targetQueryLanguage: "en",
+        sourceProfileVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+        sourceSummary: [
+          {
+            field: "product_name",
+            source: "saved_website_profile",
+            limitationCode: "pinned_snapshot",
+          },
+        ],
+        websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+      },
+      () => new Date("2026-08-19T09:00:00.000Z"),
+    );
+    if (!confirmed.ok) throw new Error("fixture context");
+    const built = await buildGeoCoreQuerySet(confirmed.snapshot, () => new Date());
+    if (!built.ok) throw new Error("fixture query set");
+
+    render(await buildReport(), {
+      context: confirmed.snapshot,
+      querySet: built.querySet,
+    });
+
+    expect(host.textContent).not.toContain("Captured website profile source v3");
   });
 
   it("renders the exact cited URL, not a host chip", async () => {

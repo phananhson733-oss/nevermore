@@ -198,8 +198,27 @@ restored as a no-login public tool on the Marketing host. It uses the current
 `internal_link_audit.v3` crawler, admission gates, and SSRF safeguards; it may
 store temporary operational abuse-control/rate-limit state and completed crawl
 results in a shared cache. It creates no App project and writes no canonical
-product data. Marketing Agent runs remain non-canonical and non-persistent;
-they do not create or impersonate an authenticated app analysis run.
+product data. Separately, signed-in Marketing accounts may keep account-owned
+website profiles keyed by normalized public website URL. Each website has one
+mutable draft and immutable confirmed snapshots. The full normalized page URL
+the user entered is retained as scan provenance while path, query, and standard
+`www` stay outside website identity. The SEO Agent and its technical
+focus can import a detached copy or reference an exact confirmed snapshot; GEO
+is reference-only and requires the visitor to reconfirm aliases and category for
+the current run. The connected Low Competition Keyword Finder is the concrete
+Tool consumer: Import copies bounded Product/ICP terms into editable seeds,
+while Reference pins an exact revision/hash and has the server derive its pinned
+seeds. Other facts-only/no-login Public Tools remain profile-free. Any Agent
+write-back updates only the mutable website draft until the user confirms it.
+
+Every exact reference is resolved server-side for the authenticated Marketing
+account and exact website host. For the Low Competition Keyword Finder, the
+sealed Google identity used by the Search Console grant must also equal the
+server-verified Google identity on the Supabase user before any private profile
+resolution, crawl, or model work. This store does not create an App project or
+write the App Product Profile. Marketing Agent and Tool runs remain
+non-canonical and non-persistent; they do not create or impersonate an
+authenticated app analysis run.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change

@@ -1,4 +1,4 @@
-// @input  -- two authenticated POSTs: one to read the site, one to price the candidates
+// @input  -- two authenticated POSTs, optionally pinned to one exact website profile
 // @output -- a sealed carry-over token, then a keyword opportunity envelope, or a stable error code
 // @pos    -- shared handler behind /api/tools/hidden-keywords/{context,opportunities}
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -43,6 +43,22 @@ import type {
   ContextProfileSelectionSummary,
   ContextProfileSitemapInventory,
 } from "@sf/sources/crawl-context-profile";
+import type { ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
+import type {
+  ResolvedWebsiteProfile,
+  WebsiteStoreResult,
+} from "../account-websites/store.ts";
+import {
+  normalizeAccountWebsiteUrl,
+  parseWebsiteProfileReference,
+  profileSha256,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
+import {
+  mergeKeywordProfileSeeds,
+  parseAcceptedKeywordProfileReference,
+  projectKeywordProfileSeeds,
+} from "../account-websites/keyword-profile-bridge.ts";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import {
   reportKeywordRunCost,
@@ -214,6 +230,8 @@ export interface KeywordContextToken {
    * changes nothing.
    */
   readonly seeds: readonly string[];
+  /** Exact confirmed account snapshot, absent for legacy and detached runs. */
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
   /**
    * The identity stage one was issued to.
    *
@@ -298,6 +316,18 @@ export interface KeywordContextCrawlResult {
 export interface KeywordOpportunityDependencies {
   /** Who is asking. Null when the visitor is not signed in. */
   readonly readIdentity: () => Promise<{ readonly sub: string } | null>;
+  /**
+   * Verified Supabase account identity for the explicit private-profile path.
+   *
+   * Optional because stage two and legacy stage-one requests never use it;
+   * the context route supplies the production implementation.
+   */
+  readonly authenticateAccount?: () => Promise<ServerAuthenticatedUser>;
+  /** Resolve one exact owned snapshot after verified account authentication. */
+  readonly resolveWebsiteProfileReference?: (
+    userId: string,
+    reference: WebsiteProfileReferenceV1,
+  ) => Promise<WebsiteStoreResult<ResolvedWebsiteProfile>>;
   /**
    * Admission for the crawl half, keyed by IP and by target host.
    *
@@ -481,6 +511,7 @@ interface ContextInput {
   readonly marketCode: string;
   readonly languageCode: string;
   readonly seeds: readonly string[];
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
 }
 
 function parseContextInput(body: unknown): ContextInput | null {
@@ -511,11 +542,25 @@ function parseContextInput(body: unknown): ContextInput | null {
   }
   if (seeds.length > KEYWORD_MAX_SEEDS) return null;
 
+  let websiteProfileReference: WebsiteProfileReferenceV1 | undefined;
+  if (record["websiteProfileReference"] !== undefined) {
+    try {
+      websiteProfileReference = parseWebsiteProfileReference(
+        record["websiteProfileReference"],
+      );
+    } catch {
+      return null;
+    }
+  }
+
   return {
     siteUrl,
     marketCode: marketCode.trim(),
     languageCode: languageCode.trim(),
     seeds,
+    ...(websiteProfileReference === undefined
+      ? {}
+      : { websiteProfileReference }),
   };
 }
 
@@ -549,6 +594,82 @@ export async function handleKeywordContextRequest(
     return json(createPublicToolError("invalid_input"), 400);
   }
 
+  let acceptedReference: WebsiteProfileReferenceV1 | undefined;
+  let runSeeds = input.seeds;
+  if (input.websiteProfileReference !== undefined) {
+    const authenticate = dependencies.authenticateAccount;
+    const resolveReference = dependencies.resolveWebsiteProfileReference;
+    if (authenticate === undefined || resolveReference === undefined) {
+      return json(createPublicToolError("invalid_request"), 503);
+    }
+
+    let authentication: ServerAuthenticatedUser;
+    try {
+      authentication = await authenticate();
+    } catch {
+      return json(createPublicToolError("invalid_request"), 503);
+    }
+    if (authentication.status === "unavailable") {
+      return json(createPublicToolError("invalid_request"), 503);
+    }
+    if (authentication.status === "unauthenticated") {
+      return json(createPublicToolError("authentication_required"), 401);
+    }
+    if (
+      identity.sub === "" ||
+      authentication.googleSubject === undefined ||
+      authentication.googleSubject === null ||
+      authentication.googleSubject === "" ||
+      authentication.googleSubject !== identity.sub
+    ) {
+      // The private snapshot and the Search Console grant are held under two
+      // independent cookies. Both may be valid while naming different Google
+      // accounts, so ownership of each cookie is insufficient: the verified
+      // provider subject must prove they are the same person before the
+      // account store or any external target is touched.
+      return json(createPublicToolError("authentication_required"), 401);
+    }
+
+    let resolved: WebsiteStoreResult<ResolvedWebsiteProfile>;
+    try {
+      resolved = await resolveReference(
+        authentication.userId,
+        input.websiteProfileReference,
+      );
+    } catch {
+      return json(createPublicToolError("invalid_request"), 503);
+    }
+    if (resolved.kind === "unavailable") {
+      return json(createPublicToolError("invalid_request"), 503);
+    }
+    if (resolved.kind !== "ok") {
+      return json(createPublicToolError("invalid_input"), 400);
+    }
+
+    const normalizedSite = normalizeAccountWebsiteUrl(input.siteUrl);
+    try {
+      acceptedReference = parseAcceptedKeywordProfileReference(
+        resolved.value.reference,
+        input.websiteProfileReference,
+      ) ?? undefined;
+      if (
+        normalizedSite === null ||
+        normalizedSite.canonicalSiteKey !==
+          resolved.value.website.canonicalSiteKey ||
+        (await profileSha256(resolved.value.profile)) !==
+          input.websiteProfileReference.profileHash
+      ) {
+        throw new Error("resolved keyword profile identity mismatch");
+      }
+      runSeeds = mergeKeywordProfileSeeds(
+        projectKeywordProfileSeeds(resolved.value.profile),
+        input.seeds,
+      );
+    } catch {
+      return json(createPublicToolError("invalid_input"), 400);
+    }
+  }
+
   const gate = await dependencies.openCrawlGate(
     dependencies.extractClientIp(request.headers),
     input.siteUrl,
@@ -568,7 +689,10 @@ export async function handleKeywordContextRequest(
       productPagesFetched: crawl.productPagesFetched,
       ...(crawl.selection === undefined ? {} : { selection: crawl.selection }),
       stopReason: crawl.stopReason,
-      seeds: input.seeds,
+      seeds: runSeeds,
+      ...(acceptedReference === undefined
+        ? {}
+        : { websiteProfileReference: acceptedReference }),
       sub: identity.sub,
     };
 
@@ -683,6 +807,9 @@ export async function handleKeywordContextRequest(
           contextSufficient: crawl.pages.length >= 3,
           headingBudgetBytes: headingBudget,
           contextToken,
+          ...(acceptedReference === undefined
+            ? {}
+            : { websiteProfileReference: acceptedReference }),
         },
       },
       200,
@@ -780,6 +907,13 @@ export async function handleKeywordOpportunitiesRequest(
   const token = open<KeywordContextToken>("gg_kw_context", input.contextToken);
   if (token === null) {
     return json(createPublicToolError("context_token_invalid"), 400);
+  }
+  if (token.websiteProfileReference !== undefined) {
+    try {
+      parseWebsiteProfileReference(token.websiteProfileReference);
+    } catch {
+      return json(createPublicToolError("context_token_invalid"), 400);
+    }
   }
   // A token names the identity it was issued to. Accepting someone else's
   // would let one sign-in hand out the expensive half of the pipeline.

@@ -110,7 +110,20 @@ describe("Agent pending intents", () => {
       ),
     );
 
-    const intent = storeConfirmedAgentRunIntent(storage, profile, 1_000);
+    const websiteProfileReference = {
+      schemaVersion: "website-profile-reference.v1" as const,
+      websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+      snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+      snapshotRevision: 3,
+      profileSchemaVersion: "marketing-website-profile.v1" as const,
+      profileHash: "a".repeat(64),
+    };
+    const intent = storeConfirmedAgentRunIntent(
+      storage,
+      profile,
+      websiteProfileReference,
+      1_000,
+    );
 
     expect(intent).toMatchObject({
       purpose: "run_confirmed_profile",
@@ -121,6 +134,7 @@ describe("Agent pending intents", () => {
         targetUrl: "https://astrologywiki.com/pricing",
         reviewState: "confirmed",
       },
+      websiteProfileReference,
     });
     expect(isRunnablePendingAgentIntent(intent!)).toBe(true);
     expect(

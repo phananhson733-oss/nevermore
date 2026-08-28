@@ -2937,6 +2937,17 @@
       "seedsLabel": "种子词（可选）",
       "seedsPlaceholder": "牙科账单, 诊所排班",
       "seedsHint": "最多十个，逗号分隔。它们会和爬取结果一起交给候选词生成——当你的站点没有写出买家实际会用的说法时，这一栏最有用。",
+      "websiteProfileIntro": "可以导入一份可编辑的种子词副本，或把本次运行固定到某个已确认的网站画像版本。",
+      "profileImportTitle": "已脱离的网站画像导入",
+      "profileImportBody": "这些种子词是可编辑副本；在这里修改不会更新已保存的网站画像。",
+      "profileReferenceTitle": "网站画像精确版本引用",
+      "profileReferenceMeta": "版本 {revision} · {hash}",
+      "profilePinnedSeedsTitle": "来自已确认画像的固定种子词",
+      "profileReferenceAccepted": "服务器已接受这个精确版本",
+      "profileOverlaySeedsLabel": "额外种子词（可选）",
+      "profileOverlaySeedsHint": "可以补充本次运行专用且不重复的词。上面的固定词保持只读并由服务器重新推导，合并后总数不超过十个。",
+      "profileAuthenticationRequired": "你的账户会话已不可用。重新登录后，请再次选择已保存的网站画像。",
+      "profileUnavailable": "已保存的网站画像暂时不可用。本次尚未开始抓取或生成关键词，请稍后重试。",
       "readSite": "读取我的站点",
       "rereadSite": "重新读取站点",
       "reading": "正在读取站点…",
@@ -4434,7 +4445,8 @@
         "run": "运行 {calls} 次 provider 调用",
         "running": "正在提问…",
         "runningHint": "大约需要两分钟。调用并发执行，计划一旦开始就不再变化。",
-        "signInRequired": "登录后运行"
+        "signInRequired": "登录后运行",
+        "websiteProfileReference": "网站画像来源固定为 v{revision} · {hash}"
       },
       "review": {
         "title": "确认本轮将使用的事实",
@@ -4449,15 +4461,22 @@
         },
         "categoryTitle": "品类",
         "categoryConfirm": "是的，买家会把这个产品称作「{category}」。",
+        "savedProfileContextTitle": "来自精确网站快照的可复用上下文",
+        "savedProfileContextHint": "这些不可编辑的值会按当前展示内容进入本轮 GEO 上下文；网站画像中的空字段不会展示。",
         "provenanceTitle": "每项事实的来源",
         "field": {
           "target_url": "站点 URL",
           "product_name": "产品名",
           "category": "品类",
           "buyer": "买家",
+          "user": "使用者",
           "brand_aliases": "品牌名",
           "direct_competitors": "竞品",
+          "indirect_alternatives": "间接替代方案",
           "jtbd": "要完成的任务",
+          "use_cases": "使用场景",
+          "outcomes": "期望结果",
+          "barriers": "采用障碍",
           "market_code": "市场",
           "target_query_language": "提问语言"
         },
@@ -4466,6 +4485,8 @@
           "visitor_declared": "你声明的",
           "visitor_confirmed": "你确认的",
           "visitor_confirmed_with_inference": "你确认的，其中一个名字为推断",
+          "saved_website_profile": "来自固定引用的网站画像",
+          "saved_website_profile_candidate": "由固定引用的网站画像提出",
           "not_supplied": "未提供",
           "product_constraint": "本版本固定"
         },
@@ -4473,6 +4494,8 @@
           "not_independently_checked": "未与页面核对",
           "no_profile_source_exists": "没有可自动获取的来源",
           "hostname_label_inferred": "主机名标签是你接受的一个猜测",
+          "pinned_snapshot": "固定到本次引用的精确快照",
+          "requires_current_confirmation": "本次 GEO 运行仍需由你确认",
           "not_supplied": "本轮在缺少它的情况下继续",
           "calibrated_for_us_only": "措辞是按美国市场设置标定的",
           "english_only_in_p0": "本版本只支持英文"
@@ -4497,6 +4520,7 @@
         "list_value_invalid": "列表里有一项过长。",
         "source_summary_invalid": "来源记录不合法。",
         "profile_version_invalid": "缺少上下文版本。",
+        "website_profile_reference_invalid": "保存的网站画像引用不合法。",
         "unknown_query": "该问题已不在本组问题里。",
         "template_unavailable": "其中一个槽位没有可用的已标定措辞。",
         "placeholder_rejected": "你填的某个值放不进已标定的措辞。请缩短成一个普通名词短语。",
@@ -4553,6 +4577,7 @@
       "results": {
         "title": "本轮观察到什么",
         "sampledAt": "采样于 {date}",
+        "websiteProfileReference": "本报告采集时的网站画像来源 v{revision} · {hash}",
         "identityTitle": "运行身份",
         "coverageNote": "下面每一块都按各自的分母计数，只有第一块是关于整轮的陈述。检索与自然需求绝不共用一个数字，入题与未入题的提及也绝不共用一个数字；什么都没观察到的样本被剔除，而不是记作 0。",
         "notStored": "报告内容、provider 回答与证据都不在服务端留存。既有积分系统仍保留最少量的计费、配额与防滥用元数据。本版本没有配对复检。",
@@ -4704,6 +4729,8 @@
         "geo_budget_exhausted": "GEO Agent 已用完今天的运行预算，请明天再试。",
         "geo_budget_unavailable": "当前无法检查运行预算，请稍后再试。",
         "geo_provider_unavailable": "回答 provider 不可用。没有产生任何计费。",
+        "geo_website_profile_reference_invalid": "固定引用的网站画像已不再匹配当前站点或精确版本。请重新选择画像后再运行——没有产生任何计费。",
+        "geo_website_profile_unavailable": "保存的网站画像暂时不可用，请稍后重试——没有产生任何计费。",
         "geo_report_invalid": "报告没有通过自身一致性检查，因此未予展示。",
         "unknown": "本次运行未能完成。没有保存任何内容。"
       },
@@ -4936,6 +4963,20 @@
     },
     "workbench": {
       "stage1": "阶段 01 · 目标",
+      "websiteProfile": {
+        "title": "已保存的网站画像",
+        "open": "使用已保存的网站画像",
+        "loading": "正在读取已保存网站…",
+        "unavailable": "已保存网站暂时不可用。",
+        "placeholder": "选择网站",
+        "suggested": "与当前 URL 精确匹配",
+        "primary": "主要",
+        "import": "导入",
+        "reference": "引用精确版本",
+        "draftOnly": "先确认这个网站画像，才能导入或引用它。",
+        "noProfile": "这个网站还没有保存画像。",
+        "runReference": "本次运行固定引用网站画像 v{revision} · {hash}"
+      },
       "profile": {
         "stage": "阶段 01 · Product Profile",
         "seo": {
@@ -4949,6 +4990,17 @@
         "states": {
           "needs_confirmation": "需要检查",
           "confirmed": "本次运行已确认"
+        },
+        "websiteProfile": {
+          "import": "已分离导入的网站画像",
+          "reference": "精确网站快照 v{revision} · {hash}",
+          "saveBack": "保存回网站草稿",
+          "saveStatus": {
+            "saving": "正在保存回网站…",
+            "saved": "已保存到网站草稿",
+            "conflict": "网站草稿已有变化，请重新打开后再保存。",
+            "error": "无法保存回网站草稿。"
+          }
         },
         "fields": {
           "targetUrl": "目标 URL",
@@ -5899,11 +5951,153 @@
     }
   },
   "account": {
+    "settings": {
+      "eyebrow": "账户",
+      "title": "设置",
+      "back": "返回 GenGrowth",
+      "navigation": "设置导航",
+      "websites": "网站",
+      "credits": "积分",
+      "agents": "Agents"
+    },
+    "websites": {
+      "title": "网站",
+      "subtitle": "保存产品与核心用户画像，让不同的 Agents 可以重复使用。",
+      "loading": "正在读取你的网站…",
+      "signedOut": "登录后管理网站。",
+      "unavailable": "网站信息暂时不可用。",
+      "retry": "重试",
+      "emptyTitle": "添加第一个网站",
+      "emptyBody": "网站画像会暂存在这里，后续 Agents 可以导入，或引用你确认过的精确版本。",
+      "add": "添加网站",
+      "edit": "编辑",
+      "editWebsite": "编辑 {name}",
+      "primary": "主要",
+      "setPrimary": "设为主要",
+      "setPrimaryWebsite": "将 {name} 设为主要网站",
+      "settingPrimary": "正在更新…",
+      "version": "已确认 v{revision}",
+      "confirmedAt": "确认于 {date}",
+      "status": {
+        "not_generated": "未生成",
+        "draft": "草稿",
+        "confirmed": "已确认",
+        "unconfirmed_changes": "有未确认修改"
+      },
+      "dialog": {
+        "title": "添加网站",
+        "description": "先保存公开网站，也可以随后生成它的产品与核心用户画像。",
+        "url": "网站 URL",
+        "urlPlaceholder": "例如 example.com…",
+        "displayName": "显示名称（可选）",
+        "displayNamePlaceholder": "例如：示例网站…",
+        "addOnly": "仅添加",
+        "addAndGenerate": "添加并生成画像",
+        "adding": "正在添加…",
+        "invalidUrl": "请输入公开的 http 或 https 网站。",
+        "failed": "网站添加失败，请重试。"
+      },
+      "fields": {
+        "productName": "产品名称",
+        "oneLinePositioning": "一句话定位",
+        "valueProposition": "价值主张",
+        "coreFeatures": "核心功能",
+        "categories": "产品类别",
+        "businessModel": "商业模式",
+        "primaryCta": "主要行动按钮",
+        "trustSignals": "信任信号",
+        "primaryIcp": "核心 ICP",
+        "buyer": "购买者",
+        "user": "使用者",
+        "triggerPain": "触发痛点",
+        "icpInterests": "ICP 兴趣",
+        "icpPain": "ICP 痛点",
+        "icpBehavior": "ICP 行为",
+        "icpPositioning": "面向 ICP 的定位",
+        "jtbd": "待完成任务",
+        "useCases": "使用场景",
+        "outcomes": "期望结果",
+        "barriers": "采用障碍",
+        "qualificationSignals": "匹配信号",
+        "disqualifiers": "排除信号",
+        "directCompetitors": "直接竞品",
+        "indirectAlternatives": "间接替代方案",
+        "excludedAlternatives": "排除的替代方案",
+        "firstOutcome": "首个结果",
+        "country": "主要市场",
+        "locale": "主要语言"
+      },
+      "refresh": {
+        "title": "查看更新建议",
+        "available": "完整的网站更新建议已生成。",
+        "partial": "已生成部分更新建议，缺失字段仍保持明确。",
+        "no_data": "没有找到可复用的字段。",
+        "current": "当前",
+        "proposed": "建议",
+        "evidence": "来源",
+        "applyAll": "应用全部建议",
+        "applyField": "应用",
+        "dismiss": "暂不处理",
+        "noChanges": "本次没有字段变化。"
+      },
+      "editor": {
+        "loading": "正在读取画像…",
+        "signedOut": "登录后编辑这个画像。",
+        "unavailable": "画像暂时不可用。",
+        "notFound": "没有找到这个网站。",
+        "productSection": "产品",
+        "icpSection": "核心用户画像",
+        "marketSection": "市场与替代方案",
+        "sourcesSection": "来源与版本",
+        "listAdd": "添加一项",
+        "listRemove": "移除",
+        "saveDraft": "保存草稿",
+        "retrySave": "重试保存",
+        "listIncomplete": "请填写或移除空白列表项后再保存。",
+        "rescan": "重新扫描网站",
+        "generating": "正在扫描…",
+        "generationFailed": "网站更新失败，当前草稿没有被修改。",
+        "saveState": {
+          "unsaved": "尚未保存",
+          "saving": "正在保存…",
+          "saved": "已保存",
+          "failed": "保存失败",
+          "conflicted": "存在冲突"
+        },
+        "conflict": {
+          "title": "处理冲突",
+          "body": "逐项选择本地或服务器内容，再基于最新版本保存。",
+          "local": "本地",
+          "server": "服务器",
+          "keepLocal": "保留本地",
+          "useServer": "使用服务器版本",
+          "save": "保存合并后的草稿"
+        },
+        "confirm": {
+          "title": "确认画像",
+          "missing": "补全必填字段后才能确认。",
+          "changes": "与当前已确认版本相比有 {count} 项变化",
+          "action": "确认画像",
+          "confirming": "正在确认…",
+          "version": "已确认 v{revision}",
+          "failed": "画像确认失败，请检查字段后重试。"
+        },
+        "draftVersion": "草稿 v{version}",
+        "noSources": "还没有来源 URL。"
+      }
+    },
     "menu": {
       "label": "账户",
       "balance": "积分",
       "welfareRemaining": "测试期还能攒 {remaining}",
-      "ledger": "查看积分明细"
+      "ledger": "查看积分明细",
+      "credits": "积分",
+      "website": "网站",
+      "addWebsite": "添加网站",
+      "settings": "设置",
+      "agents": "Agents",
+      "language": "语言",
+      "referral": "邀请好友，赚取奖励"
     }
   }
 }

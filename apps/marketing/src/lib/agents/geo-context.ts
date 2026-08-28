@@ -21,6 +21,10 @@ import {
   normalizeGeoHost,
   normalizeGeoTargetUrl,
 } from "./geo-url.ts";
+import {
+  parseWebsiteProfileReference,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
 
 export const GEO_CONTEXT_SCHEMA_VERSION = "geo_context.v1" as const;
 
@@ -79,6 +83,7 @@ export interface GeoContextSnapshotV1 {
   readonly targetQueryLanguage: "en";
   readonly sourceProfileVersion: string;
   readonly sourceSummary: readonly GeoContextSourceEntryV1[];
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
   readonly confirmedAt: string;
   readonly contextHash: string;
 }
@@ -103,6 +108,7 @@ export interface GeoContextInputV1 {
   readonly targetQueryLanguage: string;
   readonly sourceProfileVersion: string;
   readonly sourceSummary: readonly GeoContextSourceEntryV1[];
+  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
 }
 
 export type GeoContextRejection =
@@ -122,7 +128,8 @@ export type GeoContextRejection =
   | "query_language_unsupported"
   | "list_value_invalid"
   | "source_summary_invalid"
-  | "profile_version_invalid";
+  | "profile_version_invalid"
+  | "website_profile_reference_invalid";
 
 export type GeoContextConfirmation =
   | { readonly ok: true; readonly snapshot: GeoContextSnapshotV1 }
@@ -410,6 +417,20 @@ export function geoContextHashProjection(
       source: entry.source,
       limitationCode: entry.limitationCode,
     })),
+    ...(snapshot.websiteProfileReference === undefined
+      ? {}
+      : {
+          websiteProfileReference: {
+            schemaVersion: snapshot.websiteProfileReference.schemaVersion,
+            websiteId: snapshot.websiteProfileReference.websiteId,
+            snapshotId: snapshot.websiteProfileReference.snapshotId,
+            snapshotRevision:
+              snapshot.websiteProfileReference.snapshotRevision,
+            profileSchemaVersion:
+              snapshot.websiteProfileReference.profileSchemaVersion,
+            profileHash: snapshot.websiteProfileReference.profileHash,
+          },
+        }),
   };
 }
 
@@ -608,6 +629,17 @@ export async function confirmGeoContext(
     rejections.push("source_summary_invalid");
   }
 
+  let websiteProfileReference: WebsiteProfileReferenceV1 | undefined;
+  if (input.websiteProfileReference !== undefined) {
+    try {
+      websiteProfileReference = parseWebsiteProfileReference(
+        input.websiteProfileReference,
+      );
+    } catch {
+      rejections.push("website_profile_reference_invalid");
+    }
+  }
+
   if (rejections.length > 0) {
     return { ok: false, rejections: [...new Set(rejections)] };
   }
@@ -642,6 +674,9 @@ export async function confirmGeoContext(
       source: entry.source,
       limitationCode: entry.limitationCode,
     })),
+    ...(websiteProfileReference === undefined
+      ? {}
+      : { websiteProfileReference }),
     confirmedAt: clock().toISOString(),
     contextHash: "",
   };
@@ -678,6 +713,7 @@ const SNAPSHOT_KEYS = [
   "confirmedAt",
   "contextHash",
 ] as const;
+const WEBSITE_PROFILE_REFERENCE_KEY = "websiteProfileReference" as const;
 
 /**
  * Validate a snapshot that arrived over the wire.
@@ -692,10 +728,21 @@ export function isGeoContextSnapshotV1(
   if (!isObject(value)) return false;
   const keys = Object.keys(value);
   if (
-    keys.length !== SNAPSHOT_KEYS.length ||
-    !SNAPSHOT_KEYS.every((key) => Object.hasOwn(value, key))
+    !SNAPSHOT_KEYS.every((key) => Object.hasOwn(value, key)) ||
+    keys.some(
+      (key) =>
+        !(SNAPSHOT_KEYS as readonly string[]).includes(key) &&
+        key !== WEBSITE_PROFILE_REFERENCE_KEY,
+    )
   ) {
     return false;
+  }
+  if (Object.hasOwn(value, WEBSITE_PROFILE_REFERENCE_KEY)) {
+    try {
+      parseWebsiteProfileReference(value.websiteProfileReference);
+    } catch {
+      return false;
+    }
   }
   if (
     value.schemaVersion !== GEO_CONTEXT_SCHEMA_VERSION ||

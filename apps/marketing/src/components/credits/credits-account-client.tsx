@@ -255,7 +255,10 @@ export function CreditsAccountClient() {
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-card border border-brand-border-card bg-brand-panel-raised p-[22px]">
+        <section
+          id="referral"
+          className="scroll-mt-24 rounded-card border border-brand-border-card bg-brand-panel-raised p-[22px]"
+        >
           <h2 className="text-[15.5px] font-semibold text-text-dark-primary">
             {t("dailyTitle")}
           </h2>

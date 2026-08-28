@@ -32,7 +32,11 @@ describe("GET /api/auth/profile", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      data: { email: "ada@example.test", avatarUrl: null },
+      data: {
+        email: "ada@example.test",
+        avatarUrl: null,
+        displayName: null,
+      },
     });
   });
 
@@ -46,9 +50,25 @@ describe("GET /api/auth/profile", () => {
       withUser({ id: "abc", email });
 
       await expect((await GET()).json()).resolves.toEqual({
-        data: { email: null, avatarUrl: null },
+        data: { email: null, avatarUrl: null, displayName: null },
       });
     }
+  });
+
+  it("returns the caller's display name when the provider supplied one", async () => {
+    withUser({
+      id: "abc",
+      email: "ada@example.test",
+      user_metadata: { full_name: "Ada Lovelace" },
+    });
+
+    await expect((await GET()).json()).resolves.toEqual({
+      data: {
+        email: "ada@example.test",
+        avatarUrl: null,
+        displayName: "Ada Lovelace",
+      },
+    });
   });
 
   it("tells a signed-out visitor nothing at all", async () => {

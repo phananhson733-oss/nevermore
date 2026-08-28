@@ -10,6 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import en from "../../../i18n/messages/en.json";
 import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  emptyMarketingWebsiteProfile,
+  profileSha256,
+  type WebsiteDetails,
+  type WebsiteProfileReferenceV1,
+} from "../../../lib/account-websites/contracts.ts";
+import {
   confirmGeoContext,
   type GeoContextSnapshotV1,
 } from "../../../lib/agents/geo-context";
@@ -35,6 +43,81 @@ import { GEO_REPORT_SESSION_KEY } from "../../../lib/agents/geo-session-state";
 vi.mock("../../auth/sign-in-dialog", () => ({
   SignInDialog: ({ open }: { readonly open: boolean }) => (
     <div data-testid="sign-in-dialog" data-open={String(open)} />
+  ),
+}));
+
+const WEBSITE_REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 3,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: "",
+};
+const WEBSITE_PROFILE = {
+  ...emptyMarketingWebsiteProfile(),
+  productName: "Acme Saved Analytics",
+  categories: ["AI visibility tracking", "SEO reporting"],
+  primaryIcp: "Growth teams",
+  buyer: "Marketing leaders",
+  user: "Growth and content leads",
+  jtbd: "Know whether assistants cite the site when buyers ask.",
+  useCases: ["Track assistant citations", "Compare against rivals"],
+  outcomes: ["Appear in assistant answers"],
+  barriers: ["No visibility into assistant answers"],
+  directCompetitors: ["Profound", "Peec AI"],
+  indirectAlternatives: ["Manual spot checks"],
+  country: "US",
+  locale: "en-US",
+};
+const WEBSITE_PROFILE_HASH = await profileSha256(WEBSITE_PROFILE);
+const WEBSITE_DETAILS: WebsiteDetails = {
+  websiteId: WEBSITE_REFERENCE.websiteId,
+  origin: "https://acme.test",
+  submittedUrl: "https://acme.test/",
+  host: "acme.test",
+  canonicalSiteKey: "acme.test",
+  displayName: "Acme",
+  isPrimary: true,
+  profileState: "confirmed",
+  confirmedSnapshotId: WEBSITE_REFERENCE.snapshotId,
+  confirmedSnapshotRevision: WEBSITE_REFERENCE.snapshotRevision,
+  confirmedAt: "2026-08-28T00:00:00.000Z",
+  createdAt: "2026-08-27T00:00:00.000Z",
+  updatedAt: "2026-08-28T00:00:00.000Z",
+  draft: {
+    draftVersion: 4,
+    updatedAt: "2026-08-28T00:00:00.000Z",
+    profileHash: WEBSITE_PROFILE_HASH,
+    profile: WEBSITE_PROFILE,
+  },
+  currentConfirmedSnapshot: {
+    ...WEBSITE_REFERENCE,
+    profileHash: WEBSITE_PROFILE_HASH,
+    confirmedAt: "2026-08-28T00:00:00.000Z",
+    profile: WEBSITE_PROFILE,
+  },
+};
+
+vi.mock("../../account/website-profile-picker", () => ({
+  WebsiteProfilePicker: ({
+    targetUrl,
+    onImport,
+    onReference,
+  }: {
+    readonly targetUrl: string;
+    readonly onImport?: (website: WebsiteDetails) => void;
+    readonly onReference: (website: WebsiteDetails) => void;
+  }) => (
+    <div
+      data-testid="website-profile-picker"
+      data-target-url={targetUrl}
+      data-has-import={String(onImport !== undefined)}
+    >
+      <button type="button" onClick={() => onReference(WEBSITE_DETAILS)}>
+        Reference saved profile
+      </button>
+    </div>
   ),
 }));
 
@@ -168,6 +251,240 @@ describe("GeoWorkbench", () => {
     render();
 
     expect(button("Review the facts")!.disabled).toBe(true);
+  });
+
+  it("uses the shared picker in reference-only mode and never auto-confirms or runs", async () => {
+    render();
+    await act(async () => {
+      setValue(field("geo-url"), "https://acme.test/pricing");
+      button("Reference saved profile")!.click();
+    });
+    await flush();
+
+    const picker = host.querySelector('[data-testid="website-profile-picker"]');
+    expect(picker?.getAttribute("data-has-import")).toBe("false");
+    expect(field("geo-product").value).toBe("Acme Saved Analytics");
+    expect(field("geo-category").value).toBe("AI visibility tracking");
+    expect(field("geo-buyer").value).toBe("Marketing leaders");
+    expect(field("geo-jtbd").value).toBe(
+      "Know whether assistants cite the site when buyers ask.",
+    );
+    expect(field("geo-rivals").value).toBe("Profound, Peec AI");
+    expect(
+      host.querySelector<HTMLSelectElement>("#geo-market")?.value,
+    ).toBe("US");
+    expect(host.textContent).toContain("Website profile source pinned to v3");
+    expect(host.textContent).toContain(WEBSITE_PROFILE_HASH.slice(0, 10));
+    expect(host.textContent).not.toContain("Save back");
+    expect(host.querySelectorAll('input[id^="geo-q-"]')).toHaveLength(0);
+
+    await act(async () => button("Review the facts")!.click());
+    const confirmations = [
+      ...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ];
+    expect(confirmations.length).toBeGreaterThan(1);
+    expect(confirmations.every((checkbox) => !checkbox.checked)).toBe(true);
+    expect(host.textContent).toContain(
+      "Reusable context from the exact website snapshot",
+    );
+    expect(host.textContent).toContain("Growth and content leads");
+    expect(host.textContent).toContain("Track assistant citations");
+    expect(host.textContent).toContain("Compare against rivals");
+    expect(host.textContent).toContain("Appear in assistant answers");
+    expect(host.textContent).toContain("No visibility into assistant answers");
+    expect(host.textContent).toContain("Manual spot checks");
+  });
+
+  it("carries the pinned reference and hidden reusable fields into the paid request", async () => {
+    render();
+    await act(async () => {
+      setValue(field("geo-url"), "https://acme.test/pricing");
+      button("Reference saved profile")!.click();
+    });
+    await flush();
+    await act(async () => button("Review the facts")!.click());
+
+    const displayedHiddenContext = {
+      user:
+        host.querySelector('[data-geo-hidden-profile-field="user"] dd')
+          ?.textContent ?? null,
+      useCases: [
+        ...host.querySelectorAll(
+          '[data-geo-hidden-profile-field="use_cases"] li',
+        ),
+      ].map((node) => node.textContent),
+      outcomes: [
+        ...host.querySelectorAll(
+          '[data-geo-hidden-profile-field="outcomes"] li',
+        ),
+      ].map((node) => node.textContent),
+      barriers: [
+        ...host.querySelectorAll(
+          '[data-geo-hidden-profile-field="barriers"] li',
+        ),
+      ].map((node) => node.textContent),
+      indirectAlternatives: [
+        ...host.querySelectorAll(
+          '[data-geo-hidden-profile-field="indirect_alternatives"] li',
+        ),
+      ].map((node) => node.textContent),
+    };
+    expect(displayedHiddenContext).toEqual({
+      user: "Growth and content leads",
+      useCases: ["Track assistant citations", "Compare against rivals"],
+      outcomes: ["Appear in assistant answers"],
+      barriers: ["No visibility into assistant answers"],
+      indirectAlternatives: ["Manual spot checks"],
+    });
+
+    await act(async () => {
+      for (const checkbox of host.querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"]',
+      )) {
+        checkbox.click();
+      }
+    });
+    await act(async () => {
+      button("Confirm and generate the questions")!.click();
+    });
+    await flush();
+
+    let postedContext: Record<string, unknown> | null = null;
+    const runFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+    runFetch.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      if (String(input) === "/api/auth/session") {
+        return new Response(JSON.stringify({ signedIn: true }), { status: 200 });
+      }
+      const payload = JSON.parse(String(init?.body)) as {
+        readonly context: Record<string, unknown>;
+      };
+      postedContext = payload.context;
+      return new Response(
+        JSON.stringify({ error: { code: "geo_budget_exhausted" } }),
+        { status: 429 },
+      );
+    });
+    await act(async () => button("Run 18 provider calls")!.click());
+    await flush();
+
+    expect(postedContext).toMatchObject({
+      ...displayedHiddenContext,
+      websiteProfileReference: {
+        ...WEBSITE_REFERENCE,
+        profileHash: WEBSITE_PROFILE_HASH,
+      },
+    });
+  });
+
+  it("rebuilds visible-field provenance as current-run input while preserving displayed hidden snapshot sources", async () => {
+    render();
+    await act(async () => {
+      setValue(field("geo-url"), "https://acme.test/pricing");
+      button("Reference saved profile")!.click();
+    });
+    await flush();
+    await act(async () => {
+      setValue(field("geo-product"), "Acme GEO Overlay");
+      setValue(field("geo-category"), "answer visibility monitoring");
+      setValue(field("geo-jtbd"), "Understand which sources assistants use");
+      setValue(field("geo-rivals"), "Semrush, Ahrefs");
+    });
+    await act(async () => {
+      button("Review the facts")!.click();
+    });
+    await act(async () => {
+      for (const checkbox of host.querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"]',
+      )) {
+        checkbox.click();
+      }
+    });
+    await act(async () => {
+      button("Confirm and generate the questions")!.click();
+    });
+    await flush();
+
+    let postedContext: {
+      readonly sourceSummary?: readonly {
+        readonly field: string;
+        readonly source: string;
+        readonly limitationCode: string | null;
+      }[];
+    } | null = null;
+    const runFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+    runFetch.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      if (String(input) === "/api/auth/session") {
+        return new Response(JSON.stringify({ signedIn: true }), { status: 200 });
+      }
+      postedContext = (
+        JSON.parse(String(init?.body)) as {
+          readonly context: typeof postedContext;
+        }
+      ).context;
+      return new Response(
+        JSON.stringify({ error: { code: "geo_budget_exhausted" } }),
+        { status: 429 },
+      );
+    });
+    await act(async () => button("Run 18 provider calls")!.click());
+    await flush();
+
+    const sourceFor = (fieldName: string) =>
+      postedContext?.sourceSummary?.find(
+        (entry) => entry.field === fieldName,
+      );
+    expect(sourceFor("product_name")?.source).toBe("visitor_declared");
+    expect(sourceFor("category")?.source).toBe("visitor_confirmed");
+    expect(sourceFor("jtbd")?.source).toBe("visitor_declared");
+    expect(sourceFor("direct_competitors")?.source).toBe(
+      "visitor_declared",
+    );
+    expect(sourceFor("brand_aliases")?.source).toMatch(
+      /^visitor_confirmed/u,
+    );
+    for (const fieldName of [
+      "user",
+      "use_cases",
+      "outcomes",
+      "barriers",
+      "indirect_alternatives",
+    ]) {
+      expect(sourceFor(fieldName)).toMatchObject({
+        source: "saved_website_profile",
+        limitationCode: "pinned_snapshot",
+      });
+    }
+    for (const fieldName of [
+      "target_url",
+      "product_name",
+      "category",
+      "buyer",
+      "brand_aliases",
+      "direct_competitors",
+      "jtbd",
+      "market_code",
+    ]) {
+      expect(sourceFor(fieldName)?.source).not.toMatch(
+        /^saved_website_profile/u,
+      );
+    }
+  });
+
+  it("clears the pinned reference and hidden projection when the target host changes", async () => {
+    render();
+    await act(async () => {
+      setValue(field("geo-url"), "https://acme.test/pricing");
+      button("Reference saved profile")!.click();
+    });
+    await flush();
+    expect(host.textContent).toContain("Website profile source pinned to v3");
+
+    await act(async () => {
+      setValue(field("geo-url"), "https://other.test/");
+    });
+
+    expect(host.textContent).not.toContain("Website profile source pinned to v3");
+    expect(host.textContent).not.toContain(WEBSITE_PROFILE_HASH.slice(0, 10));
   });
 
   it("proposes brand names without confirming any of them", async () => {
@@ -379,7 +696,10 @@ describe("GeoWorkbench", () => {
    * hand-written payload would pass a guard that only checks shapes and fail
    * the one that checks identity.
    */
-  async function storeFinishedRun(savedAt: string): Promise<{
+  async function storeFinishedRun(
+    savedAt: string,
+    withWebsiteReference = false,
+  ): Promise<{
     readonly context: GeoContextSnapshotV1;
     readonly querySet: GeoQuerySetV1;
     readonly report: GeoReportDataV3;
@@ -411,6 +731,14 @@ describe("GeoWorkbench", () => {
         sourceSummary: [
           { field: "category", source: "user_edit", limitationCode: null },
         ],
+        ...(withWebsiteReference
+          ? {
+              websiteProfileReference: {
+                ...WEBSITE_REFERENCE,
+                profileHash: WEBSITE_PROFILE_HASH,
+              },
+            }
+          : {}),
       },
       () => new Date("2026-08-19T09:00:00.000Z"),
     );
@@ -554,6 +882,27 @@ describe("GeoWorkbench", () => {
         0,
       )}`,
     );
+  });
+
+  it("restores the pinned website-profile reference through the report and form lifecycle", async () => {
+    await storeFinishedRun(new Date().toISOString(), true);
+    render();
+    await flush();
+
+    expect(host.textContent).toContain("Captured website profile source v3");
+    expect(host.textContent).toContain(WEBSITE_PROFILE_HASH.slice(0, 10));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    await act(async () => button("Back")!.click());
+    await act(async () => button("Back")!.click());
+    await act(async () => button("Back")!.click());
+
+    expect(host.textContent).toContain("Website profile source pinned to v3");
+    expect(
+      host
+        .querySelector('[data-testid="website-profile-picker"]')
+        ?.getAttribute("data-target-url"),
+    ).toBe("https://acme.test/");
   });
 
   it("leaves the review step usable after a restore", async () => {

@@ -5,6 +5,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
+import {
   confirmGeoContext,
   deriveGeoBrandStance,
   deriveGeoMentionEligibility,
@@ -18,6 +23,15 @@ import {
 
 const CLOCK = (): Date => new Date("2026-08-18T09:00:00.000Z");
 const LATER = (): Date => new Date("2026-08-18T09:00:01.000Z");
+
+const WEBSITE_PROFILE_REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 3,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: "a".repeat(64),
+};
 
 const INPUT: GeoContextInputV1 = {
   targetUrl: "https://acme.test/",
@@ -100,6 +114,34 @@ describe("confirmGeoContext", () => {
     expect(snapshot.confirmedAt).toBe("2026-08-18T09:00:00.000Z");
     expect(snapshot.contextHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(isGeoContextSnapshotV1(snapshot)).toBe(true);
+  });
+
+  it("carries an exact strict website-profile reference into the snapshot", async () => {
+    const snapshot = await confirmed({
+      websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+    });
+
+    expect(snapshot.websiteProfileReference).toEqual(WEBSITE_PROFILE_REFERENCE);
+    expect(isGeoContextSnapshotV1(snapshot)).toBe(true);
+  });
+
+  it("rejects a malformed or extra-field website-profile reference", async () => {
+    const malformed = {
+      ...WEBSITE_PROFILE_REFERENCE,
+      extra: "not part of the exact reference",
+    };
+    const result = await confirmGeoContext(
+      {
+        ...INPUT,
+        websiteProfileReference: malformed,
+      } as unknown as GeoContextInputV1,
+      CLOCK,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      rejections: ["website_profile_reference_invalid"],
+    });
   });
 
   it("keeps only the aliases the visitor confirmed", async () => {
@@ -311,6 +353,31 @@ describe("the context fingerprint", () => {
     }
   });
 
+  it("changes identity when only the pinned revision and profile hash change", async () => {
+    const first = await confirmed({
+      websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+    });
+    const second = await confirmed({
+      websiteProfileReference: {
+        ...WEBSITE_PROFILE_REFERENCE,
+        snapshotRevision: WEBSITE_PROFILE_REFERENCE.snapshotRevision + 1,
+        profileHash: "b".repeat(64),
+      },
+    });
+
+    expect(second.productName).toBe(first.productName);
+    expect(second.targetHost).toBe(first.targetHost);
+    expect(second.contextHash).not.toBe(first.contextHash);
+  });
+
+  it("keeps the legacy no-reference context hash projection unchanged", async () => {
+    const snapshot = await confirmed();
+
+    expect(Object.hasOwn(snapshot, "websiteProfileReference")).toBe(false);
+    await expect(geoContextHash(snapshot)).resolves.toBe(snapshot.contextHash);
+    expect(isGeoContextSnapshotV1(snapshot)).toBe(true);
+  });
+
   it("does not cover the fingerprint field itself", async () => {
     const snapshot = await confirmed();
     const tampered: GeoContextSnapshotV1 = {
@@ -335,6 +402,22 @@ describe("isGeoContextSnapshotV1", () => {
     const snapshot = await confirmed();
 
     expect(isGeoContextSnapshotV1({ ...snapshot, extra: 1 })).toBe(false);
+  });
+
+  it("refuses an extra field inside the optional exact reference", async () => {
+    const snapshot = await confirmed({
+      websiteProfileReference: WEBSITE_PROFILE_REFERENCE,
+    });
+
+    expect(
+      isGeoContextSnapshotV1({
+        ...snapshot,
+        websiteProfileReference: {
+          ...WEBSITE_PROFILE_REFERENCE,
+          extra: true,
+        },
+      }),
+    ).toBe(false);
   });
 
   it("refuses a non-country market", async () => {

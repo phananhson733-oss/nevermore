@@ -6,6 +6,13 @@ import type {
   KeywordOpportunityProviderRow,
 } from "@sf/public-tools";
 import { SourceError, type DomainRegistrationEvidence } from "@sf/sources";
+import {
+  MARKETING_WEBSITE_PROFILE_VERSION,
+  WEBSITE_PROFILE_REFERENCE_VERSION,
+  emptyMarketingWebsiteProfile,
+  profileSha256,
+  type WebsiteProfileReferenceV1,
+} from "../account-websites/contracts.ts";
 import { open, seal } from "../auth/sealed-cookie.ts";
 import { openCrawlGate, type CrawlGateDependencies } from "./crawl-gate.ts";
 import { createKeywordCostAccumulator } from "./keyword-cost-guard.ts";
@@ -36,8 +43,51 @@ import {
 process.env.TOKEN_ENCRYPTION_KEY = "cd".repeat(32);
 
 const SUB = "108124453711223344556";
+const ACCOUNT_USER_ID = "21abf797-39ab-47ef-8797-6c11c7093d77";
 const SITE_URL = "https://acme.example/";
 const COMPLETED_AT = "2026-08-10T12:00:00.000Z";
+
+const SAVED_PROFILE = {
+  ...emptyMarketingWebsiteProfile(),
+  productName: "Acme",
+  oneLinePositioning: "Revenue operations for clinics",
+  valueProposition: "Find and fix revenue leakage",
+  categories: ["Revenue operations"],
+  coreFeatures: ["Claim automation"],
+  useCases: ["Recover denied claims"],
+  icpInterests: ["Faster cash flow"],
+  primaryIcp: "Clinic finance teams",
+  jtbd: "Reduce days in accounts receivable",
+  country: "GB",
+  locale: "en-GB",
+};
+const SAVED_PROFILE_HASH = await profileSha256(SAVED_PROFILE);
+const PROFILE_REFERENCE: WebsiteProfileReferenceV1 = {
+  schemaVersion: WEBSITE_PROFILE_REFERENCE_VERSION,
+  websiteId: "c80c5f1d-5a0e-4d14-a6a5-e75bc66ca4a6",
+  snapshotId: "a53f4ddb-7cd6-42da-af53-88cc68b41987",
+  snapshotRevision: 4,
+  profileSchemaVersion: MARKETING_WEBSITE_PROFILE_VERSION,
+  profileHash: SAVED_PROFILE_HASH,
+};
+const RESOLVED_PROFILE = {
+  website: {
+    websiteId: PROFILE_REFERENCE.websiteId,
+    origin: "https://acme.example",
+    host: "acme.example",
+    canonicalSiteKey: "acme.example",
+    displayName: "Acme",
+    isPrimary: true,
+    profileState: "confirmed" as const,
+    confirmedSnapshotId: PROFILE_REFERENCE.snapshotId,
+    confirmedSnapshotRevision: PROFILE_REFERENCE.snapshotRevision,
+    confirmedAt: COMPLETED_AT,
+    createdAt: COMPLETED_AT,
+    updatedAt: COMPLETED_AT,
+  },
+  reference: PROFILE_REFERENCE,
+  profile: SAVED_PROFILE,
+};
 
 /**
  * Titles chosen to share no token with any candidate keyword below.
@@ -405,6 +455,323 @@ afterEach(() => {
 });
 
 describe("handleKeywordContextRequest", () => {
+  it("does not touch account auth or profile storage on the legacy no-reference path", async () => {
+    const authenticateAccount = vi.fn();
+    const resolveWebsiteProfileReference = vi.fn();
+
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({ authenticateAccount, resolveWebsiteProfileReference }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(authenticateAccount).not.toHaveBeenCalled();
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+  });
+
+  it("strictly rejects a malformed or extra-field profile reference before private or crawl work", async () => {
+    const authenticateAccount = vi.fn();
+    const resolveWebsiteProfileReference = vi.fn();
+    const openCrawlGate = vi.fn(async () => ({
+      ok: true as const,
+      kind: "crawl" as const,
+      release: () => {},
+    }));
+    const crawlContext = vi.fn(() => Promise.resolve(CRAWL));
+    const extractPropositions = vi.fn(() => Promise.resolve(PROPOSITIONS));
+
+    const response = await handleKeywordContextRequest(
+      request({
+        ...CONTEXT_BODY,
+        websiteProfileReference: {
+          ...PROFILE_REFERENCE,
+          profile: "private text must never be accepted here",
+        },
+      }),
+      deps({
+        authenticateAccount,
+        resolveWebsiteProfileReference,
+        openCrawlGate,
+        crawlContext,
+        extractPropositions,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_input" },
+    });
+    expect(authenticateAccount).not.toHaveBeenCalled();
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+    expect(openCrawlGate).not.toHaveBeenCalled();
+    expect(crawlContext).not.toHaveBeenCalled();
+    expect(extractPropositions).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when verified account authentication is unavailable", async () => {
+    const resolveWebsiteProfileReference = vi.fn();
+    const openCrawlGate = vi.fn(async () => ({
+      ok: true as const,
+      kind: "crawl" as const,
+      release: () => {},
+    }));
+    const response = await handleKeywordContextRequest(
+      request({ ...CONTEXT_BODY, websiteProfileReference: PROFILE_REFERENCE }),
+      deps({
+        authenticateAccount: () => Promise.resolve({ status: "unavailable" }),
+        resolveWebsiteProfileReference,
+        openCrawlGate,
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_request" },
+    });
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+    expect(openCrawlGate).not.toHaveBeenCalled();
+  });
+
+  it("requires a verified account session for an exact reference", async () => {
+    const resolveWebsiteProfileReference = vi.fn();
+    const response = await handleKeywordContextRequest(
+      request({ ...CONTEXT_BODY, websiteProfileReference: PROFILE_REFERENCE }),
+      deps({
+        authenticateAccount: () =>
+          Promise.resolve({ status: "unauthenticated" }),
+        resolveWebsiteProfileReference,
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "authentication_required" },
+    });
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a missing provider subject", undefined],
+    ["a null provider subject", null],
+    ["another Google account", "109999999999999999999"],
+  ] as const)(
+    "rejects %s before resolving or reading anything",
+    async (_label, googleSubject) => {
+      const resolveWebsiteProfileReference = vi.fn(() =>
+        Promise.resolve({ kind: "ok" as const, value: RESOLVED_PROFILE }),
+      );
+      const openCrawlGate = vi.fn(async () => ({
+        ok: true as const,
+        kind: "crawl" as const,
+        release: () => {},
+      }));
+      const crawlContext = vi.fn(() => Promise.resolve(CRAWL));
+      const extractPropositions = vi.fn(() => Promise.resolve(PROPOSITIONS));
+      const response = await handleKeywordContextRequest(
+        request({
+          ...CONTEXT_BODY,
+          websiteProfileReference: PROFILE_REFERENCE,
+        }),
+        deps({
+          authenticateAccount: () =>
+            Promise.resolve({
+              status: "authenticated",
+              userId: ACCOUNT_USER_ID,
+              email: null,
+              avatarUrl: null,
+              ...(googleSubject === undefined ? {} : { googleSubject }),
+            }),
+          resolveWebsiteProfileReference,
+          openCrawlGate,
+          crawlContext,
+          extractPropositions,
+        }),
+      );
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "authentication_required" },
+      });
+      expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+      expect(openCrawlGate).not.toHaveBeenCalled();
+      expect(crawlContext).not.toHaveBeenCalled();
+      expect(extractPropositions).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["missing", { kind: "missing" }, 400],
+    ["invalid", { kind: "invalid", code: "invalid_reference" }, 400],
+    ["unavailable", { kind: "unavailable", reason: "store failed" }, 503],
+  ] as const)(
+    "rejects a %s exact snapshot before crawl work",
+    async (_label, resolution, status) => {
+      const openCrawlGate = vi.fn(async () => ({
+        ok: true as const,
+        kind: "crawl" as const,
+        release: () => {},
+      }));
+      const crawlContext = vi.fn(() => Promise.resolve(CRAWL));
+      const response = await handleKeywordContextRequest(
+        request({
+          ...CONTEXT_BODY,
+          websiteProfileReference: PROFILE_REFERENCE,
+        }),
+        deps({
+          authenticateAccount: () =>
+            Promise.resolve({
+              status: "authenticated",
+              userId: ACCOUNT_USER_ID,
+              email: null,
+              avatarUrl: null,
+              googleSubject: SUB,
+            }),
+          resolveWebsiteProfileReference: () => Promise.resolve(resolution),
+          openCrawlGate,
+          crawlContext,
+        }),
+      );
+
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: status === 503 ? "invalid_request" : "invalid_input",
+        },
+      });
+      expect(openCrawlGate).not.toHaveBeenCalled();
+      expect(crawlContext).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a resolved profile whose canonical host differs from the requested site", async () => {
+    const openCrawlGate = vi.fn(async () => ({
+      ok: true as const,
+      kind: "crawl" as const,
+      release: () => {},
+    }));
+    const response = await handleKeywordContextRequest(
+      request({ ...CONTEXT_BODY, websiteProfileReference: PROFILE_REFERENCE }),
+      deps({
+        authenticateAccount: () =>
+          Promise.resolve({
+            status: "authenticated",
+            userId: ACCOUNT_USER_ID,
+            email: null,
+            avatarUrl: null,
+            googleSubject: SUB,
+          }),
+        resolveWebsiteProfileReference: () =>
+          Promise.resolve({
+            kind: "ok",
+            value: {
+              ...RESOLVED_PROFILE,
+              website: {
+                ...RESOLVED_PROFILE.website,
+                origin: "https://other.example",
+                host: "other.example",
+                canonicalSiteKey: "other.example",
+              },
+            },
+          }),
+        openCrawlGate,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "invalid_input" },
+    });
+    expect(openCrawlGate).not.toHaveBeenCalled();
+  });
+
+  it("resolves the exact snapshot before crawl and seals server-derived pinned seeds first", async () => {
+    const calls: string[] = [];
+    const authenticateAccount = vi.fn(async () => {
+      calls.push("account-auth");
+      return {
+        status: "authenticated" as const,
+        userId: ACCOUNT_USER_ID,
+        email: null,
+        avatarUrl: null,
+        googleSubject: SUB,
+      };
+    });
+    const resolveWebsiteProfileReference = vi.fn(async () => {
+      calls.push("resolve-profile");
+      return { kind: "ok" as const, value: RESOLVED_PROFILE };
+    });
+
+    const response = await handleKeywordContextRequest(
+      request({
+        ...CONTEXT_BODY,
+        siteUrl: "https://www.acme.example/pricing",
+        seeds: [
+          " claim   automation ",
+          "Clinic scheduling",
+          "Patient intake",
+          "Denial analytics",
+          "Medical coding",
+          "This fifth distinct overlay cannot exceed the total cap",
+        ],
+        websiteProfileReference: PROFILE_REFERENCE,
+      }),
+      deps({
+        authenticateAccount,
+        resolveWebsiteProfileReference,
+        openCrawlGate: async () => {
+          calls.push("crawl-gate");
+          return { ok: true, kind: "crawl", release: () => {} };
+        },
+        crawlContext: async () => {
+          calls.push("crawl");
+          return CRAWL;
+        },
+        extractPropositions: async () => {
+          calls.push("model");
+          return PROPOSITIONS;
+        },
+      }),
+    );
+    const parsed = (await response.json()) as ContextBody & {
+      readonly data: ContextBody["data"] & {
+        readonly websiteProfileReference?: WebsiteProfileReferenceV1;
+      };
+    };
+    const opened = open<KeywordContextToken>(
+      "gg_kw_context",
+      parsed.data.contextToken,
+    );
+
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([
+      "account-auth",
+      "resolve-profile",
+      "crawl-gate",
+      "crawl",
+      "model",
+    ]);
+    expect(resolveWebsiteProfileReference).toHaveBeenCalledWith(
+      ACCOUNT_USER_ID,
+      PROFILE_REFERENCE,
+    );
+    expect(parsed.data.websiteProfileReference).toEqual(PROFILE_REFERENCE);
+    expect(opened?.websiteProfileReference).toEqual(PROFILE_REFERENCE);
+    expect(opened?.sub).toBe(SUB);
+    expect(opened?.seeds).toEqual([
+      "Revenue operations",
+      "Claim automation",
+      "Recover denied claims",
+      "Faster cash flow",
+      "Clinic finance teams",
+      "Reduce days in accounts receivable",
+      "Clinic scheduling",
+      "Patient intake",
+      "Denial analytics",
+      "Medical coding",
+    ]);
+    expect(JSON.stringify(parsed)).not.toContain(SAVED_PROFILE.valueProposition);
+  });
+
   it("refuses a visitor who is not signed in before reading anything", async () => {
     const crawlContext = vi.fn();
     const response = await handleKeywordContextRequest(
@@ -1146,6 +1513,79 @@ describe("handleKeywordOpportunitiesRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "context_token_invalid" },
     });
+  });
+
+  it("rejects a sealed token carrying a malformed exact profile reference before GSC work", async () => {
+    const openGscGate = vi.fn(async () => ({
+      ok: true as const,
+      release: () => {},
+    }));
+    const expandCandidates = vi.fn(() => Promise.resolve(DRAFTS));
+    const response = await handleKeywordOpportunitiesRequest(
+      body({
+        contextToken: contextToken({
+          websiteProfileReference: {
+            ...PROFILE_REFERENCE,
+            privateProfileText: "must not be accepted",
+          },
+        } as Partial<KeywordContextToken>),
+      }),
+      deps({ openGscGate, expandCandidates }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "context_token_invalid" },
+    });
+    expect(openGscGate).not.toHaveBeenCalled();
+    expect(expandCandidates).not.toHaveBeenCalled();
+  });
+
+  it("uses the token's pinned seed plan without a live profile lookup in stage two", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const authenticateAccount = vi.fn();
+    const resolveWebsiteProfileReference = vi.fn();
+    const expandCandidates = vi.fn(() => Promise.resolve(DRAFTS));
+    const readCoverageQueries = vi.fn(() =>
+      Promise.resolve(cleanCoverageRead()),
+    );
+    const response = await handleKeywordOpportunitiesRequest(
+      body({
+        contextToken: contextToken({
+          seeds: ["Revenue operations", "Clinic scheduling"],
+          websiteProfileReference: PROFILE_REFERENCE,
+        } as Partial<KeywordContextToken>),
+      }),
+      deps({
+        authenticateAccount,
+        resolveWebsiteProfileReference,
+        expandCandidates,
+        readCoverageQueries,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(expandCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seeds: ["Revenue operations", "Clinic scheduling"],
+      }),
+    );
+    expect(authenticateAccount).not.toHaveBeenCalled();
+    expect(resolveWebsiteProfileReference).not.toHaveBeenCalled();
+    expect(readCoverageQueries).toHaveBeenCalledWith({
+      property: SITE_URL,
+      accessToken: "ya29.test",
+    });
+    const serialized = JSON.stringify(await response.json());
+    expect(serialized).not.toContain(PROFILE_REFERENCE.snapshotId);
+    expect(serialized).not.toContain(PROFILE_REFERENCE.profileHash);
+    expect(serialized).not.toContain(SAVED_PROFILE.valueProposition);
+    expect(JSON.stringify(info.mock.calls)).not.toContain(
+      PROFILE_REFERENCE.snapshotId,
+    );
+    expect(JSON.stringify(info.mock.calls)).not.toContain(
+      SAVED_PROFILE.valueProposition,
+    );
   });
 
   it("accepts a token minted before headings existed instead of throwing on it", async () => {

@@ -118,6 +118,31 @@ async function mockSession(page: Page, signedIn: boolean): Promise<void> {
   await page.route("**/api/auth/one-tap/nonce", async (route) => {
     await route.fulfill({ status: 503, body: "" });
   });
+  if (signedIn) {
+    await page.route("**/api/auth/profile", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            email: "agent-e2e@example.test",
+            displayName: "Agent E2E",
+            avatarUrl: null,
+          },
+        }),
+      });
+    });
+    await page.route("**/api/credits/balance", async (route) => {
+      await route.fulfill({ status: 503, body: "" });
+    });
+    await page.route("**/api/account/websites", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { websites: [] } }),
+      });
+    });
+  }
 }
 
 async function completeRequiredProfileContext(
@@ -197,11 +222,16 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   await url.fill("astrologywiki.com");
   await market.fill("US");
   await language.fill("en-US");
-  await page.waitForLoadState("networkidle");
+  await expect(run).toBeEnabled();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 
   expect(profileRequests).toHaveLength(0);
   expect(auditPosts).toBe(0);
-  await expect(run).toBeEnabled();
 
   const controls = [url, market, language, run];
   const boxes = await Promise.all(controls.map((control) => control.boundingBox()));
@@ -368,7 +398,7 @@ test("signed-out SEO submission opens registration without an audit POST", async
   ).toContain('"purpose":"run_confirmed_profile"');
 });
 
-test("signed-in SEO run renders bounded evidence, reach, and selected solution", async ({
+test("signed-in SEO run renders bounded evidence and a truthful recommendation boundary", async ({
   page,
 }) => {
   await mockSession(page, true);
@@ -389,13 +419,13 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(results).toBeVisible();
   await expect(results.getByText("Pages inspected")).toBeVisible();
   await expect(page.getByTestId("agent-diagnosis")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-E")).toHaveAttribute(
+  await expect(page.getByTestId("diagnosis-group-D")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await page.getByTestId("diagnosis-scope-page").click();
-  await expect(page.getByText("9 groups · 50 checks")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-9")).toHaveAttribute(
+  await expect(page.getByText("9 groups · 49 checks")).toBeVisible();
+  await expect(page.getByTestId("diagnosis-group-2")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -410,13 +440,13 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(page.locator("[data-policy-threshold]")).toHaveCount(0);
   await expect(page.locator("[data-policy-weight]")).toHaveCount(0);
   await expect(page.locator("[data-policy-action]")).toHaveCount(0);
-  await expect(page.getByTestId("agent-recommendation-row")).toBeVisible();
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "SEO Agent decision",
-  );
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "technical seo audit",
-  );
+  await expect(
+    page.getByRole("heading", {
+      name: "No evidence-backed recommendation is available",
+    }),
+  ).toBeVisible();
+  await expect(page.getByTestId("agent-recommendation-row")).toHaveCount(0);
+  await expect(page.getByTestId("agent-selected-solution")).toHaveCount(0);
 });
 
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
@@ -456,16 +486,14 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await completeRequiredProfileContext(page, "zh", "技术 SEO 审计");
   await page.getByRole("button", { name: "接受上下文并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
-  await expect(page.getByTestId("diagnosis-group-A")).toHaveAttribute(
+  await expect(page.getByTestId("diagnosis-group-C")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "HTTP/1.1 200 OK",
-  );
-  await expect(page.getByTestId("agent-selected-solution")).not.toContainText(
-    "SEO Agent decision",
-  );
+  await expect(
+    page.getByRole("heading", { name: "暂无有证据支持的建议" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("agent-selected-solution")).toHaveCount(0);
   expect(
     await page.evaluate(() =>
       sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
