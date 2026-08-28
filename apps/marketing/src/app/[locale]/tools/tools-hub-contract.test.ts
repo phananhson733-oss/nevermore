@@ -27,6 +27,7 @@ describe("Tools hub execution boundaries", () => {
       "seo-audit",
       "low-competition-keywords",
       "competitor-keyword-gap",
+      "content-brief",
       "page-citability-check",
       "geo-knowledge-base",
       "ai-visibility-check",

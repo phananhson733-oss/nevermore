@@ -10,7 +10,8 @@ export type ConnectedTool =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
   | "low-competition-keywords"
-  | "competitor-keyword-gap";
+  | "competitor-keyword-gap"
+  | "content-brief";
 
 /**
  * The union as a value, so a test can walk every member.
@@ -25,6 +26,7 @@ export const CONNECTED_TOOLS = [
   "traffic-drop-diagnosis",
   "low-competition-keywords",
   "competitor-keyword-gap",
+  "content-brief",
 ] as const satisfies readonly ConnectedTool[];
 
 type MissingConnectedTool = Exclude<
@@ -563,6 +565,93 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
     ],
   },
+  "content-brief": {
+    path: "/tools/content-brief",
+    eyebrow: "Content planning",
+    title: "Build a content brief from what page one already answers",
+    description:
+      "Sign in, enter one primary keyword, and get a brief derived from the top results: intent, format, length, the questions competing pages all answer, an outline, and a verdict on whether you would compete with your own page.",
+    sourceLabel: "A GenGrowth sign-in is required",
+    sourceDetail:
+      "Search results come from a third-party SERP source and the competing pages are fetched publicly. A Search Console property and a confirmed product profile are optional; without them the verdict and the gap angle say so instead of guessing.",
+    cta: "Sign in to build a brief",
+    trust:
+      "No saved report, no scheduled run, no content score, and no credit claim. Every count on the page carries its denominator, and every field that could not be read says why.",
+    workflowTitle: "How the brief is built",
+    steps: [
+      {
+        name: "Name one primary keyword",
+        text: "Supporting keywords are optional and go only to the outline model; they never take part in the verdict. Choose the market and language the search results should come from.",
+      },
+      {
+        name: "Read the top results and fetch the pages",
+        text: "The brief reads the top ten organic results, deduplicates them by host, and fetches each remaining page within a fixed time budget. Pages that time out, refuse the fetch, or are not HTML are counted, not hidden.",
+      },
+      {
+        name: "Derive what a competing page must answer",
+        text: "Headings shared by enough of the fetched pages become must-answer questions, each with the pages that carry it. One model call turns those clusters into questions and an outline; the clusters and page references are not model output.",
+      },
+      {
+        name: "Decide create or rewrite only with your own evidence",
+        text: "With a Search Console property, the brief checks whether one of your pages already ranks for the primary keyword. Without one it says the verdict is undecidable rather than defaulting to a new page.",
+      },
+    ],
+    outputTitle: "What one run gives you",
+    outputs: [
+      {
+        label: "Intent, format and length with their thresholds",
+        body: "Each is derived from the search results or the fetched pages, prints the rule it was held to, and lists every tied format rather than choosing one for you.",
+      },
+      {
+        label: "Must-answer questions with page coverage",
+        body: "Every question names how many of the fetched pages carry it, over the number of pages actually read this run, with the source headings and excerpts one click away.",
+      },
+      {
+        label: "An outline marked as model-generated",
+        body: "Each section says which questions it answers. Its order and wording are yours to change; the question list and the evidence references are not.",
+      },
+      {
+        label: "A verdict, and what it cannot say",
+        body: "Create, rewrite, or undecidable, from your own Search Console rows. A query missing from the sample is not observed, never zero.",
+      },
+      {
+        label: "An exportable JSON brief",
+        body: "The whole brief with its fingerprint, which the Content Draft Writer will accept as its input. Nothing is stored on the server.",
+      },
+    ],
+    faq: [
+      {
+        question: "Where do the competing pages come from?",
+        answer:
+          "From a third-party organic-ranking source for the market and language you select, fetched publicly one URL at a time. Your Search Console data is used only for the verdict and the link sections about your own site.",
+      },
+      {
+        question: "Do I have to connect Search Console or a product profile?",
+        answer:
+          "No. A GenGrowth sign-in is required, but the brief runs without either. Without a property the verdict is undecidable; without a confirmed profile there is no gap angle section, rather than a model inventing one.",
+      },
+      {
+        question: "Which languages does it support?",
+        answer:
+          "Every language on the market list for intent, format, verdict, gap angle and links. Length, must-answer questions and the outline need whitespace-tokenized text, so for Chinese, Japanese, Korean and Thai those three fields are marked unsupported and no draft can be generated.",
+      },
+      {
+        question: "Does it write the article?",
+        answer:
+          "Not this tool. It produces the brief and exports it as JSON; the Content Draft Writer takes that brief as its only input. Neither publishes, writes to a CMS, or generates images.",
+      },
+      {
+        question: "Does the report refresh or get saved?",
+        answer:
+          "No. It runs only when you submit the form, and the report lives in your browser tab until you export it. There is no server-side history to recover.",
+      },
+      {
+        question: "How many credits does a run cost?",
+        answer:
+          "This page does not show or promise a credit price. Any future price must be defined for this specific tool before the interface claims it.",
+      },
+    ],
+  },
 };
 
 const ZH: Record<ConnectedTool, ConnectedToolContent> = {
@@ -1049,6 +1138,93 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         question: "一次运行消耗多少积分？",
         answer:
           "这个 Beta 页面不展示、也不承诺固定积分价格。未来只有在本工具自己的价格合同确定后，界面才会声称会扣费。",
+      },
+    ],
+  },
+  "content-brief": {
+    path: "/tools/content-brief",
+    eyebrow: "内容规划",
+    title: "从第一页已经回答的内容出发，生成一份内容简报",
+    description:
+      "登录后输入一个主关键词，得到一份从前十条结果推导出的简报：意图、形态、篇幅、竞争页共同回答的问题、大纲，以及一条「会不会与自己的页面竞争」的判定。",
+    sourceLabel: "需要登录 GenGrowth 账号",
+    sourceDetail:
+      "搜索结果来自第三方 SERP 数据源，竞争页面按公开方式抓取。Search Console 资源与已确认的产品档案都是可选项；不选时判定和缺口角度会如实说明，而不是猜。",
+    cta: "登录后生成简报",
+    trust:
+      "不保存报告、没有定时任务、不给内容分、不承诺积分。页面上每个计数都带分母，每个读不到的字段都写明原因。",
+    workflowTitle: "简报是怎样生成的",
+    steps: [
+      {
+        name: "填一个主关键词",
+        text: "支持词可选，只交给大纲模型，不参与判定。选定搜索结果所属的市场与语言。",
+      },
+      {
+        name: "读取前十条结果并抓取页面",
+        text: "简报读取前十条自然结果，按站点去重，再在固定时间预算内逐页抓取。超时、被拒或不是 HTML 的页面会被计数，不会被隐藏。",
+      },
+      {
+        name: "推导竞争页必须回答的问题",
+        text: "被足够多抓取页面共用的小标题成为必答问题，每条都列出承载它的页面。一次模型调用把这些簇改写成问句和大纲；簇本身与页面引用不是模型产出。",
+      },
+      {
+        name: "只用你自己的证据判定新建还是改写",
+        text: "选了 Search Console 资源时，简报会检查你是否已有页面在主关键词上排名。没选时判定为「不可判定」，而不是默认新建。",
+      },
+    ],
+    outputTitle: "一次运行你会拿到什么",
+    outputs: [
+      {
+        label: "带门槛的意图、形态与篇幅",
+        body: "各自从搜索结果或抓取页面推导，印出所依据的规则；形态并列时全部列出，不替你选。",
+      },
+      {
+        label: "带页面覆盖数的必答问题",
+        body: "每条问题都写明有多少篇抓取页承载它，分母是本次真正读到的页面数；来源小标题与片段一键展开。",
+      },
+      {
+        label: "标明「模型生成」的大纲",
+        body: "每一节写明满足哪些问题。顺序与措辞可改，问题清单与证据引用不可改。",
+      },
+      {
+        label: "一条判定，以及它说不了的话",
+        body: "新建、改写或不可判定，只来自你自己的 Search Console 行。样本里没有的查询是「未观测到」，绝不是零。",
+      },
+      {
+        label: "可导出的 JSON 简报",
+        body: "整份简报连同指纹，可直接作为 Content Draft Writer 的输入。服务端不保存任何内容。",
+      },
+    ],
+    faq: [
+      {
+        question: "竞争页面从哪里来？",
+        answer:
+          "来自你所选市场与语言的第三方自然排名数据源，再逐条 URL 公开抓取。你的 Search Console 数据只用于判定和关于自有站点的内链两节。",
+      },
+      {
+        question: "必须连接 Search Console 或产品档案吗？",
+        answer:
+          "不必。需要登录 GenGrowth 账号，但两者都不选也能运行。不选资源时判定为不可判定；没有已确认档案时不出缺口角度这一节，而不是让模型现编。",
+      },
+      {
+        question: "支持哪些语言？",
+        answer:
+          "意图、形态、判定、缺口角度与内链支持市场清单上的全部语言。篇幅、必答问题与大纲需要空白分词的文本，因此中文、日文、韩文、泰文下这三个字段标为不支持，也不能生成 draft。",
+      },
+      {
+        question: "它会把文章写出来吗？",
+        answer:
+          "本工具不写。它产出简报并导出 JSON；Content Draft Writer 只接受这份简报作为输入。两者都不发布、不写 CMS、不生成图片。",
+      },
+      {
+        question: "报告会刷新或保存吗？",
+        answer:
+          "不会。只有提交表单时才运行，报告只存在于你的浏览器标签页里，直到你导出。没有服务端历史可恢复。",
+      },
+      {
+        question: "一次运行消耗多少积分？",
+        answer:
+          "本页面不展示、也不承诺积分价格。未来只有在本工具自己的价格合同确定后，界面才会声称会扣费。",
       },
     ],
   },

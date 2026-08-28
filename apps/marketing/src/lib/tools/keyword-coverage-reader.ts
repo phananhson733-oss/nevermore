@@ -36,10 +36,24 @@ export const COVERAGE_WINDOW_DAYS = 28;
 const COVERAGE_MAX_PAGES = 4;
 
 /** Days between the last finalised day and today. */
-const FINALISATION_LAG_DAYS = 3;
+export const FINALISATION_LAG_DAYS = 3;
 
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * The one window every keyword-side GSC read shares: `COVERAGE_WINDOW_DAYS`
+ * ending `FINALISATION_LAG_DAYS` ago. Exported so the content brief reads its
+ * query and page dimensions over exactly this window instead of recomputing
+ * it with a private constant that could drift.
+ */
+export function coverageWindow(at: Date): { readonly startDate: string; readonly endDate: string } {
+  const endDate = shiftDays(at, -FINALISATION_LAG_DAYS);
+  return {
+    startDate: isoDay(shiftDays(endDate, -(COVERAGE_WINDOW_DAYS - 1))),
+    endDate: isoDay(endDate),
+  };
 }
 
 function shiftDays(from: Date, days: number): Date {

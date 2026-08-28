@@ -3952,6 +3952,349 @@
         ]
       }
     },
+    "contentBrief": {
+      "title": "Content Brief Builder",
+      "form": {
+        "title": "Set up your content brief",
+        "intro": "Enter one primary keyword. The brief reads the top {depth} results for it, fetches those pages, and derives what a competing page must answer. It runs only when you ask, and no report is saved on the server."
+      },
+      "fields": {
+        "primary": {
+          "label": "Primary keyword",
+          "placeholder": "approval workflow"
+        },
+        "supporting": {
+          "label": "Supporting keywords (optional)",
+          "placeholder": "approval workflow software, approval process",
+          "hint": "Comma-separated, up to {max}. They go to the outline model to be placed under suitable H2/H3 headings; they never take part in the verdict.",
+          "count": "{count} / {max} filled"
+        },
+        "market": {
+          "label": "Market"
+        },
+        "language": {
+          "label": "Language",
+          "unsupported": "This language is not supported by v1 for length, must-answer questions, or the outline, and no draft can be generated from the brief. The verdict, intent, format, gap angle and link sections still run."
+        },
+        "website": {
+          "label": "Product profile (optional)",
+          "none": "No product profile",
+          "help": "Without one, the brief does not produce a “gap angle” section at all, instead of letting a model invent a selling point.",
+          "signedOut": "Sign in to choose a product profile.",
+          "loading": "Loading your websites…",
+          "unavailable": "Your website list could not be loaded right now. The brief still runs without a product profile.",
+          "empty": "No websites on this account yet.",
+          "primary": "primary"
+        },
+        "property": {
+          "label": "Search Console property (optional)",
+          "none": "No Search Console property",
+          "help": "Without one, the brief cannot decide whether you would compete with your own page, and the result page prints that sentence.",
+          "notConnected": "No Search Console property is connected in this browser, so the brief runs without the self-competition verdict."
+        }
+      },
+      "validation": {
+        "primaryRequired": "Enter a primary keyword before running.",
+        "supportingLimit": "A brief accepts at most {max} supporting keywords."
+      },
+      "errors": {
+        "invalid_request": "The brief request could not be read. Check the keyword, market and language fields.",
+        "payload_too_large": "The submitted request is too large.",
+        "unsupported_media_type": "Send the request as JSON.",
+        "auth_required": "Sign in to build a content brief.",
+        "auth_unavailable": "Sign-in status is temporarily unavailable. Try again shortly.",
+        "gsc_auth_required": "Your Search Console authorization is no longer valid, so the brief did not start. Reconnect Search Console, or run again without a property.",
+        "property_not_granted": "This tool is not currently authorized to read the selected Search Console property, so the brief did not start. Grant that property, or run again without one.",
+        "rate_limited": "The hourly allowance for this tool is used up, so the brief did not start. Wait for the window to reset.",
+        "quota_unavailable": "The usage limiter on our side could not be reached, so the brief did not start rather than spend an unmetered run. This is not about your usage; try again shortly.",
+        "scan_in_progress": "Another brief is already running for this account. Wait for it to finish, then try again.",
+        "unsupported_market": "That market is not on this tool's list.",
+        "unsupported_language": "That language is not on this tool's list.",
+        "too_many_supporting_keywords": "A brief accepts at most {max} supporting keywords.",
+        "unknown": "The brief could not be completed.",
+        "brief_unavailable": "The brief did not pass its own validation. This is a problem on our side, not with your input; try again shortly.",
+        "gsc_revoked": "Your Search Console authorization is no longer valid, so the brief did not start. Reconnect Search Console, or run again without a property.",
+        "gsc_temporarily_unavailable": "Renewing the Search Console authorization failed for now, so the brief did not start. Try again shortly, or run again without a property."
+      },
+      "running": {
+        "elapsed": "Building the brief… {seconds}s elapsed of a {budget}s budget",
+        "complete": "Content brief complete."
+      },
+      "actions": {
+        "run": "Build content brief",
+        "running": "Building…",
+        "exportJson": "Export JSON",
+        "generateDraft": "Generate draft →",
+        "generateDraftPending": "Draft generation arrives with the Content Draft Writer (PR 3). The exported JSON is the handoff it will accept."
+      },
+      "modes": {
+        "complete": "complete",
+        "partial": "partial",
+        "degraded": "degraded",
+        "unavailable": "unavailable"
+      },
+      "modeBody": {
+        "complete": "Every read that was requested completed. A field marked “insufficient evidence” does not change this: the evidence was read, it just supports fewer conclusions.",
+        "partial": "At least one read was cut short: fewer SERP rows than requested, truncated or failed page fetches, or a truncated Search Console sample.",
+        "degraded": "At least one requested read was unavailable, or a field could not be produced because of a timeout, a provider error, missing configuration, failed validation, or an unsupported language.",
+        "unavailable": "No SERP came back, so there is no brief body. Only the evidence coverage is shown."
+      },
+      "run": {
+        "eyebrow": "Content brief",
+        "title": "Run",
+        "collectedAt": "Collected",
+        "elapsed": "{elapsed}s of a {budget}s budget",
+        "model": "Model",
+        "modelReported": "as reported by the deployment",
+        "modelNone": "no model call completed",
+        "temperature": "Temperature",
+        "temperatureRequested": "requested {value}",
+        "temperatureEffective": "effective {value}",
+        "temperatureNotReported": "effective value not reported by the deployment",
+        "fingerprint": "Fingerprint"
+      },
+      "unavailable": {
+        "not_requested": "Not requested for this run.",
+        "not_connected": "Not connected: no authorization was available for this read.",
+        "not_configured": "Model not configured: this deployment has no credentials for the model call.",
+        "timeout": "This read ran out of its time budget.",
+        "provider_error": "The upstream provider returned an error.",
+        "quota_exhausted": "Our own gate refused this read.",
+        "insufficient_evidence": "The upstream read worked, but the evidence is not enough to produce this field.",
+        "unsupported_language": "This language is not supported by v1 for this field.",
+        "validation_failed": "The upstream returned something, but it did not pass our structural validation."
+      },
+      "coverage": {
+        "title": "Evidence coverage",
+        "serp": "SERP",
+        "crawl": "Competitor pages",
+        "gsc": "Search Console",
+        "profile": "Product profile",
+        "llm": "Model",
+        "serpRows": "{returned}/{requested} rows",
+        "crawlObserved": "{observed}/{attempted} observed",
+        "crawlDetail": "{truncated} partially read · {failed} not fetched · {skipped} skipped",
+        "crawlFailedReason": "{count} × {reason}",
+        "crawlSkippedReason": "{count} × {reason}",
+        "gscWindow": "{property} · {days}-day window ending {end}",
+        "gscMatched": "{count} query strings matched the primary keyword",
+        "gscTruncated": "Truncated: {dimensions}",
+        "gscUnreadable": "Unreadable rows: query {query} · query-page {queryPage} · page {page}",
+        "gscDimensions": {
+          "query": "query",
+          "query_page": "query-page",
+          "page": "page"
+        },
+        "profileSnapshot": "Confirmed snapshot revision {revision}",
+        "llmCalls": "{calls, plural, one {# call} other {# calls}} · {model}",
+        "llmCallsNoModel": "{calls, plural, one {# call} other {# calls}}",
+        "llmTokens": "{input} in · {output} out",
+        "attempted": "attempted {count}",
+        "attemptedUnknown": "attempts not known",
+        "serpUnresolved": "{count} unresolved",
+        "gscRows": "query {query} rows · query×page {queryPage} rows · page {page} rows (unreadable {unreadable})"
+      },
+      "crawlSkipped": {
+        "same_host": "same-host deduplication",
+        "no_url": "no URL from the provider"
+      },
+      "crawlFailed": {
+        "timeout": "fetch timed out",
+        "provider_error": "fetch refused or failed",
+        "validation_failed": "not HTML or could not be parsed"
+      },
+      "primaryCoverage": {
+        "no_query_impressions": "The primary keyword's query row has no impressions, so its page split cannot be computed.",
+        "split_exceeds_total": "The page split for the primary keyword exceeds its query total, so the sample is inconsistent.",
+        "query_not_in_sample": "The primary keyword is not in the query sample."
+      },
+      "verdict": {
+        "title": "Verdict",
+        "undecidable": {
+          "title": "Undecidable",
+          "no_gsc_property": "No Search Console property was selected, so the brief cannot decide whether you would compete with your own page.",
+          "gsc_unavailable": "Search Console could not be read, so the brief cannot decide whether you would compete with your own page.",
+          "gsc_partial": "The Search Console sample is incomplete (truncated, unreadable rows, or too little query-page coverage), so the brief cannot decide whether you would compete with your own page.",
+          "gsc_inconsistent": "The Search Console sample is internally inconsistent, so the brief cannot decide whether you would compete with your own page.",
+          "position_unavailable": "Position is unavailable for the page with the most impressions, so the brief cannot decide whether you would compete with your own page."
+        },
+        "create": {
+          "title": "Create a new page",
+          "not_observed": "The primary keyword was not observed in the {days}-day Search Console query sample. Not observed is not zero impressions: Search Console anonymizes low-frequency queries.",
+          "below_impression_floor": "The best-placed existing page had fewer than {minImpressions} impressions for the primary keyword in the {days}-day window, below the floor at which a new page would compete with it.",
+          "beyond_position_cap": "{page} ranks at average position {position} for the primary keyword, beyond the position {maxPosition} cap, so a new page would not compete with it."
+        },
+        "update": {
+          "title": "Rewrite the existing page",
+          "self_compete": "{page} already ranks at average position {position} with {impressions} impressions for the primary keyword, within the position {maxPosition} cap. A new page would compete with it.",
+          "v1NoRewrite": "This tool's v1 does not produce a rewrite checklist. The brief below is still shaped for a new page."
+        },
+        "existing": "Existing page",
+        "impressions": "{count} impressions",
+        "position": "average position {value}",
+        "positionUnavailable": "average position unavailable",
+        "rowsWithPosition": "{withPosition}/{rows} rows have position data",
+        "matchedQueries": "{count, plural, one {# query string matched the primary keyword} other {# query strings matched the primary keyword}}"
+      },
+      "intents": {
+        "informational": "Informational",
+        "commercial": "Commercial",
+        "transactional": "Transactional",
+        "navigational": "Navigational"
+      },
+      "intent": {
+        "title": "Intent",
+        "confirmed": "confirmed",
+        "provisional": "provisional",
+        "support": "{matched}/{returned} results support it",
+        "confirmedRule": "Confirmed needs all {depth} results back, at least {ratio}% of them agreeing, and no tie.",
+        "rulesHit": "Rules hit"
+      },
+      "formats": {
+        "guide": "Guide",
+        "listicle": "Listicle",
+        "comparison": "Comparison",
+        "product_page": "Product page",
+        "tool": "Tool",
+        "forum": "Forum",
+        "video": "Video",
+        "news": "News",
+        "unknown": "Unclassified"
+      },
+      "format": {
+        "title": "Format",
+        "plurality": "{count} of {returned} returned results, at or above the {min}-page threshold.",
+        "noPlurality": "No single plurality format ({distribution}). Every tied format is listed; the tool does not choose for you.",
+        "belowThreshold": "The top format did not reach the {min}-page threshold ({distribution}). The full distribution is attached; the tool does not choose for you.",
+        "unknownCount": "{count} unclassified",
+        "distribution": "Distribution",
+        "topShare": "{count}/{returned} results"
+      },
+      "length": {
+        "title": "Length",
+        "words": "{count} words",
+        "p25": "p25",
+        "median": "median",
+        "p75": "p75",
+        "pagesCounted": "from {count}/{observed} pages read this run (fully fetched only, whitespace tokens)",
+        "insufficient": "Fewer than {min} fully fetched pages ({attempted}), so no length range is given.",
+        "unsupported_language": "Not supported for this language in v1 (whitespace tokenization only).",
+        "insufficientUnknown": "Fewer than {min} fully fetched pages, and the number of pages read is not known, so no length range is given."
+      },
+      "mustAnswer": {
+        "title": "Must-answer questions",
+        "coveredBy": "{covered}/{observed} pages",
+        "canonical": "cluster: {heading}",
+        "members": "Source headings",
+        "excerpt": "Excerpt",
+        "noExcerpt": "no excerpt captured under this heading",
+        "insufficient": "This run could not read the evidence this path depends on (observed {observed} / attempted {attempted}).",
+        "empty": "No heading is shared by {min} or more of the {observed} pages read.",
+        "unsupported_language": "Not supported for this language in v1 (whitespace tokenization only).",
+        "budget": "Candidates {candidates} · shown {shown} (cap {cap}) · not shown {hidden}, counted and not discarded.",
+        "denominator": "Denominator {observed} = competitor pages read this run (including {truncated} partially read); {failed} not fetched and {skipped} skipped pages count toward no question's coverage.",
+        "modelNote": "Question wording is model-generated; the heading clusters and page references are not.",
+        "partialRead": "partially read",
+        "insufficientUnknown": "This run could not read the evidence this path depends on, and the number of pages read is not known."
+      },
+      "outline": {
+        "title": "Outline",
+        "answers": "answers {ids}",
+        "modelNote": "Order and wording may be changed; the question list and evidence references may not.",
+        "unsupported_language": "Not supported for this language in v1 (whitespace tokenization only).",
+        "timeout": "The model call ran out of its time budget, so there is no outline.",
+        "not_configured": "Model not configured, so there is no outline.",
+        "validation_failed": "The model's outline did not pass validation (an unknown reference, a question cited by two sections, or more than {cap} sections), so it is not shown rather than trimmed.",
+        "insufficient_evidence": "Fewer than {min} must-answer questions, so no outline was requested."
+      },
+      "gapAngle": {
+        "title": "Gap angle",
+        "rationale": "Why",
+        "refs": "Profile facts cited",
+        "checkedAgainst": "Checked against all {count} competitor pages observed this run.",
+        "profileReason": {
+          "insufficient_evidence": "Profile not confirmed: this website has no confirmed profile snapshot, so no gap angle was produced.",
+          "timeout": "The product profile read ran out of its time budget, so no gap angle was produced.",
+          "provider_error": "The product profile could not be read, so no gap angle was produced."
+        },
+        "reason": {
+          "insufficient_evidence": "The confirmed profile has no usable facts, so no gap angle was produced.",
+          "timeout": "The model call ran out of its time budget, so there is no gap angle.",
+          "not_configured": "Model not configured, so there is no gap angle.",
+          "validation_failed": "The model's gap angle did not pass validation (it cited an unknown fact or did not check every observed page), so it is not shown."
+        },
+        "checkedAgainstMismatch": "The model reported checking {reported} pages, but {count} were observed this run."
+      },
+      "derivation": {
+        "declared": "declared",
+        "observed": "observed",
+        "computed": "computed",
+        "inferred": "inferred by a model"
+      },
+      "links": {
+        "internalTitle": "Internal links",
+        "doNotCoverTitle": "Do not cover",
+        "why": "why",
+        "topic": "topic",
+        "ownedBy": "owned by {page}",
+        "pageMetrics": "{impressions} impressions · {clicks} clicks",
+        "pageMissing": "page reference {ref} is not in the Search Console page ledger",
+        "empty": "The model proposed none.",
+        "reason": {
+          "not_requested": "No Search Console property was selected, so there are no owned pages to link to or to exclude.",
+          "not_connected": "Search Console is not connected, so there are no owned pages to link to or to exclude.",
+          "timeout": "The Search Console page read ran out of its time budget.",
+          "provider_error": "The Search Console page dimension could not be read completely.",
+          "insufficient_evidence": "The Search Console page dimension returned no rows in the window.",
+          "not_configured": "Model not configured, so this list was not produced.",
+          "validation_failed": "The model's list did not pass validation (an unknown page reference or more than {cap} items), so it is not shown rather than trimmed."
+        },
+        "ledger": "{ledger} pages in the ledger / {available} page rows available"
+      },
+      "readiness": {
+        "summary": "{writable, plural, one {# section writable} other {# sections writable}} · {gaps, plural, one {# gap} other {# gaps}}",
+        "gaps": {
+          "no_product_profile": "no confirmed product profile",
+          "no_gsc": "no Search Console read",
+          "no_outline": "no outline",
+          "llm_unavailable": "model unavailable"
+        },
+        "unsupportedLanguage": "Draft generation is not available for this language in v1.",
+        "noWritable": "Nothing is writable, so no draft can be generated from this brief."
+      },
+      "sources": {
+        "first": "first-party",
+        "third": "third-party",
+        "model": "model-generated",
+        "origins": {
+          "gsc": "Search Console",
+          "dataforseo_serp": "DataForSEO SERP",
+          "crawl": "competitor pages",
+          "product_profile": "product profile",
+          "user_input": "your input"
+        },
+        "methods": {
+          "observed": "observed",
+          "heuristic": "rule",
+          "model": "model"
+        },
+        "derivedFrom": "derived from {origins}",
+        "derivedFromLabel": "Derived from"
+      },
+      "wontSay": {
+        "title": "What this brief will not say",
+        "noRewrite": "It does not produce a rewrite template; a “rewrite” verdict still yields a new-page brief.",
+        "threeStates": "The verdict has three states only; four-state arbitration is not in v1.",
+        "noWithdraw": "Nothing is withdrawn: every question has at least {minPages} pages of evidence by construction.",
+        "noPublish": "It does not publish, write to a CMS, or generate images.",
+        "noHistory": "It saves no report body; refresh the page and it is gone.",
+        "noOriginality": "It claims no originality and does not promise to pass AI detection.",
+        "noCredits": "It shows and promises no credit price.",
+        "noPaa": "It reads no People Also Ask questions.",
+        "noScore": "It gives no content score.",
+        "language": "For languages without whitespace tokenization ({languages}), length, must-answer and outline are unsupported and no draft can be generated."
+      }
+    },
     "pageCitability": {
       "eyebrow": "GEO tools",
       "title": "Page Citability Check",
