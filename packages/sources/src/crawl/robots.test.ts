@@ -193,3 +193,41 @@ describe("robots rule specificity", () => {
     expect(isPathAllowed(groups, "SignalFrameBot/0.2", "/a/b/c")).toBe(true);
   });
 });
+
+describe("robots matching is linear", () => {
+  it("answers a pathological pattern without backtracking", () => {
+    // Compiled to a regular expression, this shape took 58 seconds of CPU on
+    // one call and the checker makes six of them per run.
+    const { groups } = parseRobots(
+      `User-agent: *\nDisallow: /${"a*".repeat(20)}b\n`,
+      ORIGIN,
+      true,
+    );
+    const started = Date.now();
+    expect(isPathAllowed(groups, "GPTBot", `/${"a".repeat(60)}`)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("keeps the semantics the regular expression had", () => {
+    const { groups } = parseRobots(
+      [
+        "User-agent: *",
+        "Disallow: /a/*/private",
+        "Disallow: /docs/*.pdf$",
+        "Disallow: /exact$",
+        "Allow: /a/b/private/ok",
+      ].join("\n"),
+      ORIGIN,
+      true,
+    );
+    const denied = (path: string) => !isPathAllowed(groups, "GPTBot", path);
+    expect(denied("/a/b/private")).toBe(true);
+    expect(denied("/a/b/c/private/deep")).toBe(true);
+    expect(denied("/a/private")).toBe(false);
+    expect(denied("/docs/x/y.pdf")).toBe(true);
+    expect(denied("/docs/x.pdf.html")).toBe(false);
+    expect(denied("/exact")).toBe(true);
+    expect(denied("/exactly")).toBe(false);
+    expect(denied("/a/b/private/ok")).toBe(false);
+  });
+});

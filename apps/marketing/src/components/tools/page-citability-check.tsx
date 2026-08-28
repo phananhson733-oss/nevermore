@@ -21,6 +21,8 @@ import {
 const ENDPOINT = "/api/tools/page-citability-check";
 const MAX_QUESTION_CHARS = 200;
 
+type CopyState = "idle" | "done" | "failed";
+
 type RunState =
   | { readonly kind: "idle" }
   | { readonly kind: "running" }
@@ -29,6 +31,9 @@ type RunState =
       readonly kind: "failed";
       readonly code: string;
       readonly retryAfterSeconds: number | null;
+      /** The ceiling that actually applied, when the server named one. */
+      readonly limit: number | null;
+      readonly signedIn: boolean;
     };
 
 /** Error codes this tool owns. Anything else renders as the network message. */
@@ -46,6 +51,8 @@ const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set([
   "not_html",
   "page_not_ok",
   "internal_error",
+  "already_running",
+  "not_utf8",
 ]);
 
 const STATE_STYLES: Record<CitabilityState, string> = {
@@ -61,11 +68,36 @@ const STATE_STYLES: Record<CitabilityState, string> = {
 function formatTime(value: string, locale: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
+  // Named, because an unlabelled UTC clock reads as the visitor's own and a
+  // check run at 22:03 local looks eight hours stale.
   return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "UTC",
+    timeZoneName: "short",
   }).format(parsed);
+}
+
+/**
+ * The report is read from a response this page did not build.
+ *
+ * A rolling deploy can serve an older shape to a tab that already has the new
+ * bundle; without this guard the first `.filter` on a missing array takes the
+ * whole tree down and the visitor loses the form they just filled in.
+ */
+function isCitabilityReport(value: unknown): value is CitabilityReport {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  const summary = record["summary"];
+  return (
+    Array.isArray(record["checks"]) &&
+    Array.isArray(record["limits"]) &&
+    typeof record["fetchedAt"] === "string" &&
+    typeof record["finalUrl"] === "string" &&
+    typeof summary === "object" &&
+    summary !== null &&
+    typeof (summary as Record<string, unknown>)["counted"] === "number"
+  );
 }
 
 function CheckRow({ check }: { readonly check: CitabilityCheck }) {
@@ -89,10 +121,7 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
           </span>
         ) : null}
         {check.kind === "heuristic" ? (
-          <span
-            className="rounded-full border border-brand-border-card px-2 py-0.5 text-[11px] text-text-dark-secondary"
-            title={t("kinds.heuristicNote")}
-          >
+          <span className="rounded-full border border-brand-border-card px-2 py-0.5 text-[11px] text-text-dark-secondary">
             {t("kinds.heuristic")}
           </span>
         ) : null}
@@ -100,6 +129,11 @@ function CheckRow({ check }: { readonly check: CitabilityCheck }) {
       <p className="text-[13.5px] leading-[1.7] text-text-dark-secondary">
         {t(`details.${check.measured.key}`, measuredValues)}
       </p>
+      {check.kind === "heuristic" ? (
+        <p className="text-[12.5px] leading-[1.7] text-text-dark-secondary">
+          {t("kinds.heuristicNote")}
+        </p>
+      ) : null}
       {check.fix ? (
         <p className="text-[13.5px] leading-[1.7] text-text-dark-primary">
           <span className="text-text-dark-secondary">{t("fixLabel")}: </span>
@@ -119,7 +153,7 @@ export function PageCitabilityCheck({
   const [url, setUrl] = useState("");
   const [question, setQuestion] = useState("");
   const [run, setRun] = useState<RunState>({ kind: "idle" });
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<CopyState>("idle");
   const urlInput = useRef<HTMLInputElement | null>(null);
 
   const submit = useCallback(async () => {
@@ -129,7 +163,7 @@ export function PageCitabilityCheck({
       return;
     }
     setRun({ kind: "running" });
-    setCopied(false);
+    setCopied("idle");
     try {
       const response = await fetch(ENDPOINT, {
         method: "POST",
@@ -139,22 +173,35 @@ export function PageCitabilityCheck({
           ...(question.trim().length > 0 ? { question: question.trim() } : {}),
         }),
       });
-      const payload = (await response.json()) as {
-        readonly data?: CitabilityReport;
+      const payload = (await response.json().catch(() => null)) as {
+        readonly data?: unknown;
         readonly error?: { readonly code?: string };
-      };
-      if (response.ok && payload.data) {
+        readonly limit?: unknown;
+        readonly signedIn?: unknown;
+      } | null;
+      if (response.ok && isCitabilityReport(payload?.data)) {
         setRun({ kind: "done", report: payload.data });
         return;
       }
       const retryAfter = Number(response.headers.get("Retry-After"));
       setRun({
         kind: "failed",
-        code: payload.error?.code ?? "fetch_failed",
+        code:
+          response.ok && payload?.data !== undefined
+            ? "internal_error"
+            : (payload?.error?.code ?? "fetch_failed"),
         retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : null,
+        limit: typeof payload?.limit === "number" ? payload.limit : null,
+        signedIn: payload?.signedIn === true,
       });
     } catch {
-      setRun({ kind: "failed", code: "network", retryAfterSeconds: null });
+      setRun({
+        kind: "failed",
+        code: "network",
+        retryAfterSeconds: null,
+        limit: null,
+        signedIn: false,
+      });
     }
   }, [question, url]);
 
@@ -187,10 +234,14 @@ export function PageCitabilityCheck({
           `details.${check.measured.key}`,
           check.measured.values ?? {},
         );
+        // The pattern-rule caveat travels with the row. Pasted into a model
+        // without it, a pattern match reads as a determination.
+        const kind =
+          check.kind === "heuristic" ? ` (${t("kinds.heuristic")})` : "";
         const fix = check.fix
           ? ` ${t("fixLabel")}: ${t(`fixes.${check.fix.key}`, check.fix.values ?? {})}`
           : "";
-        return `- [${state}] ${rule} — ${measured}${fix}`;
+        return `- [${state}] ${rule}${kind} — ${measured}${fix}`;
       }),
       "",
       t("limitsTitle"),
@@ -198,15 +249,33 @@ export function PageCitabilityCheck({
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
-      setCopied(true);
+      setCopied("done");
     } catch {
-      setCopied(false);
+      // A silent failure is worse than none: the visitor pastes whatever was
+      // on the clipboard before and never learns this button did nothing.
+      setCopied("failed");
     }
   }, [locale, report, t]);
 
   return (
     <div className="mt-10 grid gap-10">
+      {/*
+        One small live region instead of announcing the whole report.
+        `role="status"` on the results section is implicitly atomic, so every
+        button label change re-read all fourteen rows.
+      */}
+      <p aria-live="polite" className="sr-only" role="status">
+        {run.kind === "running"
+          ? t("actions.running")
+          : run.kind === "done"
+            ? t("summary.counted", {
+                passed: run.report.summary.passed,
+                counted: run.report.summary.counted,
+              })
+            : ""}
+      </p>
       <section
+        aria-busy={run.kind === "running"}
         aria-labelledby="citability-form"
         className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7"
       >
@@ -288,15 +357,23 @@ export function PageCitabilityCheck({
             <div className="grid gap-1" role="alert">
               <p className="text-[14px] text-brand-error">
                 {KNOWN_ERROR_CODES.has(run.code)
-                  ? t(`errors.${run.code}`, {
-                      max: CITABILITY_ANON_IP_MAX,
-                      signedInMax: CITABILITY_SIGNED_IN_IP_MAX,
-                      targetMax: CITABILITY_TARGET_MAX,
-                      minutes: run.retryAfterSeconds
-                        ? Math.max(1, Math.ceil(run.retryAfterSeconds / 60))
-                        : Math.round(CITABILITY_WINDOW_SECONDS / 60),
-                      seconds: Math.round(CITABILITY_FETCH_TIMEOUT_MS / 1000),
-                    })
+                  ? t(
+                      run.code === "rate_limited" && !run.signedIn
+                        ? "errors.rate_limited_anonymous"
+                        : `errors.${run.code}`,
+                      {
+                        limit:
+                          run.limit ??
+                          (run.code === "target_busy"
+                            ? CITABILITY_TARGET_MAX
+                            : CITABILITY_ANON_IP_MAX),
+                        signedInMax: CITABILITY_SIGNED_IN_IP_MAX,
+                        minutes: run.retryAfterSeconds
+                          ? Math.max(1, Math.ceil(run.retryAfterSeconds / 60))
+                          : Math.round(CITABILITY_WINDOW_SECONDS / 60),
+                        seconds: Math.round(CITABILITY_FETCH_TIMEOUT_MS / 1000),
+                      },
+                    )
                   : t("errors.network")}
               </p>
             </div>
@@ -305,11 +382,7 @@ export function PageCitabilityCheck({
       </section>
 
       {report && grouped ? (
-        <section
-          aria-labelledby="citability-result"
-          className="grid gap-6"
-          role="status"
-        >
+        <section aria-labelledby="citability-result" className="grid gap-6">
           <div className="rounded-xl border border-brand-border-card bg-brand-panel p-6 md:p-7">
             <h2
               className="text-[19px] text-text-dark-primary"
@@ -327,10 +400,13 @@ export function PageCitabilityCheck({
               <li>
                 {t("summary.rows", {
                   total: report.summary.total,
-                  counted:
+                  weighted:
                     report.summary.counted +
                     report.summary.fetchError +
                     report.summary.notApplicable,
+                  notApplicable: report.summary.notApplicable,
+                  fetchError: report.summary.fetchError,
+                  denominator: report.summary.counted,
                 })}
               </li>
               <li>
@@ -353,7 +429,11 @@ export function PageCitabilityCheck({
               }}
               type="button"
             >
-              {copied ? t("actions.copied") : t("actions.copy")}
+              {copied === "done"
+                ? t("actions.copied")
+                : copied === "failed"
+                  ? t("actions.copyFailed")
+                  : t("actions.copy")}
             </button>
           </div>
 

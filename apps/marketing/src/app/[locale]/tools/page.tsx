@@ -122,6 +122,16 @@ const GEO_TOOLS = [
     cta: { en: "Check a page", zh: "检查一个页面" },
     category: "geo",
   },
+  {
+    slug: "geo-knowledge-base",
+    title: { en: "GEO Knowledge Base", zh: "GEO 知识库" },
+    description: {
+      en: "Record the names a model would use for you, your category, who you sell to and the facts you can source. Freeze it, and the visibility check derives its questions from it.",
+      zh: "记下模型会怎么称呼你、你在哪个品类、你卖给谁，以及哪些事实你指得出来源。冻结之后，可见性体检的问题集由它推导出来。",
+    },
+    cta: { en: "Build a knowledge base", zh: "建立知识库" },
+    category: "geo",
+  },
 ] as const;
 
 export async function generateMetadata({

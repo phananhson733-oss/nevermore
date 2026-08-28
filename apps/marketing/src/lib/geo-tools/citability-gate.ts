@@ -60,11 +60,15 @@ function errorResponse(
   code: string,
   status: number,
   headers: Readonly<Record<string, string>> = {},
+  extra: Readonly<Record<string, unknown>> = {},
 ): Response {
-  return Response.json(createPublicToolError(code), {
-    status,
-    headers: { "Cache-Control": "no-store", ...headers },
-  });
+  return Response.json(
+    { ...createPublicToolError(code), ...extra },
+    {
+      status,
+      headers: { "Cache-Control": "no-store", ...headers },
+    },
+  );
 }
 
 export interface CitabilityGateInput {
@@ -88,7 +92,35 @@ export async function openCitabilityGate(
     `geo-citability:inflight:${input.clientIp}`,
   );
   if (!slot.acquired) {
-    return { ok: false, response: errorResponse("target_busy", 429) };
+    // Its own code: the target bucket has not been touched, so borrowing
+    // `target_busy` here would tell a visitor their never-checked site had
+    // already been checked thirty times this hour.
+    return { ok: false, response: errorResponse("already_running", 429) };
+  }
+
+  // Target first. The quota RPC increments before it decides, so charging the
+  // caller's own hourly budget and then refusing on a busy target lets other
+  // people's traffic against that site spend a visitor's allowance.
+  const target = await dependencies.consumeQuota(
+    citabilityTargetBucket(input.targetHost),
+    CITABILITY_TARGET_MAX,
+    CITABILITY_WINDOW_SECONDS,
+  );
+  if (target.kind === "unavailable") {
+    slot.release();
+    return { ok: false, response: errorResponse("gate_unavailable", 503) };
+  }
+  if (target.kind === "limited") {
+    slot.release();
+    return {
+      ok: false,
+      response: errorResponse(
+        "target_busy",
+        429,
+        { "Retry-After": String(target.retryAfterSeconds) },
+        { limit: CITABILITY_TARGET_MAX },
+      ),
+    };
   }
 
   const ipMax = input.signedIn
@@ -107,30 +139,51 @@ export async function openCitabilityGate(
     slot.release();
     return {
       ok: false,
-      response: errorResponse("rate_limited", 429, {
-        "Retry-After": String(ip.retryAfterSeconds),
-      }),
-    };
-  }
-
-  const target = await dependencies.consumeQuota(
-    citabilityTargetBucket(input.targetHost),
-    CITABILITY_TARGET_MAX,
-    CITABILITY_WINDOW_SECONDS,
-  );
-  if (target.kind === "unavailable") {
-    slot.release();
-    return { ok: false, response: errorResponse("gate_unavailable", 503) };
-  }
-  if (target.kind === "limited") {
-    slot.release();
-    return {
-      ok: false,
-      response: errorResponse("target_busy", 429, {
-        "Retry-After": String(target.retryAfterSeconds),
-      }),
+      // The ceiling that actually applied travels with the refusal. Otherwise
+      // the page prints the anonymous number at a signed-in caller and tells
+      // them to sign in.
+      response: errorResponse(
+        "rate_limited",
+        429,
+        { "Retry-After": String(ip.retryAfterSeconds) },
+        { limit: ipMax, signedIn: input.signedIn },
+      ),
     };
   }
 
   return { ok: true, release: () => slot.release() };
+}
+
+/**
+ * Charge the per-target budget for a host a redirect landed on.
+ *
+ * The pre-flight charge used the submitted host, so without this a redirect is
+ * a way to point the fetcher at a site the target budget never counted.
+ */
+export async function chargeCitabilityTarget(
+  targetHost: string,
+  dependencies: CitabilityGateDependencies = DEFAULT_CITABILITY_GATE_DEPENDENCIES,
+): Promise<
+  { readonly ok: true } | { readonly ok: false; readonly response: Response }
+> {
+  const outcome = await dependencies.consumeQuota(
+    citabilityTargetBucket(targetHost),
+    CITABILITY_TARGET_MAX,
+    CITABILITY_WINDOW_SECONDS,
+  );
+  if (outcome.kind === "unavailable") {
+    return { ok: false, response: errorResponse("gate_unavailable", 503) };
+  }
+  if (outcome.kind === "limited") {
+    return {
+      ok: false,
+      response: errorResponse(
+        "target_busy",
+        429,
+        { "Retry-After": String(outcome.retryAfterSeconds) },
+        { limit: CITABILITY_TARGET_MAX },
+      ),
+    };
+  }
+  return { ok: true };
 }

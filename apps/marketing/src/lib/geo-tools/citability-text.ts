@@ -36,15 +36,91 @@ function decodeCommonEntities(value: string): string {
     .replace(/&amp;/gi, "&");
 }
 
-function stripNonContent(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<template[\s\S]*?<\/template>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, " ");
+/**
+ * Remove a paired element by scanning, not by matching `<tag>[\s\S]*?</tag>`.
+ *
+ * That pattern has to scan to the end of the document from every unclosed
+ * opening tag, which is quadratic: 1.5 MB of `<script>` with no closing tag
+ * was measured at 114 seconds, against a route budgeted for 60. A page can
+ * contain whatever it likes, so the parser has to be the thing that does not
+ * blow up.
+ */
+function stripPaired(html: string, tag: string): string {
+  const open = `<${tag}`;
+  const close = `</${tag}`;
+  const lower = html.toLowerCase();
+  let out = "";
+  let cursor = 0;
+  for (;;) {
+    const start = lower.indexOf(open, cursor);
+    if (start < 0) break;
+    const after = lower.charAt(start + open.length);
+    // `<script` must not match `<scriptish`; a tag name ends at a space, a
+    // slash or the closing bracket.
+    if (after !== "" && !/[\s/>]/.test(after)) {
+      out += html.slice(cursor, start + open.length);
+      cursor = start + open.length;
+      continue;
+    }
+    const end = lower.indexOf(close, start + open.length);
+    out += `${html.slice(cursor, start)} `;
+    if (end < 0) {
+      // Unclosed: everything after the opening tag belongs to it, which is
+      // also what a browser does.
+      return out;
+    }
+    const tail = lower.indexOf(">", end);
+    cursor = tail < 0 ? lower.length : tail + 1;
+  }
+  return out + html.slice(cursor);
+}
+
+/**
+ * Markup with comments removed and everything else intact.
+ *
+ * Structured data lives inside `<script type="application/ld+json">`, so the
+ * projection that strips scripts cannot be the one JSON-LD is read from - but
+ * a block commented out during a migration still must not count as declared.
+ */
+export function uncommentedMarkup(html: string): string {
+  return stripComments(html);
+}
+
+function stripComments(html: string): string {
+  let out = "";
+  let cursor = 0;
+  for (;;) {
+    const start = html.indexOf("<!--", cursor);
+    if (start < 0) break;
+    out += `${html.slice(cursor, start)} `;
+    const end = html.indexOf("-->", start + 4);
+    if (end < 0) return out;
+    cursor = end + 3;
+  }
+  return out + html.slice(cursor);
+}
+
+/**
+ * Markup with everything a crawler would not read as content removed.
+ *
+ * The markup rules read this rather than the raw HTML. Reading the raw HTML is
+ * how a canonical link that was commented out during a migration wins over the
+ * live one, and how a `<template>` full of example markup counts as the page's
+ * own structure.
+ */
+export function contentMarkup(html: string): string {
+  return ["script", "style", "template", "noscript"].reduce(
+    (current, tag) => stripPaired(current, tag),
+    stripComments(html),
+  );
+}
+
+/** Content markup with the regions a reader skips removed as well. */
+export function bodyMarkup(html: string): string {
+  return ["nav", "footer", "aside"].reduce(
+    (current, tag) => stripPaired(current, tag),
+    contentMarkup(html),
+  );
 }
 
 function collapse(value: string): string {
@@ -55,7 +131,7 @@ function collapse(value: string): string {
 export function extractCitabilityText(html: string): string {
   return collapse(
     decodeCommonEntities(
-      stripNonContent(html)
+      bodyMarkup(html)
         .replace(BLOCK_END, ". ")
         .replace(/<[^>]+>/g, " "),
     ),
@@ -66,7 +142,7 @@ export function extractCitabilityText(html: string): string {
 export function extractCitabilityTextWithLinks(html: string): string {
   return collapse(
     decodeCommonEntities(
-      stripNonContent(html)
+      bodyMarkup(html)
         .replace(/<a\b[^>]*\shref\s*=/gi, ` ${LINK_MARKER} <a `)
         .replace(BLOCK_END, ". ")
         .replace(/<[^>]+>/g, " "),
@@ -74,16 +150,20 @@ export function extractCitabilityTextWithLinks(html: string): string {
   );
 }
 
-/** Total bytes of inline and referenced `<script>` elements on the page. */
+/**
+ * Bytes the page spends on script.
+ *
+ * Measured as the difference the script strip makes, so an unclosed `<script>`
+ * counts as script rather than turning its own source into the page's visible
+ * copy - which is what let a truncated app shell report 1.5 million characters
+ * of body text.
+ */
 export function scriptBytesOf(html: string): number {
-  let bytes = 0;
-  for (const match of html.matchAll(/<script[\s\S]*?<\/script>/gi)) {
-    bytes += Buffer.byteLength(match[0], "utf8");
-  }
-  for (const match of html.matchAll(/<script\b[^>]*\/>/gi)) {
-    bytes += Buffer.byteLength(match[0], "utf8");
-  }
-  return bytes;
+  const withoutScript = stripPaired(stripComments(html), "script");
+  return Math.max(
+    0,
+    Buffer.byteLength(html, "utf8") - Buffer.byteLength(withoutScript, "utf8"),
+  );
 }
 
 /** Visible characters, whitespace and link markers excluded. */
@@ -122,7 +202,7 @@ const CJK_RUN =
 const MIN_LATIN_TERM_CHARS = 3;
 const MIN_CJK_TERM_CHARS = 2;
 /** Enough to identify the question; more only makes the check easier to pass. */
-export const MAX_QUESTION_TERMS = 8;
+export const MAX_QUESTION_TERMS = 16;
 
 /**
  * Content words from the visitor's target question.
@@ -144,11 +224,24 @@ export function deriveQuestionTerms(question: string | null): string[] {
     terms.push(value);
   };
 
+  // Chinese, Japanese and Korean are written without spaces, so a run is a
+  // phrase rather than a word. Taking the whole run as one term meant a page
+  // had to repeat the question character for character - "如何提高网站转化率"
+  // did not match "如何提高网站的转化率" - so every Chinese page failed this
+  // check. Overlapping bigrams give the same phrase several chances to be
+  // recognised without a dictionary.
   for (const match of normalized.matchAll(CJK_RUN)) {
     const run = match[0];
     if (run.length < MIN_CJK_TERM_CHARS) continue;
-    if (CJK_STOPWORDS.has(run)) continue;
-    push(run);
+    if (run.length === MIN_CJK_TERM_CHARS) {
+      if (!CJK_STOPWORDS.has(run)) push(run);
+      continue;
+    }
+    for (let index = 0; index + 2 <= run.length; index += 1) {
+      const gram = run.slice(index, index + 2);
+      if (CJK_STOPWORDS.has(gram)) continue;
+      push(gram);
+    }
   }
   for (const match of normalized.matchAll(LATIN_TOKEN)) {
     const token = match[0].replace(/^[.'-]+/, "").replace(/[.'-]+$/, "");
@@ -158,6 +251,25 @@ export function deriveQuestionTerms(question: string | null): string[] {
   }
   return terms.slice(0, MAX_QUESTION_TERMS);
 }
+
+/**
+ * How much of the question the text actually covers.
+ *
+ * A fraction rather than "any term matched": one bigram out of nine is a
+ * coincidence, and requiring all of them is the whole-run rule that failed
+ * every Chinese page.
+ */
+export function questionCoverage(
+  text: string,
+  terms: readonly string[],
+): { readonly matched: readonly string[]; readonly ratio: number } {
+  if (terms.length === 0) return { matched: [], ratio: 0 };
+  const matched = terms.filter((term) => containsTerm(text, term));
+  return { matched, ratio: matched.length / terms.length };
+}
+
+/** Half the question's terms. Below it, the opening is about something else. */
+export const QUESTION_COVERAGE_FLOOR = 0.5;
 
 const LATIN_OR_DIGIT = /[\p{Script=Latin}\p{Nd}]/u;
 

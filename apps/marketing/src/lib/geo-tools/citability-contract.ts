@@ -81,6 +81,15 @@ export interface CitabilityInput {
   readonly finalUrl: string;
   /** HTML exactly as a client that does not run JavaScript receives it. */
   readonly rawHtml: string;
+  /**
+   * False when only the first bounded slice of the response was read.
+   *
+   * Every "this is not present" conclusion depends on having seen the whole
+   * document. A truncated app shell cut mid-script reported 1.5 million
+   * characters of body text and passed the very check it should have failed,
+   * because the unclosed script turned its own source into copy.
+   */
+  readonly bodyComplete: boolean;
   readonly robots: RobotsFetch;
   readonly llmsTxt: LlmsTxtFetch;
   /** Null when the visitor named no target question. */
@@ -191,13 +200,15 @@ export type CitabilityErrorCode =
   | "invalid_url"
   | "rate_limited"
   | "target_busy"
+  | "already_running"
   | "gate_unavailable"
   | "fetch_blocked"
   | "fetch_timeout"
   | "fetch_failed"
   | "not_html"
   | "page_not_ok"
-  | "internal_error";
+  | "internal_error"
+  | "not_utf8";
 
 /* ------------------------------------------------------------------ */
 /* Construction helpers                                                */

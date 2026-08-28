@@ -15,6 +15,7 @@ function input(overrides: Partial<CitabilityInput> = {}): CitabilityInput {
     url: "https://example.com/guide",
     finalUrl: "https://example.com/guide",
     rawHtml: `<html><head><link rel="canonical" href="https://example.com/guide"></head><body>${BODY}</body></html>`,
+    bodyComplete: true,
     robots: { status: "ok", text: "User-agent: *\nAllow: /\n" },
     llmsTxt: { status: "ok", bytes: 120 },
     targetQuestion: null,

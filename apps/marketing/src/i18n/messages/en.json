@@ -3969,7 +3969,8 @@
         "running": "Checking…",
         "again": "Check again",
         "copy": "Copy report",
-        "copied": "Copied"
+        "copied": "Copied",
+        "copyFailed": "Copy failed"
       },
       "summary": {
         "title": "Result",
@@ -3978,7 +3979,7 @@
         "fetchError": "Could not read",
         "notApplicable": "Not applicable",
         "counted": "{passed} of {counted} checks passed",
-        "rows": "{total} rows checked, {counted} of them count toward the result",
+        "rows": "{total} rows checked. {weighted} of them count toward the result; {notApplicable} were not applicable this run and {fetchError} could not be read, which leaves a denominator of {denominator}.",
         "advisoryNote": "Advisory rows are shown but never counted: training-crawler access and /llms.txt do not decide whether an answer can cite this page.",
         "fetchedAt": "Checked at {time}",
         "finalUrl": "Read from {url}",
@@ -4074,7 +4075,8 @@
           "valid": "{count} question and answer pairs, each with a name and answer text.",
           "incomplete": "{incomplete} of {total} question and answer pairs are missing a name or answer text.",
           "emptyMainEntity": "An FAQPage is declared but its mainEntity list is empty."
-        }
+        },
+        "truncated": "Only the first {chars} characters of this page were read, so whether this is present cannot be decided."
       },
       "fixes": {
         "robots": {
@@ -4112,15 +4114,17 @@
         "noJavaScript": "It does not run JavaScript. A page whose copy only appears after hydration is reported as HTML without copy, because that is what a crawler that does not render sees.",
         "onePage": "It reads one page plus that host's robots.txt and llms.txt. It does not crawl the site and does not fetch the canonical target.",
         "noRanking": "It says nothing about ranking, traffic or whether any model has actually cited the page. It describes the page, not the market.",
-        "advisoryRows": "Training-crawler rows and /llms.txt are shown but not counted, because neither decides whether an answer can cite this page."
+        "advisoryRows": "Training-crawler rows and /llms.txt are shown but not counted, because neither decides whether an answer can cite this page.",
+        "heuristicRows": "Two rows match patterns rather than reading meaning: the opening answer and the quantified conditions. They are marked, and they are worth looking at rather than obeying.",
+        "truncation": "It reads a bounded slice of the page. When a document exceeds it, every check that would report an absence says it could not read instead."
       },
       "errors": {
         "invalid_request": "That request could not be read. Send a URL and, optionally, a target question.",
         "payload_too_large": "That request was too large.",
         "unsupported_media_type": "That request was not JSON.",
         "invalid_url": "That is not a public page URL this tool can fetch.",
-        "rate_limited": "You have used this tool {max} times in the last hour. Try again in {minutes} minutes, or sign in for {signedInMax} per hour.",
-        "target_busy": "This site has been checked {targetMax} times in the last hour by everyone using the tool. Try again shortly.",
+        "rate_limited": "You have used this tool {limit} times in the last hour. Try again in {minutes} minutes.",
+        "target_busy": "This site has been checked {limit} times in the last hour by everyone using the tool. Try again shortly.",
         "gate_unavailable": "The quota store is not answering, so the tool is closed rather than unmetered. Try again shortly.",
         "fetch_blocked": "That URL could not be fetched safely.",
         "fetch_timeout": "The page did not respond within {seconds} seconds.",
@@ -4128,7 +4132,10 @@
         "not_html": "That URL did not return an HTML document.",
         "page_not_ok": "That URL did not return 200, so there is no page to check yet.",
         "internal_error": "Something went wrong inside the tool. Nothing was written, and the run can be repeated.",
-        "network": "The request did not reach the tool. Check your connection and try again."
+        "network": "The request did not reach the tool. Check your connection and try again.",
+        "already_running": "Your last check is still running. Wait for it to finish, or reload this page.",
+        "rate_limited_anonymous": "You have used this tool {limit} times in the last hour. Try again in {minutes} minutes, or sign in for {signedInMax} per hour.",
+        "not_utf8": "This page declares a character set this tool does not decode, so reading it would produce nonsense rather than a report."
       },
       "faq": {
         "title": "Questions about this check",

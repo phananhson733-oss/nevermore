@@ -3969,7 +3969,8 @@
         "running": "检查中…",
         "again": "再检查一次",
         "copy": "复制报告",
-        "copied": "已复制"
+        "copied": "已复制",
+        "copyFailed": "复制失败"
       },
       "summary": {
         "title": "结果",
@@ -3978,7 +3979,7 @@
         "fetchError": "读不到",
         "notApplicable": "不适用",
         "counted": "{counted} 项计入结论，其中 {passed} 项通过",
-        "rows": "共检查 {total} 行，其中 {counted} 行计入结论",
+        "rows": "共检查 {total} 行。其中 {weighted} 行计权；本次有 {notApplicable} 行不适用、{fetchError} 行读不到，因此分母是 {denominator}。",
         "advisoryNote": "仅展示行不计入结论：训练类抓取器的放行与 /llms.txt 都不决定这一页能否被回答引用。",
         "fetchedAt": "检查时间 {time}",
         "finalUrl": "实际读取自 {url}",
@@ -4074,7 +4075,8 @@
           "valid": "{count} 组问答，每组都有问题名称与答案正文。",
           "incomplete": "{total} 组问答里有 {incomplete} 组缺少问题名称或答案正文。",
           "emptyMainEntity": "声明了 FAQPage，但 mainEntity 是空的。"
-        }
+        },
+        "truncated": "这一页只读到了前 {chars} 个字符，因此无法判断它在不在。"
       },
       "fixes": {
         "robots": {
@@ -4112,15 +4114,17 @@
         "noJavaScript": "不执行 JavaScript。正文只在 hydration 之后才出现的页面，会被报成「HTML 里没有正文」——因为不渲染的抓取器看到的就是这样。",
         "onePage": "只读一个页面，外加该站的 robots.txt 与 llms.txt。不爬全站，也不去抓 canonical 指向的那一页。",
         "noRanking": "不涉及排名、流量，也不代表任何模型真的引用过这一页。它描述的是页面，不是市场。",
-        "advisoryRows": "训练类抓取器与 /llms.txt 只展示、不计入，因为两者都不决定这一页能否被回答引用。"
+        "advisoryRows": "训练类抓取器与 /llms.txt 只展示、不计入，因为两者都不决定这一页能否被回答引用。",
+        "heuristicRows": "有两行是模式匹配而不是理解语义：开头直答与限定条件量化。它们带标记，值得去看一眼，但不必照办。",
+        "truncation": "它只读页面的前一段。文档超出这个范围时，凡是要报「不存在」的检查都改说「读不到」。"
       },
       "errors": {
         "invalid_request": "这个请求读不出来。请提交一个网址，可以再附一个目标提问。",
         "payload_too_large": "请求体过大。",
         "unsupported_media_type": "请求不是 JSON。",
         "invalid_url": "这不是本工具可以抓取的公开页面网址。",
-        "rate_limited": "你在过去一小时里已经用了 {max} 次。请 {minutes} 分钟后再试，或登录后每小时 {signedInMax} 次。",
-        "target_busy": "过去一小时里，所有使用者对这个站点合计已检查 {targetMax} 次。稍后再试。",
+        "rate_limited": "你在过去一小时里已经用了 {limit} 次。请 {minutes} 分钟后再试。",
+        "target_busy": "过去一小时里，所有使用者对这个站点合计已检查 {limit} 次。稍后再试。",
         "gate_unavailable": "配额存储没有响应，因此工具选择关闭而不是不计量地跑。稍后再试。",
         "fetch_blocked": "这个网址无法被安全抓取。",
         "fetch_timeout": "页面在 {seconds} 秒内没有响应。",
@@ -4128,7 +4132,10 @@
         "not_html": "这个网址返回的不是 HTML 文档。",
         "page_not_ok": "这个网址没有返回 200，暂时没有可检查的页面。",
         "internal_error": "工具内部出错了。什么都没写下，可以直接重跑。",
-        "network": "请求没有到达工具。检查网络后重试。"
+        "network": "请求没有到达工具。检查网络后重试。",
+        "already_running": "你上一次检查还在跑。等它结束，或刷新本页。",
+        "rate_limited_anonymous": "你在过去一小时里已经用了 {limit} 次。请 {minutes} 分钟后再试，或登录后每小时 {signedInMax} 次。",
+        "not_utf8": "这一页声明的字符集本工具不解码；硬读会得到一堆乱码而不是报告。"
       },
       "faq": {
         "title": "关于这项检查",

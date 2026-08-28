@@ -21,4 +21,5 @@ export const SITEMAP_TOOLS = [
   "on-page-seo-check",
   "internal-link-audit",
   "page-citability-check",
+  "geo-knowledge-base",
 ] as const;

@@ -20,9 +20,14 @@ import {
   type CitabilityReport,
 } from "./citability-contract.ts";
 import {
+  bodyMarkup,
   buildCitabilityContext,
   containsTerm,
+  contentMarkup,
+  uncommentedMarkup,
   LINK_MARKER,
+  questionCoverage,
+  QUESTION_COVERAGE_FLOOR,
   splitSentences,
 } from "./citability-text.ts";
 
@@ -71,29 +76,57 @@ const CJK_CONCLUSION_MARKERS = [
  * qualified condition is how a page passes this rule by having a copyright
  * line.
  */
-const YEAR_RANGE = /(?:19|20)\d{2}\s*[-–—~至]\s*(?:19|20)\d{2}/;
+/**
+ * Shapes that carry digits without stating a condition.
+ *
+ * Stripped before the scan, because a range pattern on its own is satisfied by
+ * a publication date, a phone number and an opening-hours line - so every
+ * article with a dateline passed a check about qualified conditions.
+ */
+const NON_QUALIFYING_NUMBERS = [
+  /(?:19|20)\d{2}\s*[-–—~至]\s*(?:19|20)\d{2}/g,
+  /\d{4}-\d{2}-\d{2}/g,
+  /\d{1,2}[:：]\d{2}(?:\s*[-–—~]\s*\d{1,2}[:：]\d{2})?/g,
+  /\b\d{3,4}[-\s]\d{3,4}[-\s]\d{3,4}\b/g,
+  /(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?/g,
+];
 const LATIN_QUANTIFIERS = [
-  /\b\d+\s*[-–—~]\s*\d+\b/,
+  /\b\d+\s*[-–—~]\s*\d+\s*(?:people|users|seats|members|employees|hours|days|%)\b/i,
   /\b(?:under|over|above|below|at least|up to|fewer than|more than)\s+\$?\d/i,
-  /\b\d+\s*(?:people|users|seats|members|employees|hours|days)\b/i,
+  /\b\d+\s*(?:people|users|seats|members|employees)\b/i,
 ];
 const CJK_QUANTIFIERS = [
-  /(?:至少|最多|不超过|少于|多于|超过|以上|以下)\s*\d/,
-  /\d+\s*(?:人|名|位|天|小时|个月|年)(?:以内|以上|以下|团队|规模)?/,
+  /(?:至少|最多|不超过|少于|多于|超过)\s*\d/,
+  /\d+\s*(?:人|名|位)(?:以内|以上|以下|团队|规模)?/,
+  /\d+\s*(?:天|小时|个月)(?:以内|以上|以下)/,
 ];
 
-/** Words that make a number's source explicit when no link is nearby. */
-const SOURCE_MARKERS = [
+/**
+ * Phrases that name a source when no link is nearby.
+ *
+ * Whole phrases, not fragments. A bare 据 appears inside 数据, 根据, 证据 and
+ * 占据, so it matched almost every Chinese page; `cited` is a substring of
+ * `excited` and `solicited`. Both turned a counted check into one that passes
+ * on sight.
+ */
+const CJK_SOURCE_MARKERS = [
   "来源",
   "数据来源",
   "引自",
-  "据",
+  "根据",
+  "据报道",
+  "据统计",
   "参见",
-  "source:",
-  "sources:",
-  "according to",
-  "via ",
+  "出处",
+];
+const LATIN_SOURCE_MARKERS = [
+  "source",
+  "sources",
+  "according",
+  "reported",
+  "per",
   "cited",
+  "citation",
 ];
 
 function robotsPath(url: string): string {
@@ -156,7 +189,33 @@ function botCheck(
   );
 }
 
-function ssrCheck(context: CitabilityContext): CitabilityCheck {
+/**
+ * A conclusion of the form "the page does not have X" needs the whole page.
+ *
+ * With a truncated body the honest answer is that we could not read it, so
+ * every negative check degrades rather than reporting an absence it cannot
+ * know about.
+ */
+function truncated(
+  input: CitabilityInput,
+  ruleId: string,
+  section: "readable" | "extractable",
+  kind: "deterministic" | "heuristic",
+): CitabilityCheck | null {
+  return input.bodyComplete
+    ? null
+    : citabilityCheck(ruleId, section, kind, "counted", "fetchError", {
+        key: "truncated",
+        values: { chars: input.rawHtml.length },
+      });
+}
+
+function ssrCheck(
+  input: CitabilityInput,
+  context: CitabilityContext,
+): CitabilityCheck {
+  const incomplete = truncated(input, "ssr", "readable", "deterministic");
+  if (incomplete !== null) return incomplete;
   const chars = context.textChars;
   if (chars >= CITABILITY_TEXT_FLOOR_CHARS) {
     return citabilityCheck(
@@ -205,8 +264,31 @@ function ssrCheck(context: CitabilityContext): CitabilityCheck {
       );
 }
 
-/** Every `<link>` element, parsed without depending on attribute order. */
-function canonicalHref(html: string): string | null {
+/** The document's `<base href>`, which relative links resolve against. */
+function baseHref(markup: string): string | null {
+  const head = markup.slice(0, headEnd(markup));
+  for (const match of head.matchAll(/<base\b[^>]*>/gi)) {
+    const href = /\shref\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1];
+    if (href !== undefined && href.trim().length > 0) return href.trim();
+  }
+  return null;
+}
+
+function headEnd(markup: string): number {
+  const end = markup.toLowerCase().indexOf("</head");
+  return end < 0 ? markup.length : end;
+}
+
+/**
+ * Every `<link>` element in the head, parsed without depending on attribute
+ * order and read from markup with comments removed.
+ *
+ * A canonical left behind in a comment during a template migration otherwise
+ * wins over the live one, and the fix text sends the owner to edit a tag the
+ * page does not use.
+ */
+function canonicalHref(markup: string): string | null {
+  const html = markup.slice(0, headEnd(markup));
   for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
     const tag = match[0];
     const rel = /\srel\s*=\s*["']?([^"'>]+)/i.exec(tag)?.[1] ?? "";
@@ -218,9 +300,11 @@ function canonicalHref(html: string): string | null {
       continue;
     }
     const href = /\shref\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1];
-    if (href !== undefined) return href;
+    if (href !== undefined) return href.trim();
     const bare = /\shref\s*=\s*([^\s"'>]+)/i.exec(tag)?.[1];
-    if (bare !== undefined) return bare;
+    if (bare !== undefined) return bare.trim();
+    // A canonical with no href at all declares nothing; treating it as
+    // self-referential gave an empty tag full marks.
     return "";
   }
   return null;
@@ -228,8 +312,11 @@ function canonicalHref(html: string): string | null {
 
 function canonicalCheck(input: CitabilityInput): CitabilityCheck {
   const id = "canonical";
-  const href = canonicalHref(input.rawHtml);
-  if (href === null) {
+  const incomplete = truncated(input, id, "readable", "deterministic");
+  if (incomplete !== null) return incomplete;
+  const markup = contentMarkup(input.rawHtml);
+  const href = canonicalHref(markup);
+  if (href === null || href.length === 0) {
     return citabilityCheck(
       id,
       "readable",
@@ -242,7 +329,9 @@ function canonicalCheck(input: CitabilityInput): CitabilityCheck {
   }
   let resolved: URL;
   try {
-    resolved = new URL(href, input.finalUrl);
+    const base = baseHref(markup);
+    const against = base === null ? input.finalUrl : new URL(base, input.finalUrl).href;
+    resolved = new URL(href, against);
   } catch {
     return citabilityCheck(
       id,
@@ -324,9 +413,11 @@ function leadAnswerCheck(
     );
   }
   const head = context.text.slice(0, CITABILITY_LEAD_ANSWER_CHARS);
-  const matchedTerms = context.questionTerms.filter((term) =>
-    containsTerm(head, term),
-  );
+  // Coverage rather than "any term matched": one bigram out of nine is a
+  // coincidence, and requiring the whole phrase failed every Chinese page.
+  const coverage = questionCoverage(head, context.questionTerms);
+  const matchedTerms =
+    coverage.ratio >= QUESTION_COVERAGE_FLOOR ? coverage.matched : [];
   const hasMarker =
     LATIN_CONCLUSION_MARKERS.some((marker) => containsTerm(head, marker)) ||
     CJK_CONCLUSION_MARKERS.some((marker) => head.includes(marker));
@@ -366,7 +457,7 @@ function leadAnswerCheck(
         terms: context.questionTerms.join(", "),
       },
     },
-    { key: "leadAnswer" },
+    { key: "leadAnswer", values: { window: CITABILITY_LEAD_ANSWER_CHARS } },
   );
 }
 
@@ -400,8 +491,18 @@ function countContentLists(html: string): number {
 }
 
 function structureCheck(input: CitabilityInput): CitabilityCheck {
-  const tables = countRealTables(input.rawHtml);
-  const lists = countContentLists(input.rawHtml);
+  const incomplete = truncated(
+    input,
+    "extractableStructure",
+    "extractable",
+    "deterministic",
+  );
+  if (incomplete !== null) return incomplete;
+  // Body markup: a footer's address list and an example table inside a
+  // <template> are not the page's own extractable structure.
+  const markup = bodyMarkup(input.rawHtml);
+  const tables = countRealTables(markup);
+  const lists = countContentLists(markup);
   const found = tables + lists > 0;
   return found
     ? citabilityCheck(
@@ -423,8 +524,16 @@ function structureCheck(input: CitabilityInput): CitabilityCheck {
       );
 }
 
-function qualifiersCheck(context: CitabilityContext): CitabilityCheck {
-  const withoutYears = context.text.replace(new RegExp(YEAR_RANGE, "g"), " ");
+function qualifiersCheck(
+  input: CitabilityInput,
+  context: CitabilityContext,
+): CitabilityCheck {
+  const incomplete = truncated(input, "qualifiers", "extractable", "heuristic");
+  if (incomplete !== null) return incomplete;
+  const withoutYears = NON_QUALIFYING_NUMBERS.reduce(
+    (text, pattern) => text.replace(pattern, " "),
+    context.text,
+  );
   const hit =
     LATIN_QUANTIFIERS.some((pattern) => pattern.test(withoutYears)) ||
     CJK_QUANTIFIERS.some((pattern) => pattern.test(withoutYears));
@@ -453,21 +562,30 @@ function isNumericClaim(sentence: string): boolean {
   // A bare number, a date or a lone year is not a claim that needs a source.
   const stripped = sentence.replace(/\s+/g, "");
   if (/^\d+$/.test(stripped)) return false;
+  // Dates are not claims that need a source. The boundaries matter: without
+  // them "$1999" and "2000 companies" lose their digits to the year pattern
+  // and the page is reported as making no numeric claim at all.
   const withoutDates = sentence
-    .replace(/(?:19|20)\d{2}\s*[-–—~至]\s*(?:19|20)\d{2}/g, " ")
-    .replace(/(?:19|20)\d{2}\s*年?/g, " ")
+    .replace(/(?<![\d$£€¥])(?:19|20)\d{2}\s*[-–—~至]\s*(?:19|20)\d{2}(?![\d])/gu, " ")
+    .replace(/\b(?:q[1-4]\s*)?(?<![\d$£€¥])(?:19|20)\d{2}(?![\d])\s*年?/giu, " ")
+    .replace(/\d{4}-\d{2}-\d{2}/g, " ")
     .replace(/\d{1,2}[:：]\d{2}/g, " ");
   return /\d/.test(withoutDates);
 }
 
 function isSourced(sentence: string): boolean {
   if (sentence.includes(LINK_MARKER)) return true;
-  const lower = sentence.toLowerCase();
-  return SOURCE_MARKERS.some((marker) => lower.includes(marker));
+  if (CJK_SOURCE_MARKERS.some((marker) => sentence.includes(marker))) return true;
+  return LATIN_SOURCE_MARKERS.some((marker) => containsTerm(sentence, marker));
 }
 
-function citedDataCheck(context: CitabilityContext): CitabilityCheck {
+function citedDataCheck(
+  input: CitabilityInput,
+  context: CitabilityContext,
+): CitabilityCheck {
   const id = "citedData";
+  const incomplete = truncated(input, id, "extractable", "deterministic");
+  if (incomplete !== null) return incomplete;
   const sentences = splitSentences(context.textWithLinkMarkers);
   const numeric = sentences.filter(isNumericClaim);
   if (numeric.length === 0) {
@@ -530,9 +648,12 @@ function typeIncludes(node: Record<string, unknown>, type: string): boolean {
 }
 
 /** Walk arrays and `@graph`, and let one broken block not hide a valid one. */
+const JSON_LD_NODE_CAP = 20_000;
+
 function walkJsonLd(html: string): JsonLdWalk {
   const faqNodes: Record<string, unknown>[] = [];
   let brokenBlocks = 0;
+  let visited = 0;
   for (const match of html.matchAll(
     /<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
   )) {
@@ -545,15 +666,22 @@ function walkJsonLd(html: string): JsonLdWalk {
     }
     const queue: unknown[] = [parsed];
     while (queue.length > 0) {
+      // `queue.push(...node)` spreads the array into arguments, and a JSON-LD
+      // array of 124,158 entries - well inside the byte budget - overflowed
+      // the stack and took the whole report with it.
+      if (visited >= JSON_LD_NODE_CAP) break;
+      visited += 1;
       const node = queue.pop();
       if (Array.isArray(node)) {
-        queue.push(...node);
+        for (const entry of node) queue.push(entry);
         continue;
       }
       if (!isRecord(node)) continue;
       if (typeIncludes(node, "FAQPage")) faqNodes.push(node);
       const graph = node["@graph"];
-      if (Array.isArray(graph)) queue.push(...graph);
+      if (Array.isArray(graph)) {
+        for (const entry of graph) queue.push(entry);
+      }
     }
   }
   return { faqNodes, brokenBlocks };
@@ -561,7 +689,9 @@ function walkJsonLd(html: string): JsonLdWalk {
 
 function faqCheck(input: CitabilityInput): CitabilityCheck {
   const id = "faqSchema";
-  const { faqNodes, brokenBlocks } = walkJsonLd(input.rawHtml);
+  const incomplete = truncated(input, id, "extractable", "deterministic");
+  if (incomplete !== null) return incomplete;
+  const { faqNodes, brokenBlocks } = walkJsonLd(uncommentedMarkup(input.rawHtml));
   if (faqNodes.length === 0) {
     // A page with no FAQ markup is not a broken page. Scoring the absence
     // would push every explainer toward markup it may have no use for.
@@ -592,7 +722,7 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
       { key: "faq.emptyMainEntity" },
     );
   }
-  const incomplete = questions.filter((entry) => {
+  const malformed = questions.filter((entry) => {
     if (!isRecord(entry)) return true;
     const name = entry["name"];
     const answer = entry["acceptedAnswer"];
@@ -604,7 +734,7 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
       answerText.trim().length === 0
     );
   });
-  return incomplete.length === 0
+  return malformed.length === 0
     ? citabilityCheck(
         id,
         "extractable",
@@ -621,7 +751,7 @@ function faqCheck(input: CitabilityInput): CitabilityCheck {
         "fail",
         {
           key: "faq.incomplete",
-          values: { incomplete: incomplete.length, total: questions.length },
+          values: { incomplete: malformed.length, total: questions.length },
         },
         { key: "faq.incomplete" },
       );
@@ -633,22 +763,27 @@ export const CITABILITY_LIMITS = [
   "onePage",
   "noRanking",
   "advisoryRows",
+  "heuristicRows",
+  "truncation",
 ] as const;
 
 export function runCitabilityChecks(
   input: CitabilityInput,
+  /** Passed by `buildCitabilityReport` so 1.5 MB is projected once, not twice. */
+  provided?: CitabilityContext,
 ): readonly CitabilityCheck[] {
-  const context = buildCitabilityContext(input.rawHtml, input.targetQuestion);
+  const context =
+    provided ?? buildCitabilityContext(input.rawHtml, input.targetQuestion);
   return [
     ...CITABILITY_RETRIEVAL_BOTS.map((bot) => botCheck(input, bot, "counted")),
-    ssrCheck(context),
+    ssrCheck(input, context),
     canonicalCheck(input),
     ...CITABILITY_TRAINING_BOTS.map((bot) => botCheck(input, bot, "advisory")),
     llmsTxtCheck(input),
     leadAnswerCheck(input, context),
     structureCheck(input),
-    qualifiersCheck(context),
-    citedDataCheck(context),
+    qualifiersCheck(input, context),
+    citedDataCheck(input, context),
     faqCheck(input),
   ];
 }
@@ -658,7 +793,7 @@ export function buildCitabilityReport(
   fetchedAt: string,
 ): CitabilityReport {
   const context = buildCitabilityContext(input.rawHtml, input.targetQuestion);
-  const checks = runCitabilityChecks(input);
+  const checks = runCitabilityChecks(input, context);
   return {
     url: input.url,
     finalUrl: input.finalUrl,

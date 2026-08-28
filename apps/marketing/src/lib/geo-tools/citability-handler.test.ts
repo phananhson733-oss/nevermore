@@ -30,6 +30,7 @@ function deps(
     extractClientIp: () => "203.0.113.9",
     isSignedIn: async () => false,
     openGate: async () => ({ ok: true, release }),
+    chargeTarget: async () => ({ ok: true }),
     fetchResource: async (url): Promise<CitabilityFetchResult> => {
       if (url.endsWith("/robots.txt")) {
         return { kind: "ok", status: 200, contentType: "text/plain", body: "" };
@@ -43,6 +44,7 @@ function deps(
         contentType: "text/html; charset=utf-8",
         finalUrl: url,
         body: PAGE_HTML,
+        bodyComplete: true,
       };
     },
     now: () => new Date("2026-08-29T10:00:00.000Z"),
@@ -119,6 +121,7 @@ describe("gate", () => {
       post({ url: "https://acme-example-site.com/guide" }),
       deps({
         openGate: async () => ({ ok: true, release }),
+    chargeTarget: async () => ({ ok: true }),
         fetchResource: async () => ({ kind: "error", code: "network" }),
       }),
     );
@@ -179,6 +182,7 @@ describe("page fetch", () => {
       post({ url: "https://acme-example-site.com/guide" }),
       deps({
         openGate: async () => ({ ok: true, release }),
+    chargeTarget: async () => ({ ok: true }),
         fetchResource: async () => {
           throw new RangeError("counts are impossible");
         },
@@ -300,5 +304,98 @@ describe("report", () => {
     expect(body.data.targetQuestion).toBe("how do I make a page citable");
     expect(body.data.questionTerms).toContain("citable");
     expect(body.data.summary.total).toBe(14);
+  });
+});
+
+describe("truncation and encoding", () => {
+  it("does not conclude anything is absent from a body it only half read", async () => {
+    const shell = `<html><body><div id="app"></div><script>${"x".repeat(500)}`;
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({
+        fetchResource: async (url) =>
+          url.endsWith("/guide")
+            ? {
+                kind: "ok",
+                status: 200,
+                contentType: "text/html",
+                finalUrl: url,
+                body: shell,
+                bodyComplete: false,
+              }
+            : { kind: "ok", status: 404, body: "" },
+      }),
+    );
+    const parsed = (await response.json()) as {
+      data: { checks: { ruleId: string; state: string; measured: { key: string } }[] };
+    };
+    // Truncated mid-script, the unclosed tag turns script source into "copy"
+    // and this page used to pass the check it most obviously fails.
+    const ssr = parsed.data.checks.find((check) => check.ruleId === "ssr");
+    expect(ssr?.state).toBe("fetchError");
+    expect(ssr?.measured.key).toBe("truncated");
+    for (const ruleId of ["canonical", "extractableStructure", "faqSchema"]) {
+      expect(
+        parsed.data.checks.find((check) => check.ruleId === ruleId)?.state,
+      ).toBe("fetchError");
+    }
+  });
+
+  it("refuses a page it would have to decode as the wrong character set", async () => {
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({
+        fetchResource: async (url) =>
+          url.endsWith("/guide")
+            ? {
+                kind: "ok",
+                status: 200,
+                contentType: "text/html; charset=gb2312",
+                finalUrl: url,
+                body: "�".repeat(1_000),
+                bodyComplete: true,
+              }
+            : { kind: "ok", status: 404, body: "" },
+      }),
+    );
+    expect(response.status).toBe(422);
+    expect(await errorCode(response)).toBe("not_utf8");
+  });
+
+  it("charges the target budget again when a redirect lands elsewhere", async () => {
+    const chargeTarget = vi.fn(async () => ({ ok: true as const }));
+    await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({
+        chargeTarget,
+        fetchResource: async (url) =>
+          url.endsWith("/guide")
+            ? {
+                kind: "ok",
+                status: 200,
+                contentType: "text/html",
+                finalUrl: "https://elsewhere-example.com/guide",
+                body: PAGE_HTML,
+                bodyComplete: true,
+              }
+            : { kind: "ok", status: 404, body: "" },
+      }),
+    );
+    expect(chargeTarget).toHaveBeenCalledWith("elsewhere-example.com");
+  });
+
+  it("calls a mistyped domain a bad request, not a server failure", async () => {
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({ fetchResource: async () => ({ kind: "error", code: "blocked" }) }),
+    );
+    expect(response.status).toBe(422);
+    expect(await errorCode(response)).toBe("fetch_blocked");
+
+    const slow = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({ fetchResource: async () => ({ kind: "error", code: "timeout" }) }),
+    );
+    expect(slow.status).toBe(504);
   });
 });

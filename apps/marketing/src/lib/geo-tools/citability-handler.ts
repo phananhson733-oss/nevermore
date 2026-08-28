@@ -17,6 +17,7 @@ import {
   type RobotsFetch,
 } from "./citability-contract.ts";
 import {
+  chargeCitabilityTarget,
   openCitabilityGate,
   type CitabilityGateResult,
 } from "./citability-gate.ts";
@@ -35,6 +36,8 @@ export interface CitabilityFetchResult {
   readonly status?: number;
   readonly contentType?: string | null;
   readonly body?: string;
+  /** False when the fetch layer stopped at its byte ceiling. */
+  readonly bodyComplete?: boolean;
 }
 
 export interface CitabilityHandlerDependencies {
@@ -46,6 +49,10 @@ export interface CitabilityHandlerDependencies {
     readonly targetHost: string;
     readonly signedIn: boolean;
   }) => Promise<CitabilityGateResult>;
+  /** Charges the per-target budget again once a redirect names a new host. */
+  readonly chargeTarget: (
+    targetHost: string,
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly response: Response }>;
   readonly fetchResource: (
     url: string,
     options: {
@@ -67,6 +74,10 @@ function toFetchResult(
     status: result.finalStatus,
     contentType: result.contentType,
     body: result.body,
+    // Carried, not dropped. Its own doc comment says a consumer "must not
+    // infer that a tag/value is absent" from a partial body, and every
+    // negative check here does exactly that.
+    bodyComplete: result.bodyComplete,
   };
 }
 
@@ -77,6 +88,7 @@ export const DEFAULT_CITABILITY_HANDLER_DEPENDENCIES: CitabilityHandlerDependenc
     isSignedIn: async () =>
       (await getServerAuthenticationStatus()) === "authenticated",
     openGate: (input) => openCitabilityGate(input),
+    chargeTarget: (targetHost) => chargeCitabilityTarget(targetHost),
     fetchResource: async (url, options) =>
       toFetchResult(
         await fetchPublicResource(url, {
@@ -190,16 +202,24 @@ async function fetchLlmsTxt(
   return { status: "unreachable", httpStatus: status };
 }
 
-function pageErrorCode(code: string | undefined): CitabilityErrorCode {
-  if (code === "timeout") return "fetch_timeout";
+function pageErrorCode(code: string | undefined): {
+  readonly code: CitabilityErrorCode;
+  readonly status: number;
+} {
+  // A mistyped domain and a private-network address are the visitor's input,
+  // not our failure. Returning 502 for them tells the visitor their URL is
+  // unsafe and files their typo as a server error in every dashboard that
+  // counts 5xx.
+  if (code === "timeout") return { code: "fetch_timeout", status: 504 };
   if (
     code === "blocked" ||
     code === "cross_origin" ||
-    code === "invalid_redirect"
+    code === "invalid_redirect" ||
+    code === "redirect_limit"
   ) {
-    return "fetch_blocked";
+    return { code: "fetch_blocked", status: 422 };
   }
-  return "fetch_failed";
+  return { code: "fetch_failed", status: 502 };
 }
 
 export async function handleCitabilityRequest(
@@ -237,7 +257,10 @@ export async function handleCitabilityRequest(
       timeoutMs: CITABILITY_FETCH_TIMEOUT_MS,
       maxBodyBytes: CITABILITY_MAX_BODY_BYTES,
     });
-    if (page.kind === "error") return fail(pageErrorCode(page.code), 502);
+    if (page.kind === "error") {
+      const failure = pageErrorCode(page.code);
+      return fail(failure.code, failure.status);
+    }
 
     const status = page.status ?? 0;
     if (status < 200 || status >= 300) {
@@ -249,9 +272,27 @@ export async function handleCitabilityRequest(
     if (contentType && !contentType.includes("html")) {
       return fail("not_html", 422);
     }
+    // The fetch layer decodes as UTF-8 unconditionally. A GB2312 or Big5 page
+    // comes back as replacement characters, which then count as visible text
+    // and pass the "the HTML carries the copy" check while every Chinese term
+    // fails to match. Refusing is the only honest answer available here.
+    const charset = /charset\s*=\s*["']?([\w-]+)/.exec(contentType)?.[1];
+    if (
+      charset !== undefined &&
+      !["utf-8", "utf8", "us-ascii", "ascii"].includes(charset)
+    ) {
+      return fail("not_utf8", 422);
+    }
 
     const finalUrl = page.finalUrl ?? normalized.url;
     const origin = new URL(finalUrl).origin;
+    // The pre-flight bucket was keyed on the submitted host; a redirect moves
+    // the traffic somewhere the target budget never saw.
+    const landed = new URL(finalUrl).host;
+    if (landed !== target.host) {
+      const second = await dependencies.chargeTarget(landed);
+      if (!second.ok) return second.response;
+    }
     const [robots, llmsTxt] = await Promise.all([
       fetchRobots(origin, dependencies),
       fetchLlmsTxt(origin, dependencies),
@@ -262,6 +303,7 @@ export async function handleCitabilityRequest(
         url: normalized.url,
         finalUrl,
         rawHtml: page.body ?? "",
+        bodyComplete: page.bodyComplete !== false,
         robots,
         llmsTxt,
         targetQuestion: input.value.question,
