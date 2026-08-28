@@ -5,23 +5,17 @@
 
 import {
   buildKeywordOpportunityPayload,
-  buildKeywordCoverageIndex,
   createPublicToolError,
   judgeKeywordWinnability,
   KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
   KEYWORD_OPPORTUNITY_UNSAMPLED,
   keywordCoverageProperty,
-  keywordTokens,
-  keywordValidationFor,
   KEYWORD_STAGE_GSC_COVERAGE,
   KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
   KEYWORD_STAGE_SERP_SAMPLE,
   KEYWORD_STAGE_SERP_SAMPLE_PARTIAL,
   keywordVolumeKey,
-  observeKeywordCoverage,
-  resolveKeywordValidations,
   toKeywordOpportunityErrorCode,
-  type KeywordCoveragePage,
   type KeywordCoverageRead,
   type KeywordCoverageQueryRow,
   type KeywordOpportunityBasis,
@@ -30,15 +24,10 @@ import {
   type KeywordOpportunityObservationV3,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
-  type KeywordOpportunityProviderIntent,
   type KeywordOpportunitySerpFailureReason,
   type KeywordOpportunitySerpStatus,
 } from "@sf/public-tools";
-import {
-  normalizeRdapDomain,
-  normalizeTrafficDomain,
-  type DomainRegistrationEvidence,
-} from "@sf/sources";
+import type { DomainRegistrationEvidence } from "@sf/sources";
 import type {
   ContextProfileSelectionSummary,
   ContextProfileSitemapInventory,
@@ -54,6 +43,15 @@ import {
   keywordSiteRankTier,
   keywordSiteTrafficThreshold,
 } from "./keyword-signal-evidence.ts";
+import {
+  keywordCandidatePlan,
+  keywordCoverageSnapshots,
+  keywordEnrichmentTargets,
+  keywordInterpretationEntries,
+  keywordPricedCandidates,
+  keywordSerpTargets,
+  normalizeKeywordSerpSamples,
+} from "./keyword-opportunity-stages.ts";
 import { KeywordLlmError, type KeywordLlmUsage } from "./keyword-llm-client.ts";
 import type {
   KeywordSerpInterpretation,
@@ -732,27 +730,6 @@ function parseOpportunitiesInput(
   return { contextToken: token };
 }
 
-const PROVIDER_INTENTS: ReadonlySet<KeywordOpportunityProviderIntent> = new Set(
-  ["informational", "navigational", "commercial", "transactional"],
-);
-
-function providerIntent(
-  value: string | null,
-): KeywordOpportunityProviderIntent | null {
-  return value !== null &&
-    PROVIDER_INTENTS.has(value as KeywordOpportunityProviderIntent)
-    ? (value as KeywordOpportunityProviderIntent)
-    : null;
-}
-
-function normalizedSiteDomain(siteUrl: string): string | null {
-  try {
-    return normalizeTrafficDomain(new URL(siteUrl).hostname);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Stage two: price the candidates and judge them.
  */
@@ -820,24 +797,8 @@ export async function handleKeywordOpportunitiesRequest(
       languageCode: token.languageCode,
       cap: KEYWORD_CANDIDATE_CAP,
     });
-
-    // Deduplicated before pricing: a repeated term is a second charge for the
-    // same fact, and the second charge is the expensive one — the survivor
-    // would be sampled twice.
-    //
-    // Keyed with the provider's own comparison key rather than a local
-    // lowercase. They differed by one whitespace collapse, which was enough
-    // for "dental  billing" to be priced and sampled as a separate term while
-    // the validation layer folded it back onto the same row.
-    const unique = new Map<string, KeywordCandidateDraft>();
-    for (const draft of drafts) {
-      const key = keywordVolumeKey(draft.keyword);
-      if (key !== "" && !unique.has(key)) unique.set(key, draft);
-    }
-    // The cap bites after deduplication so it spends its slots on distinct
-    // terms; `generated` below still reports what the generator produced, so
-    // the gap to `deduplicated` covers both the duplicates and the cap.
-    const candidates = [...unique.values()].slice(0, KEYWORD_CANDIDATE_CAP);
+    const candidatePlan = keywordCandidatePlan(drafts, KEYWORD_CANDIDATE_CAP);
+    const candidates = candidatePlan.candidates;
     costCandidateCount = candidates.length;
 
     const validationStartedAt = dependencies.now().getTime();
@@ -846,10 +807,6 @@ export async function handleKeywordOpportunitiesRequest(
       marketCode: token.marketCode,
       languageCode: token.languageCode,
     });
-    const validations = resolveKeywordValidations(
-      candidates.map((candidate) => candidate.keyword),
-      providerRows,
-    );
     validationDurationMs =
       dependencies.now().getTime() - validationStartedAt;
 
@@ -904,128 +861,36 @@ export async function handleKeywordOpportunitiesRequest(
       }
     }
     coverageDurationMs = dependencies.now().getTime() - coverageStartedAt;
-    const coverageIndex =
-      coverageRead === null
-        ? null
-        : buildKeywordCoverageIndex(
-            coverageRead.queryRows,
-            coverageRead.queryPageRows,
-          );
-    const coveragePages: readonly KeywordCoveragePage[] = token.pages.map(
-      (page) => ({
-        url: page.url,
-        // `?? []` is not defensive noise: `open()` is a decrypt plus a type
-        // assertion, not a schema check, and a token minted by the version
-        // running right now has pages with no `headings` at all. Its TTL is
-        // ten minutes, so every deployment of this change has a ten-minute
-        // window where spreading `undefined` would throw — after admission,
-        // after this run has already paid for expansion and volume validation.
-        tokens: keywordTokens([page.title, ...(page.headings ?? [])].join(" ")),
-      }),
+    const coverageSnapshots = keywordCoverageSnapshots(
+      token,
+      candidates,
+      coverageRead,
     );
-    // Every URL the crawl actually reached. The generator's attribution is
-    // checked against it before it can become a link in the result: stage one
-    // verified proposition URLs against the crawl, but the index arrives on
-    // this request and an out-of-range or drifted one must resolve to nothing
-    // rather than to a page that was never fetched.
-    const crawledUrls = new Set(token.pages.map((page) => page.url));
-    const attributedPage = (
-      candidate: KeywordCandidateDraft,
-    ): string | null => {
-      // Only the proposition lane may claim one. The generator is told that
-      // every `site_proposition` item must carry a valid index and that every
-      // expansion item must carry none, so an expansion candidate arriving
-      // with an index is the model contradicting its own instructions — and
-      // honouring it would let one inconsistent field alone put a row in front
-      // of the reader.
-      if (candidate.discoveryBasis !== "site_proposition") return null;
-      if (candidate.propositionIndex === null) return null;
-      const sourceUrl =
-        token.propositions[candidate.propositionIndex]?.sourceUrl;
-      return sourceUrl !== undefined && crawledUrls.has(sourceUrl)
-        ? sourceUrl
-        : null;
-    };
-
-    const priced = candidates.map((candidate) => {
-      const resolved = keywordValidationFor(validations, candidate.keyword);
-      return {
-        candidate,
-        validation: {
-          ...resolved,
-          providerIntent: providerIntent(resolved.intent),
-        },
-        coverage: observeKeywordCoverage(
-          candidate.keyword,
-          coverageIndex,
-          coveragePages,
-          attributedPage(candidate),
-          token.sitemapInventory ?? null,
-        ),
-      };
-    });
+    const priced = keywordPricedCandidates(
+      candidates,
+      providerRows,
+      coverageSnapshots,
+    );
 
     // The current pipeline samples the immutable deduplicated plan in input
     // order. The only intentional omission is a provider-priced numeric zero;
     // provider silence and existing-page evidence still receive the same SERP
     // facts as every other candidate.
-    const sampleTargets = priced.filter(
-      (row) => row.validation.availability !== "explicit_zero",
-    );
+    const sampleTargets = keywordSerpTargets(priced);
     const runObservedAt = dependencies.now().toISOString();
     const serpSamplingStartedAt = dependencies.now().getTime();
     const returnedSamples =
       sampleTargets.length === 0
         ? []
         : await dependencies.sampleSerp({
-            keywords: sampleTargets.map((row) => row.candidate.keyword),
+            keywords: sampleTargets,
             marketCode: token.marketCode,
             languageCode: token.languageCode,
           });
-    const returnedByKeyword = new Map(
-      returnedSamples.map((sample) => [
-        keywordVolumeKey(sample.keyword),
-        sample,
-      ]),
-    );
-    const attemptedSamples = sampleTargets.map(
-      (row): KeywordSerpSampleResult => {
-        const returned = returnedByKeyword.get(
-          keywordVolumeKey(row.candidate.keyword),
-        );
-        if (returned === undefined) {
-          return {
-            keyword: row.candidate.keyword,
-            status: "unavailable",
-            failureReason: "provider_unavailable",
-            observedAt: null,
-            results: [],
-            pageItemTypes: null,
-            aiOverview: null,
-            communityItems: null,
-          };
-        }
-        // The optional branch is the ten-minute compatibility window for an
-        // injected legacy producer. Current production outcomes always carry
-        // the status explicitly.
-        const status = returned.status ?? "complete";
-        return status === "complete"
-          ? {
-              ...returned,
-              keyword: row.candidate.keyword,
-              status,
-              failureReason: null,
-              observedAt: returned.observedAt ?? runObservedAt,
-            }
-          : {
-              ...returned,
-              keyword: row.candidate.keyword,
-              status,
-              failureReason: returned.failureReason ?? "provider_unavailable",
-              observedAt: null,
-              results: [],
-            };
-      },
+    const attemptedSamples = normalizeKeywordSerpSamples(
+      sampleTargets,
+      returnedSamples,
+      runObservedAt,
     );
     const completeSamples = attemptedSamples.filter(
       (sample) => sample.status === "complete",
@@ -1098,49 +963,23 @@ export async function handleKeywordOpportunitiesRequest(
           dependencies.now().getTime() - interpretationStartedAt;
       }
     }
-    const completeInterpretationKeys = new Set(
-      interpretationInputs.map((input) => keywordVolumeKey(input.keyword)),
+    const interpretationsByKeyword = new Map(
+      keywordInterpretationEntries(
+        interpretationInputs,
+        returnedInterpretations,
+      ).map(([keyword, interpretation]) => [
+        keywordVolumeKey(keyword),
+        interpretation,
+      ]),
     );
-    const interpretationsByKeyword = new Map<
-      string,
-      KeywordSerpInterpretation | null
-    >();
-    for (const interpretation of returnedInterpretations) {
-      const key = keywordVolumeKey(interpretation.keyword);
-      if (key === "" || !completeInterpretationKeys.has(key)) continue;
-      if (interpretationsByKeyword.has(key)) {
-        interpretationsByKeyword.set(key, null);
-      } else {
-        interpretationsByKeyword.set(key, interpretation);
-      }
-    }
 
-    const organicDomains = [
-      ...new Set(
-        completeSamples.flatMap((sample) =>
-          sample.results.map((result) => result.domain.trim().toLowerCase()),
-        ),
-      ),
-    ].filter((domain) => domain !== "");
-    const trafficDomains = [
-      ...new Set(
-        organicDomains
-          .map(normalizeTrafficDomain)
-          .filter((domain): domain is string => domain !== null),
-      ),
-    ];
-    const registrationDomains = [
-      ...new Set(
-        organicDomains
-          .map(normalizeRdapDomain)
-          .filter((domain): domain is string => domain !== null),
-      ),
-    ];
-    const siteDomain = normalizedSiteDomain(token.siteUrl);
-    const rankTargets = [...organicDomains];
-    if (siteDomain !== null && !rankTargets.includes(siteDomain)) {
-      rankTargets.push(siteDomain);
-    }
+    const {
+      organicDomains,
+      trafficDomains,
+      registrationDomains,
+      siteDomain,
+      rankTargets,
+    } = keywordEnrichmentTargets(completeSamples, token.siteUrl);
 
     let domainRanks: ReadonlyMap<string, number> | null = null;
     let domainTraffic: ReadonlyMap<string, number | null> | null = null;
@@ -1407,7 +1246,7 @@ export async function handleKeywordOpportunitiesRequest(
       marketCode: token.marketCode,
       languageCode: token.languageCode,
       context,
-      generated: drafts.length,
+      generated: candidatePlan.generated,
       observations,
       unavailableStages,
       process: {
