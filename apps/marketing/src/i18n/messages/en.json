@@ -4127,6 +4127,7 @@
         "fetch_failed": "The page could not be fetched.",
         "not_html": "That URL did not return an HTML document.",
         "page_not_ok": "That URL did not return 200, so there is no page to check yet.",
+        "internal_error": "Something went wrong inside the tool. Nothing was written, and the run can be repeated.",
         "network": "The request did not reach the tool. Check your connection and try again."
       },
       "faq": {
@@ -4163,6 +4164,174 @@
             "href": "/tools/internal-link-audit",
             "name": "Internal Link Audit",
             "blurb": "The site around the page: click depth, orphan candidates and the links that point at it."
+          }
+        ]
+      }
+    },
+    "geoKnowledgeBase": {
+      "eyebrow": "GEO tools",
+      "title": "GEO Knowledge Base",
+      "intro": "What a model would have to know to recognise you: the names you go by, the category you compete in, who you sell to, and the facts you can point at a source for. Freeze it and the questions your visibility check asks are derived from it, the same way every time.",
+      "signIn": {
+        "title": "Sign in to build a knowledge base",
+        "body": "This one is saved to your account, because a frozen version is what a later run points at.",
+        "action": "Sign in"
+      },
+      "site": {
+        "title": "Site",
+        "urlLabel": "Site URL",
+        "urlPlaceholder": "https://example.com",
+        "urlHelp": "One site per knowledge base. This is also the domain a mention has to link to before it counts as a citation.",
+        "start": "Start a knowledge base",
+        "switch": "Switch site",
+        "importTitle": "Prefill from your website profile",
+        "importBody": "Copies the product name, categories, competitors and buyer from the confirmed profile of this site. It is a copy, not a link: editing either one afterwards leaves the other alone.",
+        "importAction": "Prefill from profile",
+        "importedFrom": "Prefilled from profile revision {revision}. Edited here since.",
+        "importUnavailable": "No confirmed website profile for this site yet, so there is nothing to prefill from."
+      },
+      "brand": {
+        "title": "Brand",
+        "officialNameLabel": "Name a model would use",
+        "officialNamePlaceholder": "Acme Analytics",
+        "officialNameHelp": "Not the domain. This is the string an answer has to contain before we count it as a mention.",
+        "aliasesLabel": "Other names you go by",
+        "aliasesHelp": "Spelling variants, the short form, the old name. Matched as whole words, so a name shorter than three characters is not usable.",
+        "categoryLabel": "Category words",
+        "categoryHelp": "How a buyer would name what you are, not how you describe yourself. The first one is used to build the questions, so put the clearest one first.",
+        "categoryWarning": "A category that is only a generic noun (\"tools\", \"software\") produces questions with no subject, and those were measured never to reach the live web. Name the thing: \"project management\", \"invoicing\".",
+        "countryLabel": "Market",
+        "languageLabel": "Question language",
+        "languageNote": "English only for now. The calibrated question wording was measured in English; asking in another language would spend the same money on wording nobody has measured."
+      },
+      "roles": {
+        "title": "Who you sell to",
+        "intro": "Each role becomes its own questions. One role asked well beats three invented ones.",
+        "add": "Add a role",
+        "remove": "Remove",
+        "labelLabel": "Role",
+        "labelPlaceholder": "agency owners",
+        "segmentLabel": "Segment",
+        "segmentPlaceholder": "5 to 20 person agencies",
+        "painLabel": "What goes wrong for them",
+        "criteriaLabel": "What they judge on",
+        "vocabularyLabel": "Words they use",
+        "empty": "No roles yet. Questions about problems and about evaluation need one, so without a role the set is smaller."
+      },
+      "competitors": {
+        "title": "Competitors",
+        "intro": "A domain is not a name. Until the name a model would use is confirmed, a competitor is carried and left out of the share figures, and the report says which ones.",
+        "add": "Add a competitor",
+        "remove": "Remove",
+        "domainLabel": "Domain",
+        "brandLabel": "Name a model would use",
+        "confirmLabel": "Confirmed",
+        "unconfirmed": "Not confirmed. Shown, never counted.",
+        "empty": "No competitors yet. Comparison questions need at least one confirmed name."
+      },
+      "facts": {
+        "title": "Verified facts",
+        "intro": "Only facts you can point at a URL for. A fact with no source is left empty with a reason, and the brief generator will write \"not published\" rather than a number.",
+        "add": "Add a fact",
+        "remove": "Remove",
+        "keyLabel": "Fact",
+        "keyPlaceholder": "starting price",
+        "valueLabel": "Value",
+        "reasonLabel": "Why it is empty",
+        "sourceLabel": "Source URL",
+        "observedLabel": "Checked on",
+        "reasons": {
+          "notPublished": "Not published anywhere",
+          "fetchFailed": "The page could not be read",
+          "lowConfidence": "Found, but not confident",
+          "conflicting": "Sources disagree"
+        },
+        "empty": "No facts yet. This is optional; it only matters once you generate a brief."
+      },
+      "draft": {
+        "save": "Save draft",
+        "saving": "Saving…",
+        "saved": "Saved at {time}",
+        "unsaved": "Unsaved changes",
+        "conflict": "Someone else saved this knowledge base while you were editing. Reload to see their version; your text is still in the form.",
+        "reload": "Reload"
+      },
+      "freeze": {
+        "title": "Freeze a version",
+        "intro": "A frozen version is immutable. The visibility check runs against one, so a report can always say exactly what it asked and why.",
+        "action": "Freeze this version",
+        "freezing": "Freezing…",
+        "blocked": "Not ready to freeze yet:",
+        "blockers": {
+          "official_name_missing": "Give the name a model would use.",
+          "aliases_missing": "Add at least one other name, even if it is just the short form.",
+          "category_terms_missing": "Add at least one category word.",
+          "role_missing": "Add at least one role.",
+          "no_confirmed_competitor": "Confirm at least one competitor's name."
+        },
+        "current": "Current version: {revision}, frozen at {time}",
+        "questions": "{count} questions, {retrieval} of them with measured search wording",
+        "reused": "Nothing changed since the last freeze, so this is still version {revision}.",
+        "none": "No frozen version yet.",
+        "preview": "Preview the questions",
+        "hidePreview": "Hide the questions",
+        "cost": "One run of this set at {samples} samples per question is {calls} provider calls, about {cost}."
+      },
+      "questions": {
+        "title": "Questions this knowledge base produces",
+        "layer": "Stage",
+        "mode": "Mode",
+        "modes": {
+          "retrieval": "Measured to search",
+          "demand": "Asked as a buyer would"
+        },
+        "modeNote": "Only the measured wording carries a citation rate. The rest is asked because the mention is worth seeing, and its citations are reported without a denominator.",
+        "layers": {
+          "problem": "Problem",
+          "discovery": "Discovery",
+          "comparison": "Comparison",
+          "evaluation": "Evaluation",
+          "branded": "Branded"
+        },
+        "uncalibrated": "This wording was assembled here, not taken from the measured library."
+      },
+      "errors": {
+        "auth_required": "Sign in to build a knowledge base.",
+        "auth_unavailable": "Sign-in is not answering right now. Try again shortly.",
+        "cross_origin": "That request did not come from this page.",
+        "invalid_request": "That request could not be read.",
+        "payload_too_large": "That knowledge base is too large to save.",
+        "unsupported_media_type": "That request was not JSON.",
+        "invalid_url": "That is not a site URL this tool can use.",
+        "invalid_payload": "Something in the form is not usable: {reason}",
+        "conflict": "This knowledge base changed while you were editing.",
+        "hash_mismatch": "The saved copy did not match what was sent, so nothing was written.",
+        "not_found": "That knowledge base does not exist on this account.",
+        "no_draft": "There is nothing to freeze yet.",
+        "store_unavailable": "The store is not answering, so nothing was written. Try again shortly.",
+        "network": "The request did not reach the tool. Check your connection and try again."
+      },
+      "limitsTitle": "What this does not do",
+      "limits": {
+        "notSynced": "It does not stay in sync with your website profile. The prefill is a copy taken once.",
+        "noGuess": "It does not fill in facts for you. An empty value with a reason is the honest state, and the brief generator relies on it.",
+        "noGsc": "It does not read Search Console. Roles are yours to write, because a query cluster is not a person.",
+        "englishOnly": "It produces English questions. The wording that reaches the live web was measured in English, and translating it would discard that measurement."
+      },
+      "faq": {
+        "title": "Questions about the knowledge base",
+        "items": [
+          {
+            "q": "Why does freezing matter?",
+            "a": "A visibility run points at a frozen version. If the knowledge base could change underneath it, two runs would not be comparable, and the report could not say which names it was matching on. Freezing is what makes \"the same question set, asked again\" a true sentence."
+          },
+          {
+            "q": "Why is the question set derived instead of written by hand?",
+            "a": "The wording that reaches the live web was established by paid measurement: some phrasings search, others answer from memory, and small changes flip it. Deriving the set from calibrated templates keeps the citation numbers meaningful. The two branded questions are the exception and are marked as unmeasured."
+          },
+          {
+            "q": "Why must a competitor's name be confirmed separately from its domain?",
+            "a": "A model writes \"Linear\", not \"linear.app\". Counting a mention needs the name; knowing where a citation points needs the domain. An unconfirmed competitor stays in the list and out of the share figures, and the report names it as excluded."
           }
         ]
       }

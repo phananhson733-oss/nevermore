@@ -4127,6 +4127,7 @@
         "fetch_failed": "页面抓取失败。",
         "not_html": "这个网址返回的不是 HTML 文档。",
         "page_not_ok": "这个网址没有返回 200，暂时没有可检查的页面。",
+        "internal_error": "工具内部出错了。什么都没写下，可以直接重跑。",
         "network": "请求没有到达工具。检查网络后重试。"
       },
       "faq": {
@@ -4163,6 +4164,174 @@
             "href": "/tools/internal-link-audit",
             "name": "内链审计",
             "blurb": "页面周围的站点：点击深度、孤岛页候选，以及指向它的那些链接。"
+          }
+        ]
+      }
+    },
+    "geoKnowledgeBase": {
+      "eyebrow": "GEO 工具",
+      "title": "GEO 知识库",
+      "intro": "模型要认出你，需要知道的那些事：你被叫什么、你在哪个品类里、你卖给谁、以及哪些事实你能指出来源。冻结之后，可见性体检要问的问题就由它确定性地推导出来，每次都一样。",
+      "signIn": {
+        "title": "登录后才能建立知识库",
+        "body": "这一件会存进你的账号，因为之后的运行要指向某个冻结版本。",
+        "action": "登录"
+      },
+      "site": {
+        "title": "站点",
+        "urlLabel": "站点网址",
+        "urlPlaceholder": "https://example.com",
+        "urlHelp": "一个知识库对应一个站点。它同时也是「被提及」要链到哪个域名才算「被引用」的那个域名。",
+        "start": "建立知识库",
+        "switch": "切换站点",
+        "importTitle": "从网站档案预填",
+        "importBody": "把该站点已确认档案里的产品名、品类、竞品与买家复制过来。是复制不是联动：之后各改各的，互不影响。",
+        "importAction": "从档案预填",
+        "importedFrom": "预填自档案第 {revision} 版，此后在这里改过。",
+        "importUnavailable": "这个站点还没有已确认的网站档案，暂时没有可预填的内容。"
+      },
+      "brand": {
+        "title": "品牌",
+        "officialNameLabel": "模型会用的名字",
+        "officialNamePlaceholder": "Acme Analytics",
+        "officialNameHelp": "不是域名。回答里出现这个字符串，我们才算它提及了你。",
+        "aliasesLabel": "你还被叫做",
+        "aliasesHelp": "拼写变体、简称、旧名。按整词匹配，所以短于三个字符的名字用不了。",
+        "categoryLabel": "品类词",
+        "categoryHelp": "买家会怎么称呼你这类东西，而不是你怎么介绍自己。第一个会用来造问题，请把最清楚的放前面。",
+        "categoryWarning": "只填一个通用名词（「工具」「软件」）会造出没有主语的问句，而实测表明这类问句从不触发联网检索。要点名：「项目管理」「开票」。",
+        "countryLabel": "市场",
+        "languageLabel": "提问语言",
+        "languageNote": "目前只有英文。已标定的问句措辞是在英文下测出来的；换语言等于用同样的钱去问没人测过的措辞。"
+      },
+      "roles": {
+        "title": "你卖给谁",
+        "intro": "每个角色会展开成自己的问题。把一个角色写准，胜过编三个出来。",
+        "add": "加一个角色",
+        "remove": "删除",
+        "labelLabel": "角色",
+        "labelPlaceholder": "代理公司老板",
+        "segmentLabel": "细分",
+        "segmentPlaceholder": "5–20 人的代理公司",
+        "painLabel": "他们哪里出问题",
+        "criteriaLabel": "他们按什么判断",
+        "vocabularyLabel": "他们会用的词",
+        "empty": "还没有角色。关于问题和关于选型的两类提问都需要角色，缺了它问题集会更小。"
+      },
+      "competitors": {
+        "title": "竞品",
+        "intro": "域名不是名字。在「模型会用的那个名字」被确认之前，竞品会被保留但不进入份额计算，报告里会写明是哪几个。",
+        "add": "加一个竞品",
+        "remove": "删除",
+        "domainLabel": "域名",
+        "brandLabel": "模型会用的名字",
+        "confirmLabel": "已确认",
+        "unconfirmed": "未确认。展示，但不计入。",
+        "empty": "还没有竞品。对比类问题至少需要一个已确认的名字。"
+      },
+      "facts": {
+        "title": "已核实事实",
+        "intro": "只放你能指出网址的事实。指不出来源的，就留空并写明原因；Brief 生成器会写「未公开」，而不是编一个数。",
+        "add": "加一条事实",
+        "remove": "删除",
+        "keyLabel": "事实",
+        "keyPlaceholder": "起步价",
+        "valueLabel": "取值",
+        "reasonLabel": "为什么是空的",
+        "sourceLabel": "来源网址",
+        "observedLabel": "核对日期",
+        "reasons": {
+          "notPublished": "哪里都没公开",
+          "fetchFailed": "页面读不到",
+          "lowConfidence": "找到了，但不确定",
+          "conflicting": "不同来源对不上"
+        },
+        "empty": "还没有事实。这一节是选填的，只有在生成 Brief 时才会用到。"
+      },
+      "draft": {
+        "save": "保存草稿",
+        "saving": "保存中…",
+        "saved": "已于 {time} 保存",
+        "unsaved": "有未保存的修改",
+        "conflict": "你编辑期间，别处保存过这个知识库。重新载入可以看到那一版；你输入的内容仍在表单里。",
+        "reload": "重新载入"
+      },
+      "freeze": {
+        "title": "冻结一个版本",
+        "intro": "冻结版本不可修改。可见性体检对着某一个版本跑，报告因此永远能说清它问了什么、为什么问。",
+        "action": "冻结当前内容",
+        "freezing": "冻结中…",
+        "blocked": "还不能冻结：",
+        "blockers": {
+          "official_name_missing": "填上模型会用的那个名字。",
+          "aliases_missing": "至少再填一个名字，哪怕只是简称。",
+          "category_terms_missing": "至少填一个品类词。",
+          "role_missing": "至少加一个角色。",
+          "no_confirmed_competitor": "至少确认一个竞品的名字。"
+        },
+        "current": "当前版本：第 {revision} 版，冻结于 {time}",
+        "questions": "共 {count} 条问题，其中 {retrieval} 条用的是已标定的检索措辞",
+        "reused": "自上次冻结以来没有变化，所以仍是第 {revision} 版。",
+        "none": "还没有冻结过任何版本。",
+        "preview": "预览这些问题",
+        "hidePreview": "收起问题",
+        "cost": "这套问题每题采样 {samples} 次，一轮是 {calls} 次调用，约 {cost}。"
+      },
+      "questions": {
+        "title": "这个知识库会产生的问题",
+        "layer": "阶段",
+        "mode": "模式",
+        "modes": {
+          "retrieval": "已标定会检索",
+          "demand": "买家会这么问"
+        },
+        "modeNote": "只有已标定的措辞带引用率。其余问题问的是「有没有被提到」，它们的引用数只报数、不做分母。",
+        "layers": {
+          "problem": "问题",
+          "discovery": "发现",
+          "comparison": "对比",
+          "evaluation": "选型",
+          "branded": "品牌词"
+        },
+        "uncalibrated": "这句是在这里拼出来的，不来自已测量的模板库。"
+      },
+      "errors": {
+        "auth_required": "登录后才能建立知识库。",
+        "auth_unavailable": "登录服务暂时没有响应，稍后再试。",
+        "cross_origin": "这个请求不是从本页发出的。",
+        "invalid_request": "这个请求读不出来。",
+        "payload_too_large": "这个知识库太大，存不下。",
+        "unsupported_media_type": "请求不是 JSON。",
+        "invalid_url": "这不是本工具可以使用的站点网址。",
+        "invalid_payload": "表单里有内容不可用：{reason}",
+        "conflict": "你编辑期间这个知识库变过了。",
+        "hash_mismatch": "存下来的内容与发出的对不上，因此什么都没写。",
+        "not_found": "这个账号下没有这个知识库。",
+        "no_draft": "还没有可冻结的内容。",
+        "store_unavailable": "存储没有响应，因此什么都没写。稍后再试。",
+        "network": "请求没有到达工具。检查网络后重试。"
+      },
+      "limitsTitle": "这件工具不做什么",
+      "limits": {
+        "notSynced": "它不与网站档案保持同步。预填是一次性的复制。",
+        "noGuess": "它不替你补事实。留空并写明原因才是诚实状态，Brief 生成器依赖这一点。",
+        "noGsc": "它不读 Search Console。角色要你自己写，因为一堆查询词不等于一个人。",
+        "englishOnly": "它产出英文问题。能触达联网检索的措辞是在英文下测出来的，翻译等于把这份测量丢掉。"
+      },
+      "faq": {
+        "title": "关于知识库",
+        "items": [
+          {
+            "q": "冻结为什么重要？",
+            "a": "可见性运行指向某个冻结版本。如果知识库能在它脚下变化，两次运行就不可比，报告也说不清自己是按哪些名字匹配的。冻结让「同一套问题再问一次」成为一句真话。"
+          },
+          {
+            "q": "问题集为什么是推导出来的，不是手写的？",
+            "a": "能触达联网检索的措辞是花钱测出来的：有的问法会搜索，有的只凭记忆回答，改几个字就翻转。从已标定模板推导，引用数才有意义。两条品牌词问题是例外，会被标成未测量。"
+          },
+          {
+            "q": "竞品的名字为什么要和域名分开确认？",
+            "a": "模型写的是「Linear」，不是「linear.app」。算提及要用名字，判断引用指向谁要用域名。未确认的竞品会留在列表里、不进份额计算，报告会点名说它被排除了。"
           }
         ]
       }

@@ -165,3 +165,31 @@ describe("matchRobotsRule", () => {
     expect(isPathAllowed(groups, "SignalFrameBot/0.2", "/search")).toBe(true);
   });
 });
+
+describe("robots rule specificity", () => {
+  it("does not let a trailing $ outrank an equally specific Allow", () => {
+    const { groups } = parseRobots(
+      "User-agent: *\nDisallow: /x$\nAllow: /x\n",
+      ORIGIN,
+      true,
+    );
+
+    // Both rules describe the same two octets. `$` matches none of its own,
+    // so counting it as a character made the Disallow win a tie that RFC 9309
+    // 2.2.2 gives to Allow.
+    expect(matchRobotsRule(groups, "SignalFrameBot/0.2", "/x")).toEqual({
+      allowed: true,
+      pattern: "/x",
+    });
+  });
+
+  it("still lets a longer anchored rule win on real octets", () => {
+    const { groups } = parseRobots(
+      "User-agent: *\nAllow: /a\nDisallow: /a/b$\n",
+      ORIGIN,
+      true,
+    );
+    expect(isPathAllowed(groups, "SignalFrameBot/0.2", "/a/b")).toBe(false);
+    expect(isPathAllowed(groups, "SignalFrameBot/0.2", "/a/b/c")).toBe(true);
+  });
+});

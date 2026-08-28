@@ -165,16 +165,27 @@ export function pooled(
 /* Comparing two proportions                                           */
 /* ------------------------------------------------------------------ */
 
-/** Two-proportion z test with pooled variance; returns the two-sided p value. */
+/**
+ * Two-proportion z test with pooled variance; returns the two-sided p value.
+ *
+ * Refuses to test below {@link MIN_TRIALS_FOR_TEST} by returning 1, which is
+ * the only way the floor actually holds. Declaring the constant and leaving
+ * the test unguarded is worse than not having it: at the sampling size this
+ * tool actually runs, 0/5 against 3/5 gives p = 0.038 and gets rejected at
+ * q = 0.10, while Fisher's exact test on the same table gives 0.167. That is
+ * a coin landing differently twice, reported as an improvement.
+ */
 export function twoProportionP(
   k1: number,
   n1: number,
   k2: number,
   n2: number,
+  minTrials: number = MIN_TRIALS_FOR_TEST,
 ): number {
   assertCounts(k1, n1);
   assertCounts(k2, n2);
   if (n1 === 0 || n2 === 0) return 1;
+  if (n1 < minTrials || n2 < minTrials) return 1;
   const pp = (k1 + k2) / (n1 + n2);
   const se = Math.sqrt(pp * (1 - pp) * (1 / n1 + 1 / n2));
   if (!Number.isFinite(se) || se === 0) return 1;
@@ -251,6 +262,98 @@ export function benjaminiHochberg(
 }
 
 /* ------------------------------------------------------------------ */
+/* One verdict, not two                                                */
+/* ------------------------------------------------------------------ */
+
+export interface ChangeVerdictInput {
+  readonly baseSuccesses: number;
+  readonly baseTrials: number;
+  readonly currentSuccesses: number;
+  readonly currentTrials: number;
+}
+
+export interface ChangeVerdict {
+  readonly diff: number | null;
+  readonly lo: number | null;
+  readonly hi: number | null;
+  readonly pValue: number;
+  /** True only when the test rejected *and* the interval excludes zero. */
+  readonly changed: boolean;
+  readonly testable: boolean;
+}
+
+/**
+ * Whether two runs differ, decided once.
+ *
+ * The p value and the difference interval are two different inferences, and on
+ * small counts they disagree: 1/5 against 4/5 gives p = 0.058 while the
+ * Newcombe interval still contains zero. A page that renders both would then
+ * say "significant" beside "[-0.0%, +83.2%]". The interval is the harder of the
+ * two, so a change has to satisfy both before this returns true.
+ */
+export function changeVerdict(
+  input: ChangeVerdictInput,
+  rejectedByFdr: boolean,
+  minTrials: number = MIN_TRIALS_FOR_TEST,
+): ChangeVerdict {
+  const interval = newcombeDiff(
+    input.baseSuccesses,
+    input.baseTrials,
+    input.currentSuccesses,
+    input.currentTrials,
+  );
+  const pValue = twoProportionP(
+    input.baseSuccesses,
+    input.baseTrials,
+    input.currentSuccesses,
+    input.currentTrials,
+    minTrials,
+  );
+  const testable =
+    input.baseTrials >= minTrials && input.currentTrials >= minTrials;
+  const excludesZero =
+    interval !== null && (interval.lo > 0 || interval.hi < 0);
+  return {
+    diff: interval?.diff ?? null,
+    lo: interval?.lo ?? null,
+    hi: interval?.hi ?? null,
+    pValue,
+    changed: testable && rejectedByFdr && excludesZero,
+    testable,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Clustered observations                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Collapse each group to one yes/no observation.
+ *
+ * Sampling asks the same question several times, so those samples are not
+ * independent trials: the same question usually gets the same answer. Pooling
+ * them and calling the total `n` makes the interval too narrow by roughly the
+ * design effect - seven questions sampled five times each would clear the
+ * "n >= 35, safe to print 0.0%" bar on the strength of seven observations.
+ *
+ * The zero claim therefore runs on this projection, where the unit is the
+ * question, and the sample-level rate is shown as a rate without one.
+ */
+export function collapseGroupsToBernoulli(
+  groups: readonly { readonly successes: number; readonly trials: number }[],
+): { readonly successes: number; readonly trials: number } {
+  let successes = 0;
+  let trials = 0;
+  for (const group of groups) {
+    assertCounts(group.successes, group.trials);
+    if (group.trials === 0) continue;
+    trials += 1;
+    if (group.successes > 0) successes += 1;
+  }
+  return { successes, trials };
+}
+
+/* ------------------------------------------------------------------ */
 /* Description                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -299,9 +402,12 @@ export function describeProportion(
       ? { kind: "zero", trials: proportion.trials, hiPercent }
       : { kind: "unobserved", trials: proportion.trials, hiPercent };
   }
+  // A rounded zero on an observation that did happen reads as "never", which
+  // is the one sentence this whole file exists to keep off the page.
+  const percent = Math.max(asPercent(proportion.point), 0.1);
   return {
     kind: "observed",
-    percent: asPercent(proportion.point),
+    percent,
     trials: proportion.trials,
     loPercent: asPercent(proportion.lo ?? 0),
     hiPercent,

@@ -269,6 +269,12 @@ export async function handleCitabilityRequest(
       dependencies.now().toISOString(),
     );
     return json({ data: report }, 200);
+  } catch {
+    // An unexpected throw still leaves through the tool's own envelope. The
+    // rule engine and the statistics both raise on impossible inputs, on
+    // purpose, and a bare 500 would hand the visitor a Next.js error page with
+    // no code to report and nothing to retry against.
+    return fail("internal_error", 500);
   } finally {
     gate.release();
   }

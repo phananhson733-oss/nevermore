@@ -152,6 +152,18 @@ function globMatches(path: string, pattern: string): boolean {
   return new RegExp(`^${expression}${anchored ? "$" : ""}`).test(path);
 }
 
+/**
+ * How specific a rule is, in URI path octets.
+ *
+ * RFC 9309 2.2.2 picks the rule matching the most octets, and gives an
+ * equally specific Allow priority over Disallow. A trailing `$` matches no
+ * octet at all, so counting it makes `Disallow: /x$` outrank `Allow: /x` and
+ * block a path both rules describe equally.
+ */
+function specificity(pattern: string): number {
+  return pattern.endsWith("$") ? pattern.length - 1 : pattern.length;
+}
+
 /** The directive that governs one path, and which pattern produced it. */
 export interface RobotsDecision {
   readonly allowed: boolean;
@@ -186,7 +198,7 @@ export function matchRobotsRule(
   if (matches.length === 0) return { allowed: true, pattern: null };
   matches.sort(
     (a, b) =>
-      b.pattern.length - a.pattern.length ||
+      specificity(b.pattern) - specificity(a.pattern) ||
       Number(b.allowed) - Number(a.allowed),
   );
   const winner = matches[0];

@@ -173,6 +173,22 @@ describe("page fetch", () => {
     expect(await errorCode(response)).toBe("not_html");
   });
 
+  it("returns the tool's envelope when something unexpected throws", async () => {
+    const release = vi.fn();
+    const response = await handleCitabilityRequest(
+      post({ url: "https://acme-example-site.com/guide" }),
+      deps({
+        openGate: async () => ({ ok: true, release }),
+        fetchResource: async () => {
+          throw new RangeError("counts are impossible");
+        },
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(await errorCode(response)).toBe("internal_error");
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it("maps a timeout to its own code", async () => {
     const response = await handleCitabilityRequest(
       post({ url: "https://acme-example-site.com/guide" }),

@@ -45,6 +45,7 @@ const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set([
   "fetch_failed",
   "not_html",
   "page_not_ok",
+  "internal_error",
 ]);
 
 const STATE_STYLES: Record<CitabilityState, string> = {

@@ -196,7 +196,8 @@ export type CitabilityErrorCode =
   | "fetch_timeout"
   | "fetch_failed"
   | "not_html"
-  | "page_not_ok";
+  | "page_not_ok"
+  | "internal_error";
 
 /* ------------------------------------------------------------------ */
 /* Construction helpers                                                */
