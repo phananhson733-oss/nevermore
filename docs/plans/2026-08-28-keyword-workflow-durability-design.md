@@ -265,8 +265,10 @@ type KeywordWorkflowOutcome =
   | { kind: "failed"; code: KeywordOpportunityErrorCode };
 ```
 
-Cost telemetry carries a run id and per-endpoint deltas so duplicate log lines
-are correlatable. It is observability, not an exactly-once billing ledger.
+Cost telemetry carries the final Workflow step id and per-endpoint deltas so
+duplicate log lines are correlatable with the Workflow trace. Stable v4 step
+metadata does not expose the raw run id. This remains observability, not an
+exactly-once billing ledger.
 
 ## Status and Result API
 
@@ -357,8 +359,13 @@ path. Public EN/ZH copy must say:
 - it is not written to GenGrowth App project history;
 - no saved-history or cross-run comparison UI is provided.
 
-Do not call it temporary or promise a deletion/retention period until the
-platform exposes and the product adopts an enforceable retention policy.
+Keep two clocks distinct. The browser's sealed resume pointer expires after 24
+hours, but that is not deletion of Workflow state. As of 2026-08-28, Vercel's
+official managed-storage policy retains data after run completion for 1 day on
+Hobby, 7 days on Pro and 30 days on Enterprise; it is not configurable by
+default. Public copy names plan-level Vercel retention without hard-coding the
+site's current plan, while this design records the verified values and source:
+https://vercel.com/docs/workflows/pricing#storage-retention.
 
 ## Security and Privacy Invariants
 

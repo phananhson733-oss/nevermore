@@ -1,5 +1,5 @@
 // @input  -- locale, the visitor's Search Console grant, and the market allow-list
-// @output -- connect / read-site / confirm / run / result states for the keyword map
+// @output -- connect / read / confirm / durable tracking / refresh recovery / result states
 // @pos    -- primary client surface for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -15,13 +15,25 @@ import type {
   KeywordOpportunityResult,
 } from "@sf/public-tools/keyword-opportunity/types";
 import { KEYWORD_OPPORTUNITY_ERROR_CODES } from "@sf/public-tools/keyword-opportunity/types";
-import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
-import { formatPropertyLabel } from "@/lib/tools/property-label";
-import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import type { GoogleConsentNotice } from "../../lib/tools/traffic-drop-session";
+import { formatPropertyLabel } from "../../lib/tools/property-label";
+import { trackMarketingEvent } from "../layout/google-analytics";
 import { GscConnectPanel, gscAuthorizeHref } from "./gsc-connect-panel";
 import { GscDisconnect } from "./gsc-disconnect";
 import { keywordMapSiteUrl } from "./keyword-map-property";
 import { KeywordMapResults } from "./keyword-map-results";
+import {
+  clearKeywordWorkflowPointer,
+  KEYWORD_WORKFLOW_API_VERSION,
+  keywordWorkflowPointerForContext,
+  keywordWorkflowPollDelayMs,
+  normalizeKeywordWorkflowStartResponse,
+  normalizeKeywordWorkflowStatusResponse,
+  readKeywordWorkflowPointer,
+  writeKeywordWorkflowPointer,
+  type KeywordWorkflowContextState,
+  type KeywordWorkflowPointerV1,
+} from "../../lib/tools/keyword-workflow-client.ts";
 
 const TOOL_PATH = "/tools/low-competition-keywords";
 const SECTION_ID = "keyword-map-tool";
@@ -68,16 +80,8 @@ function monotonicNow(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
 
-type Phase = "idle" | "reading" | "confirm" | "running" | "done";
-
-interface ContextState {
-  readonly token: string;
-  readonly propositions: readonly KeywordOpportunityProposition[];
-  readonly pagesFetched: number;
-  readonly productPagesFetched: number;
-  readonly selection?: KeywordOpportunityContextSelection;
-  readonly contextSufficient: boolean;
-}
+type Phase = "idle" | "reading" | "confirm" | "tracking" | "done";
+type ContextState = KeywordWorkflowContextState;
 
 interface KeywordMapToolProps {
   readonly locale: string;
@@ -115,6 +119,21 @@ function retryAfterSecondsFrom(response: Response): number {
   return Math.min(seconds, 3600);
 }
 
+function waitForPoll(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 export function KeywordMapTool({
   locale,
   properties,
@@ -140,9 +159,13 @@ export function KeywordMapTool({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [trackingRestored, setTrackingRestored] = useState(false);
   const startedAt = useRef<number | null>(null);
+  const workflowPointer = useRef<KeywordWorkflowPointerV1 | null>(null);
+  const workflowAbort = useRef<AbortController | null>(null);
+  const restoredOnce = useRef(false);
 
-  const busy = phase === "reading" || phase === "running";
+  const busy = phase === "reading" || phase === "tracking";
 
   /**
    * Count the server's own `Retry-After` down to zero.
@@ -186,7 +209,216 @@ export function KeywordMapTool({
     };
   }, [busy]);
 
+  useEffect(
+    () => () => {
+      workflowAbort.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (restoredOnce.current || properties === null || properties.length === 0) {
+      return;
+    }
+    restoredOnce.current = true;
+    const pointer = readKeywordWorkflowPointer(sessionStorage, {
+      properties,
+      markets,
+    });
+    if (pointer === null) return;
+
+    workflowPointer.current = pointer;
+    setProperty(pointer.property);
+    setSiteUrl(pointer.siteUrl);
+    setMarketCode(pointer.marketCode);
+    setLanguageCode(pointer.languageCode);
+    setSeedInput(pointer.seedInput);
+    setContext(pointer.context);
+    setTrackingRestored(true);
+    void resumeKeywordWorkflow(pointer);
+    // Recovery is deliberately one-shot for this mounted tab. A state update
+    // must not submit or poll the same run a second time.
+  }, [markets, properties]);
+
+  function rememberWorkflow(pointer: KeywordWorkflowPointerV1): void {
+    workflowPointer.current = pointer;
+    writeKeywordWorkflowPointer(sessionStorage, pointer);
+  }
+
+  function forgetWorkflow(): void {
+    workflowPointer.current = null;
+    clearKeywordWorkflowPointer(sessionStorage);
+  }
+
+  function finishWorkflow(nextResult: KeywordOpportunityResult): void {
+    forgetWorkflow();
+    setResult(nextResult);
+    setErrorCode(null);
+    setTrackingRestored(false);
+    setPhase("done");
+    trackMarketingEvent("tool_complete", {
+      tool_name: "keyword_opportunity_map",
+    });
+  }
+
+  async function pollKeywordWorkflow(
+    initial: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    workflowAbort.current?.abort();
+    const controller = new AbortController();
+    workflowAbort.current = controller;
+    let pointer = initial;
+    setPhase("tracking");
+    setErrorCode(null);
+
+    while (!controller.signal.aborted) {
+      try {
+        const response = await fetch(
+          "/api/tools/hidden-keywords/opportunities/status",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runToken: pointer.runToken }),
+            signal: controller.signal,
+          },
+        );
+        const body: unknown = await response.json();
+        const outcome = normalizeKeywordWorkflowStatusResponse(
+          response.status,
+          body,
+        );
+        if (outcome.kind === "completed") {
+          finishWorkflow(outcome.result);
+          return;
+        }
+        if (outcome.kind === "redirect") {
+          pointer = { ...pointer, runToken: outcome.runToken };
+          rememberWorkflow(pointer);
+          continue;
+        }
+        if (outcome.kind === "tracking") {
+          if (outcome.runToken !== pointer.runToken) {
+            pointer = { ...pointer, runToken: outcome.runToken };
+            rememberWorkflow(pointer);
+          }
+          await waitForPoll(
+            keywordWorkflowPollDelayMs(response.headers.get("Retry-After")),
+            controller.signal,
+          );
+          continue;
+        }
+        if (outcome.kind === "error") {
+          if (
+            outcome.code === "keyword_run_unavailable" &&
+            response.status === 503
+          ) {
+            await waitForPoll(
+              keywordWorkflowPollDelayMs(
+                response.headers.get("Retry-After"),
+              ),
+              controller.signal,
+            );
+            continue;
+          }
+          forgetWorkflow();
+          setErrorCode(outcome.code);
+          setCooldownSeconds(retryAfterSecondsFrom(response));
+          setTrackingRestored(false);
+          setPhase("confirm");
+          return;
+        }
+
+        // Keep the request id but drop the unreadable pointer. A manual retry
+        // then reaches the active-hook dedupe path instead of buying a new run.
+        pointer = { ...pointer, runToken: null };
+        rememberWorkflow(pointer);
+        setErrorCode("unknown");
+        setTrackingRestored(false);
+        setPhase("confirm");
+        return;
+      } catch {
+        if (controller.signal.aborted) return;
+        // A polling transport error says nothing about the run. Keep the
+        // pointer and retry sequentially; never start a second paid request.
+        await waitForPoll(2_000, controller.signal);
+      }
+    }
+  }
+
+  async function startKeywordWorkflow(
+    pointer: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    workflowAbort.current?.abort();
+    const controller = new AbortController();
+    workflowAbort.current = controller;
+    rememberWorkflow(pointer);
+    setPhase("tracking");
+    setErrorCode(null);
+    try {
+      const response = await fetch("/api/tools/hidden-keywords/opportunities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Keyword-Workflow-Version": KEYWORD_WORKFLOW_API_VERSION,
+        },
+        body: JSON.stringify({
+          contextToken: pointer.context.token,
+          requestId: pointer.requestId,
+        }),
+        signal: controller.signal,
+      });
+      const body: unknown = await response.json();
+      const outcome = normalizeKeywordWorkflowStartResponse(
+        response.status,
+        body,
+      );
+      if (outcome.kind === "completed") {
+        finishWorkflow(outcome.result);
+        return;
+      }
+      if (outcome.kind === "accepted") {
+        const trackingPointer = { ...pointer, runToken: outcome.runToken };
+        rememberWorkflow(trackingPointer);
+        await pollKeywordWorkflow(trackingPointer);
+        return;
+      }
+      if (outcome.kind === "error") {
+        if (outcome.code !== "keyword_run_unavailable") {
+          forgetWorkflow();
+        }
+        setErrorCode(outcome.code);
+        setCooldownSeconds(retryAfterSecondsFrom(response));
+        setTrackingRestored(false);
+        setPhase("confirm");
+        return;
+      }
+      setErrorCode("unknown");
+      setTrackingRestored(false);
+      setPhase("confirm");
+    } catch {
+      if (controller.signal.aborted) return;
+      // The request may have reached the server. Retain the request id with no
+      // run token so retry/reload asks the deterministic hook for its owner.
+      setErrorCode("unknown");
+      setTrackingRestored(false);
+      setPhase("confirm");
+    }
+  }
+
+  async function resumeKeywordWorkflow(
+    pointer: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    if (pointer.runToken === null) {
+      await startKeywordWorkflow(pointer);
+      return;
+    }
+    await pollKeywordWorkflow(pointer);
+  }
+
   function selectProperty(next: string) {
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
     setProperty(next);
     // The URL follows the property, because the pairing is the point: the
     // coverage read uses the property and the crawl uses the URL, and a
@@ -230,6 +462,9 @@ export function KeywordMapTool({
     const usable = keywords.filter(
       (keyword) => keyword.length <= MAX_SEED_LENGTH && !keyword.includes(","),
     );
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
     setSeedInput(usable.slice(0, MAX_SEEDS).join(", "));
     setContext(null);
     setResult(null);
@@ -239,6 +474,9 @@ export function KeywordMapTool({
   }
 
   async function readSite() {
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
     trackMarketingEvent("tool_start", { tool_name: "keyword_opportunity_map" });
     setPhase("reading");
     setErrorCode(null);
@@ -290,32 +528,21 @@ export function KeywordMapTool({
   }
 
   async function runMap(token: string) {
-    setPhase("running");
-    setErrorCode(null);
+    if (context === null || context.token !== token) return;
     try {
-      const response = await fetch("/api/tools/hidden-keywords/opportunities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contextToken: token }),
-      });
-      const body = (await response.json()) as {
-        data?: { result?: KeywordOpportunityResult };
-        error?: { code?: string };
-      };
-      if (!response.ok || !body.data?.result) {
-        setErrorCode(body.error?.code ?? "unknown");
-        setCooldownSeconds(retryAfterSecondsFrom(response));
-        // Back to the confirmation step, not to the start: the sealed context
-        // is still valid for ten minutes, and making the visitor re-crawl
-        // their own site to retry a provider hiccup wastes a minute of theirs.
-        setPhase("confirm");
-        return;
-      }
-      setResult(body.data.result);
-      setPhase("done");
-      trackMarketingEvent("tool_complete", {
-        tool_name: "keyword_opportunity_map",
-      });
+      const pointer = keywordWorkflowPointerForContext(
+        workflowPointer.current,
+        {
+          property,
+          siteUrl,
+          marketCode,
+          languageCode,
+          seedInput,
+          context,
+        },
+      );
+      setTrackingRestored(false);
+      await startKeywordWorkflow(pointer);
     } catch {
       setErrorCode("unknown");
       setPhase("confirm");
@@ -466,8 +693,10 @@ export function KeywordMapTool({
       <p role="status" aria-live="polite" className="sr-only">
         {phase === "reading"
           ? t("reading")
-          : phase === "running"
-            ? t("runningStatus", { seconds })
+          : phase === "tracking"
+            ? trackingRestored
+              ? t("restoredStatus", { seconds })
+              : t("runningStatus", { seconds })
             : phase === "done" && result !== null
               ? t("statusDone", { count: result.rows.length })
               : ""}
@@ -578,11 +807,11 @@ export function KeywordMapTool({
             <button
               type="button"
               disabled={busy || cooldownSeconds > 0}
-              aria-busy={phase === "running"}
+              aria-busy={phase === "tracking"}
               onClick={() => void runMap(context.token)}
               className={BUTTON}
             >
-              {phase === "running"
+              {phase === "tracking"
                 ? t("running")
                 : result !== null
                   ? t("rerunMap")
@@ -592,6 +821,9 @@ export function KeywordMapTool({
               type="button"
               disabled={busy}
               onClick={() => {
+                workflowAbort.current?.abort();
+                forgetWorkflow();
+                setTrackingRestored(false);
                 setContext(null);
                 setResult(null);
                 setPhase("idle");
@@ -611,6 +843,10 @@ export function KeywordMapTool({
           onRetryWithSeeds={retryWithSeeds}
         />
       ) : null}
+
+      <p className="mt-5 max-w-2xl text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("persistenceBoundary")}
+      </p>
 
       <GscDisconnect namespace="tools.keywordMap" />
     </section>

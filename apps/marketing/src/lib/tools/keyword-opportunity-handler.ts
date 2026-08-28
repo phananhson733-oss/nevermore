@@ -4,24 +4,18 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
-  buildKeywordOpportunityPayload,
   createPublicToolError,
-  judgeKeywordWinnability,
-  KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
-  KEYWORD_OPPORTUNITY_UNSAMPLED,
   keywordCoverageProperty,
   KEYWORD_STAGE_GSC_COVERAGE,
   KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
   KEYWORD_STAGE_SERP_SAMPLE,
+  KEYWORD_STAGE_SERP_INTERPRETATION,
   KEYWORD_STAGE_SERP_SAMPLE_PARTIAL,
-  keywordVolumeKey,
   toKeywordOpportunityErrorCode,
   type KeywordCoverageRead,
   type KeywordCoverageQueryRow,
   type KeywordOpportunityBasis,
-  type KeywordOpportunityContext,
   type KeywordOpportunityErrorCode,
-  type KeywordOpportunityObservationV3,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
   type KeywordOpportunitySerpFailureReason,
@@ -37,12 +31,7 @@ import {
   reportKeywordRunCost,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
-import {
-  buildKeywordSignalEvidence,
-  KEYWORD_YOUNG_DOMAIN_MONTHS,
-  keywordSiteRankTier,
-  keywordSiteTrafficThreshold,
-} from "./keyword-signal-evidence.ts";
+import { assembleKeywordOpportunityPayload } from "./keyword-opportunity-assembly.ts";
 import {
   keywordCandidatePlan,
   keywordCoverageSnapshots,
@@ -948,6 +937,7 @@ export async function handleKeywordOpportunitiesRequest(
         returnedInterpretations =
           await dependencies.interpretSerpEvidence(interpretationInputs);
       } catch (error) {
+        unavailableStages.push(KEYWORD_STAGE_SERP_INTERPRETATION);
         console.error(
           JSON.stringify({
             tool: "keyword_opportunity",
@@ -963,21 +953,15 @@ export async function handleKeywordOpportunitiesRequest(
           dependencies.now().getTime() - interpretationStartedAt;
       }
     }
-    const interpretationsByKeyword = new Map(
-      keywordInterpretationEntries(
-        interpretationInputs,
-        returnedInterpretations,
-      ).map(([keyword, interpretation]) => [
-        keywordVolumeKey(keyword),
-        interpretation,
-      ]),
+    const interpretationEntries = keywordInterpretationEntries(
+      interpretationInputs,
+      returnedInterpretations,
     );
 
     const {
       organicDomains,
       trafficDomains,
       registrationDomains,
-      siteDomain,
       rankTargets,
     } = keywordEnrichmentTargets(completeSamples, token.siteUrl);
 
@@ -1115,182 +1099,40 @@ export async function handleKeywordOpportunitiesRequest(
       domainTraffic = traffic;
       domainRegistrations = registrations;
     }
-    const siteDomainRank =
-      siteDomain === null ? null : (domainRanks?.get(siteDomain) ?? null);
     domainEnrichmentDurationMs =
       enrichmentHasWork && enrichmentAffordable
         ? dependencies.now().getTime() - domainEnrichmentStartedAt
         : null;
-    const siteTrafficThreshold = keywordSiteTrafficThreshold(siteDomainRank);
-    const siteRankTier = keywordSiteRankTier(siteDomainRank);
-    const samplesByKeyword = new Map(
-      attemptedSamples.map((sample) => [
-        keywordVolumeKey(sample.keyword),
-        sample,
-      ]),
-    );
-
-    const observations: KeywordOpportunityObservationV3[] = priced.map((row) => {
-      const attempted = samplesByKeyword.get(
-        keywordVolumeKey(row.candidate.keyword),
-      );
-      const sample: KeywordSerpSampleResult = attempted ?? {
-        keyword: row.candidate.keyword,
-        status: "unavailable",
-        failureReason: null,
-        observedAt: null,
-        results: [],
-        pageItemTypes: null,
-        aiOverview: null,
-        communityItems: null,
-      };
-      const enriched = buildKeywordSignalEvidence({
-        sample,
-        observedAt: runObservedAt,
-        siteDomainRank,
-        domainTraffic,
-        domainRegistrations,
-        marketCode: token.marketCode,
-        languageCode: token.languageCode,
-      });
-      const interpretation = interpretationsByKeyword.get(
-        keywordVolumeKey(row.candidate.keyword),
-      );
-      const availableInterpretation =
-        interpretation?.availability === "available" ? interpretation : null;
-      const serpIntent =
-        availableInterpretation === null
-          ? null
-          : {
-              intent: availableInterpretation.intent,
-              source: "serp_top_ten_interpretation" as const,
-              observedAt: sample.observedAt ?? runObservedAt,
-              modelId: availableInterpretation.modelId,
-              promptVersion: availableInterpretation.promptVersion,
-            };
-      const aiOverview =
-        availableInterpretation !== null
-          ? {
-              ...enriched.aiOverview,
-              answerAssessment: availableInterpretation.aiOverviewAssessment,
-              reason: availableInterpretation.reason,
-              modelId: availableInterpretation.modelId,
-              promptVersion: availableInterpretation.promptVersion,
-            }
-          : enriched.aiOverview.availability === "observed" &&
-              enriched.aiOverview.markdown !== null
-            ? {
-                ...enriched.aiOverview,
-                answerAssessment: "unavailable" as const,
-                reason: "interpretation_unavailable",
-                modelId: null,
-                promptVersion: null,
-              }
-            : enriched.aiOverview;
-      const serp =
-        sample.status === "complete"
-          ? {
-              ...judgeKeywordWinnability(
-                {
-                  results: sample.results,
-                  domainRanks: domainRanks ?? new Map(),
-                  pageItemTypes: sample.pageItemTypes,
-                },
-                siteDomainRank,
-              ),
-              status: "complete" as const,
-              failureReason: null,
-              observedAt: sample.observedAt ?? runObservedAt,
-              organicResults: sample.results.map((result) => ({
-                position: result.position,
-                domain: result.domain,
-                title: result.title ?? null,
-                url: result.url ?? null,
-              })),
-            }
-          : {
-              ...KEYWORD_OPPORTUNITY_UNSAMPLED,
-              status: "unavailable" as const,
-              failureReason: sample.failureReason ?? null,
-              observedAt: null,
-              organicResults: [],
-            };
-      return {
-        keyword: row.candidate.keyword,
-        lane: row.candidate.questionForm ? "geo" : "seo",
-        discoveryBasis: row.candidate.discoveryBasis,
-        questionForm: row.candidate.questionForm,
-        propositionIndex: row.candidate.propositionIndex,
-        validation: row.validation,
-        serp,
-        serpIntent,
-        signals: enriched.signals,
-        aiOverview,
-        coverage: row.coverage.state,
-        supportingPage: row.coverage.supportingPage,
-      };
-    });
-
-    const context: KeywordOpportunityContext = {
-      siteUrl: token.siteUrl,
-      pagesFetched: token.pagesFetched,
-      productPagesFetched: token.productPagesFetched,
-      ...(token.selection === undefined ? {} : { selection: token.selection }),
-      propositions: token.propositions,
-      contextSufficient: token.pages.length >= 3,
-      stopReason: token.stopReason,
-    };
-
-    const reportStartedAt = dependencies.now().getTime();
-    const payloadWithPendingDurations = buildKeywordOpportunityPayload({
-      marketCode: token.marketCode,
-      languageCode: token.languageCode,
-      context,
+    const payload = assembleKeywordOpportunityPayload(
+      {
+        token,
       generated: candidatePlan.generated,
-      observations,
-      unavailableStages,
-      process: {
-        validation: { requested: candidates.length },
-        serp: {
-          planned: attemptedSamples.length,
-          dispatched: attemptedSamples.filter(
-            (sample) => sample.failureReason !== "budget_exhausted",
-          ).length,
-        },
-        thresholds: {
-          policyVersion: KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION,
-          youngDomainMonths: KEYWORD_YOUNG_DOMAIN_MONTHS,
-          siteDomainRank,
-          siteRankTier,
-          lowOrganicTrafficThreshold: siteTrafficThreshold,
-        },
+        priced,
+        attemptedSamples,
+        interpretationEntries,
+        domainRankEntries:
+          domainRanks === null ? null : [...domainRanks.entries()],
+        domainTrafficEntries:
+          domainTraffic === null ? null : [...domainTraffic.entries()],
+        domainRegistrationEntries:
+          domainRegistrations === null
+            ? null
+            : [...domainRegistrations.entries()],
+        unavailableStages,
+        completedAt: runObservedAt,
+        totalStartedAt,
         durationsMs: {
-          total: null,
           validation: validationDurationMs,
           coverage: coverageDurationMs,
           serpSampling: serpSamplingDurationMs,
           serpInterpretation: serpInterpretationDurationMs,
           domainEnrichment: domainEnrichmentDurationMs,
-          report: null,
         },
       },
-      completedAt: runObservedAt,
-    });
-    const reportFinishedAt = dependencies.now().getTime();
-    const payload = {
-      ...payloadWithPendingDurations,
-      result: {
-        ...payloadWithPendingDurations.result,
-        process: {
-          ...payloadWithPendingDurations.result.process,
-          durationsMs: {
-            ...payloadWithPendingDurations.result.process.durationsMs,
-            total: reportFinishedAt - totalStartedAt,
-            report: reportFinishedAt - reportStartedAt,
-          },
-        },
+      {
+        now: () => dependencies.now().getTime(),
       },
-    };
+    );
 
     console.info(
       JSON.stringify({

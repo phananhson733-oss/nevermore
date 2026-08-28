@@ -3,7 +3,7 @@
 // @pos    -- the only place DataForSEO spend on the keyword tool is counted; v2 does not cap it
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { createPublicToolError } from "@sf/public-tools";
+import { createPublicToolError } from "@sf/public-tools/contract";
 import {
   EMPTY_KEYWORD_LLM_USAGE,
   type KeywordLlmUsage,
@@ -144,6 +144,12 @@ export interface KeywordCostAccumulator {
   readonly cappedStages: () => readonly string[];
 }
 
+/** Serializable provider spend emitted by one durable Workflow step. */
+export interface KeywordCostSnapshot {
+  readonly byEndpoint: Readonly<Record<KeywordCostEndpoint, number>>;
+  readonly unpricedCalls: number;
+}
+
 export function createKeywordCostAccumulator(
   maxCostUsd: number = KEYWORD_MAX_PROVIDER_COST_USD,
 ): KeywordCostAccumulator {
@@ -183,6 +189,34 @@ export function createKeywordCostAccumulator(
     capped: () => cut.length > 0,
     cappedStages: () => cut,
   };
+}
+
+export function snapshotKeywordCosts(
+  costs: KeywordCostAccumulator,
+): KeywordCostSnapshot {
+  return Object.freeze({
+    byEndpoint: Object.freeze({ ...costs.byEndpoint() }),
+    unpricedCalls: costs.unpricedCalls(),
+  });
+}
+
+export function mergeKeywordCostSnapshots(
+  snapshots: readonly KeywordCostSnapshot[],
+): KeywordCostSnapshot {
+  const totals = { ...emptyTotals() };
+  let unpricedCalls = 0;
+  for (const snapshot of snapshots) {
+    for (const endpoint of KEYWORD_COST_ENDPOINTS) {
+      totals[endpoint] = roundUsd(
+        totals[endpoint] + snapshot.byEndpoint[endpoint],
+      );
+    }
+    unpricedCalls += snapshot.unpricedCalls;
+  }
+  return Object.freeze({
+    byEndpoint: Object.freeze(totals),
+    unpricedCalls,
+  });
 }
 
 /**
@@ -317,6 +351,8 @@ export function keywordBudgetRefusal(
 
 export interface KeywordCostReport {
   readonly tool: "keyword_opportunity";
+  /** Final durable step identity, present only on the Workflow path. */
+  readonly workflowStepId?: string;
   /** Whether the HTTP run reached a usable keyword report. */
   readonly reportProduced: boolean;
   readonly runCostUsd: number;
@@ -349,6 +385,15 @@ export interface KeywordCostReportInput {
   readonly llm?: KeywordLlmUsage;
 }
 
+export interface KeywordWorkflowCostReportInput {
+  readonly costs: KeywordCostSnapshot;
+  readonly workflowStepId: string;
+  readonly candidateCount: number;
+  readonly serpSampled: number;
+  readonly reportProduced: boolean;
+  readonly llm: KeywordLlmUsage;
+}
+
 /**
  * The run's only cost record.
  *
@@ -374,6 +419,33 @@ export function reportKeywordRunCost(
     cappedStages: input.costs.cappedStages(),
     unpricedCalls: input.costs.unpricedCalls(),
     llm: input.llm ?? EMPTY_KEYWORD_LLM_USAGE,
+  };
+  emit(JSON.stringify(report));
+  return report;
+}
+
+/** Emit the same one-line telemetry after separately persisted Workflow steps. */
+export function reportKeywordWorkflowCost(
+  input: KeywordWorkflowCostReportInput,
+  emit: (line: string) => void = console.info,
+): KeywordCostReport {
+  const report: KeywordCostReport = {
+    tool: "keyword_opportunity",
+    workflowStepId: input.workflowStepId,
+    reportProduced: input.reportProduced,
+    runCostUsd: roundUsd(
+      KEYWORD_COST_ENDPOINTS.reduce(
+        (sum, endpoint) => sum + input.costs.byEndpoint[endpoint],
+        0,
+      ),
+    ),
+    byEndpoint: input.costs.byEndpoint,
+    candidateCount: input.candidateCount,
+    serpSampled: input.serpSampled,
+    capped: false,
+    cappedStages: [],
+    unpricedCalls: input.costs.unpricedCalls,
+    llm: input.llm,
   };
   emit(JSON.stringify(report));
   return report;

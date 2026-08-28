@@ -232,10 +232,12 @@ git commit -m "refactor(marketing): expose keyword pipeline stages"
 
 **Files:**
 - Create: `apps/marketing/src/lib/tools/keyword-opportunity-workflow.ts`
-- Create: `apps/marketing/src/lib/tools/keyword-opportunity-workflow.test.ts`
+- Create: `apps/marketing/.workflow-test/keyword-opportunity-workflow.workflow.vitest.ts`
 - Create: `apps/marketing/src/lib/tools/keyword-opportunity-workflow-runtime.ts`
 - Create: `apps/marketing/src/lib/tools/keyword-opportunity-workflow-runtime.test.ts`
-- Create: `apps/marketing/vitest.workflow.config.ts`
+- Create: `apps/marketing/.workflow-test/vitest.config.ts`
+- Create: `apps/marketing/.workflow-test/global-setup.ts`
+- Create: `apps/marketing/.workflow-test/setup-file.ts`
 - Modify: `apps/marketing/src/lib/tools/keyword-cost-guard.ts`
 - Modify: `apps/marketing/src/lib/tools/keyword-cost-guard.test.ts`
 
@@ -278,9 +280,11 @@ per-run admission caps.
 With the official Vitest plugin, assert:
 
 - deterministic hook conflict returns `redirect` before paid effects;
-- successful flow checkpoints all stages and returns a v3 envelope;
-- a fault after several completed SERP keyword steps resumes without invoking
-  those completed steps again;
+- the production workflow and its first no-retry step compile and return a
+  typed refusal before paid effects for invalid encrypted input;
+- every external, summary and terminal step declares `maxRetries = 0`;
+- full successful assembly remains in injected runtime tests and browser
+  protocol tests, so no integration fixture can call a real paid provider;
 - a terminal candidate/validation failure returns its stable code;
 - workflow output contains no subject, cookie, credential or provider body
   beyond the encrypted input and intended persisted step results.
@@ -288,7 +292,7 @@ With the official Vitest plugin, assert:
 **Step 5: Run RED**
 
 ```bash
-pnpm exec vitest run --config apps/marketing/vitest.workflow.config.ts
+pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
 ```
 
 Expected: workflow function/config missing.
@@ -303,12 +307,18 @@ and terminal assembly.
 Do not claim exactly-once provider calls across the provider-success/process-
 crash window; document and test the one-call risk boundary.
 
+`@workflow/vitest@4.0.21` falsely discovers its own build-time
+`@workflow/builders/serde-checker` as a runtime serde file under Node 24. The
+test-only global setup still uses the official builder and Local World, then
+replaces exactly the unused generated JSON binding and fails if that known v4
+shape changes. This workaround is outside production bundles.
+
 **Step 7: Run GREEN and commit**
 
 ```bash
 pnpm exec vitest run --project unit apps/marketing/src/lib/tools/keyword-opportunity-workflow-runtime.test.ts apps/marketing/src/lib/tools/keyword-cost-guard.test.ts
-pnpm exec vitest run --config apps/marketing/vitest.workflow.config.ts
-git add apps/marketing/src/lib/tools/keyword-opportunity-workflow* apps/marketing/src/lib/tools/keyword-cost-guard* apps/marketing/vitest.workflow.config.ts
+pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
+git add apps/marketing/src/lib/tools/keyword-opportunity-workflow* apps/marketing/src/lib/tools/keyword-cost-guard* apps/marketing/.workflow-test
 git commit -m "feat(marketing): run keyword map as durable steps"
 ```
 
@@ -458,7 +468,7 @@ git commit -m "feat(marketing): resume keyword workflow in the tab"
 - Modify: `apps/marketing/e2e/low-competition-keywords.spec.ts`
 - Modify: `apps/marketing/playwright.config.ts` only if Workflow Local World
   needs a test-only port/configuration
-- Modify: `apps/marketing/vitest.workflow.config.ts`
+- Modify: `apps/marketing/.workflow-test/vitest.config.ts`
 
 **Step 1: Write failing E2E scenarios**
 
@@ -488,7 +498,7 @@ Expected: old synchronous mock protocol does not satisfy async scenarios.
 ```bash
 pnpm --filter @sf/marketing build
 pnpm exec playwright test apps/marketing/e2e/low-competition-keywords.spec.ts --config apps/marketing/playwright.config.ts
-pnpm exec vitest run --config apps/marketing/vitest.workflow.config.ts
+pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
 ```
 
 Expected: all hermetic browser and Workflow integration cases pass.
@@ -496,7 +506,7 @@ Expected: all hermetic browser and Workflow integration cases pass.
 **Step 4: Commit**
 
 ```bash
-git add apps/marketing/e2e/low-competition-keywords.spec.ts apps/marketing/playwright.config.ts apps/marketing/vitest.workflow.config.ts
+git add apps/marketing/e2e/low-competition-keywords.spec.ts apps/marketing/playwright.config.ts apps/marketing/.workflow-test
 git commit -m "test(marketing): cover durable keyword workflow"
 ```
 
@@ -519,7 +529,7 @@ pnpm exec vitest run --project unit \
   apps/marketing/src/components/tools/keyword-map-tool.test.tsx \
   apps/marketing/src/lib/tools/keyword-opportunity-handler.test.ts \
   packages/public-tools/src/keyword-opportunity/report.test.ts
-pnpm exec vitest run --config apps/marketing/vitest.workflow.config.ts
+pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
 pnpm exec playwright test apps/marketing/e2e/low-competition-keywords.spec.ts --config apps/marketing/playwright.config.ts
 ```
 

@@ -16,8 +16,9 @@ import {
   type KeywordOpportunityProviderIntent,
   type KeywordOpportunityProviderRow,
   type KeywordOpportunityValidation,
-} from "@sf/public-tools";
-import { normalizeRdapDomain, normalizeTrafficDomain } from "@sf/sources";
+} from "@sf/public-tools/keyword-opportunity";
+import { normalizeTrafficDomain } from "@sf/sources/dataforseo/labs-traffic";
+import { normalizeRdapDomain } from "@sf/sources/rdap/domain-registration";
 import type {
   KeywordCandidateDraft,
   KeywordContextToken,

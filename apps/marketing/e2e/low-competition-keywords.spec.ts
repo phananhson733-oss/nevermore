@@ -8,6 +8,8 @@ const LOCAL_ORIGIN = `http://127.0.0.1:${process.env.MARKETING_E2E_PORT ?? "3001
 
 const CONTEXT_API = "POST /api/tools/hidden-keywords/context";
 const OPPORTUNITIES_API = "POST /api/tools/hidden-keywords/opportunities";
+const STATUS_API =
+  "POST /api/tools/hidden-keywords/opportunities/status";
 const KNOWN_SHELL_REQUESTS = new Set([
   "GET /api/auth/profile",
   "GET /api/auth/session",
@@ -291,6 +293,7 @@ const opportunitiesResponse = {
 interface GuardEvidence {
   contextPosts: number;
   opportunityPosts: number;
+  statusPosts: number;
   readonly unexpected: string[];
   readonly externalRequests: string[];
 }
@@ -329,10 +332,14 @@ async function installGuard(
       body: JSON.stringify(opportunitiesResponse),
     });
   },
+  statusHandler: (route: Route) => Promise<void> = async (route) => {
+    await route.abort("blockedbyclient");
+  },
 ): Promise<GuardEvidence> {
   const evidence: GuardEvidence = {
     contextPosts: 0,
     opportunityPosts: 0,
+    statusPosts: 0,
     unexpected: [],
     externalRequests: [],
   };
@@ -374,6 +381,11 @@ async function installGuard(
       await opportunityHandler(route);
       return;
     }
+    if (id === STATUS_API) {
+      evidence.statusPosts += 1;
+      await statusHandler(route);
+      return;
+    }
     if (!KNOWN_SHELL_REQUESTS.has(id)) evidence.unexpected.push(id);
     await route.abort("blockedbyclient");
   });
@@ -411,6 +423,143 @@ test("runs the connected read-confirm-result flow without a paid request", async
   expect(evidence.contextPosts).toBe(1);
   expect(evidence.opportunityPosts).toBe(1);
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.externalRequests).toEqual([]);
+});
+
+test("tracks a durable 202 run through running to completed", async ({
+  page,
+}) => {
+  await connect(page);
+  let statusReads = 0;
+  const evidence = await installGuard(
+    page,
+    async (route) => {
+      const request = route.request();
+      expect(request.headers()["x-keyword-workflow-version"]).toBe(
+        "keyword_workflow.v1",
+      );
+      expect(request.postDataJSON()).toMatchObject({
+        contextToken: "test-context-token",
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      });
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        headers: { "Retry-After": "1" },
+        body: JSON.stringify({
+          data: { status: "running", runToken: "sealed-run" },
+        }),
+      });
+    },
+    async (route) => {
+      statusReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        ...(statusReads === 1 ? { headers: { "Retry-After": "1" } } : {}),
+        body: JSON.stringify(
+          statusReads === 1
+            ? { data: { status: "running", runToken: "sealed-run" } }
+            : { data: { status: "completed", result: baseResult } },
+        ),
+      });
+    },
+  );
+  await readAndConfirm(page);
+  await page.getByRole("button", { name: "Run the opportunity map" }).click();
+
+  await expect(page.getByText("clinic appointment automation")).toBeVisible();
+  expect(evidence.opportunityPosts).toBe(1);
+  expect(evidence.statusPosts).toBe(2);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.externalRequests).toEqual([]);
+});
+
+test("restores the same durable run after a page reload", async ({ page }) => {
+  await connect(page);
+  let statusReads = 0;
+  const evidence = await installGuard(
+    page,
+    async (route) => {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { status: "running", runToken: "sealed-run" },
+        }),
+      });
+    },
+    async (route) => {
+      statusReads += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        ...(statusReads === 1 ? { headers: { "Retry-After": "10" } } : {}),
+        body: JSON.stringify(
+          statusReads === 1
+            ? { data: { status: "running", runToken: "sealed-run" } }
+            : { data: { status: "completed", result: baseResult } },
+        ),
+      });
+    },
+  );
+  await readAndConfirm(page);
+  await page.getByRole("button", { name: "Run the opportunity map" }).click();
+  await expect.poll(() => evidence.statusPosts).toBe(1);
+
+  await page.reload();
+
+  await expect(page.getByText("clinic appointment automation")).toBeVisible();
+  expect(evidence.opportunityPosts).toBe(1);
+  expect(evidence.statusPosts).toBe(2);
+  expect(evidence.externalRequests).toEqual([]);
+});
+
+test("adopts a duplicate owner's sealed token and continues polling", async ({
+  page,
+}) => {
+  await connect(page);
+  let statusReads = 0;
+  const evidence = await installGuard(
+    page,
+    async (route) => {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { status: "running", runToken: "duplicate-token" },
+        }),
+      });
+    },
+    async (route) => {
+      statusReads += 1;
+      const posted = route.request().postDataJSON() as { runToken?: string };
+      if (statusReads === 1) {
+        expect(posted.runToken).toBe("duplicate-token");
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            data: { status: "redirect", runToken: "owner-token" },
+          }),
+        });
+        return;
+      }
+      expect(posted.runToken).toBe("owner-token");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { status: "completed", result: baseResult },
+        }),
+      });
+    },
+  );
+  await readAndConfirm(page);
+  await page.getByRole("button", { name: "Run the opportunity map" }).click();
+
+  await expect(page.getByText("clinic appointment automation")).toBeVisible();
+  expect(evidence.statusPosts).toBe(2);
   expect(evidence.externalRequests).toEqual([]);
 });
 
