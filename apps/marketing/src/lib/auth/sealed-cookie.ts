@@ -40,7 +40,13 @@ export type SealedCookiePurpose =
    * presentable as crawl context. The cookie byte budget does not apply to it
    * — nothing sets it as a cookie — but every other rule here does.
    */
-  | "gg_kw_context";
+  | "gg_kw_context"
+  /** Encrypted, longer-lived context snapshot passed only to Workflow. */
+  | "gg_kw_workflow_input"
+  /** Encrypted access token and property snapshot passed only to Workflow. */
+  | "gg_kw_workflow_grant"
+  /** Browser-facing Workflow run pointer, bound to the signed-in subject. */
+  | "gg_kw_workflow_run";
 
 export class SealedCookieError extends Error {
   constructor(message: string) {
