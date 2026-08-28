@@ -108,43 +108,103 @@ function groupForUserAgent(
   );
 }
 
+/**
+ * Every record naming this agent, merged.
+ *
+ * RFC 9309 §2.2.1: a crawler obeys the union of the records whose product
+ * token it matches. Taking only the first record silently drops the rules in a
+ * second block for the same agent — a shape that occurs whenever a site
+ * appends a rule rather than editing the existing group.
+ */
+function rulesForUserAgent(
+  groups: readonly RobotsGroup[],
+  userAgent: string,
+):
+  | { readonly allow: readonly string[]; readonly disallow: readonly string[] }
+  | undefined {
+  const token = productToken(userAgent);
+  const exact = groups.filter((group) => group.agents.includes(token));
+  const chosen = exact.length
+    ? exact
+    : groups.filter((group) => group.agents.includes("*"));
+  if (chosen.length === 0) return undefined;
+  return {
+    allow: chosen.flatMap((group) => group.allow),
+    disallow: chosen.flatMap((group) => group.disallow),
+  };
+}
+
+/**
+ * RFC 9309 §2.2.2 pattern matching: `*` matches any run of characters and a
+ * trailing `$` anchors the end of the path.
+ *
+ * The `$` has to be removed before escaping. Escaping first turns it into a
+ * literal dollar sign, so `Disallow: /*\/private$` stops matching
+ * `/a/private` and starts matching only a path that literally ends in `$` —
+ * the rule is inverted rather than merely loose.
+ */
 function globMatches(path: string, pattern: string): boolean {
-  const expression = pattern
+  const anchored = pattern.endsWith("$");
+  const body = anchored ? pattern.slice(0, -1) : pattern;
+  const expression = body
     .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*")
-    .replace(/\$$/, "$");
-  return new RegExp(`^${expression}`).test(path);
+    .replace(/\*/g, ".*");
+  return new RegExp(`^${expression}${anchored ? "$" : ""}`).test(path);
+}
+
+/** The directive that governs one path, and which pattern produced it. */
+export interface RobotsDecision {
+  readonly allowed: boolean;
+  /** The winning pattern, or null when no rule matched. */
+  readonly pattern: string | null;
 }
 
 /**
  * Applies the RFC-style longest matching robots directive to one path. An
  * equally specific Allow wins over Disallow. Empty content = fully allowed.
- * Governs SignalFrame's own crawler only.
+ *
+ * Returns the winning pattern as well, because a checker that tells a site
+ * owner "disallowed" without naming the line cannot be acted on.
+ */
+export function matchRobotsRule(
+  groups: readonly RobotsGroup[],
+  userAgent: string,
+  path: string,
+): RobotsDecision {
+  const rules = rulesForUserAgent(groups, userAgent);
+  if (!rules) return { allowed: true, pattern: null };
+  const matches = [
+    ...rules.disallow
+      .filter(Boolean)
+      .filter((pattern) => globMatches(path, pattern))
+      .map((pattern) => ({ pattern, allowed: false })),
+    ...rules.allow
+      .filter(Boolean)
+      .filter((pattern) => globMatches(path, pattern))
+      .map((pattern) => ({ pattern, allowed: true })),
+  ];
+  if (matches.length === 0) return { allowed: true, pattern: null };
+  matches.sort(
+    (a, b) =>
+      b.pattern.length - a.pattern.length ||
+      Number(b.allowed) - Number(a.allowed),
+  );
+  const winner = matches[0];
+  return winner
+    ? { allowed: winner.allowed, pattern: winner.pattern }
+    : { allowed: true, pattern: null };
+}
+
+/**
+ * Boolean form of {@link matchRobotsRule}, used by the engine's own-crawler
+ * gate on every BFS URL before it is fetched.
  */
 export function isPathAllowed(
   groups: readonly RobotsGroup[],
   userAgent: string,
   path: string,
 ): boolean {
-  const group = groupForUserAgent(groups, userAgent);
-  if (!group) return true;
-  const matches = [
-    ...group.disallow
-      .filter(Boolean)
-      .filter((pattern) => globMatches(path, pattern))
-      .map((pattern) => ({ pattern, allowed: false })),
-    ...group.allow
-      .filter(Boolean)
-      .filter((pattern) => globMatches(path, pattern))
-      .map((pattern) => ({ pattern, allowed: true })),
-  ];
-  if (matches.length === 0) return true;
-  matches.sort(
-    (a, b) =>
-      b.pattern.length - a.pattern.length ||
-      Number(b.allowed) - Number(a.allowed),
-  );
-  return matches[0]?.allowed ?? true;
+  return matchRobotsRule(groups, userAgent, path).allowed;
 }
 
 /**

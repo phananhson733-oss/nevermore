@@ -1,7 +1,7 @@
 // @input  -- locale param, tools i18n namespace, shared ToolCard
 // @output -- Resources > Tools hub grouped by a visitor's current SEO/growth situation
 // @pos    -- Resources branch; public tools run here while retired audits hand off to Agents
-import { ArrowRight, Compass, ScanSearch } from "lucide-react";
+import { ArrowRight, Bot, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
 import { generatePageMetadata } from "@/lib/seo";
@@ -101,6 +101,26 @@ const PLANNING_TOOLS = [
     },
     cta: { en: "Analyze competitors", zh: "分析竞品" },
     category: "planning",
+  },
+] as const;
+
+/**
+ * Tools about being read and quoted by AI answers rather than by search.
+ *
+ * A separate group because the question is different: these ask whether a
+ * model can reach the page and lift an answer out of it, which is not what the
+ * diagnosis tools measure.
+ */
+const GEO_TOOLS = [
+  {
+    slug: "page-citability-check",
+    title: { en: "Page Citability Check", zh: "页面可引用性检查" },
+    description: {
+      en: "Check one page without signing in: whether the crawlers that answer questions are allowed in, whether the copy is in the HTML, and whether a claim can be lifted out.",
+      zh: "无需登录检查一个页面：回答问题的抓取器是否被放行、正文是否在 HTML 里、能不能把一条结论抽出来。",
+    },
+    cta: { en: "Check a page", zh: "检查一个页面" },
+    category: "geo",
   },
 ] as const;
 
@@ -239,6 +259,44 @@ export default async function ToolsPage({
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {PLANNING_TOOLS.map((tool) => (
+              <ToolCard
+                key={tool.slug}
+                slug={tool.slug}
+                title={tool.title[locale as "en" | "zh"]}
+                description={tool.description[locale as "en" | "zh"]}
+                category={tool.category}
+                locale={locale}
+                ctaLabel={tool.cta[locale as "en" | "zh"]}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="geo-tools"
+          className="mt-18 border-t border-brand-border pt-14"
+        >
+          <div className="mb-7 grid gap-5 md:grid-cols-[auto_1fr] md:items-end">
+            <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel text-text-dark-secondary">
+              <Bot aria-hidden="true" className="size-[18px]" />
+            </div>
+            <div>
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+                {t("geoEyebrow")}
+              </p>
+              <h2
+                id="geo-tools"
+                className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary"
+              >
+                {t("geoTitle")}
+              </h2>
+              <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
+                {t("geoBody")}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {GEO_TOOLS.map((tool) => (
               <ToolCard
                 key={tool.slug}
                 slug={tool.slug}

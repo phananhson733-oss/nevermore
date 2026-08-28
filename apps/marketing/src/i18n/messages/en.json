@@ -792,6 +792,9 @@
     "planEyebrow": "I need to plan and measure",
     "planTitle": "Make the next experiment easier to size",
     "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
+    "geoEyebrow": "Answer engines",
+    "geoTitle": "Being read, and being quoted",
+    "geoBody": "Search asks whether you rank. These ask something narrower: can the crawlers behind AI answers reach the page, and can an answer be lifted out of it.",
     "productCtaEyebrow": "From one answer to a complete route",
     "productCtaTitle": "Your SEO work should not restart at every tool.",
     "productCtaBody": "Join the waitlist if you want an email when the broader connected workflow opens. Until then, use the public Agents and supporting tools on this site.",
@@ -3945,6 +3948,221 @@
             "href": "/tools/traffic-drop-diagnosis",
             "name": "Traffic Drop Diagnosis",
             "blurb": "Compare two periods before deciding why organic traffic changed."
+          }
+        ]
+      }
+    },
+    "pageCitability": {
+      "eyebrow": "GEO tools",
+      "title": "Page Citability Check",
+      "intro": "Paste one URL. This checks whether the crawlers that answer questions can read the page at all, and whether what they read can be lifted out as an answer. It does not run JavaScript, and it says so on every row where that matters.",
+      "fields": {
+        "urlLabel": "Page URL",
+        "urlPlaceholder": "https://example.com/pricing",
+        "urlHelp": "One page, not a whole site. The page has to return 200 and be HTML.",
+        "questionLabel": "Target question (optional)",
+        "questionPlaceholder": "which project tool is best for a five-person agency",
+        "questionHelp": "Fill this in and the opening-answer row is checked against it. Leave it empty and that row reports itself as not applicable rather than failing."
+      },
+      "actions": {
+        "run": "Check this page",
+        "running": "Checking…",
+        "again": "Check again",
+        "copy": "Copy report",
+        "copied": "Copied"
+      },
+      "summary": {
+        "title": "Result",
+        "passed": "Passed",
+        "failed": "Not passed",
+        "fetchError": "Could not read",
+        "notApplicable": "Not applicable",
+        "counted": "{passed} of {counted} checks passed",
+        "rows": "{total} rows checked, {counted} of them count toward the result",
+        "advisoryNote": "Advisory rows are shown but never counted: training-crawler access and /llms.txt do not decide whether an answer can cite this page.",
+        "fetchedAt": "Checked at {time}",
+        "finalUrl": "Read from {url}",
+        "redirected": "The URL you submitted redirected here; every row below is about the page that was actually served.",
+        "textChars": "{chars} characters of visible text in the HTML, before any JavaScript runs"
+      },
+      "sections": {
+        "readable": "Can a crawler read it",
+        "readableIntro": "Access and delivery. A page that fails here cannot be quoted no matter how well it is written.",
+        "extractable": "Can an answer be lifted out",
+        "extractableIntro": "Shape of the content. These rows describe how easily a model can take a specific claim out of the page."
+      },
+      "states": {
+        "pass": "Passed",
+        "fail": "Not passed",
+        "fetchError": "Could not read",
+        "notApplicable": "Not applicable"
+      },
+      "weights": {
+        "counted": "Counted",
+        "advisory": "Advisory"
+      },
+      "kinds": {
+        "heuristic": "Pattern rule",
+        "heuristicNote": "This row matches patterns rather than reading meaning. Treat it as a prompt to look, not as a verdict."
+      },
+      "fixLabel": "How to fix it",
+      "rules": {
+        "robots": {
+          "oai-searchbot": "robots.txt allows OAI-SearchBot",
+          "chatgpt-user": "robots.txt allows ChatGPT-User",
+          "perplexitybot": "robots.txt allows PerplexityBot",
+          "claudebot": "robots.txt allows ClaudeBot",
+          "gptbot": "robots.txt allows GPTBot (training)",
+          "google-extended": "robots.txt allows Google-Extended (training)"
+        },
+        "ssr": "The HTML carries the copy",
+        "canonical": "Canonical points at this page",
+        "llmsTxt": "/llms.txt is published",
+        "leadAnswer": "The opening answers the question",
+        "extractableStructure": "A table or a real list exists",
+        "qualifiers": "Conditions are quantified",
+        "citedData": "Numbers carry a source",
+        "faqSchema": "FAQ structured data is valid"
+      },
+      "details": {
+        "robots": {
+          "absent": "No robots.txt on this host, so {bot} is allowed everywhere by default.",
+          "unreachable": "robots.txt returned {status}, so the site's rules for {bot} are unknown. This is not the same as being blocked.",
+          "allowedByRule": "Allowed for {bot}; the closest matching rule is {pattern}.",
+          "allowedNoRule": "Allowed for {bot}; no rule in robots.txt matches this path.",
+          "disallowed": "Blocked for {bot} by {pattern}, matched against {path}."
+        },
+        "ssr": {
+          "sufficient": "{chars} characters of copy are in the HTML itself, above the {floor}-character floor.",
+          "clientRendered": "Only {chars} characters of copy in the HTML against {scriptKb} KB of script. A reader that does not run JavaScript sees the {chars} characters.",
+          "thin": "Only {chars} characters of copy in the HTML, below the {floor}-character floor."
+        },
+        "canonical": {
+          "self": "Canonical points at this page.",
+          "missing": "No canonical link element on the page.",
+          "other": "Canonical points at {href}. This tool did not fetch that URL, so it is not saying whether it works.",
+          "unparsable": "Canonical could not be read as a URL: {value}"
+        },
+        "llms": {
+          "present": "/llms.txt exists and returned {bytes} bytes. This tool does not parse it.",
+          "absent": "/llms.txt returned {status}.",
+          "unreachable": "/llms.txt returned {status}, so whether it exists is unknown."
+        },
+        "leadAnswer": {
+          "notAsked": "No target question was given, so there is nothing to check the opening against.",
+          "ok": "The first {window} characters name {matched} and state a conclusion.",
+          "noTerms": "The first {window} characters do not mention {terms}.",
+          "noMarker": "The first {window} characters mention the subject but state no conclusion.",
+          "neither": "The first {window} characters neither mention {terms} nor state a conclusion."
+        },
+        "structure": {
+          "ok": "{tables} tables with cells and {lists} lists that are not navigation.",
+          "none": "No table with cells and no list of at least {minItems} non-link items."
+        },
+        "qualifiers": {
+          "ok": "At least one quantified condition, such as a size or a range.",
+          "none": "No quantified condition found; a date range on its own does not count."
+        },
+        "citedData": {
+          "noNumbers": "The page makes no numeric claim, so there is nothing to attribute.",
+          "allSourced": "All {total} numeric claims have a link or a stated source nearby.",
+          "unsourced": "{unsourced} of {total} numeric claims have no source in the same sentence, starting with: {sample}"
+        },
+        "faq": {
+          "none": "The page declares no FAQ structured data.",
+          "noneWithBroken": "The page declares no FAQ structured data. {broken} JSON-LD blocks could not be parsed.",
+          "valid": "{count} question and answer pairs, each with a name and answer text.",
+          "incomplete": "{incomplete} of {total} question and answer pairs are missing a name or answer text.",
+          "emptyMainEntity": "An FAQPage is declared but its mainEntity list is empty."
+        }
+      },
+      "fixes": {
+        "robots": {
+          "disallowed": "Allow {bot} for this path in robots.txt, or remove the {pattern} rule that matches it."
+        },
+        "ssr": {
+          "clientRendered": "Render the copy on the server or prerender it. Whatever a reader needs has to be in the HTML before JavaScript runs.",
+          "thin": "Put the answer on the page. A model can only quote what the HTML actually contains."
+        },
+        "canonical": {
+          "missing": "Add a canonical link element pointing at this page.",
+          "other": "If this is the page you want quoted, point canonical at itself. If the other URL is the one, check that page instead.",
+          "unparsable": "Fix the canonical href so it is a resolvable URL."
+        },
+        "llms": {
+          "absent": "Optional: publish /llms.txt to point crawlers at the pages you want read. It does not affect whether this page can be fetched."
+        },
+        "leadAnswer": "Move the conclusion to the top. The first {window} characters should name the subject and answer the question outright.",
+        "structure": {
+          "none": "Add a comparison table, or a list of at least {minItems} items that are not links."
+        },
+        "qualifiers": {
+          "none": "Replace \"better for small teams\" with the condition itself, such as \"for teams of 5 to 20\"."
+        },
+        "citedData": {
+          "unsourced": "Give each number a source in the same sentence: a link, or a named source and date."
+        },
+        "faq": {
+          "incomplete": "Give every Question a name and every acceptedAnswer a text value.",
+          "emptyMainEntity": "Put the question and answer pairs in mainEntity, or remove the FAQPage declaration."
+        }
+      },
+      "limitsTitle": "What this check does not do",
+      "limits": {
+        "noJavaScript": "It does not run JavaScript. A page whose copy only appears after hydration is reported as HTML without copy, because that is what a crawler that does not render sees.",
+        "onePage": "It reads one page plus that host's robots.txt and llms.txt. It does not crawl the site and does not fetch the canonical target.",
+        "noRanking": "It says nothing about ranking, traffic or whether any model has actually cited the page. It describes the page, not the market.",
+        "advisoryRows": "Training-crawler rows and /llms.txt are shown but not counted, because neither decides whether an answer can cite this page."
+      },
+      "errors": {
+        "invalid_request": "That request could not be read. Send a URL and, optionally, a target question.",
+        "payload_too_large": "That request was too large.",
+        "unsupported_media_type": "That request was not JSON.",
+        "invalid_url": "That is not a public page URL this tool can fetch.",
+        "rate_limited": "You have used this tool {max} times in the last hour. Try again in {minutes} minutes, or sign in for {signedInMax} per hour.",
+        "target_busy": "This site has been checked {targetMax} times in the last hour by everyone using the tool. Try again shortly.",
+        "gate_unavailable": "The quota store is not answering, so the tool is closed rather than unmetered. Try again shortly.",
+        "fetch_blocked": "That URL could not be fetched safely.",
+        "fetch_timeout": "The page did not respond within {seconds} seconds.",
+        "fetch_failed": "The page could not be fetched.",
+        "not_html": "That URL did not return an HTML document.",
+        "page_not_ok": "That URL did not return 200, so there is no page to check yet.",
+        "network": "The request did not reach the tool. Check your connection and try again."
+      },
+      "faq": {
+        "title": "Questions about this check",
+        "items": [
+          {
+            "q": "Does passing every row mean a model will cite the page?",
+            "a": "No. These rows describe access and shape: whether a crawler is allowed in, whether the copy is in the HTML, and whether a claim can be lifted out. Whether any model actually answers with your page depends on the question asked and on what else exists on the web. This tool never claims otherwise."
+          },
+          {
+            "q": "Why is GPTBot shown but not counted?",
+            "a": "GPTBot and Google-Extended govern training-corpus collection. The crawlers that fetch a page in order to answer with it are OAI-SearchBot, ChatGPT-User, PerplexityBot and ClaudeBot, and those are the four rows that count. Blocking GPTBot does not stop you being cited."
+          },
+          {
+            "q": "Why does a missing robots.txt pass?",
+            "a": "RFC 9309 treats an unavailable robots.txt as full allowance, so a site with no file is not blocking anyone. An unreachable robots.txt, such as a 500, is different: the site's rules are unknown, and that row says so rather than guessing."
+          },
+          {
+            "q": "The page looks fine in my browser but the HTML row failed.",
+            "a": "Your browser runs JavaScript. This check does not, and neither do most crawlers when they first fetch a page. If the copy only exists after hydration, the row is telling you what a non-rendering reader receives."
+          }
+        ]
+      },
+      "related": {
+        "title": "Where to go next",
+        "intro": "This check answers one question about one page. The rest is elsewhere.",
+        "items": [
+          {
+            "href": "/tools/on-page-seo-check",
+            "name": "On-Page SEO Checker",
+            "blurb": "The same page, read for search: where your queries appear in the title, headings and opening text."
+          },
+          {
+            "href": "/tools/internal-link-audit",
+            "name": "Internal Link Audit",
+            "blurb": "The site around the page: click depth, orphan candidates and the links that point at it."
           }
         ]
       }

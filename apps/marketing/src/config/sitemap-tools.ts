@@ -20,4 +20,5 @@ export const SITEMAP_TOOLS = [
   "competitor-keyword-gap",
   "on-page-seo-check",
   "internal-link-audit",
+  "page-citability-check",
 ] as const;

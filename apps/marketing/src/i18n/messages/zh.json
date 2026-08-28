@@ -792,6 +792,9 @@
     "planEyebrow": "我需要规划和衡量",
     "planTitle": "让下一次实验更容易判断",
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
+    "geoEyebrow": "回答引擎",
+    "geoTitle": "被读到，以及被引用",
+    "geoBody": "搜索问的是排名，这里问的更窄：AI 回答背后的抓取器能不能读到这一页，以及能不能从中抽出一个答案。",
     "productCtaEyebrow": "从一个答案到完整路径",
     "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
     "productCtaBody": "如果你想在更完整的连贯工作流开放时收到邮件通知，就加入候补名单。在此之前，先使用本站已公开的 Agents 和辅助工具。",
@@ -3945,6 +3948,221 @@
             "href": "/tools/traffic-drop-diagnosis",
             "name": "流量下降诊断",
             "blurb": "先比较两个时间段，再判断自然流量为何变化。"
+          }
+        ]
+      }
+    },
+    "pageCitability": {
+      "eyebrow": "GEO 工具",
+      "title": "页面可引用性检查",
+      "intro": "贴一个网址。这里检查两件事：回答问题的那些抓取器能不能读到这一页，以及读到之后能不能把结论抽出来。本工具不执行 JavaScript，凡是因此受影响的行都会写明。",
+      "fields": {
+        "urlLabel": "页面网址",
+        "urlPlaceholder": "https://example.com/pricing",
+        "urlHelp": "一个页面，不是整站。该页需要返回 200 且是 HTML。",
+        "questionLabel": "目标提问（选填）",
+        "questionPlaceholder": "五人代理公司适合用哪个项目管理工具",
+        "questionHelp": "填了这项，开头直答那一行才会对着它检查；不填时那一行显示「不适用」，不会算成未通过。"
+      },
+      "actions": {
+        "run": "检查这一页",
+        "running": "检查中…",
+        "again": "再检查一次",
+        "copy": "复制报告",
+        "copied": "已复制"
+      },
+      "summary": {
+        "title": "结果",
+        "passed": "通过",
+        "failed": "未通过",
+        "fetchError": "读不到",
+        "notApplicable": "不适用",
+        "counted": "{counted} 项计入结论，其中 {passed} 项通过",
+        "rows": "共检查 {total} 行，其中 {counted} 行计入结论",
+        "advisoryNote": "仅展示行不计入结论：训练类抓取器的放行与 /llms.txt 都不决定这一页能否被回答引用。",
+        "fetchedAt": "检查时间 {time}",
+        "finalUrl": "实际读取自 {url}",
+        "redirected": "你提交的网址跳转到了这里，下面每一行说的都是实际返回的那一页。",
+        "textChars": "不执行 JavaScript 时，HTML 里可见正文 {chars} 字"
+      },
+      "sections": {
+        "readable": "抓取器能不能读到",
+        "readableIntro": "访问与交付。这一段不通过，写得再好也无法被引用。",
+        "extractable": "能不能把答案抽出来",
+        "extractableIntro": "内容的形态。这几行说明模型要从这一页取走一条具体结论有多容易。"
+      },
+      "states": {
+        "pass": "通过",
+        "fail": "未通过",
+        "fetchError": "读不到",
+        "notApplicable": "不适用"
+      },
+      "weights": {
+        "counted": "计入",
+        "advisory": "仅展示"
+      },
+      "kinds": {
+        "heuristic": "模式规则",
+        "heuristicNote": "这一行按模式匹配，不理解语义。把它当成「去看一眼」的提示，不是判决。"
+      },
+      "fixLabel": "怎么修",
+      "rules": {
+        "robots": {
+          "oai-searchbot": "robots.txt 放行 OAI-SearchBot",
+          "chatgpt-user": "robots.txt 放行 ChatGPT-User",
+          "perplexitybot": "robots.txt 放行 PerplexityBot",
+          "claudebot": "robots.txt 放行 ClaudeBot",
+          "gptbot": "robots.txt 放行 GPTBot（训练用途）",
+          "google-extended": "robots.txt 放行 Google-Extended（训练用途）"
+        },
+        "ssr": "HTML 里带正文",
+        "canonical": "canonical 指向本页",
+        "llmsTxt": "已发布 /llms.txt",
+        "leadAnswer": "开头就回答了提问",
+        "extractableStructure": "存在表格或真正的列表",
+        "qualifiers": "限定条件有量化",
+        "citedData": "数字带来源",
+        "faqSchema": "FAQ 结构化数据有效"
+      },
+      "details": {
+        "robots": {
+          "absent": "该站没有 robots.txt，因此 {bot} 默认在任何路径都被允许。",
+          "unreachable": "robots.txt 返回 {status}，所以该站对 {bot} 的规则未知。这和「被禁止」不是一回事。",
+          "allowedByRule": "对 {bot} 放行；最接近的匹配规则是 {pattern}。",
+          "allowedNoRule": "对 {bot} 放行；robots.txt 里没有规则命中这个路径。",
+          "disallowed": "被 {pattern} 拦住，对 {bot} 不放行，命中的是 {path}。"
+        },
+        "ssr": {
+          "sufficient": "HTML 本身就有 {chars} 字正文，高于 {floor} 字的门槛。",
+          "clientRendered": "HTML 里只有 {chars} 字正文，脚本却有 {scriptKb} KB。不执行 JavaScript 的读者看到的就是那 {chars} 字。",
+          "thin": "HTML 里只有 {chars} 字正文，低于 {floor} 字的门槛。"
+        },
+        "canonical": {
+          "self": "canonical 指向本页。",
+          "missing": "页面上没有 canonical link 元素。",
+          "other": "canonical 指向 {href}。本工具没有抓取那个网址，因此不对它是否可用下判断。",
+          "unparsable": "canonical 无法解析成网址：{value}"
+        },
+        "llms": {
+          "present": "/llms.txt 存在，返回 {bytes} 字节。本工具不解析它的内容。",
+          "absent": "/llms.txt 返回 {status}。",
+          "unreachable": "/llms.txt 返回 {status}，因此它是否存在未知。"
+        },
+        "leadAnswer": {
+          "notAsked": "没有填目标提问，因此没有可对照开头的东西。",
+          "ok": "前 {window} 字里出现了 {matched}，并给出了结论。",
+          "noTerms": "前 {window} 字里没有出现 {terms}。",
+          "noMarker": "前 {window} 字提到了主题，但没有给出结论。",
+          "neither": "前 {window} 字既没有出现 {terms}，也没有给出结论。"
+        },
+        "structure": {
+          "ok": "{tables} 个带单元格的表格、{lists} 个不是导航的列表。",
+          "none": "没有带单元格的表格，也没有至少 {minItems} 项非链接条目的列表。"
+        },
+        "qualifiers": {
+          "ok": "至少有一处量化的限定条件，例如规模或区间。",
+          "none": "没有找到量化的限定条件；只有年份区间不算。"
+        },
+        "citedData": {
+          "noNumbers": "这一页没有任何数字断言，因此没有需要标来源的东西。",
+          "allSourced": "{total} 处数字断言全部在同一句里带链接或写明来源。",
+          "unsourced": "{total} 处数字断言里有 {unsourced} 处同句内没有来源，第一处是：{sample}"
+        },
+        "faq": {
+          "none": "这一页没有声明 FAQ 结构化数据。",
+          "noneWithBroken": "这一页没有声明 FAQ 结构化数据。另有 {broken} 个 JSON-LD 块无法解析。",
+          "valid": "{count} 组问答，每组都有问题名称与答案正文。",
+          "incomplete": "{total} 组问答里有 {incomplete} 组缺少问题名称或答案正文。",
+          "emptyMainEntity": "声明了 FAQPage，但 mainEntity 是空的。"
+        }
+      },
+      "fixes": {
+        "robots": {
+          "disallowed": "在 robots.txt 里为 {bot} 放行该路径，或去掉命中的 {pattern} 规则。"
+        },
+        "ssr": {
+          "clientRendered": "改成服务端渲染或预渲染。读者需要的内容必须在 JavaScript 执行之前就出现在 HTML 里。",
+          "thin": "把答案写进页面。模型只能引用 HTML 里真实存在的内容。"
+        },
+        "canonical": {
+          "missing": "加一个指向本页的 canonical link 元素。",
+          "other": "如果希望被引用的是这一页，就把 canonical 指向自己；如果另一个网址才是，那就去检查那一页。",
+          "unparsable": "把 canonical 的 href 改成可解析的网址。"
+        },
+        "llms": {
+          "absent": "可选：发布 /llms.txt，把抓取器指向你希望被读到的页面。它不影响这一页能否被抓取。"
+        },
+        "leadAnswer": "把结论提到最前面。前 {window} 字里应当点出主题并直接回答提问。",
+        "structure": {
+          "none": "加一张对比表，或一个至少 {minItems} 项、且不是链接堆的列表。"
+        },
+        "qualifiers": {
+          "none": "把「更适合小团队」换成条件本身，例如「适合 5–20 人的团队」。"
+        },
+        "citedData": {
+          "unsourced": "让每个数字在同一句里带上来源：一个链接，或写明来源与日期。"
+        },
+        "faq": {
+          "incomplete": "给每个 Question 补上 name，给每个 acceptedAnswer 补上 text。",
+          "emptyMainEntity": "把问答放进 mainEntity，或者干脆去掉 FAQPage 声明。"
+        }
+      },
+      "limitsTitle": "这项检查不做什么",
+      "limits": {
+        "noJavaScript": "不执行 JavaScript。正文只在 hydration 之后才出现的页面，会被报成「HTML 里没有正文」——因为不渲染的抓取器看到的就是这样。",
+        "onePage": "只读一个页面，外加该站的 robots.txt 与 llms.txt。不爬全站，也不去抓 canonical 指向的那一页。",
+        "noRanking": "不涉及排名、流量，也不代表任何模型真的引用过这一页。它描述的是页面，不是市场。",
+        "advisoryRows": "训练类抓取器与 /llms.txt 只展示、不计入，因为两者都不决定这一页能否被回答引用。"
+      },
+      "errors": {
+        "invalid_request": "这个请求读不出来。请提交一个网址，可以再附一个目标提问。",
+        "payload_too_large": "请求体过大。",
+        "unsupported_media_type": "请求不是 JSON。",
+        "invalid_url": "这不是本工具可以抓取的公开页面网址。",
+        "rate_limited": "你在过去一小时里已经用了 {max} 次。请 {minutes} 分钟后再试，或登录后每小时 {signedInMax} 次。",
+        "target_busy": "过去一小时里，所有使用者对这个站点合计已检查 {targetMax} 次。稍后再试。",
+        "gate_unavailable": "配额存储没有响应，因此工具选择关闭而不是不计量地跑。稍后再试。",
+        "fetch_blocked": "这个网址无法被安全抓取。",
+        "fetch_timeout": "页面在 {seconds} 秒内没有响应。",
+        "fetch_failed": "页面抓取失败。",
+        "not_html": "这个网址返回的不是 HTML 文档。",
+        "page_not_ok": "这个网址没有返回 200，暂时没有可检查的页面。",
+        "network": "请求没有到达工具。检查网络后重试。"
+      },
+      "faq": {
+        "title": "关于这项检查",
+        "items": [
+          {
+            "q": "全部通过就代表模型会引用这一页吗？",
+            "a": "不代表。这些行说的是访问与形态：抓取器是否被放行、正文是否在 HTML 里、一条结论能否被抽出来。模型是否真的用你的页面回答，取决于被问的问题以及网上还有什么，本工具从不声称能替你判断这件事。"
+          },
+          {
+            "q": "为什么 GPTBot 只展示不计分？",
+            "a": "GPTBot 与 Google-Extended 管的是训练语料采集。真正为了回答而去抓取页面的是 OAI-SearchBot、ChatGPT-User、PerplexityBot 与 ClaudeBot，计入结论的就是这四行。禁掉 GPTBot 不会让你无法被引用。"
+          },
+          {
+            "q": "为什么没有 robots.txt 反而算通过？",
+            "a": "RFC 9309 规定：robots.txt 不可得（404）等于完全放行，所以没有这个文件的站点并没有拦谁。robots.txt 读不到（例如 500）是另一回事——该站的规则未知，那一行会如实写「读不到」，而不是猜。"
+          },
+          {
+            "q": "页面在我浏览器里正常，为什么 HTML 那行没通过？",
+            "a": "你的浏览器会执行 JavaScript，本检查不会，多数抓取器第一次取页面时也不会。如果正文只在 hydration 之后才存在，这一行告诉你的正是「不渲染的读者会收到什么」。"
+          }
+        ]
+      },
+      "related": {
+        "title": "接下来去哪",
+        "intro": "这项检查只回答关于一个页面的一个问题，其余的在别处。",
+        "items": [
+          {
+            "href": "/tools/on-page-seo-check",
+            "name": "On-Page SEO 检查器",
+            "blurb": "同一个页面，换成搜索视角：你的关键词出现在标题、小标题和开头正文的哪些位置。"
+          },
+          {
+            "href": "/tools/internal-link-audit",
+            "name": "内链审计",
+            "blurb": "页面周围的站点：点击深度、孤岛页候选，以及指向它的那些链接。"
           }
         ]
       }
