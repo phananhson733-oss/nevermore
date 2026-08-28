@@ -4342,6 +4342,232 @@
           }
         ]
       }
+    },
+    "aiVisibility": {
+      "eyebrow": "GEO tools",
+      "title": "AI Visibility Check",
+      "intro": "Ask a frozen question set on one AI surface, several times each. It reports where you were mentioned, where you were cited, and which domains the answers were built from. It does not tell you why.",
+      "loading": "Loading your frozen versions…",
+      "retryLoad": "Try again",
+      "signIn": {
+        "title": "Sign in to run a visibility check",
+        "body": "A run costs real provider calls and points at a frozen knowledge base, both of which belong to an account.",
+        "unavailable": "Sign-in is not answering right now. Try again shortly."
+      },
+      "noFrozen": {
+        "title": "Freeze a knowledge base first",
+        "body": "A run asks the questions a frozen version produces. Without one there is nothing to ask, and inventing questions here would spend money on wording nobody confirmed.",
+        "action": "Open the GEO Knowledge Base"
+      },
+      "form": {
+        "title": "Run a check",
+        "intro": "One frozen version, one market, one surface. The numbers below come from the set itself, not from an average.",
+        "versionLabel": "Frozen version",
+        "versionOption": "{host} · revision {revision} · frozen {time}",
+        "versionQuestions": "{count} questions, {retrieval} with measured search wording",
+        "samplesLabel": "Samples per question",
+        "samplesOption": "{count} times",
+        "samplesHelp": "The same question asked several times. One answer is not a measurement: the same question can cite four sources one minute and none the next.",
+        "estimate": "{calls} provider calls, about {cost} and roughly {minutes} minutes.",
+        "estimateNote": "The cost is the observed price per call multiplied by this set's own size. It is an estimate, not a quote.",
+        "start": "Start the run",
+        "starting": "Starting…",
+        "dailyLimit": "{runs} runs per day per account. This is a guard against a loop, not a budget.",
+        "cooldown": "Try again in {seconds} seconds."
+      },
+      "running": {
+        "title": "Running",
+        "body": "This takes about {minutes} minutes. The run continues on the server.",
+        "tabNote": "You can leave this page. Come back to the tool and it will still be here while the run lasts.",
+        "elapsed": "{minutes}m {seconds}s elapsed",
+        "calls": "{done} of {total} calls",
+        "noCount": "Progress is not reported per call; the run reports when it finishes."
+      },
+      "results": {
+        "title": "Result",
+        "status": {
+          "ok": "Complete",
+          "partial": "Partial: some samples did not come back",
+          "insufficient": "Too few samples came back to draw conclusions from"
+        },
+        "coverage": "{answered} of {calls} calls answered",
+        "minSuccess": "Below {percent}% answered, this run does not draw conclusions and does not become a baseline.",
+        "questions": "{count} questions, {samples} samples each",
+        "revision": "Frozen version {revision}",
+        "model": "{model}, market {market}",
+        "finished": "Finished {time}",
+        "cost": "Provider cost {cost}",
+        "costUnavailable": "The provider returned no price for this run."
+      },
+      "overview": {
+        "title": "Overview",
+        "unpromptedMention": {
+          "label": "Mentioned, unprompted",
+          "help": "Answers that named you when the question did not. Branded questions are excluded: being named in an answer to a question about yourself proves nothing."
+        },
+        "promptedMention": {
+          "label": "Mentioned when asked about",
+          "help": "Answers to the branded questions that named you. A low number here means the model does not recognise the name."
+        },
+        "citation": {
+          "label": "Cited",
+          "help": "Only counts samples where the model actually searched, and only questions whose wording was measured to make it search. A question answered from memory has no citation to give."
+        },
+        "questionsMentioned": {
+          "label": "Questions you appeared in",
+          "help": "Counted per question rather than per sample, because five samples of one question are not five independent observations."
+        }
+      },
+      "proportion": {
+        "unavailable": "Not available",
+        "unobserved": "Not observed in {trials} samples (upper bound {hi}%)",
+        "zero": "0.0% ({trials} samples, upper bound {hi}%)",
+        "observed": "{percent}% ({trials} samples, {lo}–{hi}%)",
+        "zeroThreshold": "A zero is only written as 0.0% once the interval's upper bound is at or below {percent}%, which takes {minTrials} samples. Below that it says not observed."
+      },
+      "layers": {
+        "title": "By stage",
+        "intro": "The same numbers split by where in a buyer's search the question sits.",
+        "column": {
+          "layer": "Stage",
+          "mention": "Mentioned",
+          "citation": "Cited"
+        },
+        "names": {
+          "problem": "Problem",
+          "discovery": "Discovery",
+          "comparison": "Comparison",
+          "evaluation": "Evaluation",
+          "branded": "Branded"
+        },
+        "brandedNote": "The branded row is kept out of the headline mention rate. It answers a different question: whether the model knows the name at all."
+      },
+      "domains": {
+        "title": "Where the answers came from",
+        "intro": "Domains the answers cited, counted by answers rather than by links. This is the shelf you are competing for.",
+        "column": {
+          "domain": "Domain",
+          "answers": "Answers",
+          "role": "Role"
+        },
+        "role": {
+          "own": "Yours",
+          "competitor": "Confirmed competitor",
+          "other": "Someone else"
+        },
+        "samples": "Examples:",
+        "empty": "No answer in this run cited anything. On this surface that usually means the questions were answered from memory."
+      },
+      "questions": {
+        "title": "Question by question",
+        "intro": "Every question, what came back, and the sentence a mention was found in.",
+        "modes": {
+          "retrieval": "Measured to search",
+          "demand": "Asked as a buyer would"
+        },
+        "uncalibrated": "Wording assembled here, not from the measured library",
+        "mentionCount": "Mentioned in {mentioned} of {answered} answers",
+        "citationCount": "Cited in {cited} of {evaluable} answers that searched",
+        "citationNotEvaluable": "No answer to this question searched, so there is no citation rate to report.",
+        "demandCitationNote": "{cited} answers cited you. This question's wording was not measured to search, so the number is reported without a denominator.",
+        "citedDomains": "Cited: {domains}",
+        "competitors": "Named alongside: {names}",
+        "showSamples": "Show the answers",
+        "hideSamples": "Hide the answers",
+        "sampleLabel": "Answer {index}",
+        "sampleSearched": "searched the web",
+        "sampleNoSearch": "answered from memory",
+        "sampleSearchUnknown": "search status unknown",
+        "sampleStatus": {
+          "ok": "answered",
+          "timeout": "timed out",
+          "blocked": "refused by the provider",
+          "error": "failed"
+        },
+        "noExcerpt": "No mention in this answer."
+      },
+      "comparison": {
+        "title": "Against your last run",
+        "intro": "Compared with the run finished {time}. Only runs of the same frozen question set are compared; a re-frozen knowledge base asks different questions.",
+        "column": {
+          "metric": "Measure",
+          "base": "Then",
+          "current": "Now",
+          "change": "Change"
+        },
+        "metrics": {
+          "unpromptedMention": "Mentioned, unprompted",
+          "citation": "Cited",
+          "questionsMentioned": "Questions you appeared in"
+        },
+        "changed": "{diff} points ({lo} to {hi})",
+        "unchanged": "No change this size of sample can distinguish",
+        "notTestable": "Too few samples on one side to test",
+        "questionsTitle": "Questions that moved",
+        "questionRow": "{base} → {current} of {of} answers",
+        "direction": {
+          "gained": "Gained",
+          "lost": "Lost"
+        },
+        "empty": "Nothing moved between the two runs."
+      },
+      "limitsTitle": "What this run does not tell you",
+      "limits": {
+        "oneSurface": "One surface: ChatGPT answers collected through the DataForSEO API. Not a consumer session, and not Google, Perplexity, Claude or Gemini.",
+        "notAttribution": "It observes; it does not explain. Deciding why a question missed you needs your own pages read as well, which this run does not do. The page checker is where that starts.",
+        "sampledNotCensus": "It is a sample. The same question can cite four sources one minute and none the next, which is why each is asked several times and why every number carries its interval.",
+        "demandQuestions": "Questions written the way a buyer would ask usually get answered from memory. Their mentions are worth counting; their citations are reported without a denominator.",
+        "englishOnly": "The questions are in English, because that is the language the wording was measured in. A market other than the calibrated one is reported as such."
+      },
+      "errors": {
+        "auth_required": "Sign in to run a visibility check.",
+        "auth_unavailable": "Sign-in is not answering right now. Try again shortly.",
+        "cross_origin": "That request did not come from this page.",
+        "invalid_request": "That request could not be read.",
+        "payload_too_large": "That request was too large.",
+        "unsupported_media_type": "That request was not JSON.",
+        "no_frozen_version": "That knowledge base has no frozen version to run against.",
+        "not_found": "That frozen version does not exist on this account.",
+        "daily_limit": "This account has used its runs for today.",
+        "provider_unconfigured": "The provider credentials are not configured, so nothing was started and nothing was charged.",
+        "run_unavailable": "That run could not be read. Nothing further was charged.",
+        "store_unavailable": "The store is not answering right now. Try again shortly.",
+        "internal_error": "Something went wrong inside the tool. The run may have completed; reload before starting another.",
+        "network": "The request did not reach the tool. Check your connection and try again."
+      },
+      "faq": {
+        "title": "Questions about this check",
+        "items": [
+          {
+            "q": "Why ask the same question several times?",
+            "a": "Because one answer is not a measurement. Asked four times, the same question produced four completely different citation lists and zero overlap. A run that asked once would report a coin toss as a finding, which is why every number here carries the sample count it came from."
+          },
+          {
+            "q": "Why do some questions have no citation rate?",
+            "a": "The model decides whether to search. Wording measured to make it search carries a citation rate; wording a buyer would actually type usually gets answered from memory, and a citation rate over answers that never looked anything up would be a number about nothing."
+          },
+          {
+            "q": "It says I was not mentioned. What do I fix?",
+            "a": "This run does not know. It sees what the model said, not what your site contains, so it cannot tell a missing page from an unreadable one. The page citability check answers the second half for a page you name."
+          }
+        ]
+      },
+      "related": {
+        "title": "Where to go next",
+        "intro": "This run observes. The other two tools are where something changes.",
+        "items": [
+          {
+            "href": "/tools/page-citability-check",
+            "name": "Page Citability Check",
+            "blurb": "Take a page you expected to be cited and see whether a crawler can read it at all."
+          },
+          {
+            "href": "/tools/geo-knowledge-base",
+            "name": "GEO Knowledge Base",
+            "blurb": "Change the names, the category or the competitors, and freeze a new version to ask a different set."
+          }
+        ]
+      }
     }
   },
   "compare": {

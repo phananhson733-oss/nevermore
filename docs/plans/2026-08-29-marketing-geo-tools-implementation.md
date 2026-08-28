@@ -89,3 +89,26 @@
 **已知偏离**：`kb-store.ts` 1106 行，超过「文件 < 800 行」的房规。拆法已经想好（Supabase 适配器与行映射各自成文件），但它带着 51 条测试且刚跑通，改在下一个 PR 做。
 
 **验证**：`pnpm test apps/marketing` 4647 通过 / 1 失败（`blog-content`，main 既有红，stash 对照确认）；`pnpm --filter @sf/marketing lint` 4 个错误全部在未触碰的文件里（同样 stash 对照确认）；typecheck 与 build 干净；`node scripts/verify-implementation.mjs` 绿。SQL 集成测试需要 `MARKETING_TEST_DATABASE_URL`，本机实跑 20/20。
+
+## PR 3 · AI 可见性体检（`/tools/ai-visibility-check`）
+
+需登录。用一个冻结版本的问题集，在一个 AI 面上每题重复采样，报告提及、引用与被引用域名。
+
+**形态**：Vercel Workflow，**每个采样一个 step**，8 并发分波。一个问题一步会把五次付费调用塞进同一个重试边界，第四次死掉就要重跑前三次；这个粒度下重跑只赔一次调用，而编排本身没有墙钟上限——一轮要一刻钟，没有任何单个函数能被撑那么久。
+
+**新增**
+
+- `visibility-contract.ts` — 采样/判定/指标/报告的形状与全部阈值；`visibilityCallCount` / `visibilityCostEstimateUsd` / `visibilityMinutesEstimate` 三个推导函数，页面上印的三个数由它们算，不写死。
+- `visibility-sampling.ts` — 一次调用一次判定：提及走 `findGeoAliasMatch`（NFC + 整词 + ≥3 字符），引用走 `isGeoTargetCitation`，竞品只匹配 confirmed 的 brandName（未确认的名字是猜测，猜测进了报告就成了事实）。超时不重试，只有「请求没发出去」那一类才重试一次。
+- `visibility-metrics.ts` — 聚合与对比。分母口径是这个工具最容易说谎的地方，所以写死在一处：unprompted 提及只数非 branded 层；引用只数 retrieval 模式且 `webSearchPerformed === true` 且回答了的样本；问题级比例用 `collapseGroupsToBernoulli`。对比只对可检验项做 BH，且「p 值判显著」与「区间不跨零」必须同时成立。
+- `visibility-store.ts` + `0007_geo_visibility_runs.sql` — 每轮落一行摘要（裁决 D5），append-only，只有数字与问题文本，不存回答原文。0007 显式绕开了 0006 踩过的坑：OUT 参数与列同名会让 `returning` 变成 `column reference is ambiguous`，这里既改了参数名也限定了表名。
+- `visibility-workflow.ts` / `-steps.ts` / `-handler.ts` / `-handler-deps.ts` + 三个路由；`components/tools/ai-visibility-check.tsx`；页面；i18n `tools.aiVisibility`（en/zh 各 152 键）。
+- 两个新的密封用途 `gg_geo_visibility_input` / `gg_geo_visibility_run`：purpose 同时是 HKDF info 与 GCM 附加数据，共用一个会让运行指针可以被当作运行输入递进来。
+
+**与 D8 的偏离（有意）**：这一版**不做 A/B/C/D 四类缺口归因**。把「为什么没被提到」判成四类需要先把本站页面索引起来，那是另一条抓取预算与另一套失败模式；没有它，诚实的产出是「观测 + 引用来源分布 + 逐题证据」，再把「这一页读不读得到」交给页面可引用性检查。报告的限制清单里第一条就写着它只观测、不解释。归因留给后续 PR。
+
+**安全阀不是预算**：Owner 放开了预算，所以每账号每天 5 轮走 `consumePublicToolQuota`，只为挡住跑飞的循环；表单上印的是真实调用数、真实预估费用与真实预估耗时，全部由这套问题集自己的条数推导。
+
+**验证**：marketing 4686 通过 / 1 失败（`blog-content` 既有红）；typecheck / build / verify-implementation 干净；lint 5 个错误全在未触碰的文件里。构建产出 `/[locale]/tools/ai-visibility-check` 与三个 API 路由。
+
+**未做**：`visibility-sampling` 与 `visibility-store` 的单测（并行 agent 在写到一半时撞上会话额度中断，模块本身完整且 typecheck/lint 干净，`visibility-metrics.test.ts` 与 `visibility-handler.test.ts` 已覆盖聚合口径与 HTTP 边界）；0007 的 rollout 一节与集成测试同因缺失。这两项连同 `kb-store.ts` 的拆分记在下一个 PR。

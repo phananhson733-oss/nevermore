@@ -132,6 +132,16 @@ const GEO_TOOLS = [
     cta: { en: "Build a knowledge base", zh: "建立知识库" },
     category: "geo",
   },
+  {
+    slug: "ai-visibility-check",
+    title: { en: "AI Visibility Check", zh: "AI 可见性体检" },
+    description: {
+      en: "Ask a frozen question set on one AI surface, several times each, and see where you are mentioned, where you are cited, and which domains answers are built from.",
+      zh: "用冻结的问题集在一个 AI 面上重复提问，看你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。",
+    },
+    cta: { en: "Run a visibility check", zh: "跑一次可见性体检" },
+    category: "geo",
+  },
 ] as const;
 
 export async function generateMetadata({

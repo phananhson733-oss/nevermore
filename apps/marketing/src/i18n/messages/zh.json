@@ -4342,6 +4342,232 @@
           }
         ]
       }
+    },
+    "aiVisibility": {
+      "eyebrow": "GEO 工具",
+      "title": "AI 可见性体检",
+      "intro": "用冻结的问题集在一个 AI 面上重复提问。它报告你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。它不告诉你为什么。",
+      "loading": "正在载入你的冻结版本…",
+      "retryLoad": "重试",
+      "signIn": {
+        "title": "登录后才能跑可见性体检",
+        "body": "一轮运行要花真实的调用费，并且指向某个冻结的知识库——两者都属于账号。",
+        "unavailable": "登录服务暂时没有响应，稍后再试。"
+      },
+      "noFrozen": {
+        "title": "先冻结一个知识库",
+        "body": "运行问的是冻结版本推导出来的问题。没有冻结版本就没有可问的东西，而在这里现编问题等于把钱花在没人确认过的措辞上。",
+        "action": "打开 GEO 知识库"
+      },
+      "form": {
+        "title": "跑一次体检",
+        "intro": "一个冻结版本、一个市场、一个面。下面这几个数来自问题集本身，不是平均值。",
+        "versionLabel": "冻结版本",
+        "versionOption": "{host} · 第 {revision} 版 · 冻结于 {time}",
+        "versionQuestions": "共 {count} 题，其中 {retrieval} 题用的是已标定的检索措辞",
+        "samplesLabel": "每题采样次数",
+        "samplesOption": "{count} 次",
+        "samplesHelp": "同一个问题问几遍。一次回答不是一次测量：同一个问题这一分钟引用四个来源，下一分钟可能一个都不引。",
+        "estimate": "{calls} 次调用，约 {cost}，大约 {minutes} 分钟。",
+        "estimateNote": "费用是实测单价乘以这套问题集自己的条数。是估算，不是报价。",
+        "start": "开始运行",
+        "starting": "启动中…",
+        "dailyLimit": "每个账号每天 {runs} 轮。这是防跑飞的闸，不是预算。",
+        "cooldown": "请 {seconds} 秒后再试。"
+      },
+      "running": {
+        "title": "运行中",
+        "body": "大约需要 {minutes} 分钟。运行在服务端继续，不依赖这个页面。",
+        "tabNote": "你可以离开这一页。运行期间回到本工具，它还在。",
+        "elapsed": "已用 {minutes} 分 {seconds} 秒",
+        "calls": "{total} 次调用中已完成 {done} 次",
+        "noCount": "不按调用逐次上报进度；跑完了才会报。"
+      },
+      "results": {
+        "title": "结果",
+        "status": {
+          "ok": "已完成",
+          "partial": "部分完成：有些采样没有回来",
+          "insufficient": "回来的采样太少，不足以下结论"
+        },
+        "coverage": "{calls} 次调用中有 {answered} 次拿到回答",
+        "minSuccess": "回答率低于 {percent}% 时，这一轮不下结论，也不会成为对比基线。",
+        "questions": "{count} 题，每题 {samples} 次",
+        "revision": "冻结版本第 {revision} 版",
+        "model": "{model}，市场 {market}",
+        "finished": "完成于 {time}",
+        "cost": "调用花费 {cost}",
+        "costUnavailable": "这一轮供应商没有返回价格。"
+      },
+      "overview": {
+        "title": "概览",
+        "unpromptedMention": {
+          "label": "未点名时被提到",
+          "help": "问题里没有你的名字、回答却提到你的比例。品牌词问题被排除在外：问你自己的问题里出现你，什么也证明不了。"
+        },
+        "promptedMention": {
+          "label": "被问到时被提到",
+          "help": "品牌词问题的回答里提到你的比例。这一项低，说明模型根本不认得这个名字。"
+        },
+        "citation": {
+          "label": "被引用",
+          "help": "只统计模型真的去检索了的样本，且只统计措辞被标定过会触发检索的问题。凭记忆回答的问题没有引用可给。"
+        },
+        "questionsMentioned": {
+          "label": "出现过你的问题数",
+          "help": "按问题计，不按采样计——同一个问题的五次采样不是五次独立观测。"
+        }
+      },
+      "proportion": {
+        "unavailable": "不可得",
+        "unobserved": "{trials} 次采样中未观测到（区间上界 {hi}%）",
+        "zero": "0.0%（{trials} 次采样，上界 {hi}%）",
+        "observed": "{percent}%（{trials} 次采样，{lo}–{hi}%）",
+        "zeroThreshold": "只有当区间上界不高于 {percent}% 时，零才会写成 0.0%，那需要 {minTrials} 次采样。达不到就写「未观测到」。"
+      },
+      "layers": {
+        "title": "按阶段",
+        "intro": "同一批数字，按问题处在买家搜索的哪个阶段拆开。",
+        "column": {
+          "layer": "阶段",
+          "mention": "被提到",
+          "citation": "被引用"
+        },
+        "names": {
+          "problem": "问题",
+          "discovery": "发现",
+          "comparison": "对比",
+          "evaluation": "选型",
+          "branded": "品牌词"
+        },
+        "brandedNote": "品牌词这一行不进首屏的提及率。它回答的是另一个问题：模型到底认不认得这个名字。"
+      },
+      "domains": {
+        "title": "这些回答是从哪来的",
+        "intro": "回答引用过的域名，按「回答数」而不是按链接数计。这就是你在争的那个货架。",
+        "column": {
+          "domain": "域名",
+          "answers": "回答数",
+          "role": "身份"
+        },
+        "role": {
+          "own": "你自己",
+          "competitor": "已确认竞品",
+          "other": "其他"
+        },
+        "samples": "例如：",
+        "empty": "这一轮没有任何回答引用任何东西。在这个面上，这通常意味着问题是凭记忆回答的。"
+      },
+      "questions": {
+        "title": "逐题明细",
+        "intro": "每一题问了什么、回来了什么，以及提及出现在哪一句里。",
+        "modes": {
+          "retrieval": "已标定会检索",
+          "demand": "买家会这么问"
+        },
+        "uncalibrated": "这句是拼出来的，不来自已测量的模板库",
+        "mentionCount": "{answered} 个回答里有 {mentioned} 个提到你",
+        "citationCount": "检索过的 {evaluable} 个回答里有 {cited} 个引用了你",
+        "citationNotEvaluable": "这一题没有任何回答去检索，因此没有引用率可报。",
+        "demandCitationNote": "有 {cited} 个回答引用了你。这一题的措辞没有被标定为会检索，因此这个数不带分母。",
+        "citedDomains": "引用了：{domains}",
+        "competitors": "同场出现：{names}",
+        "showSamples": "展开这些回答",
+        "hideSamples": "收起这些回答",
+        "sampleLabel": "回答 {index}",
+        "sampleSearched": "检索了网络",
+        "sampleNoSearch": "凭记忆回答",
+        "sampleSearchUnknown": "是否检索未知",
+        "sampleStatus": {
+          "ok": "已回答",
+          "timeout": "超时",
+          "blocked": "被供应商拒绝",
+          "error": "失败"
+        },
+        "noExcerpt": "这个回答里没有提到你。"
+      },
+      "comparison": {
+        "title": "与你上一轮相比",
+        "intro": "与完成于 {time} 的那一轮对比。只对比同一套冻结问题集的运行；重新冻结过的知识库问的是另一套问题。",
+        "column": {
+          "metric": "指标",
+          "base": "那时",
+          "current": "现在",
+          "change": "变化"
+        },
+        "metrics": {
+          "unpromptedMention": "未点名时被提到",
+          "citation": "被引用",
+          "questionsMentioned": "出现过你的问题数"
+        },
+        "changed": "{diff} 个百分点（{lo} 到 {hi}）",
+        "unchanged": "这个样本量分辨不出变化",
+        "notTestable": "有一侧的采样太少，无法检验",
+        "questionsTitle": "有变动的问题",
+        "questionRow": "{of} 个回答里，从 {base} 变成 {current}",
+        "direction": {
+          "gained": "新增",
+          "lost": "失去"
+        },
+        "empty": "两轮之间没有变动。"
+      },
+      "limitsTitle": "这一轮不能告诉你什么",
+      "limits": {
+        "oneSurface": "只有一个面：通过 DataForSEO API 采集的 ChatGPT 回答。不是消费者版会话，也不是 Google、Perplexity、Claude 或 Gemini。",
+        "notAttribution": "它只观测，不解释。要判断某一题为什么没有你，还需要读你自己的页面，而这一轮不读。那件事从页面可引用性检查开始。",
+        "sampledNotCensus": "这是抽样。同一个问题这一分钟引用四个来源、下一分钟一个都不引，所以每题要问几遍，每个数字都带区间。",
+        "demandQuestions": "按买家口吻写的问题通常是凭记忆回答的。它们的提及值得数，它们的引用数只报数、不带分母。",
+        "englishOnly": "问题是英文的，因为措辞是在英文下测出来的。市场不是被标定的那个时，报告会写明。"
+      },
+      "errors": {
+        "auth_required": "登录后才能跑可见性体检。",
+        "auth_unavailable": "登录服务暂时没有响应，稍后再试。",
+        "cross_origin": "这个请求不是从本页发出的。",
+        "invalid_request": "这个请求读不出来。",
+        "payload_too_large": "请求体过大。",
+        "unsupported_media_type": "请求不是 JSON。",
+        "no_frozen_version": "这个知识库还没有可运行的冻结版本。",
+        "not_found": "这个账号下没有这个冻结版本。",
+        "daily_limit": "这个账号今天的运行次数已经用完。",
+        "provider_unconfigured": "供应商凭据没有配置，因此什么都没启动，也没有产生费用。",
+        "run_unavailable": "这一轮读不到。没有产生额外费用。",
+        "store_unavailable": "存储暂时没有响应，稍后再试。",
+        "internal_error": "工具内部出错了。这一轮可能已经跑完，开始新一轮之前先刷新。",
+        "network": "请求没有到达工具。检查网络后重试。"
+      },
+      "faq": {
+        "title": "关于这项体检",
+        "items": [
+          {
+            "q": "为什么同一个问题要问好几遍？",
+            "a": "因为一次回答不是一次测量。同一个问题问四次，得到四份完全不同的引用清单，交集为零。只问一次的运行会把抛硬币报成发现——这就是每个数字都带采样次数的原因。"
+          },
+          {
+            "q": "为什么有些问题没有引用率？",
+            "a": "是否检索由模型决定。被标定为会触发检索的措辞才带引用率；买家真正会打出来的问法通常是凭记忆回答的，而在「从没查过资料的回答」上算引用率，是一个关于虚无的数字。"
+          },
+          {
+            "q": "它说我没被提到，那我该改什么？",
+            "a": "这一轮不知道。它看到的是模型说了什么，不是你站上有什么，所以它分不清「没有这一页」和「这一页读不到」。后半个问题，页面可引用性检查能对着你指定的页面回答。"
+          }
+        ]
+      },
+      "related": {
+        "title": "接下来去哪",
+        "intro": "这一轮只是观测。真正会改变什么的是另外两件工具。",
+        "items": [
+          {
+            "href": "/tools/page-citability-check",
+            "name": "页面可引用性检查",
+            "blurb": "把你本以为会被引用的那一页拿来，看看抓取器到底读不读得到。"
+          },
+          {
+            "href": "/tools/geo-knowledge-base",
+            "name": "GEO 知识库",
+            "blurb": "改名字、改品类、改竞品，冻结一个新版本，问另一套问题。"
+          }
+        ]
+      }
     }
   },
   "compare": {
