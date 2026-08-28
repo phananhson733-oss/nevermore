@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
+import type { NextConfig } from "next";
 import { describe, expect, it } from "vitest";
-import { getMarketingRedirects } from "./next.config";
+import marketingConfig, { getMarketingRedirects } from "./next.config";
 import { LEGACY_EN_MIGRATION_ENTRIES } from "./src/lib/legacy-en-migration";
 
 describe("marketing redirects", () => {
@@ -101,5 +103,36 @@ describe("marketing redirects", () => {
     "/en/use-cases",
   ])("does not mask the proxy's 410 for %s with a redirect", (source) => {
     expect(redirects.some((entry) => entry.source === source)).toBe(false);
+  });
+});
+
+describe("marketing config wrappers", () => {
+  it("retains redirects, rewrites, and security headers after Workflow wrapping", async () => {
+    const previousDirectory = process.cwd();
+    process.chdir(fileURLToPath(new URL(".", import.meta.url)));
+    let resolved: NextConfig;
+    try {
+      resolved =
+        typeof marketingConfig === "function"
+          ? await marketingConfig("phase-production-build", {
+              defaultConfig: {},
+            } as never)
+          : marketingConfig;
+    } finally {
+      process.chdir(previousDirectory);
+    }
+
+    await expect(resolved.redirects?.()).resolves.toEqual(
+      getMarketingRedirects(),
+    );
+    await expect(resolved.rewrites?.()).resolves.toEqual([
+      { source: "/blog/rss.xml", destination: "/en/blog/rss.xml" },
+    ]);
+    const headers = await resolved.headers?.();
+    expect(headers?.[0]?.source).toBe("/:path*");
+    expect(headers?.[0]?.headers).toContainEqual({
+      key: "X-Frame-Options",
+      value: "DENY",
+    });
   });
 });

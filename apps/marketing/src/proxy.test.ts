@@ -16,6 +16,7 @@ describe("proxy workflow boundary", () => {
     const matcher = new RegExp(`^${source ?? ""}$`);
     expect(matcher.test("/.well-known/workflow/v1/flow")).toBe(false);
     expect(matcher.test("/tools/low-competition-keywords")).toBe(true);
+    expect(matcher.test("/api/tools/hidden-keywords/opportunities")).toBe(true);
   });
 });
 
