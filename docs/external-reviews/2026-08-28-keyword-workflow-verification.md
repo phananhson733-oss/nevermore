@@ -2,8 +2,9 @@
 
 Date: 2026-08-28
 
-Status: complete. PRs #241 and #242 are merged, the final Marketing SHA is
-deployed to both public aliases, and production browser/API evidence is closed.
+Status: complete. PRs #241 and #242 are merged, the final runtime-bearing
+Marketing SHA was deployed to both public aliases, and production browser/API
+evidence is closed.
 
 ## Authority and release boundary
 
@@ -13,7 +14,8 @@ deployed to both public aliases, and production browser/API evidence is closed.
   `origin/main@9c15f5ed96835dadaab661b96128747caf305ed0`.
 - Verified post-merge branch snapshot before this document:
   `9c058d97f8dda0d0ce8559a4a532ba58bc65830b`.
-- Final `origin/main`: `16a7109f3d32e93e25dcd5b23730b1d76e56658c`.
+- Final runtime-bearing `origin/main`:
+  `16a7109f3d32e93e25dcd5b23730b1d76e56658c`.
 - Production predecessor: PR #236 / `bea97d9cb1e92bacc8cb63c482f0b7deedec6410`.
 - Authorized runtime surface: Marketing plus the existing public-tools and
   sources package contracts used by Marketing.
@@ -148,12 +150,16 @@ These failures were not edited or weakened to make the branch appear green:
 2. A production-browser review found two stale descriptions of the old
    synchronous replenishing pool. Copy-only PR #242 changed them to the actual
    durable-wave/checkpoint flow, added stale-copy assertions, and merged reviewed
-   head `d6273e2a35e3c35e028d099e40531567819de76c` as final main
+   head `d6273e2a35e3c35e028d099e40531567819de76c` as final runtime-bearing main
    `16a7109f3d32e93e25dcd5b23730b1d76e56658c`.
-3. Marketing deployment `dpl_8nozCRnwV2xbbJonwWNtckadT4Pk` is `READY`, records
-   Git SHA `16a7109f3d32e93e25dcd5b23730b1d76e56658c`, and owns both
-   `gengrowth.ai` and `www.gengrowth.ai`. Its build log records 18 steps, one
-   workflow, and the managed flow/step routes.
+3. Runtime-bearing Marketing deployment `dpl_8nozCRnwV2xbbJonwWNtckadT4Pk`
+   reached `READY`, recorded Git SHA
+   `16a7109f3d32e93e25dcd5b23730b1d76e56658c`, and owned both
+   `gengrowth.ai` and `www.gengrowth.ai` for the production canary. Its build
+   log records 18 steps, one workflow, and the managed flow/step routes.
+   Later evidence-document-only merges may redeploy the identical application
+   artifact; those self-referential documentation deployments are deliberately
+   not recorded recursively here.
 4. The Chinese and English live pages return `200`. The final copy contains the
    durable-wave/checkpoint explanation and no `replenishing pool` / `持续补位池`.
    A real Chrome load showed the signed-in tool, the 24-hour pointer boundary,
