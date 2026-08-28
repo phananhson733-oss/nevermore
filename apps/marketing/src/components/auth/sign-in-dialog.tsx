@@ -4,10 +4,11 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 
 import type { SignedInListener } from "../../lib/auth/gsi-client";
-import { useSignedInListener } from "./use-signed-in-listener";
+import { signedInHandler, useSignedInListener } from "./use-signed-in-listener";
 
 import {
   Dialog,
@@ -50,7 +51,10 @@ export function SignInDialog({
   readonly onSignedIn?: SignedInListener;
 }) {
   const t = useTranslations();
-  useSignedInListener(onSignedIn);
+  // Every instance closes itself on a successful credential, so the Header's
+  // dialog benefits too; only a caller that passed onSignedIn is forwarded to.
+  const listener = useMemo(() => signedInHandler(onOpenChange, onSignedIn), [onOpenChange, onSignedIn]);
+  useSignedInListener(listener);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

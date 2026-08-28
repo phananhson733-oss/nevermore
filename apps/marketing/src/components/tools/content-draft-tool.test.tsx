@@ -33,9 +33,13 @@ import {
   draftResultFixture,
 } from "@sf/public-tools/content-brief/draft-fixtures";
 
-const { signInDialogMock, trackMarketingEventMock, signedInResult } = vi.hoisted(() => ({
+const { signInDialogMock, trackMarketingEventMock, signedInResult, signedInHandler, parserGate } = vi.hoisted(() => ({
   /** What the tool's onSignedIn last returned: `false` vetoes the reload. */
   signedInResult: { current: undefined as boolean | void },
+  /** The tool's latest onSignedIn, callable outside React (between a parser resolving and the commit). */
+  signedInHandler: { current: undefined as (() => boolean | void) | undefined },
+  /** When `defer` is set, parseContentBrief holds its result until `release` is called. */
+  parserGate: { defer: false, release: null as (() => void) | null },
   // The succeed control is rendered whether the dialog is open or not: a
   // credential posted before the dialog closed still completes, and the
   // real dialog keeps its onSignedIn registered for as long as it is mounted.
@@ -48,7 +52,9 @@ const { signInDialogMock, trackMarketingEventMock, signedInResult } = vi.hoisted
       readonly open: boolean;
       readonly onOpenChange: (open: boolean) => void;
       readonly onSignedIn?: () => boolean | void;
-    }) => (
+    }) => {
+      signedInHandler.current = onSignedIn;
+      return (
       <>
         {open ? (
           <div data-testid="sign-in-dialog">
@@ -60,14 +66,31 @@ const { signInDialogMock, trackMarketingEventMock, signedInResult } = vi.hoisted
           type="button"
           data-testid="sign-in-succeed"
           onClick={() => {
+            // Mirrors the real dialog's signedInHandler: close first, then forward.
+            onOpenChange(false);
             signedInResult.current = onSignedIn?.();
           }}
         />
       </>
-    ),
+      );
+    },
   ),
   trackMarketingEventMock: vi.fn(),
 }));
+
+vi.mock("@sf/public-tools/content-brief/parse-brief", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sf/public-tools/content-brief/parse-brief")>();
+  return {
+    ...actual,
+    parseContentBrief: async (...args: Parameters<typeof actual.parseContentBrief>) => {
+      const result = await actual.parseContentBrief(...args);
+      if (!parserGate.defer) return result;
+      return new Promise<typeof result>((resolve) => {
+        parserGate.release = () => resolve(result);
+      });
+    },
+  };
+});
 
 vi.mock("next-intl", () => ({
   useTranslations: () => {
@@ -125,10 +148,24 @@ function callsTo(url: string): readonly FetchCall[] {
   return fetchCalls().filter((call) => call.url === url);
 }
 
+const sessionStorageDescriptor = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+
+function restoreSessionStorage(): void {
+  if (sessionStorageDescriptor === undefined) {
+    delete (window as { sessionStorage?: Storage }).sessionStorage;
+  } else {
+    Object.defineProperty(window, "sessionStorage", sessionStorageDescriptor);
+  }
+}
+
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   signInDialogMock.mockClear();
   trackMarketingEventMock.mockReset();
+  restoreSessionStorage();
+  parserGate.defer = false;
+  parserGate.release = null;
+  signedInHandler.current = undefined;
   window.sessionStorage.clear();
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
@@ -497,6 +534,73 @@ describe("ContentDraftTool run flow (handoff §8 items 17 and 21)", () => {
     await settle();
     return host;
   }
+
+  it("reads the intake as of the last transition, not the last commit, when a credential lands mid-parse", async () => {
+    const waiting = await draftBrief();
+    const pasted = await withFingerprint(contentBriefFixture());
+    const rawA = storeHandoff(waiting);
+    const host = await renderTool(false);
+    await settle();
+    const handler = signedInHandler.current;
+    if (handler === undefined) throw new Error("onSignedIn was not passed to the dialog");
+
+    // B starts parsing; the credential lands first: nothing may be written,
+    // and A must not be resurrected either.
+    parserGate.defer = true;
+    await type(host.querySelector("[data-paste-brief]"), JSON.stringify(pasted));
+    await click(host.querySelector("[data-load-brief]"));
+    expect(host.querySelector('[data-intake-phase="parsing"]')).not.toBeNull();
+    expect(handler()).toBeUndefined();
+    expect(window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY)).toBe(rawA);
+
+    // The parser resolves, and the credential lands BEFORE React commits B:
+    // the listener still saves B, because the ref was written on transition.
+    parserGate.release?.();
+    for (let i = 0; i < 4; i += 1) await Promise.resolve();
+    expect(host.querySelector("[data-brief-fingerprint]")).toBeNull();
+    expect(handler()).toBe(true);
+    const raw = window.sessionStorage.getItem(CONTENT_BRIEF_HANDOFF_KEY);
+    const parsed = await parseContentBriefHandoff(JSON.parse(raw ?? "null"));
+    expect(parsed.ok && parsed.value.brief.run.fingerprint).toBe(pasted.run.fingerprint);
+    await settle();
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(pasted.run.fingerprint);
+  });
+
+  it("vetoes the reload without throwing when session storage itself is inaccessible", async () => {
+    const brief = await draftBrief();
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    });
+    const host = await renderTool();
+    await settle();
+    await pasteBrief(host, brief);
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
+    signedInResult.current = undefined;
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(signedInResult.current).toBe(false);
+    expect(host.querySelector("[data-handoff-keep-failed]")).not.toBeNull();
+    expect(host.querySelector("[data-brief-fingerprint]")?.textContent).toBe(brief.run.fingerprint);
+    restoreSessionStorage();
+  });
+
+  it("closes the dialog before the keep-failed notice appears, so the notice is not behind a modal", async () => {
+    const brief = await draftBrief();
+    storeHandoff(brief);
+    const host = await renderTool();
+    await settle();
+    await click(host.querySelector("[data-run-draft]"));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).not.toBeNull();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
+    await click(host.querySelector('[data-testid="sign-in-succeed"]'));
+    expect(host.querySelector('[data-testid="sign-in-dialog"]')).toBeNull();
+    expect(host.querySelector("[data-handoff-keep-failed]")?.textContent).toBe("intake.handoffKeepFailed");
+    expect(signedInResult.current).toBe(false);
+  });
 
   it("clears the waiting handoff when a brief is loaded before sign-in, but writes nothing until a credential became a session", async () => {
     const waiting = await draftBrief();

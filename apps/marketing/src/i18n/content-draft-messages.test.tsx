@@ -477,29 +477,39 @@ describe.each([
   });
 
   it("reports a failed latest copy in words, and clears it when the next copy succeeds", async () => {
-    const pending: { resolve: () => void; reject: () => void }[] = [];
+    const pending: { text: string; resolve: () => void; reject: () => void }[] = [];
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
-        writeText: () =>
+        writeText: (text: string) =>
           new Promise<void>((resolve, reject) => {
-            pending.push({ resolve, reject });
+            pending.push({ text, resolve, reject });
           }),
       },
     });
     const brief = await draftBrief();
-    const host = await render(locale, brief, await draftResultFixture(brief));
+    const result = await draftResultFixture(brief);
+    const host = await render(locale, brief, result);
+    const sectionFail = catalog(locale)["sectionFail"] as Record<string, string>;
+    const notes = {
+      failed: (reason: string) => sectionFail[reason] ?? reason,
+      skipped: (catalog(locale)["doc"] as Record<string, string>)["skippedBody"] ?? "",
+    };
     await click(host.querySelector("[data-copy-markdown]"));
+    expect(pending).toHaveLength(1);
     await act(async () => {
-      pending[0]?.reject();
+      pending[0].reject();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect((catalog(locale)["actions"] as Record<string, string>)["copyFailed"]).toBe(APPROVED_COPY_FAILED[locale]);
     expect(host.querySelector("[data-copy-failed]")?.textContent).toBe(APPROVED_COPY_FAILED[locale]);
     expect(host.querySelector("[data-copy-markdown]")?.textContent).toBe(copyLabel);
     await click(host.querySelector("[data-copy-markdown]"));
+    // The second click really wrote the clipboard, with this result's exact Markdown.
+    expect(pending).toHaveLength(2);
+    expect(pending[1].text).toBe(expectedMarkdown(result, notes));
     await act(async () => {
-      pending[1]?.resolve();
+      pending[1].resolve();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(host.querySelector("[data-copy-failed]")).toBeNull();

@@ -150,6 +150,20 @@ describe("content-draft message coverage", () => {
     });
 
 
+    it(`tells a visitor whose brief could not be kept that sign-in worked and the page stayed (${locale})`, () => {
+      const copy = String(group(bundle, "intake")["handoffKeepFailed"]);
+      if (locale === "en") {
+        expect(copy).toMatch(/^Signed in\./);
+        expect(copy).toMatch(/did not refresh/);
+        expect(copy).toMatch(/generate right away/);
+      } else {
+        expect(copy).toMatch(/^登录已成功/);
+        expect(copy).toContain("本页没有刷新");
+        expect(copy).toContain("可以直接生成");
+      }
+      expect(copy).not.toMatch(/export|导出|paste|粘贴/i);
+    });
+
     it(`tells a previous_draft_invalid visitor to regenerate, never to re-export (${locale})`, () => {
       // Independent oracle: the meaning is pinned here, not read back from the catalog.
       const copy = String(group(bundle, "errors")["previous_draft_invalid"]);

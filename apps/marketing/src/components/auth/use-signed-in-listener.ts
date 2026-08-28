@@ -9,13 +9,29 @@ import { useEffect } from "react";
 import { onGoogleSignedIn, type SignedInListener } from "../../lib/auth/gsi-client";
 
 /**
+ * What the dialog does when a credential became a session: it closes itself
+ * first (a vetoed reload must not leave a modal covering the notice that
+ * explains the veto), then forwards to the caller and returns the caller's
+ * verdict. Pure, so it can be tested without the dialog's chrome.
+ */
+export function signedInHandler(
+  onOpenChange: (open: boolean) => void,
+  onSignedIn: SignedInListener | undefined,
+): SignedInListener {
+  return () => {
+    onOpenChange(false);
+    return onSignedIn?.();
+  };
+}
+
+/**
  * Registered while mounted, open or closed: a credential posted before the
  * dialog closed still completes, and the caller's state must still survive
- * the reload that follows. Callers that pass nothing register nothing.
+ * the reload that follows.
  */
-export function useSignedInListener(onSignedIn: SignedInListener | undefined): void {
+export function useSignedInListener(listener: SignedInListener | undefined): void {
   useEffect(() => {
-    if (onSignedIn === undefined) return;
-    return onGoogleSignedIn(onSignedIn);
-  }, [onSignedIn]);
+    if (listener === undefined) return;
+    return onGoogleSignedIn(listener);
+  }, [listener]);
 }

@@ -4311,7 +4311,7 @@
         "handoffLoaded": "已从 Content Brief Builder 接收到 brief。",
         "handoffExpired": "交接过来的 brief 已过期或尚未生效。请在 Content Brief Builder 里导出 JSON 后粘贴到这里。",
         "handoffPending": "有一份从 Content Brief Builder 交接过来的 brief 在等待。登录后将载入。",
-        "handoffKeepFailed": "已载入的 brief 没能在这个浏览器里保留到登录引起的刷新之后。请在 Content Brief Builder 里导出 JSON，登录后粘贴到这里。",
+        "handoffKeepFailed": "登录已成功；为保留已载入的 brief，本页没有刷新。可以直接生成；手动刷新前请保留输入。",
         "pasteLabel": "粘贴 brief JSON",
         "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
         "load": "载入 brief",

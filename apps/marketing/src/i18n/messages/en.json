@@ -4311,7 +4311,7 @@
         "handoffLoaded": "Brief received from the Content Brief Builder.",
         "handoffExpired": "The handed-over brief has expired or is not valid yet. Export it as JSON from the Content Brief Builder and paste it here.",
         "handoffPending": "A brief handed over from the Content Brief Builder is waiting. Sign in and it will be loaded.",
-        "handoffKeepFailed": "The loaded brief could not be kept in this browser for the reload that sign-in causes. Export it as JSON from the Content Brief Builder and paste it here after signing in.",
+        "handoffKeepFailed": "Signed in. To keep the loaded brief, this page did not refresh. You can generate right away; keep your input before refreshing by hand.",
         "pasteLabel": "Paste the brief JSON",
         "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
         "load": "Load brief",

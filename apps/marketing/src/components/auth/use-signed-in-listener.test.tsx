@@ -17,7 +17,7 @@ vi.mock("../../lib/auth/gsi-client", () => ({
   onGoogleSignedIn: onGoogleSignedInMock,
 }));
 
-const { useSignedInListener } = await import("./use-signed-in-listener.ts");
+const { signedInHandler, useSignedInListener } = await import("./use-signed-in-listener.ts");
 
 function Harness({ onSignedIn }: { readonly onSignedIn?: () => void }) {
   useSignedInListener(onSignedIn);
@@ -48,6 +48,28 @@ async function render(onSignedIn?: () => void): Promise<void> {
     root?.render(<Harness onSignedIn={onSignedIn} />);
   });
 }
+
+describe("signedInHandler", () => {
+  it("closes the dialog first, then forwards and returns the caller's verdict", () => {
+    const order: string[] = [];
+    const onOpenChange = vi.fn((open: boolean) => {
+      order.push(`open:${open}`);
+    });
+    const onSignedIn = vi.fn(() => {
+      order.push("forward");
+      return false as const;
+    });
+    expect(signedInHandler(onOpenChange, onSignedIn)()).toBe(false);
+    expect(order).toEqual(["open:false", "forward"]);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("still closes the dialog for callers that passed nothing, and vetoes nothing", () => {
+    const onOpenChange = vi.fn();
+    expect(signedInHandler(onOpenChange, undefined)()).toBeUndefined();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
 
 describe("useSignedInListener", () => {
   it("registers the listener while mounted and releases it on unmount", async () => {

@@ -147,6 +147,19 @@ async function readSession(signal: AbortSignal): Promise<SessionCheck> {
   return body.signedIn ? "signed_in" : "signed_out";
 }
 
+/**
+ * This tab's session storage, or null when the browser refuses it (a
+ * sandboxed frame, a "block all cookies" setting): every handoff path then
+ * degrades to "nothing waiting, nothing kept" instead of throwing.
+ */
+function safeSessionStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** The opener's copy of a consumed handoff, if this tab still has an opener and it is ours. */
 function openerStorage(): Storage | null {
   try {
@@ -170,6 +183,13 @@ export interface ContentDraftToolProps {
 export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProps) {
   const t = useTranslations("tools.contentDraft");
   const [intake, setIntake] = useState<IntakeState>({ phase: "empty" });
+  /**
+   * The intake as of the last transition, written BEFORE the state update
+   * is queued. A signed-in callback can run between a parser resolving and
+   * React committing the result; reading the rendered value there would keep
+   * a brief that is already being replaced.
+   */
+  const latestIntake = useRef<IntakeState>(intake);
   const [settings, setSettings] = useState<DraftSettings>(DEFAULT_DRAFT_SETTINGS);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [phase, setPhase] = useState<Phase>("idle");
@@ -226,19 +246,21 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   // server knows is signed out only peeks: the hero sign-in reloads the page,
   // and the page after that reload is the one that consumes it.
   useEffect(() => {
+    const storage = safeSessionStorage();
+    if (storage === null) return;
     if (!authenticated) {
-      pendingRaw.current = peekContentBriefHandoff(window.sessionStorage);
+      pendingRaw.current = peekContentBriefHandoff(storage);
       setHandoffPending(pendingRaw.current !== null);
       return;
     }
-    const raw = takeContentBriefHandoff(window.sessionStorage);
+    const raw = takeContentBriefHandoff(storage);
     if (raw === null) return;
     // This tab holds the envelope now, parsed or not; the opener's copy is
     // deleted at once, and only while it is still exactly this envelope.
     const opener = openerStorage();
     if (opener !== null) clearMatchingContentBriefHandoff(opener, raw);
     const gen = nextGeneration();
-    setIntake({ phase: "parsing" });
+    setCurrentIntake({ phase: "parsing" });
     void parseIntake(raw, "handoff").then((next) => {
       if (mounted.current && gen === generation.current) loadIntake(next);
     });
@@ -261,10 +283,17 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
     resultsRef.current?.scrollIntoView({ block: "start" });
   }, [result]);
 
+  /** The only way the intake changes: the ref first, so a callback between now and the commit sees it. */
+  function setCurrentIntake(next: IntakeState): void {
+    latestIntake.current = next;
+    setIntake(next);
+  }
+
   /** Removes the envelope this tab wrote for a reload, if it is still exactly that envelope. */
   function discardWrittenHandoff(): void {
     if (writtenRaw.current === null) return;
-    clearMatchingContentBriefHandoff(window.sessionStorage, writtenRaw.current);
+    const storage = safeSessionStorage();
+    if (storage !== null) clearMatchingContentBriefHandoff(storage, writtenRaw.current);
     writtenRaw.current = null;
   }
 
@@ -272,16 +301,23 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    * Writes the loaded brief as a fresh envelope so it survives the reload a
    * sign-in causes. Idempotent: a later write for the same brief replaces
    * the earlier one with a fresh TTL; a failed refresh leaves the earlier,
-   * still-valid envelope in place. Returns whether the brief is now kept.
+   * still-valid envelope in place. Returns whether the brief is now kept;
+   * never throws, because a throw here would let the reload proceed and
+   * lose the brief (gsi-client treats a throwing listener as "no veto").
    */
   function keepForReload(brief: ContentBrief): boolean {
-    const written = writeContentBriefHandoff(window.sessionStorage, Date.now(), brief, {
-      preserve: writtenRaw.current,
-    });
-    if (written.ok) {
-      writtenRaw.current = written.raw;
-      setKeepFailed(false);
-      return true;
+    try {
+      const written = writeContentBriefHandoff(window.sessionStorage, Date.now(), brief, {
+        preserve: writtenRaw.current,
+      });
+      if (written.ok) {
+        writtenRaw.current = written.raw;
+        setKeepFailed(false);
+        return true;
+      }
+    } catch {
+      // A storage getter that throws (SecurityError) is the same outcome as
+      // a store that refuses the write: the brief cannot be kept.
     }
     setKeepFailed(true);
     return false;
@@ -304,11 +340,12 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
       // peeked). Nothing is written yet -- a plain refresh must start empty
       // and a cancelled sign-in must leave nothing behind; the brief is
       // written only by onSignedIn, once a credential became a session.
-      clearMatchingContentBriefHandoff(window.sessionStorage, pendingRaw.current);
+      const storage = safeSessionStorage();
+      if (storage !== null) clearMatchingContentBriefHandoff(storage, pendingRaw.current);
       pendingRaw.current = null;
       setHandoffPending(false);
     }
-    setIntake(next);
+    setCurrentIntake(next);
     setResult(null);
     setRerunsUsed(0);
     rerunsSpent.current = 0;
@@ -321,7 +358,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
   }
 
   function parseAt(gen: number, raw: string, source: BriefSource): void {
-    setIntake({ phase: "parsing" });
+    setCurrentIntake({ phase: "parsing" });
     void parseIntake(raw, source).then((next) => {
       if (mounted.current && gen === generation.current) loadIntake(next);
     });
@@ -333,7 +370,7 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
 
   function uploadBrief(file: File): void {
     const gen = nextGeneration();
-    setIntake({ phase: "parsing" });
+    setCurrentIntake({ phase: "parsing" });
     void file.text().then(
       (text) => {
         if (gen === generation.current) parseAt(gen, text, "upload");
@@ -393,8 +430,6 @@ export function ContentDraftTool({ locale, authenticated }: ContentDraftToolProp
    * brief or a plain refresh can neither lose it nor resurrect it. A plain
    * refresh still starts empty: nothing is written on that path.
    */
-  const latestIntake = useRef(intake);
-  latestIntake.current = intake;
   const onSignedIn = useCallback((): boolean | void => {
     const current = latestIntake.current;
     if (current.phase !== "loaded") return;
