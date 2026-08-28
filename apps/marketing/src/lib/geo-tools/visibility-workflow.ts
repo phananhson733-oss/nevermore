@@ -32,7 +32,17 @@ function waves<T>(
 }
 
 /**
- * One provider call per step.
+ * One provider call per step, in fixed waves.
+ *
+ * Fixed waves, and not a shared-cursor scheduler, even though waves cost the
+ * slowest member of each wave and a cursor would not. The orchestrator is
+ * replayed: the runtime matches step results to calls by the order the calls
+ * were made, and a scheduler that hands the next item to whichever lane
+ * finished first makes that order depend on provider latency. The second run
+ * through would pair results with different calls. The head-of-line cost is
+ * real - with per-call latency spread between a few seconds and the ninety
+ * second ceiling, waves roughly double the wall clock against a perfect
+ * scheduler - and it is the price of a run that can resume.
  *
  * A step per question would batch five paid calls behind one retry boundary,
  * and a step that dies at call four has to repeat the three that succeeded.

@@ -10,6 +10,8 @@ import {
   recordVisibilityRun,
 } from "./visibility-store.ts";
 import { readFrozenGeoKb } from "./kb-store.ts";
+import { normalizeGeoHost } from "../agents/geo-url.ts";
+import { isDenseGeoName } from "../agents/geo-alias-match.ts";
 import {
   GEO_VISIBILITY_SCHEMA_VERSION,
   VISIBILITY_LIMITS,
@@ -132,12 +134,16 @@ export async function visibilityPrepareStep(
     }
   }
 
-  let targetHost = "";
-  try {
-    targetHost = new URL(payload.targetUrl).host.toLowerCase();
-  } catch {
-    targetHost = "";
-  }
+  // `normalizeGeoHost`, not `new URL(...).host`. The citation side canonicalizes
+  // every host through that function - it lowercases, strips a leading `www.`
+  // and rejects a port - and comparing its output against a raw `URL.host` is
+  // an equality check between two different spellings of the same site. For a
+  // knowledge base whose target is `https://www.acme.com/`, every citation of
+  // acme.com would have been judged "not us" and the run would have reported a
+  // permanent zero citation rate, while the domain table beside it listed
+  // acme.com as the site's own. This repo has shipped that mismatch twice
+  // before; the fix is to have one canonical form and no second opinion.
+  const targetHost = normalizeGeoHost(payload.targetUrl) ?? "";
 
   return {
     status: "ready",
@@ -204,6 +210,15 @@ export async function visibilityAssembleStep(
     ownHost: prepared.context.targetHost,
     competitors: prepared.context.competitors,
     samplesPerQuestion: request.samplesPerQuestion,
+    // Both of these were declared, tested, and never passed. Without the brand
+    // names every question counts as unprompted, including the ones that name
+    // the brand; without the URLs the domain table has no example links and the
+    // page renders an empty evidence list under every row.
+    brandNames: [
+      prepared.context.officialName,
+      ...prepared.context.aliases,
+    ],
+    citationUrls: samples.flatMap((sample) => sample.citedUrls),
   });
 
   const finishedAt = new Date().toISOString();
@@ -221,7 +236,11 @@ export async function visibilityAssembleStep(
     questionCount: prepared.questions.length,
     samplesPerQuestion: request.samplesPerQuestion,
     marketCode: prepared.context.marketCode,
-    model: VISIBILITY_SURFACE,
+    // The model, in the field named model. It used to hold the surface, so the
+    // page printed "dataforseo_chat_gpt_llm_responses_api" where it said Model
+    // and the actual model was recorded nowhere.
+    model: VISIBILITY_MODEL,
+    surface: VISIBILITY_SURFACE,
     startedAt: request.startedAt,
     finishedAt,
     calls: aggregate.calls,
@@ -236,18 +255,30 @@ export async function visibilityAssembleStep(
     kbId: request.kbId,
     questionSetHash: prepared.questionSetHash,
   });
+  // A run that did not draw conclusions about itself cannot serve as the
+  // baseline another run is measured against. The store refuses to hand one
+  // back; this is the second half of the same rule, kept here so a future
+  // caller that reads a row by some other route still cannot compare to it.
+  const comparable =
+    previous.kind === "ok" && previous.value.manifest.status !== "insufficient"
+      ? previous.value
+      : null;
   const comparison =
-    previous.kind === "ok"
+    comparable !== null && aggregate.status !== "insufficient"
       ? compareVisibility(
           {
-            runId: previous.value.runId,
-            finishedAt: previous.value.manifest.finishedAt,
-            metrics: previous.value.metrics,
-            questions: previous.value.perQuestion.map((entry) => ({
+            runId: comparable.runId,
+            finishedAt: comparable.manifest.finishedAt,
+            metrics: comparable.metrics,
+            questions: comparable.perQuestion.map((entry) => ({
               questionId: entry.questionId,
               text: entry.text,
+              prompted: entry.prompted,
+              mode: entry.mode,
               answered: entry.answered,
               mentioned: entry.mentioned,
+              citationEvaluable: entry.citationEvaluable,
+              cited: entry.cited,
             })),
           },
           {
@@ -257,26 +288,60 @@ export async function visibilityAssembleStep(
             questions: aggregate.questions.map((entry) => ({
               questionId: entry.questionId,
               text: entry.text,
+              prompted: entry.prompted,
+              mode: entry.mode,
               answered: entry.answered,
               mentioned: entry.mentioned,
+              citationEvaluable: entry.citationEvaluable,
+              cited: entry.cited,
             })),
           },
         )
       : null;
+
+  // Disclosed rather than refused. The matcher can now find a brand written in
+  // a script that has no spaces between words, which it could not before - but
+  // the whole-word rule that stops "Acme" matching inside "AcmeCorp" has no
+  // equivalent there, so a longer word containing the name counts as a mention.
+  // The GEO Agent answers this by calling such alias sets out of scope and
+  // reporting `unavailable`, which for a Chinese brand means the tool measures
+  // nothing at all. Measuring and saying what the measurement cannot separate
+  // is the better trade here; refusing to measure is not more honest, it is
+  // just less useful.
+  const denseScript = [
+    prepared.context.officialName,
+    ...prepared.context.aliases,
+  ].some((name) => isDenseGeoName(name));
 
   const report: VisibilityReport = {
     manifest,
     metrics: aggregate.metrics,
     questions: aggregate.questions,
     citedDomains: aggregate.citedDomains,
-    limits: [...VISIBILITY_LIMITS],
+    limits: denseScript
+      ? [...VISIBILITY_LIMITS, "denseScriptMatching"]
+      : [...VISIBILITY_LIMITS],
     comparison,
   };
 
   // Recorded whatever the outcome, because a run that mostly failed is still
   // something the visitor paid for and may want to see again. Whether it can
   // serve as a baseline is the store's call, made on the manifest's status.
-  await recordVisibilityRun({ userId: request.sub, report });
+  //
+  // The outcome is read rather than discarded. A write that fails costs every
+  // future run its baseline, and a report that says nothing about it looks
+  // exactly like one that was stored - the visitor would find out weeks later,
+  // when a comparison they were promised never appears.
+  const recorded = await recordVisibilityRun({
+    userId: request.sub,
+    report,
+  });
 
-  return { kind: "completed", report };
+  return {
+    kind: "completed",
+    report:
+      recorded.kind === "ok"
+        ? report
+        : { ...report, limits: [...report.limits, "notStored"] },
+  };
 }

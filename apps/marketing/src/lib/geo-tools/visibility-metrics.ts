@@ -21,17 +21,20 @@
  * through `describeProportion` and next-intl.
  */
 
+import { containsGeoAlias } from "../agents/geo-alias-match.ts";
 import { geoCitationDomain, normalizeGeoHost } from "../agents/geo-url.ts";
 import type { GeoKbCompetitor } from "./kb-contract.ts";
-import type { GeoQuestion, GeoQuestionLayer } from "./kb-questions.ts";
+import type {
+  GeoQuestion,
+  GeoQuestionLayer,
+  GeoQuestionMode,
+} from "./kb-questions.ts";
 import {
   benjaminiHochberg,
-  changeVerdict,
   collapseGroupsToBernoulli,
+  mcnemarExactP,
   pooled,
-  twoProportionP,
   wilson,
-  MIN_TRIALS_FOR_TEST,
   type Proportion,
 } from "./stats.ts";
 import {
@@ -62,11 +65,20 @@ const LAYER_ORDER: readonly GeoQuestionLayer[] = [
 /** Example links kept per cited domain. Evidence, not a link dump. */
 export const VISIBILITY_MAX_SAMPLE_URLS = 3;
 
-/** The aggregate hypotheses the run-over-run view tests. */
+/**
+ * The hypotheses the run-over-run view tests, and the unit they are tested in.
+ *
+ * Both are question-level. The sample-level rates are still reported, and they
+ * are still the ones a reader wants to see; they are not testable. Asking one
+ * question five times produces five correlated observations, and feeding thirty
+ * of them to a test that assumes thirty independent ones inflates the sample
+ * size fivefold. Measured on a real shape: six questions where five moved the
+ * same way came out at p = 2e-7 pooled, and at p = 0.125 paired - the pooled
+ * number is not a stronger result, it is the same result counted five times.
+ */
 export const VISIBILITY_COMPARED_METRICS = [
-  "unpromptedMention",
-  "citation",
   "questionsMentioned",
+  "questionsCited",
 ] as const;
 
 export type VisibilityComparedMetric = (typeof VISIBILITY_COMPARED_METRICS)[number];
@@ -74,6 +86,16 @@ export type VisibilityComparedMetric = (typeof VISIBILITY_COMPARED_METRICS)[numb
 export interface VisibilityAggregateOptions {
   /** The site under test. Compared on exact canonical host, never by suffix. */
   readonly ownHost: string;
+  /**
+   * The confirmed brand name and its aliases.
+   *
+   * Used for one thing: deciding which questions already name the brand. That
+   * cannot be read off the layer - a comparison-layer question like "How does
+   * Acme compare to other tools?" names the brand as surely as a branded one,
+   * and counting the model repeating it as unprompted visibility is the single
+   * number this tool exists to get right.
+   */
+  readonly brandNames?: readonly string[];
   /**
    * The frozen knowledge base's competitors.
    *
@@ -147,11 +169,30 @@ function stripLevel(proportion: Proportion): VisibilityProportion {
 /* Per-question counts                                                 */
 /* ------------------------------------------------------------------ */
 
-function groupSamples(
-  samples: readonly VisibilitySample[],
-): ReadonlyMap<string, readonly VisibilitySample[]> {
+interface GroupedSamples {
+  readonly get: (questionId: string) => readonly VisibilitySample[] | undefined;
+  /**
+   * Samples discarded because another sample already held their slot.
+   *
+   * Non-zero means the record does not describe the plan - a scheduler bug, a
+   * replayed step, or a storage misalignment. The run is then reported as
+   * partial rather than certified complete, because the alternative is a report
+   * that counts one question twice and calls the missing one answered.
+   */
+  readonly dropped: number;
+}
+
+function groupSamples(samples: readonly VisibilitySample[]): GroupedSamples {
   const byQuestion = new Map<string, VisibilitySample[]>();
+  const seen = new Set<string>();
+  let dropped = 0;
   for (const sample of samples) {
+    const slot = `${sample.questionId}\u0000${sample.sampleIndex}`;
+    if (seen.has(slot)) {
+      dropped += 1;
+      continue;
+    }
+    seen.add(slot);
     const bucket = byQuestion.get(sample.questionId);
     if (bucket === undefined) byQuestion.set(sample.questionId, [sample]);
     else bucket.push(sample);
@@ -161,22 +202,32 @@ function groupSamples(
   for (const bucket of byQuestion.values()) {
     bucket.sort((left, right) => left.sampleIndex - right.sampleIndex);
   }
-  return byQuestion;
+  return { get: (questionId) => byQuestion.get(questionId), dropped };
 }
 
 function questionResult(
   question: GeoQuestion,
   samples: readonly VisibilitySample[],
+  prompted: boolean,
 ): VisibilityQuestionResult {
   let answered = 0;
   let mentioned = 0;
   let citationEvaluable = 0;
   let cited = 0;
+  let citationUnknown = 0;
   for (const sample of samples) {
     if (!isAnswered(sample)) continue;
     answered += 1;
     if (sample.mentioned) mentioned += 1;
     if (!isCitationEvaluable(sample)) continue;
+    // An answered, searched sample whose citation list would not parse is
+    // counted here and nowhere else: it is not a citation, and it is not a
+    // sample that failed to cite. Putting it in either bucket would move the
+    // rate in a direction nothing observed.
+    if (sample.cited === null) {
+      citationUnknown += 1;
+      continue;
+    }
     citationEvaluable += 1;
     if (sample.cited) cited += 1;
   }
@@ -185,6 +236,7 @@ function questionResult(
     text: question.text,
     layer: question.layer,
     mode: question.mode,
+    prompted,
     calibrated: question.calibrated,
     samples,
     answered,
@@ -194,6 +246,7 @@ function questionResult(
     // rate, and that filter lives in `metricsFrom` where the rates are built.
     citationEvaluable,
     cited,
+    citationUnknown,
   };
 }
 
@@ -220,20 +273,26 @@ const isRetrieval = (result: VisibilityQuestionResult): boolean =>
   result.mode === "retrieval";
 
 /**
- * Branded questions are excluded from every discovery number.
+ * Questions that already name the brand are excluded from every discovery number.
  *
  * "Is <brand> a good choice?" names the brand in the question, so the model
- * repeating it back is not visibility - it is the question. Counting those two
+ * repeating it back is not visibility - it is the question. Counting those
  * questions would give a brand that is never found anywhere a non-zero
  * unprompted rate, which is the one number this tool exists to get right. Their
  * mentions are reported on their own line, `promptedMention`.
+ *
+ * The test is on the question text, not on its layer. The layer says what stage
+ * of a search the question belongs to; whether the brand appears in it is a
+ * property of the words. A comparison-layer question written as "How does Acme
+ * compare to the alternatives?" is prompted, and a layer check would have filed
+ * it under discovery.
  *
  * This applies to `questionsMentioned` too. Each proportion carries the
  * denominator it was actually computed over, so the page prints "n of 40" and
  * never the size of the frozen set.
  */
 const isUnprompted = (result: VisibilityQuestionResult): boolean =>
-  result.layer !== "branded";
+  !result.prompted;
 
 function metricsFrom(
   results: readonly VisibilityQuestionResult[],
@@ -256,13 +315,21 @@ function metricsFrom(
     ];
   });
 
+  const retrieval = results.filter(isRetrieval);
+  const citationLevel = collapseGroupsToBernoulli(retrieval.map(citationPart));
+
   return {
     unpromptedMention: stripLevel(pooled(unprompted.map(mentionPart))),
     promptedMention: stripLevel(pooled(branded.map(mentionPart))),
-    citation: stripLevel(pooled(results.filter(isRetrieval).map(citationPart))),
+    citation: stripLevel(pooled(retrieval.map(citationPart))),
     questionsMentioned: stripLevel(
       wilson(questionLevel.successes, questionLevel.trials),
     ),
+    questionsCited: stripLevel(
+      wilson(citationLevel.successes, citationLevel.trials),
+    ),
+    questionsAsked: unprompted.length,
+    questionsAnswered: unprompted.filter((result) => result.answered > 0).length,
     byLayer,
   };
 }
@@ -380,8 +447,15 @@ export function aggregateVisibility(
   }
 
   const grouped = groupSamples(samples);
+  const brandNames = (options.brandNames ?? []).filter(
+    (name) => name.trim().length > 0,
+  );
   const results = questions.map((question) =>
-    questionResult(question, grouped.get(question.id) ?? []),
+    questionResult(
+      question,
+      grouped.get(question.id) ?? [],
+      brandNames.length > 0 && containsGeoAlias(question.text, brandNames),
+    ),
   );
 
   const answered = results.reduce((total, result) => total + result.answered, 0);
@@ -399,10 +473,18 @@ export function aggregateVisibility(
   const successRatio = calls === 0 ? 0 : answered / calls;
 
   const lostAnEngine = (options.engineFailures ?? []).length > 0;
+  // A run is only complete if every planned slot is filled once. Comparing
+  // totals is not the same check: six samples all labelled Q1 match a plan of
+  // two questions by three, and would certify a report in which Q2 was never
+  // asked as "100% successful". Duplicates and unknown ids are counted the same
+  // way, because both mean the record no longer describes the plan.
+  const short = results.some(
+    (result) => result.samples.length !== options.samplesPerQuestion,
+  );
   const status: VisibilityRunStatus =
     successRatio < VISIBILITY_MIN_SUCCESS_RATIO
       ? "insufficient"
-      : lostAnEngine || matched < planned
+      : lostAnEngine || short || matched < planned || grouped.dropped > 0
         ? "partial"
         : "ok";
 
@@ -425,9 +507,24 @@ export function aggregateVisibility(
 export interface VisibilityComparisonQuestion {
   readonly questionId: string;
   readonly text: string;
+  /** Carried so the paired test can exclude questions that name the brand. */
+  readonly prompted: boolean;
+  readonly mode: GeoQuestionMode;
   readonly answered: number;
   readonly mentioned: number;
+  readonly citationEvaluable: number;
+  readonly cited: number;
 }
+
+/**
+ * Comparable questions needed before a paired verdict is offered at all.
+ *
+ * Ten, and it is a floor on the pairs rather than on the discordant ones: the
+ * exact test already refuses to reject on two or three questions moving, and
+ * this stops a set that shrank to a handful of comparable questions from
+ * presenting any verdict, significant or not.
+ */
+export const MIN_PAIRED_QUESTIONS_FOR_TEST = 10;
 
 export interface VisibilityComparisonSide {
   readonly runId: string;
@@ -448,6 +545,60 @@ export interface VisibilityComparisonSide {
  * samples cannot support a significance claim, and the run-level correction is
  * what stops forty of them from producing four "improvements" out of noise.
  */
+/** Which questions each compared metric is entitled to look at. */
+const PAIRED_ELIGIBILITY: {
+  readonly [K in VisibilityComparedMetric]: (
+    question: VisibilityComparisonQuestion,
+  ) => boolean;
+} = {
+  questionsMentioned: (question) => !question.prompted && question.answered > 0,
+  questionsCited: (question) =>
+    question.mode === "retrieval" && question.citationEvaluable > 0,
+};
+
+/** Whether the question counts as a success for that metric. */
+const PAIRED_SUCCESS: {
+  readonly [K in VisibilityComparedMetric]: (
+    question: VisibilityComparisonQuestion,
+  ) => boolean;
+} = {
+  questionsMentioned: (question) => question.mentioned > 0,
+  questionsCited: (question) => question.cited > 0,
+};
+
+interface PairedCounts {
+  readonly pairs: number;
+  readonly gained: number;
+  readonly lost: number;
+}
+
+function pairedCounts(
+  metric: VisibilityComparedMetric,
+  before: readonly VisibilityComparisonQuestion[],
+  after: readonly VisibilityComparisonQuestion[],
+): PairedCounts {
+  const eligible = PAIRED_ELIGIBILITY[metric];
+  const success = PAIRED_SUCCESS[metric];
+  const baseById = new Map(
+    before.map((question) => [question.questionId, question] as const),
+  );
+  let pairs = 0;
+  let gained = 0;
+  let lost = 0;
+  for (const question of after) {
+    const previous = baseById.get(question.questionId);
+    if (previous === undefined) continue;
+    if (!eligible(previous) || !eligible(question)) continue;
+    pairs += 1;
+    const was = success(previous);
+    const now = success(question);
+    if (was === now) continue;
+    if (now) gained += 1;
+    else lost += 1;
+  }
+  return { pairs, gained, lost };
+}
+
 export function compareVisibility(
   base: VisibilityComparisonSide,
   current: VisibilityComparisonSide,
@@ -456,47 +607,47 @@ export function compareVisibility(
     metric,
     base: base.metrics[metric],
     current: current.metrics[metric],
+    counts: pairedCounts(metric, base.questions, current.questions),
   }));
 
   const testable = pairs.map(
-    (pair) =>
-      pair.base.trials >= MIN_TRIALS_FOR_TEST &&
-      pair.current.trials >= MIN_TRIALS_FOR_TEST,
+    (pair) => pair.counts.pairs >= MIN_PAIRED_QUESTIONS_FOR_TEST,
   );
   const testedPValues = pairs
     .filter((_, index) => testable[index] === true)
-    .map((pair) =>
-      twoProportionP(
-        pair.base.successes,
-        pair.base.trials,
-        pair.current.successes,
-        pair.current.trials,
-      ),
-    );
+    .map((pair) => mcnemarExactP(pair.counts.gained, pair.counts.lost));
   const rejections = benjaminiHochberg(testedPValues);
 
   let testedIndex = 0;
   const aggregates = pairs.map((pair, index) => {
     const rejected =
       testable[index] === true ? (rejections[testedIndex++] ?? false) : false;
-    const verdict = changeVerdict(
-      {
-        baseSuccesses: pair.base.successes,
-        baseTrials: pair.base.trials,
-        currentSuccesses: pair.current.successes,
-        currentTrials: pair.current.trials,
-      },
-      rejected,
-    );
+    const moved = pair.counts.gained + pair.counts.lost;
+    // The share of the moved questions that improved, with its interval. The
+    // null case is "nothing moved", which is a real answer and not a missing
+    // one - it is why the interval is reported separately from `diff`.
+    const direction = moved === 0 ? null : wilson(pair.counts.gained, moved);
+    const excludesEvenSplit =
+      direction !== null &&
+      direction.lo !== null &&
+      direction.hi !== null &&
+      (direction.lo > 0.5 || direction.hi < 0.5);
+    const diff =
+      pair.base.point === null || pair.current.point === null
+        ? null
+        : pair.current.point - pair.base.point;
     return {
       metric: pair.metric,
       base: pair.base,
       current: pair.current,
-      diff: verdict.diff,
-      lo: verdict.lo,
-      hi: verdict.hi,
-      changed: verdict.changed,
-      testable: verdict.testable,
+      diff,
+      gained: pair.counts.gained,
+      lost: pair.counts.lost,
+      pairs: pair.counts.pairs,
+      lo: direction?.lo ?? null,
+      hi: direction?.hi ?? null,
+      changed: testable[index] === true && rejected && excludesEvenSplit,
+      testable: testable[index] === true,
     };
   });
 

@@ -31,6 +31,11 @@ import {
   type ProportionDescription,
 } from "../../lib/geo-tools/stats.ts";
 import { localePath } from "../../lib/locale-path.ts";
+import {
+  clearVisibilityRunPointer,
+  readVisibilityRunPointer,
+  writeVisibilityRunPointer,
+} from "./ai-visibility-run-pointer.ts";
 
 const ENDPOINTS = {
   load: "/api/tools/ai-visibility-check/load",
@@ -41,9 +46,28 @@ const ENDPOINTS = {
 /** The route the empty state points at. It exists, so the button is allowed to. */
 const KNOWLEDGE_BASE_PATH = "/tools/geo-knowledge-base";
 
-/** Polling floor and ceiling. The server's own `Retry-After` decides in between. */
+/**
+ * Polling floor and ceiling.
+ *
+ * The server's own `retryAfterSeconds` decides in between. It arrives in the
+ * body rather than a header: `privateJson` sets only `Cache-Control`, so a
+ * client reading `Retry-After` reads nothing and polls at the floor forever —
+ * about four hundred and fifty authenticated requests for one fifteen-minute
+ * answer.
+ */
 const POLL_DEFAULT_MS = 2_000;
 const POLL_MAX_MS = 5_000;
+
+/**
+ * How long one mounted page will watch a run before it stops asking.
+ *
+ * A run is about a quarter of an hour, so half an hour is generous; what it
+ * rules out is a tab left open overnight polling a run that will never answer.
+ * The budget is per polling session rather than per run: the pointer outlives
+ * it in storage, so reloading gives the visitor another window rather than
+ * stranding a run that has already been paid for.
+ */
+const MAX_POLL_WALL_CLOCK_MS = 30 * 60 * 1_000;
 
 /**
  * How many unreadable status replies in a row before the page stops asking.
@@ -53,6 +77,19 @@ const POLL_MAX_MS = 5_000;
  * would otherwise have taken.
  */
 const MAX_STATUS_FAILURES = 5;
+
+/**
+ * Error codes that mean "this stored pointer is no good", not "your run broke".
+ *
+ * An expired pointer opens to nothing and comes back 404; a mangled one comes
+ * back 503. Neither is news to somebody who just opened the page, so a restored
+ * run that gets one of these goes quietly back to the form.
+ */
+const STALE_POINTER_CODES = new Set([
+  "not_found",
+  "run_unavailable",
+  "invalid_request",
+]);
 
 /** Cited URLs shown per domain. The rest are in the run, not on the page. */
 const SAMPLE_URLS_SHOWN = 3;
@@ -81,7 +118,6 @@ const TD = "px-3 py-3 align-top text-[13px] text-text-dark-primary";
 interface FrozenVersion {
   readonly kbId: string;
   readonly snapshotId: string;
-  readonly origin: string;
   readonly host: string;
   readonly revision: number;
   readonly frozenAt: string;
@@ -89,20 +125,28 @@ interface FrozenVersion {
   readonly retrievalCount: number;
 }
 
+/** What the load endpoint reports beside the choices themselves. */
+interface LoadedChoices {
+  readonly versions: readonly FrozenVersion[];
+  /**
+   * False only when the server says so. Absent means the account has no frozen
+   * version at all, which is the empty state — refusing the button there would
+   * be an answer to a question nobody asked.
+   */
+  readonly providerConfigured: boolean;
+  readonly runsPerDay: number;
+}
+
 type RunState =
   | { readonly kind: "idle" }
   | { readonly kind: "starting" }
-  | {
-      readonly kind: "running";
-      /** Null whenever the run does not report per-call progress. */
-      readonly done: number | null;
-      readonly total: number | null;
-    }
+  /** Queued and running are one state here: both mean "paid for, still going". */
+  | { readonly kind: "running" }
   | { readonly kind: "done"; readonly report: VisibilityReport }
   | { readonly kind: "error"; readonly code: string };
 
 type StatusOutcome =
-  | { readonly kind: "running"; readonly done: number | null; readonly total: number | null }
+  | { readonly kind: "running" }
   | { readonly kind: "completed"; readonly report: VisibilityReport }
   | { readonly kind: "error"; readonly code: string }
   | { readonly kind: "invalid" };
@@ -127,6 +171,68 @@ function countOf(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.trunc(value)
     : null;
+}
+
+/**
+ * One frozen choice, field by field.
+ *
+ * A `as readonly FrozenVersion[]` cast is why the page shipped reading
+ * `data.versions` while the handler sent `data.choices`: the assertion made
+ * `undefined` typecheck as a list of versions, so nothing between the two
+ * modules ever compared them. Checking the fields the form indexes into is
+ * what turns that class of mistake into a load error instead of a blank page.
+ */
+function asFrozenVersion(value: unknown): FrozenVersion | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+  const kbId = record["kbId"];
+  const snapshotId = record["snapshotId"];
+  const host = record["host"];
+  const frozenAt = record["frozenAt"];
+  const revision = countOf(record["revision"]);
+  const questionCount = countOf(record["questionCount"]);
+  const retrievalCount = countOf(record["retrievalCount"]);
+  if (
+    typeof kbId !== "string" ||
+    kbId.length === 0 ||
+    typeof snapshotId !== "string" ||
+    snapshotId.length === 0 ||
+    typeof host !== "string" ||
+    typeof frozenAt !== "string" ||
+    revision === null ||
+    questionCount === null ||
+    retrievalCount === null
+  ) {
+    return null;
+  }
+  return {
+    kbId,
+    snapshotId,
+    host,
+    frozenAt,
+    revision,
+    questionCount,
+    retrievalCount,
+  };
+}
+
+/** The load endpoint's payload, or null when it is not the shape the form reads. */
+function asLoadedChoices(body: unknown): LoadedChoices | null {
+  const data = asRecord(asRecord(body)?.["data"]);
+  if (data === null) return null;
+  const list = data["choices"];
+  if (!Array.isArray(list)) return null;
+  const versions: FrozenVersion[] = [];
+  for (const entry of list) {
+    const version = asFrozenVersion(entry);
+    if (version === null) return null;
+    versions.push(version);
+  }
+  return {
+    versions,
+    providerConfigured: data["providerConfigured"] !== false,
+    runsPerDay: countOf(data["runsPerDay"]) ?? VISIBILITY_RUNS_PER_DAY,
+  };
 }
 
 /**
@@ -163,12 +269,12 @@ function readStatus(httpStatus: number, body: unknown): StatusOutcome {
       ? { kind: "error", code: "schema_mismatch" }
       : { kind: "completed", report };
   }
-  if (data["status"] === "running") {
-    return {
-      kind: "running",
-      done: countOf(data["completedCalls"]),
-      total: countOf(data["totalCalls"]),
-    };
+  // Queued is not a failure. The workflow reports `pending` before it reports
+  // `running`, and a client that treated the first as unreadable spent five
+  // polls — about ten seconds — declaring a paid run dead while several
+  // hundred provider calls were still in flight.
+  if (data["status"] === "running" || data["status"] === "queued") {
+    return { kind: "running" };
   }
   return { kind: "invalid" };
 }
@@ -176,19 +282,22 @@ function readStatus(httpStatus: number, body: unknown): StatusOutcome {
 /**
  * The server's own cooldown, clamped.
  *
- * `Retry-After` arrives from a response, and a hostile or broken value must not
- * park the button for a week.
+ * It travels in the body, not in `Retry-After`: `privateJson` sets only
+ * `Cache-Control`. A hostile or broken value must still not park the button
+ * for a week, hence the ceiling.
  */
-function retryAfterSecondsFrom(response: Response): number {
-  const seconds = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
-  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3_600) : 0;
+function retryAfterSecondsFrom(body: unknown): number {
+  const record = asRecord(body);
+  const seconds =
+    countOf(record?.["retryAfterSeconds"]) ??
+    countOf(asRecord(record?.["data"])?.["retryAfterSeconds"]) ??
+    0;
+  return Math.min(seconds, 3_600);
 }
 
-function pollDelayMs(retryAfter: string | null): number {
-  const seconds = Number.parseInt(retryAfter ?? "", 10);
-  return Number.isFinite(seconds) && seconds > 0
-    ? Math.min(POLL_MAX_MS, seconds * 1_000)
-    : POLL_DEFAULT_MS;
+function pollDelayMs(body: unknown): number {
+  const seconds = retryAfterSecondsFrom(body);
+  return seconds > 0 ? Math.min(POLL_MAX_MS, seconds * 1_000) : POLL_DEFAULT_MS;
 }
 
 function waitFor(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -279,21 +388,40 @@ function ProportionValue({
 /* Report sections                                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The overview, in the unit the run can actually support.
+ *
+ * The headline is per question; the per-sample rate is a second line under it.
+ * Seven questions asked five times each is thirty-five correlated samples, and
+ * a zero over thirty-five clears the "may be written 0.0%" bound while the
+ * same zero over seven does not. Leading with the pooled figure is passing
+ * repeats of one question off as independent observations.
+ */
 function Overview({ report }: { readonly report: VisibilityReport }) {
   const t = useTranslations("tools.aiVisibility");
   const metrics = report.metrics;
   const cards = [
-    ["unpromptedMention", metrics.unpromptedMention],
-    ["promptedMention", metrics.promptedMention],
-    ["citation", metrics.citation],
-    ["questionsMentioned", metrics.questionsMentioned],
+    [
+      "questionsMentioned",
+      metrics.questionsMentioned,
+      metrics.unpromptedMention,
+    ],
+    ["questionsCited", metrics.questionsCited, metrics.citation],
   ] as const;
 
   return (
     <section className={PANEL}>
       <h3 className={HEADING}>{t("overview.title")}</h3>
+      {/* The denominator below is questions that answered, not questions
+          asked. The gap has to be on the page rather than divided away. */}
+      <p className={`mt-2 max-w-[640px] ${BODY}`}>
+        {t("overview.answeredQuestions", {
+          answered: metrics.questionsAnswered,
+          asked: metrics.questionsAsked,
+        })}
+      </p>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        {cards.map(([name, proportion]) => (
+        {cards.map(([name, byQuestion, bySample]) => (
           <div
             className="rounded-lg border border-brand-border-card p-4"
             key={name}
@@ -302,11 +430,24 @@ function Overview({ report }: { readonly report: VisibilityReport }) {
               {t(`overview.${name}.label`)}
             </p>
             <p className="mt-2 text-[16px] text-text-dark-primary">
-              <ProportionValue proportion={proportion} />
+              <ProportionValue proportion={byQuestion} />
             </p>
             <p className={`mt-2 ${NOTE}`}>{t(`overview.${name}.help`)}</p>
+            <p className={`mt-3 ${NOTE}`}>
+              {t("overview.acrossSamples")}{" "}
+              <ProportionValue proportion={bySample} />
+            </p>
           </div>
         ))}
+        <div className="rounded-lg border border-brand-border-card p-4">
+          <p className="text-[13px] text-text-dark-secondary">
+            {t("overview.promptedMention.label")}
+          </p>
+          <p className="mt-2 text-[16px] text-text-dark-primary">
+            <ProportionValue proportion={metrics.promptedMention} />
+          </p>
+          <p className={`mt-2 ${NOTE}`}>{t("overview.promptedMention.help")}</p>
+        </div>
       </div>
       <p className={`mt-5 ${NOTE}`}>
         {t("proportion.zeroThreshold", {
@@ -442,27 +583,52 @@ function QuestionRow({
   return (
     <li className="border-b border-brand-border-card pb-4 last:border-0">
       <p className="text-[14.5px] text-text-dark-primary">{question.text}</p>
+      {/* Prompted is decided on the words of the question, not on its stage,
+          so it is marked per question rather than inferred from the layer. */}
       <p className={`mt-1.5 ${NOTE}`}>
         {t(`layers.names.${question.layer}`)} ·{" "}
         {t(`questions.modes.${question.mode}`)}
+        {question.prompted ? ` · ${t("questions.promptedTag")}` : ""}
         {question.calibrated ? "" : ` · ${t("questions.uncalibrated")}`}
       </p>
-      <p className={`mt-2 ${BODY}`}>
-        {t("questions.mentionCount", {
-          mentioned: question.mentioned,
-          answered: question.answered,
-        })}
-      </p>
-      <p className={`mt-1 ${BODY}`}>
-        {question.mode === "demand"
-          ? t("questions.demandCitationNote", { cited: question.cited })
-          : question.citationEvaluable === 0
-            ? t("questions.citationNotEvaluable")
-            : t("questions.citationCount", {
-                cited: question.cited,
-                evaluable: question.citationEvaluable,
+      {/*
+        Nothing came back for this question, so there is no denominator and no
+        count. "Mentioned in 0 of 0 answers" reads as a measured absence; the
+        aggregates already refuse to say that, and the per-question line has to
+        refuse it too, or the two halves of the same page disagree.
+      */}
+      {question.answered === 0 ? (
+        <p className={`mt-2 ${BODY}`}>{t("questions.noAnswers")}</p>
+      ) : (
+        <>
+          <p className={`mt-2 ${BODY}`}>
+            {t("questions.mentionCount", {
+              mentioned: question.mentioned,
+              answered: question.answered,
+            })}
+          </p>
+          <p className={`mt-1 ${BODY}`}>
+            {question.mode === "demand"
+              ? t("questions.demandCitationNote", { cited: question.cited })
+              : question.citationEvaluable === 0
+                ? t("questions.citationNotEvaluable")
+                : t("questions.citationCount", {
+                    cited: question.cited,
+                    evaluable: question.citationEvaluable,
+                  })}
+          </p>
+          {/* An answer whose citation list would not parse is neither cited
+              nor uncited. It is out of the denominator above, so the count
+              has to be visible or the rate silently shrinks. */}
+          {question.citationUnknown === 0 ? null : (
+            <p className={`mt-1 ${NOTE}`}>
+              {t("questions.citationUnknown", {
+                count: question.citationUnknown,
               })}
-      </p>
+            </p>
+          )}
+        </>
+      )}
       <button
         className={`mt-3 ${SECONDARY_BUTTON}`}
         onClick={onToggle}
@@ -478,18 +644,26 @@ function QuestionRow({
               key={`${sample.questionId}-${String(sample.sampleIndex)}`}
             >
               <p className={NOTE}>
-                {t("questions.sampleLabel", { index: sample.sampleIndex + 1 })} ·{" "}
-                {t(`questions.sampleStatus.${sample.status}`)} ·{" "}
+                {t("questions.sampleLabel", { index: sample.sampleIndex + 1 })}{" "}
+                · {t(`questions.sampleStatus.${sample.status}`)} ·{" "}
                 {sample.webSearchPerformed === null
                   ? t("questions.sampleSearchUnknown")
                   : sample.webSearchPerformed
                     ? t("questions.sampleSearched")
                     : t("questions.sampleNoSearch")}
               </p>
+              {/*
+                A timed-out sample has no answer, so it cannot have failed to
+                mention anyone. Printing "No mention in this answer" beside a
+                label that says "timed out" is two contradictory sentences
+                about the same empty excerpt.
+              */}
               <p className={`mt-2 ${BODY}`}>
-                {sample.excerpt === null
-                  ? t("questions.noExcerpt")
-                  : sample.excerpt}
+                {sample.status !== "ok"
+                  ? t("questions.sampleNoAnswer")
+                  : sample.excerpt === null
+                    ? t("questions.noExcerpt")
+                    : sample.excerpt}
               </p>
               {sample.citedDomains.length === 0 ? null : (
                 <p className={`mt-2 ${NOTE} break-all`}>
@@ -544,6 +718,58 @@ function QuestionList({
   );
 }
 
+/** A proportion as a percentage, to one decimal. */
+function percent(value: number): number {
+  return Math.round(value * 1000) / 10;
+}
+
+/**
+ * The change column for one aggregate.
+ *
+ * Counted in questions, because that is the unit the verdict is computed in:
+ * "eight of fourteen comparable questions improved, none got worse" is
+ * something a reader can act on, where "eighteen points" is a difference of two
+ * rates whose denominators are not on the screen.
+ *
+ * `lo`/`hi` bound the share of the questions that MOVED which moved for the
+ * better, so they are centred on a half, not on zero: what makes a change real
+ * here is that it is one-sided. They are checked rather than defaulted —
+ * `lo ?? 0` printed "0.0 to 0.0" for an interval this run never computed, and
+ * that `changed` currently implies both bounds is a relationship between three
+ * independent fields, not something either type says.
+ */
+function ChangeCell({
+  row,
+}: {
+  readonly row: VisibilityComparison["aggregates"][number];
+}) {
+  const t = useTranslations("tools.aiVisibility");
+  if (!row.testable) return <>{t("comparison.notTestable")}</>;
+  if (!row.changed) return <>{t("comparison.unchanged")}</>;
+  if (row.lo === null || row.hi === null) {
+    return (
+      <>
+        {t("comparison.changedNoInterval", {
+          gained: row.gained,
+          lost: row.lost,
+          pairs: row.pairs,
+        })}
+      </>
+    );
+  }
+  return (
+    <>
+      {t("comparison.changed", {
+        gained: row.gained,
+        lost: row.lost,
+        pairs: row.pairs,
+        lo: percent(row.lo),
+        hi: percent(row.hi),
+      })}
+    </>
+  );
+}
+
 function ComparisonBlock({
   comparison,
   locale,
@@ -595,15 +821,7 @@ function ComparisonBlock({
                   <ProportionValue proportion={row.current} />
                 </td>
                 <td className={TD}>
-                  {!row.testable
-                    ? t("comparison.notTestable")
-                    : row.changed && row.diff !== null
-                      ? t("comparison.changed", {
-                          diff: Math.round(row.diff * 1000) / 10,
-                          lo: Math.round((row.lo ?? 0) * 1000) / 10,
-                          hi: Math.round((row.hi ?? 0) * 1000) / 10,
-                        })
-                      : t("comparison.unchanged")}
+                  <ChangeCell row={row} />
                 </td>
               </tr>
             ))}
@@ -686,12 +904,15 @@ function Report({
           <p>
             {t("results.revision", { revision: manifest.snapshotRevision })}
           </p>
+          {/* The model and the API it was reached through are two facts. The
+              line labelled "model" used to carry the endpoint's name. */}
           <p>
             {t("results.model", {
               model: manifest.model,
               market: manifest.marketCode,
             })}
           </p>
+          <p>{t("results.surface", { surface: manifest.surface })}</p>
           <p>
             {t("results.finished", {
               time: formatMoment(manifest.finishedAt, locale),
@@ -705,11 +926,33 @@ function Report({
         </div>
       </section>
 
-      <Overview report={report} />
-      <LayerTable report={report} />
+      {/*
+        `results.minSuccess` promises this run draws no conclusions and becomes
+        no baseline. The overview, the stage table and the comparison are the
+        conclusions: the comparison prints a changed/unchanged verdict outright.
+        Rendering them under that sentence would have made the sentence the
+        only part of the page that was true. The evidence stays — every
+        question, every sample, and what the run cost.
+      */}
+      {manifest.status === "insufficient" ? (
+        <section className={PANEL}>
+          <h3 className={HEADING}>{t("results.withheldTitle")}</h3>
+          <p className={`mt-2 max-w-[640px] ${BODY}`}>
+            {t("results.withheldBody", {
+              percent: Math.round(VISIBILITY_MIN_SUCCESS_RATIO * 100),
+            })}
+          </p>
+        </section>
+      ) : (
+        <>
+          <Overview report={report} />
+          <LayerTable report={report} />
+        </>
+      )}
       <DomainTable domains={report.citedDomains} />
       <QuestionList questions={report.questions} />
-      {report.comparison === null ? null : (
+      {report.comparison === null ||
+      manifest.status === "insufficient" ? null : (
         <ComparisonBlock comparison={report.comparison} locale={locale} />
       )}
 
@@ -739,9 +982,7 @@ export function AiVisibilityCheck({
   readonly authentication: "authenticated" | "unauthenticated" | "unavailable";
 }) {
   const t = useTranslations("tools.aiVisibility");
-  const [versions, setVersions] = useState<readonly FrozenVersion[] | null>(
-    null,
-  );
+  const [choices, setChoices] = useState<LoadedChoices | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
   const [samples, setSamples] = useState<number>(VISIBILITY_SAMPLES_DEFAULT);
@@ -750,7 +991,11 @@ export function AiVisibilityCheck({
   const [cooldown, setCooldown] = useState(0);
   const abort = useRef<AbortController | null>(null);
   const startedAt = useRef<number | null>(null);
+  /** How far into a restored run this page arrived, so the clock does not lie. */
+  const resumeOffsetMs = useRef(0);
+  const restoredOnce = useRef(false);
 
+  const versions = choices?.versions ?? null;
   const signedIn = authentication === "authenticated";
   const busy = run.kind === "starting" || run.kind === "running";
 
@@ -784,7 +1029,9 @@ export function AiVisibilityCheck({
       startedAt.current = null;
       return;
     }
-    if (startedAt.current === null) startedAt.current = monotonicNow();
+    if (startedAt.current === null) {
+      startedAt.current = monotonicNow() - resumeOffsetMs.current;
+    }
     const ticker = setInterval(() => {
       const start = startedAt.current;
       if (start !== null) setElapsedMs(monotonicNow() - start);
@@ -807,17 +1054,16 @@ export function AiVisibilityCheck({
         setLoadError(errorCodeOf(body) ?? "unknown");
         return;
       }
-      const list = asRecord(asRecord(body)?.["data"])?.["versions"];
-      if (!Array.isArray(list)) {
-        setLoadError("unknown");
+      const loaded = asLoadedChoices(body);
+      if (loaded === null) {
+        setLoadError("schema_mismatch");
         return;
       }
-      const parsed = list as readonly FrozenVersion[];
-      setVersions(parsed);
+      setChoices(loaded);
       setSelected((current) =>
-        parsed.some((version) => version.snapshotId === current)
+        loaded.versions.some((version) => version.snapshotId === current)
           ? current
-          : (parsed[0]?.snapshotId ?? ""),
+          : (loaded.versions[0]?.snapshotId ?? ""),
       );
     } catch {
       setLoadError("network");
@@ -848,15 +1094,23 @@ export function AiVisibilityCheck({
       token: string,
       controller: AbortController,
       firstDelayMs: number,
+      restored: boolean,
     ): Promise<void> => {
       let delay = firstDelayMs;
       let failures = 0;
+      const deadline = monotonicNow() + MAX_POLL_WALL_CLOCK_MS;
       // Awaiting each response before scheduling the next is what keeps a
       // single request in flight; a timer that fires on its own schedule would
       // stack requests on a slow run.
       while (!controller.signal.aborted) {
         await waitFor(delay, controller.signal);
         if (controller.signal.aborted) return;
+        if (monotonicNow() > deadline) {
+          // The pointer stays in storage: the run may still be finishing, and
+          // reloading is how the visitor gets another look at it.
+          setRun({ kind: "error", code: "polling_stopped" });
+          return;
+        }
         try {
           const response = await fetch(ENDPOINTS.status, {
             method: "POST",
@@ -865,35 +1119,47 @@ export function AiVisibilityCheck({
             signal: controller.signal,
           });
           const body: unknown = await response.json();
-          delay = pollDelayMs(response.headers.get("Retry-After"));
+          delay = pollDelayMs(body);
           const outcome = readStatus(response.status, body);
           if (outcome.kind === "completed") {
+            clearVisibilityRunPointer(sessionStorage);
             setRun({ kind: "done", report: outcome.report });
             return;
           }
           if (outcome.kind === "running") {
             failures = 0;
-            setRun({
-              kind: "running",
-              done: outcome.done,
-              total: outcome.total,
-            });
+            setRun({ kind: "running" });
             continue;
           }
           if (outcome.kind === "error") {
+            clearVisibilityRunPointer(sessionStorage);
+            // A restored pointer the server will not answer for is a stale
+            // pointer, not a failed run. Reporting it as an error would put a
+            // run the visitor never started on the screen; the form is the
+            // honest place to land.
+            if (restored && STALE_POINTER_CODES.has(outcome.code)) {
+              setRun({ kind: "idle" });
+              return;
+            }
             setRun({ kind: "error", code: outcome.code });
-            setCooldown(retryAfterSecondsFrom(response));
+            setCooldown(retryAfterSecondsFrom(body));
             return;
           }
           failures += 1;
           if (failures >= MAX_STATUS_FAILURES) {
-            setRun({ kind: "error", code: "run_unavailable" });
+            clearVisibilityRunPointer(sessionStorage);
+            setRun(
+              restored
+                ? { kind: "idle" }
+                : { kind: "error", code: "run_unavailable" },
+            );
             return;
           }
         } catch {
           if (controller.signal.aborted) return;
           // A transport error says nothing about the run itself, so it is worth
           // a bounded number of retries before the page gives the wait back.
+          // The pointer is kept for the same reason: the run is still running.
           failures += 1;
           if (failures >= MAX_STATUS_FAILURES) {
             setRun({ kind: "error", code: "network" });
@@ -911,6 +1177,7 @@ export function AiVisibilityCheck({
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
+    resumeOffsetMs.current = 0;
     startedAt.current = monotonicNow();
     setElapsedMs(0);
     setRun({ kind: "starting" });
@@ -928,7 +1195,7 @@ export function AiVisibilityCheck({
       const body: unknown = await response.json();
       if (!response.ok) {
         setRun({ kind: "error", code: errorCodeOf(body) ?? "unknown" });
-        setCooldown(retryAfterSecondsFrom(response));
+        setCooldown(retryAfterSecondsFrom(body));
         return;
       }
       const token = asRecord(asRecord(body)?.["data"])?.["runToken"];
@@ -936,17 +1203,41 @@ export function AiVisibilityCheck({
         setRun({ kind: "error", code: "run_unavailable" });
         return;
       }
-      setRun({ kind: "running", done: null, total: null });
-      await poll(
-        token,
-        controller,
-        pollDelayMs(response.headers.get("Retry-After")),
-      );
+      // Written before the first poll, not after it: the calls are already
+      // being made, so the window in which a reload loses the run has to be
+      // as close to zero as the code can make it.
+      writeVisibilityRunPointer(sessionStorage, {
+        runToken: token,
+        startedAt: Date.now(),
+      });
+      setRun({ kind: "running" });
+      await poll(token, controller, pollDelayMs(body), false);
     } catch {
       if (controller.signal.aborted) return;
       setRun({ kind: "error", code: "network" });
     }
   }, [poll, samples, version]);
+
+  /**
+   * Pick a paid run back up after a reload.
+   *
+   * The server seals the pointer for a day and the page tells the visitor they
+   * may leave; both were false while the token lived only in a closure. One
+   * shot per mount, so no state update re-enters a poll already in flight.
+   */
+  useEffect(() => {
+    if (!signedIn || restoredOnce.current) return;
+    restoredOnce.current = true;
+    const pointer = readVisibilityRunPointer(sessionStorage);
+    if (pointer === null) return;
+    resumeOffsetMs.current = Math.max(0, Date.now() - pointer.startedAt);
+    const controller = new AbortController();
+    abort.current?.abort();
+    abort.current = controller;
+    setElapsedMs(resumeOffsetMs.current);
+    setRun({ kind: "running" });
+    void poll(pointer.runToken, controller, POLL_DEFAULT_MS, true);
+  }, [poll, signedIn]);
 
   if (!signedIn) {
     return (
@@ -961,7 +1252,7 @@ export function AiVisibilityCheck({
     );
   }
 
-  if (versions === null) {
+  if (choices === null || versions === null) {
     return (
       <section className={`mt-10 ${PANEL}`}>
         <p className={BODY}>
@@ -998,6 +1289,7 @@ export function AiVisibilityCheck({
   }
 
   const elapsedSeconds = Math.floor(elapsedMs / 1_000);
+  const providerConfigured = choices.providerConfigured;
 
   return (
     <div className="mt-10 grid gap-8">
@@ -1074,14 +1366,18 @@ export function AiVisibilityCheck({
           })}
         </p>
         <p className={`mt-1.5 ${NOTE}`}>{t("form.estimateNote")}</p>
+        {/* The server's own number, not this bundle's: a tab open across a
+            limit change would otherwise print the figure it was built with. */}
         <p className={`mt-1.5 ${NOTE}`}>
-          {t("form.dailyLimit", { runs: VISIBILITY_RUNS_PER_DAY })}
+          {t("form.dailyLimit", { runs: choices.runsPerDay })}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             className={PRIMARY_BUTTON}
-            disabled={busy || version === null || cooldown > 0}
+            disabled={
+              busy || version === null || cooldown > 0 || !providerConfigured
+            }
             onClick={() => {
               void start();
             }}
@@ -1095,6 +1391,15 @@ export function AiVisibilityCheck({
             </span>
           ) : null}
         </div>
+
+        {/* The load endpoint reports this so a visitor does not spend a click
+            to learn the credentials are missing. Saying it here is what makes
+            that reporting worth anything. */}
+        {providerConfigured ? null : (
+          <p className={`mt-4 text-[13.5px] text-brand-error`} role="alert">
+            {t("errors.provider_unconfigured")}
+          </p>
+        )}
 
         {run.kind === "error" ? (
           <p className="mt-4 text-[13.5px] text-brand-error" role="alert">
@@ -1115,18 +1420,16 @@ export function AiVisibilityCheck({
               seconds: elapsedSeconds % 60,
             })}
           </p>
-          <p className={`mt-2 ${BODY}`}>
-            {run.kind === "running" && run.done !== null && run.total !== null
-              ? t("running.calls", { done: run.done, total: run.total })
-              : t("running.noCount")}
-          </p>
+          {/* The run reports nothing per call, so the page says so rather
+              than inventing a denominator to draw a bar with. */}
+          <p className={`mt-2 ${BODY}`}>{t("running.noCount")}</p>
           <p className={`mt-3 ${NOTE}`}>{t("running.tabNote")}</p>
         </section>
       ) : null}
 
-      {run.kind === "done" ? <Report locale={locale} report={run.report} /> : null}
-
-      <p className="sr-only">{GEO_VISIBILITY_SCHEMA_VERSION}</p>
+      {run.kind === "done" ? (
+        <Report locale={locale} report={run.report} />
+      ) : null}
     </div>
   );
 }

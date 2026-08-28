@@ -96,12 +96,14 @@ export async function handleVisibilityLoad(
   if (frozen.kind === "unavailable") {
     return privateError("store_unavailable", 503);
   }
-  if (frozen.kind === "not_found") {
-    return privateJson({ data: { choices: [] } });
-  }
+  // One shape for both outcomes. An account with nothing frozen used to get a
+  // payload missing `runsPerDay` and `providerConfigured`, which was harmless
+  // only because that case happens to render an empty state with no button to
+  // gate. A reader cannot see that coincidence, and the next person to add a
+  // control to the empty state would inherit two undefined fields.
   return privateJson({
     data: {
-      choices: frozen.value,
+      choices: frozen.kind === "not_found" ? [] : frozen.value,
       runsPerDay: VISIBILITY_RUNS_PER_DAY,
       // Configuration is reported rather than discovered on the paid path: a
       // visitor should not spend a click to learn the credentials are missing.

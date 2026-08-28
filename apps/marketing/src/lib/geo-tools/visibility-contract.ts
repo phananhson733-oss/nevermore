@@ -53,9 +53,27 @@ export interface VisibilitySample {
   readonly status: VisibilitySampleStatus;
   readonly webSearchPerformed: boolean | null;
   readonly mentioned: boolean;
-  readonly cited: boolean;
+  /**
+   * Whether this answer cited the site under test.
+   *
+   * `null` means the question was answered but its citation list could not be
+   * read - a malformed URL, or a list the transport marked incomplete. That is
+   * a third state, not a `false`: the answer is real and its mention counts,
+   * and folding "unreadable" into "did not cite" is how a citation rate gets
+   * quietly deflated by a parser bug.
+   */
+  readonly cited: boolean | null;
   /** Domains the answer cited, normalized, deduplicated within the answer. */
   readonly citedDomains: readonly string[];
+  /**
+   * The cited URLs themselves, normalized, deduplicated, and bounded.
+   *
+   * Carried because "which page of theirs did it cite" is the part of a
+   * citation a reader can act on, and the domain alone is not. Bounded per
+   * sample so one answer with fifty links cannot dominate the report, and
+   * dropped entirely by the store projection - the database keeps counts.
+   */
+  readonly citedUrls: readonly string[];
   /** Confirmed competitor brand names named in the answer. */
   readonly competitorsMentioned: readonly string[];
   /** The sentence the mention was found in, bounded. Never the whole answer. */
@@ -69,14 +87,23 @@ export interface VisibilityQuestionResult {
   readonly text: string;
   readonly layer: GeoQuestionLayer;
   readonly mode: GeoQuestionMode;
+  /** Whether the question text itself names the brand. Decided on the words. */
+  readonly prompted: boolean;
   readonly calibrated: boolean;
   readonly samples: readonly VisibilitySample[];
   /** Samples that came back at all. */
   readonly answered: number;
   readonly mentioned: number;
-  /** Samples where a citation was possible: answered and the model searched. */
+  /** Samples where a citation was possible: answered, searched, and readable. */
   readonly citationEvaluable: number;
   readonly cited: number;
+  /**
+   * Answered samples whose citation list could not be read.
+   *
+   * Reported rather than folded into either side, because it is the number that
+   * says how much of the citation rate is missing rather than zero.
+   */
+  readonly citationUnknown: number;
 }
 
 export interface VisibilityProportion {
@@ -101,12 +128,26 @@ export interface VisibilityMetrics {
   /** Retrieval-mode questions whose samples searched. */
   readonly citation: VisibilityProportion;
   /**
-   * Questions mentioned at least once, over questions asked.
+   * Questions mentioned at least once, over questions that produced an answer.
    *
    * The unit is the question rather than the sample, because five samples of
-   * one question are not five independent observations.
+   * one question are not five independent observations. This is the figure a
+   * "0.0%" may be claimed from: pooling the samples instead makes seven
+   * questions look like thirty-five, and a zero over thirty-five clears the
+   * zero-claim bound while the same zero over seven does not.
+   *
+   * The denominator is questions that came back, not questions asked - a
+   * question whose every sample timed out is neither mentioned nor unmentioned.
+   * `questionsAsked` carries the other number so the gap is visible rather than
+   * silently divided away.
    */
   readonly questionsMentioned: VisibilityProportion;
+  /** The same unit for citations: questions cited at least once. */
+  readonly questionsCited: VisibilityProportion;
+  /** Unprompted questions in the frozen set. */
+  readonly questionsAsked: number;
+  /** Unprompted questions that produced at least one answer. */
+  readonly questionsAnswered: number;
   readonly byLayer: readonly {
     readonly layer: GeoQuestionLayer;
     readonly mention: VisibilityProportion;
@@ -128,6 +169,9 @@ export type VisibilityRunStatus = "ok" | "partial" | "insufficient";
 /** Below this share of samples coming back, the run does not draw conclusions. */
 export const VISIBILITY_MIN_SUCCESS_RATIO = 0.7;
 
+/** Cited URLs kept per sample. Evidence, not a copy of the answer's links. */
+export const VISIBILITY_MAX_SAMPLE_CITATION_URLS = 10;
+
 export interface VisibilityRunManifest {
   readonly schemaVersion: typeof GEO_VISIBILITY_SCHEMA_VERSION;
   readonly kbId: string;
@@ -137,7 +181,10 @@ export interface VisibilityRunManifest {
   readonly questionCount: number;
   readonly samplesPerQuestion: number;
   readonly marketCode: string;
+  /** The model the questions were put to, e.g. a GPT-5 snapshot. */
   readonly model: string;
+  /** The API the model was reached through. Separate: it is not the model. */
+  readonly surface: string;
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly calls: number;
@@ -162,13 +209,31 @@ export interface VisibilityComparison {
   readonly baseRunId: string;
   readonly baseFinishedAt: string;
   readonly aggregates: readonly {
-    readonly metric: "unpromptedMention" | "citation" | "questionsMentioned";
+    readonly metric: "questionsMentioned" | "questionsCited";
     readonly base: VisibilityProportion;
     readonly current: VisibilityProportion;
     readonly diff: number | null;
+    /**
+     * Questions that moved, and which way.
+     *
+     * These are the paired unit the verdict is computed in, and they are the
+     * interpretable quantity: "eight questions changed, seven of them for the
+     * better" says something a difference of two rates does not.
+     */
+    readonly gained: number;
+    readonly lost: number;
+    /** Questions comparable on both sides. The denominator behind `diff`. */
+    readonly pairs: number;
+    /**
+     * Interval on the share of the moved questions that improved.
+     *
+     * Centred on 0.5, not on 0: with paired data the question is whether the
+     * changes point one way, and an interval that excludes half is what says
+     * they do. Null when nothing moved.
+     */
     readonly lo: number | null;
     readonly hi: number | null;
-    /** True only when the test rejected and the interval excludes zero. */
+    /** True only when the test rejected and the interval excludes an even split. */
     readonly changed: boolean;
     readonly testable: boolean;
   }[];
@@ -196,6 +261,18 @@ export const VISIBILITY_LIMITS = [
   "sampledNotCensus",
   "demandQuestions",
   "englishOnly",
+] as const;
+
+/**
+ * Limits a particular run adds to that list.
+ *
+ * Separate from the fixed ones because these are not properties of the tool -
+ * they are things that went wrong in this run, and printing them
+ * unconditionally would make every report claim a failure it did not have.
+ */
+export const VISIBILITY_RUN_LIMITS = [
+  "notStored",
+  "denseScriptMatching",
 ] as const;
 
 export type VisibilityErrorCode =

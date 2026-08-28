@@ -73,6 +73,8 @@ export interface VisibilityQuestionCounts {
   readonly text: string;
   readonly layer: GeoQuestionLayer;
   readonly mode: GeoQuestionMode;
+  /** Whether the question text names the brand. Needed by the paired test. */
+  readonly prompted: boolean;
   readonly answered: number;
   readonly mentioned: number;
   readonly citationEvaluable: number;
@@ -190,7 +192,13 @@ async function readLatestRunViaSupabase(input: {
       .select(RUN_COLUMNS)
       .eq("user_id", input.userId)
       .eq("kb_id", input.kbId)
-      .eq("question_set_hash", input.questionSetHash);
+      .eq("question_set_hash", input.questionSetHash)
+      // A run that did not draw conclusions about itself cannot be the baseline
+      // for another one. Filtered in the query rather than after the read, so
+      // an insufficient latest run yields the next comparable one instead of
+      // "no baseline" - the visitor loses nothing for a bad night at the
+      // provider. The page prints this promise; this is where it is kept.
+      .neq("manifest->>status", "insufficient");
     // Strictly earlier, so the anchor cannot be its own baseline. Two runs
     // written in the same microsecond would hide each other here; a run takes
     // minutes and the daily cap is five, so that tie cannot arise, and if it
@@ -349,6 +357,12 @@ function nullableFinite(row: Record<string, unknown>, key: string): number | nul
   return value;
 }
 
+function requiredFinite(row: Record<string, unknown>, key: string): number {
+  const value = row[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) throw badRun(key);
+  return value;
+}
+
 function requiredBoolean(row: Record<string, unknown>, key: string): boolean {
   const value = row[key];
   if (typeof value !== "boolean") throw badRun(key);
@@ -404,11 +418,17 @@ function manifestFrom(value: unknown): VisibilityRunManifest {
     samplesPerQuestion: requiredCount(row, "samplesPerQuestion"),
     marketCode: requiredString(row, "marketCode"),
     model: requiredString(row, "model"),
+    surface: requiredString(row, "surface"),
     startedAt: requiredInstant(row, "startedAt"),
     finishedAt: requiredInstant(row, "finishedAt"),
     calls: requiredCount(row, "calls"),
     answered: requiredCount(row, "answered"),
-    successRatio: nullableFinite(row, "successRatio") ?? 0,
+    // Not `?? 0`. A stored run whose success ratio is missing has an unknown
+    // ratio, and rendering that as "0% of samples came back" is the one thing
+    // this codebase does not do with an unavailable number. The writer always
+    // sends one, so a row without it is a malformed row, and malformed is a
+    // state the reader already has a word for.
+    successRatio: requiredFinite(row, "successRatio"),
     costUsd: nullableFinite(row, "costUsd"),
     status: status as VisibilityRunStatus,
   };
@@ -427,6 +447,9 @@ function metricsFrom(value: unknown): VisibilityMetrics {
       row.questionsMentioned,
       "questionsMentioned",
     ),
+    questionsCited: proportionFrom(row.questionsCited, "questionsCited"),
+    questionsAsked: requiredCount(row, "questionsAsked"),
+    questionsAnswered: requiredCount(row, "questionsAnswered"),
     byLayer: layers.map((entry) => {
       const layer = requiredString(entry, "layer");
       if (!QUESTION_LAYERS.has(layer)) throw badRun("layer");
@@ -466,11 +489,14 @@ function questionCountsFrom(value: unknown): readonly VisibilityQuestionCounts[]
     ) {
       throw badRun("per_question");
     }
+    const prompted = row.prompted;
+    if (typeof prompted !== "boolean") throw badRun("per_question");
     return {
       questionId,
       text: requiredString(row, "text"),
       layer: layer as GeoQuestionLayer,
       mode: mode as GeoQuestionMode,
+      prompted,
       answered,
       mentioned,
       citationEvaluable,
@@ -588,6 +614,7 @@ export async function recordVisibilityRun(
       text: question.text,
       layer: question.layer,
       mode: question.mode,
+      prompted: question.prompted,
       answered: question.answered,
       mentioned: question.mentioned,
       citationEvaluable: question.citationEvaluable,

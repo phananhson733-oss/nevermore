@@ -43,21 +43,29 @@ import {
 import type { GeoKbCompetitor } from "./kb-contract.ts";
 import type { GeoQuestion } from "./kb-questions.ts";
 import {
-  VISIBILITY_CONCURRENCY,
   type VisibilitySample,
+  VISIBILITY_MAX_SAMPLE_CITATION_URLS,
   type VisibilitySampleStatus,
 } from "./visibility-contract.ts";
 
 /**
  * How many times one planned sample may be sent again.
  *
- * One, and only for a request that never left. A timeout is never retried: the
- * provider bills for an answer it produced whether or not the response reached
- * us, so a retry after an ambiguous timeout is a second charge for one planned
- * sample — and at 210 planned calls a blanket retry policy is a second run
- * nobody asked for.
+ * Zero. This started at one, for "the request never left" - the transport
+ * reports that as `network_error`, and a request that never left cannot have
+ * been billed. The premise is false: a rejected `fetch` says the client did not
+ * receive a complete response, not that the POST failed to arrive. A request
+ * delivered and billed whose connection drops before the response headers
+ * arrives on exactly the same branch, and retrying it buys a second charge for
+ * one planned sample - usually without even recording the first, since the
+ * first response never came back to read a price from.
+ *
+ * Retrying a paid POST is only safe with an idempotency key the provider
+ * honours, or a fence that can prove the call did not happen. Neither exists
+ * here, so the sample is recorded as unobserved and the run reports one fewer
+ * answer. An under-reported denominator is visible; a duplicate charge is not.
  */
-export const VISIBILITY_MAX_UNSENT_RETRIES = 1;
+export const VISIBILITY_MAX_UNSENT_RETRIES = 0;
 
 export interface VisibilitySampleInput {
   /** The question as it was frozen. Its text is sent verbatim; its id labels the sample. */
@@ -153,8 +161,11 @@ function unobservedSample(
     status,
     webSearchPerformed: null,
     mentioned: false,
-    cited: false,
+    // Not `false`: nothing was read, so "did not cite" would be a claim about
+    // an answer that does not exist.
+    cited: null,
     citedDomains: [],
+    citedUrls: [],
     competitorsMentioned: [],
     excerpt: null,
     costUsd,
@@ -163,6 +174,8 @@ function unobservedSample(
 }
 
 interface CitationReading {
+  /** Canonical URLs, deduplicated within this one answer, bounded. */
+  readonly urls: readonly string[];
   /** Canonical hosts, deduplicated within this one answer, in first-cited order. */
   readonly domains: readonly string[];
   readonly citedTarget: boolean;
@@ -185,6 +198,8 @@ function readCitations(
   if (!observation.citationsComplete) return null;
 
   const domains: string[] = [];
+  const urls: string[] = [];
+  const seenUrls = new Set<string>();
   const seen = new Set<string>();
   let citedTarget = false;
 
@@ -198,6 +213,13 @@ function readCitations(
     const domain = geoCitationDomain(url);
     if (domain === null) return null;
     if (isGeoTargetCitation(url, targetHost)) citedTarget = true;
+    if (
+      !seenUrls.has(url) &&
+      urls.length < VISIBILITY_MAX_SAMPLE_CITATION_URLS
+    ) {
+      seenUrls.add(url);
+      urls.push(url);
+    }
     // One answer citing three pages of one host is one cited domain. The report
     // counts answers per domain, not links, so counting links here would let a
     // single answer look like a pattern.
@@ -207,7 +229,7 @@ function readCitations(
     }
   }
 
-  return { domains, citedTarget };
+  return { urls, domains, citedTarget };
 }
 
 /**
@@ -286,11 +308,14 @@ function boundedExcerpt(
  * it belongs to whatever builds {@link VisibilityMetrics}, which is the only
  * place that can see all the samples at once.
  *
- * An unreadable citation list makes the whole sample unobserved rather than a
- * sample with unknown citations, because the frozen record has no state for
- * "cited: unknown". That costs a real mention observation on a rare payload,
- * and the alternative costs a false citation number on the report's headline
- * metric. See the note in the module's tests.
+ * An unreadable citation list no longer discards the sample. It used to: the
+ * record had no state for "cited: unknown", so a malformed URL anywhere in the
+ * list rewrote an answered, brand-mentioning sample into `status: "error"` and
+ * removed it from the mention denominator as well. One answer in five failing
+ * to parse its citations turned a real 1/5 mention rate into 0/4. The record
+ * now carries `cited: null`, and the two observations stay independent: the
+ * mention is counted, the citation is not, and the count of unreadable lists is
+ * reported beside the citation rate.
  */
 export function judgeVisibilitySample(
   input: VisibilitySampleInput,
@@ -298,7 +323,6 @@ export function judgeVisibilitySample(
   costUsd: number | null,
 ): VisibilitySample {
   const citations = readCitations(observation, input.targetHost);
-  if (citations === null) return unobservedSample(input, "error", costUsd);
 
   // The official name first: it is the name the report prints, and the matcher
   // breaks a same-offset tie by length rather than by order, so listing it
@@ -319,8 +343,9 @@ export function judgeVisibilitySample(
     status: "ok",
     webSearchPerformed: observation.webSearchPerformed,
     mentioned: match !== null,
-    cited: citations.citedTarget,
-    citedDomains: citations.domains,
+    cited: citations === null ? null : citations.citedTarget,
+    citedDomains: citations === null ? [] : citations.domains,
+    citedUrls: citations === null ? [] : citations.urls,
     competitorsMentioned: mentionedCompetitors(
       observation.answerText,
       input.competitors,
@@ -366,11 +391,10 @@ export async function observeVisibilitySample(
       }
       billed = addCost(billed, error.costUsd);
 
-      // The only retryable failure is one where the request never left: the
-      // transport reports that as `network_error`, and it is the single case
-      // where a second attempt cannot be a second charge. An abort is excluded
-      // even though it surfaces the same way — the caller asked us to stop, and
-      // retrying would spend money on a run that is being cancelled.
+      // No transport failure is retried. See VISIBILITY_MAX_UNSENT_RETRIES:
+      // a rejected fetch cannot distinguish "never sent" from "sent, billed,
+      // and the response was lost", and only one of those is free to repeat.
+      // The loop is kept so the constant remains the single place that decides.
       const retryable =
         error.reason === "network_error" &&
         attempt < VISIBILITY_MAX_UNSENT_RETRIES &&
@@ -380,101 +404,4 @@ export async function observeVisibilitySample(
       return unobservedSample(input, statusForReason(error.reason), billed);
     }
   }
-}
-
-/**
- * What one item of a wave produced.
- *
- * A settled shape rather than a bare result array: a worker that throws must
- * not take its siblings' results with it, and `Promise.all` would do exactly
- * that. `index` is carried so a caller can align an outcome with the item that
- * produced it without relying on array position surviving a later refactor.
- */
-export type VisibilityWaveOutcome<TResult> =
-  | {
-      readonly index: number;
-      readonly status: "fulfilled";
-      readonly value: TResult;
-    }
-  | {
-      readonly index: number;
-      readonly status: "rejected";
-      readonly reason: unknown;
-    };
-
-/**
- * Run `worker` over `items` with at most `concurrency` in flight.
- *
- * Lanes pull from one shared cursor rather than the batch being cut into fixed
- * waves. A fixed wave costs its slowest member: with per-call latency ranging
- * from a few seconds to the full timeout, waves make the wall clock the sum of
- * each wave's worst case, and one 90-second call would hold seven idle lanes
- * while 200 questions wait. Here a lane that finishes early takes the next item
- * immediately, so the slow call delays only itself.
- *
- * Outcomes come back in input order, one per item, whatever happened to the
- * others.
- */
-export async function runVisibilityWave<TItem, TResult>(
-  items: readonly TItem[],
-  concurrency: number | undefined,
-  worker: (item: TItem, index: number) => Promise<TResult>,
-): Promise<readonly VisibilityWaveOutcome<TResult>[]> {
-  const width = concurrency ?? VISIBILITY_CONCURRENCY;
-  // Thrown rather than clamped. This number is derived inside the run, never
-  // parsed from a request, so a bad one is a bug — and a silently repaired
-  // concurrency is how a run ends up issuing calls at a width nobody chose.
-  if (!Number.isSafeInteger(width) || width < 1) {
-    throw new RangeError(
-      `concurrency must be a positive integer, got ${String(concurrency)}`,
-    );
-  }
-
-  const outcomes: (VisibilityWaveOutcome<TResult> | undefined)[] = items.map(
-    () => undefined,
-  );
-  let cursor = 0;
-
-  const lane = async (): Promise<void> => {
-    for (;;) {
-      const index = cursor;
-      if (index >= items.length) return;
-      // Claimed before the first `await` in this iteration, so two lanes can
-      // never take the same item: everything between here and the next suspend
-      // point is synchronous.
-      cursor += 1;
-      // The cast, not a `!`: `TItem` may legitimately include `undefined`, so
-      // there is no runtime check that could tell "the caller passed undefined"
-      // apart from "the index is out of range". The bound above is the proof.
-      const item = items[index] as TItem;
-      try {
-        outcomes[index] = {
-          index,
-          status: "fulfilled",
-          value: await worker(item, index),
-        };
-      } catch (reason) {
-        outcomes[index] = { index, status: "rejected", reason };
-      }
-    }
-  };
-
-  const lanes = Math.min(width, items.length);
-  await Promise.all(Array.from({ length: lanes }, () => lane()));
-
-  const settled: VisibilityWaveOutcome<TResult>[] = [];
-  for (let index = 0; index < items.length; index += 1) {
-    const outcome = outcomes[index];
-    // Every index is claimed exactly once, so a hole is a bug in this function
-    // rather than a worker failure. Reported as a rejection so the array stays
-    // aligned with `items`, which a silently shortened result would not.
-    settled.push(
-      outcome ?? {
-        index,
-        status: "rejected",
-        reason: new Error("The wave produced no outcome for this item."),
-      },
-    );
-  }
-  return settled;
 }

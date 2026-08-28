@@ -4617,7 +4617,8 @@
           "aliases_missing": "Add at least one other name, even if it is just the short form.",
           "category_terms_missing": "Add at least one category word.",
           "role_missing": "Add at least one role.",
-          "no_confirmed_competitor": "Confirm at least one competitor's name."
+          "no_confirmed_competitor": "Confirm at least one competitor's name.",
+          "alias_too_short": "That name is too short for the matcher to look for: at least three letters, or two characters in a script written without spaces. Write it out in full, or add a longer alias — a name this short would make every answer that mentions you read as one that did not."
         },
         "current": "Current version: {revision}, frozen at {time}",
         "questions": "{count} questions, {retrieval} of them with measured search wording",
@@ -4711,7 +4712,7 @@
         "samplesLabel": "Samples per question",
         "samplesOption": "{count} times",
         "samplesHelp": "The same question asked several times. One answer is not a measurement: the same question can cite four sources one minute and none the next.",
-        "estimate": "{calls} provider calls, about {cost} and roughly {minutes} minutes.",
+        "estimate": "{calls} provider calls, about {cost, number, ::currency/USD} and roughly {minutes} minutes.",
         "estimateNote": "The cost is the observed price per call multiplied by this set's own size. It is an estimate, not a quote.",
         "start": "Start the run",
         "starting": "Starting…",
@@ -4723,7 +4724,6 @@
         "body": "This takes about {minutes} minutes. The run continues on the server.",
         "tabNote": "You can leave this page. Come back to the tool and it will still be here while the run lasts.",
         "elapsed": "{minutes}m {seconds}s elapsed",
-        "calls": "{done} of {total} calls",
         "noCount": "Progress is not reported per call; the run reports when it finishes."
       },
       "results": {
@@ -4739,26 +4739,27 @@
         "revision": "Frozen version {revision}",
         "model": "{model}, market {market}",
         "finished": "Finished {time}",
-        "cost": "Provider cost {cost}",
-        "costUnavailable": "The provider returned no price for this run."
+        "cost": "Provider cost {cost, number, ::currency/USD}",
+        "costUnavailable": "The provider returned no price for this run.",
+        "withheldTitle": "No conclusions from this run",
+        "withheldBody": "Fewer than {percent}% of the calls came back, so the rates, the stage table and the comparison against your last run are not shown: an interval built on the samples that survived would describe the ones that failed as if they had answered. Every question and every answer that did come back is below, with what the run cost.",
+        "surface": "Reached through {surface}"
       },
       "overview": {
         "title": "Overview",
-        "unpromptedMention": {
-          "label": "Mentioned, unprompted",
-          "help": "Answers that named you when the question did not. Branded questions are excluded: being named in an answer to a question about yourself proves nothing."
-        },
         "promptedMention": {
           "label": "Mentioned when asked about",
           "help": "Answers to the branded questions that named you. A low number here means the model does not recognise the name."
         },
-        "citation": {
-          "label": "Cited",
-          "help": "Only counts samples where the model actually searched, and only questions whose wording was measured to make it search. A question answered from memory has no citation to give."
-        },
         "questionsMentioned": {
           "label": "Questions you appeared in",
-          "help": "Counted per question rather than per sample, because five samples of one question are not five independent observations."
+          "help": "Counted per question, because five samples of one question are not five independent observations. The denominator is the questions that came back."
+        },
+        "answeredQuestions": "{answered} of {asked} questions produced an answer. The rates below are over the questions that answered, not over the questions asked.",
+        "acrossSamples": "Across every sample:",
+        "questionsCited": {
+          "label": "Questions you were cited in",
+          "help": "Per question again, and only over questions whose wording was measured to make the model search. A question answered from memory has no citation to give."
         }
       },
       "proportion": {
@@ -4827,7 +4828,11 @@
           "blocked": "refused by the provider",
           "error": "failed"
         },
-        "noExcerpt": "No mention in this answer."
+        "noExcerpt": "No mention in this answer.",
+        "noAnswers": "No answer to this question came back, so there is nothing to count. This is not a zero.",
+        "sampleNoAnswer": "No answer came back, so there is nothing to read here.",
+        "promptedTag": "names you in the question",
+        "citationUnknown": "{count} answers came back with a citation list this run could not read. They are neither cited nor uncited, and they are outside the rate above."
       },
       "comparison": {
         "title": "Against your last run",
@@ -4839,20 +4844,20 @@
           "change": "Change"
         },
         "metrics": {
-          "unpromptedMention": "Mentioned, unprompted",
-          "citation": "Cited",
-          "questionsMentioned": "Questions you appeared in"
+          "questionsMentioned": "Questions you appeared in",
+          "questionsCited": "Questions you were cited in"
         },
-        "changed": "{diff} points ({lo} to {hi})",
-        "unchanged": "No change this size of sample can distinguish",
-        "notTestable": "Too few samples on one side to test",
+        "changed": "{gained} improved, {lost} got worse, of {pairs} comparable questions. One-sided: {lo}–{hi}% of the questions that moved improved.",
+        "unchanged": "The questions that moved do not point one way",
+        "notTestable": "Too few questions comparable on both sides to test",
         "questionsTitle": "Questions that moved",
         "questionRow": "{base} → {current} of {of} answers",
         "direction": {
           "gained": "Gained",
           "lost": "Lost"
         },
-        "empty": "Nothing moved between the two runs."
+        "empty": "Nothing moved between the two runs.",
+        "changedNoInterval": "{gained} improved, {lost} got worse, of {pairs} comparable questions. This run carries no interval for the direction."
       },
       "limitsTitle": "What this run does not tell you",
       "limits": {
@@ -4860,7 +4865,9 @@
         "notAttribution": "It observes; it does not explain. Deciding why a question missed you needs your own pages read as well, which this run does not do. The page checker is where that starts.",
         "sampledNotCensus": "It is a sample. The same question can cite four sources one minute and none the next, which is why each is asked several times and why every number carries its interval.",
         "demandQuestions": "Questions written the way a buyer would ask usually get answered from memory. Their mentions are worth counting; their citations are reported without a denominator.",
-        "englishOnly": "The questions are in English, because that is the language the wording was measured in. A market other than the calibrated one is reported as such."
+        "englishOnly": "The questions are in English, because that is the language the wording was measured in. A market other than the calibrated one is reported as such.",
+        "notStored": "This run was not saved. The report is complete, but it could not be written to the store, so it will not be the baseline your next run is compared against.",
+        "denseScriptMatching": "In a script written without spaces — Chinese, Japanese, Thai — the matcher has no word boundary to hold it to. It finds the brand name inside a longer word as readily as on its own, so a longer word that contains the name counts as a mention here and the count may be higher than the answers warrant."
       },
       "errors": {
         "auth_required": "Sign in to run a visibility check.",
@@ -4876,7 +4883,10 @@
         "run_unavailable": "That run could not be read. Nothing further was charged.",
         "store_unavailable": "The store is not answering right now. Try again shortly.",
         "internal_error": "Something went wrong inside the tool. The run may have completed; reload before starting another.",
-        "network": "The request did not reach the tool. Check your connection and try again."
+        "network": "The request did not reach the tool. Check your connection and try again.",
+        "unknown": "The tool answered in a way this page could not read. Nothing further was charged.",
+        "schema_mismatch": "This page is older than the answer it received. Reload before starting another run.",
+        "polling_stopped": "This page stopped checking after 30 minutes. The run may still be finishing on the server; reload the page to look again."
       },
       "faq": {
         "title": "Questions about this check",

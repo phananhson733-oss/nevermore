@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GeoQuestion } from "./kb-questions.ts";
-import { describeProportion, twoProportionP, wilson } from "./stats.ts";
+import { describeProportion, wilson } from "./stats.ts";
 import type {
   VisibilityMetrics,
   VisibilityProportion,
@@ -49,6 +49,7 @@ function makeSample(
     mentioned: false,
     cited: false,
     citedDomains: [],
+    citedUrls: [],
     competitorsMentioned: [],
     excerpt: null,
     costUsd: 0.0457,
@@ -60,7 +61,12 @@ function makeSample(
 function makeOptions(
   overrides: Partial<VisibilityAggregateOptions> = {},
 ): VisibilityAggregateOptions {
-  return { ownHost: "acme.test", samplesPerQuestion: 5, ...overrides };
+  return {
+    ownHost: "acme.test",
+    samplesPerQuestion: 5,
+    brandNames: ["Acme"],
+    ...overrides,
+  };
 }
 
 function proportion(successes: number, trials: number): VisibilityProportion {
@@ -78,13 +84,36 @@ function makeMetrics(
   unpromptedMention: VisibilityProportion,
   citation: VisibilityProportion,
   questionsMentioned: VisibilityProportion,
+  questionsCited: VisibilityProportion = proportion(0, 0),
 ): VisibilityMetrics {
   return {
     unpromptedMention,
     promptedMention: proportion(0, 0),
     citation,
     questionsMentioned,
+    questionsCited,
+    questionsAsked: questionsMentioned.trials,
+    questionsAnswered: questionsMentioned.trials,
     byLayer: [],
+  };
+}
+
+function comparisonQuestion(
+  questionId: string,
+  answered: number,
+  mentioned: number,
+  overrides: Partial<VisibilityComparisonSide["questions"][number]> = {},
+): VisibilityComparisonSide["questions"][number] {
+  return {
+    questionId,
+    text: `question ${questionId}`,
+    prompted: false,
+    mode: "retrieval",
+    answered,
+    mentioned,
+    citationEvaluable: answered,
+    cited: 0,
+    ...overrides,
   };
 }
 
@@ -109,7 +138,12 @@ describe("aggregateVisibility denominators", () => {
   it("keeps branded mentions out of the unprompted rate", () => {
     const questions = [
       makeQuestion("q01"),
-      makeQuestion("q02", { layer: "branded", mode: "demand", calibrated: false }),
+      makeQuestion("q02", {
+        text: "Is Acme a good choice for small teams?",
+        layer: "branded",
+        mode: "demand",
+        calibrated: false,
+      }),
     ];
     const samples = [
       makeSample("q01", 0),
@@ -133,6 +167,111 @@ describe("aggregateVisibility denominators", () => {
     // Same exclusion at the question level, and the denominator says so.
     expect(result.metrics.questionsMentioned.successes).toBe(0);
     expect(result.metrics.questionsMentioned.trials).toBe(1);
+  });
+
+  it("treats any question that names the brand as prompted, whatever its layer", () => {
+    // The layer says what stage of a search a question belongs to. Whether the
+    // brand is already in the words is a different property, and a comparison
+    // question written this way is exactly as circular as a branded one.
+    const questions = [
+      makeQuestion("q01", { text: "best project tools for small teams" }),
+      makeQuestion("q02", {
+        text: "How does Acme compare to the alternatives?",
+        layer: "comparison",
+      }),
+    ];
+    const samples = [
+      makeSample("q01", 0),
+      makeSample("q01", 1),
+      makeSample("q02", 0, { mentioned: true }),
+      makeSample("q02", 1, { mentioned: true }),
+    ];
+
+    const result = aggregateVisibility(
+      questions,
+      samples,
+      makeOptions({ samplesPerQuestion: 2 }),
+    );
+
+    expect(result.questions[1]?.prompted).toBe(true);
+    expect(result.metrics.unpromptedMention.successes).toBe(0);
+    expect(result.metrics.unpromptedMention.trials).toBe(2);
+    expect(result.metrics.promptedMention.successes).toBe(2);
+  });
+
+  it("keeps a mention whose citation list would not parse", () => {
+    // One unreadable citation list used to rewrite the whole sample into an
+    // error, which removed a real, brand-mentioning answer from the mention
+    // denominator as well: a true 1 of 5 was published as 0 of 4.
+    const questions = [makeQuestion("q01")];
+    const samples = [
+      makeSample("q01", 0, { mentioned: true, cited: null }),
+      makeSample("q01", 1),
+      makeSample("q01", 2),
+      makeSample("q01", 3),
+      makeSample("q01", 4),
+    ];
+
+    const result = aggregateVisibility(questions, samples, makeOptions());
+
+    expect(result.metrics.unpromptedMention.successes).toBe(1);
+    expect(result.metrics.unpromptedMention.trials).toBe(5);
+    // The unreadable one is in neither citation bucket, and is counted where a
+    // reader can see how much of the rate is missing.
+    expect(result.questions[0]?.citationEvaluable).toBe(4);
+    expect(result.questions[0]?.citationUnknown).toBe(1);
+  });
+
+  it("refuses to certify a run whose samples do not fill the plan", () => {
+    // Six answered samples against a plan of six, every one of them succeeding.
+    // Comparing totals says the plan was met and the run was perfect; four of
+    // the six went to q01 and q02 was asked once. The slot check is what tells
+    // those apart.
+    const questions = [makeQuestion("q01"), makeQuestion("q02")];
+    const samples = [
+      makeSample("q01", 0),
+      makeSample("q01", 1),
+      makeSample("q01", 2),
+      makeSample("q01", 3),
+      makeSample("q02", 0),
+      makeSample("q02", 1),
+    ];
+
+    const result = aggregateVisibility(
+      questions,
+      samples,
+      makeOptions({ samplesPerQuestion: 3 }),
+    );
+
+    expect(result.successRatio).toBe(1);
+    expect(result.status).toBe("partial");
+  });
+
+  it("drops a repeated slot instead of counting one question twice", () => {
+    // A replayed step or a storage misalignment can deliver the same
+    // (question, sample) twice. Counted, it inflates that question's evidence
+    // and hides the sample that never arrived.
+    const questions = [makeQuestion("q01")];
+    const samples = [
+      makeSample("q01", 0, { mentioned: true }),
+      makeSample("q01", 0, { mentioned: true }),
+      makeSample("q01", 1),
+    ];
+
+    const result = aggregateVisibility(
+      questions,
+      samples,
+      makeOptions({ samplesPerQuestion: 2 }),
+    );
+
+    expect(result.questions[0]?.answered).toBe(2);
+    expect(result.questions[0]?.mentioned).toBe(1);
+    // The duplicate still counts against the run: three records arrived and two
+    // could be placed, so the ratio falls below the conclusion threshold. A
+    // record that cannot be trusted should suppress conclusions rather than be
+    // quietly forgiven - the alternative is a report that looks complete and
+    // was built on a question asked twice.
+    expect(result.status).toBe("insufficient");
   });
 
   it("reports demand-mode citations without letting them into the citation rate", () => {
@@ -606,73 +745,158 @@ describe("aggregateVisibility layers", () => {
 /* Run over run                                                        */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Run over run                                                        */
+/* ------------------------------------------------------------------ */
+
+function pairedSide(
+  runId: string,
+  entries: readonly (readonly [string, number, number])[],
+  overrides: Partial<VisibilityComparisonSide["questions"][number]> = {},
+): VisibilityComparisonSide {
+  return makeSide(
+    runId,
+    makeMetrics(proportion(0, 0), proportion(0, 0), proportion(0, 0)),
+    entries.map(([id, answered, mentioned]) =>
+      comparisonQuestion(id, answered, mentioned, overrides),
+    ),
+  );
+}
+
 describe("compareVisibility", () => {
-  it("refuses to call a change significant while the interval crosses zero", () => {
-    const base = makeSide(
+  it("counts the paired unit, not the repeated samples", () => {
+    // Six questions, five samples each. Five of the six moved the same way.
+    // Pooled over samples this is 5/30 against 25/30 and z-tests at p ~ 2e-7;
+    // paired it is five discordant questions, which exact McNemar puts at
+    // 0.0625 and refuses to call a change. The pooled number is not a stronger
+    // result, it is one result counted five times.
+    const ids = ["q1", "q2", "q3", "q4", "q5", "q6"] as const;
+    const base = pairedSide(
       "run-base",
-      makeMetrics(proportion(10, 30), proportion(0, 0), proportion(0, 7)),
+      ids.map((id, index) => [id, 5, index === 0 ? 5 : 0] as const),
     );
-    const current = makeSide(
+    const current = pairedSide(
       "run-current",
-      makeMetrics(proportion(17, 30), proportion(0, 0), proportion(0, 7)),
+      ids.map((id, index) => [id, 5, index <= 4 ? 5 : 0] as const),
     );
 
-    const comparison = compareVisibility(base, current);
-    const unprompted = comparison.aggregates[0];
+    const mention = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsMentioned",
+    );
 
-    // The test on its own rejects at q = 0.10; the difference interval does not
-    // exclude zero, and the page would otherwise print "significant" beside an
-    // interval that contains no change at all.
-    expect(twoProportionP(10, 30, 17, 30)).toBeLessThan(0.1);
-    expect(unprompted?.metric).toBe("unpromptedMention");
-    expect(unprompted?.testable).toBe(true);
-    expect(unprompted?.lo).toBeLessThan(0);
-    expect(unprompted?.hi).toBeGreaterThan(0);
-    expect(unprompted?.changed).toBe(false);
+    expect(mention?.gained).toBe(4);
+    expect(mention?.lost).toBe(0);
+    expect(mention?.pairs).toBe(6);
+    // Six pairs is below the floor, so no verdict is offered at all.
+    expect(mention?.testable).toBe(false);
+    expect(mention?.changed).toBe(false);
   });
 
-  it("calls a change a change when both halves agree", () => {
-    const base = makeSide(
+  it("calls a one-directional move a change once there are enough questions", () => {
+    const ids = Array.from({ length: 14 }, (_, index) => `q${index + 1}`);
+    const base = pairedSide(
       "run-base",
-      makeMetrics(proportion(10, 30), proportion(0, 0), proportion(0, 7)),
+      ids.map((id) => [id, 5, 0] as const),
     );
-    const current = makeSide(
+    const current = pairedSide(
       "run-current",
-      makeMetrics(proportion(19, 30), proportion(0, 0), proportion(0, 7)),
+      ids.map((id, index) => [id, 5, index < 8 ? 4 : 0] as const),
     );
 
-    const comparison = compareVisibility(base, current);
+    const mention = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsMentioned",
+    );
 
-    expect(comparison.aggregates[0]?.changed).toBe(true);
-    expect(comparison.aggregates[0]?.diff).toBeCloseTo(0.3, 6);
-    expect(comparison.baseRunId).toBe("run-base");
-    expect(comparison.baseFinishedAt).toBe("2026-08-29T12:00:00.000Z");
+    expect(mention?.pairs).toBe(14);
+    expect(mention?.gained).toBe(8);
+    expect(mention?.lost).toBe(0);
+    expect(mention?.testable).toBe(true);
+    expect(mention?.changed).toBe(true);
+    // The interval is on the share of moved questions that improved, so it
+    // sits above an even split rather than above zero.
+    expect(mention?.lo).not.toBeNull();
+    expect(mention!.lo!).toBeGreaterThan(0.5);
   });
 
-  it("leaves an untestable aggregate untested without spending its neighbour's power", () => {
+  it("refuses a verdict when the moves cancel out", () => {
+    const ids = Array.from({ length: 14 }, (_, index) => `q${index + 1}`);
+    const base = pairedSide(
+      "run-base",
+      ids.map((id, index) => [id, 5, index < 7 ? 0 : 3] as const),
+    );
+    const current = pairedSide(
+      "run-current",
+      ids.map((id, index) => [id, 5, index < 7 ? 3 : 0] as const),
+    );
+
+    const mention = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsMentioned",
+    );
+
+    expect(mention?.gained).toBe(7);
+    expect(mention?.lost).toBe(7);
+    expect(mention?.testable).toBe(true);
+    expect(mention?.changed).toBe(false);
+  });
+
+  it("leaves prompted questions out of the mention comparison", () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `q${index + 1}`);
+    const base = pairedSide(
+      "run-base",
+      ids.map((id) => [id, 5, 0] as const),
+      { prompted: true },
+    );
+    const current = pairedSide(
+      "run-current",
+      ids.map((id) => [id, 5, 5] as const),
+      { prompted: true },
+    );
+
+    const mention = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsMentioned",
+    );
+
+    // Every question names the brand, so there is nothing to compare and no
+    // verdict - not a twelve-question improvement.
+    expect(mention?.pairs).toBe(0);
+    expect(mention?.testable).toBe(false);
+    expect(mention?.changed).toBe(false);
+  });
+
+  it("compares citations only over demand-free wording that could cite", () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `q${index + 1}`);
     const base = makeSide(
       "run-base",
-      makeMetrics(proportion(1, 5), proportion(10, 40), proportion(0, 7)),
+      makeMetrics(proportion(0, 0), proportion(0, 0), proportion(0, 0)),
+      ids.map((id, index) =>
+        comparisonQuestion(id, 5, 0, {
+          mode: index < 6 ? "retrieval" : "demand",
+          citationEvaluable: 5,
+          cited: 0,
+        }),
+      ),
     );
     const current = makeSide(
       "run-current",
-      makeMetrics(proportion(4, 5), proportion(30, 40), proportion(0, 7)),
+      makeMetrics(proportion(0, 0), proportion(0, 0), proportion(0, 0)),
+      ids.map((id, index) =>
+        comparisonQuestion(id, 5, 0, {
+          mode: index < 6 ? "retrieval" : "demand",
+          citationEvaluable: 5,
+          cited: 3,
+        }),
+      ),
     );
 
-    const comparison = compareVisibility(base, current);
+    const citation = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsCited",
+    );
 
-    expect(comparison.aggregates.map((entry) => entry.metric)).toEqual([
-      "unpromptedMention",
-      "citation",
-      "questionsMentioned",
-    ]);
-    expect(comparison.aggregates[0]?.testable).toBe(false);
-    expect(comparison.aggregates[0]?.changed).toBe(false);
-    // The rejection has to land on the hypothesis it was computed for.
-    expect(comparison.aggregates[1]?.testable).toBe(true);
-    expect(comparison.aggregates[1]?.changed).toBe(true);
-    expect(comparison.aggregates[2]?.testable).toBe(false);
-    expect(comparison.aggregates[2]?.changed).toBe(false);
+    // Six retrieval questions moved; the six demand ones are reported but never
+    // enter a citation denominator, and the floor of ten pairs is not met.
+    expect(citation?.pairs).toBe(6);
+    expect(citation?.gained).toBe(6);
+    expect(citation?.testable).toBe(false);
   });
 
   it("reports a direction per question only when the count moved", () => {
@@ -682,24 +906,24 @@ describe("compareVisibility", () => {
       proportion(0, 2),
     );
     const base = makeSide("run-base", metrics, [
-      { questionId: "q01", text: "unchanged", answered: 5, mentioned: 2 },
-      { questionId: "q02", text: "gained", answered: 5, mentioned: 1 },
-      { questionId: "q03", text: "lost", answered: 5, mentioned: 4 },
-      { questionId: "q04", text: "different denominator", answered: 5, mentioned: 3 },
-      { questionId: "q05", text: "nothing answered", answered: 0, mentioned: 0 },
+      comparisonQuestion("q01", 5, 2, { text: "unchanged" }),
+      comparisonQuestion("q02", 5, 1, { text: "gained" }),
+      comparisonQuestion("q03", 5, 4, { text: "lost" }),
+      comparisonQuestion("q04", 5, 3, { text: "different denominator" }),
+      comparisonQuestion("q05", 0, 0, { text: "nothing answered" }),
     ]);
     const current = makeSide("run-current", metrics, [
-      { questionId: "q01", text: "unchanged", answered: 5, mentioned: 2 },
-      { questionId: "q02", text: "gained", answered: 5, mentioned: 4 },
-      { questionId: "q03", text: "lost", answered: 5, mentioned: 0 },
-      { questionId: "q04", text: "different denominator", answered: 3, mentioned: 2 },
-      { questionId: "q05", text: "nothing answered", answered: 0, mentioned: 0 },
-      { questionId: "q06", text: "new question", answered: 5, mentioned: 5 },
+      comparisonQuestion("q01", 5, 2, { text: "unchanged" }),
+      comparisonQuestion("q02", 5, 4, { text: "gained" }),
+      comparisonQuestion("q03", 5, 0, { text: "lost" }),
+      comparisonQuestion("q04", 3, 2, { text: "different denominator" }),
+      comparisonQuestion("q05", 0, 0, { text: "nothing answered" }),
+      comparisonQuestion("q06", 5, 5, { text: "new question" }),
     ]);
 
     const comparison = compareVisibility(base, current);
 
-    // q01 did not move, q04's denominator did (3 of 3 is a higher rate than 3
+    // q01 did not move, q04's denominator did (2 of 3 is a higher rate than 3
     // of 5 and would have been printed as a loss), q05 has nothing to compare
     // and q06 has no baseline.
     expect(comparison.questions).toEqual([
@@ -722,21 +946,35 @@ describe("compareVisibility", () => {
     ]);
   });
 
-  it("consumes the aggregate proportions it was handed", () => {
+  it("carries both runs' headline proportions through untouched", () => {
     const base = makeSide(
       "run-base",
       makeMetrics(proportion(3, 40), proportion(1, 35), proportion(2, 8)),
     );
     const current = makeSide(
       "run-current",
-      makeMetrics(proportion(4, 40), proportion(2, 35), proportion(3, 8)),
+      makeMetrics(proportion(9, 40), proportion(4, 35), proportion(5, 8)),
     );
 
-    const comparison = compareVisibility(base, current);
+    const mention = compareVisibility(base, current).aggregates.find(
+      (entry) => entry.metric === "questionsMentioned",
+    );
 
-    expect(comparison.aggregates[0]?.base).toEqual(proportion(3, 40));
-    expect(comparison.aggregates[0]?.current).toEqual(proportion(4, 40));
-    expect(comparison.aggregates[1]?.base.trials).toBe(35);
-    expect(comparison.aggregates[2]?.testable).toBe(false);
+    expect(mention?.base).toEqual(proportion(2, 8));
+    expect(mention?.current).toEqual(proportion(5, 8));
+    // No paired questions were supplied, so there is a difference to print and
+    // no verdict to draw from it.
+    expect(mention?.diff).toBeCloseTo(5 / 8 - 2 / 8, 12);
+    expect(mention?.testable).toBe(false);
+    expect(mention?.changed).toBe(false);
+  });
+
+  it("names the baseline it compared against", () => {
+    const comparison = compareVisibility(
+      pairedSide("run-base", [["q1", 5, 1]]),
+      pairedSide("run-current", [["q1", 5, 1]]),
+    );
+    expect(comparison.baseRunId).toBe("run-base");
+    expect(comparison.baseFinishedAt).toBe("2026-08-29T12:00:00.000Z");
   });
 });

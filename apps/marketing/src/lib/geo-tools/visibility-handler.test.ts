@@ -7,8 +7,11 @@ import {
   type VisibilityFrozenChoice,
   type VisibilityHandlerDependencies,
 } from "./visibility-handler.ts";
-import { seal } from "../auth/sealed-cookie.ts";
-import { VISIBILITY_RUNS_PER_DAY } from "./visibility-contract.ts";
+import { open, seal } from "../auth/sealed-cookie.ts";
+import {
+  VISIBILITY_DAILY_WINDOW_SECONDS,
+  VISIBILITY_RUNS_PER_DAY,
+} from "./visibility-contract.ts";
 
 /**
  * The sealing key this suite runs under.
@@ -136,9 +139,17 @@ describe("load", () => {
       deps({ listFrozen: async () => ({ kind: "ok", value: [] }) }),
     );
     expect(response.status).toBe(200);
-    expect(((await body(response)).data as { choices: unknown[] }).choices).toEqual(
-      [],
-    );
+    const data = (await body(response)).data as {
+      choices: unknown[];
+      runsPerDay: number;
+      providerConfigured: boolean;
+    };
+    expect(data.choices).toEqual([]);
+    // Same shape as the populated case. An empty account is not a different
+    // contract, and a page that reads these fields must not find them missing
+    // on one branch out of two.
+    expect(data.runsPerDay).toBe(VISIBILITY_RUNS_PER_DAY);
+    expect(data.providerConfigured).toBe(true);
   });
 });
 
@@ -265,5 +276,195 @@ describe("status", () => {
     );
     expect(response.status).toBe(404);
     expect(readRun).not.toHaveBeenCalled();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* What travels sealed                                                 */
+/* ------------------------------------------------------------------ */
+
+interface SealedRunRequest {
+  readonly sub: string;
+  readonly kbId: string;
+  readonly snapshotId: string;
+  readonly revision: number;
+  readonly samplesPerQuestion: number;
+  readonly startedAt: string;
+}
+
+describe("the sealed run request", () => {
+  async function sealedFrom(
+    body: Record<string, unknown>,
+  ): Promise<SealedRunRequest> {
+    const startRun = vi.fn(async () => ({ runId: "run-9" }));
+    await handleVisibilityStart(post("/run", body), deps({ startRun }));
+    const token = (startRun.mock.calls as readonly unknown[][])[0]?.[0];
+    const opened = open<SealedRunRequest>(
+      "gg_geo_visibility_input",
+      String(token),
+      () => Date.parse("2026-08-29T10:00:00.000Z"),
+    );
+    if (opened === null) throw new Error("the workflow was handed no request");
+    return opened;
+  }
+
+  // Opening the token is the only way to see what the workflow was actually
+  // told. Asserting that the string does not contain "user-1" proves the value
+  // is opaque and nothing else - every wrong payload is opaque too.
+  it("carries the identity the request authenticated as", async () => {
+    expect((await sealedFrom(startBody())).sub).toBe("user-1");
+  });
+
+  it("carries the sample count that was asked for, not a default", async () => {
+    // A visitor who chose ten and was charged for five, or chose three and was
+    // charged for ten, would see nothing wrong on the page.
+    expect((await sealedFrom(startBody({ samplesPerQuestion: 10 }))).samplesPerQuestion).toBe(10);
+    expect((await sealedFrom(startBody({ samplesPerQuestion: 3 }))).samplesPerQuestion).toBe(3);
+  });
+
+  it("carries the frozen version the visitor picked", async () => {
+    const request = await sealedFrom(startBody());
+    expect(request.kbId).toBe(CHOICE.kbId);
+    expect(request.snapshotId).toBe(CHOICE.snapshotId);
+    // Both identifiers travel: the workflow re-reads by revision and asserts
+    // the row it got back is the snapshot named here.
+    expect(request.revision).toBe(CHOICE.revision);
+  });
+
+  it("stamps the start time from the injected clock", async () => {
+    expect((await sealedFrom(startBody())).startedAt).toBe(
+      "2026-08-29T10:00:00.000Z",
+    );
+  });
+});
+
+describe("the run pointer handed back", () => {
+  it("names the run the workflow started", async () => {
+    const startRun = vi.fn(async () => ({ runId: "run-9" }));
+    const response = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ startRun }),
+    );
+    const data = (await body(response)).data as { runToken: string };
+    const pointer = open<{ sub: string; runId: string }>(
+      "gg_geo_visibility_run",
+      data.runToken,
+      () => Date.parse("2026-08-29T10:00:00.000Z"),
+    );
+    expect(pointer).toEqual({ sub: "user-1", runId: "run-9" });
+  });
+
+  it("is the id the status route reads with", async () => {
+    const startRun = vi.fn(async () => ({ runId: "run-9" }));
+    const started = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ startRun }),
+    );
+    const { runToken } = (await body(started)).data as { runToken: string };
+
+    const readRun = vi.fn(async () => ({ kind: "running" }) as const);
+    await handleVisibilityStatus(post("/run/status", { runToken }), deps({ readRun }));
+    expect(readRun).toHaveBeenCalledWith("run-9");
+  });
+});
+
+describe("outcomes the visitor paid for", () => {
+  const runToken = () =>
+    seal(
+      "gg_geo_visibility_run",
+      { sub: "user-1", runId: "run-1" },
+      3_600,
+      () => Date.parse("2026-08-29T10:00:00.000Z"),
+    );
+
+  it("returns the finished report unchanged", async () => {
+    // The one thing the visitor spent money on. Compared by identity so a
+    // handler that rebuilt or trimmed the report would fail here.
+    const report = { manifest: { calls: 75 }, questions: [] } as never;
+    const response = await handleVisibilityStatus(
+      post("/run/status", { runToken: runToken() }),
+      deps({ readRun: async () => ({ kind: "completed", report }) }),
+    );
+    expect(response.status).toBe(200);
+    const data = (await body(response)).data as {
+      status: string;
+      report: unknown;
+    };
+    expect(data.status).toBe("completed");
+    expect(data.report).toEqual(report);
+  });
+
+  it("reports a run the store has never heard of as missing", async () => {
+    const response = await handleVisibilityStatus(
+      post("/run/status", { runToken: runToken() }),
+      deps({ readRun: async () => ({ kind: "missing" }) }),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("says how long to wait, in the units the client polls in", async () => {
+    for (const kind of ["queued", "running"] as const) {
+      const response = await handleVisibilityStatus(
+        post("/run/status", { runToken: runToken() }),
+        deps({ readRun: async () => ({ kind }) }),
+      );
+      const data = (await body(response)).data as {
+        status: string;
+        retryAfterSeconds: number;
+      };
+      // Both states are progress, not failure: a client that cannot read
+      // `queued` counts it as an error and kills a run that is about to start.
+      expect(data.status).toBe(kind);
+      expect(data.retryAfterSeconds).toBe(5);
+    }
+  });
+});
+
+describe("what a refusal must not cost", () => {
+  it("does not spend a run when the provider has no credentials", async () => {
+    const consumeDailyRun = vi.fn(async () => true);
+    const response = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ providerConfigured: () => false, consumeDailyRun }),
+    );
+    expect(response.status).toBe(503);
+    // An unconfigured deployment would otherwise burn all five of the day's
+    // runs before the visitor learned the key was missing.
+    expect(consumeDailyRun).not.toHaveBeenCalled();
+  });
+
+  it("says the day's window as well as its size", async () => {
+    const response = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ consumeDailyRun: async () => false }),
+    );
+    const parsed = await body(response);
+    expect(parsed.limit).toBe(VISIBILITY_RUNS_PER_DAY);
+    expect(parsed.windowSeconds).toBe(VISIBILITY_DAILY_WINDOW_SECONDS);
+  });
+
+  it("tells a store outage apart from an empty account", async () => {
+    // "You own nothing" and "the database is down" lead to opposite actions.
+    const unavailable = { kind: "unavailable", reason: "transport" } as const;
+    const load = await handleVisibilityLoad(
+      post("/load", {}),
+      deps({ listFrozen: async () => unavailable }),
+    );
+    expect(load.status).toBe(503);
+    const start = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ listFrozen: async () => unavailable }),
+    );
+    expect(start.status).toBe(503);
+  });
+
+  it("refuses a body carrying fields it does not know", async () => {
+    const startRun = vi.fn();
+    const response = await handleVisibilityStart(
+      post("/run", startBody({ userId: "someone-else" })),
+      deps({ startRun }),
+    );
+    expect(response.status).toBe(400);
+    expect(startRun).not.toHaveBeenCalled();
   });
 });
