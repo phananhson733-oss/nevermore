@@ -6089,7 +6089,7 @@
     "menu": {
       "label": "Account",
       "balance": "Credits",
-      "welfareRemaining": "{remaining} left to earn while testing",
+      "upgrade": "Upgrade",
       "ledger": "Credit history",
       "credits": "Credits",
       "website": "Website",

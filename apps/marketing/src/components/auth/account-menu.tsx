@@ -276,6 +276,9 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
               onPhotoError={() => setPhotoFailed(true)}
               size="large"
             />
+            <div className="absolute top-1 right-1">
+              <ThemeToggle menuItem onAction={() => closeMenu(true)} />
+            </div>
             <div className="min-w-0 pr-10">
               {displayName === null ? null : (
                 <p className="truncate text-[14px] font-semibold text-text-dark-primary">
@@ -287,23 +290,22 @@ export function AccountMenu({ account }: { readonly account: AccountState }) {
                   {email}
                 </p>
               )}
-              {balance === null ? null : (
-                <>
-                  <p className="mt-1 font-mono text-[11px] text-text-dark-faint">
+              <div className="mt-2 flex items-center gap-2">
+                {balance === null ? null : (
+                  <span className="inline-flex min-h-7 items-center rounded-full border border-brand-border-card bg-brand-panel-raised px-2.5 font-mono text-[11px] text-text-dark-primary">
                     {balance.total} {t("credits")}
-                  </p>
-                  {balance.welfareRemaining === null ? null : (
-                    <p className="mt-0.5 font-mono text-[10px] text-text-dark-faint">
-                      {t("welfareRemaining", {
-                        remaining: balance.welfareRemaining,
-                      })}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="absolute top-1 right-1">
-              <ThemeToggle menuItem onAction={() => closeMenu(true)} />
+                  </span>
+                )}
+                <Link
+                  role="menuitem"
+                  tabIndex={-1}
+                  href={localePath(locale, "/pricing")}
+                  onClick={() => closeMenu(false)}
+                  className="inline-flex min-h-7 items-center rounded-full bg-text-dark-primary px-3 text-[11px] font-semibold text-brand-panel outline-none transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                >
+                  {t("upgrade")}
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -453,6 +455,20 @@ export function AccountSummaryMobile({
           {email}
         </p>
       )}
+      <div className="mt-2 flex items-center gap-2">
+        {balance === null ? null : (
+          <span className="inline-flex min-h-8 items-center rounded-full border border-brand-border-card bg-brand-panel-raised px-2.5 font-mono text-[12px] text-text-dark-primary">
+            {balance.total} {t("credits")}
+          </span>
+        )}
+        <Link
+          href={localePath(locale, "/pricing")}
+          onClick={onNavigate}
+          className="inline-flex min-h-8 items-center rounded-full bg-text-dark-primary px-3 text-[12px] font-semibold text-brand-panel outline-none transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+        >
+          {t("upgrade")}
+        </Link>
+      </div>
       <div className="mt-3 space-y-1">
         <Link
           href={localePath(locale, "/account/credits")}
