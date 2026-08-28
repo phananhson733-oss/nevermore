@@ -11,7 +11,8 @@ export type ConnectedTool =
   | "traffic-drop-diagnosis"
   | "low-competition-keywords"
   | "competitor-keyword-gap"
-  | "content-brief";
+  | "content-brief"
+  | "content-draft";
 
 /**
  * The union as a value, so a test can walk every member.
@@ -27,6 +28,7 @@ export const CONNECTED_TOOLS = [
   "low-competition-keywords",
   "competitor-keyword-gap",
   "content-brief",
+  "content-draft",
 ] as const satisfies readonly ConnectedTool[];
 
 type MissingConnectedTool = Exclude<
@@ -652,6 +654,93 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
     ],
   },
+  "content-draft": {
+    path: "/tools/content-draft",
+    eyebrow: "Content drafting",
+    title: "Write a draft whose every sentence says where it came from",
+    description:
+      "Sign in, bring a content brief from the Content Brief Builder, and get a section-by-section draft: each sentence is marked bound, gap, stance or no-claim, a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm before publishing.",
+    sourceLabel: "A GenGrowth sign-in and a content brief are required",
+    sourceDetail:
+      "The draft takes a Content Brief as its only input — handed over from the brief tool, pasted, or uploaded as JSON — and re-checks its fingerprint before using it. The competitor excerpts and profile facts the brief carries are the only evidence a sentence may cite.",
+    cta: "Sign in to write a draft",
+    trust:
+      "No saved draft, no scheduled run, no content score, no originality claim, and no credit claim. A section whose evidence references fail validation is reported as failed rather than quietly rewritten, and an unfinished coverage check never shows a question as covered.",
+    workflowTitle: "How the draft is written",
+    steps: [
+      {
+        name: "Load a brief, not a keyword",
+        text: "The page accepts only a Content Brief Builder export. The brief is parsed strictly and its fingerprint recomputed; an edited or incomplete brief is refused with the reason, not repaired.",
+      },
+      {
+        name: "Choose tone, person, product mention and sections",
+        text: "Each writable outline section is a checkbox. Profile facts reach the model only where you allow them: not at all, in the gap-angle section only, or throughout.",
+      },
+      {
+        name: "One model call per section, annotated as it is written",
+        text: "Sections are generated in parallel with their own timeouts. The model marks every sentence with its claim state and cites the competitor excerpts or profile facts behind it; the server validates those references and fails the section, with one retry, rather than rewriting a claim.",
+      },
+      {
+        name: "A separate call checks coverage",
+        text: "With a fresh context, a second model call reads only the generated sections and the brief's must-answer questions and judges each one covered, partial or not covered. If that call does not complete, coverage is shown as unavailable.",
+      },
+    ],
+    outputTitle: "What one run gives you",
+    outputs: [
+      {
+        label: "A draft in sections, with claim annotations",
+        body: "Every sentence carries a claim state. Bound sentences are underlined in the colour of their evidence layer, gaps in the error colour; the annotations can be switched off without changing the verify list.",
+      },
+      {
+        label: "Coverage as three raw counts",
+        body: "Covered, partial and not covered over the brief's question total, each question with the section that answers it and the gap the model named. No score.",
+      },
+      {
+        label: "A verify-before-publishing list",
+        body: "Sentences with a single competitor source, sentences backed only by your profile, gaps, and stances — grouped, each naming its section and references.",
+      },
+      {
+        label: "One document, three projections",
+        body: "The screen, the copied Markdown and the exported JSON come from the same result. Any section can be rerun on its own; the whole result is replaced and re-fingerprinted.",
+      },
+      {
+        label: "A handoff to the On-Page SEO Checker",
+        body: "Once you enter the published URL, the page and the primary keyword are carried to the checker inside this browser, never through the URL bar.",
+      },
+    ],
+    faq: [
+      {
+        question: "Can I start from a keyword instead of a brief?",
+        answer:
+          "No. Without a brief there is nothing for the coverage check to measure against, so the page accepts only a Content Brief Builder export.",
+      },
+      {
+        question: "Why was my pasted brief refused?",
+        answer:
+          "The parser recomputes the brief's fingerprint and checks every cross-reference. A brief edited after export, one whose outline cites a question it does not contain, or one from another schema is refused with the reason shown.",
+      },
+      {
+        question: "What does a claim annotation mean?",
+        answer:
+          "Bound: the sentence cites a competitor excerpt or a profile fact that the brief carries. Gap: the model thought it should be said but found no evidence. Stance: a position from the gap angle, citing profile facts. No claim: a connective sentence that asserts nothing.",
+      },
+      {
+        question: "Which languages does it support?",
+        answer:
+          "The same as the brief's must-answer and outline fields: whitespace-tokenized languages. A brief in Chinese, Japanese, Korean or Thai has no writable section, and the page says so instead of generating.",
+      },
+      {
+        question: "Does it publish, and is the draft saved?",
+        answer:
+          "Neither. It does not publish, write to a CMS or generate images, and the draft lives in your browser tab until you copy or export it. Refresh the page and it is gone.",
+      },
+      {
+        question: "How many credits does a run cost?",
+        answer:
+          "This page does not show or promise a credit price. Any future price must be defined for this specific tool before the interface claims it.",
+      },
+    ],
+  },
 };
 
 const ZH: Record<ConnectedTool, ConnectedToolContent> = {
@@ -1220,6 +1309,93 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         question: "报告会刷新或保存吗？",
         answer:
           "不会。只有提交表单时才运行，报告只存在于你的浏览器标签页里，直到你导出。没有服务端历史可恢复。",
+      },
+      {
+        question: "一次运行消耗多少积分？",
+        answer:
+          "本页面不展示、也不承诺积分价格。未来只有在本工具自己的价格合同确定后，界面才会声称会扣费。",
+      },
+    ],
+  },
+  "content-draft": {
+    path: "/tools/content-draft",
+    eyebrow: "内容初稿",
+    title: "生成一份每句话都写明出处的初稿",
+    description:
+      "登录后带上 Content Brief Builder 的一份简报，得到逐节生成的初稿：每句话标为有据、缺口、立场或无主张，一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出发布前仍需人工确认的句子。",
+    sourceLabel: "需要登录 GenGrowth 账号并提供一份内容简报",
+    sourceDetail:
+      "初稿只接受 Content Brief 作为输入——从简报工具交接、粘贴或上传 JSON——使用前会重新核对指纹。简报里带的竞品片段与档案事实是句子唯一可引用的证据。",
+    cta: "登录后生成初稿",
+    trust:
+      "不保存初稿、没有定时任务、不给内容分、不声称原创、不承诺积分。证据引用没过校验的段落记为失败而不是悄悄改写；覆盖度校验没跑完时不会把任何问题显示为已覆盖。",
+    workflowTitle: "初稿是怎样生成的",
+    steps: [
+      {
+        name: "载入简报，而不是关键词",
+        text: "页面只接受 Content Brief Builder 的导出。简报会被严格解析并重算指纹；被改过或不完整的简报会连同原因一起被拒绝，不会被修补。",
+      },
+      {
+        name: "选定语气、人称、产品提及强度和要生成的段落",
+        text: "大纲里每个可写的节都是一个复选框。档案事实只在你允许的地方交给模型：完全不给、只在缺口角度那一节给，或全文都给。",
+      },
+      {
+        name: "每节一次模型调用，边写边标注",
+        text: "各节并行生成，各有自己的超时。模型给每句话标主张状态，并引用背后的竞品片段或档案事实；服务端校验这些引用，不通过就让该节失败并重试一次，绝不改写主张。",
+      },
+      {
+        name: "独立一次调用校验覆盖度",
+        text: "第二次模型调用用全新上下文，只读生成成功的段落和简报的必答问题，逐条判为已覆盖、部分或未覆盖。这次调用没完成时，覆盖度显示为不可得。",
+      },
+    ],
+    outputTitle: "一次运行你会拿到什么",
+    outputs: [
+      {
+        label: "分节初稿，带主张标注",
+        body: "每句话带主张状态。有据句按证据层的颜色画下划线，缺口用错误色；标注可以关掉，核实清单不受影响。",
+      },
+      {
+        label: "覆盖度只有三个原始计数",
+        body: "已覆盖、部分、未覆盖，分母是简报的问题总数；每条问题写明回答它的节和模型指出的缺口。不给分。",
+      },
+      {
+        label: "发布前必须人工核实的清单",
+        body: "单一竞品来源的句子、只有档案支撑的句子、缺口和立场——分组列出，每条写明所在节与引用。",
+      },
+      {
+        label: "同一份文档，三种投影",
+        body: "屏幕、复制的 Markdown 和导出的 JSON 出自同一个结果。任何一节都能单独重跑；整份结果被替换并重算指纹。",
+      },
+      {
+        label: "交接到 On-Page SEO Checker",
+        body: "填入已发布 URL 后，页面和主关键词在浏览器内交给检查器，不经过地址栏。",
+      },
+    ],
+    faq: [
+      {
+        question: "能直接从关键词开始吗？",
+        answer:
+          "不能。没有简报就没有覆盖度校验的被测对象，所以页面只接受 Content Brief Builder 的导出。",
+      },
+      {
+        question: "为什么我粘贴的简报被拒绝了？",
+        answer:
+          "解析器会重算简报的指纹并核对每一处交叉引用。导出后被改过的简报、大纲引用了不存在问题的简报、或者别的 schema 的文档，都会连同原因一起被拒绝。",
+      },
+      {
+        question: "主张标注是什么意思？",
+        answer:
+          "有据：这句话引用了简报里带的竞品片段或档案事实。缺口：模型认为该说但没找到证据。立场：出自缺口角度的表态，引用档案事实。无主张：不作断言的连接句。",
+      },
+      {
+        question: "支持哪些语言？",
+        answer:
+          "与简报的必答问题和大纲字段相同：空白分词语言。中文、日文、韩文、泰文的简报没有可写的节，页面会直说，不会生成。",
+      },
+      {
+        question: "它会发布吗？初稿会保存吗？",
+        answer:
+          "都不会。它不发布、不写 CMS、不生成图片；初稿只存在于你的浏览器标签页里，直到你复制或导出。刷新页面即清空。",
       },
       {
         question: "一次运行消耗多少积分？",

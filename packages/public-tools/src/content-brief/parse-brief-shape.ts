@@ -64,13 +64,13 @@ export type ParseBriefFailure =
 
 export type Ok<T> = { readonly ok: true; readonly value: T };
 export type Decoded<T> = Ok<T> | ParseBriefFailure;
-type Decoder<T> = (input: unknown, path: string) => Decoded<T>;
-type Infer<D> = D extends Decoder<infer T> ? T : never;
-type Shape = Record<string, Decoder<unknown>>;
-type ObjectOf<S extends Shape> = { [K in keyof S]: Infer<S[K]> };
+export type Decoder<T> = (input: unknown, path: string) => Decoded<T>;
+export type Infer<D> = D extends Decoder<infer T> ? T : never;
+export type Shape = Record<string, Decoder<unknown>>;
+export type ObjectOf<S extends Shape> = { [K in keyof S]: Infer<S[K]> };
 
 /** Non-model free text (ids, titles, domains, hashes, provider strings). Model text reads MODEL_TEXT_MAX_CHARS. */
-const FREE_TEXT_MAX_CHARS = 2000;
+export const FREE_TEXT_MAX_CHARS = 2000;
 const URL_MAX_CHARS = 2048;
 
 export function ok<T>(value: T): Ok<T> {
@@ -99,33 +99,33 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /* returned value never shares a reference with the input               */
 /* ------------------------------------------------------------------ */
 
-function text(max = FREE_TEXT_MAX_CHARS, min = 0): Decoder<string> {
+export function text(max = FREE_TEXT_MAX_CHARS, min = 0): Decoder<string> {
   return (input, path) =>
     typeof input === "string" && input.length >= min && input.length <= max ? ok(input) : invalid(path);
 }
 
 /** Model-written text: non-empty, no control characters or angle brackets, single spaces, code points <= max (text.ts). */
-function modelText(maxCodePoints: number): Decoder<string> {
+export function modelText(maxCodePoints: number): Decoder<string> {
   return (input, path) =>
     typeof input === "string" && isBoundedModelText(input, maxCodePoints) ? ok(input) : invalid(path);
 }
 
-function literal<const L extends string | number | boolean | null>(expected: L): Decoder<L> {
+export function literal<const L extends string | number | boolean | null>(expected: L): Decoder<L> {
   return (input, path) => (input === expected ? ok(expected) : invalid(path));
 }
 
-function oneOf<const L extends readonly string[]>(values: L): Decoder<L[number]> {
+export function oneOf<const L extends readonly string[]>(values: L): Decoder<L[number]> {
   const allowed = new Set<string>(values);
   return (input, path) =>
     typeof input === "string" && allowed.has(input) ? ok(input as L[number]) : invalid(path);
 }
 
-function integer(min = 0): Decoder<number> {
+export function integer(min = 0): Decoder<number> {
   return (input, path) =>
     typeof input === "number" && Number.isInteger(input) && input >= min ? ok(input) : invalid(path);
 }
 
-function finite(min = Number.NEGATIVE_INFINITY): Decoder<number> {
+export function finite(min = Number.NEGATIVE_INFINITY): Decoder<number> {
   return (input, path) =>
     typeof input === "number" && Number.isFinite(input) && input >= min ? ok(input) : invalid(path);
 }
@@ -135,11 +135,11 @@ const positive: Decoder<number> = (input, path) =>
 
 const boolean: Decoder<boolean> = (input, path) => (typeof input === "boolean" ? ok(input) : invalid(path));
 
-function nullable<T>(inner: Decoder<T>): Decoder<T | null> {
+export function nullable<T>(inner: Decoder<T>): Decoder<T | null> {
   return (input, path) => (input === null ? ok(null) : inner(input, path));
 }
 
-function identifier(prefix: string): Decoder<string> {
+export function identifier(prefix: string): Decoder<string> {
   const pattern = new RegExp(`^${prefix}[1-9][0-9]*$`);
   return (input, path) => (typeof input === "string" && pattern.test(input) ? ok(input) : invalid(path));
 }
@@ -154,19 +154,19 @@ const httpUrl: Decoder<string> = (input, path) => {
   }
 };
 
-const timestamp: Decoder<string> = (input, path) => {
+export const timestamp: Decoder<string> = (input, path) => {
   const decoded = text(FREE_TEXT_MAX_CHARS, 1)(input, path);
   if (!decoded.ok) return decoded;
   return Number.isFinite(Date.parse(decoded.value)) ? decoded : invalid(path);
 };
 
-interface ArrayBounds {
+export interface ArrayBounds {
   readonly min?: number;
   readonly max?: number;
   readonly unique?: boolean;
 }
 
-function array<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<T[]> {
+export function array<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<T[]> {
   return (input, path) => {
     if (!Array.isArray(input)) return invalid(path);
     if (input.length < (bounds.min ?? 0) || input.length > (bounds.max ?? Number.POSITIVE_INFINITY)) {
@@ -183,7 +183,7 @@ function array<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<T[]> {
   };
 }
 
-function nonEmpty<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<[T, ...T[]]> {
+export function nonEmpty<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<[T, ...T[]]> {
   const inner = array(item, { ...bounds, min: 1 });
   return (input, path) => {
     const decoded = inner(input, path);
@@ -192,7 +192,7 @@ function nonEmpty<T>(item: Decoder<T>, bounds: ArrayBounds = {}): Decoder<[T, ..
 }
 
 /** Exact key set: every declared key must be an own property, no other own property may exist. */
-function object<S extends Shape>(shape: S): Decoder<ObjectOf<S>> {
+export function object<S extends Shape>(shape: S): Decoder<ObjectOf<S>> {
   const entries = Object.entries(shape);
   return (input, path) => {
     if (!isRecord(input)) return invalid(path);
@@ -211,7 +211,7 @@ function object<S extends Shape>(shape: S): Decoder<ObjectOf<S>> {
 }
 
 /** Discriminated union on a string or boolean tag; the branch re-validates the tag itself. */
-function tagged<B extends Record<string, Decoder<unknown>>>(key: string, branches: B): Decoder<Infer<B[keyof B]>> {
+export function tagged<B extends Record<string, Decoder<unknown>>>(key: string, branches: B): Decoder<Infer<B[keyof B]>> {
   return (input, path) => {
     if (!isRecord(input)) return invalid(path);
     const tag = Object.hasOwn(input, key) ? input[key] : undefined;
@@ -229,7 +229,7 @@ function recordOf<K extends string, T>(keys: readonly K[], item: Decoder<T>): De
 }
 
 /** Enumerations are declared as exhaustive records so a contract change fails to compile here. */
-function keysOf<K extends string>(record: Record<K, null>): readonly K[] {
+export function keysOf<K extends string>(record: Record<K, null>): readonly K[] {
   return Object.keys(record) as K[];
 }
 
@@ -273,7 +273,7 @@ const AVAILABLE_STATUSES = ["complete", "partial"] as const;
 /* provenance and reads                                                 */
 /* ------------------------------------------------------------------ */
 
-const unavailableShape = {
+export const unavailableShape = {
   status: literal("unavailable"),
   reason: oneOf(UNAVAILABLE_REASONS),
   attempted: nullable(integer()),
@@ -293,7 +293,7 @@ function observedBy<O extends Origin>(origin: O) {
   return object({ method: literal("observed"), origin: literal(origin) });
 }
 
-const llmReadMeta: Decoder<LlmReadMeta> = tagged("status", {
+export const llmReadMeta: Decoder<LlmReadMeta> = tagged("status", {
   complete: object({
     status: literal("complete"),
     calls: integer(),
@@ -675,7 +675,7 @@ const contentBrief: Decoder<ContentBrief> = object({
 /* ------------------------------------------------------------------ */
 
 /** UTF-8 bytes of the JSON form; `Buffer.byteLength(JSON.stringify(x))` without a Node-only global. */
-function byteLength(input: unknown): number | null {
+export function byteLength(input: unknown): number | null {
   try {
     return new TextEncoder().encode(JSON.stringify(input)).byteLength;
   } catch {

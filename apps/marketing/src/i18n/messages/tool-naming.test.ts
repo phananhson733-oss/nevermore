@@ -25,4 +25,10 @@ describe("tool formal names", () => {
     expect(en.tools.contentBrief.title).toBe("Content Brief Builder");
     expect(zh.tools.contentBrief.title).toBe("Content Brief Builder");
   });
+
+  // Handoff 2026-08-28 §1: the chain's second tool, same rule.
+  it("keeps the formal name Content Draft Writer in both locales", () => {
+    expect(en.tools.contentDraft.title).toBe("Content Draft Writer");
+    expect(zh.tools.contentDraft.title).toBe("Content Draft Writer");
+  });
 });

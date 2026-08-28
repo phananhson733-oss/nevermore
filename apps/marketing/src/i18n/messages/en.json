@@ -4025,7 +4025,11 @@
         "running": "Building…",
         "exportJson": "Export JSON",
         "generateDraft": "Generate draft →",
-        "generateDraftPending": "Draft generation arrives with the Content Draft Writer (PR 3). The exported JSON is the handoff it will accept."
+        "generateDraftHelp": "Opens the Content Draft Writer in a new tab with this brief. Nothing goes into the URL; the brief travels inside this browser only.",
+        "generateDraftFailed": {
+          "too_large": "This brief is larger than the {maxKb} KB the handoff accepts, so the draft tool was not opened. Export the JSON and upload it there instead.",
+          "storage": "The brief could not be stored in this browser, so the draft tool was not opened. Export the JSON and upload it there instead."
+        }
       },
       "modes": {
         "complete": "complete",
@@ -4293,6 +4297,241 @@
         "noPaa": "It reads no People Also Ask questions.",
         "noScore": "It gives no content score.",
         "language": "For languages without whitespace tokenization ({languages}), length, must-answer and outline are unsupported and no draft can be generated."
+      }
+    },
+    "contentDraft": {
+      "title": "Content Draft Writer",
+      "empty": {
+        "title": "This tool starts from a brief",
+        "body": "This tool does not accept a bare keyword. Without a brief there is nothing for the coverage check to measure against.",
+        "hint": "Bring a brief from the Content Brief Builder, paste its exported JSON, or upload the .json file."
+      },
+      "intake": {
+        "title": "Load a content brief",
+        "handoffLoaded": "Brief received from the Content Brief Builder.",
+        "handoffExpired": "The handed-over brief has expired or is not valid yet. Export it as JSON from the Content Brief Builder and paste it here.",
+        "pasteLabel": "Paste the brief JSON",
+        "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
+        "load": "Load brief",
+        "uploadLabel": "Or upload the exported .json file",
+        "invalidJson": "That is not valid JSON, so it was not parsed as a brief.",
+        "parseFailed": "Rejected at {path}.",
+        "maxBytes": "A brief is accepted up to {kb} KB; every cross-reference and the fingerprint are checked before it is loaded.",
+        "loaded": "Brief loaded",
+        "keyword": "Primary keyword",
+        "briefRun": "Brief run",
+        "fingerprint": "Fingerprint",
+        "writable": "{count, plural, one {# writable section} other {# writable sections}}",
+        "gaps": "{count, plural, =0 {no gaps} one {# gap} other {# gaps}}",
+        "noWritable": "This brief has no section that can be generated, so nothing can be drafted from it.",
+        "unsupportedLanguage": "This brief's language ({language}) is not supported by v1 for draft generation.",
+        "replace": "Replace brief"
+      },
+      "settings": {
+        "title": "Draft settings",
+        "tone": {
+          "label": "Tone",
+          "explanatory": "Explanatory · neutral",
+          "conversational": "Conversational",
+          "technical": "Technical documentation"
+        },
+        "person": {
+          "label": "Person",
+          "second": "Second person (you)",
+          "third": "Third person"
+        },
+        "productMention": {
+          "label": "Product mention",
+          "none": "Do not mention the product",
+          "gap_only": "Only in the gap-angle section",
+          "throughout": "Naturally throughout",
+          "help": "Profile facts reach the model only where you allow them. The gap angle attaches to section {section}.",
+          "helpNoGap": "This brief has no gap angle, so “only in the gap-angle section” hands the model no profile facts at all.",
+          "helpThroughout": "Mentioning the product throughout significantly increases the number of sentences you must verify by hand."
+        },
+        "sections": {
+          "label": "Sections to generate",
+          "help": "One model call per checked section, each with its own {timeout}s timeout inside a {budget}s total budget. Unchecked sections are recorded as skipped and their questions count as not covered.",
+          "answers": "answers {ids}",
+          "gapAngleHere": "gap angle attaches here"
+        }
+      },
+      "validation": {
+        "sectionsRequired": "Check at least one section to generate."
+      },
+      "errors": {
+        "invalid_request": "The draft request could not be read.",
+        "payload_too_large": "The brief and settings exceed the request size limit.",
+        "unsupported_media_type": "Send the request as JSON.",
+        "auth_required": "Sign in to generate a draft.",
+        "auth_unavailable": "Sign-in status is temporarily unavailable. Try again shortly.",
+        "rate_limited": "The hourly allowance for this tool is used up, so the draft did not start. Wait for the window to reset.",
+        "quota_unavailable": "The usage limiter on our side could not be reached, so the draft did not start rather than spend an unmetered run. This is not about your usage; try again shortly.",
+        "brief_schema_mismatch": "This is not a Content Brief v1 document, so it was not loaded.",
+        "brief_fingerprint_mismatch": "The brief's fingerprint does not match its content: it was changed after export. Export it again from the Content Brief Builder.",
+        "brief_reference_invalid": "The brief's cross-references do not hold (a section cites a question that does not exist, a question is cited by two sections, or an invariant is broken), so it was not loaded.",
+        "section_not_writable": "The requested section is not writable in this brief, so the draft did not start.",
+        "draft_unavailable": "A verifiable draft could not be produced this time. This is not about your brief; try again shortly.",
+        "unknown": "The draft could not be completed."
+      },
+      "running": {
+        "elapsed": "Generating the draft… {seconds}s elapsed of a {budget}s budget",
+        "rerunElapsed": "Rerunning the section… {seconds}s elapsed of a {budget}s budget",
+        "complete": "Draft complete."
+      },
+      "actions": {
+        "run": "Generate draft",
+        "running": "Generating…",
+        "rerun": "Rerun this section",
+        "rerunning": "Rerunning…",
+        "copyMarkdown": "Copy Markdown",
+        "copied": "Markdown copied",
+        "copyFailed": "The clipboard refused the copy. Select the text and copy it by hand.",
+        "exportJson": "Export JSON",
+        "openOnPage": "Open On-Page SEO Checker →",
+        "expand": "Expand",
+        "collapse": "Collapse"
+      },
+      "modes": {
+        "complete": "complete",
+        "partial": "partial",
+        "degraded": "degraded",
+        "unavailable": "unavailable"
+      },
+      "modeBody": {
+        "complete": "Every requested section was generated and the coverage check completed.",
+        "partial": "At least one section was left unchecked and recorded as skipped; its questions count as not covered.",
+        "degraded": "At least one section failed, or the coverage check could not run. Nothing here is defaulted to covered.",
+        "unavailable": "No section was generated, so there is no draft body."
+      },
+      "run": {
+        "eyebrow": "Content draft",
+        "title": "Run",
+        "collectedAt": "Generated",
+        "elapsed": "{elapsed}s of a {budget}s budget",
+        "model": "Model",
+        "modelReported": "as reported by the deployment",
+        "modelNone": "no model call completed",
+        "temperature": "Coverage-check temperature",
+        "temperatureRequested": "requested {value}",
+        "temperatureEffective": "effective {value}",
+        "temperatureNotReported": "effective value not reported by the deployment",
+        "fingerprint": "Fingerprint",
+        "rerunFrom": "Replaces run {runId}",
+        "briefRef": "From brief run {runId}",
+        "briefFingerprint": "Brief fingerprint",
+        "sections": "{requested} requested · {ok} generated · {failed} failed · {skipped} skipped",
+        "words": "{count, plural, one {# word} other {# words}}",
+        "calls": "{calls, plural, one {# section model call} other {# section model calls}}"
+      },
+      "unavailable": {
+        "not_requested": "Not requested for this run.",
+        "not_connected": "Not connected: no authorization was available for this read.",
+        "not_configured": "Model not configured: this deployment has no credentials for the model call.",
+        "timeout": "This read ran out of its time budget.",
+        "provider_error": "The upstream provider returned an error.",
+        "quota_exhausted": "Our own gate refused this read.",
+        "insufficient_evidence": "The upstream read worked, but the evidence is not enough to produce this field.",
+        "unsupported_language": "This language is not supported by v1 for this field.",
+        "validation_failed": "The upstream returned something, but it did not pass our structural validation."
+      },
+      "coverage": {
+        "title": "Coverage of must-answer questions",
+        "covered": "covered",
+        "partial": "partial",
+        "none": "not covered",
+        "total": "of {total}",
+        "question": "Question",
+        "unavailableTitle": "Coverage could not be checked",
+        "unavailableBody": "The coverage check is a separate model call with a fresh context. It did not complete, so no question is shown as covered.",
+        "coveredIn": "in {id}",
+        "gap": "Gap",
+        "cause": "Cause",
+        "checkNote": "Judged by a separate model call over the generated sections only. A question whose section failed or was skipped is decided by the server, not the model."
+      },
+      "coverageStatus": {
+        "covered": "Covered",
+        "partial": "Partial",
+        "none": "Not covered"
+      },
+      "coverageCause": {
+        "content": "the draft's content",
+        "section_failed": "the section failed to generate",
+        "section_skipped": "the section was not selected"
+      },
+      "claims": {
+        "bound": "Bound",
+        "gap": "Gap",
+        "no_claim": "No claim",
+        "stance": "Stance"
+      },
+      "claimsBody": {
+        "bound": "backed by a cited competitor excerpt (third-party) or profile fact (first-party)",
+        "gap": "the model thought it should be said but found no evidence for it in the brief",
+        "no_claim": "a connective or organising sentence; no underline",
+        "stance": "a position taken from the gap angle, citing profile facts"
+      },
+      "toolbar": {
+        "showClaims": "Show claim annotations",
+        "legend": "Legend",
+        "boundThird": "Bound · competitor excerpt",
+        "boundFirst": "Bound · profile fact"
+      },
+      "sectionFail": {
+        "timeout": "The section's model call ran out of its time budget.",
+        "provider_error": "The model provider returned an error for this section.",
+        "not_configured": "Model not configured: this deployment has no credentials for the draft model.",
+        "validation_failed": "The model's evidence references did not pass validation (a bound sentence without references, a reference that does not exist, or a stance citing a competitor page). The section is not shown rather than rewritten."
+      },
+      "doc": {
+        "title": "Draft",
+        "words": "{count, plural, one {# word} other {# words}}",
+        "answers": "answers {ids}",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "skippedBody": "You left this section unchecked, so no model call was made.",
+        "rerunsUsed": "{used}/{max} reruns used",
+        "rerunLimit": "This page allows at most {max} section reruns per draft; the server enforces its own quota.",
+        "attempts": "{count, plural, one {# attempt} other {# attempts}}"
+      },
+      "verify": {
+        "title": "Verify before publishing",
+        "count": "{count, plural, =0 {no sentences} one {# sentence} other {# sentences}}",
+        "empty": "Nothing to verify: no sentence in this draft is single-sourced, profile-only, a gap, or a stance.",
+        "section": "in {id}",
+        "refs": "cites {refs}",
+        "noRefs": "cites nothing"
+      },
+      "verifyKind": {
+        "single_source": "Single source",
+        "profile_only": "Profile only",
+        "gap": "Gap",
+        "stance": "Stance"
+      },
+      "verifyKindBody": {
+        "single_source": "Only {count} competitor page has a matching excerpt.",
+        "profile_only": "Backed only by your product profile, not by any competitor page.",
+        "gap": "The model believed this should be said but found no evidence for it in the brief.",
+        "stance": "A position, not a finding. It cites your profile, possibly an inferred fact."
+      },
+      "handoff": {
+        "title": "Next step",
+        "publishedUrlLabel": "Published URL (optional)",
+        "publishedUrlPlaceholder": "https://example.com/blog/your-article",
+        "publishedUrlHelp": "This tool does not know where you publish. Enter the live URL to hand the page and the primary keyword to the On-Page SEO Checker; the button appears once the URL is valid.",
+        "invalidUrl": "Enter a full http(s) URL without credentials.",
+        "failed": "The handoff could not be stored in this browser, so the checker was not opened."
+      },
+      "wontSay": {
+        "title": "What this draft will not claim",
+        "noPublish": "It does not publish, write to a CMS, or generate images.",
+        "noHistory": "It saves no draft; refresh the page and it is gone.",
+        "noOriginality": "It claims no originality and does not promise to pass AI detection.",
+        "noCredits": "It shows and promises no credit price.",
+        "noScore": "It gives no content score; coverage is three raw counts and a total.",
+        "noRewrite": "A section whose evidence references fail validation gets {attempts} attempts and is then reported as failed; the server never rewrites a sentence's claim.",
+        "noDefaultCoverage": "When the coverage check cannot run, nothing is shown as covered.",
+        "language": "For languages without whitespace tokenization ({languages}), no draft can be generated."
       }
     },
     "pageCitability": {

@@ -93,6 +93,29 @@ function competitorGapQuickWinsPayload() {
   };
 }
 
+/** A sha256 hex digest, as `fingerprintBrief` emits it: 64 lowercase hex. */
+const BRIEF_FINGERPRINT = "a3f1".repeat(16);
+
+/**
+ * The Content Draft Writer hands the checker the page the visitor just
+ * published, for the keyword the draft was written to. No property: the
+ * writer never reads Search Console, and the page is the visitor's own rather
+ * than one a property returned.
+ */
+function contentDraftPayload() {
+  return {
+    source: "content-draft" as const,
+    destination: "on-page-seo-check" as const,
+    scope: "query_page" as const,
+    property: null,
+    query: "pricing automation",
+    page: "https://example.com/blog/pricing-automation",
+    evidenceId: BRIEF_FINGERPRINT,
+    marketCode: "GB",
+    languageCode: "en",
+  };
+}
+
 describe("tool handoff storage", () => {
   it("uses one fixed tab-scoped key and a ten-minute lifetime", () => {
     expect(TOOL_HANDOFF_KEY).toBe("gengrowth.tool-handoff.v1");
@@ -460,6 +483,286 @@ describe("tool handoff storage", () => {
         languageCode: "en",
       } as never),
     ).toBe(false);
+  });
+
+  it("writes and consumes one content-draft handoff with no property and its market", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(writeToolHandoff(session, now, contentDraftPayload())).toBe(true);
+
+    expect(consumeToolHandoff(session, now + 1, "on-page-seo-check")).toEqual({
+      source: "content-draft",
+      destination: "on-page-seo-check",
+      scope: "query_page",
+      property: null,
+      query: "pricing automation",
+      page: "https://example.com/blog/pricing-automation",
+      evidenceId: BRIEF_FINGERPRINT,
+      marketCode: "GB",
+      languageCode: "en",
+      createdAt: now,
+      expiresAt: now + TOOL_HANDOFF_TTL_MS,
+    });
+    // One-time: the second reader in the same tab gets nothing.
+    expect(
+      consumeToolHandoff(session, now + 2, "on-page-seo-check"),
+    ).toBeNull();
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("trims the draft's query and page but stores the fingerprint verbatim", () => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...contentDraftPayload(),
+        query: "  pricing automation  ",
+        page: "  https://example.com/blog/pricing-automation  ",
+      }),
+    ).toBe(true);
+    expect(
+      consumeToolHandoff(session, 1_001, "on-page-seo-check"),
+    ).toMatchObject({
+      query: "pricing automation",
+      page: "https://example.com/blog/pricing-automation",
+      evidenceId: BRIEF_FINGERPRINT,
+    });
+  });
+
+  it("does not bind a content-draft page to any property", () => {
+    const session = storage();
+
+    // The page is the visitor's own freshly published URL; there is no
+    // property it was observed under, so there is nothing to bind it to.
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...contentDraftPayload(),
+        page: "https://another-site.test/post",
+      }),
+    ).toBe(true);
+    expect(
+      consumeToolHandoff(session, 1_001, "on-page-seo-check"),
+    ).toMatchObject({ page: "https://another-site.test/post" });
+  });
+
+  it("keeps unsupported but well-shaped draft market context for the consumer to resolve", () => {
+    const session = storage();
+
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...contentDraftPayload(),
+        marketCode: "ZZ",
+        languageCode: "zz",
+      }),
+    ).toBe(true);
+    expect(
+      consumeToolHandoff(session, 1_001, "on-page-seo-check"),
+    ).toMatchObject({ marketCode: "ZZ", languageCode: "zz" });
+  });
+
+  it("does not deliver a content-draft handoff to the property tools", () => {
+    const session = storage();
+
+    writeToolHandoff(session, 1_000, contentDraftPayload());
+
+    expect(consumeToolHandoff(session, 1_001, "seo-quick-wins")).toBeNull();
+    expect(
+      consumeToolHandoff(session, 1_002, "traffic-drop-diagnosis"),
+    ).toBeNull();
+    // A read by the wrong tool must not consume it either.
+    expect(
+      consumeToolHandoff(session, 1_003, "on-page-seo-check"),
+    ).not.toBeNull();
+  });
+
+  // Swept from the fixture rather than listed, so a field added to this
+  // variant later is required by this test the day it appears — `property`
+  // included: null is a value the key must carry, not a key to omit.
+  it.each(Object.keys(contentDraftPayload()))(
+    "rejects a content-draft payload missing %s on write and removes it on consume",
+    (field) => {
+      const written = storage();
+      const stored = storage();
+      const candidate = Object.fromEntries(
+        Object.entries(contentDraftPayload()).filter(([key]) => key !== field),
+      );
+
+      expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+      expect(written.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+      stored.setItem(
+        TOOL_HANDOFF_KEY,
+        JSON.stringify({
+          ...candidate,
+          createdAt: 1_000,
+          expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+        }),
+      );
+
+      expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
+      expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    },
+  );
+
+  it.each([
+    [
+      "a string property",
+      { ...contentDraftPayload(), property: "sc-domain:example.com" },
+    ],
+    ["an empty-string property", { ...contentDraftPayload(), property: "" }],
+    [
+      "an uppercase fingerprint",
+      { ...contentDraftPayload(), evidenceId: BRIEF_FINGERPRINT.toUpperCase() },
+    ],
+    [
+      "a 63-character fingerprint",
+      { ...contentDraftPayload(), evidenceId: BRIEF_FINGERPRINT.slice(1) },
+    ],
+    [
+      "a 65-character fingerprint",
+      { ...contentDraftPayload(), evidenceId: `${BRIEF_FINGERPRINT}0` },
+    ],
+    [
+      "a non-hex fingerprint",
+      {
+        ...contentDraftPayload(),
+        evidenceId: `${BRIEF_FINGERPRINT.slice(1)}g`,
+      },
+    ],
+    [
+      "a free-text evidence id",
+      { ...contentDraftPayload(), evidenceId: "brief:pricing-automation" },
+    ],
+    [
+      "a whitespace-padded fingerprint",
+      { ...contentDraftPayload(), evidenceId: ` ${BRIEF_FINGERPRINT} ` },
+    ],
+    ["a blank query", { ...contentDraftPayload(), query: "   " }],
+    ["a null query", { ...contentDraftPayload(), query: null }],
+    [
+      "an oversized query",
+      { ...contentDraftPayload(), query: "x".repeat(513) },
+    ],
+    ["a relative page", { ...contentDraftPayload(), page: "/blog/post" }],
+    ["a null page", { ...contentDraftPayload(), page: null }],
+    [
+      "a non-http page",
+      { ...contentDraftPayload(), page: "javascript:alert(1)" },
+    ],
+    ["an ftp page", { ...contentDraftPayload(), page: "ftp://example.com/x" }],
+    [
+      "a credential-bearing page",
+      {
+        ...contentDraftPayload(),
+        page: "https://user:secret@example.com/post",
+      },
+    ],
+    [
+      "an oversized page",
+      {
+        ...contentDraftPayload(),
+        page: `https://example.com/${"x".repeat(2_048)}`,
+      },
+    ],
+    ["a lowercase market", { ...contentDraftPayload(), marketCode: "gb" }],
+    ["an oversized market", { ...contentDraftPayload(), marketCode: "GBR" }],
+    ["an uppercase language", { ...contentDraftPayload(), languageCode: "EN" }],
+    [
+      "an oversized language",
+      { ...contentDraftPayload(), languageCode: "eng" },
+    ],
+    ["a property scope", { ...contentDraftPayload(), scope: "property" }],
+    ["a page scope", { ...contentDraftPayload(), scope: "page" }],
+    [
+      "the Opportunity Finder as destination",
+      { ...contentDraftPayload(), destination: "seo-quick-wins" },
+    ],
+    [
+      "Traffic Drop as destination",
+      { ...contentDraftPayload(), destination: "traffic-drop-diagnosis" },
+    ],
+    ["an extra field", { ...contentDraftPayload(), briefId: "no" }],
+  ] as const)(
+    "rejects a content-draft payload with %s on write and removes it on consume",
+    (_label, candidate) => {
+      const written = storage();
+      const stored = storage();
+
+      expect(writeToolHandoff(written, 1_000, candidate as never)).toBe(false);
+      expect(written.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+      stored.setItem(
+        TOOL_HANDOFF_KEY,
+        JSON.stringify({
+          ...candidate,
+          createdAt: 1_000,
+          expiresAt: 1_000 + TOOL_HANDOFF_TTL_MS,
+        }),
+      );
+
+      expect(consumeToolHandoff(stored, 1_001, "on-page-seo-check")).toBeNull();
+      expect(stored.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    },
+  );
+
+  it("accepts a content-draft page only through the shared page boundary", () => {
+    const base = "https://example.com/";
+    const exact = storage();
+    const oversized = storage();
+
+    expect(
+      writeToolHandoff(exact, 1_000, {
+        ...contentDraftPayload(),
+        page: base + "x".repeat(2_048 - base.length),
+      }),
+    ).toBe(true);
+    expect(
+      writeToolHandoff(oversized, 1_000, {
+        ...contentDraftPayload(),
+        page: base + "x".repeat(2_049 - base.length),
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["the Daily Briefing", payload()],
+    ["the gap tool", competitorGapPayload()],
+  ])("does not let the draft's null property loosen %s", (_label, other) => {
+    const session = storage();
+
+    // The null is legal for exactly one source. Every other source still has
+    // to name the property its evidence was read under.
+    expect(
+      writeToolHandoff(session, 1_000, { ...other, property: null } as never),
+    ).toBe(false);
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("does not let a draft fingerprint stand in for another source's evidence id shape", () => {
+    const session = storage();
+
+    // The reverse direction: a stored gap handoff renamed to the draft source
+    // is not a draft handoff, whatever else it carries.
+    expect(
+      writeToolHandoff(session, 1_000, {
+        ...competitorGapPayload(),
+        source: "content-draft",
+      } as never),
+    ).toBe(false);
+  });
+
+  it("expires and removes a content-draft handoff at the shared TTL", () => {
+    const session = storage();
+    const now = 1_000;
+
+    expect(writeToolHandoff(session, now, contentDraftPayload())).toBe(true);
+    expect(
+      consumeToolHandoff(
+        session,
+        now + TOOL_HANDOFF_TTL_MS,
+        "on-page-seo-check",
+      ),
+    ).toBeNull();
+    expect(session.getItem(TOOL_HANDOFF_KEY)).toBeNull();
   });
 
   it("expires and removes a competitor-gap handoff at the shared TTL", () => {

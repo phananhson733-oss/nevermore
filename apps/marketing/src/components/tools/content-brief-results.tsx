@@ -47,7 +47,7 @@ export function ContentBriefResults({
           <OutlineList brief={brief} locale={locale} t={t} />
           <GapAngleCard brief={brief} locale={locale} t={t} />
           <LinksCards brief={brief} locale={locale} t={t} />
-          <ReadinessBar brief={brief} t={t} />
+          <ReadinessBar brief={brief} locale={locale} t={t} />
         </>
       )}
       <WontSayFooter t={t} />

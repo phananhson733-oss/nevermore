@@ -116,12 +116,54 @@ export type ToolHandoffPayload =
       readonly evidenceId: string;
       readonly marketCode: string;
       readonly languageCode: string;
+    }
+  /**
+   * A draft the visitor just published, handed to the checker with the
+   * keyword it was written for.
+   *
+   * `property` is null on purpose. The Content Draft Writer never reads Search
+   * Console, so there is no property this page was observed under, and the
+   * page is the visitor's own freshly published URL rather than one a property
+   * returned — which is why it is checked as a safe URL only and not bound to
+   * a property the way the briefing's pages are. `evidenceId` is the brief's
+   * fingerprint (sha256 hex), so a report can be traced to the exact brief.
+   */
+  | {
+      readonly source: "content-draft";
+      readonly destination: "on-page-seo-check";
+      readonly scope: "query_page";
+      readonly property: null;
+      readonly query: string;
+      readonly page: string;
+      readonly evidenceId: string;
+      readonly marketCode: string;
+      readonly languageCode: string;
     };
 
 export type ToolHandoff = ToolHandoffPayload & {
   readonly createdAt: number;
   readonly expiresAt: number;
 };
+
+/**
+ * The handoff variants a destination can actually receive.
+ *
+ * `consumeToolHandoff` already refuses a stored handoff addressed elsewhere,
+ * so the property tools never see a `content-draft` handoff at runtime; this
+ * says so to the type checker, which otherwise widens `property` to
+ * `string | null` in every consumer the moment one source carries no property.
+ * A variant whose `destination` is itself a union is kept for each member.
+ */
+export type ToolHandoffFor<D extends ToolHandoffDestination> =
+  NarrowByDestination<ToolHandoff, D>;
+
+type NarrowByDestination<H, D> = H extends {
+  readonly destination: infer HD;
+}
+  ? D extends HD
+    ? H
+    : never
+  : never;
 
 const MAX_PROPERTY_LENGTH = 512;
 const MAX_QUERY_LENGTH = 512;
@@ -151,8 +193,33 @@ const COMPETITOR_GAP_HANDOFF_KEYS: ReadonlySet<string> = new Set([
   "createdAt",
   "expiresAt",
 ]);
+// Spelled out rather than aliased to the gap set: the two shapes coincide
+// today, and a field added to one must not silently become required by the
+// other.
+const CONTENT_DRAFT_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  "source",
+  "destination",
+  "scope",
+  "property",
+  "query",
+  "page",
+  "evidenceId",
+  "marketCode",
+  "languageCode",
+]);
+const CONTENT_DRAFT_HANDOFF_KEYS: ReadonlySet<string> = new Set([
+  ...CONTENT_DRAFT_PAYLOAD_KEYS,
+  "createdAt",
+  "expiresAt",
+]);
 const MARKET_CODE = /^[A-Z]{2}$/u;
 const LANGUAGE_CODE = /^[a-z]{2}$/u;
+/**
+ * A brief fingerprint: `sha256Hex` in `@sf/public-tools/content-brief`
+ * emits lowercase hex on both its digest paths, so uppercase is a forgery,
+ * not an alternate spelling.
+ */
+const BRIEF_FINGERPRINT = /^[0-9a-f]{64}$/u;
 
 function isDestination(value: unknown): value is ToolHandoffDestination {
   return (
@@ -318,6 +385,9 @@ function payloadKeysFor(
   if (value.source === "competitor-keyword-gap") {
     return COMPETITOR_GAP_PAYLOAD_KEYS;
   }
+  if (value.source === "content-draft") {
+    return CONTENT_DRAFT_PAYLOAD_KEYS;
+  }
   return null;
 }
 
@@ -329,6 +399,9 @@ function handoffKeysFor(
   }
   if (value.source === "competitor-keyword-gap") {
     return COMPETITOR_GAP_HANDOFF_KEYS;
+  }
+  if (value.source === "content-draft") {
+    return CONTENT_DRAFT_HANDOFF_KEYS;
   }
   return null;
 }
@@ -349,11 +422,14 @@ function isSafeHttpPage(value: unknown): value is string {
 }
 
 /**
- * A gap keyword's numbers only mean anything inside the market they were read
- * in, so every destination carries it. Checked apart from the target below so
- * that adding a destination cannot quietly ship a handoff without a market.
+ * A gap keyword's numbers, and a brief's SERP read, only mean anything inside
+ * the market they were read in, so every destination of those sources carries
+ * it. Checked apart from the target below so that adding a destination cannot
+ * quietly ship a handoff without a market.
  */
-function hasValidGapMarket(value: Readonly<Record<string, unknown>>): boolean {
+function hasValidMarketContext(
+  value: Readonly<Record<string, unknown>>,
+): boolean {
   return (
     typeof value.marketCode === "string" &&
     MARKET_CODE.test(value.marketCode) &&
@@ -386,9 +462,38 @@ function hasValidGapTarget(value: Readonly<Record<string, unknown>>): boolean {
   return false;
 }
 
+/**
+ * The draft writer hands the checker the page it just helped publish, so the
+ * page is checked as a URL the checker can fetch and nothing more: there is no
+ * property to bind it to, and `property` must say so with an explicit null
+ * rather than an empty string that a reader could mistake for a blank
+ * identifier. The evidence is the brief fingerprint, pinned to its exact shape
+ * so an arbitrary label cannot pose as one.
+ */
+function hasValidContentDraftFields(
+  value: Readonly<Record<string, unknown>>,
+): boolean {
+  return (
+    value.destination === "on-page-seo-check" &&
+    value.scope === "query_page" &&
+    value.property === null &&
+    typeof value.evidenceId === "string" &&
+    BRIEF_FINGERPRINT.test(value.evidenceId) &&
+    nonEmptyString(value.query, MAX_QUERY_LENGTH) &&
+    isSafeHttpPage(value.page) &&
+    hasValidMarketContext(value)
+  );
+}
+
 function hasValidPayloadFields(
   value: Readonly<Record<string, unknown>>,
 ): boolean {
+  // Branched before the shared property check: this is the one source with
+  // no property, and its evidence is a fingerprint rather than a free label.
+  if (value.source === "content-draft") {
+    return hasValidContentDraftFields(value);
+  }
+
   if (
     !nonEmptyString(value.property, MAX_PROPERTY_LENGTH) ||
     !nonEmptyString(value.evidenceId, MAX_EVIDENCE_ID_LENGTH)
@@ -397,7 +502,7 @@ function hasValidPayloadFields(
   }
 
   if (value.source === "competitor-keyword-gap") {
-    return hasValidGapMarket(value) && hasValidGapTarget(value);
+    return hasValidMarketContext(value) && hasValidGapTarget(value);
   }
 
   if (value.source === "daily-search-briefing") {
@@ -496,6 +601,41 @@ function toGapHandoff(
       };
 }
 
+/**
+ * Its own builder for the same reason the gap one is: the stored shape is
+ * exactly what this source sends, and `property` stays the literal null the
+ * validator demanded rather than a trimmed string. The fingerprint is stored
+ * untrimmed because the validator accepted only its exact 64 characters.
+ */
+function toContentDraftHandoff(
+  payload: Extract<ToolHandoffPayload, { source: "content-draft" }>,
+  now: number,
+): ToolHandoff {
+  return {
+    source: payload.source,
+    destination: payload.destination,
+    scope: payload.scope,
+    property: null,
+    query: payload.query.trim(),
+    page: payload.page.trim(),
+    evidenceId: payload.evidenceId,
+    marketCode: payload.marketCode,
+    languageCode: payload.languageCode,
+    createdAt: now,
+    expiresAt: now + TOOL_HANDOFF_TTL_MS,
+  };
+}
+
+function toHandoff(payload: ToolHandoffPayload, now: number): ToolHandoff {
+  if (payload.source === "competitor-keyword-gap") {
+    return toGapHandoff(payload, now);
+  }
+  if (payload.source === "content-draft") {
+    return toContentDraftHandoff(payload, now);
+  }
+  return toBriefingHandoff(payload, now);
+}
+
 function toBriefingHandoff(
   payload: Extract<ToolHandoffPayload, { source: "daily-search-briefing" }>,
   now: number,
@@ -556,10 +696,7 @@ export function writeToolHandoff(
     return false;
   }
 
-  const handoff: ToolHandoff =
-    payload.source === "competitor-keyword-gap"
-      ? toGapHandoff(payload, now)
-      : toBriefingHandoff(payload, now);
+  const handoff = toHandoff(payload, now);
 
   try {
     storage.setItem(TOOL_HANDOFF_KEY, JSON.stringify(handoff));
@@ -569,11 +706,11 @@ export function writeToolHandoff(
   }
 }
 
-export function consumeToolHandoff(
+export function consumeToolHandoff<D extends ToolHandoffDestination>(
   storage: ToolHandoffStorage,
   now: number,
-  destination: ToolHandoffDestination,
-): ToolHandoff | null {
+  destination: D,
+): ToolHandoffFor<D> | null {
   try {
     const raw = storage.getItem(TOOL_HANDOFF_KEY);
     if (raw === null) return null;
@@ -601,7 +738,10 @@ export function consumeToolHandoff(
     if (parsed.destination !== destination) return null;
 
     storage.removeItem(TOOL_HANDOFF_KEY);
-    return parsed;
+    // The equality above is the narrowing `ToolHandoffFor` describes; the
+    // checker cannot follow a comparison against a generic parameter, so the
+    // relation it just verified at runtime is restated here.
+    return parsed as ToolHandoffFor<D>;
   } catch {
     return null;
   }

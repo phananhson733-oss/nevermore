@@ -854,6 +854,140 @@ describe("On-Page checker local state", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  /** 64 lowercase hex, the shape `fingerprintBrief` emits. */
+  const briefFingerprint = "a3f1".repeat(16);
+
+  function stageContentDraftHandoff(
+    marketCode = "GB",
+    languageCode = "zh",
+  ): void {
+    expect(
+      writeToolHandoff(sessionStorage, Date.now(), {
+        source: "content-draft",
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        // The writer never read Search Console, so it names no property.
+        property: null,
+        query: "pricing automation",
+        page: "https://example.com/blog/pricing-automation",
+        evidenceId: briefFingerprint,
+        marketCode,
+        languageCode,
+      }),
+    ).toBe(true);
+  }
+
+  it("imports a content-draft page/query and its market without a property, running, or URL leakage", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    // An older draft and its page-focused intent: the handoff is the newer
+    // explicit intent and must replace both, exactly as the gap handoff does.
+    sessionStorage.setItem(
+      "gengrowth:onpage-draft:v1",
+      JSON.stringify({
+        url: "https://old.example/draft",
+        targetQueries: ["old query"],
+        country: "US",
+        locale: "en",
+        pageType: "guide",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    sessionStorage.setItem(
+      "gengrowth:agent-intent:seo:v3",
+      JSON.stringify({
+        agent: "seo",
+        purpose: "page_focused_launch",
+        url: "https://old.example/draft",
+        scope: "page",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+    localStorage.setItem("gengrowth:onpage-history:v1", "[]");
+    stageContentDraftHandoff();
+    const beforeUrl = window.location.href;
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe(
+      "https://example.com/blog/pricing-automation",
+    );
+    expect(field(host, "onpage-query").value).toBe("pricing automation");
+    expect(
+      (host.querySelector("#onpage-country") as HTMLSelectElement).value,
+    ).toBe("GB");
+    expect(
+      (host.querySelector("#onpage-language") as HTMLSelectElement).value,
+    ).toBe("zh");
+    expect(host.textContent).toContain(handoffNotice);
+    // No property arrived and none is shown: the checker has no property
+    // selector, and the handoff's null must not surface as text anywhere.
+    expect(host.querySelectorAll("select")).toHaveLength(3);
+    expect(host.textContent).not.toContain("null");
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(sessionStorage.getItem("gengrowth:onpage-draft:v1")).toBeNull();
+    expect(
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v3"),
+    ).toBeNull();
+    expect(localStorage.getItem("gengrowth:onpage-history:v1")).toBe("[]");
+    expect(window.location.href).toBe(beforeUrl);
+    expect(window.location.href).not.toContain("pricing");
+    expect(window.location.href).not.toContain(briefFingerprint);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("consumes a content-draft handoff and falls back when its shaped market is unsupported", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    stageContentDraftHandoff("ZZ", "zz");
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe(
+      "https://example.com/blog/pricing-automation",
+    );
+    expect(field(host, "onpage-query").value).toBe("pricing automation");
+    expect(
+      (host.querySelector("#onpage-country") as HTMLSelectElement).value,
+    ).toBe("US");
+    expect(
+      (host.querySelector("#onpage-language") as HTMLSelectElement).value,
+    ).toBe("en");
+    expect(host.textContent).toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a crafted content-draft handoff that names a property without filling or running", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const now = Date.now();
+    sessionStorage.setItem(
+      TOOL_HANDOFF_KEY,
+      JSON.stringify({
+        source: "content-draft",
+        destination: "on-page-seo-check",
+        scope: "query_page",
+        property: "sc-domain:example.com",
+        query: "pricing automation",
+        page: "https://example.com/blog/pricing-automation",
+        evidenceId: briefFingerprint,
+        marketCode: "GB",
+        languageCode: "en",
+        createdAt: now,
+        expiresAt: now + 600_000,
+      }),
+    );
+
+    const host = await render();
+
+    expect(field(host, "onpage-url").value).toBe("");
+    expect(field(host, "onpage-query").value).toBe("");
+    expect(host.textContent).not.toContain(handoffNotice);
+    expect(sessionStorage.getItem(TOOL_HANDOFF_KEY)).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("rejects a crafted property-scoped handoff without filling or running", async () => {
     globalThis.fetch = vi.fn() as unknown as typeof fetch;
     const now = Date.now();

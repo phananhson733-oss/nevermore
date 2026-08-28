@@ -4025,7 +4025,11 @@
         "running": "生成中…",
         "exportJson": "导出 JSON",
         "generateDraft": "生成 draft →",
-        "generateDraftPending": "生成 draft 随 Content Draft Writer（PR 3）一起上线。导出的 JSON 就是它将接受的交接格式。"
+        "generateDraftHelp": "在新标签页打开 Content Draft Writer 并带上这份 brief。不进 URL；brief 只在这个浏览器内传递。",
+        "generateDraftFailed": {
+          "too_large": "这份 brief 超过了交接接受的 {maxKb} KB，没有打开 draft 工具。请导出 JSON 后到那边上传。",
+          "storage": "brief 没能写进这个浏览器，没有打开 draft 工具。请导出 JSON 后到那边上传。"
+        }
       },
       "modes": {
         "complete": "完整",
@@ -4293,6 +4297,241 @@
         "noPaa": "不读 People Also Ask。",
         "noScore": "不给内容分。",
         "language": "非空白分词语言（{languages}）下篇幅、必答问题、大纲不支持，也不能生成 draft。"
+      }
+    },
+    "contentDraft": {
+      "title": "Content Draft Writer",
+      "empty": {
+        "title": "本工具从一份 brief 开始",
+        "body": "本工具不接受裸关键词。没有 brief 就没有覆盖度校验的被测对象。",
+        "hint": "从 Content Brief Builder 交接一份 brief，粘贴它导出的 JSON，或上传 .json 文件。"
+      },
+      "intake": {
+        "title": "载入内容简报",
+        "handoffLoaded": "已从 Content Brief Builder 接收到 brief。",
+        "handoffExpired": "交接过来的 brief 已过期或尚未生效。请在 Content Brief Builder 里导出 JSON 后粘贴到这里。",
+        "pasteLabel": "粘贴 brief JSON",
+        "pastePlaceholder": "{ \"schema\": \"gengrowth.content_brief/v1\", … }",
+        "load": "载入 brief",
+        "uploadLabel": "或上传导出的 .json 文件",
+        "invalidJson": "这不是合法的 JSON，没有按 brief 解析。",
+        "parseFailed": "在 {path} 处被拒绝。",
+        "maxBytes": "brief 最大接受 {kb} KB；载入前会核对全部交叉引用与指纹。",
+        "loaded": "brief 已载入",
+        "keyword": "主关键词",
+        "briefRun": "brief 运行",
+        "fingerprint": "指纹",
+        "writable": "{count} 节可写",
+        "gaps": "{count} 处缺口",
+        "noWritable": "本 brief 没有可生成的段落，生成不了 draft。",
+        "unsupportedLanguage": "本 brief 的语言（{language}）v1 不支持生成 draft。",
+        "replace": "更换 brief"
+      },
+      "settings": {
+        "title": "生成设置",
+        "tone": {
+          "label": "语气",
+          "explanatory": "说明性 · 中性",
+          "conversational": "对话式",
+          "technical": "技术文档"
+        },
+        "person": {
+          "label": "人称",
+          "second": "第二人称 you",
+          "third": "第三人称"
+        },
+        "productMention": {
+          "label": "产品提及强度",
+          "none": "完全不提",
+          "gap_only": "只在缺口角度那一节提",
+          "throughout": "全文自然提及",
+          "help": "档案事实只在你允许的地方交给模型。缺口角度挂在第 {section} 节。",
+          "helpNoGap": "本 brief 没有缺口角度，选「只在缺口角度那一节提」时模型不会拿到任何档案事实。",
+          "helpThroughout": "会显著增加需人工核实的句子数量。"
+        },
+        "sections": {
+          "label": "要生成的段落",
+          "help": "每个勾选的段落一次独立模型调用，单段超时 {timeout} 秒，总预算 {budget} 秒。取消勾选的段记为跳过，它对应的问题按未覆盖计。",
+          "answers": "满足 {ids}",
+          "gapAngleHere": "缺口角度挂在这一节"
+        }
+      },
+      "validation": {
+        "sectionsRequired": "至少勾选一个段落再生成。"
+      },
+      "errors": {
+        "invalid_request": "draft 请求无法读取。",
+        "payload_too_large": "brief 与设置超过了请求体大小上限。",
+        "unsupported_media_type": "请以 JSON 发送请求。",
+        "auth_required": "登录后才能生成 draft。",
+        "auth_unavailable": "登录状态暂时不可用，请稍后再试。",
+        "rate_limited": "本工具的小时额度已用完，draft 没有开始。等窗口重置后再试。",
+        "quota_unavailable": "我们这边的用量限制服务暂时联系不上，为了不跑一次不计量的运行，draft 没有开始。这与你的使用量无关，请稍后再试。",
+        "brief_schema_mismatch": "这不是 Content Brief v1 文档，没有载入。",
+        "brief_fingerprint_mismatch": "brief 的指纹与内容不一致：导出后被改过。请在 Content Brief Builder 里重新导出。",
+        "brief_reference_invalid": "brief 的交叉引用不成立（某节引用了不存在的问题、同一问题被两节引用，或某条不变量被破坏），没有载入。",
+        "section_not_writable": "请求的段落在本 brief 里不可写，draft 没有开始。",
+        "draft_unavailable": "这次没能生成可核实的初稿。这不是你的 brief 的问题，请稍后重试。",
+        "unknown": "draft 没有完成。"
+      },
+      "running": {
+        "elapsed": "正在生成 draft… 已用 {seconds} 秒，预算 {budget} 秒",
+        "rerunElapsed": "正在重跑这一段… 已用 {seconds} 秒，预算 {budget} 秒",
+        "complete": "draft 已完成。"
+      },
+      "actions": {
+        "run": "生成 draft",
+        "running": "生成中…",
+        "rerun": "重跑这一段",
+        "rerunning": "重跑中…",
+        "copyMarkdown": "复制 Markdown",
+        "copied": "Markdown 已复制",
+        "copyFailed": "剪贴板拒绝了复制。请选中正文手动复制。",
+        "exportJson": "导出 JSON",
+        "openOnPage": "打开 On-Page SEO Checker →",
+        "expand": "展开",
+        "collapse": "收起"
+      },
+      "modes": {
+        "complete": "完整",
+        "partial": "部分",
+        "degraded": "降级",
+        "unavailable": "不可得"
+      },
+      "modeBody": {
+        "complete": "请求的每一段都生成了，覆盖度校验也完成了。",
+        "partial": "至少有一段没有勾选，记为跳过；它对应的问题按未覆盖计。",
+        "degraded": "至少有一段失败，或覆盖度校验没有跑成。这里没有任何东西被默认为已覆盖。",
+        "unavailable": "没有任何一段生成成功，没有 draft 正文。"
+      },
+      "run": {
+        "eyebrow": "内容初稿",
+        "title": "本次运行",
+        "collectedAt": "生成时间",
+        "elapsed": "用时 {elapsed} 秒 / 预算 {budget} 秒",
+        "model": "模型",
+        "modelReported": "部署回报",
+        "modelNone": "没有完成的模型调用",
+        "temperature": "覆盖度校验 temperature",
+        "temperatureRequested": "请求 {value}",
+        "temperatureEffective": "生效 {value}",
+        "temperatureNotReported": "部署未回报生效值",
+        "fingerprint": "指纹",
+        "rerunFrom": "替换运行 {runId}",
+        "briefRef": "来自 brief 运行 {runId}",
+        "briefFingerprint": "brief 指纹",
+        "sections": "请求 {requested} 段 · 生成 {ok} 段 · 失败 {failed} 段 · 跳过 {skipped} 段",
+        "words": "{count} 词",
+        "calls": "分段模型调用 {calls} 次"
+      },
+      "unavailable": {
+        "not_requested": "本次运行没有请求这一路。",
+        "not_connected": "未连接：这一路没有可用的授权。",
+        "not_configured": "模型未配置：本部署没有模型调用的凭据。",
+        "timeout": "这一路读取耗尽了时间预算。",
+        "provider_error": "上游返回了错误。",
+        "quota_exhausted": "我们自己的闸门拒绝了这次读取。",
+        "insufficient_evidence": "上游读取正常，但证据不够产出这个字段。",
+        "unsupported_language": "本语言不支持这个字段（v1 只支持空白分词语言）。",
+        "validation_failed": "上游返回了，但没有通过我们的结构校验。"
+      },
+      "coverage": {
+        "title": "必答问题覆盖度",
+        "covered": "已覆盖",
+        "partial": "部分",
+        "none": "未覆盖",
+        "total": "共 {total}",
+        "question": "问题",
+        "unavailableTitle": "覆盖度不可得",
+        "unavailableBody": "覆盖度校验是一次全新上下文的独立模型调用。它没有完成，所以没有任何问题被显示为已覆盖。",
+        "coveredIn": "在 {id}",
+        "gap": "缺口",
+        "cause": "成因",
+        "checkNote": "由一次独立模型调用只看生成成功的段落判定。所在段失败或跳过的问题由服务端直接判定，不问模型。"
+      },
+      "coverageStatus": {
+        "covered": "已覆盖",
+        "partial": "部分覆盖",
+        "none": "未覆盖"
+      },
+      "coverageCause": {
+        "content": "初稿内容本身",
+        "section_failed": "所在段生成失败",
+        "section_skipped": "所在段没有勾选"
+      },
+      "claims": {
+        "bound": "有据",
+        "gap": "缺口",
+        "no_claim": "无主张",
+        "stance": "立场"
+      },
+      "claimsBody": {
+        "bound": "有被引用的竞品片段（三方）或档案事实（一手）支撑",
+        "gap": "模型认为该说但 brief 里没有证据",
+        "no_claim": "连接、组织性句子；不画线",
+        "stance": "出自缺口角度的立场句，引用档案事实"
+      },
+      "toolbar": {
+        "showClaims": "显示主张标注",
+        "legend": "图例",
+        "boundThird": "有据 · 竞品片段",
+        "boundFirst": "有据 · 档案事实"
+      },
+      "sectionFail": {
+        "timeout": "这一段的模型调用耗尽了时间预算。",
+        "provider_error": "模型服务方对这一段返回了错误。",
+        "not_configured": "模型未配置：本部署没有 draft 模型的凭据。",
+        "validation_failed": "模型标注的证据引用没有通过校验（有据句没有引用、引用了不存在的证据，或立场句引用了竞品页）。这一段不显示，也不改写。"
+      },
+      "doc": {
+        "title": "初稿",
+        "words": "{count} 词",
+        "answers": "满足 {ids}",
+        "failed": "失败",
+        "skipped": "跳过",
+        "skippedBody": "你没有勾选这一段，没有调用模型。",
+        "rerunsUsed": "已重跑 {used}/{max} 次",
+        "rerunLimit": "本页面每份 draft 最多重跑 {max} 段；服务端只认自己的配额。",
+        "attempts": "尝试 {count} 次"
+      },
+      "verify": {
+        "title": "发布前必须人工核实",
+        "count": "{count} 句",
+        "empty": "没有需要核实的句子：这份初稿里没有单一来源、仅档案、缺口或立场句。",
+        "section": "在 {id}",
+        "refs": "引用 {refs}",
+        "noRefs": "没有引用"
+      },
+      "verifyKind": {
+        "single_source": "单一来源",
+        "profile_only": "仅档案",
+        "gap": "缺口",
+        "stance": "立场"
+      },
+      "verifyKindBody": {
+        "single_source": "仅 {count} 篇竞品页面有对应片段。",
+        "profile_only": "只有你的产品档案支撑，没有任何竞品页面。",
+        "gap": "模型认为该说，但在 brief 里没找到证据。",
+        "stance": "是立场不是结论。它引用你的档案，可能是推断出来的事实。"
+      },
+      "handoff": {
+        "title": "下一步",
+        "publishedUrlLabel": "已发布 URL（可选）",
+        "publishedUrlPlaceholder": "https://example.com/blog/your-article",
+        "publishedUrlHelp": "本工具不知道你把文章发到了哪里。填入线上 URL，就能把页面和主关键词交给 On-Page SEO Checker；URL 合法后按钮才出现。",
+        "invalidUrl": "请填完整的 http(s) URL，不带凭据。",
+        "failed": "交接没能写进这个浏览器，没有打开检查器。"
+      },
+      "wontSay": {
+        "title": "这份初稿不会声称的事",
+        "noPublish": "不发布、不写 CMS、不生成图片。",
+        "noHistory": "不保存初稿；刷新页面即清空。",
+        "noOriginality": "不声称原创度，不承诺能过 AI 检测。",
+        "noCredits": "不展示、不承诺积分价格。",
+        "noScore": "不给内容分；覆盖度只有三个原始计数和总数。",
+        "noRewrite": "证据引用没过校验的段落最多尝试 {attempts} 次，然后记为失败；服务端绝不改写任何句子的主张。",
+        "noDefaultCoverage": "覆盖度校验跑不成时，没有任何问题会被显示为已覆盖。",
+        "language": "非空白分词语言（{languages}）下不能生成 draft。"
       }
     },
     "pageCitability": {

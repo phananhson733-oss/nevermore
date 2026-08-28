@@ -1,6 +1,6 @@
 "use client";
 
-// @input  -- page/query fields, optional private query/page handoff, market and role
+// @input  -- page/query fields, optional private query/page handoff (briefing, gap or content-draft market context), market and role
 // @output -- handoff prefill, focused safe redirect recovery, page evidence, local history
 // @pos    -- the page-scoped entry into the same bounded crawl the SEO Agent runs
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -258,7 +258,14 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       } else if (handoff?.scope === "query_page") {
         setUrl(handoff.page);
         setQueryText(handoff.query);
-        if (handoff.source === "competitor-keyword-gap") {
+        // Both sources read their keyword in one market, and the checker's
+        // SERP read has to happen in the same one. A content-draft handoff
+        // carries no property (the writer never touched Search Console), and
+        // nothing here reads one: the checker has no property to preselect.
+        if (
+          handoff.source === "competitor-keyword-gap" ||
+          handoff.source === "content-draft"
+        ) {
           setCountry(
             SERP_MARKET_OPTIONS.some(
               (option) => option.code === handoff.marketCode,
