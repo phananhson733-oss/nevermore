@@ -102,6 +102,18 @@ const PLANNING_TOOLS = [
     cta: { en: "Analyze competitors", zh: "分析竞品" },
     category: "planning",
   },
+  {
+    slug: "content-brief",
+    // Formal name in both locales (tool-naming.test.ts); the search-phrase
+    // Title/H1 live on the tool page itself.
+    title: { en: "Content Brief Builder", zh: "Content Brief Builder" },
+    description: {
+      en: "Sign in and turn one primary keyword into a brief derived from the top results: intent, format, length, must-answer questions, an outline, and a verdict on self-competition from your own Search Console data.",
+      zh: "登录后把一个主关键词变成一份从前十条结果推导出的简报：意图、形态、篇幅、必答问题、大纲，以及用你自己的 Search Console 数据判定是否自我竞争。",
+    },
+    cta: { en: "Build a content brief", zh: "生成内容简报" },
+    category: "planning",
+  },
 ] as const;
 
 export async function generateMetadata({

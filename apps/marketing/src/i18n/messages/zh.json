@@ -3948,6 +3948,349 @@
           }
         ]
       }
+    },
+    "contentBrief": {
+      "title": "Content Brief Builder",
+      "form": {
+        "title": "设置内容简报",
+        "intro": "输入一个主关键词。简报会读取它的前 {depth} 条搜索结果，抓取这些页面，推导出一篇竞争页必须回答的问题。只在你点击时运行，服务端不保存任何报告。"
+      },
+      "fields": {
+        "primary": {
+          "label": "主关键词",
+          "placeholder": "approval workflow"
+        },
+        "supporting": {
+          "label": "支持词（可选）",
+          "placeholder": "approval workflow software, approval process",
+          "hint": "逗号分隔，最多 {max} 个。它们会交给大纲模型安排进合适的 H2/H3，不参与判定。",
+          "count": "已填 {count} / {max}"
+        },
+        "market": {
+          "label": "市场"
+        },
+        "language": {
+          "label": "语言",
+          "unsupported": "本语言 v1 不支持篇幅/必答问题/大纲，也不能生成 draft。判定、意图、形态、缺口角度与内链照常。"
+        },
+        "website": {
+          "label": "产品档案（可选）",
+          "none": "不选产品档案",
+          "help": "不选时不产出「缺口角度」这一节，而不是让模型现编一个卖点。",
+          "signedOut": "登录后可选择产品档案。",
+          "loading": "正在读取你的网站列表…",
+          "unavailable": "网站列表暂时读不到。简报仍可在没有产品档案的情况下运行。",
+          "empty": "这个账号下还没有网站。",
+          "primary": "主站"
+        },
+        "property": {
+          "label": "Search Console 资源（可选）",
+          "none": "不选 Search Console 资源",
+          "help": "不选时无法判定是否自我竞争，结果页会把这句话印出来。",
+          "notConnected": "这个浏览器里没有已连接的 Search Console 资源，简报会在没有自我竞争判定的情况下运行。"
+        }
+      },
+      "validation": {
+        "primaryRequired": "运行前先填主关键词。",
+        "supportingLimit": "一份简报最多接受 {max} 个支持词。"
+      },
+      "errors": {
+        "invalid_request": "简报请求无法读取。检查关键词、市场和语言字段。",
+        "payload_too_large": "提交的请求过大。",
+        "unsupported_media_type": "请以 JSON 发送请求。",
+        "auth_required": "登录后才能生成内容简报。",
+        "auth_unavailable": "登录状态暂时不可用，请稍后再试。",
+        "gsc_auth_required": "你的 Search Console 授权已失效，简报没有开始。重新连接 Search Console，或不选资源再运行。",
+        "property_not_granted": "本工具目前没有读取所选 Search Console 资源的权限，简报没有开始。授予该资源，或不选资源再运行。",
+        "rate_limited": "本工具的小时额度已用完，简报没有开始。等窗口重置后再试。",
+        "quota_unavailable": "我们这边的用量限制服务暂时联系不上，为了不跑一次不计量的运行，简报没有开始。这与你的使用量无关，请稍后再试。",
+        "scan_in_progress": "这个账号已经有一份简报在运行。等它结束后再试。",
+        "unsupported_market": "这个市场不在本工具的清单里。",
+        "unsupported_language": "这个语言不在本工具的清单里。",
+        "too_many_supporting_keywords": "一份简报最多接受 {max} 个支持词。",
+        "unknown": "简报没有完成。",
+        "brief_unavailable": "简报没有通过自身校验，这是服务端问题，请稍后重试。",
+        "gsc_revoked": "Search Console 授权已失效，简报没有开始。请重新连接 Search Console，或不选资源再运行。",
+        "gsc_temporarily_unavailable": "Search Console 续期暂时失败，简报没有开始。请稍后重试，或不选资源再运行。"
+      },
+      "running": {
+        "elapsed": "正在生成简报… 已用 {seconds} 秒，预算 {budget} 秒",
+        "complete": "内容简报已完成。"
+      },
+      "actions": {
+        "run": "生成内容简报",
+        "running": "生成中…",
+        "exportJson": "导出 JSON",
+        "generateDraft": "生成 draft →",
+        "generateDraftPending": "生成 draft 随 Content Draft Writer（PR 3）一起上线。导出的 JSON 就是它将接受的交接格式。"
+      },
+      "modes": {
+        "complete": "完整",
+        "partial": "部分",
+        "degraded": "降级",
+        "unavailable": "不可得"
+      },
+      "modeBody": {
+        "complete": "每一路请求过的读取都完成了。标为「证据不足」的字段不改变这一点：证据读到了，只是支持的结论更少。",
+        "partial": "至少有一路读取被截短：SERP 行数少于请求、页面抓取有截断或失败、或 Search Console 样本被截断。",
+        "degraded": "至少有一路请求过的读取不可得，或某个字段因超时、上游错误、未配置、校验失败或语言不支持而无法产出。",
+        "unavailable": "没有拿到 SERP，就没有简报主体。只显示证据覆盖。"
+      },
+      "run": {
+        "eyebrow": "内容简报",
+        "title": "本次运行",
+        "collectedAt": "采集时间",
+        "elapsed": "用时 {elapsed} 秒 / 预算 {budget} 秒",
+        "model": "模型",
+        "modelReported": "部署回报",
+        "modelNone": "没有完成的模型调用",
+        "temperature": "temperature",
+        "temperatureRequested": "请求 {value}",
+        "temperatureEffective": "生效 {value}",
+        "temperatureNotReported": "部署未回报生效值",
+        "fingerprint": "指纹"
+      },
+      "unavailable": {
+        "not_requested": "本次运行没有请求这一路。",
+        "not_connected": "未连接：这一路没有可用的授权。",
+        "not_configured": "模型未配置：本部署没有模型调用的凭据。",
+        "timeout": "这一路读取耗尽了时间预算。",
+        "provider_error": "上游返回了错误。",
+        "quota_exhausted": "我们自己的闸门拒绝了这次读取。",
+        "insufficient_evidence": "上游读取正常，但证据不够产出这个字段。",
+        "unsupported_language": "本语言不支持这个字段（v1 只支持空白分词语言）。",
+        "validation_failed": "上游返回了，但没有通过我们的结构校验。"
+      },
+      "coverage": {
+        "title": "证据覆盖",
+        "serp": "SERP",
+        "crawl": "竞品正文",
+        "gsc": "Search Console",
+        "profile": "产品档案",
+        "llm": "模型",
+        "serpRows": "{returned}/{requested} 条",
+        "crawlObserved": "{observed}/{attempted} observed",
+        "crawlDetail": "{truncated} 篇部分读取 · {failed} 篇未读取 · {skipped} 篇跳过",
+        "crawlFailedReason": "{count} × {reason}",
+        "crawlSkippedReason": "{count} × {reason}",
+        "gscWindow": "{property} · {days} 天窗口，截至 {end}",
+        "gscMatched": "{count} 条 query 串归一化后等于主词",
+        "gscTruncated": "被截断：{dimensions}",
+        "gscUnreadable": "无法读取的行：query {query} · query-page {queryPage} · page {page}",
+        "gscDimensions": {
+          "query": "query",
+          "query_page": "query-page",
+          "page": "page"
+        },
+        "profileSnapshot": "已确认快照第 {revision} 版",
+        "llmCalls": "{calls} 次调用 · {model}",
+        "llmCallsNoModel": "{calls} 次调用",
+        "llmTokens": "输入 {input} · 输出 {output}",
+        "attempted": "尝试 {count}",
+        "attemptedUnknown": "尝试次数未知",
+        "serpUnresolved": "{count} 条无法解析",
+        "gscRows": "query {query} 行 · query×page {queryPage} 行 · page {page} 行（无法读取 {unreadable}）"
+      },
+      "crawlSkipped": {
+        "same_host": "同站去重",
+        "no_url": "数据源没给 URL"
+      },
+      "crawlFailed": {
+        "timeout": "抓取超时",
+        "provider_error": "抓取被拒或失败",
+        "validation_failed": "不是 HTML 或无法解析"
+      },
+      "primaryCoverage": {
+        "no_query_impressions": "主关键词的 query 行没有曝光，算不出页面拆分。",
+        "split_exceeds_total": "主关键词的页面拆分之和超过了 query 总数，样本内部矛盾。",
+        "query_not_in_sample": "主关键词不在 query 样本里。"
+      },
+      "verdict": {
+        "title": "判定",
+        "undecidable": {
+          "title": "不可判定",
+          "no_gsc_property": "未选择 Search Console 资源，无法判定是否自我竞争。",
+          "gsc_unavailable": "Search Console 读不到，无法判定是否自我竞争。",
+          "gsc_partial": "Search Console 样本不完整（被截断、有无法读取的行、或 query-page 覆盖率不足），无法判定是否自我竞争。",
+          "gsc_inconsistent": "Search Console 样本内部矛盾，无法判定是否自我竞争。",
+          "position_unavailable": "曝光最高的页面没有排名数据，无法判定是否自我竞争。"
+        },
+        "create": {
+          "title": "新建页面",
+          "not_observed": "主关键词没有出现在 {days} 天的 Search Console query 样本里。未观测到不等于零曝光：Search Console 会匿名化低频查询。",
+          "below_impression_floor": "已有页面里表现最好的一页在 {days} 天窗口内对主关键词的曝光少于 {minImpressions}，低于新页会与它自我竞争的门槛。",
+          "beyond_position_cap": "{page} 对主关键词的均位是 {position}，超出均位 {maxPosition} 的上限，新页不会与它竞争。"
+        },
+        "update": {
+          "title": "改写已有页",
+          "self_compete": "{page} 已经以均位 {position}、{impressions} 次曝光在主关键词上排名，在均位 {maxPosition} 的上限之内。新页会与它自我竞争。",
+          "v1NoRewrite": "本工具 v1 不产出改写清单。下面的简报仍按新建页面的形态产出。"
+        },
+        "existing": "已有页面",
+        "impressions": "曝光 {count}",
+        "position": "均位 {value}",
+        "positionUnavailable": "均位不可得",
+        "rowsWithPosition": "{withPosition}/{rows} 行有排名数据",
+        "matchedQueries": "{count} 条 query 串归一化后等于主词"
+      },
+      "intents": {
+        "informational": "信息型",
+        "commercial": "商业调研",
+        "transactional": "交易型",
+        "navigational": "导航型"
+      },
+      "intent": {
+        "title": "意图",
+        "confirmed": "已确认",
+        "provisional": "暂定",
+        "support": "{matched}/{returned} 条支持",
+        "confirmedRule": "「已确认」需要 {depth} 条结果全部返回、至少 {ratio}% 一致、且无平局。",
+        "rulesHit": "命中规则"
+      },
+      "formats": {
+        "guide": "指南",
+        "listicle": "清单文",
+        "comparison": "对比",
+        "product_page": "产品页",
+        "tool": "工具",
+        "forum": "论坛",
+        "video": "视频",
+        "news": "新闻",
+        "unknown": "未分类"
+      },
+      "format": {
+        "title": "形态",
+        "plurality": "{returned} 条返回结果里占 {count} 条，达到 {min} 篇门槛。",
+        "noPlurality": "没有单一多数形态（{distribution}）。并列输出，不替你选。",
+        "belowThreshold": "最高形态未过 {min} 篇门槛（{distribution}），附完整分布，不替你选。",
+        "unknownCount": "{count} 条未分类",
+        "distribution": "分布",
+        "topShare": "{count}/{returned} 条"
+      },
+      "length": {
+        "title": "篇幅",
+        "words": "{count} 词",
+        "p25": "p25",
+        "median": "中位",
+        "p75": "p75",
+        "pagesCounted": "完整读取 {count}/{observed} 篇（分母是本次读到的页面），按空白分词",
+        "insufficient": "完整读取的页面少于 {min} 篇（{attempted} 篇），不给篇幅区间。",
+        "unsupported_language": "本语言不支持（v1 只支持空白分词语言）。",
+        "insufficientUnknown": "完整读取的页面少于 {min} 篇，且读到的页数未知，不给篇幅区间。"
+      },
+      "mustAnswer": {
+        "title": "必答问题",
+        "coveredBy": "{covered}/{observed} 篇",
+        "canonical": "簇代表：{heading}",
+        "members": "来源小标题",
+        "excerpt": "片段",
+        "noExcerpt": "这个小标题下没有抓到片段",
+        "insufficient": "本次运行读不到这条路径所依赖的证据（observed {observed} / attempted {attempted}）。",
+        "empty": "{observed} 篇里没有 {min} 篇以上共用的小标题。",
+        "unsupported_language": "本语言不支持（v1 只支持空白分词语言）。",
+        "budget": "候选 {candidates} · 展示 {shown}（上限 {cap}）· 未展示 {hidden}，已计数未丢弃。",
+        "denominator": "分母 {observed} = 本次读到的竞品页（含 {truncated} 篇部分读取）；{failed} 篇未读取、{skipped} 篇跳过的页面不计入任何一条的覆盖数。",
+        "modelNote": "问句措辞由模型生成；小标题簇与页面引用不是。",
+        "partialRead": "部分读取",
+        "insufficientUnknown": "本次运行读不到这条路径所依赖的证据，且读到的页数未知。"
+      },
+      "outline": {
+        "title": "大纲",
+        "answers": "满足 {ids}",
+        "modelNote": "顺序与措辞可改，问题清单与证据引用不可改。",
+        "unsupported_language": "本语言不支持（v1 只支持空白分词语言）。",
+        "timeout": "模型调用耗尽了时间预算，没有大纲。",
+        "not_configured": "模型未配置，没有大纲。",
+        "validation_failed": "模型返回的大纲没有通过校验（引用不存在、同一问题被两节引用、或超过 {cap} 节），因此不展示而不是截断。",
+        "insufficient_evidence": "必答问题少于 {min} 条，没有请求大纲。"
+      },
+      "gapAngle": {
+        "title": "缺口角度",
+        "rationale": "理由",
+        "refs": "引用的档案事实",
+        "checkedAgainst": "已对照本次 observed 的全部 {count} 篇竞品页。",
+        "profileReason": {
+          "insufficient_evidence": "档案未确认：这个网站没有已确认的档案快照，没有产出缺口角度。",
+          "timeout": "产品档案读取耗尽了时间预算，没有产出缺口角度。",
+          "provider_error": "产品档案读不到，没有产出缺口角度。"
+        },
+        "reason": {
+          "insufficient_evidence": "已确认的档案里没有可用事实，没有产出缺口角度。",
+          "timeout": "模型调用耗尽了时间预算，没有缺口角度。",
+          "not_configured": "模型未配置，没有缺口角度。",
+          "validation_failed": "模型返回的缺口角度没有通过校验（引用了不存在的事实，或没有对照全部 observed 页），因此不展示。"
+        },
+        "checkedAgainstMismatch": "模型自报对照了 {reported} 篇，但本次 observed 的是 {count} 篇。"
+      },
+      "derivation": {
+        "declared": "自报",
+        "observed": "观测",
+        "computed": "计算",
+        "inferred": "模型推断"
+      },
+      "links": {
+        "internalTitle": "内链",
+        "doNotCoverTitle": "不要覆盖",
+        "why": "原因",
+        "topic": "主题",
+        "ownedBy": "已由 {page} 承接",
+        "pageMetrics": "曝光 {impressions} · 点击 {clicks}",
+        "pageMissing": "页面引用 {ref} 不在 Search Console 页面账本里",
+        "empty": "模型没有提出任何一条。",
+        "reason": {
+          "not_requested": "未选择 Search Console 资源，没有可链接或可排除的自有页面。",
+          "not_connected": "未连接 Search Console，没有可链接或可排除的自有页面。",
+          "timeout": "Search Console 页面维度读取耗尽了时间预算。",
+          "provider_error": "Search Console 页面维度没有完整读到。",
+          "insufficient_evidence": "Search Console 页面维度在窗口内没有返回任何行。",
+          "not_configured": "模型未配置，没有产出这份清单。",
+          "validation_failed": "模型返回的清单没有通过校验（引用了不存在的页面，或超过 {cap} 条），因此不展示而不是截断。"
+        },
+        "ledger": "进账本 {ledger} / 可用 {available}"
+      },
+      "readiness": {
+        "summary": "{writable} 节可写 · {gaps} 处缺口",
+        "gaps": {
+          "no_product_profile": "没有已确认的产品档案",
+          "no_gsc": "没有 Search Console 读取",
+          "no_outline": "没有大纲",
+          "llm_unavailable": "模型不可得"
+        },
+        "unsupportedLanguage": "本语言 v1 不能生成 draft。",
+        "noWritable": "没有可写的节，这份简报生成不了 draft。"
+      },
+      "sources": {
+        "first": "一手",
+        "third": "三方",
+        "model": "模型生成",
+        "origins": {
+          "gsc": "Search Console",
+          "dataforseo_serp": "DataForSEO SERP",
+          "crawl": "竞品页面",
+          "product_profile": "产品档案",
+          "user_input": "你的输入"
+        },
+        "methods": {
+          "observed": "观测",
+          "heuristic": "规则",
+          "model": "模型"
+        },
+        "derivedFrom": "来自 {origins}",
+        "derivedFromLabel": "来源"
+      },
+      "wontSay": {
+        "title": "这份简报不会说的话",
+        "noRewrite": "不产出改写模板；判定为「改写」时简报仍按新建形态产出。",
+        "threeStates": "判定只有三态；四态仲裁不在 v1。",
+        "noWithdraw": "没有「撤下」：每条问题由构造至少有 {minPages} 篇证据。",
+        "noPublish": "不发布、不写 CMS、不生成图片。",
+        "noHistory": "不保存报告正文；刷新页面即清空。",
+        "noOriginality": "不声称原创度，不承诺能过 AI 检测。",
+        "noCredits": "不展示、不承诺积分价格。",
+        "noPaa": "不读 People Also Ask。",
+        "noScore": "不给内容分。",
+        "language": "非空白分词语言（{languages}）下篇幅、必答问题、大纲不支持，也不能生成 draft。"
+      }
     }
   },
   "compare": {
