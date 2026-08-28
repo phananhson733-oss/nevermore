@@ -2,8 +2,8 @@
 
 Date: 2026-08-28
 
-Status: local implementation and post-merge verification complete; PR, merge,
-and production evidence are still pending.
+Status: complete. PRs #241 and #242 are merged, the final Marketing SHA is
+deployed to both public aliases, and production browser/API evidence is closed.
 
 ## Authority and release boundary
 
@@ -13,6 +13,7 @@ and production evidence are still pending.
   `origin/main@9c15f5ed96835dadaab661b96128747caf305ed0`.
 - Verified post-merge branch snapshot before this document:
   `9c058d97f8dda0d0ce8559a4a532ba58bc65830b`.
+- Final `origin/main`: `16a7109f3d32e93e25dcd5b23730b1d76e56658c`.
 - Production predecessor: PR #236 / `bea97d9cb1e92bacc8cb63c482f0b7deedec6410`.
 - Authorized runtime surface: Marketing plus the existing public-tools and
   sources package contracts used by Marketing.
@@ -20,10 +21,11 @@ and production evidence are still pending.
   saved-history surface, production environment-variable changes, and any
   paid production keyword-map run.
 
-Relative to the integrated upstream, the branch changes 60 paths: 47 under
+Relative to the integrated upstream, PR #241 changes 61 paths: 47 under
 `apps/marketing`, five under `packages/public-tools`, one package export file
-under `packages/sources`, two design/plan documents, and five repository-level
-CI/package/ignore/lint files. A forbidden-path scan found no `apps/web`, Worker,
+under `packages/sources`, three verification/design/plan documents, and five
+repository-level CI/package/ignore/lint files. A forbidden-path scan found no
+`apps/web`, Worker,
 Product source, database migration, environment file, Railway, or Vercel config
 change introduced by this branch.
 
@@ -135,22 +137,35 @@ These failures were not edited or weakened to make the branch appear green:
 - No database-backed customer run history, cross-tab project, Product activation,
   or publishing capability is introduced.
 - A static build proving internal routes exist is not production registration
-  evidence. Production completion still requires the exact merged SHA, READY
-  Marketing deployment, custom-domain aliases, signed-out API boundaries,
-  protected internal Workflow-route probes, and runtime-log review.
+  evidence. The exact deployment, aliases, signed-out API boundaries, protected
+  internal routes, live browser state, and logs were verified separately below.
 
-## Release evidence still required
+## Production closure evidence
 
-1. Rerun the final frozen-SHA repository/type/lint/test/build gates after this
-   document is committed.
-2. Push the reviewed branch, create the focused PR, and inspect the exact PR
-   changed paths and checks.
-3. Merge only the reviewed head SHA and independently verify `origin/main`.
-4. Verify the exact Marketing merge SHA is READY and aliased to `gengrowth.ai`
-   and `www.gengrowth.ai`.
-5. Run signed-out/no-provider production canaries for the page, start/status API,
-   and Vercel-managed internal Workflow endpoints; inspect runtime errors without
-   starting a paid keyword map.
-6. Record the Product candidate separately from the actual `app.gengrowth.ai`
-   production identity. A same-SHA Product candidate is not proof of a Product
-   production release.
+1. PR #241 merged reviewed head
+   `e45e4f099252106172b04af0c878b715b5675b3c` as
+   `15ae914c7f3749f8b36f6d8c18283e578a8e54a3`.
+2. A production-browser review found two stale descriptions of the old
+   synchronous replenishing pool. Copy-only PR #242 changed them to the actual
+   durable-wave/checkpoint flow, added stale-copy assertions, and merged reviewed
+   head `d6273e2a35e3c35e028d099e40531567819de76c` as final main
+   `16a7109f3d32e93e25dcd5b23730b1d76e56658c`.
+3. Marketing deployment `dpl_8nozCRnwV2xbbJonwWNtckadT4Pk` is `READY`, records
+   Git SHA `16a7109f3d32e93e25dcd5b23730b1d76e56658c`, and owns both
+   `gengrowth.ai` and `www.gengrowth.ai`. Its build log records 18 steps, one
+   workflow, and the managed flow/step routes.
+4. The Chinese and English live pages return `200`. The final copy contains the
+   durable-wave/checkpoint explanation and no `replenishing pool` / `持续补位池`.
+   A real Chrome load showed the signed-in tool, the 24-hour pointer boundary,
+   and no browser warning/error logs. No run button was clicked.
+5. Safe no-provider canaries returned `401 authentication_required` for start
+   and status. Originless/cross-origin starts returned `403 invalid_request`.
+   Direct external POSTs to the managed flow and step routes returned `404`.
+   No LLM, DataForSEO, GSC, RDAP, or paid Workflow run was intentionally started.
+6. Product was checked independently. PR #241 created READY candidate
+   `dpl_G9sNZep3KnS5jC2V3zEoo7kA5k7m` for merge SHA `15ae914c`, but it never
+   owned `app.gengrowth.ai`. PR #242's Product candidate
+   `dpl_GvnVcAa7KGPMyLnNVLAeCkpcXjkK` was canceled as not affected. The actual
+   `app.gengrowth.ai` production identity remains
+   `dpl_DzMBdEeuhxshcsqSt8UVttk75cc7` at SHA
+   `de82f380bf2d531907bfad825dc4b755deced053`.
