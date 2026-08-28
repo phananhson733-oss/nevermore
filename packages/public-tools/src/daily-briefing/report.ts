@@ -206,8 +206,18 @@ export const BRIEFING_OBSERVATION_MID_BAND_MAX = 40;
  * move a change.
  */
 export const BRIEFING_OBSERVATION_MIN_ROW_IMPRESSIONS = 50;
-const FIRST_OBSERVED_MIN_POSITION = 8;
-const FIRST_OBSERVED_MAX_POSITION = 21;
+/**
+ * The first-appearance band, as a half-open interval `[MIN, MAX)`.
+ *
+ * Exported because the public page quotes it. Every other threshold that page
+ * states is pinned to its constant by a test on both sides; these two were
+ * module-private, so the copy could only be pinned to a literal string and a
+ * bump here would have left the page quoting a band the engine had stopped
+ * using. The upper edge is EXCLUSIVE — a pair averaging exactly 21 is out —
+ * and the copy has to say so.
+ */
+export const FIRST_OBSERVED_MIN_POSITION = 8;
+export const FIRST_OBSERVED_MAX_POSITION = 21;
 
 /**
  * Average position at or under which a first appearance is worth pressing.

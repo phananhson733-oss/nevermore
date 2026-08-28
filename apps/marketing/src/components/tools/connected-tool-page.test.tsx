@@ -176,3 +176,54 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(after).not.toContain("URL Agents to use next");
   });
 });
+
+describe("ConnectedToolPage long-form article", () => {
+  const ARTICLE = "MARKER_LONG_FORM_ARTICLE";
+
+  function renderWithArticle(
+    tool: ConnectedTool,
+    options: {
+      readonly connected?: boolean;
+      readonly compactConnected?: boolean;
+    } = {},
+  ): string {
+    return withIntl(
+      "en",
+      <ConnectedToolPage
+        locale="en"
+        content={getConnectedToolContent("en", tool)}
+        connected={options.connected ?? false}
+        accountGated
+        compactConnected={options.compactConnected ?? false}
+        article={<p>{ARTICLE}</p>}
+      />,
+    );
+  }
+
+  // Every crawl and every first visit is anonymous, so this is the state the
+  // article was written for.
+  it("renders the article to a visitor who has not passed the gate", () => {
+    expect(renderWithArticle("competitor-keyword-gap")).toContain(ARTICLE);
+  });
+
+  // A compact tool becomes a working report once admitted. The reference
+  // sections are already hidden in that state; leaving a long explainer under
+  // the live report would push the output below the fold, which is the exact
+  // thing the flag exists to prevent.
+  it("hides it under a compact tool the visitor can already run", () => {
+    expect(
+      renderWithArticle("competitor-keyword-gap", {
+        connected: true,
+        compactConnected: true,
+      }),
+    ).not.toContain(ARTICLE);
+  });
+
+  // Without the flag, a connected page keeps its whole reference shell, and
+  // the article is part of it.
+  it("keeps it for a connected tool that is not compact", () => {
+    expect(
+      renderWithArticle("daily-search-briefing", { connected: true }),
+    ).toContain(ARTICLE);
+  });
+});

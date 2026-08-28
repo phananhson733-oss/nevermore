@@ -1,9 +1,12 @@
 // @input  -- locale, the visitor's optional GSC property list, and DFS market allow-list
 // @output -- the authenticated on-demand competitor keyword gap tool on Marketing
 // @pos    -- independent Marketing tool; competitor facts come from DFS, GSC is an optional own-site overlay
+// 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { CompetitorKeywordGapTool } from "@/components/tools/competitor-keyword-gap-tool";
+import { getCompetitorKeywordGapArticle } from "@/components/tools/competitor-keyword-gap-article-content";
+import { ToolArticleSections } from "@/components/tools/tool-article";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
 import {
@@ -87,6 +90,12 @@ export default async function CompetitorKeywordGapPage({
         connected={authentication === "authenticated"}
         accountGated
         compactConnected
+        article={
+          <ToolArticleSections
+            locale={locale}
+            article={getCompetitorKeywordGapArticle(locale)}
+          />
+        }
       >
         {/* Only shared auth copy and this tool's messages cross into client UI. */}
         <NextIntlClientProvider
