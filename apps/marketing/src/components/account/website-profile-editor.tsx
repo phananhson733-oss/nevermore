@@ -10,6 +10,12 @@ import {
   applyProfileRefreshToWebsiteDraft,
 } from "../../lib/account-websites/agent-profile-bridge.ts";
 import {
+  classifyWebsiteCompetitorDraft,
+  websiteCompetitorSearchIdentity,
+  websiteCompetitorSearchRequest,
+  type WebsiteCompetitorSearchRequest,
+} from "../../lib/account-websites/competitor-discovery.ts";
+import {
   WEBSITE_PROFILE_FIELD_NAMES,
   emptyMarketingWebsiteProfile,
   isMarketingWebsiteProfileReady,
@@ -24,6 +30,15 @@ import {
   isAgentProfileRefreshEnvelope,
   type AgentProfileRefreshAvailability,
 } from "../../lib/agents/profile-refresh-contract.ts";
+import {
+  isAgentProfileSearchEnvelope,
+  type AgentProfileSearchData,
+} from "../../lib/agents/profile-search-contract.ts";
+import {
+  AgentProfileSearch,
+  type AgentProfileSearchCopy,
+} from "../agents/agent-profile-search.tsx";
+import type { AgentCompetitorClassification } from "../agents/agent-competitor-candidates.ts";
 import { Button } from "../ui/button.tsx";
 import {
   Card,
@@ -38,6 +53,17 @@ import { Textarea } from "../ui/textarea.tsx";
 import { ProfileRefreshReview } from "./profile-refresh-review.tsx";
 
 const AUTOSAVE_DELAY_MS = 900;
+const PROFILE_SEARCH_CLIENT_TIMEOUT_MS = 35_000;
+const PROFILE_SEARCH_RESPONSE_LIMIT_BYTES = 256 * 1_024;
+const PROFILE_SEARCH_PUBLIC_ERROR_CODES = new Set([
+  "auth_required",
+  "auth_unavailable",
+  "unsupported_media_type",
+  "payload_too_large",
+  "invalid_request",
+  "invalid_url",
+  "search_in_progress",
+]);
 const REQUIRED_FIELDS = [
   "productName",
   "oneLinePositioning",
@@ -109,6 +135,18 @@ type RefreshState =
       readonly proposal: MarketingWebsiteProfileV1;
       readonly availability: AgentProfileRefreshAvailability;
     };
+type CompetitorSearchState =
+  | { readonly status: "idle" | "pending" | "loading" }
+  | {
+      readonly status: "result";
+      readonly requestIdentity: string;
+      readonly data: AgentProfileSearchData;
+    }
+  | {
+      readonly status: "error";
+      readonly requestIdentity: string | null;
+      readonly code: string;
+    };
 
 interface ReadyEditor {
   readonly phase: "ready";
@@ -120,6 +158,7 @@ interface ReadyEditor {
     Partial<Record<WebsiteProfileFieldName, "local" | "server">>
   >;
   readonly refresh: RefreshState;
+  readonly competitorSearch: CompetitorSearchState;
   readonly confirming: boolean;
   readonly confirmError: readonly WebsiteProfileFieldName[] | null;
 }
@@ -136,6 +175,50 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
 
 async function readJson(response: Response): Promise<unknown> {
   return response.json().catch(() => null);
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+  const declaredValue = response.headers.get("content-length");
+  if (declaredValue !== null) {
+    const declaredBytes = Number(declaredValue);
+    if (
+      !Number.isSafeInteger(declaredBytes) ||
+      declaredBytes < 0 ||
+      declaredBytes > PROFILE_SEARCH_RESPONSE_LIMIT_BYTES
+    ) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+  }
+  if (response.body === null) return null;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytesRead += chunk.value.byteLength;
+      if (bytesRead > PROFILE_SEARCH_RESPONSE_LIMIT_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function responseErrorCode(body: unknown): string {
+  const code = record(record(body)?.error)?.code;
+  return typeof code === "string" && PROFILE_SEARCH_PUBLIC_ERROR_CODES.has(code)
+    ? code
+    : "unknown";
 }
 
 async function websiteFromData(body: unknown): Promise<WebsiteDetails | null> {
@@ -214,6 +297,39 @@ function profileEqual(
   right: MarketingWebsiteProfileV1,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function competitorSearchRequestForProfile(
+  profile: MarketingWebsiteProfileV1,
+  submittedUrl: string,
+): WebsiteCompetitorSearchRequest | null {
+  return websiteCompetitorSearchRequest(
+    {
+      ...emptyMarketingWebsiteProfile(),
+      productName: profile.productName,
+      oneLinePositioning: profile.oneLinePositioning,
+      coreFeatures: profile.coreFeatures,
+      categories: profile.categories,
+      country: profile.country,
+      locale: profile.locale,
+      fieldProvenance: profile.fieldProvenance.filter(
+        (entry) =>
+          entry.path === "/productName" ||
+          entry.path === "/oneLinePositioning" ||
+          entry.path === "/coreFeatures" ||
+          entry.path === "/categories",
+      ),
+    },
+    submittedUrl,
+  );
+}
+
+function competitorSearchIdentityForProfile(
+  profile: MarketingWebsiteProfileV1,
+  submittedUrl: string,
+): string | null {
+  const request = competitorSearchRequestForProfile(profile, submittedUrl);
+  return request === null ? null : websiteCompetitorSearchIdentity(request);
 }
 
 function sourceProfile(details: WebsiteDetails): MarketingWebsiteProfileV1 {
@@ -431,16 +547,77 @@ export function WebsiteProfileEditor({
   const locale = useLocale();
   const t = useTranslations("account.websites.editor");
   const fieldName = useTranslations("account.websites.fields");
+  const profileT = useTranslations("agents.workbench.profile");
   const [state, setState] = useState<EditorState>({ phase: "loading" });
   const stateRef = useRef<EditorState>(state);
   const autoGenerateStarted = useRef(false);
   const refreshController = useRef<AbortController | null>(null);
+  const competitorSearchController = useRef<AbortController | null>(null);
+  const competitorSearchControllerIdentity = useRef<string | null>(null);
   stateRef.current = state;
+
+  const competitorSearchErrorCode =
+    state.phase === "ready" && state.competitorSearch.status === "error"
+      ? state.competitorSearch.code
+      : null;
+  const profileSearchCopy = {
+    eyebrow: profileT("search.eyebrow"),
+    title: profileT("search.title"),
+    description: profileT("search.description"),
+    action: profileT("search.action"),
+    loadingAction: profileT("search.loadingAction"),
+    organicBoundary: profileT("search.organicBoundary"),
+    serpBoundary: profileT("search.serpBoundary"),
+    seedSerpBoundary: profileT("search.seedSerpBoundary"),
+    noData: profileT("search.noData"),
+    marketUnsupported: profileT("search.marketUnsupported"),
+    sourceUnavailable: profileT("search.sourceUnavailable"),
+    requestError:
+      competitorSearchErrorCode === "auth_required"
+        ? profileT("search.errors.authRequired")
+        : competitorSearchErrorCode === "auth_unavailable"
+          ? profileT("search.errors.authUnavailable")
+          : competitorSearchErrorCode === "search_timeout"
+            ? profileT("search.errors.searchTimeout")
+            : profileT("search.errors.requestFailed"),
+    domainLabel: profileT("search.domainLabel"),
+    intersectionsLabel: profileT("search.intersectionsLabel"),
+    averagePositionLabel: profileT("search.averagePositionLabel"),
+    medianPositionLabel: profileT("search.medianPositionLabel"),
+    ratingLabel: profileT("search.ratingLabel"),
+    trafficLabel: profileT("search.trafficLabel"),
+    keywordsCountLabel: profileT("search.keywordsCountLabel"),
+    visibilityLabel: profileT("search.visibilityLabel"),
+    relevantSerpItemsLabel: profileT("search.relevantSerpItemsLabel"),
+    rankLabel: profileT("search.rankLabel"),
+    observedAtLabel: profileT("search.observedAtLabel"),
+    unavailableMetricLabel: profileT("search.unavailableMetricLabel"),
+    providerCountLabel: profileT("search.counts.providerLabel"),
+    confirmedCountLabel: profileT("search.counts.confirmedLabel"),
+    excludedCountLabel: profileT("search.counts.excludedLabel"),
+    providerEvidenceLabel: profileT("search.review.providerEvidence"),
+    seedSerpEvidenceLabel: profileT("search.review.seedSerpEvidence"),
+    suggestedDirectLabel: profileT("search.review.suggestedDirect"),
+    suggestedIndirectLabel: profileT("search.review.suggestedIndirect"),
+    higherOverlapLabel: profileT("search.review.higherOverlap"),
+    adjacentOverlapLabel: profileT("search.review.adjacentOverlap"),
+    unclassifiedLabel: profileT("search.review.targetQueryObserved"),
+    seedSerpObservedLabel: profileT("search.review.seedSerpObserved"),
+    currentDirectLabel: profileT("search.review.currentDirect"),
+    currentIndirectLabel: profileT("search.review.currentIndirect"),
+    currentExcludedLabel: profileT("search.review.currentExcluded"),
+    directAction: profileT("search.review.actions.direct"),
+    indirectAction: profileT("search.review.actions.indirect"),
+    excludeAction: profileT("search.review.actions.exclude"),
+  } satisfies AgentProfileSearchCopy;
 
   useEffect(
     () => () => {
       refreshController.current?.abort();
       refreshController.current = null;
+      competitorSearchController.current?.abort();
+      competitorSearchController.current = null;
+      competitorSearchControllerIdentity.current = null;
     },
     [],
   );
@@ -448,6 +625,9 @@ export function WebsiteProfileEditor({
   useEffect(() => {
     refreshController.current?.abort();
     refreshController.current = null;
+    competitorSearchController.current?.abort();
+    competitorSearchController.current = null;
+    competitorSearchControllerIdentity.current = null;
     autoGenerateStarted.current = false;
   }, [websiteId]);
 
@@ -484,6 +664,7 @@ export function WebsiteProfileEditor({
           conflict: null,
           conflictChoices: {},
           refresh: { status: "idle" },
+          competitorSearch: { status: "idle" },
           confirming: false,
           confirmError: null,
         });
@@ -667,6 +848,7 @@ export function WebsiteProfileEditor({
                 profile: proposal,
                 saveState: "unsaved",
                 refresh: { status: "idle" },
+                competitorSearch: { status: "pending" },
               }
             : {
                 ...latest,
@@ -693,6 +875,256 @@ export function WebsiteProfileEditor({
     },
     [locale, websiteId],
   );
+
+  const runCompetitorSearch = useCallback(
+    async (requestedProfile: MarketingWebsiteProfileV1): Promise<void> => {
+      const current = stateRef.current;
+      if (current.phase !== "ready") return;
+
+      const request = competitorSearchRequestForProfile(
+        requestedProfile,
+        current.details.submittedUrl,
+      );
+      if (request === null) {
+        setState((latest) =>
+          latest.phase === "ready" &&
+          latest.competitorSearch.status === "pending"
+            ? { ...latest, competitorSearch: { status: "idle" } }
+            : latest,
+        );
+        return;
+      }
+
+      const requestIdentity = websiteCompetitorSearchIdentity(request);
+      if (
+        competitorSearchController.current !== null &&
+        competitorSearchControllerIdentity.current === requestIdentity
+      ) {
+        return;
+      }
+      const capturedDetails = current.details;
+      competitorSearchController.current?.abort();
+      const controller = new AbortController();
+      competitorSearchController.current = controller;
+      competitorSearchControllerIdentity.current = requestIdentity;
+      setState((latest) =>
+        latest.phase === "ready" &&
+        latest.details.websiteId === capturedDetails.websiteId
+          ? { ...latest, competitorSearch: { status: "loading" } }
+          : latest,
+      );
+
+      const applySearchState = (next: CompetitorSearchState): void => {
+        if (competitorSearchController.current !== controller) return;
+        setState((latest) => {
+          if (
+            latest.phase !== "ready" ||
+            latest.details.websiteId !== capturedDetails.websiteId ||
+            latest.details.websiteId !== websiteId ||
+            latest.details.host !== capturedDetails.host
+          ) {
+            return latest;
+          }
+          const latestIdentity = competitorSearchIdentityForProfile(
+            latest.profile,
+            latest.details.submittedUrl,
+          );
+          if (
+            latestIdentity === null ||
+            latestIdentity !== requestIdentity
+          ) {
+            return latest.competitorSearch.status === "loading"
+              ? { ...latest, competitorSearch: { status: "idle" } }
+              : latest;
+          }
+          return { ...latest, competitorSearch: next };
+        });
+      };
+
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let rejectAbort!: (reason?: unknown) => void;
+      const abortRequest = new Promise<never>((_resolve, reject) => {
+        rejectAbort = reject;
+      });
+      const rejectOnAbort = () =>
+        rejectAbort(
+          new DOMException("Competitor search aborted", "AbortError"),
+        );
+      controller.signal.addEventListener("abort", rejectOnAbort, {
+        once: true,
+      });
+
+      try {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, PROFILE_SEARCH_CLIENT_TIMEOUT_MS);
+        const response = await Promise.race([
+          fetch("/api/agents/seo/profile-search", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify(request),
+            signal: controller.signal,
+          }),
+          abortRequest,
+        ]);
+        const body = await Promise.race([
+          readBoundedJson(response),
+          abortRequest,
+        ]);
+        if (
+          controller.signal.aborted ||
+          competitorSearchController.current !== controller
+        ) {
+          return;
+        }
+        if (!response.ok) {
+          applySearchState({
+            status: "error",
+            requestIdentity,
+            code: responseErrorCode(body),
+          });
+          return;
+        }
+        if (
+          !isAgentProfileSearchEnvelope(body) ||
+          body.data.agent !== "seo" ||
+          body.data.targetHost !== capturedDetails.host ||
+          body.data.market.code !== request.marketCode
+        ) {
+          applySearchState({
+            status: "error",
+            requestIdentity,
+            code: "audit_response_invalid",
+          });
+          return;
+        }
+        applySearchState({
+          status: "result",
+          requestIdentity,
+          data: body.data,
+        });
+      } catch {
+        if (
+          timedOut &&
+          competitorSearchController.current === controller
+        ) {
+          applySearchState({
+            status: "error",
+            requestIdentity,
+            code: "search_timeout",
+          });
+        } else if (
+          !controller.signal.aborted &&
+          competitorSearchController.current === controller
+        ) {
+          applySearchState({
+            status: "error",
+            requestIdentity,
+            code: "unknown",
+          });
+        }
+      } finally {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        controller.signal.removeEventListener("abort", rejectOnAbort);
+        if (competitorSearchController.current === controller) {
+          competitorSearchController.current = null;
+          competitorSearchControllerIdentity.current = null;
+        }
+      }
+    },
+    [websiteId],
+  );
+
+  useEffect(() => {
+    if (
+      state.phase !== "ready" ||
+      state.competitorSearch.status !== "pending"
+    ) {
+      return;
+    }
+    void runCompetitorSearch(state.profile);
+  }, [runCompetitorSearch, state]);
+
+  useEffect(() => {
+    if (state.phase !== "ready") {
+      return;
+    }
+    const currentIdentity = competitorSearchIdentityForProfile(
+      state.profile,
+      state.details.submittedUrl,
+    );
+    if (state.competitorSearch.status === "loading") {
+      const activeIdentity = competitorSearchControllerIdentity.current;
+      const activeController = competitorSearchController.current;
+      if (activeIdentity === null || currentIdentity === activeIdentity) {
+        return;
+      }
+      if (
+        competitorSearchController.current === activeController &&
+        competitorSearchControllerIdentity.current === activeIdentity
+      ) {
+        activeController?.abort();
+        competitorSearchController.current = null;
+        competitorSearchControllerIdentity.current = null;
+      }
+      const capturedWebsiteId = state.details.websiteId;
+      setState((current) => {
+        if (
+          current.phase !== "ready" ||
+          current.details.websiteId !== capturedWebsiteId ||
+          current.competitorSearch.status !== "loading"
+        ) {
+          return current;
+        }
+        const latestIdentity = competitorSearchIdentityForProfile(
+          current.profile,
+          current.details.submittedUrl,
+        );
+        return latestIdentity !== activeIdentity
+          ? { ...current, competitorSearch: { status: "idle" } }
+          : current;
+      });
+      return;
+    }
+    if (
+      (state.competitorSearch.status !== "result" &&
+        state.competitorSearch.status !== "error") ||
+      state.competitorSearch.requestIdentity === null
+    ) {
+      return;
+    }
+    const settledIdentity = state.competitorSearch.requestIdentity;
+    if (currentIdentity === settledIdentity) {
+      return;
+    }
+    if (competitorSearchControllerIdentity.current === settledIdentity) {
+      competitorSearchController.current?.abort();
+      competitorSearchController.current = null;
+      competitorSearchControllerIdentity.current = null;
+    }
+    setState((current) => {
+      if (
+        current.phase !== "ready" ||
+        (current.competitorSearch.status !== "result" &&
+          current.competitorSearch.status !== "error") ||
+        current.competitorSearch.requestIdentity !== settledIdentity
+      ) {
+        return current;
+      }
+      const latestIdentity = competitorSearchIdentityForProfile(
+        current.profile,
+        current.details.submittedUrl,
+      );
+      return latestIdentity === null || latestIdentity !== settledIdentity
+        ? { ...current, competitorSearch: { status: "idle" } }
+        : current;
+    });
+  }, [state]);
 
   useEffect(() => {
     if (
@@ -748,6 +1180,42 @@ export function WebsiteProfileEditor({
     });
   }
 
+  function classifyCompetitor(
+    domain: string,
+    classification: AgentCompetitorClassification,
+  ): void {
+    setState((current) => {
+      if (
+        current.phase !== "ready" ||
+        current.competitorSearch.status !== "result"
+      ) {
+        return current;
+      }
+      const requestIdentity = competitorSearchIdentityForProfile(
+        current.profile,
+        current.details.submittedUrl,
+      );
+      if (
+        requestIdentity === null ||
+        requestIdentity !== current.competitorSearch.requestIdentity
+      ) {
+        return { ...current, competitorSearch: { status: "idle" } };
+      }
+      const profile = classifyWebsiteCompetitorDraft(
+        current.profile,
+        domain,
+        classification,
+      );
+      if (profileEqual(profile, current.profile)) return current;
+      return {
+        ...current,
+        profile,
+        saveState: "unsaved",
+        confirmError: null,
+      };
+    });
+  }
+
   function applyRefreshFields(fields: readonly WebsiteProfileFieldName[]): void {
     setState((current) => {
       if (current.phase !== "ready" || current.refresh.status !== "review") {
@@ -770,6 +1238,9 @@ export function WebsiteProfileEditor({
         saveState: "unsaved",
         confirmError: null,
         refresh: remaining ? current.refresh : { status: "idle" },
+        competitorSearch: remaining
+          ? current.competitorSearch
+          : { status: "pending" },
       };
     });
   }
@@ -1083,6 +1554,37 @@ export function WebsiteProfileEditor({
         fields={MARKET_FIELDS}
         profile={state.profile}
         onChange={editField}
+      />
+      <AgentProfileSearch
+        locale={locale}
+        loading={
+          state.competitorSearch.status === "pending" ||
+          state.competitorSearch.status === "loading"
+        }
+        data={
+          state.competitorSearch.status === "result"
+            ? state.competitorSearch.data
+            : null
+        }
+        errorCode={
+          state.competitorSearch.status === "error"
+            ? state.competitorSearch.code
+            : null
+        }
+        onDiscover={() => void runCompetitorSearch(state.profile)}
+        disabled={
+          competitorSearchRequestForProfile(
+            state.profile,
+            state.details.submittedUrl,
+          ) === null
+        }
+        classifications={{
+          direct: state.profile.directCompetitors,
+          indirect: state.profile.indirectAlternatives,
+          excluded: state.profile.excludedAlternatives,
+        }}
+        onClassify={classifyCompetitor}
+        copy={profileSearchCopy}
       />
 
       <Card>

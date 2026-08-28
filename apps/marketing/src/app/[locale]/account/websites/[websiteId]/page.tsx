@@ -1,4 +1,4 @@
-// @input  -- locale/website route params, optional generate intent, account messages
+// @input  -- locale/website route params, optional generate intent, account + Agent search copy
 // @output -- private website Product/ICP editor
 // @pos    -- per-website settings route
 
@@ -43,7 +43,18 @@ export default async function AccountWebsiteProfilePage({
   ]);
 
   return (
-    <NextIntlClientProvider messages={{ account: messages.account }}>
+    <NextIntlClientProvider
+      messages={{
+        account: messages.account,
+        agents: {
+          workbench: {
+            profile: {
+              search: messages.agents.workbench.profile.search,
+            },
+          },
+        },
+      }}
+    >
       <WebsiteProfileEditor
         websiteId={websiteId}
         autoGenerate={generate === "1"}

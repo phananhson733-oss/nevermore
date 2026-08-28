@@ -212,6 +212,22 @@ describe("AgentProfileSearch", () => {
     expect(results?.textContent).not.toMatch(/similarity|cost/i);
   });
 
+  it("does not count an unresolved system suggestion as an assigned relationship", () => {
+    render({
+      data: ORGANIC_DATA,
+      classifications: { direct: [], indirect: [], excluded: [] },
+    });
+
+    expect(
+      host.querySelector('[data-profile-competitor-count="provider"]')
+        ?.textContent,
+    ).toContain("1");
+    expect(
+      host.querySelector('[data-profile-competitor-count="confirmed"]')
+        ?.textContent,
+    ).toContain("0");
+  });
+
   it("shows truthful discovery and local-review counts", () => {
     render({
       data: ORGANIC_DATA,
@@ -252,7 +268,7 @@ describe("AgentProfileSearch", () => {
     expect(
       host.querySelector('[data-profile-competitor-count="confirmed"]')
         ?.textContent,
-    ).toContain("3");
+    ).toContain("2");
     expect(
       host.querySelector('[data-profile-competitor-count="excluded"]')
         ?.textContent,
