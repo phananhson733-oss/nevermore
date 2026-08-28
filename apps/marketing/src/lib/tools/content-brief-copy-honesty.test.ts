@@ -6,6 +6,7 @@
 
 import { createTranslator } from "next-intl";
 import { describe, expect, it } from "vitest";
+import { CONTENT_BRIEF_HANDOFF_MAX_BYTES } from "@sf/public-tools/content-brief/contract";
 import {
   CRAWL_MIN_FOR_LENGTH,
   DO_NOT_COVER_CAP,
@@ -36,7 +37,10 @@ const BUNDLES = { en, zh } as const;
 type Locale = keyof typeof BUNDLES;
 
 function copy(locale: Locale): Record<string, unknown> {
-  return BUNDLES[locale].tools.contentBrief as unknown as Record<string, unknown>;
+  return BUNDLES[locale].tools.contentBrief as unknown as Record<
+    string,
+    unknown
+  >;
 }
 
 function translator(locale: Locale) {
@@ -57,7 +61,8 @@ function leaf(locale: Locale, path: string): string {
           : undefined,
       copy(locale),
     );
-  if (typeof value !== "string") throw new Error(`${locale}: ${path} is not a string`);
+  if (typeof value !== "string")
+    throw new Error(`${locale}: ${path} is not a string`);
   return value;
 }
 
@@ -126,7 +131,10 @@ const THRESHOLD_COPY: readonly {
   },
   {
     path: "format.belowThreshold",
-    values: { min: FORMAT_PLURALITY_MIN, distribution: "guide 4 / listicle 3 / forum 3" },
+    values: {
+      min: FORMAT_PLURALITY_MIN,
+      distribution: "guide 4 / listicle 3 / forum 3",
+    },
     pinned: [["min", FORMAT_PLURALITY_MIN]],
   },
   {
@@ -146,7 +154,12 @@ const THRESHOLD_COPY: readonly {
   },
   {
     path: "mustAnswer.budget",
-    values: { candidates: 14, shown: MUST_ANSWER_CAP, cap: MUST_ANSWER_CAP, hidden: 6 },
+    values: {
+      candidates: 14,
+      shown: MUST_ANSWER_CAP,
+      cap: MUST_ANSWER_CAP,
+      hidden: 6,
+    },
     pinned: [["cap", MUST_ANSWER_CAP]],
   },
   {
@@ -171,7 +184,10 @@ const THRESHOLD_COPY: readonly {
   },
   {
     path: "verdict.create.below_impression_floor",
-    values: { days: GSC_LOOKBACK_DAYS, minImpressions: SELF_COMPETE_MIN_IMPRESSIONS },
+    values: {
+      days: GSC_LOOKBACK_DAYS,
+      minImpressions: SELF_COMPETE_MIN_IMPRESSIONS,
+    },
     pinned: [
       ["days", GSC_LOOKBACK_DAYS],
       ["minImpressions", SELF_COMPETE_MIN_IMPRESSIONS],
@@ -179,7 +195,11 @@ const THRESHOLD_COPY: readonly {
   },
   {
     path: "verdict.create.beyond_position_cap",
-    values: { page: "example.com/a", position: "45.0", maxPosition: SELF_COMPETE_MAX_POSITION },
+    values: {
+      page: "example.com/a",
+      position: "45.0",
+      maxPosition: SELF_COMPETE_MAX_POSITION,
+    },
     pinned: [["maxPosition", SELF_COMPETE_MAX_POSITION]],
   },
   {
@@ -197,6 +217,11 @@ const THRESHOLD_COPY: readonly {
     values: { minPages: MUST_ANSWER_MIN_PAGES, languages: "zh / ja / ko / th" },
     pinned: [["minPages", MUST_ANSWER_MIN_PAGES]],
   },
+  {
+    path: "actions.generateDraftFailed.too_large",
+    values: { maxKb: CONTENT_BRIEF_HANDOFF_MAX_BYTES / 1024 },
+    pinned: [["maxKb", CONTENT_BRIEF_HANDOFF_MAX_BYTES / 1024]],
+  },
 ];
 
 describe("content brief threshold copy", () => {
@@ -208,7 +233,9 @@ describe("content brief threshold copy", () => {
         const formatted = t(path as never, values as never);
         for (const [parameter, expected] of pinned) {
           // The template names the parameter...
-          expect(template, `${path} lacks {${parameter}}`).toContain(`{${parameter}}`);
+          expect(template, `${path} lacks {${parameter}}`).toContain(
+            `{${parameter}}`,
+          );
           // ...and never carries the number itself, so it cannot drift.
           expect(template, `${path} hard-codes ${expected}`).not.toMatch(
             new RegExp(`(?<![\\d.{])${expected}(?![\\d}])`),
@@ -224,9 +251,12 @@ describe("content brief threshold copy", () => {
 
   it("pins the do-not-cover cap through the same links sentence", () => {
     // One sentence serves both link cards; it must format for either cap.
-    const formatted = translator("en")("links.reason.validation_failed" as never, {
-      cap: DO_NOT_COVER_CAP,
-    } as never);
+    const formatted = translator("en")(
+      "links.reason.validation_failed" as never,
+      {
+        cap: DO_NOT_COVER_CAP,
+      } as never,
+    );
     expect(formatted).toContain(String(DO_NOT_COVER_CAP));
   });
 });

@@ -143,9 +143,25 @@ export const SECTION_IP_MAX_PER_HOUR = 30;
 export const BRIEF_REQUEST_MAX_BYTES = 8 * 1024;
 /** brief + settings + section_ids */
 export const DRAFT_REQUEST_MAX_BYTES = CONTENT_BRIEF_HANDOFF_MAX_BYTES + 16 * 1024;
-/** brief + 全部段 */
-export const SECTION_REQUEST_MAX_BYTES =
-  CONTENT_BRIEF_HANDOFF_MAX_BYTES + OUTLINE_CAP * SECTION_BODY_MAX_BYTES + 16 * 1024;
+/** JSON 里每个字符最多占的字节（4 字节 UTF-8，或 \uXXXX 转义的 6 字节按 1.5 倍折算后仍 ≤ 此值 × 1.5） */
+const JSON_BYTES_PER_CHAR = 6;
+/** 一条 verify_before_publish / coverage item 除正文外的键名、id、refs 的余量 */
+const RECORD_OVERHEAD_BYTES = 512;
+/** run / brief_ref / settings / totals / reads 与 JSON 外壳 */
+const DRAFT_ENVELOPE_BYTES = 16 * 1024;
+/**
+ * 一份 contract-valid DraftResult 序列化后的上限：全部段 + verify_before_publish
+ * （最坏情况每句都进清单并复制整句）+ coverage（每题一段模型 gap）+ 外壳。
+ * section 端点携带整份上一次结果，所以请求上限必须按这个形状推导，
+ * 否则合法首跑结果会在任何模型调用前被 body reader 以 413 拒掉。
+ */
+export const DRAFT_RESULT_MAX_BYTES =
+  OUTLINE_CAP * SECTION_BODY_MAX_BYTES +
+  OUTLINE_CAP * SECTION_MAX_SENTENCES * (SENTENCE_MAX_CHARS * JSON_BYTES_PER_CHAR + RECORD_OVERHEAD_BYTES) +
+  MUST_ANSWER_CAP * (MODEL_TEXT_MAX_CHARS * JSON_BYTES_PER_CHAR + RECORD_OVERHEAD_BYTES) +
+  DRAFT_ENVELOPE_BYTES;
+/** brief + section_id + 整份上一次 DraftResult */
+export const SECTION_REQUEST_MAX_BYTES = CONTENT_BRIEF_HANDOFF_MAX_BYTES + DRAFT_RESULT_MAX_BYTES + 16 * 1024;
 
 /* ------------------------------------------------------------------ */
 /* 语言                                                                 */

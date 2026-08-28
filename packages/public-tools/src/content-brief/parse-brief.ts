@@ -65,7 +65,7 @@ type Violation = ParseBriefFailure | null;
 /* ------------------------------------------------------------------ */
 
 /** Path of the first key where `actual` departs from `expected`, in `expected`'s key order. */
-function firstDifference(expected: unknown, actual: unknown, path: string): string | null {
+export function firstDifference(expected: unknown, actual: unknown, path: string): string | null {
   if (Array.isArray(expected)) {
     if (!Array.isArray(actual) || actual.length !== expected.length) return path;
     for (const [index, item] of expected.entries()) {
@@ -88,7 +88,7 @@ function firstDifference(expected: unknown, actual: unknown, path: string): stri
   return Object.is(expected, actual) ? null : path;
 }
 
-function recomputed(expected: unknown, actual: unknown, path: string): Violation {
+export function recomputed(expected: unknown, actual: unknown, path: string): Violation {
   const difference = firstDifference(expected, actual, path);
   return difference === null ? null : reference(difference);
 }
@@ -120,7 +120,7 @@ function buildLedger(brief: ContentBrief): Ledger {
 }
 
 /** Equal as sets, and neither side may repeat a member. */
-function sameSet(left: readonly string[], right: readonly string[]): boolean {
+export function sameSet(left: readonly string[], right: readonly string[]): boolean {
   const lefts = new Set(left);
   const rights = new Set(right);
   return (

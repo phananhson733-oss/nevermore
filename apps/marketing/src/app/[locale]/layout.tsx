@@ -5,7 +5,7 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Serif } from "next/font/google";
 import { routing } from "@/i18n/routing";
 import { PageShell } from "@/components/layout/page-shell";
 import { localePath } from "@/lib/locale-path";
@@ -27,7 +27,20 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-const fontVars = [ibmPlexSans.variable, ibmPlexMono.variable].join(" ");
+// Serif is reserved for the Content Draft Writer's article body (globals.css
+// --font-serif); it is loaded here so the variable exists on every page.
+const ibmPlexSerif = IBM_Plex_Serif({
+  subsets: ["latin"],
+  variable: "--font-ibm-plex-serif",
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+
+const fontVars = [
+  ibmPlexSans.variable,
+  ibmPlexMono.variable,
+  ibmPlexSerif.variable,
+].join(" ");
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));

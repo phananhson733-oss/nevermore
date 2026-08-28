@@ -1,7 +1,7 @@
 // @input  -- globals.css and every source file under components/tools
 // @output -- a failing test when the three source-layer colours leak past their whitelist
 // @pos    -- handoff §7: the source colours are information architecture, not decoration;
-//            three files may read them and nothing else in components/tools may
+//            five files may read them and nothing else in components/tools may
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -24,9 +24,26 @@ const css = readFileSync(GLOBALS_CSS, "utf8");
  * the two palettes exist to keep apart.
  */
 const SOURCE_TOKEN_ALLOWLIST = new Map<string, string>([
-  ["content-brief-source-chip.tsx", "the chip that names a value's source layer"],
-  ["content-brief-evidence-coverage.tsx", "each coverage cell is framed by its layer"],
-  ["content-brief-outline-list.tsx", "the model-colour rule on every outline section"],
+  [
+    "content-brief-source-chip.tsx",
+    "the chip that names a value's source layer",
+  ],
+  [
+    "content-brief-evidence-coverage.tsx",
+    "each coverage cell is framed by its layer",
+  ],
+  [
+    "content-brief-outline-list.tsx",
+    "the model-colour rule on every outline section",
+  ],
+  [
+    "content-draft-doc.tsx",
+    "the claim underline under every drafted sentence, by source layer",
+  ],
+  [
+    "content-draft-verify-list.tsx",
+    "a single-source sentence is framed by its one witness's layer",
+  ],
 ]);
 
 const SOURCE_TOKEN = /--sc-source-|\bsource-(?:first|third|model)\b/;
@@ -45,7 +62,11 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 
 describe("source-layer tokens", () => {
   it("are defined in both theme blocks and mapped without literals", () => {
-    for (const token of ["--sc-source-first", "--sc-source-third", "--sc-source-model"]) {
+    for (const token of [
+      "--sc-source-first",
+      "--sc-source-third",
+      "--sc-source-model",
+    ]) {
       const definitions = [
         ...css.matchAll(new RegExp(`^\\s{2}${token}:\\s*([^;]+);$`, "gm")),
       ];
@@ -65,7 +86,9 @@ describe("source-layer tokens", () => {
   it("scans the tools directory, allowlist included", () => {
     const names = new Set(scanned.map((file) => file.name));
     for (const allowed of SOURCE_TOKEN_ALLOWLIST.keys()) {
-      expect(names, `allowlisted ${allowed} was not scanned`).toContain(allowed);
+      expect(names, `allowlisted ${allowed} was not scanned`).toContain(
+        allowed,
+      );
     }
     expect(scanned.length).toBeGreaterThan(20);
   });
@@ -75,7 +98,10 @@ describe("source-layer tokens", () => {
     // waiting for a future file to hide behind.
     for (const allowed of SOURCE_TOKEN_ALLOWLIST.keys()) {
       const body = scanned.find((file) => file.name === allowed)?.body ?? "";
-      expect(SOURCE_TOKEN.test(body), `${allowed} no longer reads a source colour`).toBe(true);
+      expect(
+        SOURCE_TOKEN.test(body),
+        `${allowed} no longer reads a source colour`,
+      ).toBe(true);
     }
   });
 

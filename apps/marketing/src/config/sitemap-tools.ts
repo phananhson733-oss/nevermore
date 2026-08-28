@@ -19,6 +19,7 @@ export const SITEMAP_TOOLS = [
   "low-competition-keywords",
   "competitor-keyword-gap",
   "content-brief",
+  "content-draft",
   "on-page-seo-check",
   "internal-link-audit",
   "page-citability-check",

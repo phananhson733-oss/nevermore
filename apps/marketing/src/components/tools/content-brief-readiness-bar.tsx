@@ -1,10 +1,21 @@
-// @input  -- one ContentBrief's draft_readiness, its keyword block, and the tool translator
-// @output -- "N sections writable · M gaps", the JSON export, and the (PR 3) draft button
+// @input  -- one ContentBrief's draft_readiness, its keyword block, the locale and the tool translator
+// @output -- "N sections writable · M gaps", the JSON export, and the handoff link into the
+//            Content Draft Writer
 // @pos    -- the confirmation gate in its v1 form; nothing is withdrawn, so only N and M print
 
-import type { ContentBrief } from "@sf/public-tools/content-brief/contract";
+import { useState } from "react";
+import {
+  CONTENT_BRIEF_HANDOFF_MAX_BYTES,
+  type ContentBrief,
+} from "@sf/public-tools/content-brief/contract";
 import { isWhitespaceTokenizedLanguage } from "@sf/public-tools/content-brief/constants";
 
+import { localePath } from "../../lib/locale-path";
+import {
+  writeContentBriefHandoff,
+  type ContentBriefHandoffWrite,
+} from "../../lib/tools/content-brief-handoff";
+import { TOOL_HANDOFF_LINK_PROPS } from "../../lib/tools/tool-handoff";
 import {
   ACTION_BUTTON,
   BODY_TEXT,
@@ -44,15 +55,52 @@ export function downloadBriefJson(brief: ContentBrief): void {
   URL.revokeObjectURL(url);
 }
 
+/** Storage itself can be unavailable, which is a browser state, not a defect. */
+function storeHandoff(brief: ContentBrief): ContentBriefHandoffWrite {
+  try {
+    return writeContentBriefHandoff(window.sessionStorage, Date.now(), brief);
+  } catch {
+    return { ok: false, reason: "storage", bytes: 0 };
+  }
+}
+
 export function ReadinessBar({
   brief,
+  locale,
   t,
 }: {
   readonly brief: ContentBrief;
+  readonly locale: string;
   readonly t: Translate;
 }) {
   const { writable, gaps } = brief.draft_readiness;
   const unsupported = !isWhitespaceTokenizedLanguage(brief.keyword.language);
+  const [handoffFailure, setHandoffFailure] = useState<
+    "too_large" | "storage" | null
+  >(null);
+
+  /**
+   * The handoff is written before navigation, and navigation is cancelled
+   * when it could not be written: the draft page would otherwise open on its
+   * empty state and look like it lost the brief. No query-string fallback --
+   * a brief does not fit a URL and must not leak into one (handoff §5.1).
+   *
+   * Written on every gesture that can open the link, not only `click`: a new
+   * tab receives a COPY of session storage at the moment it is created, and a
+   * middle click or "open in new tab" creates it without ever firing click.
+   * The same synchronous stage runs on mousedown (left / middle), contextmenu
+   * and click (keyboard); writing twice for one gesture is harmless.
+   */
+  function stage(): boolean {
+    const written = storeHandoff(brief);
+    setHandoffFailure(written.ok ? null : written.reason);
+    return written.ok;
+  }
+
+  function prepare(event: React.MouseEvent<HTMLAnchorElement>): void {
+    if (!stage()) event.preventDefault();
+  }
+
   return (
     <section data-readiness-bar className={CARD}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -98,22 +146,41 @@ export function ReadinessBar({
           >
             {t("actions.exportJson")}
           </button>
-          {/* PR 3 wires this to the Content Draft Writer handoff. Disabled
-              rather than absent so the shape of the gate is already on the
-              page; the title says why it does nothing yet. */}
-          <button
-            type="button"
-            data-generate-draft
-            disabled
-            aria-disabled="true"
-            title={t("actions.generateDraftPending")}
-            className={`${PRIMARY_ACTION_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            {t("actions.generateDraft")}
-          </button>
+          {/* Absent, not disabled, when nothing is writable: the draft page
+              would only restate "no writable section" after a paid tab. */}
+          {writable.length > 0 ? (
+            <a
+              data-generate-draft
+              href={localePath(locale, "/tools/content-draft")}
+              {...TOOL_HANDOFF_LINK_PROPS}
+              onMouseDown={(event) => {
+                if (event.button === 0 || event.button === 1) stage();
+              }}
+              onContextMenu={(event) => {
+                if (!stage()) event.preventDefault();
+              }}
+              onClick={prepare}
+              className={PRIMARY_ACTION_BUTTON}
+            >
+              {t("actions.generateDraft")}
+            </a>
+          ) : null}
         </div>
       </div>
-      <p className={`mt-3 ${BODY_TEXT}`}>{t("actions.generateDraftPending")}</p>
+      {writable.length > 0 ? (
+        <p className={`mt-3 ${BODY_TEXT}`}>{t("actions.generateDraftHelp")}</p>
+      ) : null}
+      {handoffFailure !== null ? (
+        <p
+          role="alert"
+          data-generate-draft-failed={handoffFailure}
+          className={`mt-2 ${BODY_TEXT} text-brand-error`}
+        >
+          {translated(t, `actions.generateDraftFailed.${handoffFailure}`, {
+            maxKb: Math.round(CONTENT_BRIEF_HANDOFF_MAX_BYTES / 1024),
+          })}
+        </p>
+      ) : null}
     </section>
   );
 }

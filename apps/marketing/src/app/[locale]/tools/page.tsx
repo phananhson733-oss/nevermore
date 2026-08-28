@@ -114,6 +114,17 @@ const PLANNING_TOOLS = [
     cta: { en: "Build a content brief", zh: "生成内容简报" },
     category: "planning",
   },
+  {
+    slug: "content-draft",
+    // Formal name in both locales (tool-naming.test.ts), like the brief above.
+    title: { en: "Content Draft Writer", zh: "Content Draft Writer" },
+    description: {
+      en: "Sign in and turn an exported content brief into a section-by-section draft: every sentence carries its claim state, a separate model call checks which must-answer questions the draft covers, and a verify list names what a human must still confirm.",
+      zh: "登录后把一份导出的内容简报变成逐节初稿：每句话都带主张状态，一次独立模型调用校验初稿覆盖了哪些必答问题，核实清单列出仍需人工确认的句子。",
+    },
+    cta: { en: "Write a draft from a brief", zh: "从简报生成初稿" },
+    category: "planning",
+  },
 ] as const;
 
 /**
