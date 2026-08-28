@@ -4,10 +4,20 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "./proxy.ts";
+import { config, proxy } from "./proxy.ts";
 import { LEGACY_EN_MIGRATION_ENTRIES } from "./lib/legacy-en-migration.ts";
 
 const zhBrowser = { "accept-language": "zh-CN,zh;q=0.9,en;q=0.8" };
+
+describe("proxy workflow boundary", () => {
+  it("keeps Workflow internal paths outside the locale proxy matcher", () => {
+    const source = config.matcher[0];
+    expect(source).toBeDefined();
+    const matcher = new RegExp(`^${source ?? ""}$`);
+    expect(matcher.test("/.well-known/workflow/v1/flow")).toBe(false);
+    expect(matcher.test("/tools/low-competition-keywords")).toBe(true);
+  });
+});
 
 function request(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`https://gengrowth.ai${path}`, { headers });

@@ -111,8 +111,8 @@ The route performs, before `start()`:
 7. creating a caller-bound run token after Workflow returns its opaque run id.
 
 No raw access token, refresh token, property list, client IP or identity is
-stored as plaintext Workflow metadata. Run attributes contain only bounded
-non-sensitive values such as tool and schema version.
+stored as plaintext Workflow metadata. Stable `workflow@4.8.5` exposes no run
+attributes option, so this release writes no custom run metadata at all.
 
 The start response is:
 
@@ -368,8 +368,8 @@ platform exposes and the product adopts an enforceable retention policy.
 - `Cache-Control: no-store, private` on every response.
 - GSC credentials are workflow-purpose ciphertext and never step output.
 - Client IP, raw identity, access/refresh tokens and complete GSC rows are never
-  persisted in plaintext Workflow state or attributes.
-- Workflow attributes never contain customer data.
+  persisted in plaintext Workflow state.
+- No custom Workflow run metadata is written.
 - No raw Workflow run id appears in browser storage or responses.
 - No raw provider/model/GSC error string reaches a response or log.
 - Completed paid steps are never called again by later workflow replay.
@@ -423,7 +423,8 @@ Extend the paid-call-free Marketing E2E:
 - signed-out 401 boundary without paid calls;
 - authenticated deterministic test seam only in local/preview, never a
   production bypass;
-- Workflow run visible in Vercel observability with no sensitive attributes;
+- Workflow run visible in Vercel observability with no sensitive custom
+  metadata;
 - independent Product deployment/domain identity check.
 
 ## Non-Goals

@@ -282,9 +282,8 @@ With the official Vitest plugin, assert:
 - a fault after several completed SERP keyword steps resumes without invoking
   those completed steps again;
 - a terminal candidate/validation failure returns its stable code;
-- workflow output and attributes contain no subject, cookie, token, URL,
-  keyword list or provider body beyond the encrypted input and intended
-  persisted step results.
+- workflow output contains no subject, cookie, credential or provider body
+  beyond the encrypted input and intended persisted step results.
 
 **Step 5: Run RED**
 
@@ -330,7 +329,7 @@ Assert the exact order and boundary:
 2. context purpose/expiry/sub binding;
 3. GSC gate before grant renewal;
 4. encrypted workflow context/grant snapshots only;
-5. `start()` with non-sensitive attributes;
+5. `start()` with only encrypted, versioned arguments and no custom metadata;
 6. identity-bound sealed run token;
 7. gate release on success, refusal and exception;
 8. `202`, `Retry-After: 2`, `no-store, private`.
@@ -536,7 +535,7 @@ pnpm --filter @sf/marketing build
 
 Review:
 
-- no secrets/customer data in attributes/logs;
+- no secrets/customer data in logs or custom run metadata;
 - status ownership and foreign/absent equivalence;
 - same-origin JSON-only mutation boundary;
 - sessionStorage never enters URL/analytics;
