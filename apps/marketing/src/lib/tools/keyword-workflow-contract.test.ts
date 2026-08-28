@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { KeywordOpportunityResult } from "@sf/public-tools";
+
 import {
   KEYWORD_WORKFLOW_VERSION,
   isSameOriginKeywordWorkflowRequest,
   keywordWorkflowDedupeKey,
   keywordWorkflowJson,
-  openKeywordWorkflowGrant,
-  openKeywordWorkflowInput,
+  openKeywordWorkflowSnapshots,
   openKeywordWorkflowRun,
   parseKeywordWorkflowStartInput,
   parseKeywordWorkflowStatusInput,
@@ -14,6 +15,7 @@ import {
   sealKeywordWorkflowInput,
   sealKeywordWorkflowRun,
   type KeywordWorkflowStartResponse,
+  type KeywordWorkflowStatusResponse,
 } from "./keyword-workflow-contract.ts";
 
 const SECRET = Buffer.alloc(32, 17).toString("base64");
@@ -89,11 +91,30 @@ describe("keyword Workflow public contract", () => {
 
   it("seals Workflow input, grant, and caller ownership under separate purposes", () => {
     const input = sealKeywordWorkflowInput(
-      { siteUrl: "https://example.com", sub: "owner-a" },
+      {
+        sub: "owner-a",
+        data: { siteUrl: "https://example.com" },
+      },
       () => NOW,
     );
     const grant = sealKeywordWorkflowGrant(
-      { accessToken: "access-secret", properties: ["sc-domain:example.com"] },
+      {
+        sub: "owner-a",
+        data: {
+          accessToken: "access-secret",
+          properties: ["sc-domain:example.com"],
+        },
+      },
+      () => NOW,
+    );
+    const foreignGrant = sealKeywordWorkflowGrant(
+      {
+        sub: "owner-b",
+        data: {
+          accessToken: "foreign-secret",
+          properties: ["sc-domain:example.com"],
+        },
+      },
       () => NOW,
     );
     const run = sealKeywordWorkflowRun(
@@ -101,14 +122,18 @@ describe("keyword Workflow public contract", () => {
       () => NOW,
     );
 
-    expect(openKeywordWorkflowInput(input, () => NOW)).toEqual({
-      siteUrl: "https://example.com",
+    expect(openKeywordWorkflowSnapshots(input, grant, () => NOW)).toEqual({
       sub: "owner-a",
+      input: { siteUrl: "https://example.com" },
+      grant: {
+        accessToken: "access-secret",
+        properties: ["sc-domain:example.com"],
+      },
     });
-    expect(openKeywordWorkflowGrant(grant, () => NOW)).toEqual({
-      accessToken: "access-secret",
-      properties: ["sc-domain:example.com"],
-    });
+    expect(
+      openKeywordWorkflowSnapshots(input, foreignGrant, () => NOW),
+    ).toBeNull();
+    expect(openKeywordWorkflowSnapshots(input, input, () => NOW)).toBeNull();
     expect(openKeywordWorkflowRun(run, "owner-a", () => NOW)).toEqual({
       runId: "run_123",
     });
@@ -151,5 +176,20 @@ describe("keyword Workflow public contract", () => {
     expect(response.headers.get("Retry-After")).toBe("2");
     await expect(response.json()).resolves.toEqual(body);
     expect(KEYWORD_WORKFLOW_VERSION).toBe("keyword_workflow.v1");
+  });
+
+  it("returns only the public result for a completed status", () => {
+    const result = {
+      version: "keyword_opportunity.v3",
+    } as unknown as KeywordOpportunityResult;
+    const body: KeywordWorkflowStatusResponse = {
+      data: {
+        status: "completed",
+        result,
+      },
+    };
+
+    expect(body.data).toEqual({ status: "completed", result });
+    expect(body.data).not.toHaveProperty("payload");
   });
 });

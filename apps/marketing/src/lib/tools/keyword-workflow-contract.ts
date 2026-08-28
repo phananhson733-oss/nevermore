@@ -5,10 +5,7 @@
 
 import { createHash } from "node:crypto";
 
-import type {
-  KeywordOpportunityEnvelope,
-  KeywordOpportunityResult,
-} from "@sf/public-tools";
+import type { KeywordOpportunityResult } from "@sf/public-tools";
 import { open, seal } from "../auth/sealed-cookie.ts";
 
 export const KEYWORD_WORKFLOW_VERSION = "keyword_workflow.v1";
@@ -51,7 +48,6 @@ export type KeywordWorkflowStatusResponse =
   | {
       readonly data: {
         readonly status: "completed";
-        readonly payload: KeywordOpportunityEnvelope;
         readonly result: KeywordOpportunityResult;
       };
     };
@@ -61,8 +57,14 @@ export interface KeywordWorkflowGrantSnapshot {
   readonly properties: readonly string[];
 }
 
-interface VersionedSnapshot<T> {
+interface VersionedOwnedSnapshot<T> {
   readonly version: typeof KEYWORD_WORKFLOW_VERSION;
+  readonly sub: string;
+  readonly data: T;
+}
+
+interface OwnedWorkflowSnapshot<T> {
+  readonly sub: string;
   readonly data: T;
 }
 
@@ -139,59 +141,93 @@ export function keywordWorkflowDedupeKey(
 }
 
 export function sealKeywordWorkflowInput<T>(
-  data: T,
+  snapshot: OwnedWorkflowSnapshot<T>,
   now: () => number = Date.now,
 ): string {
   return seal(
     "gg_kw_workflow_input",
-    { version: KEYWORD_WORKFLOW_VERSION, data } satisfies VersionedSnapshot<T>,
+    {
+      version: KEYWORD_WORKFLOW_VERSION,
+      ...snapshot,
+    } satisfies VersionedOwnedSnapshot<T>,
     KEYWORD_WORKFLOW_TTL_SECONDS,
     now,
   );
 }
 
-export function openKeywordWorkflowInput<T>(
+function openKeywordWorkflowInput<T>(
   value: string,
   now: () => number = Date.now,
-): T | null {
-  const snapshot = open<VersionedSnapshot<T>>(
+): OwnedWorkflowSnapshot<T> | null {
+  const snapshot = open<VersionedOwnedSnapshot<T>>(
     "gg_kw_workflow_input",
     value,
     now,
   );
-  return snapshot?.version === KEYWORD_WORKFLOW_VERSION ? snapshot.data : null;
+  return snapshot?.version === KEYWORD_WORKFLOW_VERSION &&
+    typeof snapshot.sub === "string" &&
+    snapshot.sub !== ""
+    ? { sub: snapshot.sub, data: snapshot.data }
+    : null;
 }
 
 export function sealKeywordWorkflowGrant(
-  data: KeywordWorkflowGrantSnapshot,
+  snapshot: OwnedWorkflowSnapshot<KeywordWorkflowGrantSnapshot>,
   now: () => number = Date.now,
 ): string {
   return seal(
     "gg_kw_workflow_grant",
-    { version: KEYWORD_WORKFLOW_VERSION, data } satisfies VersionedSnapshot<KeywordWorkflowGrantSnapshot>,
+    {
+      version: KEYWORD_WORKFLOW_VERSION,
+      ...snapshot,
+    } satisfies VersionedOwnedSnapshot<KeywordWorkflowGrantSnapshot>,
     KEYWORD_WORKFLOW_TTL_SECONDS,
     now,
   );
 }
 
-export function openKeywordWorkflowGrant(
+function openKeywordWorkflowGrant(
   value: string,
   now: () => number = Date.now,
-): KeywordWorkflowGrantSnapshot | null {
-  const snapshot = open<VersionedSnapshot<KeywordWorkflowGrantSnapshot>>(
+): OwnedWorkflowSnapshot<KeywordWorkflowGrantSnapshot> | null {
+  const snapshot = open<VersionedOwnedSnapshot<KeywordWorkflowGrantSnapshot>>(
     "gg_kw_workflow_grant",
     value,
     now,
   );
   const data = snapshot?.data;
   return snapshot?.version === KEYWORD_WORKFLOW_VERSION &&
+    typeof snapshot.sub === "string" &&
+    snapshot.sub !== "" &&
     typeof data?.accessToken === "string" &&
     data.accessToken !== "" &&
     Array.isArray(data.properties) &&
     data.properties.every(
       (property) => typeof property === "string" && property !== "",
     )
-    ? { accessToken: data.accessToken, properties: [...data.properties] }
+    ? {
+        sub: snapshot.sub,
+        data: {
+          accessToken: data.accessToken,
+          properties: [...data.properties],
+        },
+      }
+    : null;
+}
+
+export function openKeywordWorkflowSnapshots<T>(
+  inputValue: string,
+  grantValue: string,
+  now: () => number = Date.now,
+): {
+  readonly sub: string;
+  readonly input: T;
+  readonly grant: KeywordWorkflowGrantSnapshot;
+} | null {
+  const input = openKeywordWorkflowInput<T>(inputValue, now);
+  const grant = openKeywordWorkflowGrant(grantValue, now);
+  return input !== null && grant !== null && input.sub === grant.sub
+    ? { sub: input.sub, input: input.data, grant: grant.data }
     : null;
 }
 
