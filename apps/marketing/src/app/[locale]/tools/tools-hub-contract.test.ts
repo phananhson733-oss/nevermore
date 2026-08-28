@@ -30,6 +30,8 @@ describe("Tools hub execution boundaries", () => {
       "content-brief",
       "page-citability-check",
       "geo-knowledge-base",
+      "ai-visibility-check",
+      "geo-brief",
     ]);
     expect(source).toContain(
       'cta: { en: "Run internal link audit", zh: "运行内链审计" }',

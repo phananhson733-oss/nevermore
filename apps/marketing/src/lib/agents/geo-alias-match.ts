@@ -5,13 +5,60 @@
 import { codePointLength } from "./geo-canonical.ts";
 
 /**
- * Shortest alias worth matching.
+ * Shortest alias worth matching, in scripts that separate words with spaces.
  *
  * Below three characters a brand name collides with ordinary words and with
  * every acronym in the answer, and a mention count built on that is noise
  * presented as evidence.
  */
 export const GEO_MIN_ALIAS_TOKEN_LENGTH = 3;
+
+/**
+ * The same floor for scripts that write without spaces.
+ *
+ * Two, because a character there carries a whole morpheme rather than a letter:
+ * the two code points of a Chinese brand name are as specific as five or six
+ * Latin ones, and the three-character floor silently dropped every such name
+ * before it was ever compared. A dropped alias is not a near miss - the run is
+ * paid for, the answer names the brand, and the report says it was never
+ * mentioned.
+ */
+export const GEO_MIN_DENSE_ALIAS_TOKEN_LENGTH = 2;
+
+/**
+ * Scripts whose readers do not put spaces between words.
+ *
+ * The whole-word rule below asks for a separator on both sides of a match.
+ * That rule is what stops "Acme" from matching inside "AcmeCorp", and it is
+ * meaningless in a script that never writes the separator: in the same
+ * sentence it stops the alias from matching at all. Both properties are real,
+ * so the rule applies per edge rather than globally, and an edge that touches
+ * one of these scripts does not demand a space that the language does not use.
+ *
+ * Listed by the property that matters (no inter-word spaces) rather than by
+ * region, which is why Hangul is absent - Korean is written with spaces and
+ * keeps the stricter rule.
+ */
+const DENSE_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
+/** Whether a name is written in a script that needs no separators. */
+function isDenseAlias(normalized: string): boolean {
+  return DENSE_SCRIPT.test(normalized);
+}
+
+/**
+ * The same question about a name as the user wrote it.
+ *
+ * Exported so a report can say what its mention count cannot separate: in a
+ * script with no inter-word spaces there is no whole-word rule, so a longer
+ * word containing the name is counted as a mention. That is a disclosure, not
+ * a refusal - a matcher that declines to look is not more accurate, it just
+ * returns nothing.
+ */
+export function isDenseGeoName(value: string): boolean {
+  return isDenseAlias(normalizeAliasForMatch(value));
+}
 
 /**
  * Longest mention excerpt the report will carry, in Unicode code points.
@@ -112,6 +159,23 @@ export function normalizeAliasForMatch(value: string): string {
   return buildMatchIndex(value).normalized;
 }
 
+/**
+ * Whether the matcher would ever look for this name.
+ *
+ * Exported so the knowledge base can refuse a name at freeze time instead of
+ * discovering it after a paid run. Both sides read the same floors from here;
+ * a copy of the rule beside the form is a copy that drifts, and the way it
+ * drifts is silent - the form keeps accepting a name the matcher stopped
+ * looking for.
+ */
+export function isMatchableGeoName(value: string): boolean {
+  const normalized = normalizeAliasForMatch(value);
+  const floor = isDenseAlias(normalized)
+    ? GEO_MIN_DENSE_ALIAS_TOKEN_LENGTH
+    : GEO_MIN_ALIAS_TOKEN_LENGTH;
+  return codePointLength(normalized) >= floor;
+}
+
 export interface GeoAliasMatch {
   /** The alias as the user confirmed it, not the normalized form. */
   readonly alias: string;
@@ -126,8 +190,81 @@ export interface GeoAliasMatch {
   readonly endIndex: number;
 }
 
-function isWordBoundary(haystack: string, index: number): boolean {
-  return index < 0 || index >= haystack.length || haystack[index] === " ";
+/**
+ * Whether the edge of a match is a place a reader would see one word end.
+ *
+ * `inside` is the match's own outermost character. A separator always ends a
+ * word; so does running off either end of the text. Beyond that the question is
+ * script-dependent, and the answer is "yes" as soon as either side of the seam
+ * belongs to a script that does not write separators - there is no space to
+ * find, and demanding one is how a correct match gets thrown away.
+ */
+function isWordBoundary(
+  haystack: string,
+  index: number,
+  inside: string | undefined,
+): boolean {
+  if (index < 0 || index >= haystack.length) return true;
+  const outside = haystack[index]!;
+  if (outside === " ") return true;
+  return DENSE_SCRIPT.test(outside) || (inside !== undefined && DENSE_SCRIPT.test(inside));
+}
+
+/**
+ * Whether an occurrence is written in a case the alias could have produced.
+ *
+ * Matching is case-insensitive so that a model writing "ACME" in a heading
+ * still counts, and that same folding is what lets the ordinary noun "notion"
+ * be reported as the brand Notion, or the question word "Who" as the confirmed
+ * competitor WHO. Both of those are the tool's headline number claiming a
+ * mention that did not happen.
+ *
+ * The rule uses the shape the user confirmed, which is the only evidence
+ * available about how the name is written:
+ *
+ * - No cased letters at all (Han, Kana, digits) - nothing to check.
+ * - Every cased letter uppercase (an acronym) - the occurrence must be
+ *   uppercase too. "WHO" is a brand; "Who" is a question.
+ * - Otherwise the alias has some uppercase - the occurrence must keep at least
+ *   one. "Notion" and "NOTION" are the company, "notion" is a noun.
+ * - Alias written entirely lowercase - the user gave no capital to check
+ *   against, so any case matches.
+ *
+ * What this costs, stated plainly: a model that writes an established brand in
+ * all lowercase is no longer counted. That is a real loss of recall, taken
+ * because the opposite error is worse here - an inflated mention rate tells a
+ * customer they are already visible and that no work is needed, and nothing
+ * downstream can detect it. A brand that really is written lowercase can be
+ * confirmed that way in the knowledge base, and then matches everything again.
+ */
+function isCasedLetter(character: string): boolean {
+  return character.toLowerCase() !== character.toUpperCase();
+}
+
+function caseCompatible(alias: string, occurrence: string): boolean {
+  const aliasCased = [...alias.normalize("NFC")].filter(isCasedLetter);
+  if (aliasCased.length === 0) return true;
+
+  const occurrenceCased = [...occurrence].filter(isCasedLetter);
+  if (occurrenceCased.length === 0) return true;
+
+  const aliasAllUpper = aliasCased.every(
+    (character) => character === character.toUpperCase(),
+  );
+  if (aliasAllUpper) {
+    return occurrenceCased.every(
+      (character) => character === character.toUpperCase(),
+    );
+  }
+
+  const aliasHasUpper = aliasCased.some(
+    (character) => character === character.toUpperCase(),
+  );
+  if (!aliasHasUpper) return true;
+
+  return occurrenceCased.some(
+    (character) => character === character.toUpperCase(),
+  );
 }
 
 /**
@@ -148,21 +285,34 @@ export function findGeoAliasMatch(
   let best: GeoAliasMatch | null = null;
   let bestLength = -1;
 
+  const source = text.normalize("NFC");
+
   for (const alias of aliases) {
     const needle = normalizeAliasForMatch(alias);
-    if (needle.length < GEO_MIN_ALIAS_TOKEN_LENGTH) continue;
+    const floor = isDenseAlias(needle)
+      ? GEO_MIN_DENSE_ALIAS_TOKEN_LENGTH
+      : GEO_MIN_ALIAS_TOKEN_LENGTH;
+    // Code points, not UTF-16 units: a two-character name written in a Han
+    // extension block is four units long, and a floor counted in units would
+    // let it through while rejecting the two-unit name beside it.
+    if (codePointLength(needle) < floor) continue;
 
     let from = 0;
     for (;;) {
       const at = index.normalized.indexOf(needle, from);
       if (at === -1) break;
       const after = at + needle.length;
+      const startIndex = index.starts[at]!;
+      const endIndex = index.ends[after - 1]!;
       if (
-        isWordBoundary(index.normalized, at - 1) &&
-        isWordBoundary(index.normalized, after)
+        isWordBoundary(index.normalized, at - 1, index.normalized[at]) &&
+        isWordBoundary(
+          index.normalized,
+          after,
+          index.normalized[after - 1],
+        ) &&
+        caseCompatible(alias, source.slice(startIndex, endIndex))
       ) {
-        const startIndex = index.starts[at]!;
-        const endIndex = index.ends[after - 1]!;
         if (
           best === null ||
           startIndex < best.startIndex ||

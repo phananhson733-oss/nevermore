@@ -2,6 +2,8 @@
 // @output -- a validated payload, its canonical text, and the digest both sides agree on
 // @pos    -- the identity of a GEO knowledge base; the database recomputes this digest and refuses a mismatch
 
+import { isMatchableGeoName } from "../agents/geo-alias-match.ts";
+
 export const GEO_KB_SCHEMA_VERSION = "marketing-geo-kb.v1" as const;
 
 /**
@@ -403,6 +405,7 @@ export function emptyGeoKbPayload(targetUrl: string): GeoKbPayload {
 export type GeoKbBlocker =
   | "official_name_missing"
   | "aliases_missing"
+  | "alias_too_short"
   | "category_terms_missing"
   | "no_confirmed_competitor"
   | "role_missing";
@@ -413,6 +416,22 @@ export function geoKbBlockers(
   const blockers: GeoKbBlocker[] = [];
   if (payload.officialName.length === 0) blockers.push("official_name_missing");
   if (payload.aliases.length === 0) blockers.push("aliases_missing");
+  // A name the mention matcher will not look for has to be refused here, before
+  // the run is paid for. Freezing it costs a full round of provider calls and
+  // then reports every answer that names the brand as not mentioning it - the
+  // visitor gets a bill and a zero, and nothing on the page says why. The floor
+  // is the matcher's own, and it is lower for scripts written without spaces,
+  // where two characters is a whole name.
+  // The test is on the whole set, not on each name. Mention detection searches
+  // for the official name and every alias together, so one matchable spelling
+  // is enough - blocking because a short alias sits beside a usable official
+  // name would refuse a knowledge base that works.
+  const names = [payload.officialName, ...payload.aliases].filter(
+    (name) => name.length > 0,
+  );
+  if (names.length > 0 && !names.some((name) => isMatchableGeoName(name))) {
+    blockers.push("alias_too_short");
+  }
   if (payload.categoryTerms.length === 0) blockers.push("category_terms_missing");
   if (payload.roles.length === 0) blockers.push("role_missing");
   if (!payload.competitors.some((entry) => entry.confirmed)) {

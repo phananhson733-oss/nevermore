@@ -254,3 +254,74 @@ commit;
 - **不存邮箱、账号资料、积分。** 全表只有 `user_id` 这一个 uuid 指向账号。
 - **不存跨用户可见的东西。** 三张表都没有 policy，浏览器角色一个权限都没有。跨用户可见性只可能来自服务端代码忘记传 `user_id`，而三个 RPC 的每一条 where 都带着它。
 - **没有删除路径。** 这一期没有删除知识库的 RPC；外键是 `on delete restrict`，所以即使有人拿到了写权限，也删不掉一个还有草稿或快照的知识库。
+
+---
+
+# AI 可见性体检（迁移 0007）
+
+## 先决条件：0006 必须已经在这个 Supabase 项目里跑过
+
+0007 的 `marketing_geo_visibility_runs` 有一个到 `marketing_geo_kb_snapshots (id, user_id)` 的复合外键，写入函数还会直接查那张表。**没有 0006，`create table` 当场就失败**——这一次不像 0006 依赖 0005 那样会「装得上、第一次用才炸」，因为外键在建表时就要求被引用的表存在。确认一下：
+
+```sql
+select to_regclass('public.marketing_geo_kb_snapshots');
+-- 期望：public.marketing_geo_kb_snapshots；如果是 null，先跑 0006。
+```
+
+## 顺序
+
+代码可以先上。没有这张表时，一轮体检会在最后一步落库时失败并把 `store_unavailable` 显示出来——但那时钱已经花掉了。**所以这条迁移要在把工具入口交给任何人之前跑完**，不能像 0006 那样容忍一段空窗。
+
+```bash
+# DATABASE_URL 从 Railway worker 的变量里取，去掉 query string
+psql "$DATABASE_URL" -f apps/marketing/supabase/migrations/0007_geo_visibility_runs.sql
+```
+
+## 冒烟
+
+```sql
+-- 1. 表在，RLS 开着，且一条策略都没有（真正的边界是下面的 revoke）
+select relrowsecurity from pg_class where oid = 'public.marketing_geo_visibility_runs'::regclass;
+-- 期望：t
+select count(*) from pg_policies where tablename = 'marketing_geo_visibility_runs';
+-- 期望：0
+
+-- 2. 三个角色都不能写；service_role 只能读
+select grantee, privilege_type from information_schema.role_table_grants
+ where table_name = 'marketing_geo_visibility_runs' order by grantee, privilege_type;
+-- 期望：只有 service_role / SELECT 一行。任何 INSERT、UPDATE、DELETE 都是缺陷。
+
+-- 3. append-only 的两个触发器都在（行级挡改删，语句级挡 truncate）
+select tgname from pg_trigger
+ where tgrelid = 'public.marketing_geo_visibility_runs'::regclass and not tgisinternal
+ order by tgname;
+-- 期望：marketing_geo_visibility_runs_immutable_row
+--       marketing_geo_visibility_runs_immutable_truncate
+
+-- 4. 写入函数只有 service_role 能执行
+select has_function_privilege('service_role',
+  'public.marketing_geo_record_visibility_run(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'execute') as service_role,
+  has_function_privilege('authenticated',
+  'public.marketing_geo_record_visibility_run(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'execute') as authenticated;
+-- 期望：t / f
+```
+
+第 3 项值得单独盯：这张表是「这轮体检花了多少钱、看到了什么」的唯一记录，也是下一轮做对比的基线。基线能被改写，对比就能说任何话。
+
+## 回滚
+
+```sql
+drop function if exists public.marketing_geo_record_visibility_run(
+  uuid, uuid, uuid, text, integer, jsonb, jsonb, jsonb, jsonb);
+drop table if exists public.marketing_geo_visibility_runs;
+```
+
+丢的是历史轮次与基线，知识库本身不受影响。回滚后工具仍能跑完并出报告，只是最后落库那步会失败——所以要么同时把入口撤下来，要么接受访客付了钱看得到报告但存不下来。
+
+## 这张表存了什么
+
+每轮一行：manifest（问题集指纹、样本数、市场、模型面、起止时间、调用数与实测花费）、聚合指标、逐题的「答了没有 / 提到没有」、被引用域名的计数。
+
+## 不存什么
+
+**不存模型回答的原文。** 判定在写库之前就做完了，落下来的只有数字和问题文本本身。回答里可能有第三方的名字、也可能有模型编的东西，留着它既扩大了泄漏面，也会让人把它当成「AI 说过的话」的证据来引用——它不是，它是一次不可复现的采样。

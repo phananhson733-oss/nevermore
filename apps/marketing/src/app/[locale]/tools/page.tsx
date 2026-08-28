@@ -144,6 +144,32 @@ const GEO_TOOLS = [
     cta: { en: "Build a knowledge base", zh: "建立知识库" },
     category: "geo",
   },
+  {
+    slug: "ai-visibility-check",
+    title: { en: "AI Visibility Check", zh: "AI 可见性体检" },
+    // Both preconditions are stated here rather than discovered on the tool
+    // page: a run costs provider calls and asks the questions a frozen
+    // knowledge base produces, so arriving without either is a dead end.
+    description: {
+      en: "Sign in, and with a frozen GEO Knowledge Base version in hand, ask its question set on one AI surface several times each: where you are mentioned, where you are cited, and which domains answers are built from.",
+      zh: "登录后、并且已经有一个冻结的 GEO 知识库版本，就能用它的问题集在一个 AI 面上重复提问：看你在哪些回答里被提到、在哪些里被引用，以及这些回答是用哪些域名的内容拼出来的。",
+    },
+    cta: { en: "Run a visibility check", zh: "跑一次可见性体检" },
+    category: "geo",
+  },
+  {
+    slug: "geo-brief",
+    title: { en: "GEO Brief Builder", zh: "GEO Brief 生成器" },
+    // Same two preconditions as the visibility check, said here rather than
+    // found on the page: it is written against a frozen version, and it spends
+    // a provider call.
+    description: {
+      en: "Sign in, pick a frozen GEO Knowledge Base version and one question, and get a brief: what the opening has to answer, what the page must cover, and which of your facts may be used. Nothing unverified gets a number.",
+      zh: "登录后选一个冻结的 GEO 知识库版本和一道题，产出一份 Brief：开头段要回答什么、这一页要覆盖什么、可以用你哪些事实。没核实过的维度不会被填上数字。",
+    },
+    cta: { en: "Build a brief", zh: "生成一份 Brief" },
+    category: "geo",
+  },
 ] as const;
 
 export async function generateMetadata({
