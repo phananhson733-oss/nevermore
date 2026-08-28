@@ -6,9 +6,9 @@
 import {
   readQueryPageRows,
   readQueryRows,
-  type KeywordCoverageRead,
-} from "@sf/public-tools";
-import { createSearchAnalyticsClient } from "@sf/sources";
+} from "@sf/public-tools/gsc-analytics";
+import type { KeywordCoverageRead } from "@sf/public-tools/keyword-opportunity";
+import { createSearchAnalyticsClient } from "@sf/sources/gsc/search-analytics";
 
 /** Per-call deadline for one Search Console request. */
 const READ_TIMEOUT_MS = 15_000;

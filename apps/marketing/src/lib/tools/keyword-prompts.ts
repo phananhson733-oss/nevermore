@@ -30,7 +30,7 @@ import {
   type KeywordOpportunityBasis,
   type KeywordOpportunitySerpIntent,
   type KeywordOpportunityProposition,
-} from "@sf/public-tools";
+} from "@sf/public-tools/keyword-opportunity";
 import {
   createKeywordLlmClient,
   EMPTY_KEYWORD_LLM_USAGE,

@@ -3,24 +3,28 @@
 // @pos    -- the only place provider transport meets the run's cost accumulator
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
+import { SourceError } from "@sf/sources/adapter";
 import {
   bulkTrafficEstimation,
-  createDomainRegistrationResolver,
-  createDataForSeoKeywordMetricsClient,
-  dataForSeoMarketLanguages,
   labsLanguageForMarket,
-  normalizeRdapDomain,
   normalizeTrafficDomain,
-  SourceError,
   type BulkTrafficEstimationOptions,
   type BulkTrafficEstimationResult,
+} from "@sf/sources/dataforseo/labs-traffic";
+import {
+  createDataForSeoKeywordMetricsClient,
   type DataForSeoKeywordMetricsClient,
+} from "@sf/sources/dataforseo/keyword-metrics";
+import { dataForSeoMarketLanguages } from "@sf/sources/dataforseo/market-language";
+import {
+  createDomainRegistrationResolver,
+  normalizeRdapDomain,
   type DomainRegistrationEvidence,
-} from "@sf/sources";
+} from "@sf/sources/rdap/domain-registration";
 import type {
   KeywordOpportunityProviderRow,
   KeywordOpportunitySerpFailureReason,
-} from "@sf/public-tools";
+} from "@sf/public-tools/keyword-opportunity";
 import type { KeywordCostAccumulator } from "./keyword-cost-guard.ts";
 import type { KeywordSerpSampleResult } from "./keyword-opportunity-handler.ts";
 

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { withWorkflow } from "workflow/next";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const monorepoRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -131,4 +132,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+export default withWorkflow(withNextIntl(nextConfig));

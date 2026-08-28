@@ -2914,9 +2914,9 @@
     "security_scanner": "安全扫描器",
     "keywordMap": {
       "connectTitle": "连接 Search Console",
-      "connectBody": "这张地图会读取你站点的公开页面，把候选词拿到搜索数据源去核价，再用你自己资源里已经在服务的查询逐条比对。只读：我们改不了你 Google 账号里的任何东西，也不在服务器上留存任何数据。",
+      "connectBody": "这张地图会读取你站点的公开页面，把候选词拿到搜索数据源去核价，再用你自己资源里已经在服务的查询逐条比对。Search Console 授权仅为只读。当前标签页里的密封恢复凭证会在 24 小时后失效；加密的 Workflow 执行数据按 Vercel 套餐级托管存储周期留存。两者都不会变成 App 项目或跨次历史。",
       "connectCta": "连接 Search Console",
-      "connectTrust": "免费 · 只读授权 · 不在服务器留存 · 随时断开",
+      "connectTrust": "免费 · 只读授权 · Workflow 托管留存 · 不保存项目历史 · 随时断开",
       "connectPending": "这个环境还没开放 Google 连接。",
       "inviteOnlyTitle": "还没对所有人开放",
       "inviteOnlyBody": "我们的 Google 同意页还在测试状态，目前只有测试者名单上的账号能完成授权。",
@@ -2961,10 +2961,12 @@
       "startOver": "重新开始",
       "running": "正在运行…",
       "runningTitle": "正在生成机会地图",
-      "runningBody": "给模型提出的候选词核价、读取你的 Search Console 证据，并对除明确核价为零以外的每个候选词检查第一页；使用最多 10 个并发请求的持续补位池。用时取决于候选词数量和本次数据源响应。",
+      "runningBody": "正在给模型提出的候选词核价、读取你的 Search Console 证据，并以每批最多 10 个并发请求的耐久步骤，为除明确核价为零外的每个候选词检查第一页。已经完成的步骤会写入检查点，刷新页面不会重新开始已付费的工作。",
       "runningStatus": "仍在运行，已用时 {seconds} 秒。",
+      "restoredStatus": "页面刷新后已恢复这次运行。仍在运行，已用时 {seconds} 秒。",
       "elapsed": "已用时 {seconds} 秒",
       "statusDone": "完成，{count} 条机会。",
+      "persistenceBoundary": "当前标签页里的密封恢复凭证会在 24 小时后失效。运行结束后，加密的 Workflow 执行数据按 Vercel 套餐级留存周期保存；它不是 App 项目、已保存报告历史或跨次对比。",
       "cooldown": "还有 {seconds} 秒可重试。",
       "exportCsv": "导出 CSV",
       "exportAuditJson": "导出审计 JSON",
@@ -3243,6 +3245,7 @@
         "gsc_coverage_truncated": "Search Console 覆盖读取的后续数据行",
         "serp_sample": "第一页抽样",
         "serp_sample_partial": "部分候选词的第一页抽样",
+        "serp_interpretation": "部分候选词的 SERP 解读",
         "serp_sample_cost_capped": "第一页抽样（触及本次成本上限后停止）"
       },
       "nextSteps": {
@@ -3290,7 +3293,9 @@
         "target_busy": "这个站点在过去一小时里被读取过多次（可能是你，也可能是别人），我们对任何单个站点的抓取频率有上限。稍后再试。",
         "quota_unavailable": "我们的限流服务暂时连不上；宁可不跑，也不无上限地跑。一分钟后再试。",
         "gsc_revoked": "这个浏览器已不再持有可用的 Search Console 授权。重新连接后即可运行。",
-        "gsc_temporarily_unavailable": "Google 刚才没能续期你的授权。你的访问权限没有任何变化——稍后重试即可。"
+        "gsc_temporarily_unavailable": "Google 刚才没能续期你的授权。你的访问权限没有任何变化——稍后重试即可。",
+        "keyword_run_unavailable": "这次已保存运行目前无法读取。回到确认步骤后重试；只要原运行仍在进行，同一个请求会先去找它，不会重复购买一次。",
+        "keyword_run_cancelled": "这次运行在产出报告前被取消了。你已经确认的站点上下文仍可用于发起新运行。"
       }
     },
     "onPageChecker": {

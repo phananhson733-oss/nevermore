@@ -2914,9 +2914,9 @@
     "dev_tools": "Browser Dev Tools",
     "keywordMap": {
       "connectTitle": "Connect Search Console",
-      "connectBody": "The map reads your site's public pages, prices candidate keywords against a search-data provider, and checks each one against the queries your own property already serves. Read-only: we cannot change anything in your Google account, and nothing is stored on our servers.",
+      "connectBody": "The map reads your site's public pages, prices candidate keywords against a search-data provider, and checks each one against the queries your own property already serves. Search Console access is read-only. This tab's sealed resume pointer expires after 24 hours; encrypted Workflow execution data follows Vercel's plan-level managed-storage retention. Neither becomes App project or cross-run history.",
       "connectCta": "Connect Search Console",
-      "connectTrust": "Free · Read-only access · Nothing stored on our servers · Disconnect anytime",
+      "connectTrust": "Free · Read-only access · Managed Workflow retention · No project history · Disconnect anytime",
       "connectPending": "The Google connection is not open in this environment yet.",
       "inviteOnlyTitle": "Not open to everyone yet",
       "inviteOnlyBody": "Our Google consent screen is in testing, so only accounts on the tester list can authorize right now.",
@@ -2961,10 +2961,12 @@
       "startOver": "Start over",
       "running": "Running…",
       "runningTitle": "Building the opportunity map",
-      "runningBody": "Pricing model-proposed candidates, reading your Search Console evidence, and checking page one for every candidate except an explicit-zero term through a replenishing pool of up to ten concurrent requests. The elapsed time depends on how many candidates and provider responses this run has.",
+      "runningBody": "Pricing model-proposed candidates, reading your Search Console evidence, and checking page one for every candidate except an explicit-zero term in durable waves of up to ten concurrent requests. Completed steps are checkpointed so a refresh can resume without restarting the paid work.",
       "runningStatus": "Still running, {seconds} seconds elapsed.",
+      "restoredStatus": "Restored this run after refresh. Still running, {seconds} seconds elapsed.",
       "elapsed": "{seconds}s elapsed",
       "statusDone": "Done. {count} opportunities.",
+      "persistenceBoundary": "The sealed pointer in this tab expires after 24 hours. Encrypted Workflow execution data follows Vercel's plan-level retention after the run completes; it is not an App project, saved report history, or cross-run comparison.",
       "cooldown": "You can try again in {seconds}s.",
       "exportCsv": "Export CSV",
       "exportAuditJson": "Export audit JSON",
@@ -3243,6 +3245,7 @@
         "gsc_coverage_truncated": "later rows from the Search Console coverage read",
         "serp_sample": "page-one sampling",
         "serp_sample_partial": "page-one sampling for some candidates",
+        "serp_interpretation": "SERP interpretation for some candidates",
         "serp_sample_cost_capped": "page-one sampling, stopped at the run's cost ceiling"
       },
       "nextSteps": {
@@ -3290,7 +3293,9 @@
         "target_busy": "That site has been read several times in the last hour — by you or by others — and we cap how often any one site gets crawled. Try again later.",
         "quota_unavailable": "Our rate limiter could not be reached just now, and we do not run without one. Try again in a minute.",
         "gsc_revoked": "This browser no longer holds a usable Search Console authorization. Reconnect to run the map.",
-        "gsc_temporarily_unavailable": "Google could not renew your authorization just now. Nothing about your access changed — try again shortly."
+        "gsc_temporarily_unavailable": "Google could not renew your authorization just now. Nothing about your access changed — try again shortly.",
+        "keyword_run_unavailable": "This saved run cannot be read right now. Return to the confirmation step and retry; the same request is deduplicated while its run is active.",
+        "keyword_run_cancelled": "This run was cancelled before it produced a report. Your confirmed site context is still available for a new run."
       }
     },
     "onPageChecker": {

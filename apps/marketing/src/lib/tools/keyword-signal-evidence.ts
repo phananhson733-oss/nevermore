@@ -5,16 +5,16 @@
 
 import { domainToASCII } from "node:url";
 
+import { normalizeTrafficDomain } from "@sf/sources/dataforseo/labs-traffic";
 import {
   normalizeRdapDomain,
-  normalizeTrafficDomain,
   type DomainRegistrationEvidence,
-} from "@sf/sources";
+} from "@sf/sources/rdap/domain-registration";
 import type {
   KeywordOpportunityAiOverviewObservation,
   KeywordOpportunitySignals,
   KeywordOpportunitySiteRankTier,
-} from "@sf/public-tools";
+} from "@sf/public-tools/keyword-opportunity";
 import type { KeywordSerpSampleResult } from "./keyword-opportunity-handler.ts";
 
 export interface KeywordSignalEvidenceInput {

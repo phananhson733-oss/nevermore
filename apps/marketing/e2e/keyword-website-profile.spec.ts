@@ -42,10 +42,15 @@ interface StageOneRequest {
   readonly websiteProfileReference?: WebsiteProfileReferenceV1;
 }
 
+interface StageTwoRequest {
+  readonly contextToken: string;
+  readonly requestId: string;
+}
+
 interface KeywordHarness {
   readonly reference: WebsiteProfileReferenceV1;
   readonly stageOneRequests: StageOneRequest[];
-  readonly stageTwoRequests: unknown[];
+  readonly stageTwoRequests: StageTwoRequest[];
   readonly sessionRequests: () => number;
   readonly websiteListRequests: () => number;
   readonly websiteDetailRequests: () => number;
@@ -201,7 +206,7 @@ async function installHarness(page: Page): Promise<KeywordHarness> {
   const profile = keywordProfile();
   const website = confirmedWebsite(profile);
   const stageOneRequests: StageOneRequest[] = [];
-  const stageTwoRequests: unknown[] = [];
+  const stageTwoRequests: StageTwoRequest[] = [];
   const writes: string[] = [];
   let sessionRequests = 0;
   let websiteListRequests = 0;
@@ -282,7 +287,7 @@ async function installHarness(page: Page): Promise<KeywordHarness> {
       path === "/api/tools/hidden-keywords/opportunities" &&
       method === "POST"
     ) {
-      const body = request.postDataJSON() as unknown;
+      const body = request.postDataJSON() as StageTwoRequest;
       stageTwoRequests.push(body);
       const latest = stageOneRequests.at(-1);
       await fulfillJson(route, 200, {
@@ -435,9 +440,13 @@ test("carries one exact reference through both stages while keeping the run over
   await expect(
     page.getByRole("heading", { name: "Nothing reached the tables" }),
   ).toBeVisible();
-  expect(harness.stageTwoRequests).toEqual([
-    { contextToken: "keyword-context-reference-e2e" },
-  ]);
+  expect(harness.stageTwoRequests).toHaveLength(1);
+  expect(harness.stageTwoRequests[0]).toMatchObject({
+    contextToken: "keyword-context-reference-e2e",
+  });
+  expect(harness.stageTwoRequests[0]?.requestId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+  );
   await expect(pinned).toContainText(`Revision ${SNAPSHOT_REVISION}`);
   await expect(pinned).toContainText(harness.reference.profileHash.slice(0, 8));
   expect(harness.websiteWrites()).toEqual([]);

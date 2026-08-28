@@ -2824,6 +2824,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(row?.serp.status).toBe("complete");
     expect(row?.serp.organicResults).toHaveLength(1);
     expect(row?.serpIntent).toBeNull();
+    expect(parsed.data.result.unavailableStages).toContain(
+      "serp_interpretation",
+    );
     expect(row?.aiOverview).toMatchObject({
       availability: "observed",
       loadedAsync: true,

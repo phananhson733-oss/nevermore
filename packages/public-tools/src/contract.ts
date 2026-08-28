@@ -1,5 +1,5 @@
 export type PublicToolMode = "public_preview";
-export type PublicToolPersistence = "none";
+export type PublicToolPersistence = "none" | "workflow_managed";
 export type PublicToolCheckStatus =
   | "pass"
   | "warning"
@@ -61,12 +61,13 @@ export function createPublicToolResult<
 >(
   run: Omit<PublicToolRun<TTool, TScope>, "mode" | "persistence">,
   result: TResult,
+  persistence: PublicToolPersistence = "none",
 ): PublicToolResultEnvelope<TResult, TTool, TScope> {
   return {
     run: {
       ...run,
       mode: "public_preview",
-      persistence: "none",
+      persistence,
     },
     result,
   };

@@ -403,7 +403,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "Every candidate except an explicit-zero term gets a page-one check",
-        text: "Every candidate except an explicit-zero term enters a replenishing pool of up to ten concurrent page-one requests. Completed reads report young-domain, low-organic-traffic-domain and community-result evidence separately; a provider gap remains incomplete instead of becoming a negative.",
+        text: "Every candidate except an explicit-zero term enters durable waves of up to ten concurrent page-one requests. Each completed keyword is checkpointed independently; young-domain, low-organic-traffic-domain and community-result evidence stay separate, and a provider gap remains incomplete instead of becoming a negative.",
       },
     ],
     outputTitle: "What you get back",
@@ -456,7 +456,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Does every candidate get checked against page one?",
         answer:
-          "Every deduplicated candidate except a term the provider explicitly priced at zero enters a replenishing pool of up to ten concurrent checks. A provider or interpretation failure is recorded on the affected candidate as unavailable evidence; it does not silently turn into a negative or disappear from the report.",
+          "Every deduplicated candidate except a term the provider explicitly priced at zero enters durable waves of up to ten concurrent checks. Completed keywords are checkpointed independently. A provider or interpretation failure is recorded on the affected candidate as unavailable evidence; it does not silently turn into a negative or disappear from the report.",
       },
       {
         question: "Does the map detect AI Overviews?",
@@ -894,7 +894,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         name: "除明确核价为零外，每个候选词都检查第一页",
-        text: "除明确核价为零以外的每个候选词都会进入最多 10 个并发请求的持续补位池。完成的读取会分别报告年轻域名、低自然搜索流量域名和社区结果证据；数据源缺口会留在「检测未完成」，不会变成阴性。",
+        text: "除明确核价为零以外的每个候选词都会进入每批最多 10 个并发请求的耐久步骤。每个完成的关键词都会独立写入检查点，并分别报告年轻域名、低自然搜索流量域名和社区结果证据；数据源缺口会留在「检测未完成」，不会变成阴性。",
       },
     ],
     outputTitle: "你会拿到什么",
@@ -945,7 +945,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "每个候选词都会检查第一页吗？",
         answer:
-          "去重候选词中，除数据源明确核价为零的词以外，每一个都会进入最多 10 个并发请求的持续补位池。某个候选词的数据源或解读失败，会记录为证据不可用；不会悄悄变成阴性，也不会从报告里消失。",
+          "去重候选词中，除数据源明确核价为零的词以外，每一个都会进入每批最多 10 个并发请求的耐久步骤。完成的关键词会独立写入检查点。某个候选词的数据源或解读失败，会记录为证据不可用；不会悄悄变成阴性，也不会从报告里消失。",
       },
       {
         question: "地图检测 AI Overview 吗？",

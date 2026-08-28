@@ -974,6 +974,18 @@ describe("buildKeywordOpportunityPayload", () => {
     });
   });
 
+  it("labels only the durable path as Workflow-managed persistence", () => {
+    const envelope = buildKeywordOpportunityPayload(
+      input({ observations: shownSeoRows(KEYWORD_OPPORTUNITY_MIN_ROWS) }),
+      "workflow_managed",
+    );
+
+    expect(envelope.run.persistence).toBe("workflow_managed");
+    expect(
+      buildKeywordOpportunityPayload(input()).run.persistence,
+    ).toBe("none");
+  });
+
   it("takes completedAt from the caller so the same input always produces the same envelope", () => {
     // Reading the clock in here would make every test either nondeterministic
     // or forced to stub a global.

@@ -37,6 +37,21 @@ describe("sealed cookies", () => {
     expect(open("gg_gsc", value)).toBeNull();
   });
 
+  it("isolates every keyword Workflow ciphertext purpose", () => {
+    const input = seal("gg_kw_workflow_input", { context: "sealed" }, 600);
+    const grant = seal("gg_kw_workflow_grant", { accessToken: "secret" }, 600);
+    const run = seal("gg_kw_workflow_run", { runId: "run-1" }, 600);
+
+    expect(open("gg_kw_workflow_input", input)).toEqual({ context: "sealed" });
+    expect(open("gg_kw_workflow_grant", grant)).toEqual({
+      accessToken: "secret",
+    });
+    expect(open("gg_kw_workflow_run", run)).toEqual({ runId: "run-1" });
+    expect(open("gg_kw_workflow_grant", input)).toBeNull();
+    expect(open("gg_kw_workflow_run", grant)).toBeNull();
+    expect(open("gg_kw_workflow_input", run)).toBeNull();
+  });
+
   it("rejects a tampered value", () => {
     const value = seal("gg_id", { sub: "1234567890" }, 3_600);
     const bytes = Buffer.from(value, "base64url");

@@ -199,10 +199,10 @@ export function KeywordMapResults({
 /**
  * The one copy of a run that survives the tab.
  *
- * Nothing is stored server-side by design, so before this button existed the
- * only way to keep a run's fifteen rows was to transcribe them by hand. The
- * file carries the same evidence as the tables, blanks included — an
- * unavailable number stays an empty cell rather than becoming a zero.
+ * Workflow checkpoints are temporary execution state, not a report history.
+ * This download remains the visitor-owned durable copy of the visible rows.
+ * It carries the same evidence as the tables, blanks included — an unavailable
+ * number stays an empty cell rather than becoming a zero.
  */
 function ExportButton({
   result,
@@ -234,7 +234,7 @@ function ExportButton({
   );
 }
 
-/** Keep the complete public evidence ledger locally; this creates no server write. */
+/** Download the public evidence ledger; Workflow checkpoint writes happen upstream. */
 function AuditJsonButton({
   result,
 }: {

@@ -12,6 +12,7 @@ import {
   KEYWORD_OPPORTUNITY_INCOMPLETE_REASONS,
   KEYWORD_OPPORTUNITY_WITHHELD_REASONS,
   KEYWORD_STAGE_GSC_COVERAGE_TRUNCATED,
+  KEYWORD_STAGE_SERP_INTERPRETATION,
   KEYWORD_STAGE_SERP_SAMPLE_PARTIAL,
 } from "@sf/public-tools/keyword-opportunity/types";
 import type {
@@ -215,6 +216,32 @@ describe("keyword map copy", () => {
         .toBeTypeOf("string");
     },
   );
+
+  it.each(["en", "zh"] as const)(
+    "names unavailable SERP interpretation in %s",
+    (locale) => {
+      expect(group(locale, "stages")[KEYWORD_STAGE_SERP_INTERPRETATION])
+        .toBeTypeOf("string");
+    },
+  );
+
+  it("states temporary Workflow persistence without claiming project history", () => {
+    expect(String(namespace("en")["persistenceBoundary"])).toContain(
+      "expires after 24 hours",
+    );
+    expect(String(namespace("en")["persistenceBoundary"])).toContain(
+      "Vercel's plan-level retention",
+    );
+    expect(String(namespace("zh")["persistenceBoundary"])).toContain(
+      "24 小时后失效",
+    );
+    expect(String(namespace("en")["connectBody"])).not.toContain(
+      "nothing is stored",
+    );
+    expect(String(namespace("zh")["connectBody"])).not.toContain(
+      "不在服务器上留存任何数据",
+    );
+  });
 
   it.each(["en", "zh"] as const)(
     "renders every availability state in %s",

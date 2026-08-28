@@ -1,5 +1,5 @@
-// @input  -- locale, the visitor's Search Console grant, and the market allow-list
-// @output -- connect / read-site / confirm / run / result states for the keyword map
+// @input  -- locale, Search Console grant, website profile, and market allow-list
+// @output -- profile / read / confirm / durable tracking / refresh recovery / result states
 // @pos    -- primary client surface for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -22,7 +22,6 @@ import { WebsiteProfilePicker } from "../account/website-profile-picker.tsx";
 import {
   normalizeAccountWebsiteUrl,
   type WebsiteDetails,
-  type WebsiteProfileReferenceV1,
 } from "../../lib/account-websites/contracts.ts";
 import {
   importWebsiteProfileForKeywords,
@@ -35,6 +34,18 @@ import { GscConnectPanel, gscAuthorizeHref } from "./gsc-connect-panel";
 import { GscDisconnect } from "./gsc-disconnect";
 import { keywordMapSiteUrl } from "./keyword-map-property";
 import { KeywordMapResults } from "./keyword-map-results";
+import {
+  clearKeywordWorkflowPointer,
+  KEYWORD_WORKFLOW_API_VERSION,
+  keywordWorkflowPointerForContext,
+  keywordWorkflowPollDelayMs,
+  normalizeKeywordWorkflowStartResponse,
+  normalizeKeywordWorkflowStatusResponse,
+  readKeywordWorkflowPointer,
+  writeKeywordWorkflowPointer,
+  type KeywordWorkflowContextState,
+  type KeywordWorkflowPointerV1,
+} from "../../lib/tools/keyword-workflow-client.ts";
 
 const TOOL_PATH = "/tools/low-competition-keywords";
 const SECTION_ID = "keyword-map-tool";
@@ -56,6 +67,7 @@ const SECONDARY_BUTTON =
 /** Seeds the visitor may add, matching what the API accepts. */
 const MAX_SEEDS = 10;
 const MAX_SEED_LENGTH = 80;
+const MAX_CONSECUTIVE_WORKFLOW_STATUS_FAILURES = 5;
 
 /**
  * Languages offered, and the market each one defaults from.
@@ -75,23 +87,21 @@ const MARKET_LANGUAGE: Readonly<Record<string, string>> = {
   NL: "nl",
   SE: "sv",
 };
+const CONTEXT_STOP_REASONS = new Set([
+  "max_urls",
+  "max_requests",
+  "max_wall_clock",
+  "max_total_bytes",
+  "aborted",
+]);
 
 /** A clock that cannot run backwards when the device's wall clock is adjusted. */
 function monotonicNow(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
 
-type Phase = "idle" | "reading" | "confirm" | "running" | "done";
-
-interface ContextState {
-  readonly token: string;
-  readonly propositions: readonly KeywordOpportunityProposition[];
-  readonly pagesFetched: number;
-  readonly productPagesFetched: number;
-  readonly selection?: KeywordOpportunityContextSelection;
-  readonly contextSufficient: boolean;
-  readonly websiteProfileReference?: WebsiteProfileReferenceV1;
-}
+type Phase = "idle" | "reading" | "confirm" | "tracking" | "done";
+type ContextState = KeywordWorkflowContextState;
 
 type KeywordWebsiteProfileContext =
   | ImportedKeywordWebsiteProfile
@@ -133,6 +143,21 @@ function retryAfterSecondsFrom(response: Response): number {
   return Math.min(seconds, 3600);
 }
 
+function waitForPoll(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 export function KeywordMapTool({
   locale,
   properties,
@@ -160,10 +185,14 @@ export function KeywordMapTool({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [trackingRestored, setTrackingRestored] = useState(false);
   const startedAt = useRef<number | null>(null);
+  const workflowPointer = useRef<KeywordWorkflowPointerV1 | null>(null);
+  const workflowAbort = useRef<AbortController | null>(null);
+  const restoredOnce = useRef(false);
   const profileSelectionRequest = useRef(0);
 
-  const busy = phase === "reading" || phase === "running";
+  const busy = phase === "reading" || phase === "tracking";
 
   /**
    * Count the server's own `Retry-After` down to zero.
@@ -207,18 +236,257 @@ export function KeywordMapTool({
     };
   }, [busy]);
 
-  function selectProperty(next: string) {
+  useEffect(
+    () => () => {
+      workflowAbort.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (restoredOnce.current || properties === null || properties.length === 0) {
+      return;
+    }
+    restoredOnce.current = true;
+    const pointer = readKeywordWorkflowPointer(sessionStorage, {
+      properties,
+      markets,
+    });
+    if (pointer === null) return;
+
+    workflowPointer.current = pointer;
+    setProperty(pointer.property);
+    setSiteUrl(pointer.siteUrl);
+    setMarketCode(pointer.marketCode);
+    setLanguageCode(pointer.languageCode);
+    setSeedInput(pointer.seedInput);
+    setContext(pointer.context);
+    setTrackingRestored(true);
+    void resumeKeywordWorkflow(pointer);
+    // Recovery is deliberately one-shot for this mounted tab. A state update
+    // must not submit or poll the same run a second time.
+  }, [markets, properties]);
+
+  function rememberWorkflow(pointer: KeywordWorkflowPointerV1): void {
+    workflowPointer.current = pointer;
+    writeKeywordWorkflowPointer(sessionStorage, pointer);
+  }
+
+  function forgetWorkflow(): void {
+    workflowPointer.current = null;
+    clearKeywordWorkflowPointer(sessionStorage);
+  }
+
+  function finishWorkflow(nextResult: KeywordOpportunityResult): void {
+    forgetWorkflow();
+    setResult(nextResult);
+    setErrorCode(null);
+    setTrackingRestored(false);
+    setPhase("done");
+    trackMarketingEvent("tool_complete", {
+      tool_name: "keyword_opportunity_map",
+    });
+  }
+
+  async function pollKeywordWorkflow(
+    initial: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    workflowAbort.current?.abort();
+    const controller = new AbortController();
+    workflowAbort.current = controller;
+    let pointer = initial;
+    let consecutiveStatusFailures = 0;
+    setPhase("tracking");
+    setErrorCode(null);
+
+    async function retryStatusOrPause(delayMs: number): Promise<boolean> {
+      consecutiveStatusFailures += 1;
+      if (consecutiveStatusFailures < MAX_CONSECUTIVE_WORKFLOW_STATUS_FAILURES) {
+        await waitForPoll(delayMs, controller.signal);
+        return false;
+      }
+
+      // The run may still be healthy even though its status cannot be read.
+      // Keep the original request id, but remove the unreadable token so a
+      // manual retry asks the active-hook dedupe path for the owner instead of
+      // starting a second paid attempt.
+      pointer = { ...pointer, runToken: null };
+      rememberWorkflow(pointer);
+      setErrorCode("keyword_run_unavailable");
+      setTrackingRestored(false);
+      setPhase("confirm");
+      return true;
+    }
+
+    while (!controller.signal.aborted) {
+      try {
+        const response = await fetch(
+          "/api/tools/hidden-keywords/opportunities/status",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runToken: pointer.runToken }),
+            signal: controller.signal,
+          },
+        );
+        const body: unknown = await response.json();
+        const outcome = normalizeKeywordWorkflowStatusResponse(
+          response.status,
+          body,
+        );
+        if (outcome.kind === "completed") {
+          finishWorkflow(outcome.result);
+          return;
+        }
+        if (outcome.kind === "redirect") {
+          consecutiveStatusFailures = 0;
+          pointer = { ...pointer, runToken: outcome.runToken };
+          rememberWorkflow(pointer);
+          continue;
+        }
+        if (outcome.kind === "tracking") {
+          consecutiveStatusFailures = 0;
+          if (outcome.runToken !== pointer.runToken) {
+            pointer = { ...pointer, runToken: outcome.runToken };
+            rememberWorkflow(pointer);
+          }
+          await waitForPoll(
+            keywordWorkflowPollDelayMs(response.headers.get("Retry-After")),
+            controller.signal,
+          );
+          continue;
+        }
+        if (outcome.kind === "error") {
+          if (
+            outcome.code === "keyword_run_unavailable" &&
+            response.status === 503
+          ) {
+            if (
+              await retryStatusOrPause(
+                keywordWorkflowPollDelayMs(
+                  response.headers.get("Retry-After"),
+                ),
+              )
+            ) {
+              return;
+            }
+            continue;
+          }
+          forgetWorkflow();
+          setErrorCode(outcome.code);
+          setCooldownSeconds(retryAfterSecondsFrom(response));
+          setTrackingRestored(false);
+          setPhase("confirm");
+          return;
+        }
+
+        // Keep the request id but drop the unreadable pointer. A manual retry
+        // then reaches the active-hook dedupe path instead of buying a new run.
+        pointer = { ...pointer, runToken: null };
+        rememberWorkflow(pointer);
+        setErrorCode("unknown");
+        setTrackingRestored(false);
+        setPhase("confirm");
+        return;
+      } catch {
+        if (controller.signal.aborted) return;
+        // A polling transport error says nothing about the run. Retry a small,
+        // bounded number of times, then hand control back to the visitor while
+        // retaining the request id for active-run dedupe.
+        if (await retryStatusOrPause(2_000)) return;
+      }
+    }
+  }
+
+  async function startKeywordWorkflow(
+    pointer: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    workflowAbort.current?.abort();
+    const controller = new AbortController();
+    workflowAbort.current = controller;
+    rememberWorkflow(pointer);
+    setPhase("tracking");
+    setErrorCode(null);
+    try {
+      const response = await fetch("/api/tools/hidden-keywords/opportunities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Keyword-Workflow-Version": KEYWORD_WORKFLOW_API_VERSION,
+        },
+        body: JSON.stringify({
+          contextToken: pointer.context.token,
+          requestId: pointer.requestId,
+        }),
+        signal: controller.signal,
+      });
+      const body: unknown = await response.json();
+      const outcome = normalizeKeywordWorkflowStartResponse(
+        response.status,
+        body,
+      );
+      if (outcome.kind === "completed") {
+        finishWorkflow(outcome.result);
+        return;
+      }
+      if (outcome.kind === "accepted") {
+        const trackingPointer = { ...pointer, runToken: outcome.runToken };
+        rememberWorkflow(trackingPointer);
+        await pollKeywordWorkflow(trackingPointer);
+        return;
+      }
+      if (outcome.kind === "error") {
+        if (outcome.code !== "keyword_run_unavailable") {
+          forgetWorkflow();
+        }
+        setErrorCode(outcome.code);
+        setCooldownSeconds(retryAfterSecondsFrom(response));
+        setTrackingRestored(false);
+        setPhase("confirm");
+        return;
+      }
+      setErrorCode("unknown");
+      setTrackingRestored(false);
+      setPhase("confirm");
+    } catch {
+      if (controller.signal.aborted) return;
+      // The request may have reached the server. Retain the request id with no
+      // run token so retry/reload asks the deterministic hook for its owner.
+      setErrorCode("unknown");
+      setTrackingRestored(false);
+      setPhase("confirm");
+    }
+  }
+
+  async function resumeKeywordWorkflow(
+    pointer: KeywordWorkflowPointerV1,
+  ): Promise<void> {
+    if (pointer.runToken === null) {
+      await startKeywordWorkflow(pointer);
+      return;
+    }
+    await pollKeywordWorkflow(pointer);
+  }
+
+  function invalidateConfirmedContext(): void {
     profileSelectionRequest.current += 1;
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
+    setContext(null);
+    setResult(null);
+    setErrorCode(null);
+    setPhase("idle");
+  }
+
+  function selectProperty(next: string) {
+    invalidateConfirmedContext();
     setProperty(next);
     // The URL follows the property, because the pairing is the point: the
     // coverage read uses the property and the crawl uses the URL, and a
     // visitor who edits one without the other gets a run whose headline stage
     // silently does not apply to the site they asked about.
     setSiteUrl(keywordMapSiteUrl(next) ?? "");
-    setContext(null);
-    setResult(null);
-    setErrorCode(null);
-    setPhase("idle");
     setWebsiteProfile(null);
   }
 
@@ -226,13 +494,7 @@ export function KeywordMapTool({
     setMarketCode(next);
     const paired = MARKET_LANGUAGE[next];
     if (paired !== undefined) setLanguageCode(paired);
-  }
-
-  function resetRunState(): void {
-    setContext(null);
-    setResult(null);
-    setErrorCode(null);
-    setPhase("idle");
+    invalidateConfirmedContext();
   }
 
   function applyProfileMarketLanguage(
@@ -256,7 +518,7 @@ export function KeywordMapTool({
       setSiteUrl(projection.websiteOrigin);
       setSeedInput(projection.editableSeeds.join(", "));
       applyProfileMarketLanguage(projection);
-      resetRunState();
+      invalidateConfirmedContext();
     } catch {
       if (profileSelectionRequest.current !== requestId) return;
       setWebsiteProfile(null);
@@ -278,7 +540,7 @@ export function KeywordMapTool({
       // not silently become part of the exact-reference run.
       setSeedInput("");
       applyProfileMarketLanguage(projection);
-      resetRunState();
+      invalidateConfirmedContext();
     } catch {
       if (profileSelectionRequest.current !== requestId) return;
       setWebsiteProfile(null);
@@ -287,9 +549,8 @@ export function KeywordMapTool({
   }
 
   function updateSiteUrl(next: string): void {
-    profileSelectionRequest.current += 1;
     setSiteUrl(next);
-    resetRunState();
+    invalidateConfirmedContext();
     if (websiteProfile === null) return;
     const normalized = normalizeAccountWebsiteUrl(next);
     if (
@@ -325,6 +586,9 @@ export function KeywordMapTool({
     const usable = keywords.filter(
       (keyword) => keyword.length <= MAX_SEED_LENGTH && !keyword.includes(","),
     );
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
     setSeedInput(usable.slice(0, MAX_SEEDS).join(", "));
     setContext(null);
     setResult(null);
@@ -334,6 +598,10 @@ export function KeywordMapTool({
   }
 
   async function readSite() {
+    profileSelectionRequest.current += 1;
+    workflowAbort.current?.abort();
+    forgetWorkflow();
+    setTrackingRestored(false);
     trackMarketingEvent("tool_start", { tool_name: "keyword_opportunity_map" });
     setPhase("reading");
     setErrorCode(null);
@@ -343,7 +611,7 @@ export function KeywordMapTool({
       const requestedReference =
         websiteProfile?.kind === "reference"
           ? websiteProfile.reference
-          : null;
+          : (context?.websiteProfileReference ?? null);
       const response = await fetch("/api/tools/hidden-keywords/context", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -365,6 +633,7 @@ export function KeywordMapTool({
           productPagesFetched?: number;
           selection?: KeywordOpportunityContextSelection;
           contextSufficient?: boolean;
+          stopReason?: string;
           websiteProfileReference?: unknown;
         };
         error?: { code?: string };
@@ -399,6 +668,7 @@ export function KeywordMapTool({
           ? {}
           : { selection: body.data.selection }),
         contextSufficient: body.data.contextSufficient ?? false,
+        stopReason: body.data.stopReason ?? null,
         ...(acceptedReference === null
           ? {}
           : { websiteProfileReference: acceptedReference }),
@@ -411,32 +681,21 @@ export function KeywordMapTool({
   }
 
   async function runMap(token: string) {
-    setPhase("running");
-    setErrorCode(null);
+    if (context === null || context.token !== token) return;
     try {
-      const response = await fetch("/api/tools/hidden-keywords/opportunities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contextToken: token }),
-      });
-      const body = (await response.json()) as {
-        data?: { result?: KeywordOpportunityResult };
-        error?: { code?: string };
-      };
-      if (!response.ok || !body.data?.result) {
-        setErrorCode(body.error?.code ?? "unknown");
-        setCooldownSeconds(retryAfterSecondsFrom(response));
-        // Back to the confirmation step, not to the start: the sealed context
-        // is still valid for ten minutes, and making the visitor re-crawl
-        // their own site to retry a provider hiccup wastes a minute of theirs.
-        setPhase("confirm");
-        return;
-      }
-      setResult(body.data.result);
-      setPhase("done");
-      trackMarketingEvent("tool_complete", {
-        tool_name: "keyword_opportunity_map",
-      });
+      const pointer = keywordWorkflowPointerForContext(
+        workflowPointer.current,
+        {
+          property,
+          siteUrl,
+          marketCode,
+          languageCode,
+          seedInput,
+          context,
+        },
+      );
+      setTrackingRestored(false);
+      await startKeywordWorkflow(pointer);
     } catch {
       setErrorCode("unknown");
       setPhase("confirm");
@@ -531,6 +790,7 @@ export function KeywordMapTool({
             value={languageCode}
             onChange={(event) => {
               setLanguageCode(event.target.value);
+              invalidateConfirmedContext();
             }}
             disabled={busy}
             className={SELECT_FIELD}
@@ -544,7 +804,7 @@ export function KeywordMapTool({
         </label>
       </div>
 
-      <div className="mt-3.5 space-y-3">
+      <fieldset disabled={busy} className="mt-3.5 space-y-3">
         <p className="max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("websiteProfileIntro")}
         </p>
@@ -557,7 +817,7 @@ export function KeywordMapTool({
             void referenceWebsiteProfile(website);
           }}
         />
-      </div>
+      </fieldset>
 
       {websiteProfile !== null ? (
         <div
@@ -604,9 +864,31 @@ export function KeywordMapTool({
         </div>
       ) : null}
 
+      {websiteProfile === null &&
+      context?.websiteProfileReference !== undefined ? (
+        <div
+          data-keyword-profile-context="reference"
+          className="mt-3.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-3.5"
+        >
+          <p className="text-[13px] font-medium text-text-dark-primary">
+            {t("profileReferenceTitle")}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-text-dark-secondary">
+            {t("profileReferenceMeta", {
+              revision: context.websiteProfileReference.snapshotRevision,
+              hash: context.websiteProfileReference.profileHash.slice(0, 8),
+            })}
+          </p>
+          <p className="mt-3 text-[11px] text-brand-accent-text">
+            {t("profileReferenceAccepted")}
+          </p>
+        </div>
+      ) : null}
+
       <label className="mt-3.5 block">
         <span className={FIELD_LABEL}>
-          {websiteProfile?.kind === "reference"
+          {websiteProfile?.kind === "reference" ||
+          context?.websiteProfileReference !== undefined
             ? t("profileOverlaySeedsLabel")
             : t("seedsLabel")}
         </span>
@@ -615,6 +897,7 @@ export function KeywordMapTool({
           value={seedInput}
           onChange={(event) => {
             setSeedInput(event.target.value);
+            invalidateConfirmedContext();
           }}
           placeholder={t("seedsPlaceholder")}
           disabled={busy}
@@ -622,7 +905,8 @@ export function KeywordMapTool({
         />
       </label>
       <p className="mt-2 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {websiteProfile?.kind === "reference"
+        {websiteProfile?.kind === "reference" ||
+        context?.websiteProfileReference !== undefined
           ? t("profileOverlaySeedsHint")
           : t("seedsHint")}
       </p>
@@ -653,8 +937,10 @@ export function KeywordMapTool({
       <p role="status" aria-live="polite" className="sr-only">
         {phase === "reading"
           ? t("reading")
-          : phase === "running"
-            ? t("runningStatus", { seconds })
+          : phase === "tracking"
+            ? trackingRestored
+              ? t("restoredStatus", { seconds })
+              : t("runningStatus", { seconds })
             : phase === "done" && result !== null
               ? t("statusDone", { count: result.rows.length })
               : ""}
@@ -743,6 +1029,21 @@ export function KeywordMapTool({
             </p>
           )}
 
+          {context.stopReason === null ||
+          context.stopReason === "completed" ? null : (
+            <p className="mt-1.5 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("contextStopped", {
+                reason: CONTEXT_STOP_REASONS.has(context.stopReason)
+                  ? t(
+                      `contextStops.${context.stopReason}` as Parameters<
+                        typeof t
+                      >[0],
+                    )
+                  : context.stopReason,
+              })}
+            </p>
+          )}
+
           {!context.contextSufficient ? (
             <p className="mt-3 text-[12.5px] leading-[1.6] text-brand-warning">
               {t("thinContext")}
@@ -771,11 +1072,11 @@ export function KeywordMapTool({
             <button
               type="button"
               disabled={busy || cooldownSeconds > 0}
-              aria-busy={phase === "running"}
+              aria-busy={phase === "tracking"}
               onClick={() => void runMap(context.token)}
               className={BUTTON}
             >
-              {phase === "running"
+              {phase === "tracking"
                 ? t("running")
                 : result !== null
                   ? t("rerunMap")
@@ -785,6 +1086,9 @@ export function KeywordMapTool({
               type="button"
               disabled={busy}
               onClick={() => {
+                workflowAbort.current?.abort();
+                forgetWorkflow();
+                setTrackingRestored(false);
                 setContext(null);
                 setResult(null);
                 setPhase("idle");
@@ -804,6 +1108,10 @@ export function KeywordMapTool({
           onRetryWithSeeds={retryWithSeeds}
         />
       ) : null}
+
+      <p className="mt-5 max-w-2xl text-[12px] leading-[1.6] text-text-dark-secondary">
+        {t("persistenceBoundary")}
+      </p>
 
       <GscDisconnect namespace="tools.keywordMap" />
     </section>

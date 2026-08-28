@@ -16,6 +16,7 @@
       "sharp@<0.35.3": "0.35.3",
       "postcss@<8.5.23": "8.5.23",
       "nanoid@<3.3.17": "3.3.17",
+      "@workflow/core@4.8.5>nanoid": "5.1.16",
       "js-yaml@<4.3.1": "4.3.1",
       "undici@<7.29.0": "7.29.0"
     },
@@ -35,6 +36,7 @@
     "artifact:regen": "pnpm artifact:build && pnpm artifact:manual",
     "test": "vitest run --project unit",
     "test:watch": "vitest",
+    "test:workflow:marketing": "pnpm --filter @sf/marketing test:workflow",
     "test:integration": "vitest run --project integration",
     "test:sql:marketing": "vitest run --project marketing-sql",
     "test:coverage": "vitest run --coverage",

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
     "./canonical-url": "./src/canonical-url.ts",
     "./crawl-context-profile": "./src/crawl/context-profile.ts",
     "./crawl-page": "./src/crawl/parse-page.ts",
@@ -15,6 +16,9 @@
     "./url-safety": "./src/url-safety/index.ts",
     "./gsc/url-inspection": "./src/gsc/url-inspection.ts",
     "./dataforseo/labs-traffic": "./src/dataforseo/labs-traffic.ts",
+    "./dataforseo/keyword-metrics": "./src/dataforseo/keyword-metrics.ts",
+    "./dataforseo/market-language": "./src/dataforseo/market-language.ts",
+    "./gsc/search-analytics": "./src/gsc/search-analytics.ts",
     "./rdap/domain-registration": "./src/rdap/domain-registration.ts",
     "./crawl-limits": "./src/crawl/types.ts"
   },

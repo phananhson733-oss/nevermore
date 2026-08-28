@@ -4,6 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolResult } from "../contract.ts";
+import type { PublicToolPersistence } from "../contract.ts";
 import { clusterKeywords, keywordClusterIndex } from "./cluster.ts";
 import { isKeywordAlreadyCovered } from "./coverage.ts";
 import { keywordNextChecks } from "./next-checks.ts";
@@ -849,6 +850,7 @@ export function buildKeywordOpportunityResult(
  */
 export function buildKeywordOpportunityPayload(
   input: KeywordOpportunityReportInput,
+  persistence: PublicToolPersistence = "none",
 ): KeywordOpportunityEnvelope {
   return createPublicToolResult(
     {
@@ -858,5 +860,6 @@ export function buildKeywordOpportunityPayload(
       completedAt: input.completedAt,
     },
     buildKeywordOpportunityResult(input),
+    persistence,
   );
 }

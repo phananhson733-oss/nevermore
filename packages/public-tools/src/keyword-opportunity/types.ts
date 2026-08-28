@@ -787,6 +787,9 @@ export const KEYWORD_STAGE_SERP_SAMPLE = "serp_sample";
 /** Some planned page-one reads completed while others remained unavailable. */
 export const KEYWORD_STAGE_SERP_SAMPLE_PARTIAL = "serp_sample_partial";
 
+/** One or more completed SERPs could not be interpreted by the model stage. */
+export const KEYWORD_STAGE_SERP_INTERPRETATION = "serp_interpretation";
+
 export interface KeywordOpportunityFunnel {
   readonly generated: number;
   readonly deduplicated: number;
@@ -1020,7 +1023,9 @@ export type KeywordOpportunityErrorCode =
   | "target_busy"
   | "quota_unavailable"
   | "gsc_revoked"
-  | "gsc_temporarily_unavailable";
+  | "gsc_temporarily_unavailable"
+  | "keyword_run_unavailable"
+  | "keyword_run_cancelled";
 
 export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "invalid_input",
@@ -1044,6 +1049,8 @@ export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "quota_unavailable",
   "gsc_revoked",
   "gsc_temporarily_unavailable",
+  "keyword_run_unavailable",
+  "keyword_run_cancelled",
 ] as const satisfies readonly KeywordOpportunityErrorCode[];
 
 /**

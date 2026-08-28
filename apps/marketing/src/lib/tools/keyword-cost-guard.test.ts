@@ -7,7 +7,10 @@ import {
   estimateSerpSampleCostUsd,
   keywordBudgetRefusal,
   keywordDailyBudgetBucket,
+  mergeKeywordCostSnapshots,
+  reportKeywordWorkflowCost,
   reportKeywordRunCost,
+  snapshotKeywordCosts,
   KEYWORD_DAILY_RUN_MAX,
   KEYWORD_DAILY_WINDOW_SECONDS,
   KEYWORD_MAX_PROVIDER_COST_USD,
@@ -146,6 +149,38 @@ describe("createKeywordCostAccumulator", () => {
     const costs = createKeywordCostAccumulator(0.05);
     costs.record("keyword_overview", 0.04);
     expect(costs.wouldExceed(0.02)).toBe(true);
+  });
+
+  it("freezes serializable per-step snapshots and merges them without inventing prices", () => {
+    const validation = createKeywordCostAccumulator();
+    validation.record("keyword_overview", 0.017);
+    const serp = createKeywordCostAccumulator();
+    serp.record("serp_organic", 0.002);
+    serp.record("serp_organic", Number.NaN);
+
+    const first = snapshotKeywordCosts(validation);
+    validation.record("keyword_overview", 0.004);
+
+    expect(first).toEqual({
+      byEndpoint: {
+        keyword_overview: 0.017,
+        serp_organic: 0,
+        bulk_ranks: 0,
+        bulk_traffic: 0,
+      },
+      unpricedCalls: 0,
+    });
+    expect(mergeKeywordCostSnapshots([first, snapshotKeywordCosts(serp)])).toEqual(
+      {
+        byEndpoint: {
+          keyword_overview: 0.017,
+          serp_organic: 0.002,
+          bulk_ranks: 0,
+          bulk_traffic: 0,
+        },
+        unpricedCalls: 1,
+      },
+    );
   });
 });
 
@@ -442,5 +477,38 @@ describe("reportKeywordRunCost", () => {
 
     expect(info).toHaveBeenCalledTimes(1);
     expect(String(info.mock.calls[0]?.[0])).toContain('"runCostUsd":0.031');
+  });
+
+  it("reports merged durable-step snapshots once without reviving admission caps", () => {
+    const costs = createKeywordCostAccumulator();
+    costs.record("keyword_overview", 0.017);
+    costs.record("serp_organic", 0.004);
+    const lines: string[] = [];
+
+    const report = reportKeywordWorkflowCost(
+      {
+        costs: snapshotKeywordCosts(costs),
+        candidateCount: 2,
+        serpSampled: 2,
+        reportProduced: true,
+        workflowStepId: "step_final_123",
+        llm: {
+          inputTokens: 900,
+          outputTokens: 120,
+          requestCount: 2,
+          retryCount: 0,
+        },
+      },
+      (line) => lines.push(line),
+    );
+
+    expect(report).toMatchObject({
+      runCostUsd: 0.021,
+      capped: false,
+      cappedStages: [],
+      unpricedCalls: 0,
+      workflowStepId: "step_final_123",
+    });
+    expect(lines).toHaveLength(1);
   });
 });
