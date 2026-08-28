@@ -94,6 +94,9 @@ jobs:
       - name: Typecheck workspaces
         run: pnpm typecheck
 
+      - name: Run Marketing Workflow integration tests
+        run: pnpm test:workflow:marketing
+
       # The 80% coverage gate moved to the `database` job, where it can be
       # measured over unit AND integration together (see vitest.config.ts).
       # This job still runs the unit project, and still reports — without any

@@ -121,7 +121,7 @@ export function parseKeywordWorkflowStatusInput(
 
 export function isSameOriginKeywordWorkflowRequest(request: Request): boolean {
   const origin = request.headers.get("Origin");
-  if (origin === null) return true;
+  if (origin === null) return false;
   try {
     return new URL(origin).origin === new URL(request.url).origin;
   } catch {

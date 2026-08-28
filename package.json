@@ -35,6 +35,7 @@
     "artifact:regen": "pnpm artifact:build && pnpm artifact:manual",
     "test": "vitest run --project unit",
     "test:watch": "vitest",
+    "test:workflow:marketing": "pnpm --filter @sf/marketing test:workflow",
     "test:integration": "vitest run --project integration",
     "test:sql:marketing": "vitest run --project marketing-sql",
     "test:coverage": "vitest run --coverage",

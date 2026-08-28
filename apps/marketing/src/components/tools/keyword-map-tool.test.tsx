@@ -62,6 +62,7 @@ const CONTEXT = {
   pagesFetched: 5,
   productPagesFetched: 1,
   contextSufficient: true,
+  stopReason: "max_urls",
 };
 const RESULT = {
   availability: "available",
@@ -126,12 +127,54 @@ async function click(button: HTMLButtonElement): Promise<void> {
   });
 }
 
+async function change(
+  field: HTMLInputElement | HTMLSelectElement,
+  value: string,
+): Promise<void> {
+  const prototype =
+    field instanceof HTMLSelectElement
+      ? window.HTMLSelectElement.prototype
+      : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  await act(async () => {
+    setter?.call(field, value);
+    field.dispatchEvent(
+      new Event(field instanceof HTMLSelectElement ? "change" : "input", {
+        bubbles: true,
+      }),
+    );
+  });
+}
+
 async function readAndConfirm(host: HTMLElement): Promise<void> {
   await click(buttonWith(host, "Read my site"));
   expect(host.textContent).toContain("What we read off your site");
+  expect(host.textContent).toContain(
+    "The 20-page context limit was reached; later eligible pages were not read",
+  );
 }
 
 describe("KeywordMapTool durable run", () => {
+  it("invalidates confirmed context when an authority-bearing field changes", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: CONTEXT }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+    await readAndConfirm(host);
+
+    await change(
+      host.querySelector('input[type="url"]') as HTMLInputElement,
+      "https://different.example/",
+    );
+
+    expect(host.textContent).not.toContain("What we read off your site");
+    expect(
+      [...host.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Run the opportunity map"),
+      ),
+    ).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the legacy 200 result path compatible", async () => {
     const fetchMock = vi
       .fn()
@@ -192,6 +235,7 @@ describe("KeywordMapTool durable run", () => {
           pagesFetched: CONTEXT.pagesFetched,
           productPagesFetched: CONTEXT.productPagesFetched,
           contextSufficient: true,
+          stopReason: "max_urls",
         },
         createdAt: Date.now(),
         runToken: "sealed-run",

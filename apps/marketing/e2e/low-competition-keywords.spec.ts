@@ -399,9 +399,14 @@ async function readAndConfirm(page: Page): Promise<void> {
   await expect(
     page.getByText("Appointment automation for independent clinics"),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      "The 20-page context limit was reached; later eligible pages were not read",
+    ),
+  ).toBeVisible();
 }
 
-test("runs the connected read-confirm-result flow without a paid request", async ({
+test("keeps the legacy synchronous completion path compatible", async ({
   page,
 }) => {
   await connect(page);
@@ -423,6 +428,26 @@ test("runs the connected read-confirm-result flow without a paid request", async
   expect(evidence.contextPosts).toBe(1);
   expect(evidence.opportunityPosts).toBe(1);
   expect(evidence.unexpected).toEqual([]);
+  expect(evidence.externalRequests).toEqual([]);
+});
+
+test("requires a fresh context after an authority-bearing input changes", async ({
+  page,
+}) => {
+  await connect(page);
+  const evidence = await installGuard(page);
+  await readAndConfirm(page);
+
+  await page.getByLabel("Site to read").fill("https://different.test");
+
+  await expect(
+    page.getByRole("heading", { name: "What we read off your site" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Run the opportunity map" }),
+  ).toHaveCount(0);
+  expect(evidence.contextPosts).toBe(1);
+  expect(evidence.opportunityPosts).toBe(0);
   expect(evidence.externalRequests).toEqual([]);
 });
 

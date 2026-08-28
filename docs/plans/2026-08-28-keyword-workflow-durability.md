@@ -292,7 +292,7 @@ With the official Vitest plugin, assert:
 **Step 5: Run RED**
 
 ```bash
-pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
+pnpm test:workflow:marketing
 ```
 
 Expected: workflow function/config missing.
@@ -317,7 +317,7 @@ shape changes. This workaround is outside production bundles.
 
 ```bash
 pnpm exec vitest run --project unit apps/marketing/src/lib/tools/keyword-opportunity-workflow-runtime.test.ts apps/marketing/src/lib/tools/keyword-cost-guard.test.ts
-pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
+pnpm test:workflow:marketing
 git add apps/marketing/src/lib/tools/keyword-opportunity-workflow* apps/marketing/src/lib/tools/keyword-cost-guard* apps/marketing/.workflow-test
 git commit -m "feat(marketing): run keyword map as durable steps"
 ```
@@ -498,7 +498,7 @@ Expected: old synchronous mock protocol does not satisfy async scenarios.
 ```bash
 pnpm --filter @sf/marketing build
 pnpm exec playwright test apps/marketing/e2e/low-competition-keywords.spec.ts --config apps/marketing/playwright.config.ts
-pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
+pnpm test:workflow:marketing
 ```
 
 Expected: all hermetic browser and Workflow integration cases pass.
@@ -529,7 +529,7 @@ pnpm exec vitest run --project unit \
   apps/marketing/src/components/tools/keyword-map-tool.test.tsx \
   apps/marketing/src/lib/tools/keyword-opportunity-handler.test.ts \
   packages/public-tools/src/keyword-opportunity/report.test.ts
-pnpm exec vitest run --config apps/marketing/.workflow-test/vitest.config.ts
+pnpm test:workflow:marketing
 pnpm exec playwright test apps/marketing/e2e/low-competition-keywords.spec.ts --config apps/marketing/playwright.config.ts
 ```
 

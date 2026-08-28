@@ -29,6 +29,7 @@ export interface KeywordWorkflowContextState {
   readonly productPagesFetched: number;
   readonly selection?: KeywordOpportunityContextSelection;
   readonly contextSufficient: boolean;
+  readonly stopReason: string | null;
 }
 
 export interface KeywordWorkflowPointerV1 {
@@ -125,6 +126,11 @@ function contextState(value: unknown): KeywordWorkflowContextState | null {
     !finiteNonNegative(input["pagesFetched"]) ||
     !finiteNonNegative(input["productPagesFetched"]) ||
     typeof input["contextSufficient"] !== "boolean" ||
+    !(
+      input["stopReason"] === undefined ||
+      input["stopReason"] === null ||
+      typeof input["stopReason"] === "string"
+    ) ||
     parsedSelection === null
   ) {
     return null;
@@ -136,6 +142,8 @@ function contextState(value: unknown): KeywordWorkflowContextState | null {
     productPagesFetched: input["productPagesFetched"],
     ...(parsedSelection === undefined ? {} : { selection: parsedSelection }),
     contextSufficient: input["contextSufficient"],
+    stopReason:
+      typeof input["stopReason"] === "string" ? input["stopReason"] : null,
   };
 }
 

@@ -38,6 +38,7 @@ function pointer(
       pagesFetched: 5,
       productPagesFetched: 1,
       contextSufficient: true,
+      stopReason: "max_urls",
     },
     createdAt: NOW,
     runToken: null,
@@ -121,6 +122,22 @@ describe("keyword Workflow tab pointer", () => {
     };
     expect(writeKeywordWorkflowPointer(inaccessible, pointer())).toBe(false);
     expect(clearKeywordWorkflowPointer(inaccessible)).toBe(false);
+  });
+
+  it("keeps a v1 pointer minted before stopReason joined the recovery UI", () => {
+    const legacy = pointer() as unknown as {
+      context: Record<string, unknown>;
+    };
+    delete legacy.context["stopReason"];
+    const target = storage(JSON.stringify(legacy));
+
+    expect(
+      readKeywordWorkflowPointer(
+        target,
+        { properties: ["sc-domain:example.com"], markets: ["US"] },
+        () => NOW + 1_000,
+      )?.context.stopReason,
+    ).toBeNull();
   });
 
   it("reuses one request id after a lost start response but rotates it for new context", () => {

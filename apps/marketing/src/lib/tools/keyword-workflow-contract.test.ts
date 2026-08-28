@@ -63,7 +63,7 @@ describe("keyword Workflow public contract", () => {
     ).toBeNull();
   });
 
-  it("rejects cross-origin browser mutations while admitting same-origin and originless server calls", () => {
+  it("requires an explicit same-origin browser mutation", () => {
     expect(
       isSameOriginKeywordWorkflowRequest(
         new Request("https://gengrowth.ai/api/tools/hidden-keywords/opportunities", {
@@ -86,7 +86,7 @@ describe("keyword Workflow public contract", () => {
           method: "POST",
         }),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("seals Workflow input, grant, and caller ownership under separate purposes", () => {

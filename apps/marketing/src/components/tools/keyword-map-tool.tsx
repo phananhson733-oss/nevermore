@@ -74,6 +74,13 @@ const MARKET_LANGUAGE: Readonly<Record<string, string>> = {
   NL: "nl",
   SE: "sv",
 };
+const CONTEXT_STOP_REASONS = new Set([
+  "max_urls",
+  "max_requests",
+  "max_wall_clock",
+  "max_total_bytes",
+  "aborted",
+]);
 
 /** A clock that cannot run backwards when the device's wall clock is adjusted. */
 function monotonicNow(): number {
@@ -415,26 +422,31 @@ export function KeywordMapTool({
     await pollKeywordWorkflow(pointer);
   }
 
-  function selectProperty(next: string) {
+  function invalidateConfirmedContext(): void {
     workflowAbort.current?.abort();
     forgetWorkflow();
     setTrackingRestored(false);
-    setProperty(next);
-    // The URL follows the property, because the pairing is the point: the
-    // coverage read uses the property and the crawl uses the URL, and a
-    // visitor who edits one without the other gets a run whose headline stage
-    // silently does not apply to the site they asked about.
-    setSiteUrl(keywordMapSiteUrl(next) ?? "");
     setContext(null);
     setResult(null);
     setErrorCode(null);
     setPhase("idle");
   }
 
+  function selectProperty(next: string) {
+    invalidateConfirmedContext();
+    setProperty(next);
+    // The URL follows the property, because the pairing is the point: the
+    // coverage read uses the property and the crawl uses the URL, and a
+    // visitor who edits one without the other gets a run whose headline stage
+    // silently does not apply to the site they asked about.
+    setSiteUrl(keywordMapSiteUrl(next) ?? "");
+  }
+
   function selectMarket(next: string) {
     setMarketCode(next);
     const paired = MARKET_LANGUAGE[next];
     if (paired !== undefined) setLanguageCode(paired);
+    invalidateConfirmedContext();
   }
 
   function seeds(): string[] {
@@ -501,6 +513,7 @@ export function KeywordMapTool({
           productPagesFetched?: number;
           selection?: KeywordOpportunityContextSelection;
           contextSufficient?: boolean;
+          stopReason?: string;
         };
         error?: { code?: string };
       };
@@ -519,6 +532,7 @@ export function KeywordMapTool({
           ? {}
           : { selection: body.data.selection }),
         contextSufficient: body.data.contextSufficient ?? false,
+        stopReason: body.data.stopReason ?? null,
       });
       setPhase("confirm");
     } catch {
@@ -607,6 +621,7 @@ export function KeywordMapTool({
             value={siteUrl}
             onChange={(event) => {
               setSiteUrl(event.target.value);
+              invalidateConfirmedContext();
             }}
             disabled={busy}
             className={TEXT_FIELD}
@@ -637,6 +652,7 @@ export function KeywordMapTool({
             value={languageCode}
             onChange={(event) => {
               setLanguageCode(event.target.value);
+              invalidateConfirmedContext();
             }}
             disabled={busy}
             className={SELECT_FIELD}
@@ -657,6 +673,7 @@ export function KeywordMapTool({
           value={seedInput}
           onChange={(event) => {
             setSeedInput(event.target.value);
+            invalidateConfirmedContext();
           }}
           placeholder={t("seedsPlaceholder")}
           disabled={busy}
@@ -775,6 +792,21 @@ export function KeywordMapTool({
                 excluded: context.selection.excludedCandidates,
                 attempted: context.selection.attemptedCandidates,
                 truncated: context.selection.truncatedCandidates,
+              })}
+            </p>
+          )}
+
+          {context.stopReason === null ||
+          context.stopReason === "completed" ? null : (
+            <p className="mt-1.5 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {t("contextStopped", {
+                reason: CONTEXT_STOP_REASONS.has(context.stopReason)
+                  ? t(
+                      `contextStops.${context.stopReason}` as Parameters<
+                        typeof t
+                      >[0],
+                    )
+                  : context.stopReason,
               })}
             </p>
           )}

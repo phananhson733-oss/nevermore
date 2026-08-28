@@ -9,6 +9,7 @@
     "start": "next start --port 3001",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "test:workflow": "vitest run --config .workflow-test/vitest.config.ts",
     "test:e2e": "playwright test --config=playwright.config.ts"
   },
   "dependencies": {
