@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   KeywordCoverageRead,
+  KeywordOpportunityProcess,
   KeywordOpportunityProviderRow,
 } from "@sf/public-tools";
 import { SourceError, type DomainRegistrationEvidence } from "@sf/sources";
@@ -361,7 +362,12 @@ interface OpportunitiesBody {
         readonly keyword: string;
         readonly lane: string;
         readonly coverage: string;
-        readonly supportingPageUrl: string | null;
+        readonly supportingPage: {
+          readonly availability: string;
+          readonly source: string | null;
+          readonly url: string | null;
+        };
+        readonly supportingPageUrl?: string | null;
         readonly validation: {
           readonly availability: string;
           readonly providerIntent: string | null;
@@ -421,19 +427,26 @@ interface OpportunitiesBody {
           readonly communityResult: { readonly state: string };
         };
       }[];
+      readonly process: KeywordOpportunityProcess;
     };
   };
 }
 
 /** Every line the handler wrote to `console.error` during one case. */
 let logged: string[] = [];
+/** Privacy-safe informational summaries written during one case. */
+let infoLogged: string[] = [];
 
 beforeEach(() => {
   logged = [];
+  infoLogged = [];
   // Silenced and captured: the failure reason IS the product on the error
   // paths, so a case can assert on it instead of merely on a call count.
   vi.spyOn(console, "error").mockImplementation((line: unknown) => {
     logged.push(String(line));
+  });
+  vi.spyOn(console, "info").mockImplementation((line: unknown) => {
+    infoLogged.push(String(line));
   });
 });
 
@@ -1165,6 +1178,11 @@ describe("handleKeywordContextRequest", () => {
       (candidate) => candidate.keyword === "insurance claim tracking",
     );
     expect(row?.supportingPageUrl).toBe("https://acme.example/claims");
+    expect(row?.supportingPage).toEqual({
+      availability: "available",
+      source: "lexical_page_match",
+      url: "https://acme.example/claims",
+    });
   });
 
   it("refuses rather than handing back a token it has proved stage two will reject", async () => {
@@ -1733,7 +1751,14 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // their whole keyword read over a stage that never blocks the answer.
     const response = await handleKeywordOpportunitiesRequest(
       body(),
-      deps({ readCoverageQueries: () => Promise.reject(new Error("403")) }),
+      deps({
+        readCoverageQueries: () =>
+          Promise.reject(
+            new Error(
+              "sc-domain:private.example rejected secret keyword evidence",
+            ),
+          ),
+      }),
     );
     const parsed = (await response.json()) as OpportunitiesBody;
 
@@ -1749,6 +1774,13 @@ describe("handleKeywordOpportunitiesRequest", () => {
     for (const row of parsed.data.result.rows) {
       expect(row.coverage).toBe("inventory_unavailable");
     }
+    expect(logged.join("\n")).not.toContain("private.example");
+    expect(logged.join("\n")).not.toContain("secret keyword evidence");
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "gsc_coverage",
+      reason: "read_failed",
+    });
   });
 
   it("keeps positive rows but marks a truncated query-page read partial", async () => {
@@ -1788,8 +1820,9 @@ describe("handleKeywordOpportunitiesRequest", () => {
     );
     expect(parsed.data.result.unavailableStages).not.toContain("gsc_coverage");
     expect(parsed.data.result.availability).toBe("partial");
-    // Coverage changes the final disposition, not the evidence plan: v2 still
-    // samples every candidate except explicit zero so the retained record is complete.
+    // Coverage changes the final disposition, not the evidence plan: the
+    // pipeline still samples every candidate except explicit zero so the
+    // retained record is complete.
     expect(sampleSerp.mock.calls[0]?.[0].keywords).toContain(
       "patient intake forms",
     );
@@ -1912,6 +1945,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const geo = parsed.data.result.rows.find((row) => row.lane === "geo");
     expect(geo?.keyword).toBe("can i submit an insurance claim the same day");
     expect(geo?.supportingPageUrl).toBe("https://acme.example/");
+    expect(geo?.supportingPage).toEqual({
+      availability: "available",
+      source: "llm_proposition_source",
+      url: "https://acme.example/",
+    });
     // Attribution says where the claim came from. It is not evidence the site
     // ranks, and this legacy token carried no inventory to check independently.
     expect(geo?.coverage).toBe("inventory_unavailable");
@@ -1943,6 +1981,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
       (candidate) => candidate.keyword === "what does the pricing page say",
     );
     expect(row?.supportingPageUrl).toBeNull();
+    expect(row?.supportingPage).toEqual({
+      availability: "unavailable",
+      source: null,
+      url: null,
+    });
     expect(row?.signals.youngDomain.state).toBe("observed");
   });
 
@@ -2107,6 +2150,11 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(row?.supportingPageUrl).toBe(
       "https://acme.example/insurance-claim-tracking",
     );
+    expect(row?.supportingPage).toEqual({
+      availability: "available",
+      source: "inventory_url_match",
+      url: "https://acme.example/insurance-claim-tracking",
+    });
   });
 
   it("returns a hard source failure when the SERP seam throws a stage-wide authentication error", async () => {
@@ -2488,7 +2536,7 @@ describe("handleKeywordOpportunitiesRequest", () => {
       // able to hold the route past the platform ceiling, where the response
       // stops existing.
       expect(response.status).toBe(200);
-      expect(parsed.data.result.availability).toBe("insufficient_evidence");
+      expect(parsed.data.result.availability).toBe("available");
     } finally {
       vi.useRealTimers();
     }
@@ -2517,19 +2565,21 @@ describe("handleKeywordOpportunitiesRequest", () => {
       await vi.advanceTimersByTimeAsync(30_000);
       const response = await pending;
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
+      expect(row?.decision).toEqual(
+        expect.objectContaining({ basis: "positive_signal_observed" }),
+      );
       // Traffic resolved immediately and is kept. Racing the wave as one unit
       // would have discarded it because a third resolver hung — strictly worse
       // than the per-resolver failure isolation this wave already had, where
       // one dead resolver never cost the other two their answers.
-      expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-        "observed",
-      );
+      expect(row?.signals.lowOrganicTrafficDomain.state).toBe("observed");
       // Only the resolver that ran out of budget reports unknown, and it says
-      // unknown rather than young.
-      expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
+      // unknown rather than young. Because another positive signal landed, the
+      // row still reaches the reader under the monotonic decision rule.
+      expect(row?.signals.youngDomain.state).toBe("unavailable");
     } finally {
       vi.useRealTimers();
     }
@@ -2574,29 +2624,25 @@ describe("handleKeywordOpportunitiesRequest", () => {
         }),
       );
       const parsed = (await response.json()) as OpportunitiesBody;
-      const incomplete = parsed.data.result.incomplete[0];
+      const row = parsed.data.result.rows[0];
 
       expect(response.status).toBe(200);
-      expect(incomplete?.serp.status).toBe("complete");
-      expect(incomplete?.serp.organicResults).toHaveLength(1);
+      expect(row?.serp.status).toBe("complete");
+      expect(row?.serp.organicResults).toHaveLength(1);
       expect(resolveDomainRanks).toHaveBeenCalledTimes(1);
       expect(resolveDomainTraffic).toHaveBeenCalledTimes(1);
       expect(resolveDomainRegistrations).toHaveBeenCalledTimes(1);
       if (failedStage === "registration") {
-        expect(incomplete?.signals.youngDomain.state).toBe("unavailable");
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-          "observed",
-        );
+        expect(row?.signals.youngDomain.state).toBe("unavailable");
+        expect(row?.signals.lowOrganicTrafficDomain.state).toBe("observed");
       } else {
-        expect(incomplete?.signals.lowOrganicTrafficDomain.state).toBe(
-          "unavailable",
-        );
-        expect(incomplete?.signals.youngDomain.state).toBe("observed");
+        expect(row?.signals.lowOrganicTrafficDomain.state).toBe("unavailable");
+        expect(row?.signals.youngDomain.state).toBe("observed");
       }
     },
   );
 
-  it("does not turn provider rank zero into a v2 eligible decision", async () => {
+  it("admits provider rank zero rows when another positive signal was observed", async () => {
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
@@ -2610,17 +2656,29 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const parsed = (await response.json()) as OpportunitiesBody;
 
     expect(response.status).toBe(200);
-    expect(parsed.data.result.rows).toEqual([]);
-    expect(parsed.data.result.incomplete).toEqual([
+    expect(parsed.data.result.rows).toEqual([
       expect.objectContaining({
         keyword: "rank zero candidate",
-        reason: "low_organic_traffic_signal_unavailable",
+        decision: expect.objectContaining({
+          disposition: "eligible",
+          basis: "positive_signal_observed",
+        }),
         serp: expect.objectContaining({
           status: "complete",
           verdict: "no_serp_evidence",
         }),
+        signals: expect.objectContaining({
+          lowOrganicTrafficDomain: expect.objectContaining({
+            state: "unavailable",
+            reason: "site_rank_tier_unavailable",
+          }),
+          youngDomain: expect.objectContaining({
+            state: "observed",
+          }),
+        }),
       }),
     ]);
+    expect(parsed.data.result.incomplete).toEqual([]);
   });
 
   it("carries the provider intent as its own fact", async () => {
@@ -2798,13 +2856,110 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // shows up as an ADDED field, and a per-field assertion is blind to that.
     expect(parsed.data.run).toEqual({
       tool: "keyword_opportunity_map",
-      schemaVersion: "keyword_opportunity_map.v2",
+      schemaVersion: "keyword_opportunity_map.v3",
       mode: "public_preview",
       scope: "site",
       persistence: "none",
       completedAt: COMPLETED_AT,
     });
     expect(parsed.data.result.availability).toBe("available");
+  });
+
+  it("reports caller-owned transport facts, provisional thresholds and measured stage durations without sensitive text", async () => {
+    let nowMs = Date.parse(COMPLETED_AT);
+    const advance = <T>(milliseconds: number, value: T): Promise<T> => {
+      nowMs += milliseconds;
+      return Promise.resolve(value);
+    };
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        now: () => new Date(nowMs),
+        validateVolumes: ({ keywords }) => advance(11, rows(keywords)),
+        readCoverageQueries: () => advance(13, cleanCoverageRead()),
+        sampleSerp: ({ keywords }) =>
+          advance(
+            17,
+            keywords.map((keyword) => completeSample(keyword)),
+          ),
+        interpretSerpEvidence: (samples) =>
+          advance(
+            19,
+            samples.map((sample) => ({
+              keyword: sample.keyword,
+              availability: "available" as const,
+              intent: "informational" as const,
+              aiOverviewAssessment: "unavailable" as const,
+              reason: "No AI Overview content was returned.",
+              observedAt: sample.observedAt,
+              modelId: "test-model",
+              promptVersion: "keyword_serp_interpretation.v1" as const,
+            })),
+          ),
+        resolveDomainRanks: (domains) =>
+          advance(
+            5,
+            new Map(domains.map((domain) => [domain, 40] as const)),
+          ),
+        resolveDomainTraffic: ({ domains }) =>
+          advance(
+            7,
+            new Map(domains.map((domain) => [domain, 100] as const)),
+          ),
+        resolveDomainRegistrations: (domains) =>
+          advance(
+            11,
+            new Map(
+              domains.map(
+                (domain) => [domain, availableRegistration(domain)] as const,
+              ),
+            ),
+          ),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(response.status).toBe(200);
+    expect(parsed.data.result.process).toMatchObject({
+      validation: { requested: 6, accounted: true },
+      serp: {
+        planned: 6,
+        dispatched: 6,
+        completed: 6,
+        failed: 0,
+        legacyStatusUnreported: 0,
+        accounted: true,
+      },
+      thresholds: {
+        policyVersion: "keyword_opportunity_thresholds.v1",
+        youngDomainMonths: 24,
+        siteDomainRank: 40,
+        siteRankTier: "rank_1_200",
+        lowOrganicTrafficThreshold: 5_000,
+      },
+      durationsMs: {
+        total: 83,
+        validation: 11,
+        coverage: 13,
+        serpSampling: 17,
+        serpInterpretation: 19,
+        domainEnrichment: 23,
+        report: 0,
+      },
+    });
+
+    const ledgerLog = infoLogged
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry["stage"] === "process_ledger");
+    expect(ledgerLog).toEqual({
+      tool: "keyword_opportunity",
+      stage: "process_ledger",
+      process: parsed.data.result.process,
+    });
+    expect(JSON.stringify(ledgerLog)).not.toContain(SITE_URL);
+    expect(JSON.stringify(ledgerLog)).not.toContain(DRAFTS[0]?.keyword);
+    expect(JSON.stringify(ledgerLog)).not.toContain("small-blog.com");
   });
 
   it("releases the Search Console gate after a successful run", async () => {
@@ -2825,7 +2980,10 @@ describe("handleKeywordOpportunitiesRequest", () => {
     const response = await handleKeywordOpportunitiesRequest(
       body(),
       deps({
-        expandCandidates: () => Promise.reject(new Error("generator down")),
+        expandCandidates: () =>
+          Promise.reject(
+            new Error("private.example secret candidate and provider body"),
+          ),
         openGscGate: () => Promise.resolve({ ok: true, release }),
       }),
     );
@@ -2835,6 +2993,13 @@ describe("handleKeywordOpportunitiesRequest", () => {
       error: { code: "keyword_source_unavailable" },
     });
     expect(release).toHaveBeenCalledTimes(1);
+    expect(logged.join("\n")).not.toContain("private.example");
+    expect(logged.join("\n")).not.toContain("secret candidate");
+    expect(logged.map((line) => JSON.parse(line))).toContainEqual({
+      tool: "keyword_opportunity",
+      stage: "opportunities",
+      reason: "unexpected_error",
+    });
   });
 
   it("identifies a candidate-generation transport failure without blaming search data", async () => {

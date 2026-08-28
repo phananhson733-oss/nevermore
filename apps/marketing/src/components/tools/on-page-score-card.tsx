@@ -13,6 +13,7 @@ import type { SeoAuditTargetPageExtract } from "@sf/public-tools/seo-audit/types
 import type { OnPageScore } from "../../lib/on-page-checker/scoring.ts";
 
 function gradeTone(grade: OnPageScore["grade"]): string {
+  if (grade === null) return "text-text-dark-faint";
   if (grade === "A") return "text-brand-accent-text";
   if (grade === "B") return "text-brand-accent-text";
   if (grade === "C") return "text-brand-warning";
@@ -64,14 +65,21 @@ export function OnPageScoreCard({
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center gap-4">
+        {/* An em dash, not a zero and not a number over the categories that
+            did run: keyword placement is the largest graded category, so a
+            renormalised total reads higher than a scored page's and would be
+            compared against one. */}
         <p
+          data-onpage-score
           className={`font-mono text-[44px] leading-none tabular-nums ${gradeTone(score.grade)}`}
         >
-          {score.score}
+          {score.score ?? "—"}
         </p>
         <div className="grid gap-1">
           <p className={`text-[15px] ${gradeTone(score.grade)}`}>
-            {t(`grades.${score.grade}`)}
+            {score.grade === null
+              ? t("score.unscored")
+              : t(`grades.${score.grade}`)}
           </p>
           <p className="text-[12.5px] text-text-dark-faint">
             {t("score.counts", {
@@ -91,6 +99,21 @@ export function OnPageScoreCard({
         )}
         {action}
       </div>
+
+      {/*
+        Why the number is missing, next to where it would have been. An em dash
+        and the words "not scored" say that something is absent; they do not say
+        that the category subtotals below are complete for what did run, which
+        is the part that makes the report still worth reading.
+      */}
+      {score.score === null && (
+        <p
+          data-onpage-unscored
+          className="rounded-lg border border-brand-border-card bg-brand-bg/40 p-3 text-[13px] leading-[1.6] text-text-dark-secondary"
+        >
+          {t("score.unscoredNote")}
+        </p>
+      )}
 
       {/*
         A capped score would otherwise be unexplainable: the checks on screen
@@ -137,9 +160,13 @@ export function OnPageScoreCard({
         ))}
       </div>
 
-      <p className="text-[12.5px] leading-[1.6] text-text-dark-faint">
-        {t("score.disclaimer")}
-      </p>
+      {/* The disclaimer qualifies a number. With no number there is nothing
+          for it to qualify, and the note above already says what happened. */}
+      {score.score !== null && (
+        <p className="text-[12.5px] leading-[1.6] text-text-dark-faint">
+          {t("score.disclaimer")}
+        </p>
+      )}
     </div>
   );
 }

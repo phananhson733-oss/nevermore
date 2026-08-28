@@ -120,22 +120,27 @@ type RunState =
   | { readonly kind: "running"; readonly startedAt: number }
   | {
       readonly kind: "done";
-      readonly evidence: KeywordEvidence;
-      readonly targetUrl: string;
       /**
-       * Where the crawl landed, when that is not where it was sent.
+       * Null for a URL-only run.
        *
-       * Null when nothing redirected, or when the run could not say. A visitor
-       * auditing a URL that redirects was reading a report about a different
-       * page than the one named at the top of it -- a tracking short link that
-       * 302s to the homepage produced a homepage audit labelled with the short
-       * link. The report has to name the page it actually read.
+       * The API omits the region entirely when no query was submitted, which is
+       * a different fact from a region that came back unavailable — one is a
+       * question nobody asked, the other one we could not answer.
        */
-      readonly landedUrl: string | null;
+      readonly evidence: KeywordEvidence | null;
+      readonly targetUrl: string;
       readonly scannedAt: string;
       readonly cacheStatus: "hit" | "miss" | "unknown";
       /** The page's own extract, or null when the run could not read it. */
       readonly extract: SeoAuditTargetPageExtract | null;
+      /**
+       * Whether the crawl collected the submitted page at all.
+       *
+       * Read from the response rather than inferred from the keyword region: a
+       * run that named no query has no such region, so without this a page the
+       * crawl never reached was indistinguishable from one it read fine.
+       */
+      readonly targetInspected: boolean;
       /**
        * Scored in the browser from the same response the tables are drawn from.
        *
@@ -327,8 +332,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       setUrlNotice(t("errors.urlRequired"));
       return;
     }
-    if (queries.length === 0) {
-      setQueryNotice(t("errors.queryRequired"));
+    // Typing nothing is a URL-only run. Typing something that every rule
+    // rejected is not a choice the visitor made: the field looked filled, the
+    // warning under it said which words were dropped, and submitting anyway
+    // produced a report announcing that no target query was submitted.
+    if (queryText.trim() !== "" && queries.length === 0) {
+      setQueryNotice(t("errors.queriesAllRejected"));
       return;
     }
     // One run at a time: a second click would start a second crawl and leave
@@ -354,7 +363,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         },
         body: JSON.stringify({
           url: url.trim(),
-          targetQueries: queries,
+          // Omitted rather than sent empty: the request normaliser rejects an
+          // empty list outright, and this is the shape that means "no query",
+          // which the API answers by leaving the keyword region out.
+          ...(queries.length === 0 ? {} : { targetQueries: queries }),
           pageRole,
           // These two used to stop at the form. They reach the results-page
           // lookup now, and nothing else: the crawl ignores both.
@@ -409,9 +421,28 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       return;
     }
 
-    const result = (body as AuditResponse).data?.result;
-    const evidence = result?.keywordEvidence;
-    if (!evidence) {
+    // `body` is null when the response carried nothing or would not parse.
+    // The optional chain below guards `.data`, not the dereference of `body`
+    // itself, so reading it threw — and the click handler discards the
+    // promise, leaving the run showing as still running forever.
+    const result =
+      body === null || typeof body !== "object"
+        ? undefined
+        : (body as AuditResponse).data?.result;
+    const evidence = result?.keywordEvidence ?? null;
+    // A 2xx is not a result. An empty body, unparseable JSON or a 200 with no
+    // `result` all leave this undefined, and while the keyword region was
+    // required the missing region caught them. It no longer is, so an empty
+    // 200 became a finished run reporting that the crawl did not collect the
+    // visitor's page — inventing a fact about their site out of our own
+    // failure to read the answer.
+    //
+    // The two directions after it: no query means no keyword region, and a
+    // query means there must be one. Either contradiction is the API
+    // disagreeing with the request, not something to render.
+    const contradicts =
+      queries.length === 0 ? evidence !== null : evidence === null;
+    if (result === undefined || result === null || contradicts) {
       setRun({
         kind: "failed",
         code: "scan_failed",
@@ -429,14 +460,6 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       typeof result?.targetUrl === "string" ? result.targetUrl : url.trim();
     const scannedAt =
       typeof result?.scannedAt === "string" ? result.scannedAt : "";
-    // Kept only when it disagrees with the URL the report already names.
-    // Carrying it when the two are equal would put a "redirected to" line on
-    // every clean run, which says nothing and trains the reader to skip it.
-    const landed =
-      typeof result?.landedTargetUrl === "string" &&
-      result.landedTargetUrl !== targetUrl
-        ? result.landedTargetUrl
-        : null;
 
     const extract = result?.targetPageExtract ?? null;
     const siteResources = result?.siteResources ?? null;
@@ -456,10 +479,10 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
       kind: "done",
       evidence,
       targetUrl,
-      landedUrl: landed,
       scannedAt,
       cacheStatus: cache,
       extract,
+      targetInspected: result?.targetInspected === true,
       score,
       // Validated, not cast. The checker reads this response with a TypeScript
       // interface, which is erased at runtime — so the guard written for this
@@ -470,9 +493,15 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
         : null,
     });
 
-    // Only a whole success is remembered, so the list never suggests a run
-    // produced something it did not.
-    if (evidence.availability === "available") {
+    // A whole success is remembered, so the list never suggests a run produced
+    // something it did not — recorded whenever the page was read, not only when
+    // a query was named, and never when the crawl did not reach the page.
+    // The list is what the visitor checked; a URL-only run that never appeared
+    // in it left somebody able to check five pages and see an empty history.
+    if (
+      extract !== null &&
+      (evidence === null || evidence.availability === "available")
+    ) {
       const store = webStore("local");
       if (store) {
         setHistory(
@@ -485,11 +514,11 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
             country,
             locale: language,
             pageType: pageRole,
-            focus: evidence.focus,
+            focus: evidence === null ? null : evidence.focus,
             // Null when the run could not be scored, so the trend column reads
             // "—" rather than implying this page came back a zero.
             score:
-              score === null
+              score === null || score.score === null || score.grade === null
                 ? null
                 : { value: score.score, grade: score.grade },
             coverage: {
@@ -520,12 +549,19 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     const score = run.score;
     const text = buildCopyReport({
       targetUrl: run.targetUrl,
-      landedUrl: run.landedUrl,
       scannedAt: run.scannedAt,
       cacheStatus: run.cacheStatus,
       evidence: run.evidence,
+      // The page's own state, which the keyword region cannot carry: a
+      // URL-only run has no region at all.
+      pageState:
+        run.extract !== null
+          ? "read"
+          : run.targetInspected
+            ? "extract_missing"
+            : "not_captured",
       limitationText: Object.fromEntries(
-        (run.evidence.availability === "available"
+        (run.evidence !== null && run.evidence.availability === "available"
           ? run.evidence.limitations
           : []
         ).map((code) => [code, t(`limitations.${code}`)]),
@@ -535,7 +571,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           ? null
           : {
               score: score.score,
-              grade: t(`grades.${score.grade}`),
+              grade: score.grade === null ? null : t(`grades.${score.grade}`),
+              // Said in words, because the receiver is an assistant that would
+              // otherwise compare an absent number with a scored page's.
+              ...(score.score === null
+                ? { scoreUnavailable: t("score.unscoredReport") }
+                : {}),
               counts: {
                 pass: score.counts.pass,
                 warn: score.counts.warn,
@@ -568,7 +609,7 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               value: vital.value,
             })),
       fixes:
-        run.evidence.availability === "available"
+        run.evidence !== null && run.evidence.availability === "available"
           ? t(`fixes.${run.evidence.pageRole ?? "homepage"}`)
           : null,
     });
@@ -597,6 +638,9 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
     if (session) {
       storeOnPageDraft(session, {
         url: url.trim(),
+        // Empty stays empty here — the draft's job is to restore what was on
+        // screen — and the Agent omits the field rather than sending `[]`,
+        // which the endpoint rejects outright.
         targetQueries: queries,
         country,
         locale: language,
@@ -714,8 +758,19 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               className="block text-[13px] text-text-dark-secondary"
               htmlFor="onpage-query"
             >
-              {t("fields.queries", { max: MAX_QUERIES })}
+              {t("fields.queriesOptional", { max: MAX_QUERIES })}
             </label>
+            {/*
+              Said before the field, not after a rejected submit.
+              
+              The keyword category is the only one that reads this box. Leaving
+              it empty runs everything else and publishes no overall score,
+              which is a choice worth making deliberately rather than a rule to
+              discover by pressing the button.
+            */}
+            <p className="mt-1 text-[12px] leading-[1.55] text-text-dark-faint">
+              {t("fields.queriesOptionalHint")}
+            </p>
             {/*
               One field, no button beside it.
 
@@ -1014,10 +1069,20 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
         )}
 
-        {evidence !== null && evidence.availability === "unavailable" && (
+        {/* Keyed on the page, not on the keyword region.
+        
+            Both unavailable reasons mean the same thing about the page — no
+            extract — and a run that named no query carries no region to say it
+            with, so a page the crawl never reached came back looking like a
+            successful URL-only check. */}
+        {run.kind === "done" && run.extract === null && (
           <div className="mt-4 grid gap-2">
             <p className="text-[14px] text-text-dark-primary">
-              {t(`unavailable.${evidence.reason}`)}
+              {t(
+                run.targetInspected
+                  ? "unavailable.extract_missing"
+                  : "unavailable.target_page_not_captured",
+              )}
             </p>
             <p className="text-[12.5px] text-text-dark-faint">
               {t("unavailable.notZero")}
@@ -1025,7 +1090,13 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
           </div>
         )}
 
-        {available !== null && run.kind === "done" && (
+        {/* Gated on the run, not on the keyword region.
+            
+            While this required `available`, a run that named no query — or one
+            whose keyword region came back unavailable — rendered an empty
+            stage 02: the score, the vitals, the forty checks and the term
+            tables were all computed and none of them reached the screen. */}
+        {run.kind === "done" && (
           <div className="mt-5 grid gap-4">
             {/*
               What was read, and when.
@@ -1034,24 +1105,18 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               from a crawl that just finished, and a normalized target URL is
               indistinguishable from the one that was typed.
             */}
-            <div className="grid gap-1">
-              <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
-                {t("provenance.page", { url: run.targetUrl })}
-              </p>
-              {run.landedUrl === null ? null : (
-                <p
-                  data-provenance-landed
-                  className="font-mono text-[12.5px] break-all text-brand-warning"
-                >
-                  {t("provenance.landed", { url: run.landedUrl })}
+            {run.extract !== null && (
+              <div className="grid gap-1">
+                <p className="font-mono text-[12.5px] break-all text-text-dark-secondary">
+                  {t("provenance.page", { url: run.targetUrl })}
                 </p>
-              )}
-              <p className="text-[12.5px] text-text-dark-faint">
-                {t(`provenance.${run.cacheStatus}`, {
-                  time: formatCollectedAt(run.scannedAt, locale),
-                })}
-              </p>
-            </div>
+                <p className="text-[12.5px] text-text-dark-faint">
+                  {t(`provenance.${run.cacheStatus}`, {
+                    time: formatCollectedAt(run.scannedAt, locale),
+                  })}
+                </p>
+              </div>
+            )}
             <OnPageReportSections
             scoreAction={scoredHere ? copyControl : undefined}
               extract={run.extract}
@@ -1060,10 +1125,12 @@ export function OnPageChecker({ locale }: { readonly locale: string }) {
               evidence={available}
             />
 
-            <OnPageKeywordEvidence
-              available={available}
-              submittedQueries={queries.length}
-            />
+            {available !== null && (
+              <OnPageKeywordEvidence
+                available={available}
+                submittedQueries={queries.length}
+              />
+            )}
 
             <div className="flex flex-wrap items-center gap-3 border-t border-brand-border-card pt-4">
               {/*

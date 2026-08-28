@@ -1,5 +1,5 @@
 // @input  -- one finished keyword opportunity result and the page's locale
-// @output -- the run's verdict, funnel, lanes, incomplete evidence, groups, and exclusions
+// @output -- a compact run summary, decision lanes, mounted row evidence, gaps, groups, and exclusions
 // @pos    -- read-only rendering for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { useId, useState } from "react";
 import type {
   KeywordOpportunityCluster,
   KeywordOpportunityIncomplete,
@@ -43,6 +44,14 @@ const PILL =
   "rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1 font-mono text-[11px] text-text-dark-primary";
 const NAV_LINK =
   "flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info";
+const TABLE_TEXT = "text-[13px] leading-[1.45]";
+const META_TEXT = "text-[12px] leading-[1.35]";
+const KEYWORD_TEXT =
+  "text-[15.5px] font-semibold leading-[1.25] text-text-dark-primary";
+const DATA_CHIP =
+  "inline-flex items-center gap-1 whitespace-nowrap rounded-[6px] border border-brand-border-strong bg-brand-panel-sunken px-2 py-[3px] font-mono text-[11.5px] leading-[1.35] text-text-dark-primary";
+const STATE_PILL =
+  "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-[11.5px] leading-[1.3]";
 
 /**
  * The gates a candidate passes, in the order it passes them.
@@ -161,14 +170,16 @@ export function KeywordMapResults({
   return (
     <div className="mt-8 space-y-4">
       <Verdict result={result} />
-      <RunSummary result={result} locale={locale} />
+      <ResultSummary
+        result={result}
+        locale={locale}
+        incompleteCount={incomplete.length}
+      />
 
       {result.rows.length === 0 && incomplete.length === 0 ? (
         <EmptyState degraded={result.unavailableStages.length > 0} />
       ) : result.rows.length > 0 ? (
         <>
-          <EligibleSummary count={result.rows.length} />
-          <ExportRow result={result} />
           <RowTable rows={seo} lane="seo" locale={locale} />
           <RowTable rows={geo} lane="geo" locale={locale} />
         </>
@@ -185,20 +196,6 @@ export function KeywordMapResults({
   );
 }
 
-/** The included lane, explicitly separate from exclusions and evidence gaps. */
-function EligibleSummary({ count }: { readonly count: number }) {
-  const t = useTranslations("tools.keywordMap");
-
-  return (
-    <section className={CARD}>
-      <h3 className={SECTION_TITLE}>
-        {t("eligibleTitle")} · {t("sectionCount", { count })}
-      </h3>
-      <p className={SECTION_INTRO}>{t("eligibleIntro")}</p>
-    </section>
-  );
-}
-
 /**
  * The one copy of a run that survives the tab.
  *
@@ -207,7 +204,11 @@ function EligibleSummary({ count }: { readonly count: number }) {
  * file carries the same evidence as the tables, blanks included — an
  * unavailable number stays an empty cell rather than becoming a zero.
  */
-function ExportRow({ result }: { readonly result: KeywordOpportunityResult }) {
+function ExportButton({
+  result,
+}: {
+  readonly result: KeywordOpportunityResult;
+}) {
   const t = useTranslations("tools.keywordMap");
 
   function download() {
@@ -223,15 +224,44 @@ function ExportRow({ result }: { readonly result: KeywordOpportunityResult }) {
   }
 
   return (
-    <div className="flex justify-end">
-      <button
-        type="button"
-        onClick={download}
-        className="inline-flex h-10 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-      >
-        {t("exportCsv")}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={download}
+      className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+    >
+      {t("exportCsv")}
+    </button>
+  );
+}
+
+/** Keep the complete public evidence ledger locally; this creates no server write. */
+function AuditJsonButton({
+  result,
+}: {
+  readonly result: KeywordOpportunityResult;
+}) {
+  const t = useTranslations("tools.keywordMap");
+
+  function download() {
+    const blob = new Blob([`${JSON.stringify(result, null, 2)}\n`], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `keyword-opportunity-audit-${result.marketCode.toLowerCase()}-${result.languageCode.toLowerCase()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-[10px] border border-brand-border-strong px-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+    >
+      {t("exportAuditJson")}
+    </button>
   );
 }
 
@@ -304,74 +334,146 @@ export function stageRan(
   return stage === undefined || !unavailableStages.includes(stage);
 }
 
-/** What was read, and what each stage of the run saw. */
-function RunSummary({
+/** Scope, outcome and the optional screening trace in one compact surface. */
+function ResultSummary({
   result,
   locale,
+  incompleteCount,
 }: {
   readonly result: KeywordOpportunityResult;
   readonly locale: string;
+  readonly incompleteCount: number;
 }) {
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
 
   return (
-    <section className={CARD}>
-      <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
-        {t("runContext", {
-          site: result.context.siteUrl,
-          market: label(`markets.${result.marketCode}`, result.marketCode),
-          language: label(
-            `languages.${result.languageCode}`,
-            result.languageCode,
-          ),
-          pages: result.context.pagesFetched,
-          productPages: result.context.productPagesFetched,
-        })}
-      </p>
-      <p className={SECTION_INTRO}>{t("contextBoundary")}</p>
-      {result.context.selection === undefined ? null : (
-        <p className={SECTION_INTRO}>
-          {t("contextSelection", {
-            eligible: result.context.selection.eligibleCandidates,
-            excluded: result.context.selection.excludedCandidates,
-            attempted: result.context.selection.attemptedCandidates,
-            truncated: result.context.selection.truncatedCandidates,
-          })}
-        </p>
-      )}
-      {result.context.stopReason !== "completed" ? (
-        <p className={SECTION_INTRO}>
-          {t("contextStopped", {
-            reason: label(
-              `contextStops.${result.context.stopReason}`,
-              result.context.stopReason,
-            ),
-          })}
-        </p>
-      ) : null}
-      <p className={`${SECTION_INTRO} mt-3`}>{t("funnelIntro")}</p>
-
-      {/* 1px gap over the divider colour: the counts read as one table of
-          gates rather than nine chips that happen to sit near each other. */}
-      <div className="rounded-card border-brand-border-card bg-brand-border-card mt-4 grid grid-cols-3 gap-px overflow-hidden border">
-        {FUNNEL_STEPS.map((step) => (
-          <Tile
-            key={step}
-            label={t(`funnel.${step}`)}
-            value={
-              stageRan(step, result.unavailableStages)
-                ? result.funnel[step]
-                : null
-            }
-            locale={locale}
-            /* The funnel's payoff is its last number, so that is the one the
-               eye should land on — the order stays strictly the pipeline's. */
-            emphasis={step === "shown"}
-          />
-        ))}
+    <section data-result-summary="" className={CARD}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className={SECTION_TITLE}>{t("eligibleTitle")}</h3>
+          <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("runContext", {
+              site: result.context.siteUrl,
+              market: label(`markets.${result.marketCode}`, result.marketCode),
+              language: label(
+                `languages.${result.languageCode}`,
+                result.languageCode,
+              ),
+              pages: result.context.pagesFetched,
+              productPages: result.context.productPagesFetched,
+            })}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {result.rows.length > 0 ? <ExportButton result={result} /> : null}
+          <AuditJsonButton result={result} />
+        </div>
       </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <SummaryMetric
+          label={t("summary.included")}
+          value={formatCount(result.rows.length, locale)}
+          tone="included"
+        />
+        <SummaryMetric
+          label={t("summary.incomplete")}
+          value={formatCount(incompleteCount, locale)}
+          tone="incomplete"
+        />
+        <SummaryMetric
+          label={t("summary.withheld")}
+          value={formatCount(result.withheld.length, locale)}
+          tone="withheld"
+        />
+      </div>
+
+      {result.rows.length > 0 ? (
+        <p className={SECTION_INTRO}>{t("eligibleIntro")}</p>
+      ) : null}
+      <div className="mt-4 border-t border-brand-border-faint pt-3">
+        <p className={SECTION_INTRO}>{t("contextBoundary")}</p>
+        {result.context.selection === undefined ? null : (
+          <p className={SECTION_INTRO}>
+            {t("contextSelection", {
+              eligible: result.context.selection.eligibleCandidates,
+              excluded: result.context.selection.excludedCandidates,
+              attempted: result.context.selection.attemptedCandidates,
+              truncated: result.context.selection.truncatedCandidates,
+            })}
+          </p>
+        )}
+        {result.context.stopReason !== "completed" ? (
+          <p className={SECTION_INTRO}>
+            {t("contextStopped", {
+              reason: label(
+                `contextStops.${result.context.stopReason}`,
+                result.context.stopReason,
+              ),
+            })}
+          </p>
+        ) : null}
+      </div>
+
+      <details
+        data-screening-process=""
+        className="group mt-4 border-t border-brand-border-faint pt-3"
+      >
+        <summary className="cursor-pointer text-[13px] font-medium text-text-dark-primary transition-colors marker:text-text-dark-secondary hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
+          {t("summary.screeningProcess")}
+        </summary>
+        <p className={`${SECTION_INTRO} mt-3`}>{t("funnelIntro")}</p>
+
+        {/* 1px gap over the divider colour: the counts read as one table of
+            gates rather than nine chips that happen to sit near each other. */}
+        <div className="rounded-card border-brand-border-card bg-brand-border-card mt-4 grid grid-cols-3 gap-px overflow-hidden border">
+          {FUNNEL_STEPS.map((step) => (
+            <Tile
+              key={step}
+              label={t(`funnel.${step}`)}
+              value={
+                stageRan(step, result.unavailableStages)
+                  ? result.funnel[step]
+                  : null
+              }
+              locale={locale}
+              /* The funnel's payoff is its last number, so that is the one the
+                 eye should land on — the order stays strictly the pipeline's. */
+              emphasis={step === "shown"}
+            />
+          ))}
+        </div>
+        <ProcessLedger result={result} locale={locale} />
+      </details>
     </section>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  tone,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly tone: "included" | "incomplete" | "withheld";
+}) {
+  const toneClass =
+    tone === "included"
+      ? "border-brand-success/25 bg-brand-success/[0.07]"
+      : tone === "incomplete"
+        ? "border-brand-warning/25 bg-brand-warning/[0.07]"
+        : "border-brand-border-card bg-brand-panel-sunken";
+  return (
+    <div className={`rounded-[10px] border px-3.5 py-3 ${toneClass}`}>
+      <p className="font-mono text-[18px] leading-none tabular-nums text-text-dark-primary">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[11.5px] leading-tight text-text-dark-secondary">
+        {label}
+      </p>
+    </div>
   );
 }
 
@@ -419,6 +521,178 @@ function Tile({
       )}
       <p className="mt-2 text-[11px] leading-tight text-text-dark-secondary sm:mt-2.5 sm:text-[12.5px]">
         {label}
+      </p>
+    </div>
+  );
+}
+
+function formatBreakdown(
+  counts: Readonly<Record<string, number>>,
+  labelFor: (key: string) => string,
+  locale: string,
+): string {
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, count]) => `${labelFor(key)} ${formatCount(count, locale)}`)
+    .join(" · ");
+}
+
+function ProcessLedger({
+  result,
+  locale,
+}: {
+  readonly result: KeywordOpportunityResult;
+  readonly locale: string;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const process = result.process;
+  if (process === undefined) return null;
+
+  const measuredCount = (value: number | null): string =>
+    value === null ? t("notMeasured") : formatCount(value, locale);
+
+  const supportingPageBreakdown = formatBreakdown(
+    {
+      ...process.supportingPages.sources,
+      source_unreported: process.supportingPages.sourceUnreported,
+      unavailable: process.supportingPages.unavailable,
+    },
+    (key) => label(`supportingPageSources.${key}`, key),
+    locale,
+  );
+  const withheldBreakdown = formatBreakdown(
+    process.decisions.withheldReasons,
+    (key) => label(`withheld.${key}`, key),
+    locale,
+  );
+  const incompleteBreakdown = formatBreakdown(
+    process.decisions.incompleteReasons,
+    (key) => label(`incomplete.${key}`, key),
+    locale,
+  );
+  const failureBreakdown = formatBreakdown(
+    process.serp.failureReasons,
+    (key) => label(`process.failureReasons.${key}`, key),
+    locale,
+  );
+  const durationBreakdown = (
+    [
+      ["coverage", process.durationsMs.coverage],
+      ["validation", process.durationsMs.validation],
+      ["serpSampling", process.durationsMs.serpSampling],
+      ["serpInterpretation", process.durationsMs.serpInterpretation],
+      ["domainEnrichment", process.durationsMs.domainEnrichment],
+      ["report", process.durationsMs.report],
+    ] as const
+  )
+    .flatMap(([key, value]) =>
+      value === null
+        ? []
+        : [
+            `${label(`process.durationStages.${key}`, key)} ${formatCount(value, locale)}ms`,
+          ],
+    )
+    .join(" · ");
+  const accounted =
+    process.validation.accounted &&
+    process.serp.accounted &&
+    process.decisions.accounted &&
+    process.supportingPages.accounted;
+
+  return (
+    <div className="mt-4 space-y-2.5 border-t border-brand-border-faint pt-3">
+      <p className={LABEL}>{t("process.title")}</p>
+      <p className={SECTION_INTRO}>
+        {t("process.serpSummary", {
+          planned: measuredCount(process.serp.planned),
+          dispatched: measuredCount(process.serp.dispatched),
+          completed: process.serp.completed,
+          failed: process.serp.failed,
+        })}
+      </p>
+      {process.serp.legacyStatusUnreported > 0 ? (
+        <p className={SECTION_INTRO}>
+          {t("process.legacyStatusUnreported", {
+            count: process.serp.legacyStatusUnreported,
+          })}
+        </p>
+      ) : null}
+      {failureBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.serpFailures", { reasons: failureBreakdown })}
+        </p>
+      )}
+      <p className={SECTION_INTRO}>
+        {t("process.validation", {
+          requested: measuredCount(process.validation.requested),
+          available: process.validation.available,
+          explicitZero: process.validation.explicitZero,
+          providerNoData: process.validation.providerNoData,
+        })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t("process.supportingPages", {
+          breakdown: supportingPageBreakdown,
+        })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t("process.decisions", {
+          eligible: process.decisions.eligible,
+          withheld: process.decisions.withheld,
+          incomplete: process.decisions.incomplete,
+        })}
+      </p>
+      {withheldBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.withheldReasons", { reasons: withheldBreakdown })}
+        </p>
+      )}
+      {incompleteBreakdown === "" ? null : (
+        <p className={SECTION_INTRO}>
+          {t("process.incompleteReasons", { reasons: incompleteBreakdown })}
+        </p>
+      )}
+      {process.decisions.positiveWithUnavailableSignals > 0 ? (
+        <p className={SECTION_INTRO}>
+          {t("process.positiveWithUnavailable", {
+            count: process.decisions.positiveWithUnavailableSignals,
+          })}
+        </p>
+      ) : null}
+      <p className={SECTION_INTRO}>
+        {process.thresholds.lowOrganicTrafficThreshold === null
+          ? t("process.thresholdUnavailable")
+          : t("process.threshold", {
+              policy: process.thresholds.policyVersion ?? "—",
+              months:
+                process.thresholds.youngDomainMonths === null
+                  ? "—"
+                  : process.thresholds.youngDomainMonths,
+              tier: process.thresholds.siteRankTier ?? "—",
+              rank:
+                process.thresholds.siteDomainRank === null
+                  ? "—"
+                  : formatCount(process.thresholds.siteDomainRank, locale),
+              threshold: formatCount(
+                process.thresholds.lowOrganicTrafficThreshold,
+                locale,
+              ),
+            })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {process.durationsMs.total === null
+          ? t("process.durationsPartial", {
+              breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
+            })
+          : t("process.durations", {
+              total: formatCount(process.durationsMs.total, locale),
+              breakdown: durationBreakdown === "" ? "—" : durationBreakdown,
+            })}
+      </p>
+      <p className={SECTION_INTRO}>
+        {t(accounted ? "process.accounted" : "process.unaccounted")}
       </p>
     </div>
   );
@@ -483,10 +757,14 @@ function RowTable({
 
   const shared = commonChecks(rows);
   const sharedSet = new Set(shared);
+  const headingId = `keyword-lane-${lane}`;
+  const columnCount = lane === "seo" ? 6 : 5;
 
   return (
-    <section className={CARD}>
-      <h3 className={SECTION_TITLE}>{t(`lane.${lane}.title`)}</h3>
+    <section className={`${CARD} min-w-0`}>
+      <h3 id={headingId} className={SECTION_TITLE}>
+        {t(`lane.${lane}.title`)}
+      </h3>
       <p className={SECTION_INTRO}>{t(`lane.${lane}.intro`)}</p>
       {shared.length > 0 ? (
         <p className={SECTION_INTRO}>
@@ -495,118 +773,64 @@ function RowTable({
         </p>
       ) : null}
 
-      {/* Wide on purpose; the page must never scroll sideways because of it. */}
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[1480px] border-collapse text-left">
+      <div
+        data-keyword-scroll={lane}
+        tabIndex={0}
+        role="region"
+        aria-labelledby={headingId}
+        className="mt-4 max-w-full overflow-x-auto focus-visible:rounded-[10px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+      >
+        <table
+          data-keyword-table={lane}
+          className={`${TABLE_TEXT} w-full border-collapse text-left ${
+            lane === "seo" ? "min-w-[1160px]" : "min-w-[1120px]"
+          }`}
+        >
+          <caption className="sr-only">{t(`lane.${lane}.title`)}</caption>
           <thead>
             <tr className="border-b border-brand-border-card">
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.keyword")}
-              </th>
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.providerIntent")}
-              </th>
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.serpIntent")}
+              <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2`}>
+                {t(
+                  lane === "seo"
+                    ? "columns.keywordIntent"
+                    : "columns.questionIntent",
+                )}
               </th>
               {lane === "seo" ? (
                 <>
-                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
+                  <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2 text-right`}>
                     {t("columns.volume")}
                   </th>
-                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
-                    {t("columns.difficulty")}
-                  </th>
-                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
-                    {t("columns.weakest")}
+                  <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2`}>
+                    {t("columns.competition")}
                   </th>
                 </>
               ) : (
-                <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+                <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2`}>
                   {t("columns.supportingPage")}
                 </th>
               )}
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+              <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2`}>
                 {t("columns.signals")}
               </th>
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
+              <th scope="col" className={`${LABEL} whitespace-nowrap pr-5 pb-2`}>
                 {t("columns.aiOverview")}
               </th>
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.coverage")}
-              </th>
-              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
-                {t("columns.remainingDecisions")}
+              <th scope="col" className={`${LABEL} whitespace-nowrap pb-2`}>
+                {t("columns.coverageReview")}
               </th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr
+              <KeywordResultRow
                 key={row.keyword}
-                className="border-b border-brand-border-card/60 align-top"
-              >
-                <td className="py-3 pr-4 text-[13.5px] text-text-dark-primary">
-                  {row.keyword}
-                </td>
-                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
-                  <ProviderIntentCell row={row} />
-                </td>
-                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
-                  <SerpIntentCell row={row} />
-                </td>
-                {lane === "seo" ? (
-                  <>
-                    <td className="py-3 pr-4 text-right font-mono text-[13px] text-text-dark-primary tabular-nums">
-                      {row.validation.volume ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono text-[13px] text-text-dark-secondary tabular-nums">
-                      {row.validation.difficulty ?? "—"}
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono text-[13px] text-text-dark-secondary tabular-nums">
-                      {row.serp.weakestTopTenDomainRank ?? "—"}
-                      {/*
-                       * The holder's identity and position, under the rank
-                       * they explain. A rank of 24 at position 2 and the same
-                       * rank clinging to position 10 are different facts, and
-                       * without the domain the reader cannot open the page
-                       * and check either one. `typeof` guards rather than
-                       * null checks: a payload from the previous deployment
-                       * has neither field, and `undefined !== null` would
-                       * render the word "undefined" into the table.
-                       */}
-                      {typeof row.serp.weakestTopTenDomain === "string" ? (
-                        <span className="block text-[11px] break-all text-text-dark-faint">
-                          {row.serp.weakestTopTenDomain}
-                          {typeof row.serp.weakestTopTenPosition === "number"
-                            ? ` · #${row.serp.weakestTopTenPosition}`
-                            : ""}
-                        </span>
-                      ) : null}
-                    </td>
-                  </>
-                ) : (
-                  <td className="py-3 pr-4 text-[12.5px] break-all text-text-dark-secondary">
-                    {row.supportingPageUrl ?? "—"}
-                  </td>
-                )}
-                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
-                  <SignalEvidenceList row={row} locale={locale} />
-                </td>
-                <td className="py-3 pr-4 text-[12.5px]">
-                  <AiOverviewCell
-                    evidence={row.aiOverview}
-                    itemTypes={row.serp.pageOneItemTypes}
-                    decision={row.decision}
-                  />
-                </td>
-                <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
-                  {label(`coverage.${row.coverage}`, row.coverage)}
-                </td>
-                <td className="py-3 text-[12.5px] text-text-dark-secondary">
-                  <RowChecks checks={row.nextChecks} shared={sharedSet} />
-                </td>
-              </tr>
+                row={row}
+                lane={lane}
+                locale={locale}
+                shared={sharedSet}
+                columnCount={columnCount}
+              />
             ))}
           </tbody>
         </table>
@@ -616,6 +840,228 @@ function RowTable({
         {lane === "seo" ? t("weakestHint") : t("geoHint")}
       </p>
     </section>
+  );
+}
+
+function KeywordResultRow({
+  row,
+  lane,
+  locale,
+  shared,
+  columnCount,
+}: {
+  readonly row: KeywordOpportunityRow;
+  readonly lane: "seo" | "geo";
+  readonly locale: string;
+  readonly shared: ReadonlySet<KeywordOpportunityCheck>;
+  readonly columnCount: number;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const [expanded, setExpanded] = useState(false);
+  const reactId = useId();
+  const detailId = `keyword-evidence-${reactId.replaceAll(":", "")}`;
+
+  return (
+    <>
+      <tr
+        data-keyword-row={row.keyword}
+        data-keyword-summary=""
+        className="border-b border-brand-border-card/60 align-top"
+      >
+        <td className="w-[220px] py-4 pr-5">
+          <p className={KEYWORD_TEXT}>{row.keyword}</p>
+          <dl className={`${META_TEXT} mt-3 space-y-2 text-text-dark-secondary`}>
+            <IntentSummary
+              label={t("columns.providerIntent")}
+              value={<ProviderIntentCell row={row} />}
+            />
+            <IntentSummary
+              label={t("columns.serpIntent")}
+              value={<SerpIntentCell row={row} />}
+            />
+          </dl>
+        </td>
+        {lane === "seo" ? (
+          <>
+            <td className="w-[100px] py-4 pr-5 text-right tabular-nums">
+              <p className={META_TEXT}>{t("columns.volume")}</p>
+              <span className={`${DATA_CHIP} mt-1.5`}>
+                {row.validation.volume === null
+                  ? t("values.notReturned")
+                  : formatCount(row.validation.volume, locale)}
+              </span>
+            </td>
+            <td className="w-[190px] py-4 pr-5">
+              <div className="flex flex-wrap gap-1.5">
+                <span className={DATA_CHIP}>
+                  {t("columns.difficulty")} {" "}
+                  {row.validation.difficulty === null
+                    ? t("values.notReturned")
+                    : formatCount(row.validation.difficulty, locale)}
+                </span>
+                <span className={DATA_CHIP}>
+                  {t("columns.weakest")} {" "}
+                  {row.serp.weakestTopTenDomainRank === null
+                    ? t("values.notReturned")
+                    : formatCount(row.serp.weakestTopTenDomainRank, locale)}
+                </span>
+              </div>
+              {typeof row.serp.weakestTopTenDomain === "string" ? (
+                <p className={`${META_TEXT} mt-2 break-all text-text-dark-secondary`}>
+                  {row.serp.weakestTopTenDomain}
+                  {typeof row.serp.weakestTopTenPosition === "number"
+                    ? ` · #${row.serp.weakestTopTenPosition}`
+                    : ""}
+                </p>
+              ) : null}
+            </td>
+          </>
+        ) : (
+          <td className="w-[190px] py-4 pr-5">
+            <SupportingPageSummary
+              supportingPage={row.supportingPage}
+              value={row.supportingPageUrl}
+            />
+          </td>
+        )}
+        <td className="w-[230px] py-4 pr-5 text-text-dark-secondary">
+          <CompactSignalList row={row} locale={locale} />
+        </td>
+        <td className="w-[170px] py-4 pr-5">
+          <AiOverviewSummary
+            evidence={row.aiOverview}
+            itemTypes={row.serp.pageOneItemTypes}
+            decision={row.decision}
+          />
+        </td>
+        <td className="w-[230px] py-4 text-text-dark-secondary">
+          <span
+            className={`${STATE_PILL} border-brand-border-strong bg-brand-panel-sunken text-text-dark-primary`}
+          >
+            {label(`coverage.${row.coverage}`, row.coverage)}
+          </span>
+          <div className={`${META_TEXT} mt-3`}>
+            <p className="font-medium text-text-dark-primary">
+              {t("columns.remainingDecisions")}
+            </p>
+            <div className="mt-1.5">
+              <RowChecks checks={row.nextChecks} shared={shared} />
+            </div>
+          </div>
+          <button
+            type="button"
+            data-keyword-toggle={row.keyword}
+            aria-expanded={expanded}
+            aria-controls={detailId}
+            onClick={() => setExpanded((current) => !current)}
+            className="mt-3 inline-flex min-h-11 items-center rounded-[9px] border border-brand-border-strong px-3 text-[12.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent hover:text-brand-accent-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+          >
+            {t(expanded ? "evidence.hide" : "evidence.show")}
+          </button>
+        </td>
+      </tr>
+      {expanded ? (
+        <EvidenceDetailRow
+          id={detailId}
+          row={row}
+          locale={locale}
+          columnCount={columnCount}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function IntentSummary({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-text-dark-faint">{label}</dt>
+      <dd className={`${DATA_CHIP} mt-1`}>{value}</dd>
+    </div>
+  );
+}
+
+type SupportingPagePresentation =
+  | { readonly state: "not_observed" | "unavailable" }
+  | {
+      readonly state: "available";
+      readonly source: string | null;
+      readonly compact: string;
+      readonly full: string;
+    };
+
+function supportingPagePresentation(
+  supportingPage: KeywordOpportunityRow["supportingPage"] | undefined,
+  value: string | null,
+): SupportingPagePresentation {
+  const pageUrl =
+    supportingPage?.availability === "available" ? supportingPage.url : value;
+  if (pageUrl === null) {
+    return {
+      state: supportingPage === undefined ? "not_observed" : "unavailable",
+    };
+  }
+  try {
+    const parsed = new URL(pageUrl);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.host === ""
+    ) {
+      return { state: "unavailable" };
+    }
+    return {
+      state: "available",
+      source:
+        supportingPage?.availability === "available"
+          ? supportingPage.source
+          : null,
+      compact: `${parsed.host}${parsed.pathname}`,
+      full: pageUrl,
+    };
+  } catch {
+    return { state: "unavailable" };
+  }
+}
+
+function SupportingPageSummary({
+  supportingPage,
+  value,
+}: {
+  readonly supportingPage: KeywordOpportunityRow["supportingPage"] | undefined;
+  readonly value: string | null;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const page = supportingPagePresentation(supportingPage, value);
+  if (page.state === "available") {
+    return (
+      <div className={`${META_TEXT} space-y-1 break-words text-text-dark-secondary`}>
+        <p>{page.compact}</p>
+        {page.source === null ? null : (
+          <p className="text-text-dark-faint">
+            {label(`supportingPageSources.${page.source}`, page.source)}
+          </p>
+        )}
+      </div>
+    );
+  }
+  return (
+    <span
+      className={`${STATE_PILL} ${
+        page.state === "not_observed"
+          ? "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary"
+          : "border-brand-warning/25 bg-brand-warning/[0.08] text-brand-warning"
+      }`}
+    >
+      {t(`supportingPage.${page.state}`)}
+    </span>
   );
 }
 
@@ -636,28 +1082,307 @@ function ProviderIntentCell({
     : label(`intents.${intent}`, intent);
 }
 
-/** The organic-result interpretation stays visibly separate and provenanced. */
+/** The inferred intent stays separate here; its provenance lives in details. */
 function SerpIntentCell({ row }: { readonly row: KeywordOpportunityRow }) {
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
   if (row.serpIntent === null || row.serpIntent === undefined) {
-    return <span className="text-text-dark-faint">{t("inferenceUnavailable")}</span>;
+    return (
+      <span className="text-text-dark-faint">{t("inferenceUnavailable")}</span>
+    );
   }
 
-  const provenance = [row.serpIntent.modelId, row.serpIntent.promptVersion]
-    .filter((value): value is string => value !== null)
-    .join(" · ");
+  return label(`intents.${row.serpIntent.intent}`, row.serpIntent.intent);
+}
+
+type CompactSignalState = "observed" | "not_observed" | "unavailable";
+
+function CompactSignalList({
+  row,
+  locale,
+}: {
+  readonly row: KeywordOpportunityRow;
+  readonly locale: string;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const young = row.signals?.youngDomain;
+  const traffic = row.signals?.lowOrganicTrafficDomain;
+  const community = row.signals?.communityResult;
+
   return (
-    <>
-      <span className="text-text-dark-primary">
-        {label(`intents.${row.serpIntent.intent}`, row.serpIntent.intent)}
-      </span>
-      {provenance !== "" ? (
-        <span className="mt-1 block font-mono text-[10.5px] break-all text-text-dark-faint">
-          {provenance}
+    <ul className="space-y-2.5">
+      <CompactSignal
+        name="young_domain"
+        state={young?.state ?? "unavailable"}
+        detail={
+          young?.state === "observed"
+            ? t("signalCompact.youngObserved", {
+                domain: young.observation.domain,
+                months: formatCount(young.observation.ageMonths, locale),
+              })
+            : null
+        }
+      />
+      <CompactSignal
+        name="low_organic_traffic_domain"
+        state={traffic?.state ?? "unavailable"}
+        detail={
+          traffic?.state === "observed"
+            ? t("signalCompact.lowTrafficObserved", {
+                domain: traffic.observation.domain,
+                etv: formatCount(traffic.observation.organicEtv, locale),
+              })
+            : null
+        }
+      />
+      <CompactSignal
+        name="community_result"
+        state={community?.state ?? "unavailable"}
+        detail={
+          community?.state === "observed"
+            ? t("signalCompact.communityObserved", {
+                domain: community.observation.domain,
+                position: formatCount(community.observation.position, locale),
+              })
+            : null
+        }
+      />
+    </ul>
+  );
+}
+
+function CompactSignal({
+  name,
+  state,
+  detail,
+}: {
+  readonly name: string;
+  readonly state: CompactSignalState;
+  readonly detail: string | null;
+}) {
+  const label = useOptionalLabel();
+  const stateClass =
+    state === "observed"
+      ? "border-brand-success/30 bg-brand-success/[0.08] text-brand-success"
+      : state === "not_observed"
+        ? "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary"
+        : "border-brand-warning/25 bg-brand-warning/[0.08] text-brand-warning";
+
+  return (
+    <li>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-medium text-text-dark-primary">
+          {label(`signalNames.${name}`, name)}
         </span>
+        <span className={`${STATE_PILL} ${stateClass}`}>
+          {label(`signalStates.${state}`, state)}
+        </span>
+      </div>
+      {detail === null ? null : (
+        <p className={`${META_TEXT} mt-1 text-text-dark-secondary`}>{detail}</p>
+      )}
+    </li>
+  );
+}
+
+function aiOverviewAvailability(
+  evidence: KeywordOpportunityRow["aiOverview"],
+  itemTypes: readonly string[] | null | undefined,
+): "observed" | "not_observed" | "unavailable" {
+  return (
+    evidence?.availability ??
+    (itemTypes === null || itemTypes === undefined
+      ? "unavailable"
+      : itemTypes.includes("ai_overview")
+        ? "observed"
+        : "not_observed")
+  );
+}
+
+function AiOverviewSummary({
+  evidence,
+  itemTypes,
+  decision,
+}: {
+  readonly evidence: KeywordOpportunityRow["aiOverview"];
+  readonly itemTypes: readonly string[] | null | undefined;
+  readonly decision: KeywordOpportunityRow["decision"];
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const availability = aiOverviewAvailability(evidence, itemTypes);
+  const assessment = evidence?.answerAssessment ?? "unavailable";
+  const discounted =
+    decision?.discounts.includes("ai_overview_answer_discount") === true;
+  const availabilityClass =
+    availability === "observed"
+      ? "border-brand-warning/25 bg-brand-warning/[0.08] text-brand-warning"
+      : availability === "not_observed"
+        ? "border-brand-success/30 bg-brand-success/[0.08] text-brand-success"
+        : "border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary";
+
+  return (
+    <div className="space-y-2.5">
+      <div>
+        <p className={META_TEXT}>{t("aio.providerLabel")}</p>
+        <span className={`${STATE_PILL} ${availabilityClass} mt-1`}>
+          {label(`aioAvailability.${availability}`, availability)}
+        </span>
+      </div>
+      <div>
+        <p className={META_TEXT}>{t("aio.assessmentLabel")}</p>
+        <span
+          className={`${STATE_PILL} mt-1 border-brand-border-strong bg-brand-panel-sunken text-text-dark-primary`}
+        >
+          {label(`aioAssessments.${assessment}`, assessment)}
+        </span>
+      </div>
+      {discounted ? (
+        <p className={`${META_TEXT} text-brand-warning`}>
+          {t("aio.discountLabel")}: {t("discounts.ai_overview_answer_discount")}
+        </p>
       ) : null}
-    </>
+    </div>
+  );
+}
+
+function EvidenceDetailRow({
+  id,
+  row,
+  locale,
+  columnCount,
+}: {
+  readonly id: string;
+  readonly row: KeywordOpportunityRow;
+  readonly locale: string;
+  readonly columnCount: number;
+}) {
+  const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
+  const intent = row.serpIntent;
+  const supportingPage = supportingPagePresentation(
+    row.supportingPage,
+    row.supportingPageUrl,
+  );
+
+  return (
+    <tr
+      id={id}
+      data-keyword-detail={row.keyword}
+      className="border-b border-brand-border-card/60 bg-brand-panel-sunken/60"
+    >
+      <td colSpan={columnCount} className="px-4 py-5">
+        <h4 className="text-[14px] font-semibold text-text-dark-primary">
+          {t("evidence.title")}
+        </h4>
+        <div className="mt-4 grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <p className={LABEL}>{t("evidence.intentTitle")}</p>
+            <dl className={`${META_TEXT} mt-3 space-y-2.5`}>
+              <EvidenceFact label={t("columns.providerIntent")}>
+                <ProviderIntentCell row={row} />
+              </EvidenceFact>
+              <EvidenceFact label={t("columns.serpIntent")}>
+                <SerpIntentCell row={row} />
+              </EvidenceFact>
+              <EvidenceFact label={t("evidence.source")}>
+                {intent === null || intent === undefined
+                  ? "—"
+                  : label(
+                      `serpIntentSources.${intent.source}`,
+                      intent.source,
+                    )}
+              </EvidenceFact>
+              <EvidenceFact label={t("evidence.observedAt")}>
+                {intent?.observedAt ?? row.serp.observedAt ?? "—"}
+              </EvidenceFact>
+              <EvidenceFact label={t("evidence.modelId")}>
+                {intent?.modelId ?? "—"}
+              </EvidenceFact>
+              <EvidenceFact label={t("evidence.promptVersion")}>
+                {intent?.promptVersion ?? "—"}
+              </EvidenceFact>
+            </dl>
+          </div>
+
+          <div>
+            <p className={LABEL}>{t("evidence.signalsTitle")}</p>
+            <div className={`${META_TEXT} mt-3`}>
+              <SignalEvidenceList row={row} locale={locale} />
+            </div>
+          </div>
+
+          <div>
+            <p className={LABEL}>{t("columns.aiOverview")}</p>
+            <div className={`${META_TEXT} mt-3`}>
+              <AiOverviewCell
+                evidence={row.aiOverview}
+                itemTypes={row.serp.pageOneItemTypes}
+                decision={row.decision}
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className={LABEL}>{t("evidence.reviewTitle")}</p>
+            <dl className={`${META_TEXT} mt-3 space-y-2.5`}>
+              <EvidenceFact label={t("columns.coverage")}>
+                {label(`coverage.${row.coverage}`, row.coverage)}
+              </EvidenceFact>
+              {supportingPage.state === "available" ? (
+                <>
+                  <EvidenceFact label={t("evidence.supportingPageUrl")}>
+                    <span className="break-all">{supportingPage.full}</span>
+                  </EvidenceFact>
+                  <EvidenceFact label={t("evidence.supportingPageSource")}>
+                    {supportingPage.source === null
+                      ? "—"
+                      : label(
+                          `supportingPageSources.${supportingPage.source}`,
+                          supportingPage.source,
+                        )}
+                  </EvidenceFact>
+                </>
+              ) : null}
+              <EvidenceFact label={t("columns.remainingDecisions")}>
+                <FullRowChecks checks={row.nextChecks} />
+              </EvidenceFact>
+            </dl>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function EvidenceFact({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-text-dark-faint">{label}</dt>
+      <dd className="mt-0.5 break-words text-text-dark-primary">{children}</dd>
+    </div>
+  );
+}
+
+function FullRowChecks({
+  checks,
+}: {
+  readonly checks: readonly KeywordOpportunityCheck[];
+}) {
+  const label = useOptionalLabel();
+  if (checks.length === 0) return <span>—</span>;
+  return (
+    <ul className="space-y-1">
+      {checks.map((check) => (
+        <li key={check}>{label(`checks.${check}`, check)}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -721,31 +1446,50 @@ function SignalEvidenceList({
       : undefined;
 
   return (
-    <ul className="min-w-[270px] space-y-2.5">
+    <ul className="space-y-3">
       <SignalBlock
         name="young_domain"
         evidence={signals?.youngDomain}
         renderObserved={(observation) => (
-          <p>
-            {t("signalEvidence.youngObserved", {
-              domain: observation.domain,
-              date: observation.registrationDate.slice(0, 10),
-              months: formatCount(observation.ageMonths, locale),
-            })}
-          </p>
+          <>
+            <p>
+              {t("signalEvidence.youngObserved", {
+                domain: observation.domain,
+                date: observation.registrationDate.slice(0, 10),
+                months: formatCount(observation.ageMonths, locale),
+              })}
+            </p>
+            <p className="mt-0.5 break-all text-text-dark-faint">
+              {t("evidence.registrationDate")}: {observation.registrationDate}
+            </p>
+            <p className="mt-0.5 break-all text-text-dark-faint">
+              {t("evidence.observedAt")}: {observation.observedAt}
+            </p>
+          </>
         )}
       />
       <SignalBlock
         name="low_organic_traffic_domain"
         evidence={signals?.lowOrganicTrafficDomain}
         renderObserved={(observation) => (
-          <p>
-            {t("signalEvidence.lowTrafficObserved", {
-              domain: observation.domain,
-              etv: formatCount(observation.organicEtv, locale),
-              threshold: formatCount(observation.threshold, locale),
-            })}
-          </p>
+          <>
+            <p>
+              {t("signalEvidence.lowTrafficObserved", {
+                domain: observation.domain,
+                etv: formatCount(observation.organicEtv, locale),
+                threshold: formatCount(observation.threshold, locale),
+              })}
+            </p>
+            <p className="mt-0.5 text-text-dark-faint">
+              {t("evidence.marketLanguage", {
+                market: observation.marketCode,
+                language: observation.languageCode,
+              })}
+            </p>
+            <p className="mt-0.5 break-all text-text-dark-faint">
+              {t("evidence.observedAt")}: {observation.observedAt}
+            </p>
+          </>
         )}
       />
       <SignalBlock
@@ -800,19 +1544,10 @@ function AiOverviewCell({
 }) {
   const t = useTranslations("tools.keywordMap");
   const label = useOptionalLabel();
-  const availability =
-    evidence?.availability ??
-    (itemTypes === null || itemTypes === undefined
-      ? "unavailable"
-      : itemTypes.includes("ai_overview")
-        ? "observed"
-        : "not_observed");
+  const availability = aiOverviewAvailability(evidence, itemTypes);
   const assessment = evidence?.answerAssessment ?? "unavailable";
   const discounted =
     decision?.discounts.includes("ai_overview_answer_discount") === true;
-  const provenance = [evidence?.modelId, evidence?.promptVersion]
-    .filter((value): value is string => value !== null && value !== undefined)
-    .join(" · ");
 
   return (
     <div className="min-w-[220px] space-y-2">
@@ -848,12 +1583,26 @@ function AiOverviewCell({
       ) : null}
       {evidence?.reason !== null && evidence?.reason !== undefined ? (
         <p className="text-text-dark-faint">
+          {t("evidence.reason")}: {" "}
           {label(`evidenceReasons.${evidence.reason}`, evidence.reason)}
         </p>
       ) : null}
-      {provenance !== "" ? (
+      {evidence?.loadedAsync !== null &&
+      evidence?.loadedAsync !== undefined ? (
+        <p className="text-text-dark-faint">
+          {t("evidence.loadedAsync")}: {" "}
+          {t(evidence.loadedAsync ? "values.yes" : "values.no")}
+        </p>
+      ) : null}
+      {evidence?.modelId !== null && evidence?.modelId !== undefined ? (
         <p className="font-mono text-[10.5px] break-all text-text-dark-faint">
-          {provenance}
+          {t("evidence.modelId")}: {evidence.modelId}
+        </p>
+      ) : null}
+      {evidence?.promptVersion !== null &&
+      evidence?.promptVersion !== undefined ? (
+        <p className="font-mono text-[10.5px] break-all text-text-dark-faint">
+          {t("evidence.promptVersion")}: {evidence.promptVersion}
         </p>
       ) : null}
     </div>

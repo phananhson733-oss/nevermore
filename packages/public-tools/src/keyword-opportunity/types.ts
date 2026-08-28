@@ -5,7 +5,7 @@
 
 import type { PublicToolResultEnvelope } from "../contract.ts";
 
-export const KEYWORD_OPPORTUNITY_SCHEMA_VERSION = "keyword_opportunity_map.v2";
+export const KEYWORD_OPPORTUNITY_SCHEMA_VERSION = "keyword_opportunity_map.v3";
 
 /**
  * Where a candidate came from.
@@ -92,6 +92,17 @@ export type KeywordOpportunitySerpFailureReason =
    * is likely to resolve.
    */
   | "budget_exhausted";
+
+/**
+ * Bounded SERP failure categories safe to expose in a run summary.
+ *
+ * `unreported` exists only in the aggregate. It records that v3 evidence was
+ * unavailable without a typed reason; it must never be copied back onto a row
+ * as though a provider returned it.
+ */
+export type KeywordOpportunityProcessSerpFailureReason =
+  | KeywordOpportunitySerpFailureReason
+  | "unreported";
 
 export interface KeywordOpportunityOrganicResult {
   readonly position: number;
@@ -333,7 +344,7 @@ export type KeywordOpportunityWithheldReason =
   | "serp_sample_unavailable"
   /** GEO lane only: nothing on the crawled site answers the question. */
   | "no_supporting_page"
-  /** All three v2 decision signals completed and each was negative. */
+  /** All three decision signals completed and each was negative. */
   | "all_signals_not_observed";
 
 export type KeywordOpportunityAvailability =
@@ -391,6 +402,18 @@ export const KEYWORD_OPPORTUNITY_WINNABILITY_STATES = [
   "no_serp_evidence",
 ] as const satisfies readonly KeywordOpportunityWinnability[];
 
+export const KEYWORD_OPPORTUNITY_SERP_FAILURE_REASONS = [
+  "provider_unavailable",
+  "provider_no_data",
+  "transport_outcome_unknown",
+  "budget_exhausted",
+] as const satisfies readonly KeywordOpportunitySerpFailureReason[];
+
+export const KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS = [
+  ...KEYWORD_OPPORTUNITY_SERP_FAILURE_REASONS,
+  "unreported",
+] as const satisfies readonly KeywordOpportunityProcessSerpFailureReason[];
+
 export const KEYWORD_OPPORTUNITY_COVERAGE_STATES = [
   "observed_exact_strong",
   "observed_exact_weak",
@@ -414,6 +437,13 @@ export const KEYWORD_OPPORTUNITY_SIGNAL_STATES = [
   "not_observed",
   "unavailable",
 ] as const satisfies readonly KeywordOpportunitySignalState[];
+
+export const KEYWORD_OPPORTUNITY_SUPPORTING_PAGE_SOURCES = [
+  "gsc_observed_query_page",
+  "lexical_page_match",
+  "inventory_url_match",
+  "llm_proposition_source",
+] as const satisfies readonly KeywordOpportunitySupportingPageSource[];
 
 export const KEYWORD_OPPORTUNITY_DISPOSITIONS = [
   "eligible",
@@ -467,6 +497,14 @@ const UNION_LISTS_ARE_COMPLETE: readonly [
     typeof KEYWORD_OPPORTUNITY_WINNABILITY_STATES
   >,
   AssertComplete<
+    KeywordOpportunitySerpFailureReason,
+    typeof KEYWORD_OPPORTUNITY_SERP_FAILURE_REASONS
+  >,
+  AssertComplete<
+    KeywordOpportunityProcessSerpFailureReason,
+    typeof KEYWORD_OPPORTUNITY_PROCESS_SERP_FAILURE_REASONS
+  >,
+  AssertComplete<
     KeywordOpportunityCoverage,
     typeof KEYWORD_OPPORTUNITY_COVERAGE_STATES
   >,
@@ -474,6 +512,10 @@ const UNION_LISTS_ARE_COMPLETE: readonly [
   AssertComplete<
     KeywordOpportunitySignalState,
     typeof KEYWORD_OPPORTUNITY_SIGNAL_STATES
+  >,
+  AssertComplete<
+    KeywordOpportunitySupportingPageSource,
+    typeof KEYWORD_OPPORTUNITY_SUPPORTING_PAGE_SOURCES
   >,
   AssertComplete<
     KeywordOpportunityDisposition,
@@ -491,7 +533,22 @@ const UNION_LISTS_ARE_COMPLETE: readonly [
     KeywordOpportunityAvailability,
     typeof KEYWORD_OPPORTUNITY_AVAILABILITY_STATES
   >,
-] = [true, true, true, true, true, true, true, true, true, true, true];
+] = [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+];
 void UNION_LISTS_ARE_COMPLETE;
 
 /** A selling point read off the site, with the crawled URL that shows it. */
@@ -532,7 +589,7 @@ export interface KeywordOpportunityValidation {
   readonly volume: number | null;
   readonly difficulty: number | null;
   /**
-   * Explicit v2 provider provenance. Optional only for old-bundle tolerance;
+   * Explicit provider provenance. Optional only for old-bundle tolerance;
    * new report rows carry it independently from any SERP interpretation.
    */
   readonly providerIntent?: KeywordOpportunityProviderIntent | null;
@@ -544,9 +601,9 @@ export interface KeywordOpportunityValidation {
 /** One sampled page one, reduced to the facts that decide winnability. */
 export interface KeywordOpportunitySerpEvidence {
   /**
-   * Optional only for signal-less v1 observations. When v2 signals are
-   * present, a missing status is fail-closed as incomplete, never inferred as
-   * complete.
+   * Optional only for signal-less legacy observations. When structured
+   * signals are present, a missing status is fail-closed as incomplete, never
+   * inferred as complete.
    */
   readonly status?: KeywordOpportunitySerpStatus;
   readonly failureReason?: KeywordOpportunitySerpFailureReason | null;
@@ -585,6 +642,31 @@ export interface KeywordOpportunitySerpEvidence {
   readonly isEstimate: boolean;
 }
 
+/** The evidence source that identified a page related to one candidate. */
+export type KeywordOpportunitySupportingPageSource =
+  | "gsc_observed_query_page"
+  | "lexical_page_match"
+  | "inventory_url_match"
+  | "llm_proposition_source";
+
+/**
+ * A page reference with its provenance kept explicit.
+ *
+ * `llm_proposition_source` records where the proposition came from. It is not
+ * measured coverage and must never be renamed to an observed source.
+ */
+export type KeywordOpportunitySupportingPage =
+  | {
+      readonly availability: "available";
+      readonly source: KeywordOpportunitySupportingPageSource;
+      readonly url: string;
+    }
+  | {
+      readonly availability: "unavailable";
+      readonly source: null;
+      readonly url: null;
+    };
+
 export interface KeywordOpportunityRow {
   readonly keyword: string;
   readonly lane: KeywordOpportunityLane;
@@ -599,10 +681,17 @@ export interface KeywordOpportunityRow {
   readonly aiOverview?: KeywordOpportunityAiOverviewEvidence | null;
   readonly decision?: KeywordOpportunityDecision;
   readonly coverage: KeywordOpportunityCoverage;
-  /** The crawled page that already answers this, when one does. */
+  /** Optional only while a cached v2 row is still being read. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
+  /** @deprecated Read `supportingPage`; retained for current UI compatibility. */
   readonly supportingPageUrl: string | null;
   readonly nextChecks: readonly KeywordOpportunityCheck[];
   readonly clusterId: string | null;
+}
+
+/** A row emitted by the v3 producer. */
+export interface KeywordOpportunityRowV3 extends KeywordOpportunityRow {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /** A candidate that was dropped, kept visible so the funnel stays honest. */
@@ -613,7 +702,7 @@ export interface KeywordOpportunityWithheld {
   readonly decision?: KeywordOpportunityDecision;
 }
 
-/** A v2 candidate whose required decision evidence did not complete. */
+/** A v3 candidate whose required decision evidence did not complete. */
 export interface KeywordOpportunityIncomplete {
   readonly keyword: string;
   readonly lane: KeywordOpportunityLane;
@@ -626,6 +715,16 @@ export interface KeywordOpportunityIncomplete {
   readonly aiOverview: KeywordOpportunityAiOverviewEvidence | null;
   readonly reason: KeywordOpportunityIncompleteReason;
   readonly decision: KeywordOpportunityDecision;
+  /** Optional only while a cached v2 incomplete row is still being read. */
+  readonly supportingPage?: KeywordOpportunitySupportingPage;
+  /** @deprecated Read `supportingPage`; retained for v2 deployment skew. */
+  readonly supportingPageUrl?: string | null;
+}
+
+/** An incomplete row emitted by the v3 producer. */
+export interface KeywordOpportunityIncompleteV3
+  extends KeywordOpportunityIncomplete {
+  readonly supportingPage: KeywordOpportunitySupportingPage;
 }
 
 /**
@@ -711,6 +810,129 @@ export interface KeywordOpportunityFunnel {
   readonly shown: number;
 }
 
+/** Versioned local policy whose provisional thresholds produced this run. */
+export const KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION =
+  "keyword_opportunity_thresholds.v1";
+
+export type KeywordOpportunityThresholdPolicyVersion =
+  typeof KEYWORD_OPPORTUNITY_THRESHOLD_POLICY_VERSION;
+
+/** Requesting-site rank band used to select the organic-traffic threshold. */
+export type KeywordOpportunitySiteRankTier =
+  | "rank_1_200"
+  | "rank_201_500"
+  | "rank_501_1000";
+
+/**
+ * Threshold facts supplied by the producer.
+ *
+ * Null means the caller did not measure or could not select that fact. A
+ * report builder must not substitute the current code constant for a missing
+ * run-time observation because cached results can outlive policy changes.
+ */
+export interface KeywordOpportunityProcessThresholds {
+  readonly policyVersion: KeywordOpportunityThresholdPolicyVersion | null;
+  readonly youngDomainMonths: number | null;
+  readonly siteDomainRank: number | null;
+  readonly siteRankTier: KeywordOpportunitySiteRankTier | null;
+  readonly lowOrganicTrafficThreshold: number | null;
+}
+
+/** Milliseconds measured at real pipeline boundaries; null means not measured. */
+export interface KeywordOpportunityProcessDurationsMs {
+  readonly total: number | null;
+  readonly validation: number | null;
+  readonly coverage: number | null;
+  readonly serpSampling: number | null;
+  readonly serpInterpretation: number | null;
+  readonly domainEnrichment: number | null;
+  readonly report: number | null;
+}
+
+/** Caller-owned counts that cannot be reconstructed from projected rows. */
+export interface KeywordOpportunityProcessInput {
+  readonly validation?: {
+    readonly requested: number;
+  };
+  readonly serp?: {
+    readonly planned: number;
+    readonly dispatched: number;
+  };
+  readonly thresholds?: KeywordOpportunityProcessThresholds;
+  readonly durationsMs?: KeywordOpportunityProcessDurationsMs;
+}
+
+export interface KeywordOpportunityProcessValidation {
+  /** Null when the producer did not report a valid requested count. */
+  readonly requested: number | null;
+  readonly available: number;
+  readonly explicitZero: number;
+  readonly providerNoData: number;
+  readonly accounted: boolean;
+}
+
+export interface KeywordOpportunityProcessSerp {
+  /** Null when the producer did not report a valid plan count. */
+  readonly planned: number | null;
+  /** Null when the producer did not report a valid dispatch count. */
+  readonly dispatched: number | null;
+  readonly completed: number;
+  readonly failed: number;
+  /** Legacy observations that never carried a transport status. Not failures. */
+  readonly legacyStatusUnreported: number;
+  readonly failureReasons: Readonly<
+    Record<KeywordOpportunityProcessSerpFailureReason, number>
+  >;
+  readonly accounted: boolean;
+}
+
+export interface KeywordOpportunityProcessDecisions {
+  readonly eligible: number;
+  readonly withheld: number;
+  readonly incomplete: number;
+  /** Eligible rows with at least one positive and one unavailable signal. */
+  readonly positiveWithUnavailableSignals: number;
+  readonly withheldReasons: Readonly<
+    Record<KeywordOpportunityWithheldReason, number>
+  >;
+  readonly incompleteReasons: Readonly<
+    Record<KeywordOpportunityIncompleteReason, number>
+  >;
+  readonly accounted: boolean;
+}
+
+export interface KeywordOpportunityProcessSupportingPages {
+  readonly sources: Readonly<
+    Record<KeywordOpportunitySupportingPageSource, number>
+  >;
+  /** A valid legacy URL was present but no structured source travelled with it. */
+  readonly sourceUnreported: number;
+  /** No usable supporting-page reference was available. */
+  readonly unavailable: number;
+  readonly accounted: boolean;
+}
+
+/** One privacy-safe aggregate; no keyword, URL, domain, or provider text. */
+export interface KeywordOpportunityProcessSignalStateCount {
+  readonly youngDomain: KeywordOpportunitySignalState;
+  readonly lowOrganicTrafficDomain: KeywordOpportunitySignalState;
+  readonly communityResult: KeywordOpportunitySignalState;
+  readonly count: number;
+}
+
+/** Complete public reconciliation for one v3 run. */
+export interface KeywordOpportunityProcess {
+  readonly validation: KeywordOpportunityProcessValidation;
+  readonly serp: KeywordOpportunityProcessSerp;
+  readonly decisions: KeywordOpportunityProcessDecisions;
+  readonly supportingPages: KeywordOpportunityProcessSupportingPages;
+  readonly signalStates: readonly KeywordOpportunityProcessSignalStateCount[];
+  /** Observations from a v2 producer that carried no structured signals. */
+  readonly legacyWithoutSignals: number;
+  readonly thresholds: KeywordOpportunityProcessThresholds;
+  readonly durationsMs: KeywordOpportunityProcessDurationsMs;
+}
+
 export interface KeywordOpportunityResult {
   readonly availability: KeywordOpportunityAvailability;
   readonly marketCode: string;
@@ -718,10 +940,12 @@ export interface KeywordOpportunityResult {
   readonly context: KeywordOpportunityContext;
   readonly rows: readonly KeywordOpportunityRow[];
   readonly withheld: readonly KeywordOpportunityWithheld[];
-  /** Optional only so an older cached bundle can still read a v2 payload. */
+  /** Optional only so an older cached v2 bundle remains readable. */
   readonly incomplete?: readonly KeywordOpportunityIncomplete[];
   readonly clusters: readonly KeywordOpportunityCluster[];
   readonly funnel: KeywordOpportunityFunnel;
+  /** Run-scoped ledger that reconciles the whole candidate set. */
+  readonly process?: KeywordOpportunityProcess;
   /**
    * Which parts of the run could not be completed, by name.
    *
@@ -732,13 +956,26 @@ export interface KeywordOpportunityResult {
   readonly nextStepSuggestions: readonly string[];
 }
 
-/** The emitted v2 result; `incomplete` is always present, including when empty. */
-export interface KeywordOpportunityResultV2 extends KeywordOpportunityResult {
+/**
+ * The v3 producer result; structured provenance and reconciliation are
+ * required even when thresholds or durations were not measured.
+ */
+export type KeywordOpportunityResultV3 = Omit<
+  KeywordOpportunityResult,
+  "rows" | "incomplete" | "process"
+> & {
+  readonly rows: readonly KeywordOpportunityRowV3[];
+  readonly incomplete: readonly KeywordOpportunityIncompleteV3[];
+  readonly process: KeywordOpportunityProcess;
+};
+
+/** @deprecated The current producer emits `KeywordOpportunityResultV3`. */
+export type KeywordOpportunityResultV2 = KeywordOpportunityResult & {
   readonly incomplete: readonly KeywordOpportunityIncomplete[];
-}
+};
 
 export type KeywordOpportunityEnvelope = PublicToolResultEnvelope<
-  KeywordOpportunityResultV2,
+  KeywordOpportunityResultV3,
   "keyword_opportunity_map",
   "site"
 >;

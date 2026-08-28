@@ -39,7 +39,11 @@ import type {
   DailyBriefingSuggestedCheck,
 } from "@sf/public-tools";
 import { localePath } from "../../lib/locale-path";
-import { writeToolHandoff } from "../../lib/tools/tool-handoff";
+import {
+  TOOL_HANDOFF_LINK_PROPS,
+  writeToolHandoff,
+  type ToolHandoffPayload,
+} from "../../lib/tools/tool-handoff";
 import { DailyBriefingTrendChart } from "./daily-briefing-trend";
 
 const CARD =
@@ -1048,173 +1052,156 @@ export function DailyBriefingResults({
    * and current browsers apply noopener to `target="_blank"` by default --
    * measured in Chromium and WebKit, a `noopener` destination reads `null` and
    * looks like it lost the property this page just handed it. The destinations
-   * are our own same-origin tools, which same-origin already lets reach this
-   * document, so the opener reference concedes nothing new.
+   * are our own same-origin tools -- but same-origin is a permission, not a
+   * reference: without an opener, another tab of ours cannot reach this
+   * document at all. Keeping one really does hand the destination a Window it
+   * would not otherwise have, and the honest statement of the cost is that an
+   * XSS on one of our own tool pages would also reach the tab that opened it.
+   * The bound is the destination set: fixed `/tools/` literals on our origin,
+   * with `locale` whitelisted in the locale layout before any of this renders.
    */
+  /**
+   * Write the handoff, and cancel the navigation when it could not be written.
+   *
+   * Six call sites repeated this envelope -- try/catch, the failure flag, the
+   * `preventDefault` -- with only the payload literal differing, so a seventh
+   * had to remember the cancel step by hand. Arriving at a destination that
+   * reads a property which was never stored looks like the destination lost
+   * it, which is the whole reason the step exists.
+   *
+   * A null payload is the same outcome as a failed write, because it is: two
+   * of these rows can only build a payload when the value that identifies the
+   * page is present, and a row that cannot say where it is going must not
+   * navigate either.
+   */
+  function handoffOrCancel(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    payload: ToolHandoffPayload | null,
+  ): void {
+    if (payload !== null) {
+      try {
+        if (writeToolHandoff(window.sessionStorage, Date.now(), payload)) {
+          return;
+        }
+      } catch {
+        // Storage itself can be unavailable, which is a browser state, not a
+        // defect. Falls through to the cancel below.
+      }
+    }
+    event.preventDefault();
+    setHandoffFailed(true);
+  }
+
   function handoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     action: DailyBriefingAction,
     index: number,
   ) {
-    let written = false;
-    try {
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: action.destination,
-        scope: "query_page",
-        property,
-        query: action.query,
-        page: action.page,
-        evidenceId: `daily:${index}:${action.kind}`,
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(event, {
+      source: "daily-search-briefing",
+      destination: action.destination,
+      scope: "query_page",
+      property,
+      query: action.query,
+      page: action.page,
+      evidenceId: `daily:${index}:${action.kind}`,
+    });
   }
 
   function pageHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     action: DailyBriefingPageAction,
   ) {
-    let written = false;
-    try {
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: action.destination,
-        // A page and no query: the queries that moved it are anonymized, and
-        // inventing one to fit the query_page shape would hand the next tool a
-        // term this briefing never saw.
-        scope: "page",
-        property,
-        query: null,
-        page: action.page,
-        evidenceId: `daily:page:${action.kind}`,
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(event, {
+      source: "daily-search-briefing",
+      destination: action.destination,
+      // A page and no query: the queries that moved it are anonymized, and
+      // inventing one to fit the query_page shape would hand the next tool a
+      // term this briefing never saw.
+      scope: "page",
+      property,
+      query: null,
+      page: action.page,
+      evidenceId: `daily:page:${action.kind}`,
+    });
   }
 
   function checkHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     check: DailyBriefingSuggestedCheck,
   ) {
-    let written = false;
-    try {
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: check.destination,
-        scope: "query_page",
-        property,
-        query: check.query,
-        page: check.page,
-        // Deliberately not an action index. A check never entered the action
-        // list and must not be counted as one downstream.
-        evidenceId: `daily:check:${check.sampleKind}`,
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(event, {
+      source: "daily-search-briefing",
+      destination: check.destination,
+      scope: "query_page",
+      property,
+      query: check.query,
+      page: check.page,
+      // Deliberately not an action index. A check never entered the action
+      // list and must not be counted as one downstream.
+      evidenceId: `daily:check:${check.sampleKind}`,
+    });
   }
 
   function pageCheckHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     check: DailyBriefingPageCheck,
   ) {
-    let written = false;
-    try {
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: check.destination,
-        // Page scope, and no query: this check is a statement about a page's
-        // whole impression base, not about any one term that produced it.
-        scope: "page",
-        property,
-        query: null,
-        page: check.page,
-        // Not an action index. A check never entered the action list and must
-        // not be counted as one downstream.
-        evidenceId: "daily:page-check:zero_clicks",
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(event, {
+      source: "daily-search-briefing",
+      destination: check.destination,
+      // Page scope, and no query: this check is a statement about a page's
+      // whole impression base, not about any one term that produced it.
+      scope: "page",
+      property,
+      query: null,
+      page: check.page,
+      // Not an action index. A check never entered the action list and must
+      // not be counted as one downstream.
+      evidenceId: "daily:page-check:zero_clicks",
+    });
   }
 
   function provisionalHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     move: DailyBriefingProvisionalMove,
   ) {
-    let written = false;
-    try {
-      if (move.page === null) {
-        event.preventDefault();
-        setHandoffFailed(true);
-        return;
-      }
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: "on-page-seo-check",
-        scope: "query_page",
-        property,
-        query: move.query,
-        page: move.page,
-        // Deliberately not an action index: this row never entered the action
-        // list and must not be counted as one downstream.
-        evidenceId: `daily:provisional:${move.kind}`,
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(
+      event,
+      move.page === null
+        ? null
+        : {
+    source: "daily-search-briefing",
+    destination: "on-page-seo-check",
+    scope: "query_page",
+    property,
+    query: move.query,
+    page: move.page,
+    // Deliberately not an action index: this row never entered the action
+    // list and must not be counted as one downstream.
+    evidenceId: `daily:provisional:${move.kind}`,
+          },
+    );
   }
 
   function propertyHandoff(
     event: ReactMouseEvent<HTMLAnchorElement>,
     trend: DailyBriefingPropertyTrend,
   ) {
-    let written = false;
-    try {
-      if (trend.action === null || trend.change === null) {
-        event.preventDefault();
-        setHandoffFailed(true);
-        return;
-      }
-      written = writeToolHandoff(window.sessionStorage, Date.now(), {
-        source: "daily-search-briefing",
-        destination: trend.action.destination,
-        scope: "property",
-        property,
-        query: null,
-        page: null,
-        evidenceId: `daily:property:${trend.change.kind}`,
-      });
-    } catch {
-      written = false;
-    }
-    if (!written) {
-      event.preventDefault();
-      setHandoffFailed(true);
-    }
+    handoffOrCancel(
+      event,
+      trend.action === null || trend.change === null
+        ? null
+        : {
+    source: "daily-search-briefing",
+    destination: trend.action.destination,
+    scope: "property",
+    property,
+    query: null,
+    page: null,
+    evidenceId: `daily:property:${trend.change.kind}`,
+          },
+    );
   }
 
   return (
@@ -1487,8 +1474,7 @@ export function DailyBriefingResults({
                     <Link
                       data-provisional-check-link
                       href={localePath(locale, "/tools/on-page-seo-check")}
-                      target="_blank"
-                      rel="opener"
+                      {...TOOL_HANDOFF_LINK_PROPS}
                       onClick={(event) => provisionalHandoff(event, move)}
                       className="mt-2 inline-flex text-[11.5px] leading-[1.6] font-semibold text-brand-accent-text underline decoration-brand-accent/35 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
                     >
@@ -1801,8 +1787,7 @@ export function DailyBriefingResults({
                   <Link
                     data-action-link
                     href={localePath(locale, target.path)}
-                    target="_blank"
-                    rel="opener"
+                    {...TOOL_HANDOFF_LINK_PROPS}
                     onClick={(event) => handoff(event, action, index)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
@@ -1897,8 +1882,7 @@ export function DailyBriefingResults({
                   <Link
                     data-action-link
                     href={localePath(locale, target.path)}
-                    target="_blank"
-                    rel="opener"
+                    {...TOOL_HANDOFF_LINK_PROPS}
                     onClick={(event) => pageHandoff(event, action)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >
@@ -1962,8 +1946,7 @@ export function DailyBriefingResults({
                 <Link
                   data-action-link
                   href={localePath(locale, propertyTarget.path)}
-                  target="_blank"
-                  rel="opener"
+                  {...TOOL_HANDOFF_LINK_PROPS}
                   onClick={(event) => propertyHandoff(event, result.propertyTrend)}
                   className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-accent/30 bg-brand-accent-soft px-3.5 py-2.5 text-[13px] font-semibold text-brand-accent-text transition-colors hover:border-brand-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                 >
@@ -2036,8 +2019,7 @@ export function DailyBriefingResults({
                     <Link
                       data-check-link
                       href={localePath(locale, target.path)}
-                      target="_blank"
-                      rel="opener"
+                      {...TOOL_HANDOFF_LINK_PROPS}
                       onClick={(event) => checkHandoff(event, check)}
                       className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                     >
@@ -2099,8 +2081,7 @@ export function DailyBriefingResults({
                   <Link
                     data-page-check-link
                     href={localePath(locale, destination(check.destination).path)}
-                    target="_blank"
-                    rel="opener"
+                    {...TOOL_HANDOFF_LINK_PROPS}
                     onClick={(event) => pageCheckHandoff(event, check)}
                     className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[9px] border border-brand-border bg-brand-panel px-3.5 py-2.5 text-[13px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent lg:w-auto lg:shrink-0 lg:self-center"
                   >

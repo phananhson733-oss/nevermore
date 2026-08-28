@@ -227,7 +227,6 @@ describe("on-page draft slot", () => {
 
   it.each([
     ["a sixth query", { targetQueries: ["a", "b", "c", "d", "e", "f"] }],
-    ["no queries", { targetQueries: [] }],
     ["a lowercase market", { country: "us" }],
     ["an unknown page type", { pageType: "article" }],
     ["an empty url", { url: "   " }],
@@ -241,6 +240,21 @@ describe("on-page draft slot", () => {
       ),
     ).toBeNull();
     expect(storage.getItem(ON_PAGE_DRAFT_KEY)).toBeNull();
+  });
+
+  it("keeps a draft that names no query", () => {
+    // A URL-only check is a run the tool now performs, so a draft carrying
+    // only the URL is the state a sign-in interrupted — refusing it sent the
+    // visitor back to an empty form.
+    const storage = new MemoryStorage();
+    const stored = storeOnPageDraft(
+      storage,
+      { ...draftInput, targetQueries: [] },
+      1_000,
+    );
+
+    expect(stored).not.toBeNull();
+    expect(readOnPageDraft(storage, 1_001)?.targetQueries).toEqual([]);
   });
 
   it("survives malformed stored text without throwing", () => {

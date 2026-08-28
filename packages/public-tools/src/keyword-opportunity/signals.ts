@@ -15,8 +15,9 @@ import type {
 
 /**
  * Apply the three-question rule without collapsing unknown evidence to false.
- * Any unavailable required signal keeps the candidate incomplete, even when a
- * separate signal is positive; only three completed negatives may exclude.
+ * One observed positive admits the candidate even when a sibling signal is
+ * unavailable; only no-positive unknowns stay incomplete, and only three
+ * completed negatives may exclude.
  */
 export function classifyKeywordOpportunitySignals(
   signals: KeywordOpportunitySignals,
@@ -47,21 +48,21 @@ export function classifyKeywordOpportunitySignals(
     .map(([name]) => name);
   const unavailable = named.find(([, state]) => state === "unavailable");
 
-  if (unavailable !== undefined) {
-    return {
-      disposition: "incomplete",
-      basis: "signal_evidence_unavailable",
-      positiveSignals,
-      incompleteReason: unavailable[2],
-    };
-  }
-
   if (positiveSignals.length > 0) {
     return {
       disposition: "eligible",
       basis: "positive_signal_observed",
       positiveSignals,
       incompleteReason: null,
+    };
+  }
+
+  if (unavailable !== undefined) {
+    return {
+      disposition: "incomplete",
+      basis: "signal_evidence_unavailable",
+      positiveSignals,
+      incompleteReason: unavailable[2],
     };
   }
 
@@ -73,7 +74,7 @@ export function classifyKeywordOpportunitySignals(
   };
 }
 
-/** AI Overview assessment is a ranking discount in v2, never an exclusion. */
+/** AI Overview assessment is a ranking discount, never an exclusion. */
 export function keywordOpportunityDecisionDiscounts(
   aiOverview: KeywordOpportunityAiOverviewObservation | null | undefined,
 ): readonly KeywordOpportunityDecisionDiscount[] {

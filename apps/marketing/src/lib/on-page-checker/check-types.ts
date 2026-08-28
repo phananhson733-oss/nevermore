@@ -66,7 +66,16 @@ export interface CheckDetail {
 export interface CheckInput {
   readonly targetUrl: string;
   readonly extract: SeoAuditTargetPageExtract;
-  readonly evidence: KeywordEvidence;
+  /**
+   * Null when the visitor named no target query.
+   *
+   * Distinct from `availability: "unavailable"`, which means a query was named
+   * and the page's text could not be read to compare it against. One is a
+   * choice and the other is a failure, and they cannot share an outcome: the
+   * failure holds the score down, while never having asked means there is no
+   * score to hold down.
+   */
+  readonly evidence: KeywordEvidence | null;
   readonly siteResources: SeoAuditSiteResources;
   /**
    * Site-wide rules that named this page.

@@ -2000,8 +2000,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
             return Response.json({ signedIn: true });
           }
           if (path === "/api/account/websites") {
-            const { draft: _draft, currentConfirmedSnapshot: _snapshot, ...summary } =
-              website;
+            const {
+              submittedUrl: _submittedUrl,
+              draft: _draft,
+              currentConfirmedSnapshot: _snapshot,
+              ...summary
+            } = website;
             return Response.json({ data: { websites: [summary] } });
           }
           if (path === "/api/account/websites/" + website.websiteId) {
@@ -2111,6 +2115,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         }
         if (path === "/api/account/websites") {
           const {
+            submittedUrl: _submittedUrl,
             draft: _draft,
             currentConfirmedSnapshot: _snapshot,
             ...summary

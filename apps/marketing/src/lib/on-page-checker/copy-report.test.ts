@@ -56,13 +56,9 @@ function evidenceFor(raw: readonly string[], role: "product" | null = "product")
   return buildKeywordEvidence(extract, normalized.queries, role);
 }
 
-function report(
-  raw: readonly string[] = ["pricing"],
-  landedUrl: string | null = null,
-) {
+function report(raw: readonly string[] = ["pricing"]) {
   return buildCopyReport({
     targetUrl: extract.url,
-    landedUrl,
     scannedAt: "2026-08-17T12:00:00.000Z",
     cacheStatus: "miss",
     evidence: evidenceFor(raw),
@@ -71,30 +67,99 @@ function report(
 }
 
 describe("buildCopyReport", () => {
-  it("names the page it actually read when the submitted URL redirected", () => {
-    // The assistant on the other end of this paste is asked to act on the
-    // report. Without this line it is told to fix a page the audit never read:
-    // a URL that redirects produces a report about its destination, and the
-    // header named the redirect.
-    const redirected = report(["pricing"], "https://example.com/landed");
+  it("hands on a query-free run's findings instead of a note about them", () => {
+    // This paste exists to be given to an assistant that will implement the
+    // fixes. A run with no query still has forty graded checks; returning the
+    // "no keyword evidence" stub for it would hand over an explanation and
+    // none of the work.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      limitationText,
+      result: {
+        score: null,
+        grade: null,
+        scoreUnavailable: "No overall score this run: no target query.",
+        counts: { pass: 12, warn: 2, fail: 1 },
+        topicFocus: null,
+        categories: [
+          { label: "Technical", earned: 8, available: 10 },
+          // Nothing in it was gradable. `0/0` in a score table reads as a
+          // category that scored nothing rather than one never scored.
+          { label: "Keyword placement", earned: 0, available: 0 },
+        ],
+        caps: [],
+        checks: [
+          {
+            id: "canonical",
+            state: "fail",
+            score: 0,
+            max: 4,
+            label: "Canonical",
+            detail: "The canonical points at another URL.",
+            categoryLabel: "Technical",
+          },
+        ],
+      },
+    });
 
-    expect(redirected).toContain(
-      "- Redirected to: `https://example.com/landed` (the page this report read)",
-    );
-    // Under the URL it qualifies, not somewhere the reader meets it first.
-    expect(redirected.indexOf("- Page:")).toBeLessThan(
-      redirected.indexOf("- Redirected to:"),
-    );
-    expect(redirected.indexOf("- Redirected to:")).toBeLessThan(
-      redirected.indexOf("- Collected at:"),
-    );
+    expect(text).toContain("No target query was submitted");
+    expect(text).toContain("No overall score this run");
+    // The absence is words, never a number an assistant could compare with a
+    // scored page's.
+    expect(text).not.toMatch(/\b\d{1,3}\/100\b/);
+    // And the work is there.
+    expect(text).toContain("## Not passing");
+    expect(text).toContain("canonical");
+    expect(text).toContain("| `Technical` | 8/10 |");
+    expect(text).not.toContain("0/0");
+    expect(text).not.toContain("| `Keyword placement` |");
   });
 
-  it("says nothing about redirects when nothing redirected", () => {
-    // A "redirected to" line on every clean run says nothing and trains the
-    // reader to skip it, which is how the line would be missed on the one run
-    // where it mattered.
-    expect(report()).not.toContain("Redirected to");
+  it("keeps a query-free run's reason right when the page URL alone blows the budget", () => {
+    // The three shapes are tried richest first. Before the last one was
+    // returned unconditionally, a URL this long fell through to the branch
+    // written about a query that WAS named — printing "the submitted page was
+    // collected, but its text was not carried", which is a different failure
+    // and not this run's.
+    const text = buildCopyReport({
+      targetUrl: `https://example.com/${"a".repeat(COPY_REPORT_MAX_BYTES)}`,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      limitationText,
+    });
+
+    expect(text).toContain("No target query was submitted");
+    expect(text).not.toContain("its text was not carried");
+    expect(text).not.toContain("was not collected as a readable HTML response");
+  });
+
+  it("names the page's own failure on a query-free run that read nothing", () => {
+    // The keyword region cannot carry this: a URL-only run has none. Without
+    // the page state the report said only that no query was submitted, and
+    // promised "the checks below" above a report with no checks — handing an
+    // assistant an unreadable page as if it were a clean structural check.
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "miss",
+      evidence: null,
+      pageState: "not_captured",
+      limitationText,
+    });
+
+    // Order, not just presence. A reader told only that no query was named
+    // will go and name one against a page that cannot be read, so the page
+    // fact has to come first — and two `toContain`s cannot say that.
+    const page = text.indexOf("was not collected as a readable HTML response");
+    const query = text.indexOf("No target query was submitted");
+    expect(page).toBeGreaterThanOrEqual(0);
+    expect(query).toBeGreaterThan(page);
+    expect(text).not.toContain("The checks below");
+    expect(text).toContain("This is not a score of zero.");
   });
 
   it("puts the sections in the order the reader needs them", () => {
@@ -133,7 +198,6 @@ describe("buildCopyReport", () => {
     // to catch.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: (() => {
@@ -194,7 +258,6 @@ describe("buildCopyReport", () => {
     if (!normalized.ok) throw new Error(normalized.reason);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "unknown",
       evidence: buildKeywordEvidence(null, normalized.queries, null),
@@ -207,6 +270,47 @@ describe("buildCopyReport", () => {
     expect(text).not.toContain("## Coverage");
   });
 
+  it("still hands over the graded work when the keyword region is unavailable", () => {
+    // The screen shows the score and the forty checks for this run — the
+    // keyword ceiling holds the total down, and everything else graded. The
+    // paste used to return the note alone, so the two disagreed about what the
+    // same run produced.
+    const normalized = normalizeTargetQueries(["pricing"]);
+    if (!normalized.ok) throw new Error(normalized.reason);
+    const text = buildCopyReport({
+      targetUrl: extract.url,
+      scannedAt: "2026-08-17T12:00:00.000Z",
+      cacheStatus: "unknown",
+      evidence: buildKeywordEvidence(null, normalized.queries, null),
+      limitationText,
+      result: {
+        score: 60,
+        grade: "C",
+        counts: { pass: 12, warn: 2, fail: 1 },
+        topicFocus: null,
+        categories: [{ label: "Technical", earned: 8, available: 10 }],
+        caps: ["Held at 60: the keyword region was not measured."],
+        checks: [
+          {
+            id: "canonical",
+            state: "fail",
+            score: 0,
+            max: 4,
+            label: "Canonical",
+            detail: "The canonical points at another URL.",
+            categoryLabel: "Technical",
+          },
+        ],
+      },
+    });
+
+    expect(text).toContain("target_page_not_captured");
+    expect(text).toContain("60/100");
+    expect(text).toContain("Held at 60");
+    expect(text).toContain("## Not passing");
+    expect(text).toContain("canonical");
+  });
+
   /**
    * The two unavailable reasons are two different facts, and the report used to
    * state the first for both. "Not collected" about a page that was collected
@@ -217,7 +321,6 @@ describe("buildCopyReport", () => {
     if (!normalized.ok) throw new Error(normalized.reason);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: buildKeywordEvidence(null, normalized.queries, null, true),
@@ -268,7 +371,6 @@ describe("buildCopyReport", () => {
 
     const text = buildCopyReport({
       targetUrl,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -316,7 +418,6 @@ describe("buildCopyReport", () => {
 
     const text = buildCopyReport({
       targetUrl: "https://example.com/pricing",
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -339,7 +440,6 @@ describe("buildCopyReport", () => {
     // `plan | tier` becomes two cells and every later column shifts.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["plan | tier"]),
@@ -362,7 +462,6 @@ describe("buildCopyReport", () => {
   it("quotes page-sourced text so it cannot reformat the report", () => {
     const text = buildCopyReport({
       targetUrl: "https://example.com/a|b",
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["plan | tier"]),
@@ -377,7 +476,6 @@ describe("buildCopyReport", () => {
     const long = "x".repeat(78);
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor([
@@ -401,7 +499,6 @@ describe("buildCopyReport", () => {
     // pastes this somewhere with a limit, so it holds with no table at all.
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),
@@ -443,7 +540,6 @@ describe("buildCopyReport", () => {
       const long = "x".repeat(78);
       const text = buildCopyReport({
         targetUrl: extract.url,
-        landedUrl: null,
         scannedAt: "2026-08-17T12:00:00.000Z",
         cacheStatus: "miss",
         evidence: evidenceFor([`${long}a`, `${long}b`, `${long}c`]),
@@ -580,7 +676,6 @@ const RESULT = {
 function fullReport() {
   return buildCopyReport({
     targetUrl: extract.url,
-    landedUrl: null,
     scannedAt: "2026-08-17T12:00:00.000Z",
     cacheStatus: "miss",
     evidence: evidenceFor(["pricing"]),
@@ -632,7 +727,6 @@ describe("the report an assistant is handed", () => {
     };
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),
@@ -711,7 +805,6 @@ describe("the report an assistant is handed", () => {
   it("frames the paste even when the page could not be read", () => {
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: {
@@ -748,7 +841,6 @@ describe("the report an assistant is handed", () => {
     };
     const text = buildCopyReport({
       targetUrl: extract.url,
-      landedUrl: null,
       scannedAt: "2026-08-17T12:00:00.000Z",
       cacheStatus: "miss",
       evidence: evidenceFor(["pricing"]),

@@ -37,6 +37,7 @@ const COLUMNS = [
   // claim an observation nobody made.
   "aiOverviewObserved",
   "coverage",
+  "supportingPageSource",
   "supportingPageUrl",
   "discoveryBasis",
   "clusterId",
@@ -116,6 +117,11 @@ function rowCells(
   const youngDomain = row.signals?.youngDomain;
   const lowTraffic = row.signals?.lowOrganicTrafficDomain;
   const community = row.signals?.communityResult;
+  const supportingPage = row.supportingPage;
+  const supportingPageUrl =
+    supportingPage?.availability === "available"
+      ? supportingPage.url
+      : (row.supportingPageUrl ?? "");
 
   return [
     text(result.marketCode),
@@ -129,7 +135,12 @@ function rowCells(
     num(row.serp.weakestTopTenPosition),
     aiOverviewCell(row.serp.pageOneItemTypes),
     text(row.coverage),
-    text(row.supportingPageUrl ?? ""),
+    text(
+      supportingPage?.availability === "available"
+        ? supportingPage.source
+        : "",
+    ),
+    text(supportingPageUrl),
     text(row.discoveryBasis),
     text(row.clusterId ?? ""),
     text(row.nextChecks.join("|")),

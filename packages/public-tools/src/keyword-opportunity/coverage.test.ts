@@ -14,7 +14,10 @@ import type {
   KeywordCoveragePage,
   KeywordCoverageQueryRow,
 } from "./coverage.ts";
-import { KEYWORD_OPPORTUNITY_COVERAGE_STATES } from "./types.ts";
+import {
+  KEYWORD_OPPORTUNITY_COVERAGE_STATES,
+  type KeywordOpportunitySupportingPage,
+} from "./types.ts";
 
 function row(
   query: string,
@@ -40,6 +43,22 @@ function page(url: string, title: string): KeywordCoveragePage {
 
 const NO_PAGES: readonly KeywordCoveragePage[] = [];
 const EMPTY_INDEX = buildKeywordCoverageIndex([]);
+
+function availableSupportingPage(
+  source: KeywordOpportunitySupportingPage["source"],
+  url: string,
+): KeywordOpportunitySupportingPage {
+  if (source === null) {
+    throw new Error(
+      "supporting page source must be non-null for an available page",
+    );
+  }
+  return { availability: "available", source, url };
+}
+
+function unavailableSupportingPage(): KeywordOpportunitySupportingPage {
+  return { availability: "unavailable", source: null, url: null };
+}
 
 function inventory(
   urls: readonly string[],
@@ -242,6 +261,7 @@ describe("observeKeywordCoverage", () => {
 
     expect(observeKeywordCoverage("best crm", index, NO_PAGES)).toEqual({
       state: "observed_exact_strong",
+      supportingPage: unavailableSupportingPage(),
       supportingPageUrl: null,
     });
   });
@@ -307,6 +327,10 @@ describe("observeKeywordCoverage", () => {
 
     expect(observeKeywordCoverage("best crm", tooFew, pages)).toEqual({
       state: "related_coverage_unverified",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crm",
+      ),
       supportingPageUrl: "https://example.com/crm",
     });
   });
@@ -325,6 +349,10 @@ describe("observeKeywordCoverage", () => {
 
     expect(observeKeywordCoverage("best crm", index, pages)).toEqual({
       state: "observed_exact_strong",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crm",
+      ),
       supportingPageUrl: "https://example.com/crm",
     });
   });
@@ -345,7 +373,33 @@ describe("observeKeywordCoverage", () => {
       ),
     ).toEqual({
       state: "observed_exact_strong",
+      supportingPage: availableSupportingPage(
+        "gsc_observed_query_page",
+        "https://example.com/gsc",
+      ),
       supportingPageUrl: "https://example.com/gsc",
+    });
+  });
+
+  it("names a measured query-page source explicitly instead of collapsing it into a bare URL", () => {
+    const index = buildKeywordCoverageIndex(
+      [row("best crm", 40, 4)],
+      [queryPageRow("best crm", "https://example.com/gsc", 30, 4)],
+    );
+
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        index,
+        [page("https://example.com/lexical", "Best CRM")],
+        "https://example.com/attributed",
+      ),
+    ).toMatchObject({
+      supportingPage: {
+        availability: "available",
+        source: "gsc_observed_query_page",
+        url: "https://example.com/gsc",
+      },
     });
   });
 
@@ -358,6 +412,10 @@ describe("observeKeywordCoverage", () => {
       observeKeywordCoverage("best crm", index, pages, null, sitemap),
     ).toEqual({
       state: "observed_exact_strong",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crawled",
+      ),
       supportingPageUrl: "https://example.com/crawled",
     });
 
@@ -365,6 +423,10 @@ describe("observeKeywordCoverage", () => {
       observeKeywordCoverage("best crm", EMPTY_INDEX, pages, null, sitemap),
     ).toEqual({
       state: "related_coverage_unverified",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crawled",
+      ),
       supportingPageUrl: "https://example.com/crawled",
     });
   });
@@ -378,6 +440,10 @@ describe("observeKeywordCoverage", () => {
       observeKeywordCoverage("best crm for startups", EMPTY_INDEX, pages),
     ).toEqual({
       state: "related_coverage_unverified",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crm",
+      ),
       supportingPageUrl: "https://example.com/crm",
     });
   });
@@ -412,6 +478,7 @@ describe("observeKeywordCoverage", () => {
       ),
     ).toEqual({
       state: "not_observed_in_bounded_inventory",
+      supportingPage: unavailableSupportingPage(),
       supportingPageUrl: null,
     });
   });
@@ -456,6 +523,7 @@ describe("observeKeywordCoverage", () => {
       ),
     ).toEqual({
       state: "not_observed_in_bounded_inventory",
+      supportingPage: unavailableSupportingPage(),
       supportingPageUrl: null,
     });
   });
@@ -500,6 +568,10 @@ describe("observeKeywordCoverage", () => {
       observeKeywordCoverage("café crm", EMPTY_INDEX, NO_PAGES, null, sitemap),
     ).toEqual({
       state: "possible_existing_page",
+      supportingPage: availableSupportingPage(
+        "inventory_url_match",
+        "https://example.com/products/caf%C3%A9-crm?source=secret-keyword",
+      ),
       supportingPageUrl:
         "https://example.com/products/caf%C3%A9-crm?source=secret-keyword",
     });
@@ -524,6 +596,31 @@ describe("observeKeywordCoverage", () => {
       observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES, null, sitemap),
     ).toEqual({
       state: "possible_existing_page",
+      supportingPage: availableSupportingPage(
+        "inventory_url_match",
+        "https://example.com/best-crm",
+      ),
+      supportingPageUrl: "https://example.com/best-crm",
+    });
+  });
+
+  it("prefers a sitemap inventory match to LLM proposition attribution", () => {
+    const sitemap = inventory(["https://example.com/best-crm"]);
+
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        NO_PAGES,
+        "https://example.com/proposition-source",
+        sitemap,
+      ),
+    ).toEqual({
+      state: "possible_existing_page",
+      supportingPage: availableSupportingPage(
+        "inventory_url_match",
+        "https://example.com/best-crm",
+      ),
       supportingPageUrl: "https://example.com/best-crm",
     });
   });
@@ -558,6 +655,10 @@ describe("observeKeywordCoverage", () => {
 
     expect(observeKeywordCoverage("best crm", null, pages)).toEqual({
       state: "related_coverage_unverified",
+      supportingPage: availableSupportingPage(
+        "lexical_page_match",
+        "https://example.com/crm",
+      ),
       supportingPageUrl: "https://example.com/crm",
     });
   });
@@ -578,7 +679,29 @@ describe("observeKeywordCoverage", () => {
       ),
     ).toEqual({
       state: "not_observed_in_bounded_inventory",
+      supportingPage: availableSupportingPage(
+        "llm_proposition_source",
+        "https://example.com/audit",
+      ),
       supportingPageUrl: "https://example.com/audit",
+    });
+  });
+
+  it("labels an attributed-only page as proposition provenance rather than observed coverage", () => {
+    expect(
+      observeKeywordCoverage(
+        "can i audit a website without owning it",
+        EMPTY_INDEX,
+        NO_PAGES,
+        "https://example.com/audit",
+        COMPLETE_EMPTY_INVENTORY,
+      ),
+    ).toMatchObject({
+      supportingPage: {
+        availability: "available",
+        source: "llm_proposition_source",
+        url: "https://example.com/audit",
+      },
     });
   });
 
@@ -611,6 +734,7 @@ describe("observeKeywordCoverage", () => {
       ),
     ).toEqual({
       state: "not_observed_in_bounded_inventory",
+      supportingPage: unavailableSupportingPage(),
       supportingPageUrl: null,
     });
   });

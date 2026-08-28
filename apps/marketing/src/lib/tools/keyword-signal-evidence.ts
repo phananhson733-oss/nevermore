@@ -13,6 +13,7 @@ import {
 import type {
   KeywordOpportunityAiOverviewObservation,
   KeywordOpportunitySignals,
+  KeywordOpportunitySiteRankTier,
 } from "@sf/public-tools";
 import type { KeywordSerpSampleResult } from "./keyword-opportunity-handler.ts";
 
@@ -40,14 +41,33 @@ function unavailableSignal(reason: string) {
   return { state: "unavailable" as const, observation: null, reason };
 }
 
-/** Traffic threshold selected solely from the requesting site's provider rank. */
-export function keywordSiteTrafficThreshold(rank: number | null): number | null {
+/** Provisional v1 young-domain boundary; exported so each run reports it. */
+export const KEYWORD_YOUNG_DOMAIN_MONTHS = 24;
+
+/** Requesting-site rank band used by the provisional traffic policy. */
+export function keywordSiteRankTier(
+  rank: number | null,
+): KeywordOpportunitySiteRankTier | null {
   if (!Number.isInteger(rank) || rank === null || rank < 1 || rank > 1_000) {
     return null;
   }
-  if (rank <= 200) return 5_000;
-  if (rank <= 500) return 50_000;
-  return 100_000;
+  if (rank <= 200) return "rank_1_200";
+  if (rank <= 500) return "rank_201_500";
+  return "rank_501_1000";
+}
+
+/** Traffic threshold selected solely from the requesting site's provider rank. */
+export function keywordSiteTrafficThreshold(rank: number | null): number | null {
+  switch (keywordSiteRankTier(rank)) {
+    case "rank_1_200":
+      return 5_000;
+    case "rank_201_500":
+      return 50_000;
+    case "rank_501_1000":
+      return 100_000;
+    case null:
+      return null;
+  }
 }
 
 function parseInstant(value: string): Date | null {
@@ -110,7 +130,7 @@ function youngDomainSignal(input: KeywordSignalEvidenceInput) {
     ),
   ].sort();
 
-  const cutoff = subtractCalendarMonths(observedAt, 24);
+  const cutoff = subtractCalendarMonths(observedAt, KEYWORD_YOUNG_DOMAIN_MONTHS);
   const young: Array<{
     readonly domain: string;
     readonly registrationDate: string;

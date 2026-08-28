@@ -7,6 +7,7 @@ const testCookieKey = "cd".repeat(32);
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
+  // Vitest contract fixtures live beside browser fixtures and are not E2E specs.
   testIgnore: "**/*.test.ts",
   fullyParallel: false,
   forbidOnly: true,
@@ -19,8 +20,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    // Clear parent-shell provider credentials so an E2E mock gap cannot become
-    // a paid external call. Only local fixture/session values are admitted.
+    // `env -i` is the paid-call tripwire. The standalone server receives no
+    // developer or production provider credentials even when the parent shell
+    // has them; only the local values required to read the sealed fixtures are
+    // admitted.
     command: `mkdir -p .next/standalone/apps/marketing/public .next/standalone/apps/marketing/.next/static && cp -R public/. .next/standalone/apps/marketing/public/ && cp -R .next/static/. .next/standalone/apps/marketing/.next/static/ && cd .next/standalone && env -i PATH="$PATH" NODE_ENV=production MARKETING_GSC_CONNECT_ENABLED=true TOKEN_ENCRYPTION_KEY=${testCookieKey} HOSTNAME=127.0.0.1 PORT=${port} node apps/marketing/server.js`,
     url: `${baseURL}/tools/seo-audit`,
     timeout: 60_000,

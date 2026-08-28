@@ -70,6 +70,7 @@ function slotState(
 export function primaryQuery(
   input: CheckInput,
 ): KeywordEvidenceQuery | null {
+  if (input.evidence === null) return null;
   if (input.evidence.availability !== "available") return null;
   return (
     input.evidence.queries.find((query) => query.isPrimary) ??
@@ -81,7 +82,19 @@ export function primaryQuery(
 export function keywordChecks(input: CheckInput): readonly OnPageCheck[] {
   const query = primaryQuery(input);
   if (query === null) {
-    return [observation("keywordSlots", "keyword", "keyword.unavailable")];
+    // Two different sentences, because they are two different facts. "Not
+    // asked" is the visitor running a URL-only check; "unavailable" is a query
+    // they did name whose page text could not be read. Sharing one line told
+    // half the visitors their page had failed something.
+    return [
+      observation(
+        "keywordSlots",
+        "keyword",
+        input.evidence === null
+          ? "keyword.notRequested"
+          : "keyword.unavailable",
+      ),
+    ];
   }
 
   const checks: OnPageCheck[] = [];

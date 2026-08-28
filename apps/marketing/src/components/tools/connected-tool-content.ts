@@ -398,12 +398,12 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         text: "A bounded context of up to 20 pages, product pages first, and we show you what we understood before spending anything. It is not a whole-site crawl. Wrong reading, wrong keywords — so you get to correct it.",
       },
       {
-        name: "Candidates are priced, not guessed",
-        text: "Every term goes to a search-data provider. Terms it has no data for are reported as having no data, never as zero demand.",
+        name: "The model proposes; the provider prices",
+        text: "The model proposes terms from the site context you approved. Every term then goes to a search-data provider, whose silence remains no data rather than zero demand.",
       },
       {
         name: "Every candidate except an explicit-zero term gets a page-one check",
-        text: "Every candidate except an explicit-zero term is attempted in ordered parallel waves of up to ten. Completed reads report young-domain, low-organic-traffic-domain and community-result evidence separately; a provider gap remains incomplete instead of becoming a negative.",
+        text: "Every candidate except an explicit-zero term enters a replenishing pool of up to ten concurrent page-one requests. Completed reads report young-domain, low-organic-traffic-domain and community-result evidence separately; a provider gap remains incomplete instead of becoming a negative.",
       },
     ],
     outputTitle: "What you get back",
@@ -414,7 +414,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "Question-form opportunities",
-        body: "Question phrasings that cleared the same page-one signal rule. A supporting site page is shown only when one was observed, and no search volume is claimed when the provider returned none.",
+        body: "Question phrasings that cleared the same page-one signal rule. A measured, related, possible-existing, or candidate-source page is labelled with its exact basis; no search volume is claimed when the provider returned none.",
       },
       {
         label: "Checks before you act",
@@ -456,7 +456,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Does every candidate get checked against page one?",
         answer:
-          "Every deduplicated candidate except a term the provider explicitly priced at zero is attempted. Checks run in fixed parallel waves of up to ten. A provider or interpretation failure is recorded on the affected candidate as unavailable evidence; it does not silently turn into a negative or disappear from the report.",
+          "Every deduplicated candidate except a term the provider explicitly priced at zero enters a replenishing pool of up to ten concurrent checks. A provider or interpretation failure is recorded on the affected candidate as unavailable evidence; it does not silently turn into a negative or disappear from the report.",
       },
       {
         question: "Does the map detect AI Overviews?",
@@ -476,7 +476,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "How long does it take?",
         answer:
-          "The site read is bounded to 20 pages. Candidate pricing and page-one checks then continue through every candidate except an explicit-zero term in parallel waves of up to ten, so there is no fixed duration promise; elapsed time depends on the candidate count and provider responses.",
+          "The site read is bounded to 20 pages. Candidate pricing and page-one checks then continue through every candidate except an explicit-zero term in a replenishing pool of up to ten concurrent requests, so there is no fixed duration promise; elapsed time depends on the candidate count and provider responses.",
       },
     ],
   },
@@ -889,12 +889,12 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         text: "读取最多 20 个页面的有限上下文、产品页优先，并且在花掉任何钱之前把我们读到的内容摆给你看；这不是全站完整抓取。读错了关键词就会错，所以这一步由你来纠正。",
       },
       {
-        name: "候选词是核价出来的，不是猜的",
-        text: "每个词都送去搜索数据源。数据源没有数据的词，会如实报告为「无数据」，绝不写成需求为零。",
+        name: "模型提词，数据源核价",
+        text: "模型根据你确认的站点上下文提出候选词；随后每个词都送去搜索数据源。数据源没有数据时，会如实报告为「无数据」，绝不写成需求为零。",
       },
       {
         name: "除明确核价为零外，每个候选词都检查第一页",
-        text: "除明确核价为零以外的每个候选词都会尝试检查，并按固定顺序、每波最多 10 个并行执行。完成的读取会分别报告年轻域名、低自然搜索流量域名和社区结果证据；数据源缺口会留在「检测未完成」，不会变成阴性。",
+        text: "除明确核价为零以外的每个候选词都会进入最多 10 个并发请求的持续补位池。完成的读取会分别报告年轻域名、低自然搜索流量域名和社区结果证据；数据源缺口会留在「检测未完成」，不会变成阴性。",
       },
     ],
     outputTitle: "你会拿到什么",
@@ -905,7 +905,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
       {
         label: "问句式机会",
-        body: "通过同一套第一页信号规则的问句说法。只有观测到站内支持页面时才会展示对应 URL；数据源没有返回搜索量时，不会声称存在搜索量。",
+        body: "通过同一套第一页信号规则的问句说法。实测页、相关页、可能已有页或候选词来源页都会标明准确依据；数据源没有返回搜索量时，不会声称存在搜索量。",
       },
       {
         label: "动手前该查什么",
@@ -945,7 +945,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "每个候选词都会检查第一页吗？",
         answer:
-          "去重候选词中，除数据源明确核价为零的词以外，每一个都会尝试检查。检查按固定顺序、每波最多 10 个并行执行。某个候选词的数据源或解读失败，会记录为证据不可用；不会悄悄变成阴性，也不会从报告里消失。",
+          "去重候选词中，除数据源明确核价为零的词以外，每一个都会进入最多 10 个并发请求的持续补位池。某个候选词的数据源或解读失败，会记录为证据不可用；不会悄悄变成阴性，也不会从报告里消失。",
       },
       {
         question: "地图检测 AI Overview 吗？",
@@ -965,7 +965,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "要跑多久？",
         answer:
-          "站点读取最多覆盖 20 个页面。随后会按每波最多 10 个并行，继续核价并检查除明确核价为零以外的每个候选词，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
+          "站点读取最多覆盖 20 个页面。随后会用最多 10 个并发请求的持续补位池，继续核价并检查除明确核价为零以外的每个候选词，所以不承诺固定时长；实际用时取决于候选词数量和本次数据源响应。",
       },
     ],
   },

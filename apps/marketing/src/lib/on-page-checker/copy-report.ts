@@ -32,8 +32,18 @@ export interface CopyReportCheck {
 }
 
 export interface CopyReportResult {
-  readonly score: number;
-  readonly grade: string;
+  /**
+   * Null for a URL-only run, where no target query was named.
+   *
+   * The report exists to be handed to an assistant. Left as a number over the
+   * categories that did run, that assistant would compare it with a scored
+   * page's number and act on a difference that is an artefact of a smaller
+   * denominator, so the absence is stated in words instead.
+   */
+  readonly score: number | null;
+  readonly grade: string | null;
+  /** The sentence explaining an absent score. Required when `score` is null. */
+  readonly scoreUnavailable?: string;
   readonly counts: {
     readonly pass: number;
     readonly warn: number;
@@ -68,18 +78,26 @@ export const COPY_REPORT_MAX_BYTES = 48 * 1024;
 
 export interface CopyReportInput {
   readonly targetUrl: string;
-  /**
-   * Where the crawl landed, when that is not the URL above.
-   *
-   * The receiving assistant is asked to act on this report. Without this line
-   * it is told to fix a page the audit never read: a URL that redirects
-   * produces a report about its destination, and the header named the
-   * redirect. Null when nothing redirected.
-   */
-  readonly landedUrl: string | null;
   readonly scannedAt: string;
   readonly cacheStatus: "hit" | "miss" | "unknown";
-  readonly evidence: KeywordEvidence;
+  /**
+   * Null for a URL-only run, where the visitor named no target query.
+   *
+   * Different from an `unavailable` region, which is a query that was named and
+   * could not be compared: that one ends the report, because the coverage it
+   * exists to carry does not exist. A URL-only run still has forty graded
+   * checks, and dropping them would hand the assistant a note instead of work.
+   */
+  readonly evidence: KeywordEvidence | null;
+  /**
+   * Whether the crawl read the submitted page, and if not, why.
+   *
+   * Passed separately because the keyword region cannot carry it: a run that
+   * named no query has no region at all, so a page the crawl never reached
+   * produced a report saying only that no query was submitted — and promising
+   * "the checks below" above a report that had none.
+   */
+  readonly pageState?: "read" | "not_captured" | "extract_missing";
   /**
    * Localized sentence per limitation code.
    *
@@ -196,7 +214,9 @@ function gradedSections(result: CopyReportResult): readonly string[] {
     "",
     "## Score",
     "",
-    `${result.score}/100 (${inlineCode(result.grade)}). ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`,
+    result.score === null || result.grade === null
+      ? `${result.scoreUnavailable ?? "No overall score: no target query was named."} ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`
+      : `${result.score}/100 (${inlineCode(result.grade)}). ${result.counts.pass} passed, ${result.counts.warn} warned, ${result.counts.fail} did not pass.`,
     ...(result.topicFocus === null
       ? []
       : [
@@ -211,10 +231,15 @@ function gradedSections(result: CopyReportResult): readonly string[] {
     "",
     "| Category | Score |",
     "| --- | --- |",
-    ...result.categories.map(
-      (category) =>
-        `| ${tableCell(category.label)} | ${category.earned}/${category.available} |`,
-    ),
+    // Same filter the card applies. A category with nothing gradable in it
+    // printed as `0/0` in a score table, which reads as a category that scored
+    // nothing rather than one that was never scored.
+    ...result.categories
+      .filter((category) => category.available > 0)
+      .map(
+        (category) =>
+          `| ${tableCell(category.label)} | ${category.earned}/${category.available} |`,
+      ),
     "",
     "## Not passing",
     "",
@@ -297,40 +322,86 @@ export function buildCopyReport(input: CopyReportInput): string {
     "# On-page SEO check",
     "",
     `- Page: ${inlineCode(input.targetUrl)}`,
-    ...(input.landedUrl === null
-      ? []
-      : [
-          `- Redirected to: ${inlineCode(input.landedUrl)} (the page this report read)`,
-        ]),
     `- Collected at: ${inlineCode(input.scannedAt)}`,
     `- Crawl cache: ${inlineCode(input.cacheStatus)}`,
   ];
 
-  if (input.evidence.availability === "unavailable") {
-    // The two reasons are not the same fact. One says the page never came back
-    // as readable HTML; the other says it did and its text did not survive the
-    // projection. Printing the first for both misreports the second.
-    const why =
-      input.evidence.reason === "target_page_not_captured"
+  const result = input.result ?? null;
+
+  if (input.evidence === null || input.evidence.availability === "unavailable") {
+    const graded = result === null ? [] : gradedSections(result);
+    const supporting =
+      result === null
+        ? []
+        : supportingSections(result, input.vitals ?? [], input.fixes ?? null);
+    // The page first, because it is the bigger fact and the one the keyword
+    // region cannot state. `pageState` wins where it is given; the region's own
+    // reason is the fallback for callers that do not pass it.
+    const pageState =
+      input.pageState ??
+      (input.evidence === null
+        ? "read"
+        : input.evidence.reason === "target_page_not_captured"
+          ? "not_captured"
+          : "extract_missing");
+    const pageWhy =
+      pageState === "not_captured"
         ? [
             "The submitted page was not collected as a readable HTML response,",
             "so no coverage was measured.",
           ]
+        : pageState === "extract_missing"
+          ? [
+              "The submitted page was collected, but its text was not carried in",
+              "the response, so no coverage was measured.",
+            ]
+          : [];
+    // Only claimed when there are some. Printed above an empty report it was a
+    // promise the next section did not keep.
+    const queryWhy =
+      input.evidence !== null
+        ? []
         : [
-            "The submitted page was collected, but its text was not carried in",
-            "the response, so no coverage was measured.",
+            "No target query was submitted, so nothing was compared against",
+            "the page's title, description, headings or opening text.",
+            ...(result === null
+              ? []
+              : ["The checks below are the ones that do not depend on a query."]),
           ];
-    return [
+    const note = [
       ...header,
       ...BRIEFING,
       "",
-      "## Result",
+      "## Keyword coverage",
       "",
-      `No keyword evidence: ${inlineCode(input.evidence.reason)}.`,
-      ...why,
+      ...(input.evidence === null
+        ? []
+        : [`No keyword evidence: ${inlineCode(input.evidence.reason)}.`]),
+      // The page first. It is the bigger fact, and a reader who is told only
+      // that no query was named will go and name one against a page that
+      // cannot be read.
+      ...pageWhy,
+      ...queryWhy,
       "This is not a score of zero.",
-      "",
-    ].join("\n");
+    ];
+    // Richest that fits, same order the full report uses: supporting detail
+    // goes before the findings it supports. The last shape is returned whether
+    // it fits or not — a page URL long enough to exhaust the budget on its own
+    // must not fall through to the branch below, which is written about a
+    // query that was named and would print the wrong reason for this run.
+    const shapes = [
+      [graded, supporting],
+      [graded, []],
+      [[], []],
+    ] as const;
+    let last = "";
+    for (const [gradedPart, supportingPart] of shapes) {
+      last = [...note, ...gradedPart, ...supportingPart, ""]
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n");
+      if (withinBriefBudget(last, COPY_REPORT_MAX_BYTES)) return last;
+    }
+    return last;
   }
 
   const { evidence } = input;
@@ -393,7 +464,6 @@ export function buildCopyReport(input: CopyReportInput): string {
 
   const rows = evidence.queries.map(slotRow);
 
-  const result = input.result ?? null;
   const graded = result === null ? [] : gradedSections(result);
   const supporting =
     result === null

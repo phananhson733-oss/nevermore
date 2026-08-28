@@ -87,7 +87,17 @@ export interface OnPageHistoryEntry {
   readonly country: string;
   readonly locale: string;
   readonly pageType: OnPageCheckerPageType;
-  readonly focus: { readonly covered: number; readonly applicable: number };
+  /**
+   * Null for a URL-only check, which measured no coverage to report.
+   *
+   * The list is what the visitor ran, not only what produced a coverage
+   * figure. Skipping those rows outright meant somebody could check five pages
+   * from a briefing handoff and watch "recent checks" stay empty.
+   */
+  readonly focus: {
+    readonly covered: number;
+    readonly applicable: number;
+  } | null;
   /**
    * The published score, so the list can show a trend rather than a log.
    *
@@ -200,10 +210,16 @@ function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Empty is a real list now: a URL-only check names no query.
+ *
+ * The floor of one predated that mode, and `appendOnPageHistory` drops an
+ * invalid entry silently — so the whole row vanished rather than erroring, and
+ * a visitor checking page after page watched the list stay empty.
+ */
 function isQueryList(value: unknown): value is readonly string[] {
   return (
     Array.isArray(value) &&
-    value.length >= 1 &&
     value.length <= 5 &&
     value.every(
       (entry) =>
@@ -395,6 +411,18 @@ export function clearOnPageDraft(storage: OnPageKeyedStorage): void {
   }
 }
 
+/** Null for a URL-only check, which measured no coverage. */
+function isNullableFocus(
+  value: unknown,
+): value is { readonly covered: number; readonly applicable: number } | null {
+  return (
+    value === null ||
+    (isObject(value) &&
+      isNonNegativeInteger(value.covered) &&
+      isNonNegativeInteger(value.applicable))
+  );
+}
+
 function isHistoryScore(
   value: unknown,
 ): value is { readonly value: number; readonly grade: "A" | "B" | "C" | "D" } {
@@ -442,9 +470,7 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     typeof locale !== "string" ||
     typeof pageType !== "string" ||
     !PAGE_TYPES.has(pageType) ||
-    !isObject(focus) ||
-    !isNonNegativeInteger(focus.covered) ||
-    !isNonNegativeInteger(focus.applicable) ||
+    !isNullableFocus(focus) ||
     !isObject(coverage) ||
     !isCoverageAvailability(coverage.availability) ||
     !isNullableCount(coverage.pagesInspected) ||
@@ -466,7 +492,10 @@ function readHistoryEntry(value: unknown): OnPageHistoryEntry | null {
     country,
     locale,
     pageType: pageType as OnPageCheckerPageType,
-    focus: { covered: focus.covered, applicable: focus.applicable },
+    focus:
+      focus === null
+        ? null
+        : { covered: focus.covered, applicable: focus.applicable },
     coverage: {
       availability: coverage.availability,
       pagesInspected: coverage.pagesInspected,
